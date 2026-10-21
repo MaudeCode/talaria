@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "On Hermes Agent 0.22.3, the Plugins page shows each plugin's OAuth sign-ins with Sign in and Sign out, without a terminal. When the browser runs on another machine, paste the address it lands on after approval.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

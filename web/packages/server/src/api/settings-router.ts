@@ -21,6 +21,7 @@ import { OAUTH_PROVIDERS, SUPPORTED_PROVIDER_SETUPS } from '../providers/tables.
 import { displayBotName, QUOTA_THRESHOLDS_BY_PROFILE_KEY, SETTINGS_SPEECH_KEYS, pyBool } from '../settings.js'
 import { str } from '../util.js'
 import { checkExternalLink, linkPreferences } from '../links.js'
+import { forgetPluginFlow, isPluginFlow, rememberPluginFlow } from '../tools/plugin-oauth.js'
 
 const os = implement(settingsContract).$context<ApiContext>().use(requestSessionIdGuard)
 
@@ -204,21 +205,25 @@ const effortsResolver = (ctx: RequestContext) => async (model: string, provider:
 
 const OAUTH_GATE_DENIED = 'Onboarding OAuth is only available from local networks when auth is not enabled. To bypass this on a remote server, set HERMES_WEBUI_ONBOARDING_OPEN=1.'
 
-/** TAL-398: a device-code sign-in runs in the Agent sidecar, which writes the credential to the profile's own auth store. Callers check the onboarding gate first. */
-async function oauthCall<M extends 'oauth.start' | 'oauth.poll' | 'oauth.cancel'>(ctx: RequestContext, method: M, params: SidecarParams<M>): Promise<SidecarResult<M>> {
+/**
+ * TAL-398: a device-code sign-in runs in the Agent sidecar, which writes the credential to the profile's own auth store;
+ * so does a plugin client's browser sign-in (TAL-1276). Callers check the onboarding gate first.
+ */
+export async function oauthCall<M extends 'oauth.start' | 'oauth.poll' | 'oauth.cancel' | 'oauth.submit_redirect'>(ctx: RequestContext, method: M, params: SidecarParams<M>): Promise<SidecarResult<M>> {
   const sidecar = ctx.deps.sidecar()
   if (!sidecar) throw new HttpError(503, 'Provider sign-in needs the Agent sidecar, which is not running.', { condition: 'sidecar_unavailable' })
   try {
     return await sidecar.call(method, params)
   } catch (error) {
     if (!(error instanceof SidecarError)) throw error
-    const status = { sidecar_unavailable: 503, oauth_flow_not_found: 404, oauth_unsupported: 409, oauth_superseded: 409, invalid_params: 400 }[error.condition] ?? (error.code === -32602 ? 400 : 502)
+    const status = { sidecar_unavailable: 503, oauth_flow_not_found: 404, plugin_not_found: 404, oauth_unsupported: 409, oauth_superseded: 409, oauth_flow_ended: 409, oauth_redirect_invalid: 400, invalid_params: 400 }[error.condition] ?? (error.code === -32602 ? 400 : 502)
     throw new HttpError(status, error.message, { condition: error.condition })
   }
 }
 
 /** One flow's state as the onboarding view renders it: `ok` is false for every ending without a credential. */
-function oauthView(flow: SidecarResult<'oauth.poll'>): Dict {
+export function oauthView(flow: SidecarResult<'oauth.poll'>): Dict {
+  if (flow.status !== 'pending') forgetPluginFlow(flow.flow_id)
   return { ok: flow.status === 'pending' || flow.status === 'approved', flow_id: flow.flow_id, provider: flow.provider, status: flow.status, error: flow.error }
 }
 
@@ -434,11 +439,23 @@ export const settingsRouter = os.router({
     })),
     oauthStart: os.onboarding.oauthStart.handler(({ input, context: { ctx } }) => run(async () => {
       if (!(await onboardingGateAllows(ctx))) throw new HttpError(403, OAUTH_GATE_DENIED)
-      const provider = str(input.provider).trim().toLowerCase()
+      const raw = str(input.provider).trim()
+      // A plugin key keeps its case; built-in provider ids are lowercase.
+      const plugin = isPluginFlow(raw)
+      const provider = plugin ? raw : raw.toLowerCase()
       if (!provider) throw new HttpError(400, 'provider is required')
-      if (SUPPORTED_PROVIDER_SETUPS[provider]?.oauth_flow !== 'device_code') throw new HttpError(400, `'${displayName(provider)}' does not sign in with a device code here. Run \`hermes auth\` in a terminal for it.`)
+      if (plugin) {
+        // TAL-1276: like plugin settings, a plugin client's sign-in is the server owner's.
+        if (!(await canManageServer(ctx))) throw new HttpError(403, 'Only the server owner can sign in to a plugin\'s OAuth client.')
+      } else if (SUPPORTED_PROVIDER_SETUPS[provider]?.oauth_flow !== 'device_code') {
+        throw new HttpError(400, `'${displayName(provider)}' does not sign in with a device code here. Run \`hermes auth\` in a terminal for it.`)
+      }
       const flow = await oauthCall(ctx, 'oauth.start', { profile_home: home(ctx), provider })
-      return { ok: true, flow_id: flow.flow_id, provider: flow.provider, status: flow.status, user_code: flow.user_code, verification_url: flow.verification_url, url: flow.verification_url, expires_in: flow.expires_in, interval: flow.interval }
+      if (plugin) rememberPluginFlow(flow.flow_id, home(ctx), flow)
+      return {
+        ok: true, flow_id: flow.flow_id, provider: flow.provider, status: flow.status, user_code: flow.user_code, verification_url: flow.verification_url, url: flow.verification_url,
+        expires_in: flow.expires_in, interval: flow.interval, redirect_uri: flow.redirect_uri, authorize_host: flow.authorize_host, token_host: flow.token_host,
+      }
     })),
     oauthCancel: os.onboarding.oauthCancel.handler(({ input, context: { ctx } }) => run(async () => {
       if (!(await onboardingGateAllows(ctx))) throw new HttpError(403, OAUTH_GATE_DENIED)

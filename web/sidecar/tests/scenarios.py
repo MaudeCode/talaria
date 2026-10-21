@@ -149,6 +149,7 @@ SCENARIOS: list[tuple[str, dict]] = [
     # TAL-806: test_namespaces seeds a synthetic plugin that declares settings before this; last, so no earlier fixture sees its config write.
     ("plugins.settings", {"profile_home": "{home}"}),
     ("plugins.settings_save", {"profile_home": "{home}", "key": "fake-settings", "values": {"limit": 9, "mode": "careful"}}),
+    ("plugins.oauth_status", {"profile_home": "{home}"}),
 ]
 
 # Scenarios whose params hold ids produced by earlier calls; resolved at run time.
@@ -162,5 +163,5 @@ DYNAMIC: list[tuple[str, str]] = [
 # Methods deliberately not exercised here: they need credentials, the
 # network, a running gateway, or a real audio file.
 UNEXERCISED = {"models.selection_warnings", "runtime.agent_mutation", "runtime.sync_dependencies", "runtime.handshake", "runtime.shutdown", "goals.restore", "commands.exec",
-               "providers.resolve_runtime", "oauth.start", "oauth.poll", "oauth.cancel", "aux.complete", "stt.transcribe", "stt.stream", "stt.stream_audio", "gateway.control", "gateway.restart", "mcp.reload", "cron.run",
+               "providers.resolve_runtime", "oauth.start", "oauth.poll", "oauth.cancel", "oauth.submit_redirect", "plugins.oauth_logout", "aux.complete", "stt.transcribe", "stt.stream", "stt.stream_audio", "gateway.control", "gateway.restart", "mcp.reload", "cron.run",
                "worktree.create", "chat.start", "chat.interrupt", "chat.steer", "chat.steer_withdraw", "chat.steer_now", "chat.evict_agent", "chat.commit_memory", "chat.refine", "chat.compress", "chat.compress_finalize", "approval.respond", "approval.pending", "approval.set_yolo", "clarify.respond", "config.set"}

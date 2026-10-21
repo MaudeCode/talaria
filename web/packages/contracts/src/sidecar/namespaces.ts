@@ -77,6 +77,10 @@ export const PluginSettingFieldSchema = z.object({
   choices: z.array(z.string()).optional(), default: Json.optional(), value: Json.optional(), env: z.string().optional(), has_value: z.boolean().optional(),
 })
 export type PluginSettingField = z.infer<typeof PluginSettingFieldSchema>
+/** TAL-1276: one OAuth client a plugin manifest declares, its grant's state as `hermes auth status` maps it, and the hosts the code is approved at and exchanged at. */
+export const PluginOAuthStateSchema = z.enum(['signed_in', 'sign_in_needed', 'revoked', 'logged_out'])
+export const PluginOAuthClientSchema = z.object({ id: z.string(), state: PluginOAuthStateSchema, authorize_host: z.string(), token_host: z.string() })
+export type PluginOAuthClient = z.infer<typeof PluginOAuthClientSchema>
 export const PluginProviderSchema = z.object({ name: z.string(), display_name: z.string(), auth_type: z.string(), setup: z.enum(['ready', 'missing_cli', 'needs_setup', 'not_loaded', 'unavailable']) })
 /** A skill bundle: `/<name>` loads its `skill_count` skills in one message (TAL-265). */
 export const CommandBundleSchema = z.object({ name: z.string(), description: z.string(), skill_count: z.number().int(), source: z.literal('bundle') })
@@ -104,6 +108,14 @@ export const COMMANDS_METHODS = {
   'plugins.isolation': { params: BaseHomeParams, result: z.object({ profiles: z.array(z.object({ name: z.string(), isolation: z.enum(['in_process', 'host']), third_party_plugins: z.number().int() })) }) },
   /** TAL-806: plugins whose manifest declares settings; `supported` is false on an Agent without `hermes_cli.plugins_settings`. */
   'plugins.settings': { params: ProfileHomeParams, result: z.object({ supported: z.boolean(), plugins: z.array(z.object({ key: z.string(), fields: z.array(PluginSettingFieldSchema) })) }) },
+  /**
+   * TAL-1276: plugins whose manifest declares OAuth clients (Agent v0.22.3+), each client's sign-in state as
+   * `hermes auth status <plugin>:<id>` reports it, and the hosts the CLI names before signing in: the code is approved
+   * at `authorize_host` and exchanged at `token_host`. `supported` is false on an Agent without the plugin OAuth helpers.
+   */
+  'plugins.oauth_status': { params: ProfileHomeParams, result: z.object({ supported: z.boolean(), plugins: z.array(z.object({ key: z.string(), clients: z.array(PluginOAuthClientSchema) })) }) },
+  /** TAL-1276: `hermes auth logout <plugin>:<id>`; `removed` is false when no grant was stored. Errors `oauth_unsupported` on older Agents. */
+  'plugins.oauth_logout': { params: ProfileHomeParams.extend({ key: z.string().min(1), id: z.string().min(1) }), result: z.object({ key: z.string(), id: z.string(), removed: z.boolean() }) },
   /**
    * TAL-806: write non-secret `values` through the Agent's locked plugin-state writer and return the refreshed fields.
    * An undeclared key, a secret or a type mismatch is invalid params; a managed install or key errors `plugin_settings_managed`.
@@ -361,14 +373,21 @@ export const PROVIDERS_METHODS = {
  * `oauth.start` answers the code to show; a sidecar thread polls the provider and writes the credential through the
  * Agent's own auth store. A flow belongs to the profile home that started it: poll and cancel from another home do not
  * find it. `error` is the Agent's reason for a flow that ended without a credential.
+ *
+ * TAL-1276: provider `plugin:<key>:<id>` is the browser sign-in of a plugin-declared OAuth client. Its start has no
+ * `user_code`; `verification_url` is the authorize link, `redirect_uri` the loopback address the browser is sent back
+ * to, and `authorize_host`/`token_host` the hosts the code goes to. It finishes when that redirect reaches the sidecar's
+ * listener or through `oauth.submit_redirect` with the address the browser showed (`oauth_redirect_invalid` for any
+ * other address, `oauth_flow_ended` once the flow ended).
  */
 export const OAuthFlowStatusSchema = z.enum(['pending', 'approved', 'denied', 'expired', 'cancelled', 'error'])
 const OAuthFlow = z.object({ flow_id: z.string(), provider: z.string(), status: OAuthFlowStatusSchema, error: z.string().nullable() })
 const OAuthFlowParams = ProfileHomeParams.extend({ flow_id: z.string().min(1) })
 export const OAUTH_METHODS = {
-  'oauth.start': { params: ProfileHomeParams.extend({ provider: z.string().min(1) }), result: z.object({ flow_id: z.string(), provider: z.string(), status: z.literal('pending'), user_code: z.string(), verification_url: z.string(), expires_in: z.number().int(), interval: z.number().int() }) },
+  'oauth.start': { params: ProfileHomeParams.extend({ provider: z.string().min(1) }), result: z.object({ flow_id: z.string(), provider: z.string(), status: z.literal('pending'), user_code: z.string().optional(), verification_url: z.string(), expires_in: z.number().int(), interval: z.number().int(), redirect_uri: z.string().optional(), authorize_host: z.string().optional(), token_host: z.string().optional() }) },
   'oauth.poll': { params: OAuthFlowParams, result: OAuthFlow },
   'oauth.cancel': { params: OAuthFlowParams, result: OAuthFlow },
+  'oauth.submit_redirect': { params: OAuthFlowParams.extend({ url: z.string().min(1) }), result: OAuthFlow },
 } as const
 
 // ── aux / text / process / usage / gateway ─────────────────────────────

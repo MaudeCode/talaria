@@ -695,6 +695,82 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     }
   })
 
+  it('TAL-1276: plugin OAuth clients ship on their row, sign in through the OAuth routes, and only this flow\'s redirect reaches the sidecar', async () => {
+    const authorize = 'https://idp.example.test/authorize?client_id=synthetic&state=synthetic-state&code_challenge=synthetic-challenge'
+    const redirect = 'http://127.0.0.1:43123/callback'
+    let flows = 0
+    const statuses = new Map<string, 'pending' | 'approved'>()
+    sidecar.respond('plugins.list', () => ({ plugins: [{ name: 'Calendar', key: 'tools/Calendar', version: '1', description: '', enabled: true, kind: 'standalone', activation: 'enabled', hooks: [] }, { name: 'plain', key: 'plain', version: '1', description: '', enabled: true, kind: 'standalone', activation: 'enabled', hooks: [] }], supported_hooks: [] }))
+    sidecar.respond('plugins.oauth_status', () => ({ supported: true, plugins: [{ key: 'tools/Calendar', clients: [{ id: 'google', state: 'logged_out', authorize_host: 'idp.example.test', token_host: 'token.example.test' }, { id: 'drive', state: 'revoked', authorize_host: 'idp.example.test', token_host: 'idp.example.test' }] }] }))
+    sidecar.respond('oauth.start', (params) => {
+      const flowId = `plugin-flow-${++flows}`
+      statuses.set(flowId, 'pending')
+      return { flow_id: flowId, provider: params.provider, status: 'pending', verification_url: authorize, redirect_uri: redirect, authorize_host: 'idp.example.test', token_host: 'token.example.test', expires_in: 180, interval: 2 }
+    })
+    sidecar.respond('oauth.submit_redirect', (params) => { statuses.set(params.flow_id, 'approved'); return { flow_id: params.flow_id, provider: 'plugin:tools/Calendar:google', status: 'pending', error: null } })
+    sidecar.respond('oauth.poll', (params) => ({ flow_id: params.flow_id, provider: 'plugin:tools/Calendar:google', status: statuses.get(params.flow_id)!, error: null }))
+    sidecar.respond('plugins.oauth_logout', (params) => ({ key: params.key, id: params.id, removed: true }))
+    const submits = () => sidecar.calls.filter((c) => c.method === 'oauth.submit_redirect')
+    try {
+      // The row carries each declared client's state and the hosts the sign-in sends the code to; a plugin without clients has none.
+      const plugins = (await json(await s.get('/api/plugins'))).plugins as Json[]
+      expect(plugins.find((p) => p.key === 'tools/Calendar')?.oauth_clients).toEqual([{ id: 'google', state: 'logged_out', authorize_host: 'idp.example.test', token_host: 'token.example.test', can_sign_out: false }, { id: 'drive', state: 'revoked', authorize_host: 'idp.example.test', token_host: 'idp.example.test', can_sign_out: true }])
+      expect(plugins.find((p) => p.key === 'plain')).not.toHaveProperty('oauth_clients')
+
+      // The plugin flow kind starts through the onboarding route, keeping the key's case, and answers the disclosure hosts.
+      let res = await post(s, '/api/onboarding/oauth/start', { provider: 'plugin:tools/Calendar:google' })
+      expect(res.status).toBe(200)
+      const started = await json(res)
+      expect(started).toMatchObject({ ok: true, status: 'pending', flow_id: 'plugin-flow-1', verification_url: authorize, url: authorize, redirect_uri: redirect, authorize_host: 'idp.example.test', token_host: 'token.example.test', expires_in: 180, interval: 2 })
+      expect(started).not.toHaveProperty('user_code')
+      expect(sidecar.calls.filter((c) => c.method === 'oauth.start').at(-1)?.params).toEqual({ profile_home: s.state, provider: 'plugin:tools/Calendar:google' })
+
+      // Anything but this flow's loopback address with its own state is refused before the sidecar sees it.
+      const answer = `${redirect}?code=synthetic-code&state=synthetic-state`
+      for (const url of [`${redirect}?code=synthetic-code&state=other-state`, `${redirect}?code=synthetic-code`, 'http://attacker.example:43123/callback?code=synthetic-code&state=synthetic-state',
+        'https://127.0.0.1:43123/callback?code=synthetic-code&state=synthetic-state', 'http://127.0.0.1:43124/callback?code=synthetic-code&state=synthetic-state',
+        'http://127.0.0.1:43123/other?code=synthetic-code&state=synthetic-state', `${redirect}?state=synthetic-state`, 'not a url']) {
+        res = await post(s, '/api/plugins/oauth/redirect', { flow_id: 'plugin-flow-1', url })
+        expect(res.status, url).toBe(400)
+        expect(await json(res), url).toMatchObject({ condition: 'oauth_redirect_invalid' })
+      }
+      expect((await post(s, '/api/plugins/oauth/redirect', { flow_id: 'unknown-flow', url: answer })).status).toBe(404)
+      expect(submits()).toHaveLength(0)
+
+      // The flow's own answer goes through; the flow is then polled to its ending, after which no paste is accepted.
+      res = await post(s, '/api/plugins/oauth/redirect', { flow_id: 'plugin-flow-1', url: answer })
+      expect(res.status).toBe(200)
+      expect(await json(res)).toMatchObject({ ok: true, status: 'pending', flow_id: 'plugin-flow-1' })
+      expect(submits().at(-1)?.params).toEqual({ profile_home: s.state, flow_id: 'plugin-flow-1', url: answer })
+      expect(await json(await s.get('/api/onboarding/oauth/poll?flow_id=plugin-flow-1'))).toMatchObject({ ok: true, status: 'approved' })
+      expect((await post(s, '/api/plugins/oauth/redirect', { flow_id: 'plugin-flow-1', url: answer })).status).toBe(404)
+      expect(submits()).toHaveLength(1)
+
+      // A sidecar refusal keeps its condition; responses never echo the pasted code or the state.
+      await post(s, '/api/onboarding/oauth/start', { provider: 'plugin:tools/Calendar:google' })
+      sidecar.respond('oauth.submit_redirect', () => { throw new SidecarError('This sign-in already ended.', { condition: 'oauth_flow_ended' }) })
+      res = await post(s, '/api/plugins/oauth/redirect', { flow_id: 'plugin-flow-2', url: answer })
+      expect(res.status).toBe(409)
+      const refused = JSON.stringify(await json(res))
+      expect(refused).not.toContain('synthetic-code')
+      expect(refused).not.toContain('synthetic-state')
+
+      // Sign-out removes the grant through the sidecar.
+      res = await post(s, '/api/plugins/oauth/logout', { key: 'tools/Calendar', id: 'google' })
+      expect(await json(res)).toEqual({ ok: true, removed: true })
+      expect(sidecar.calls.filter((c) => c.method === 'plugins.oauth_logout').at(-1)?.params).toEqual({ profile_home: s.state, key: 'tools/Calendar', id: 'google' })
+
+      // On an Agent without plugin OAuth the rows carry no OAuth fields.
+      sidecar.respond('plugins.oauth_status', () => ({ supported: false, plugins: [] }))
+      expect(((await json(await s.get('/api/plugins'))).plugins as Json[]).every((p) => !('oauth_clients' in p))).toBe(true)
+      // An OAuth status failure leaves the list readable.
+      sidecar.respond('plugins.oauth_status', () => { throw new SidecarError('status failed', { condition: 'internal' }) })
+      expect(((await json(await s.get('/api/plugins'))).plugins as Json[]).map((p) => p.key)).toEqual(['tools/Calendar', 'plain'])
+    } finally {
+      for (const method of ['plugins.list', 'plugins.oauth_status', 'oauth.start', 'oauth.submit_redirect', 'oauth.poll', 'plugins.oauth_logout'] as const) sidecar.respond(method, undefined)
+    }
+  })
+
   it('TAL-806: overlapping saves of one secret run one at a time, so a failed save cannot restore over a later one', async () => {
     const { state, save, envText, restore } = fakePlugin()
     try {

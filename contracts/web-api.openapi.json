@@ -60780,7 +60780,7 @@
     "/api/onboarding/oauth/start": {
       "post": {
         "operationId": "onboarding.oauthStart",
-        "summary": "Start a device-code sign-in for a provider whose onboarding entry has `oauth_flow: 'device_code'`.",
+        "summary": "Start a device-code sign-in for a provider whose onboarding entry has `oauth_flow: 'device_code'`, or (TAL-1276, operator only) the browser sign-in of a plugin OAuth client with provider `plugin:<key>:<id>`.",
         "tags": [
           "settings"
         ],
@@ -60851,6 +60851,15 @@
                       "type": "integer",
                       "minimum": -9007199254740991,
                       "maximum": 9007199254740991
+                    },
+                    "authorize_host": {
+                      "type": "string"
+                    },
+                    "token_host": {
+                      "type": "string"
+                    },
+                    "redirect_uri": {
+                      "type": "string"
                     }
                   },
                   "additionalProperties": {}
@@ -60935,6 +60944,15 @@
                       "type": "integer",
                       "minimum": -9007199254740991,
                       "maximum": 9007199254740991
+                    },
+                    "authorize_host": {
+                      "type": "string"
+                    },
+                    "token_host": {
+                      "type": "string"
+                    },
+                    "redirect_uri": {
+                      "type": "string"
                     }
                   },
                   "additionalProperties": {}
@@ -61014,6 +61032,15 @@
                       "type": "integer",
                       "minimum": -9007199254740991,
                       "maximum": 9007199254740991
+                    },
+                    "authorize_host": {
+                      "type": "string"
+                    },
+                    "token_host": {
+                      "type": "string"
+                    },
+                    "redirect_uri": {
+                      "type": "string"
                     }
                   },
                   "additionalProperties": {}
@@ -66196,6 +66223,38 @@
                                 "required"
                               ]
                             }
+                          },
+                          "oauth_clients": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "state": {
+                                  "enum": [
+                                    "signed_in",
+                                    "sign_in_needed",
+                                    "revoked",
+                                    "logged_out"
+                                  ],
+                                  "type": "string"
+                                },
+                                "authorize_host": {
+                                  "type": "string"
+                                },
+                                "token_host": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "state",
+                                "authorize_host",
+                                "token_host"
+                              ]
+                            }
                           }
                         },
                         "required": [
@@ -66357,6 +66416,164 @@
                     "key",
                     "written",
                     "settings"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/plugins/oauth/redirect": {
+      "post": {
+        "operationId": "pluginOAuthRedirect",
+        "summary": "TAL-1276 (operator only): finish a plugin client's browser sign-in with `url`, the address the browser showed after the approval, when that address does not open on the Agent's machine. 400 `oauth_redirect_invalid` unless it is the flow's `redirect_uri` on 127.0.0.1 with the flow's `state`; 404 for an unknown flow, 409 `oauth_flow_ended` once it ended. Poll the flow afterwards.",
+        "tags": [
+          "tools"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "flow_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "url": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "flow_id",
+                  "url"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "url": {
+                      "type": "string"
+                    },
+                    "verification_url": {
+                      "type": "string"
+                    },
+                    "user_code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "flow_id": {
+                      "type": "string"
+                    },
+                    "provider": {
+                      "type": "string"
+                    },
+                    "expires_in": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "interval": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "authorize_host": {
+                      "type": "string"
+                    },
+                    "token_host": {
+                      "type": "string"
+                    },
+                    "redirect_uri": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": {}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/plugins/oauth/logout": {
+      "post": {
+        "operationId": "pluginOAuthLogout",
+        "summary": "TAL-1276 (operator only): sign out of a plugin-declared OAuth client (`hermes auth logout <key>:<id>`). `removed` is false when no grant was stored.",
+        "tags": [
+          "tools"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "key",
+                  "id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    },
+                    "removed": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "removed"
                   ]
                 }
               }

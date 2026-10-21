@@ -751,5 +751,16 @@
         ]
       }
     }
+  ],
+  "plugins.oauth_status": [
+    {
+      "params": {
+        "profile_home": "<home>"
+      },
+      "result": {
+        "supported": false,
+        "plugins": []
+      }
+    }
   ]
 }

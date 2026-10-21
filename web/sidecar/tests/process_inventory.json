@@ -1527,6 +1527,13 @@
         "[oauth_device_code]"
       ]
     },
+    "tests/test_plugin_oauth.py::test_plugin_oauth_sign_in_status_and_sign_out": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a plugin-declared OAuth client signs in through the Agent's own PKCE helpers, loopback listener, token request (real TLS verification against a test CA) and grant store, and the Agent's CLI status reads the result. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_plugin_settings.py::test_plugin_settings_round_trip_and_keep_secrets_out_of_config": {
       "layer": "compatibility",
       "reason": "Supported-Agent API compatibility: plugin settings round trip and keep secrets out of config. Uses the real installed release, not a fabricated API response.",
