@@ -172,6 +172,9 @@ class RecordingAgent(AIAgent):
         seen.append(self._build_api_kwargs(messages))
         return {"final_response": "ok", "messages": [*messages, {"role": "assistant", "content": "ok"}]}
 
+    def _spawn_background_review(self, **kwargs):
+        seen.append(self._build_api_kwargs(kwargs["messages_snapshot"]))
+
 class Client:
     def __init__(self, **kwargs):
         self.api_key = kwargs.get("api_key")
@@ -202,10 +205,14 @@ with patch("agent.process_bootstrap.OpenAI", Client), scoped_home(home):
         if capable:
             result = chat.start(Ctx(), turn)
             assert result["status"] == "completed", result
+            assert "Reviewing this conversation" in chat.refine({**turn, "messages": history})
         else:
-            for method in (chat.start, chat.compress):
+            for method in ("start", "compress", "refine"):
                 try:
-                    method(Ctx(), turn)
+                    if method == "refine":
+                        chat.refine({**turn, "messages": history})
+                    else:
+                        getattr(chat, method)(Ctx(), turn)
                 except RpcError as exc:
                     refusals.append(exc.data["condition"])
                 else:
@@ -224,10 +231,10 @@ def test_second_turn_connector_data_use_reaches_nous_request(tmp_path) -> None:
     requests = observed["requests"]
     if not observed["capable"]:
         assert len(requests) == 1
-        assert observed["refusals"] == ["agent_incompatible"] * 4
+        assert observed["refusals"] == ["agent_incompatible"] * 6
         return
     assert observed["refusals"] == []
-    assert [request["extra_body"].get("provider") for request in requests] == [None, {"data_collection": "deny"}, {"data_collection": "deny", "zdr": True}]
+    assert [request["extra_body"].get("provider") for request in requests] == [None, *[{"data_collection": "deny"}] * 2, *[{"data_collection": "deny", "zdr": True}] * 2]
     for request in requests[1:]:
         assert next(row for row in request["messages"] if row["role"] == "tool") == {"role": "tool", "tool_call_id": "c1", "content": "private result"}
         assert all("data_use" not in row and "display_metadata" not in row for row in request["messages"])

@@ -66,7 +66,7 @@ def _patch(monkeypatch):
     monkeypatch.setattr(chat, "scoped_home", lambda home: contextlib.nullcontext(home))
 
 
-@pytest.mark.parametrize("method", ["start", "compress"])
+@pytest.mark.parametrize("method", ["start", "compress", "refine"])
 @pytest.mark.parametrize("requirement", ["no_training", "zero_retention"])
 def test_connector_privacy_requires_capable_agent_before_provider_or_agent_use(monkeypatch, method, requirement) -> None:
     _patch(monkeypatch)
@@ -77,9 +77,14 @@ def test_connector_privacy_requires_capable_agent_before_provider_or_agent_use(m
         reached_runtime.append(args)
         raise RpcError("provider resolution reached", condition="unsafe")
     monkeypatch.setattr(chat, "_resolve_runtime", resolve)
-    params = {**_params("privacy-guard"), "conversation_history": [{"role": "tool", "tool_call_id": "c1", "content": "private", "data_use": [requirement]}]}
+    monkeypatch.setattr(chat, "_refine_agent", resolve)
+    history = [{"role": "tool", "tool_call_id": "c1", "content": "private", "data_use": [requirement]}]
+    params = {**_params("privacy-guard"), "conversation_history": history, "messages": history}
     with pytest.raises(RpcError) as denied:
-        getattr(chat, method)(Ctx(), params)
+        if method == "refine":
+            chat.refine(params)
+        else:
+            getattr(chat, method)(Ctx(), params)
     assert not reached_runtime, "private history reached provider resolution"
     assert "cannot enforce connector privacy" in str(denied.value)
     assert denied.value.data["condition"] == "agent_incompatible"

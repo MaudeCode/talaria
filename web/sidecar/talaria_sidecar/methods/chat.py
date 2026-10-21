@@ -1198,7 +1198,7 @@ def _require_data_use_support(history: list) -> None:
     else:
         if DATA_USE == "data_use" and callable(data_use_requirement):
             return
-    raise RpcError("This Agent release cannot enforce connector privacy requirements. Update Hermes Agent before continuing or compressing this chat.", condition="agent_incompatible")
+    raise RpcError("This Agent release cannot enforce connector privacy requirements. Update Hermes Agent before continuing, compressing or refining this chat.", condition="agent_incompatible")
 
 
 def _max_iterations_summary_request() -> str:
@@ -2046,6 +2046,7 @@ def refine(params: dict) -> str:
     messages = params.get("messages")
     if not session_id or not isinstance(messages, list):
         raise InvalidParams("session_id and messages are required")
+    _require_data_use_support(messages)
     focus = str(params.get("focus") or "").strip()
     with _RUNS_LOCK:
         if _session_running_locked(session_id):
