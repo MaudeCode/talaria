@@ -1516,7 +1516,8 @@ describe('chat turns through the sidecar', () => {
       expect(persisted).toEqual(['/initiate_setup'])
       expect(titles).toEqual(['/initiate_setup'])
       expect((await s.deps.sessionStore.get(sid)).messages.filter((m) => m.role === 'user').map((m) => m.content)).toEqual(['/initiate_setup'])
-      expect(asked[0]).toMatchObject({ command: '/initiate_setup', workspace: (await s.deps.sessionStore.get(sid)).workspace, enabled_toolsets: null })
+      // TAL-1279: with the chat's session, so the Agent's pre_command observers see it.
+      expect(asked[0]).toMatchObject({ command: '/initiate_setup', workspace: (await s.deps.sessionStore.get(sid)).workspace, enabled_toolsets: null, session_id: sid })
       // Other slash text is still the user's own message.
       await turn('/etc/hosts looks wrong')
       expect(prompts[1]).toBe('/etc/hosts looks wrong')
@@ -1531,6 +1532,7 @@ describe('chat turns through the sidecar', () => {
       const res = await json(await post(s, '/api/chat/steer', { session_id: sid, text: '/plan ship it', steer_id: 'steer-plan' }))
       expect(res).toMatchObject({ accepted: true, steer_id: 'steer-plan' })
       expect(steered).toEqual(['[/plan — plan mode]\n\nTask to plan:\nship it'])
+      expect(asked.at(-1)).toMatchObject({ command: '/plan ship it', session_id: sid })
       expect(s.deps.turns.pendingSteers(streamId).map((r) => r.text)).toEqual(['/plan ship it'])
       release()
       await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'stream_end')

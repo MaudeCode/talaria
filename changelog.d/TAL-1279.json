@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Plugins observing commands now see /plan, /learn, /init and /initiate-setup typed in a Web chat, as they do from the CLI and messaging.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

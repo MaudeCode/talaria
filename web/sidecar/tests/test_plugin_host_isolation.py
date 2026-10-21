@@ -152,7 +152,7 @@ def register(ctx):
 @requires_agent
 def test_web_commands_pass_session_context_to_plugins_and_fire_pre_command(tmp_path: pathlib.Path) -> None:
     """TAL-1267: like the Agent's CLI, TUI and gateway, a Web command passes its session to a plugin handler that declares
-    it (v0.22.3+ ``invoke_plugin_command``) and fires ``pre_command`` once per recognised command."""
+    it (v0.22.3+ ``invoke_plugin_command``) and fires ``pre_command`` once per recognised command, prompt built-ins included."""
     home = tmp_path / "home" / ".hermes"
     log = tmp_path / "pre_command.jsonl"
     path = home / "plugins" / "probe-context"
@@ -171,6 +171,12 @@ def test_web_commands_pass_session_context_to_plugins_and_fire_pre_command(tmp_p
         assert sidecar.result("commands.exec", {**params, "command": "/reload_skills", "session_id": "chat-1267"})["source"] == "agent"
         error, _ = sidecar.call("commands.exec", {**params, "command": "/definitely-not-a-command"})
         assert error.get("error", {}).get("data", {}).get("condition") == "command_not_found", error
+        # TAL-1279: a prompt built-in fires it too, by canonical name, even one this Agent cannot expand; other text does not.
+        expand = {**params, "workspace": "", "enabled_toolsets": None}
+        assert sidecar.result("commands.expand_prompt", {**expand, "command": "/plan x", "session_id": "chat-1279"})["message"]
+        assert sidecar.result("commands.expand_prompt", {**expand, "command": "/bp daily"}) == {"name": "blueprint", "message": None}
+        for text in ("/probe-context hi", "/etc/hosts looks wrong"):
+            assert sidecar.result("commands.expand_prompt", {**expand, "command": text, "session_id": "chat-1279"})["name"] is None
 
         # The Agent stamps its own telemetry fields beside the hook arguments.
         arguments = ("surface", "command", "alias_used", "args_raw", "session_key", "platform")
@@ -180,6 +186,8 @@ def test_web_commands_pass_session_context_to_plugins_and_fire_pre_command(tmp_p
             {**webui, "command": "probe-context", "alias_used": "probe-context", "args_raw": "hi", "session_key": "chat-1267"},
             {**webui, "command": "probe-legacy", "alias_used": "probe-legacy", "args_raw": "there", "session_key": None},
             {**webui, "command": "reload-skills", "alias_used": "reload_skills", "args_raw": "", "session_key": "chat-1267"},
+            {**webui, "command": "plan", "alias_used": "plan", "args_raw": "x", "session_key": "chat-1279"},
+            {**webui, "command": "blueprint", "alias_used": "bp", "args_raw": "daily", "session_key": None},
         ]
     finally:
         sidecar.close()

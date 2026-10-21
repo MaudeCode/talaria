@@ -124,7 +124,7 @@ def _prompt_mode(name: str) -> str | None:
     return "expand" if _prompt_expander(name) else "unsupported"
 
 
-def expand_prompt(command: str, workspace: str, enabled_toolsets) -> dict[str, Any]:
+def expand_prompt(command: str, workspace: str, enabled_toolsets, session_id: str = "") -> dict[str, Any]:
     """``/<prompt built-in> [args]`` as the turn text the Agent's own builder writes. ``name`` is the built-in's (None
     when the command is not one) and ``message`` None when this Agent has no builder for it."""
     try:
@@ -135,6 +135,8 @@ def expand_prompt(command: str, workspace: str, enabled_toolsets) -> dict[str, A
     cmd = resolve_command(name)
     if cmd is None or cmd.name not in _PROMPT_BUILTINS:
         return {"name": None, "message": None}
+    # TAL-1279: as the CLI does, before it expands or refuses the built-in.
+    _fire_pre_command(command, session_id, cmd.name)
     expander = _prompt_expander(cmd.name)
     if expander is None:
         return {"name": cmd.name, "message": None}
@@ -336,12 +338,12 @@ def _credits() -> str:
     return "\n".join(lines)
 
 
-def _fire_pre_command(command: str, session_id: str) -> None:
+def _fire_pre_command(command: str, session_id: str, canonical: str | None = None) -> None:
     """The Agent's observer-only ``pre_command`` hook, which every local surface fires before a recognised command runs."""
     from hermes_cli.plugins import fire_pre_command_hook
 
     typed, arg = _split_slash_command(command)
-    fire_pre_command_hook(surface="webui", command=_ALIASES.get(typed, typed), alias_used=typed, args_raw=arg,
+    fire_pre_command_hook(surface="webui", command=canonical or _ALIASES.get(typed, typed), alias_used=typed, args_raw=arg,
                           session_key=session_id or None, platform="webui")
 
 
@@ -663,7 +665,8 @@ def register(registry) -> None:
     @registry.method("commands.expand_prompt")
     def expand_prompt_(ctx: CallContext, params: dict) -> dict:
         with scoped_home(profile_home_param(params)):
-            return expand_prompt(str(params.get("command") or ""), str(params.get("workspace") or ""), params.get("enabled_toolsets"))
+            return expand_prompt(str(params.get("command") or ""), str(params.get("workspace") or ""), params.get("enabled_toolsets"),
+                                 str(params.get("session_id") or "").strip())
 
     @registry.method("commands.bundles")
     def bundles(ctx: CallContext, params: dict) -> dict:
