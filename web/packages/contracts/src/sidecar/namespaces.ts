@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { ProviderPhaseSchema } from '../run-status.js'
 import { SpeedTierSchema } from '../speed.js'
-import { GatewayCreateParamsSchema, GatewaySessionParamsSchema, GatewaySessionResultSchema } from '../gateway-session.js'
+import { GatewayClarifyBatchSchema, GatewayCreateParamsSchema, GatewaySessionParamsSchema, GatewaySessionResultSchema } from '../gateway-session.js'
 
 /** Warnings and wording come from the Agent's selection guard registry, including future guard kinds. */
 export const ModelSelectionWarningSchema = z.object({ kind: z.string(), title: z.string(), model: z.string(), provider: z.string(), message: z.string() })
@@ -696,7 +696,11 @@ const GatewayActionResult = z.object({ status: z.enum(['completed', 'failed', 'b
 const GatewayActionStream = z.discriminatedUnion('event', [z.object({ event: z.literal('progress'), data: z.object({ phase: z.enum(['started', 'draining']) }) })])
 export const GATEWAY_ACTIONS = ['start', 'stop', 'restart'] as const
 export const GATEWAY_METHODS = {
-  'gateway.session': { params: GatewaySessionParamsSchema, result: GatewaySessionResultSchema, stream: z.object({ event: z.enum(['snapshot', 'event']), data: Loose }) },
+  'gateway.session': { params: GatewaySessionParamsSchema, result: GatewaySessionResultSchema, stream: z.discriminatedUnion('event', [
+    z.object({ event: z.enum(['snapshot', 'event']), data: Loose }),
+    z.object({ event: z.literal('clarify_batch'), data: GatewayClarifyBatchSchema }),
+    z.object({ event: z.literal('restarting'), data: z.object({ restarting: z.literal(true) }) }),
+  ]) },
   'gateway.create': { params: GatewayCreateParamsSchema, result: GatewaySessionResultSchema },
   'gateway.control': { params: GatewayActionParams.extend({ action: z.enum(GATEWAY_ACTIONS) }), result: GatewayActionResult, stream: GatewayActionStream },
   'gateway.restart': { params: GatewayActionParams, result: GatewayActionResult, stream: GatewayActionStream },

@@ -175,7 +175,7 @@ def test_watch_negotiates_display_without_breaking_older_owners(tmp_path, monkey
     monkeypatch.setattr(gateway_sessions, "_connect", connect)
     monkeypatch.setattr(gateway_sessions, "_control_refusal", lambda *_: None)
     result = asyncio.run(gateway_sessions._run(ctx, {"session_id": "native", "action": "watch", "show_reasoning": shown},
-                                               tmp_path, SimpleNamespace(endpoint=endpoint)))
+                                               tmp_path, SimpleNamespace(endpoint=endpoint, state="ready")))
     assert result["state"] == "attached"
     assert frames[0][0] == "snapshot"
     assert ("config.set", {"session_id": "native", "key": "show_reasoning", "value": "1" if shown else "0", "_timeout": 10}) in calls
