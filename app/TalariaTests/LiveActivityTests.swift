@@ -6,6 +6,21 @@ import XCTest
 @MainActor
 final class LiveActivityTests: XCTestCase {
     func testFullExcerptSkipsNormalizationAndActivityUpdatesForTwoThousandTokens() async throws {
+        try await assertFullExcerptSkipsFurtherTokens(
+            initialToken: String(repeating: "a", count: 141), tailToken: " more",
+            expectedExcerpt: String(repeating: "a", count: 137) + "..."
+        )
+    }
+
+    func testCombiningMarkExcerptSkipsNormalizationAndActivityUpdates() async throws {
+        try await assertFullExcerptSkipsFurtherTokens(
+            initialToken: "e" + String(repeating: "\u{301}", count: 20_000), tailToken: "\u{301}"
+        )
+    }
+
+    private func assertFullExcerptSkipsFurtherTokens(
+        initialToken: String, tailToken: String, expectedExcerpt: String? = nil
+    ) async throws {
         var normalizationRequests = 0
         var updates: [AgentRunActivityAttributes.ContentState] = []
         let excerptDelivered = expectation(description: "Full excerpt delivered")
@@ -24,15 +39,17 @@ final class LiveActivityTests: XCTestCase {
             sessionID: "prefix-fixture", sessionTitle: "Prefix fixture", streamID: "prefix-stream",
             publisherURL: URL(string: "https://fixture.example")!
         )
-        manager.update(.token(String(repeating: "a", count: 141)))
+        manager.update(.token(initialToken))
         await fulfillment(of: [excerptDelivered], timeout: 5)
         let fullState = try XCTUnwrap(manager.currentState)
-        XCTAssertEqual(fullState.responseExcerpt, String(repeating: "a", count: 137) + "...")
+        if let expectedExcerpt { XCTAssertEqual(fullState.responseExcerpt, expectedExcerpt) }
+        XCTAssertTrue(fullState.responseExcerpt.hasSuffix("..."))
+        XCTAssertLessThanOrEqual(fullState.responseExcerpt.unicodeScalars.count, 1_024)
         let initialNormalizations = normalizationRequests
         let initialUpdates = updates.count
 
         for _ in 0..<2_000 {
-            manager.update(.token(" more"))
+            manager.update(.token(tailToken))
             await Task.yield()
         }
         for _ in 0..<10 { await Task.yield() }

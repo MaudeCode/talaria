@@ -338,6 +338,7 @@ public enum AgentRunActivitySanitizer {
     static let maximumSessionTitleCharacters = 42
     static let maximumActivityCharacters = 64
     static let maximumExcerptCharacters = 140
+    static let maximumResponsePrefixScalars = 1_024
     static let maximumToolLabelCharacters = 28
 
     public static func sessionTitle(_ rawValue: String) -> String {
@@ -351,9 +352,16 @@ public enum AgentRunActivitySanitizer {
 
     public static func responsePrefix(_ rawValue: String) -> (text: String, isFull: Bool) {
         let normalized = normalizedSingleLine(rawValue)
-        let isFull = normalized.count > maximumExcerptCharacters
+        // Grapheme clusters can contain unbounded combining marks; reserve room for the ellipsis.
+        let scalarLimit = maximumResponsePrefixScalars - 3
+        let scalars = normalized.unicodeScalars.prefix(scalarLimit + 1)
+        let bounded = String(String.UnicodeScalarView(scalars.prefix(scalarLimit)))
+        if scalars.count > scalarLimit {
+            return (String(bounded.prefix(maximumExcerptCharacters - 3)) + "...", true)
+        }
+        let isFull = bounded.count > maximumExcerptCharacters
         // One extra non-whitespace character must survive trimming at the cutoff.
-        var prefix = String(normalized.prefix(maximumExcerptCharacters + 2))
+        var prefix = String(bounded.prefix(maximumExcerptCharacters + 2))
         // Keep a separator split across tokens, without retaining the whitespace itself.
         if !isFull, !prefix.isEmpty,
            rawValue.unicodeScalars.last.map({ CharacterSet.whitespacesAndNewlines.contains($0) }) == true {

@@ -764,6 +764,15 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertFalse(whitespace.isFull)
     }
 
+    func testResponsePrefixBoundsCombiningMarkScalars() {
+        let raw = "e" + String(repeating: "\u{301}", count: 20_000)
+        XCTAssertEqual(raw.count, 1)
+        let prefix = AgentRunActivitySanitizer.responsePrefix(raw)
+        XCTAssertTrue(prefix.isFull, "Combining marks must fill the prefix budget")
+        XCTAssertLessThanOrEqual(prefix.text.unicodeScalars.count, 1_024, "Retained scalars must be bounded")
+        XCTAssertTrue(prefix.text.hasSuffix("..."), "A scalar-truncated excerpt must show truncation")
+    }
+
     func testContentComparisonIgnoresOnlyUpdatedAt() {
         let state = AgentRunActivityStateReducer.initialState(sessionID: "comparison", sessionTitle: "Comparison")
         var other = state
