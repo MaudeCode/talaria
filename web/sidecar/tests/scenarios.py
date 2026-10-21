@@ -96,7 +96,7 @@ SCENARIOS: list[tuple[str, dict]] = [
     ("cron.blueprint_fill", {"profile_home": "{home}", "key": "morning-brief", "values": {"time": "08:30"}}),
     ("cron.list", {"profile_home": "{home}"}),
     ("cron.create", {"profile_home": "{home}", "job": {"schedule": "every 1h", "prompt": "say hi", "name": "hello"}}),
-    ("cron.delivery_options", {}),
+    ("cron.delivery_options", {"profile_home": "{home}"}),
     ("cron.status", {}),
     # providers / models / aux / text / process
     ("config.get", {"profile_home": "{home}", "config_path": "{home}/config.yaml"}),

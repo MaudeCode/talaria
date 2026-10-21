@@ -610,10 +610,10 @@ export class CronService {
     return this.sidecar().call('cron.output', { profile_home: home, job_id: jobId, limit: Number.isFinite(l) ? Math.max(1, Math.min(500, l)) : 5 })
   }
 
-  async deliveryOptions(): Promise<{ platforms: { value: string; label: string }[] }> {
+  async deliveryOptions(home: string): Promise<{ platforms: { value: string; label: string }[] }> {
     const sidecar = this.deps.sidecar()
     const fallback = { platforms: [{ value: 'local', label: 'Local (save output only)' }, { value: 'origin', label: 'Origin (reply to creator)' }] }
     if (!sidecar) return fallback
-    try { return await sidecar.call('cron.delivery_options', {}) } catch { return fallback }
+    try { return await sidecar.call('cron.delivery_options', { profile_home: home }) } catch { return fallback }
   }
 }

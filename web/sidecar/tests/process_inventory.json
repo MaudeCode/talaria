@@ -930,6 +930,13 @@
         ""
       ]
     },
+    "tests/test_cron_parity.py::test_delivery_options_list_messaging_platforms": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: delivery options list the messaging platforms the installed release delivers to. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_dependency_sync.py::test_dependency_sync_rpc_owns_the_agent_subprocess": {
       "layer": "process",
       "reason": "Actual child/grandchild execution, cancellation and process-group cleanup cannot be proved by fake Popen responses.",

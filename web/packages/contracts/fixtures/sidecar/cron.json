@@ -72,7 +72,9 @@
   ],
   "cron.delivery_options": [
     {
-      "params": {},
+      "params": {
+        "profile_home": "<home>"
+      },
       "result": {
         "platforms": [
           {

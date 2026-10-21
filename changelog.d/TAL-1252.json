@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The cron delivery picker lists Telegram, Discord, Slack, Matrix and the other messaging platforms on Hermes Agent 0.22.3.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
