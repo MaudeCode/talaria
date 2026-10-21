@@ -85,6 +85,10 @@ test('off-screen history halves long tasks during a 200-token stream', async ({ 
         await page.addStyleTag({ content: withoutContainment })
         await page.evaluate((disabled) => document.documentElement.classList.toggle('without-containment', disabled), baseline)
         await page.waitForTimeout(500)
+        // Changing containment can resize the history; both phases must start in the same follow mode.
+        await page.locator('#messages').evaluate((el) => { el.scrollTop = el.scrollHeight; el.dispatchEvent(new Event('scroll', { bubbles: true })) })
+        await expect.poll(() => distance(page)).toBeLessThan(2)
+        await expect(page.locator('.scroll-to-bottom-btn')).toHaveCount(0)
         await cpu.send('Emulation.setCPUThrottlingRate', { rate: 6 })
         const before = await readTimings()
         await page.evaluate(() => {
@@ -98,6 +102,7 @@ test('off-screen history halves long tasks during a 200-token stream', async ({ 
           await page.waitForTimeout(30)
         }
         await expect(page.locator('.live-turn .msg-body')).toContainText('word '.repeat(200).trim())
+        await expect.poll(() => distance(page)).toBeLessThan(2)
         await page.waitForTimeout(100)
         samples.push(await page.evaluate(() => {
           const w = window as unknown as { longTasks: number; observer: PerformanceObserver }
@@ -302,6 +307,11 @@ for (const virtualize of [false, true]) {
     await expect(page.locator('[data-history-sentinel]')).toHaveCount(0)
     await page.locator('#messages').evaluate((el) => { el.dispatchEvent(new WheelEvent('wheel', { deltaY: -1, bubbles: true })); el.scrollTop = 0 })
     await expect(page.getByText('history question 1', { exact: true })).toBeInViewport()
+    if (!virtualize) {
+      const path = testInfo.outputPath(`history-start-${testInfo.project.name}.png`)
+      await page.screenshot({ path })
+      await testInfo.attach('History start', { path, contentType: 'image/png' })
+    }
     expect(await page.locator('[data-message-key]').evaluateAll((rows) => new Set(rows.map((row) => row.getAttribute('data-message-key'))).size === rows.length)).toBe(true)
   })
 }

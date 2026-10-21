@@ -106,6 +106,8 @@ export function Transcript(props: TranscriptProps) {
 
   const readerAnchor = useRef<{ key: string; top: number } | null>(null)
   const rememberReaderAnchor = useCallback(() => {
+    // Following owns the tail position; no history anchor is used until the reader leaves it.
+    if (followsRef.current()) { readerAnchor.current = null; return }
     const pane = scrollRef.current
     if (!pane) return
     const bounds = pane.getBoundingClientRect()
@@ -121,7 +123,7 @@ export function Transcript(props: TranscriptProps) {
   // A hand scroll (wheel or touch) that moves the transcript asks the composer to rest; a gesture against an edge
   // moves nothing, and programmatic follow and entry jumps record their own position, so neither does.
   const handAtRef = useRef(-Infinity)
-  const onReaderInput = useCallback(() => { prependRef.current = null }, [])
+  const onReaderInput = useCallback(() => { prependRef.current = null; readerAnchor.current = null }, [])
   const onReaderScroll = useCallback(() => { onReaderInput(); handAtRef.current = performance.now() }, [onReaderInput])
 
   const onScroll = useCallback(() => {

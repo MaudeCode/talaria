@@ -2,7 +2,7 @@
   "entries": [
     {
       "category": "Fixed",
-      "summary": "Long chats skip rendering off-screen messages while keeping history searchable.",
+      "summary": "Long chats stay responsive and keep your place when older messages load.",
       "highlight": false,
       "components": ["web"]
     }

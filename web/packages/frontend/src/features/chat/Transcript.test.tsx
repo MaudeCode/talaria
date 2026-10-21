@@ -8,10 +8,16 @@ import { requestScroll } from './sendMotion'
 import * as turnActivity from './turnActivity'
 
 let intersect: IntersectionObserverCallback
+let resized: ResizeObserverCallback
 const observe = vi.fn()
 beforeEach(() => {
   window.matchMedia = vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia
-  vi.stubGlobal('ResizeObserver', class { observe = vi.fn(); disconnect = vi.fn(); unobserve = vi.fn() })
+  resized = () => undefined
+  vi.stubGlobal('ResizeObserver', class {
+    constructor(private callback: ResizeObserverCallback) {}
+    observe = vi.fn((element: Element) => { if (element.id === 'msgInner') resized = this.callback })
+    disconnect = vi.fn(); unobserve = vi.fn()
+  })
   resetStreamStoreForTests()
   vi.stubGlobal('IntersectionObserver', class {
     constructor(callback: IntersectionObserverCallback, options: IntersectionObserverInit) { intersect = callback; observe(options) }
@@ -69,8 +75,16 @@ it('keeps the row filter and user scans cached across ten streamed tokens', () =
   expect(view.container.querySelector('[data-live]')).toBeNull()
 })
 
-it.each([false, true])('preserves an upward reader scroll before its scroll event when content arrives: autoFollow=%s', async (autoFollow) => {
-  const view = render(<Transcript {...props()} autoFollow={autoFollow} />)
+it.each([
+  { autoFollow: false, scrollTop: 300 },
+  { autoFollow: true, scrollTop: 300 },
+  { autoFollow: true, scrollTop: 2000 },
+  { autoFollow: false, scrollTop: 2000 },
+])('honors the reader position before queued scroll events: autoFollow=$autoFollow, scrollTop=$scrollTop', async ({ autoFollow, scrollTop }) => {
+  // At the tail with follow disabled, a running turn must still preserve a reader anchor.
+  const notFollowing = !autoFollow && scrollTop === 2000
+  if (notFollowing) dispatch({ type: 'start', sessionId: 'history', streamId: 'run', turnId: null, userMessageId: null, userText: '', now: 0 })
+  const view = render(<Transcript {...props()} autoFollow={autoFollow} live={notFollowing ? getStreamState().turns.history! : null} />)
   const pane = view.container.querySelector<HTMLElement>('#messages')
   const inner = view.container.querySelector<HTMLElement>('#msgInner')
   if (!pane || !inner) throw new Error('Missing transcript')
@@ -80,11 +94,15 @@ it.each([false, true])('preserves an upward reader scroll before its scroll even
   })
   act(() => requestScroll('end'))
   expect(pane.scrollTop).toBe(2000)
-  fireEvent.wheel(pane, { deltaY: -1 })
-  pane.scrollTop = 300
+  const history = view.container.querySelector<HTMLElement>('[data-message-key="121"]')!
+  const measured = vi.spyOn(history, 'getBoundingClientRect')
+  if (scrollTop < 2000) fireEvent.wheel(pane, { deltaY: -1 })
+  pane.scrollTop = scrollTop
   // DOM insertion can precede the queued browser scroll event, as a deferred renderer reveals.
   await act(async () => { inner.append(document.createTextNode('Deferred content')); await Promise.resolve() })
-  expect(pane.scrollTop).toBe(300)
+  expect(pane.scrollTop).toBe(scrollTop)
+  if (scrollTop === 2000 && autoFollow) expect(measured).not.toHaveBeenCalled()
+  if (notFollowing) expect(measured).toHaveBeenCalled()
 })
 
 it('prefetches from a sentinel one viewport before the top, with no load button', () => {
@@ -140,6 +158,45 @@ it('keeps the prepend anchor when a duplicate observer callback is rejected', ()
   rect.mockRestore()
 })
 
+it('reader input cancels prepend and stale reader anchors at the top', () => {
+  let mutated: MutationCallback = () => undefined
+  vi.stubGlobal('MutationObserver', class {
+    constructor(private callback: MutationCallback) {}
+    observe = (element: Element) => { if (element.id === 'msgInner') mutated = this.callback }
+    disconnect = vi.fn()
+  })
+  vi.stubGlobal('CSS', { escape: (key: string) => key })
+  let frame: FrameRequestCallback | undefined
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { frame = callback; return 1 })
+  vi.stubGlobal('cancelAnimationFrame', vi.fn())
+  let oldTop = 100, olderHeight = 60
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    const pane = document.getElementById('messages')!
+    const top = this.dataset.messageKey === '121' ? oldTop - pane.scrollTop : this.dataset.messageKey === '1' ? 20 - pane.scrollTop : 0
+    const height = this.id === 'messages' ? 600 : this.dataset.messageKey === '1' ? olderHeight : 100
+    return { top, bottom: top + height, left: 0, right: 400, width: 400, height, x: 0, y: top, toJSON: () => ({}) }
+  })
+  let capture: (() => void) | undefined
+  const input = { ...props(), onLoadOlder: vi.fn((_retry?: boolean, beforePrepend?: () => void) => { capture = beforePrepend }) }
+  const view = render(<Transcript {...input} />), pane = view.container.querySelector<HTMLElement>('#messages')!
+  Object.defineProperties(pane, { scrollHeight: { configurable: true, value: 2600 }, clientHeight: { configurable: true, value: 600 } })
+  vi.spyOn(pane, 'scrollTo').mockImplementation((options: ScrollToOptions | number) => { pane.scrollTop = Math.min(typeof options === 'number' ? options : options.top ?? 0, 2000) })
+  act(() => requestScroll('end'))
+  pane.scrollTop = 20
+  fireEvent.scroll(pane)
+  act(() => intersect([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver))
+  act(() => capture?.())
+  oldTop = 80
+  view.rerender(<Transcript {...input} loadedFrom={0} truncated={false} rows={projectMessages([{ id: 1, role: 'user', content: 'Older content' }, { id: 121, role: 'user', content: 'Current window' }])} />)
+  expect(pane.scrollTop).toBe(0)
+  // The reader stays at the start while newly revealed content acquires its full height.
+  fireEvent.wheel(pane, { deltaY: -1 })
+  pane.scrollTop = 0
+  oldTop = 380; olderHeight = 360
+  act(() => { resized([], {} as ResizeObserver); mutated([], {} as MutationObserver); frame?.(0) })
+  expect(pane.scrollTop).toBe(0)
+})
+
 it('a terminal snapshot that beats admission replaces the pending row by server identity, including identical text', () => {
   dispatch({ type: 'start', sessionId: 's1', streamId: 'new', turnId: 'turn-new', userMessageId: '3', userText: 'Same', now: 1 })
   dispatch({ type: 'event', sessionId: 's1', streamId: 'new', event: { event: 'done', data: { session: sessionFixture({ session_id: 's1' }) } }, lastEventId: 'new:2', now: 2 })
@@ -163,12 +220,6 @@ it('a terminal snapshot that beats admission replaces the pending row by server 
 })
 
 it('preserves the visible row offset when terminal excerpts shrink an earlier reply (TAL-1114)', () => {
-  let resized: ResizeObserverCallback = () => undefined
-  globalThis.ResizeObserver = class {
-    constructor(private callback: ResizeObserverCallback) {}
-    observe = (element: Element) => { if (element.id === 'msgInner') resized = this.callback }
-    disconnect = vi.fn(); unobserve = vi.fn()
-  }
   const props: TranscriptProps = {
     rows: [{ index: 0, key: 'a', message: { role: 'assistant', message_id: 'a', content: 'A'.repeat(6000), _turn_id: 'A' } },
       { index: 1, key: 'anchor', message: { role: 'user', message_id: 'anchor', content: 'Visible anchor', _turn_id: 'B' } }],
