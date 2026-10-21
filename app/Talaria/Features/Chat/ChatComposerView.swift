@@ -5,6 +5,9 @@ import TalariaKit
 
 
 struct MessageComposerView: View {
+#if DEBUG
+    @Environment(\.chatBodyEvaluation) private var recordBodyEvaluation
+#endif
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -239,6 +242,9 @@ struct MessageComposerView: View {
     }
 
     var body: some View {
+#if DEBUG
+        let _ = recordBodyEvaluation?("composer")
+#endif
         AdaptiveGlassContainer(spacing: 6) {
             VStack(spacing: 6) {
                 if voiceNoteRecorder.isRecording {

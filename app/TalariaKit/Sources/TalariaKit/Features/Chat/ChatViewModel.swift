@@ -17,8 +17,14 @@ public final class ChatViewModel {
     }
 
     public private(set) var messages: [ChatMessage] = [] {
-        didSet { recomputeDisplayedTranscriptMessages() }
+        didSet {
+            let populated = !messages.isEmpty
+            if hasMessages != populated { hasMessages = populated }
+            recomputeDisplayedTranscriptMessages()
+        }
     }
+    /// Layout reads message presence without observing each streamed content update.
+    public private(set) var hasMessages = false
     /// Memoized transcript mapping. Structural changes rebuild it; paced content
     /// flushes replace only the active transcript row.
     public private(set) var displayedTranscriptMessages: [TranscriptMessage] = []
@@ -128,7 +134,7 @@ public final class ChatViewModel {
     /// Loads started by pull-to-refresh; the system refresh spinner covers them.
     private var userRefreshLoadGenerations: Set<Int> = []
     /// True while a populated transcript is being reconciled with the server (TAL-436).
-    public var isSyncingTranscript: Bool { isLoading && userRefreshLoadGenerations.isEmpty && !messages.isEmpty }
+    public var isSyncingTranscript: Bool { isLoading && userRefreshLoadGenerations.isEmpty && hasMessages }
     @ObservationIgnored private var pendingStreamingScrollTriggerTask: Task<Void, Never>?
     @ObservationIgnored private var pendingAssistantTokenText = ""
     @ObservationIgnored private var pendingReasoningText = ""
@@ -306,7 +312,9 @@ public final class ChatViewModel {
     public private(set) var responseCompletionHapticTrigger = 0
     public private(set) var responseCompletionNeedsTranscriptRefresh = false
     public private(set) var responseCompletionOutcome: ResponseCompletionOutcome = .completed
-    public private(set) var modelCatalogGroups: [ModelCatalogGroup] = []
+    public private(set) var modelCatalogGroups: [ModelCatalogGroup] = [] {
+        didSet { recomputeSelectedModelTitle() }
+    }
     public private(set) var agentCommands: [AgentCommand] = []
     public private(set) var workspaceRoots: [WorkspaceRoot] = []
     public private(set) var workspaceSuggestions: [String] = []
@@ -416,10 +424,16 @@ public final class ChatViewModel {
     /// The workspace the server last reported for this session, with its label (TAL-303).
     private var serverWorkspacePath: String?
     private var serverWorkspaceName: String?
-    private var currentModel: String?
-    private var currentModelProvider: String?
+    private var currentModel: String? {
+        didSet { recomputeSelectedModelTitle() }
+    }
+    private var currentModelProvider: String? {
+        didSet { recomputeSelectedModelTitle() }
+    }
     /// TAL-301: the catalog entry the server says `currentModel` selects.
-    private var currentModelOptionID: String?
+    private var currentModelOptionID: String? {
+        didSet { recomputeSelectedModelTitle() }
+    }
     private var currentProfile: String?
     private var isCLISession: Bool
     /// Server-owned view-only state (TAL-152). Seeded from the list row and
@@ -650,6 +664,7 @@ public final class ChatViewModel {
             ApprovalNotificationService.shared.observe(prompt, server: server)
         }
         self.attachmentCoordinator.delegate = self
+        recomputeSelectedModelTitle()
     }
 
     /// Fills the composer's empty catalogs from the last responses (TAL-437). Called when the chat
@@ -765,17 +780,20 @@ public final class ChatViewModel {
         return profileName == "default" ? String(localized: "Default") : profileName
     }
 
-    public var selectedModelTitle: String {
-        guard let currentModel, !currentModel.isEmpty else {
-            return String(localized: "Model")
+    public private(set) var selectedModelTitle = String(localized: "Model")
+
+    private func recomputeSelectedModelTitle() {
+        let title: String
+        if let currentModel, !currentModel.isEmpty {
+            let catalogName = modelCatalogGroups
+                .flatMap(\.models)
+                .firstSelected(optionID: currentModelOptionID, modelID: currentModel, providerID: currentModelProvider)?
+                .displayName
+            title = catalogName ?? Self.compactModelTitle(currentModel)
+        } else {
+            title = String(localized: "Model")
         }
-
-        let catalogName = modelCatalogGroups
-            .flatMap(\.models)
-            .firstSelected(optionID: currentModelOptionID, modelID: currentModel, providerID: currentModelProvider)?
-            .displayName
-
-        return catalogName ?? Self.compactModelTitle(currentModel)
+        if selectedModelTitle != title { selectedModelTitle = title }
     }
 
     public func isSelectedProfile(_ profile: ProfileSummary) -> Bool {
@@ -819,6 +837,14 @@ public final class ChatViewModel {
             self.drainStreamingContentTick()
         }
     }
+
+#if DEBUG
+    /// Drives the real paced reveal without a wall-clock race in hosted rendering tests.
+    func revealStreamingContentTickForTesting() {
+        cancelPendingStreamingContentFlush()
+        drainStreamingContentTick()
+    }
+#endif
 
     /// One paced flush tick: drains a word-cadence quota of buffered assistant
     /// text (reasoning still flushes whole — pacing applies to assistant content
