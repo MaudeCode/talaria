@@ -1,7 +1,8 @@
 /**
  * TAL-571: the right panel's Checkpoints page. It lists the Agent's file checkpoints for the chat's workspace as the
- * server reads them (newest first), shows each one's diff against the current files, and restores one behind a danger
- * confirmation. It loads only while shown, and each read is fresh: the Agent changes these files and checkpoints at will.
+ * server reads them (newest first), shows each one's diff against the current files, and restores one behind a
+ * confirmation: by default only the files the Agent last wrote, keeping the user's hand-edits, or everything (TAL-1260).
+ * It loads only while shown, and each read is fresh: the Agent changes these files and checkpoints at will.
  */
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -12,9 +13,11 @@ import { m } from '../../paraglide/messages.js'
 import { Button, IconButton } from '../../ui/Button'
 import { ConfirmDialog, Dialog } from '../../ui/Dialog'
 import { ErrorState, LoadingState } from '../../ui/States'
-import { showToast } from '../toast/toast'
+import { showRichToast, showToast } from '../toast/toast'
 
 interface Picked { id: string; message: string }
+
+const listed = (files: string[], message: (inputs: { files: string }) => string): string[] => (files.length ? [message({ files: files.join(', ') })] : [])
 
 /** `onRestored` gets the files a restore rewrote, so another page can drop its unsaved edits of them. */
 export function CheckpointsPage({ workspace, sessionId, active, onRestored }: { workspace: string | null | undefined; sessionId: string; active: boolean; onRestored: (paths: string[]) => void }) {
@@ -28,10 +31,14 @@ function WorkspaceCheckpoints({ workspace, sessionId, active, onRestored }: { wo
   const [restoring, setRestoring] = useState<Picked | null>(null)
   const list = useQuery({ queryKey: keys.checkpoints.list(workspace), queryFn: () => api.fetchCheckpoints(sessionId), enabled: active, staleTime: 0 })
   const restore = useMutation({
-    mutationFn: (id: string) => api.restoreCheckpoint(sessionId, id),
+    mutationFn: ({ id, all }: { id: string; all: boolean }) => api.restoreCheckpoint(sessionId, id, all),
     onSuccess: (res) => {
       // The server answers 200 with per-file errors; any error makes this a failed restore, never a restored one.
-      if (res.errors.length) showToast(`${m.checkpoint_restore()}: ${res.errors.map((e) => `${e.file}: ${e.error}`).join('; ')}`, 6000, 'error')
+      const failed = res.errors.map((e) => `${e.file}: ${e.error}`)
+      // The files the restore left as they are; the server names each list.
+      const kept = [...listed(res.kept_user_edits, m.checkpoint_kept_user_edits), ...listed(res.skipped_oversize, m.checkpoint_skipped_oversize)]
+      if (failed.length) showToast(`${m.checkpoint_restore()}: ${[...failed, ...kept].join('; ')}`, 6000, 'error')
+      else if (kept.length) showRichToast({ id: `checkpoint-restored-${workspace}`, title: m.checkpoint_restored(), text: kept.join(' · '), ttl: 10000, kind: 'info', dismissible: true, actions: [] })
       else showToast(m.checkpoint_restored())
       onRestored(res.files_restored)
       // The restore rewrote workspace files: drop every view of them.
@@ -77,8 +84,8 @@ function WorkspaceCheckpoints({ workspace, sessionId, active, onRestored }: { wo
         description={restoring ? m.checkpoint_restore_confirm_message({ ckpt: restoring.message }) : undefined}
         confirmLabel={m.checkpoint_restore()}
         cancelLabel={m.cancel()}
-        danger
-        onConfirm={() => { if (restoring) restore.mutate(restoring.id) }}
+        onConfirm={() => { if (restoring) restore.mutate({ id: restoring.id, all: false }) }}
+        alternate={{ label: m.checkpoint_restore_everything(), onConfirm: () => { if (restoring) restore.mutate({ id: restoring.id, all: true }) } }}
       />
     </div>
   )

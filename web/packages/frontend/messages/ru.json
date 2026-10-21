@@ -1941,8 +1941,11 @@
 	"checkpoint_view_diff": "Показать diff",
 	"checkpoint_restore": "Восстановить",
 	"checkpoint_restore_confirm_title": "Восстановить контрольную точку?",
-	"checkpoint_restore_confirm_message": "Восстановить рабочее пространство до контрольной точки \"{ckpt}\"? Файлы будут перезаписаны сохранёнными версиями. Файлы, добавленные после этой контрольной точки, удалены не будут.",
+	"checkpoint_restore_confirm_message": "Восстановить файлы, изменённые агентом после контрольной точки «{ckpt}»? Файлы, которые вы отредактировали вручную после его последней записи, останутся без изменений.",
 	"checkpoint_restored": "Контрольная точка восстановлена",
+	"checkpoint_restore_everything": "Восстановить всё",
+	"checkpoint_kept_user_edits": "Ваши правки сохранены: {files}",
+	"checkpoint_skipped_oversize": "Слишком большие для восстановления: {files}",
 	"checkpoint_diff_title": "Изменения в контрольной точке",
 	"checkpoint_diff_no_changes": "Различий между этой контрольной точкой и текущим рабочим пространством не найдено.",
 	"checkpoint_diff_files_changed": [

@@ -70,7 +70,12 @@ export const gitContract = {
   rollback: {
     list: oc.route({ method: 'GET', path: '/api/rollback/list', tags: ['rollback'] }).input(RollbackTarget).output(z.object({ checkpoints: z.array(CheckpointSchema), workspace: z.string(), checkpoint_dir: z.string() })),
     diff: oc.route({ method: 'GET', path: '/api/rollback/diff', tags: ['rollback'] }).input(RollbackTarget.extend({ checkpoint: z.string().optional(), id: z.string().optional() })).output(z.object({ checkpoint: z.string(), workspace: z.string(), diff: z.string(), files_changed: z.array(z.object({ file: z.string(), status: z.string() })), total_changes: z.number().int() })),
-    restore: oc.route({ method: 'POST', path: '/api/rollback/restore', tags: ['rollback'] }).input(RollbackTarget.extend({ checkpoint: z.string().optional(), id: z.string().optional() }).catchall(Json)).output(z.object({ ok: z.literal(true), checkpoint: z.string(), workspace: z.string(), files_restored: z.array(z.string()), files_restored_count: z.number().int(), errors: z.array(z.object({ file: z.string(), error: z.string() })) })),
+    /**
+     * Keeps the user's hand-edits unless `all` (TAL-1260). `kept_user_edits` are files left as the user edited them,
+     * `skipped_oversize` files the checkpoint size cap kept out, `failed_deletes` Agent-created files that could not be removed
+     * (each also an `errors` entry, so any client reports the restore as failed).
+     */
+    restore: oc.route({ method: 'POST', path: '/api/rollback/restore', tags: ['rollback'] }).input(RollbackTarget.extend({ checkpoint: z.string().optional(), id: z.string().optional(), all: z.boolean().optional() }).catchall(Json)).output(z.object({ ok: z.literal(true), checkpoint: z.string(), workspace: z.string(), files_restored: z.array(z.string()), files_restored_count: z.number().int(), errors: z.array(z.object({ file: z.string(), error: z.string() })), kept_user_edits: z.array(z.string()), skipped_oversize: z.array(z.string()), failed_deletes: z.array(z.string()) })),
   },
   worktree: {
     status: oc.route({ method: 'GET', path: '/api/session/worktree/status', tags: ['sessions'] }).input(SessionQuery).output(z.object({ status: WorktreeStatusSchema })),

@@ -17,12 +17,12 @@ vi.mock('../../api/endpoints', () => ({
   fetchCheckpointDiff: vi.fn(),
   restoreCheckpoint: vi.fn(),
 }))
-vi.mock('../toast/toast', () => ({ showToast: vi.fn() }))
+vi.mock('../toast/toast', () => ({ showToast: vi.fn(), showRichToast: vi.fn() }))
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children, params, className }: { children: ReactNode; params: { sessionId: string }; className?: string }) => <a href={`/session/${params.sessionId}`} className={className}>{children}</a>,
 }))
 import * as api from '../../api/endpoints'
-import { showToast } from '../toast/toast'
+import { showRichToast, showToast } from '../toast/toast'
 import { ChatSidePanel } from './ChatSidePanel'
 
 const agent = (overrides: Partial<BackgroundTask>): BackgroundTask => ({
@@ -143,17 +143,21 @@ describe('chat side panel (TAL-373)', () => {
 
 describe('chat side panel Checkpoints (TAL-571)', () => {
   const checkpoints = { checkpoints: [{ id: 'c1', commit: 'abc', message: 'before edit', date: '', date_display: '', files: 1, path: '/ck/c1' }], workspace: '/repo', checkpoint_dir: '/ck' }
-  const restored = (errors: { file: string; error: string }[] = []) => ({ ok: true as const, checkpoint: 'c1', workspace: '/repo', files_restored: errors.length ? [] : ['notes.txt'], files_restored_count: errors.length ? 0 : 1, errors })
+  const restored = (errors: { file: string; error: string }[] = [], kept: Partial<Record<'kept_user_edits' | 'skipped_oversize' | 'failed_deletes', string[]>> = {}) => ({
+    ok: true as const, checkpoint: 'c1', workspace: '/repo', files_restored: errors.length ? [] : ['notes.txt'], files_restored_count: errors.length ? 0 : 1, errors,
+    kept_user_edits: [], skipped_oversize: [], failed_deletes: [], ...kept,
+  })
   beforeEach(() => {
     vi.mocked(showToast).mockReset()
+    vi.mocked(showRichToast).mockReset()
     vi.mocked(api.fetchCheckpoints).mockReset().mockResolvedValue(checkpoints)
     vi.mocked(api.listDir).mockResolvedValue({ entries: [{ name: 'notes.txt', size: 10 }] })
   })
-  const restore = async () => {
+  const restore = async (action = 'Restore') => {
     await userEvent.click(screen.getByRole('tab', { name: 'Checkpoints' }))
     await userEvent.click(await screen.findByRole('button', { name: 'Restore' }))
-    await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Restore' }))
-    await waitFor(() => { expect(api.restoreCheckpoint).toHaveBeenCalledWith('s1', 'c1') })
+    await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: action }))
+    await waitFor(() => { expect(api.restoreCheckpoint).toHaveBeenCalledWith('s1', 'c1', action === 'Restore everything') })
   }
 
   it('drops an unsaved Files draft of a file the restore rewrote', async () => {
@@ -168,6 +172,33 @@ describe('chat side panel Checkpoints (TAL-571)', () => {
     await userEvent.click(screen.getByRole('tab', { name: 'Files' }))
     await waitFor(() => { expect(screen.getByRole('textbox', { name: 'Preview' })).toHaveValue('saved text') })
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+  })
+
+  it('restores keeping hand-edits by default and names the files it kept (TAL-1260)', async () => {
+    vi.mocked(api.restoreCheckpoint).mockReset().mockResolvedValue(restored([], { kept_user_edits: ['notes.txt', 'src/app.ts'], skipped_oversize: ['big.bin'] }))
+    render(<Panel />)
+    await screen.findByRole('tab', { name: 'Checkpoints' })
+    await restore()
+    await waitFor(() => { expect(showRichToast).toHaveBeenCalledWith(expect.objectContaining({ title: 'Checkpoint restored', text: 'Kept your edits: notes.txt, src/app.ts · Too large to restore: big.bin', dismissible: true })) })
+    expect(showToast).not.toHaveBeenCalled()
+  })
+
+  it('restores everything, hand-edits included, only through its own confirmation action (TAL-1260)', async () => {
+    vi.mocked(api.restoreCheckpoint).mockReset().mockResolvedValue(restored())
+    render(<Panel />)
+    await screen.findByRole('tab', { name: 'Checkpoints' })
+    await restore('Restore everything')
+    expect(api.restoreCheckpoint).toHaveBeenCalledTimes(1)
+    await waitFor(() => { expect(showToast).toHaveBeenCalledWith('Checkpoint restored') })
+  })
+
+  it('names the kept files beside the errors of a failed restore (TAL-1260)', async () => {
+    vi.mocked(api.restoreCheckpoint).mockReset().mockResolvedValue(restored([{ file: 'new.txt', error: 'could not be deleted' }], { failed_deletes: ['new.txt'], kept_user_edits: ['notes.txt'] }))
+    render(<Panel />)
+    await screen.findByRole('tab', { name: 'Checkpoints' })
+    await restore()
+    await waitFor(() => { expect(showToast).toHaveBeenCalledWith('Restore: new.txt: could not be deleted; Kept your edits: notes.txt', 6000, 'error') })
+    expect(showRichToast).not.toHaveBeenCalled()
   })
 
   it('reports a restore with per-file errors as a failure, never as restored', async () => {

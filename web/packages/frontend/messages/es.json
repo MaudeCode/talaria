@@ -1817,8 +1817,11 @@
 	"checkpoint_view_diff": "Ver diff",
 	"checkpoint_restore": "Restaurar",
 	"checkpoint_restore_confirm_title": "¿Restaurar el punto de control?",
-	"checkpoint_restore_confirm_message": "¿Restaurar el espacio de trabajo al punto de control \"{ckpt}\"? Esto sobrescribirá los archivos con las versiones guardadas. Los archivos añadidos después de este punto de control no se eliminarán.",
+	"checkpoint_restore_confirm_message": "¿Restaurar los archivos que el agente cambió desde el punto de control \"{ckpt}\"? Los archivos que editaste a mano después de su última escritura se quedan como están.",
 	"checkpoint_restored": "Punto de control restaurado",
+	"checkpoint_restore_everything": "Restaurar todo",
+	"checkpoint_kept_user_edits": "Se mantuvieron tus cambios: {files}",
+	"checkpoint_skipped_oversize": "Demasiado grandes para restaurar: {files}",
 	"checkpoint_diff_title": "Cambios en el punto de control",
 	"checkpoint_diff_no_changes": "No se encontraron diferencias entre este punto de control y el espacio de trabajo actual.",
 	"checkpoint_diff_files_changed": [

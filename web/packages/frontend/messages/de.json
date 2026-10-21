@@ -1793,8 +1793,11 @@
 	"checkpoint_view_diff": "Diff anzeigen",
 	"checkpoint_restore": "Wiederherstellen",
 	"checkpoint_restore_confirm_title": "Checkpoint wiederherstellen?",
-	"checkpoint_restore_confirm_message": "Arbeitsbereich auf Checkpoint \"{ckpt}\" wiederherstellen? Dadurch werden Dateien mit den gespeicherten Versionen überschrieben. Nach diesem Checkpoint hinzugefügte Dateien werden nicht gelöscht.",
+	"checkpoint_restore_confirm_message": "Vom Agenten seit dem Checkpoint „{ckpt}“ geänderte Dateien wiederherstellen? Dateien, die du nach seinem letzten Schreibvorgang von Hand bearbeitet hast, bleiben unverändert.",
 	"checkpoint_restored": "Checkpoint wiederhergestellt",
+	"checkpoint_restore_everything": "Alles wiederherstellen",
+	"checkpoint_kept_user_edits": "Deine Änderungen wurden beibehalten: {files}",
+	"checkpoint_skipped_oversize": "Zu groß zum Wiederherstellen: {files}",
 	"checkpoint_diff_title": "Änderungen im Checkpoint",
 	"checkpoint_diff_no_changes": "Zwischen diesem Checkpoint und dem aktuellen Arbeitsbereich wurden keine Unterschiede gefunden.",
 	"checkpoint_diff_files_changed": [

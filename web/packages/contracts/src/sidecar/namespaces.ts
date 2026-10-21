@@ -522,7 +522,14 @@ export const CHECKPOINTS_METHODS = {
   'checkpoints.list': { params: CheckpointTarget, result: z.object({ checkpoints: z.array(AgentCheckpointSchema), store: z.string() }) },
   /** `diff` is `git diff <checkpoint> --cached` over the workspace: `a/` is the checkpoint, `b/` the files now. */
   'checkpoints.diff': { params: CheckpointTarget.extend({ checkpoint: z.string().min(1) }), result: z.object({ stat: z.string(), diff: z.string() }) },
-  'checkpoints.restore': { params: CheckpointTarget.extend({ checkpoint: z.string().min(1) }), result: z.object({ restored_to: z.string(), reason: z.string() }) },
+  /**
+   * Safe unless `all` (TAL-1260): only files still as the Agent last wrote them are reverted, and `kept_user_edits` names the
+   * hand-edited ones left in place. `restored_files` is what a safe restore acted on; null when the whole tree was checked out.
+   */
+  'checkpoints.restore': {
+    params: CheckpointTarget.extend({ checkpoint: z.string().min(1), all: z.boolean().optional() }),
+    result: z.object({ restored_to: z.string(), reason: z.string(), restored_files: z.array(z.string()).nullable(), kept_user_edits: z.array(z.string()), skipped_oversize: z.array(z.string()), failed_deletes: z.array(z.string()) }),
+  },
 } as const
 // ── chat / approval / clarify ──────────────────────────────────────────
 export const ChatUsageSchema = z.object({ prompt_tokens: z.number().int(), completion_tokens: z.number().int(), cache_read_tokens: z.number().int(), cache_write_tokens: z.number().int(), estimated_cost_usd: z.number().nullable() })

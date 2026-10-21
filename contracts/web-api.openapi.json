@@ -42167,6 +42167,9 @@
                   },
                   "id": {
                     "type": "string"
+                  },
+                  "all": {
+                    "type": "boolean"
                   }
                 },
                 "additionalProperties": {}
@@ -42219,6 +42222,24 @@
                           "error"
                         ]
                       }
+                    },
+                    "kept_user_edits": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "skipped_oversize": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "failed_deletes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
                     }
                   },
                   "required": [
@@ -42227,7 +42248,10 @@
                     "workspace",
                     "files_restored",
                     "files_restored_count",
-                    "errors"
+                    "errors",
+                    "kept_user_edits",
+                    "skipped_oversize",
+                    "failed_deletes"
                   ]
                 }
               }

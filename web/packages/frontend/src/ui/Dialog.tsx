@@ -39,10 +39,23 @@ export interface ConfirmDialogProps {
   cancelLabel: string
   danger?: boolean
   onConfirm: () => void | Promise<void>
+  /** A second, destructive way to confirm, beside the main one (TAL-1260: Restore everything). */
+  alternate?: { label: string; onConfirm: () => void | Promise<void> } | undefined
 }
 
 /** Destructive confirmation (alert dialog semantics: no outside-click dismissal). */
-export function ConfirmDialog({ open, onOpenChange, title, description, confirmLabel, cancelLabel, danger, onConfirm }: ConfirmDialogProps) {
+export function ConfirmDialog({ open, onOpenChange, title, description, confirmLabel, cancelLabel, danger, onConfirm, alternate }: ConfirmDialogProps) {
+  const action = (label: string, destructive: boolean | undefined, confirm: () => void | Promise<void>) => (
+    <button
+      type="button"
+      className={cn('rounded-md px-3 py-1.5 text-sm font-medium', destructive ? 'bg-error text-white' : 'bg-accent text-accent-fg')}
+      onClick={() => {
+        void Promise.resolve(confirm()).finally(() => onOpenChange(false))
+      }}
+    >
+      {label}
+    </button>
+  )
   return (
     <BaseAlertDialog.Root open={open} onOpenChange={onOpenChange}>
       <BaseAlertDialog.Portal>
@@ -50,17 +63,10 @@ export function ConfirmDialog({ open, onOpenChange, title, description, confirmL
         <BaseAlertDialog.Popup className="fixed left-1/2 top-1/2 z-[1301] max-h-[90dvh] overflow-y-auto w-[min(92vw,440px)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-surface p-5 text-text shadow-md outline-none">
           <BaseAlertDialog.Title className="text-base font-semibold text-strong">{title}</BaseAlertDialog.Title>
           {description && <BaseAlertDialog.Description className="mt-1 whitespace-pre-line text-sm text-muted [overflow-wrap:anywhere]">{description}</BaseAlertDialog.Description>}
-          <div className="mt-4 flex justify-end gap-2">
+          <div className="mt-4 flex flex-wrap justify-end gap-2">
             <BaseAlertDialog.Close className="rounded-md border border-border bg-surface px-3 py-1.5 text-sm hover:bg-hover">{cancelLabel}</BaseAlertDialog.Close>
-            <button
-              type="button"
-              className={cn('rounded-md px-3 py-1.5 text-sm font-medium', danger ? 'bg-error text-white' : 'bg-accent text-accent-fg')}
-              onClick={() => {
-                void Promise.resolve(onConfirm()).finally(() => onOpenChange(false))
-              }}
-            >
-              {confirmLabel}
-            </button>
+            {alternate && action(alternate.label, true, alternate.onConfirm)}
+            {action(confirmLabel, danger, onConfirm)}
           </div>
         </BaseAlertDialog.Popup>
       </BaseAlertDialog.Portal>

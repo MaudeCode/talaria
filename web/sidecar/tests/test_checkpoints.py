@@ -32,6 +32,22 @@ def _take_checkpoint(home: pathlib.Path, workspace: pathlib.Path, reason: str) -
     subprocess.run([AGENT_PYTHON, "-c", script], env=isolated_env(home, PYTHONPATH=str(AGENT_DIR)), check=True, timeout=60)
 
 
+def _agent_writes(home: pathlib.Path, workspace: pathlib.Path, files: dict[str, str]) -> None:
+    """The Agent writes ``files`` and records each in its agent-write ledger, as its file tools do after a write."""
+    script = textwrap.dedent(
+        f"""
+        import pathlib
+        from tools.checkpoint_manager import CheckpointManager
+        manager = CheckpointManager(enabled=True)
+        for name, text in {files!r}.items():
+            path = pathlib.Path({str(workspace)!r}) / name
+            path.write_text(text)
+            manager.record_agent_write(str(path))
+        """
+    )
+    subprocess.run([AGENT_PYTHON, "-c", script], env=isolated_env(home, PYTHONPATH=str(AGENT_DIR)), check=True, timeout=60)
+
+
 @pytest.fixture
 def workspace(hermes_home: pathlib.Path) -> pathlib.Path:
     path = hermes_home.parent / "project"
@@ -54,11 +70,50 @@ def test_a_checkpoint_the_agent_took_is_listed_diffed_and_restored(handshaken: S
     diff = handshaken.result("checkpoints.diff", {**params, "checkpoint": checkpoint["hash"]})
     assert "-original text" in diff["diff"] and "+edited by the agent" in diff["diff"]
 
-    restored = handshaken.result("checkpoints.restore", {**params, "checkpoint": checkpoint["hash"]})
+    restored = handshaken.result("checkpoints.restore", {**params, "checkpoint": checkpoint["hash"], "all": True})
     assert restored["restored_to"] == checkpoint["hash"][:8]
     assert (workspace / "notes.txt").read_text() == "original text\n"
     # The Agent snapshots the edited tree first, so the restore itself can be undone.
     assert [c["reason"] for c in handshaken.result("checkpoints.list", params)["checkpoints"]][0].startswith("pre-rollback snapshot")
+
+
+def test_a_restore_keeps_the_users_hand_edits_unless_all_is_set(handshaken: SidecarProcess, hermes_home: pathlib.Path, workspace: pathlib.Path) -> None:
+    """TAL-1260: a whole-tree restore reverts only what the Agent wrote, and reports the hand-edited files it kept."""
+    (workspace / "agent.txt").write_text("original agent file\n")
+    _take_checkpoint(hermes_home, workspace, "before edit")
+    _agent_writes(hermes_home, workspace, {"agent.txt": "written by the agent\n", "notes.txt": "written by the agent\n"})
+    (workspace / "notes.txt").write_text("edited by hand\n")
+    params = {"profile_home": str(hermes_home), "workspace": str(workspace)}
+    checkpoint = handshaken.result("checkpoints.list", params)["checkpoints"][0]["hash"]
+
+    kept = handshaken.result("checkpoints.restore", {**params, "checkpoint": checkpoint})
+    assert (workspace / "agent.txt").read_text() == "original agent file\n"
+    assert (workspace / "notes.txt").read_text() == "edited by hand\n"
+    assert kept["kept_user_edits"] == ["notes.txt"]
+    assert kept["restored_files"] == ["agent.txt"]
+    assert kept["skipped_oversize"] == [] and kept["failed_deletes"] == []
+
+    everything = handshaken.result("checkpoints.restore", {**params, "checkpoint": checkpoint, "all": True})
+    assert (workspace / "notes.txt").read_text() == "original text\n"
+    assert everything["kept_user_edits"] == [] and everything["restored_files"] is None
+
+
+def test_a_default_restore_without_a_record_of_agent_writes_is_refused(handshaken: SidecarProcess, hermes_home: pathlib.Path, workspace: pathlib.Path) -> None:
+    """TAL-1260: with no agent-write ledger the Agent cannot tell hand-edits apart and would check the whole tree out, so
+    only Restore everything may do that."""
+    _take_checkpoint(hermes_home, workspace, "before edit")
+    (workspace / "notes.txt").write_text("edited by hand\n")
+    params = {"profile_home": str(hermes_home), "workspace": str(workspace)}
+    checkpoint = handshaken.result("checkpoints.list", params)["checkpoints"][0]["hash"]
+
+    message, _ = handshaken.call("checkpoints.restore", {**params, "checkpoint": checkpoint})
+    assert message.get("error", {}).get("data", {}).get("condition") == "checkpoint_failed", message
+    assert "Restore everything" in message["error"]["message"]
+    assert (workspace / "notes.txt").read_text() == "edited by hand\n"
+    assert [c["reason"] for c in handshaken.result("checkpoints.list", params)["checkpoints"]] == ["before edit"]
+
+    handshaken.result("checkpoints.restore", {**params, "checkpoint": checkpoint, "all": True})
+    assert (workspace / "notes.txt").read_text() == "original text\n"
 
 
 def test_an_unknown_checkpoint_is_the_agents_refusal(handshaken: SidecarProcess, hermes_home: pathlib.Path, workspace: pathlib.Path) -> None:
@@ -100,7 +155,7 @@ def test_a_restore_over_an_uncaptured_nested_repository_is_refused(handshaken: S
     params = {"profile_home": str(hermes_home), "workspace": str(workspace)}
     checkpoint = handshaken.result("checkpoints.list", params)["checkpoints"][0]["hash"]
 
-    message, _ = handshaken.call("checkpoints.restore", {**params, "checkpoint": checkpoint})
+    message, _ = handshaken.call("checkpoints.restore", {**params, "checkpoint": checkpoint, "all": True})
     assert message["error"]["data"]["condition"] == "checkpoint_failed"
     assert "nested git repositories" in message["error"]["message"] and "vendor" in message["error"]["message"]
     assert (workspace / "notes.txt").read_text() == "edited by the agent\n"
