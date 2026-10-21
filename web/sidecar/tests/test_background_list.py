@@ -4,9 +4,72 @@ from __future__ import annotations
 
 import json
 import pathlib
+import sqlite3
+from contextlib import closing
 
 from conftest import SidecarProcess
 from test_process_delivery import _agent
+
+
+def test_children_query_is_bounded_by_the_oldest_returned_delegation(tmp_path, monkeypatch) -> None:
+    from talaria_sidecar.methods import process
+
+    connect = sqlite3.connect
+    with closing(connect(tmp_path / "state.db")) as db:
+        db.executescript("""
+            CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT, model_config TEXT, started_at REAL);
+            CREATE INDEX idx_sessions_source ON sessions(source);
+            CREATE INDEX idx_sessions_started ON sessions(started_at);
+            CREATE TABLE messages (id INTEGER PRIMARY KEY, session_id TEXT, role TEXT, content TEXT);
+            CREATE INDEX idx_messages_session ON messages(session_id);
+            CREATE TABLE async_delegations (
+                delegation_id TEXT, origin_ui_session_id TEXT, state TEXT, dispatched_at REAL,
+                completed_at REAL, updated_at REAL, task_json TEXT, result_json TEXT, event_json TEXT
+            );
+        """)
+        db.executemany("INSERT INTO async_delegations VALUES (?, ?, 'completed', ?, 10200, 10200, ?, NULL, NULL)", [
+            ("older", "web-a", 10000, json.dumps({"goals": ["Write docs", "Write tests"]})),
+            ("newer", "web-b", 10100, json.dumps({"goal": "Run tests"})),
+        ])
+        children = [
+            ("child-docs", "subagent", json.dumps({"_delegate_from": "web-a"}), 9995, "Write docs"),
+            ("child-tests", "subagent", json.dumps({"_delegate_from": "web-a"}), 10001, "Write tests"),
+            ("child-run", "subagent", json.dumps({"_delegate_from": "web-b"}), 10101, "Run tests"),
+        ]
+        rows = [
+            (f"historical-{i}", "subagent", json.dumps({"_delegate_from": "web-a"}), i, "Write docs")
+            for i in range(2000)
+        ] + children + [
+            ("foreign", "subagent", json.dumps({"_delegate_from": "web-c"}), 10000, "Write docs"),
+            ("not-subagent", "cli", json.dumps({"_delegate_from": "web-a"}), 10000, "Write docs"),
+        ]
+        db.executemany("INSERT INTO sessions VALUES (?, ?, ?, ?)", [r[:4] for r in rows])
+        db.executemany("INSERT INTO messages (session_id, role, content) VALUES (?, 'user', ?)", [(r[0], r[4]) for r in rows])
+        db.commit()
+
+    statements = []
+
+    def traced_connect(*args, **kwargs):
+        db = connect(*args, **kwargs)
+        db.set_trace_callback(statements.append)
+        return db
+
+    monkeypatch.setattr(process.sqlite3, "connect", traced_connect)
+    monkeypatch.setattr(process, "_live_delegations", lambda: {})
+    monkeypatch.setattr(process, "_live_children", lambda: [])
+    monkeypatch.setattr(process, "_owned_processes", lambda _: [])
+    listed = process.background_list(tmp_path, ["web-a", "web-b"])
+    assert {d["delegation_id"]: d["children"] for d in listed["delegations"]} == {
+        "older": [{"goal": "Write docs", "session_id": "child-docs"}, {"goal": "Write tests", "session_id": "child-tests"}],
+        "newer": [{"goal": "Run tests", "session_id": "child-run"}],
+    }
+    query, = [s for s in statements if "FROM sessions s" in s]
+    assert "s.started_at >= 9940" in query
+    with closing(connect(tmp_path / "state.db")) as db:
+        assert {r[0] for r in db.execute(query)} == {c[0] for c in children}
+        plan = [r[3] for r in db.execute("EXPLAIN QUERY PLAN " + query)]
+    assert any("SEARCH s USING INDEX idx_sessions_" in step for step in plan), plan
+    assert not any(step.startswith(("SCAN s", "SCAN sessions")) for step in plan), plan
 
 
 def _dispatch(home: pathlib.Path, delegation_id: str, session: str, goals: str, indexes: str = "") -> None:
