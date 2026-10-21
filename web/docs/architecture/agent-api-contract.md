@@ -103,7 +103,7 @@ Agent v0.22.2 is supported with its observed upstream limitations: task-relative
 SSH configuration approval can be bypassed, explicit MCP budgets can be shortened
 by the executor's generic deadline, and transcript growth does not lift structural
 compression backoff. Those are Agent behaviors; Talaria does not patch, vendor or
-wrap the Agent to change them.
+wrap the Agent to change them. v0.22.3 shows none of these limitations.
 
 Candidate and canary probes, and supported releases from v0.22.1 onward, also
 replay retained cron records written by the v0.22.1 Agent and Web manual-execution
@@ -566,8 +566,8 @@ eviction. Unsupported encodings are refused rather than silently changed or
 reported by the Agent writer in logs. Skip, expiry and disconnect leave setup
 unanswered. No answer is echoed, streamed, journaled, or put in a transcript.
 
-v0.22.1 provides the turn-local API; v0.22.0 and v0.22.2 do not. Talaria leaves
-their normal setup-needed result intact and never uses the process-global
+v0.22.1 and v0.22.3 provide the turn-local API; v0.22.2 does not. Talaria leaves
+its normal setup-needed result intact and never uses the process-global
 capture callback or ordinary clarification as a secret fallback. The Web and the
 App render the shared `skill_secret` secure prompt variant.
 
@@ -583,7 +583,7 @@ URL, since the bypass owner reads no `custom_providers`), workspace and toolsets
 credential.
 `probe: true` answers availability without creating a session.
 
-v0.22.1 provides this owner path; v0.22.0 and v0.22.2 have no native sessions, so Web
+v0.22.1 and v0.22.3 provide this owner path; v0.22.2 has no native sessions, so Web
 reports the modes unavailable. On v0.22.1 the owner binds `DEFAULT_CONFIG`'s
 `voice.record_key` as a launch-only secret of every bypass session. After an owner restart
 it refuses that session's next turn with `launch_credentials_unavailable` before any worker

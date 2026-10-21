@@ -152,7 +152,7 @@ sidecar command it uses the fixture replay sidecar). See
 - Docker: `python3 scripts/check-docker.py single` needs a Docker daemon.
   The two- and three-container variants also import the staged Agent and send a
   Web API chat through the sidecar to a loopback stub provider. Use
-  `python3 scripts/check-docker.py two-container --agent-release v0.22.0`
+  `python3 scripts/check-docker.py two-container --agent-release v0.22.1`
   to check an older release from `sidecar/agent_support.json`. The Python selector's
   isolated unit checks run with `python3 scripts/lib/test_agent_python.py` from `web/`.
   `python3 ../scripts/check-docker.py agent-upgrade` checks both multi-container

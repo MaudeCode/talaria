@@ -199,13 +199,6 @@ if expected := os.environ.get("TALARIA_AGENT_SSH_EXPECTED"):
 print(f"PASS Agent {__version__}: imports, real SessionDB, and the sidecar write path")
 
 
-# These exact supported sources predate per-entry executor deadlines. Never infer
-# this exception from a candidate's version or the presence of an Agent attribute.
-LEGACY_MCP_DEADLINES = {
-    "71d34bad1045610252eda02ee79549436896e784": "0.21.7",
-    "e06df9c2eae6901f4c88f464e0ae6e753c0428b8": "0.22.0",
-}
-
 MCP_SERVER = '''
 import asyncio
 import sys
@@ -237,9 +230,6 @@ def probe_mcp_deadlines(report):
     from tools.mcp_tool_lifecycle import shutdown_mcp_servers
     from tools.registry import registry
 
-    revision = os.environ.get("TALARIA_AGENT_PROBE_REVISION")
-    legacy = revision in LEGACY_MCP_DEADLINES and LEGACY_MCP_DEADLINES[revision] == __version__
-    report["historicalMcpDeadline"] = legacy
     script = home / "deadline_mcp_server.py"
     script.write_text(MCP_SERVER)
     markers = home / "deadline-markers"
@@ -300,7 +290,7 @@ def probe_mcp_deadlines(report):
             while not all((markers / (token + ".finished")).exists() for token in dispatched) and time.monotonic() < end:
                 time.sleep(0.01)
             finished = sum((markers / (token + ".finished")).exists() for token in dispatched)
-            succeeds = seconds == 0 or (server == "deadline_explicit" and not legacy)
+            succeeds = seconds == 0 or server == "deadline_explicit"
             actual = "completed" if completed else "tool_timeout" if timed_out else "unexpected_result"
             expected = "completed" if succeeds else "tool_timeout"
             check = {"case": case, "expected": expected, "actual": actual, "started": len(dispatched), "finished": finished,
