@@ -11,9 +11,9 @@ import { resetConnectionsForTests } from '../../stream/connection'
 const { renders, navigate, composer } = vi.hoisted(() => ({ renders: vi.fn(), navigate: vi.fn(), composer: vi.fn() }))
 vi.mock('@tanstack/react-router', async (original) => ({ ...await original<object>(), useNavigate: () => navigate, useSearch: () => ({}) }))
 vi.mock('../../shell/AppShell', () => ({ MAIN_VIEW: '' }))
-vi.mock('../../app/bootstrap', () => {
+vi.mock('../../app/bootstrap', async (original) => {
   const bootstrap = { profile: { name: 'default' }, assistant_name: 'Assistant', features: {} }
-  return { useBootstrap: () => bootstrap }
+  return { ...await original<object>(), useBootstrap: () => bootstrap }
 })
 vi.mock('../../app/queries', () => ({ useSettingsQuery: () => ({ data: { auto_scroll_follow: false } }), useWorkspacesQuery: () => ({ data: { workspaces: [] } }) }))
 vi.mock('../composer/Composer', () => ({ Composer: (props: unknown) => { composer(props); return null } }))
