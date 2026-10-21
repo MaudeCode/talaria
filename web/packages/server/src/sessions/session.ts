@@ -68,6 +68,8 @@ export const METADATA_FIELDS = [
 
 const PLACED = new Set(['message_count', 'anchor_scene_index', 'messages', 'tool_calls', 'anchor_activity_scenes', 'context_messages'])
 const KNOWN = new Set<string>([...METADATA_FIELDS, ...PLACED])
+/** TAL-1254: an `extra` key, present only once a sidecar start found the session's worktree gone from git. */
+export const WORKTREE_RETAINED_KEY = 'worktree_retained'
 
 const SAFE_SID_RE = /^[0-9A-Za-z_-]+$/
 export function isSafeSessionId(sid: unknown): sid is string {
@@ -549,6 +551,7 @@ export class Session {
       compact.worktree_branch = this.worktree_branch
       compact.worktree_repo_root = this.worktree_repo_root
       compact.worktree_created_at = this.worktree_created_at
+      if (this.extra[WORKTREE_RETAINED_KEY] === true) compact.worktree_retained = true
     }
     Object.assign(compact, {
       user_message_count: opts.transcriptSummary?.userCount ?? this.userMessageCount(),

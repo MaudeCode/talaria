@@ -17,7 +17,7 @@ import { DraftVersionConflict, normalizeDraftVersion } from './drafts.js'
 import type { SessionEventBus } from './events.js'
 import { allSessions, buildSessionListPayload, reconcileLocalSessionRows, sessionLineageIds, CLI_IDENTITY_FIELDS, isClaimableCliSource, isMessagingSessionRecord, ownerLockCandidates, withOwnerLocks, withSessionWireFlags, lineageRootId, type OwnerSources, mergeCliSidebarMetadata, sessionListResponse, sessionSearchMatches, sessionSearchPreview, sessionSearchTerms, type ListParams, type ListResponse, type Row, type RuntimeOverlay } from './list.js'
 import { anchorSceneIntOrNull, fullToolResult, hydrateAnchorActivityScenes, normalizeAnchorSceneMessageRef, readAnchorSceneRows, storeAnchorScene, withTurnIds } from './anchor.js'
-import { contextUsage, COMPRESSION_RECOVERY_ACTION_START_FOCUSED, compressionRecoveryPayload, forgetContextFigures, isSafeSessionId, lastMessageTimestamp, Session, sharePath, stripAttachedFilesMarker, titleFrom, type Message } from './session.js'
+import { contextUsage, COMPRESSION_RECOVERY_ACTION_START_FOCUSED, compressionRecoveryPayload, forgetContextFigures, isSafeSessionId, lastMessageTimestamp, Session, sharePath, stripAttachedFilesMarker, titleFrom, WORKTREE_RETAINED_KEY, type Message } from './session.js'
 import { SessionBusy, SessionNotFound, type SessionStore } from './store.js'
 import { UNSETTLED_TODO_KEY, attachTodoSnapshot, attachTodoState } from './todo.js'
 import { isClaudeCodeSessionId, type ClaudeCodeSessionSource } from './claude-code.js'
@@ -64,6 +64,8 @@ export async function ensureAgentRuntimeCurrent(sidecar: SidecarLike | null): Pr
 
 /** The health probe is also the browser's server-reachability probe (30 s), so the readiness check answers well inside it. */
 const CHAT_READINESS_CHECK_TIMEOUT_MS = 5_000
+/** TAL-1254: how soon a worktree lock the sidecar could not confirm is tried again. */
+export const WORKTREE_RETAIN_RETRY_MS = 60_000
 
 /**
  * TAL-951: whether a chat turn would be admitted now. Ready and source-stale incompatible sidecars both run turn
@@ -191,6 +193,8 @@ export class SessionService {
   private readonly compressionJobs: CompressionJobs
   /** TAL-1005: the turns now waiting on their session's compression job before they read its history. */
   private readonly compactionWaiters = new Set<string>()
+  private worktreeRetainRetry: ReturnType<typeof setTimeout> | null = null
+  private worktreesUnconfirmed = 0
 
   constructor(readonly deps: SessionServiceDeps) {
     this.compressionJobs = new CompressionJobs()
@@ -1525,6 +1529,93 @@ export class SessionService {
     return { ok: true, session: (await this.wireRow(s)) }
   }
 
+  /**
+   * TAL-1254: relock the worktrees of every unarchived worktree chat (or just `only`) for the running sidecar, so the
+   * Agent's worktree sweep reads them as live, and flag each one git no longer has as retained. Runs before a
+   * (re)started sidecar reports ready and when a chat is unarchived. The Agent's sweep runs outside Talaria, so a lock
+   * the sidecar could not confirm is retried until git takes it; meanwhile that tree keeps its flag.
+   */
+  async retainWorktrees(call: SidecarLike['call'], only?: Session): Promise<void> {
+    const { rows, unread } = only ? { rows: [only.compact()], unread: 0 } : await this.worktreeSessionRows()
+    const targets = rows.filter((row) => !row.archived && typeof row.worktree_path === 'string' && row.worktree_path && typeof row.session_id === 'string')
+    if (!targets.length) {
+      if (unread) this.retryWorktreeRetention()
+      return
+    }
+    let results: Record<string, string>
+    try {
+      ({ results } = await call('worktree.retain', { paths: [...new Set(targets.map((row) => String(row.worktree_path)))] }))
+    } catch (error) {
+      this.retryWorktreeRetention()
+      throw error
+    }
+    const unconfirmed = targets.filter((row) => !results[String(row.worktree_path)]).length + unread
+    if (!only && unconfirmed !== this.worktreesUnconfirmed) this.deps.log(`[webui] ${String(unconfirmed)} worktree lock(s) not yet held by the sidecar${unconfirmed ? '; retrying' : ''}`)
+    if (!only) this.worktreesUnconfirmed = unconfirmed
+    if (unconfirmed) this.retryWorktreeRetention()
+    for (const row of targets) {
+      const state = results[String(row.worktree_path)]
+      const sid = String(row.session_id)
+      if (!state) continue
+      try {
+        // `extra` follows the transcript in the file, past what a metadata-only read sees.
+        if (row._unread) continue
+        const s = await this.store.ensureFull(sid, await this.store.get(sid, { metadataOnly: true }))
+        if ((state === 'missing') === (s.extra[WORKTREE_RETAINED_KEY] === true)) continue
+        await this.withMutationLock(sid, async () => {
+          s.extra = Object.fromEntries(Object.entries(s.extra).filter(([key]) => key !== WORKTREE_RETAINED_KEY))
+          if (state === 'missing') s.extra[WORKTREE_RETAINED_KEY] = true
+          await this.store.save(s, { touchUpdatedAt: false })
+        }, { allowReadOnly: true })
+        this.publish('session_worktree', s.profile, sid)
+      } catch (error) {
+        if (error instanceof SessionNotFound) continue
+        this.deps.log(`[webui] could not record the worktree state of ${sid}: ${(error as Error).message}`)
+        this.retryWorktreeRetention()
+      }
+    }
+  }
+
+  /**
+   * Every persisted worktree chat, read from its own file: the index only narrows the files to read, since a crash
+   * between a save and its index update can leave a session out of the index or with a stale `archived`. A file that
+   * cannot be read now, or a session directory that cannot be listed, falls back to the index rows (`_unread`, so their
+   * flags are left alone) and counts in `unread`, which keeps retention retrying until every file has been read.
+   */
+  private async worktreeSessionRows(): Promise<{ rows: Record<string, unknown>[]; unread: number }> {
+    let indexed: Map<string, Record<string, unknown>>
+    try { indexed = new Map((await this.store.readIndexEntries()).map((row) => [str(row.session_id), row])) } catch { indexed = new Map() }
+    let persisted: Set<string>
+    try { persisted = await this.store.persistedIds({ strict: true }) } catch {
+      // The session directory cannot be listed now: retain what the index names and retry until it can.
+      const rows = [...indexed.values()].filter((row) => row.worktree_path).map((row) => ({ ...row, archived: false, _unread: true }))
+      return { rows, unread: Math.max(1, rows.length) }
+    }
+    const candidates = [...persisted].filter((sid) => !indexed.has(sid) || indexed.get(sid)?.worktree_path)
+    let unread = 0
+    const rows = await Promise.all(candidates.map(async (sid) => {
+      try { return (await this.store.get(sid, { metadataOnly: true })).compact() } catch (error) {
+        if (error instanceof SessionNotFound) return null
+        unread += 1
+        const row = indexed.get(sid)
+        return row?.worktree_path ? { ...row, archived: false, _unread: true } : null
+      }
+    }))
+    return { rows: rows.filter((row) => row !== null), unread }
+  }
+
+  /** One pending retry at a time; a sidecar that is not ready by then retains everything in its next ready gate instead. */
+  private retryWorktreeRetention(): void {
+    if (this.worktreeRetainRetry) return
+    this.worktreeRetainRetry = setTimeout(() => {
+      this.worktreeRetainRetry = null
+      const sidecar = this.deps.sidecar?.()
+      if (sidecar?.status !== 'ready') return
+      this.retainWorktrees((method, params, opts) => sidecar.call(method, params, opts)).catch((error: unknown) => { this.deps.log(`[webui] worktree lock retry failed: ${String(error)}`) })
+    }, WORKTREE_RETAIN_RETRY_MS)
+    this.worktreeRetainRetry.unref()
+  }
+
   async archive(sid: string, archived: boolean): Promise<Record<string, unknown>> {
     await this.rejectViewOnly(sid, 'archived')
     let s = (await this.get404(sid))
@@ -1534,6 +1625,8 @@ export class SessionService {
       if (archived) s.pinned = false
       await this.store.save(s, { touchUpdatedAt: false })
     }, { allowReadOnly: true })
+    const sidecar = this.deps.sidecar?.()
+    if (!archived && sidecar) await this.retainWorktrees((method, params, opts) => sidecar.call(method, params, opts), s).catch(() => undefined)
     this.publish('session_archive', s.profile, s.session_id)
     return { ok: true, session: (await this.wireRow(s)), ...worktreeRetainedPayload(s) }
   }
@@ -2255,6 +2348,7 @@ export class SessionService {
           project_id: source.project_id, profile: source.profile, session_source: 'fork', personality: source.personality, enabled_toolsets: copyJson(source.enabled_toolsets),
           context_length: source.context_length, threshold_tokens: source.threshold_tokens, gateway_routing: copyJson(source.gateway_routing), gateway_routing_history: copyJson(source.gateway_routing_history),
           parent_session_id: source.session_id, worktree_path: source.worktree_path, worktree_branch: source.worktree_branch, worktree_repo_root: source.worktree_repo_root, worktree_created_at: source.worktree_created_at,
+          ...(source.extra[WORKTREE_RETAINED_KEY] === true ? { [WORKTREE_RETAINED_KEY]: true } : {}),
           compression_recovery_source_session_id: sid, compression_recovery_action: action,
           // An empty model-facing transcript: the focused follow-up must not replay the exhausted context.
           messages: [], context_messages: [], composer_draft: { text: '', files: [] },

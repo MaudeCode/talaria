@@ -2368,6 +2368,34 @@
         ""
       ]
     },
+    "tests/test_worktree.py::test_a_retained_worktree_survives_the_agents_sweep_after_a_restart": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a retained worktree survives the Agent's own sweep after a restart. Runs the real installed release's lock check and sweep against a disposable repository.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_worktree_retain.py::test_retain_relocks_only_hermes_pid_locks_and_reports_missing_trees": {
+      "layer": "process",
+      "reason": "Actual git worktree lock files: the sidecar relocks a Talaria worktree under the Agent's hermes pid= contract and leaves every other lock as git recorded it.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_worktree_retain.py::test_a_lock_replaced_after_it_was_read_is_kept": {
+      "layer": "process",
+      "reason": "Actual git worktree lock files: a lock that changed after it was read is put back, never deleted.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_worktree_retain.py::test_an_unreadable_worktree_is_unconfirmed_not_missing": {
+      "layer": "process",
+      "reason": "Actual file permissions on a git worktree link: an unreadable tree is left unconfirmed, never reported missing.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_write_approval.py::test_staged_writes_list_with_diffs_and_approve_applies_them": {
       "layer": "compatibility",
       "reason": "Supported-Agent API compatibility: staged writes list with diffs and approve applies them. Uses the real installed release, not a fabricated API response.",

@@ -1,10 +1,14 @@
 """TAL-881: ``worktree.create`` never runs the target repository's own git filter programs. Agents from v0.21.6
-neutralize them in the checkout; older supported Agents get a refusal instead. Real sidecar, disposable repos."""
+neutralize them in the checkout; older supported Agents get a refusal instead. TAL-1254: ``worktree.retain`` keeps a
+Talaria worktree's lock live for the Agent's own sweep after a restart. Real sidecar, disposable repos."""
 
 from __future__ import annotations
 
+import json
+import os
 import pathlib
 import subprocess
+import time
 
 import pytest
 
@@ -64,3 +68,55 @@ def test_a_clean_repository_gets_a_worktree(handshaken: SidecarProcess, hermes_h
     path = pathlib.Path(result["path"])
     assert (path / "notes.txt").read_text() == "hello\n"
     assert result["repo_root"] == str(repo) and result["branch"].startswith("hermes/")
+
+
+def _lock_reason(tree: pathlib.Path) -> str | None:
+    admin = tree / tree.joinpath(".git").read_text().split("gitdir:", 1)[1].strip()
+    locked = admin.resolve() / "locked"
+    return locked.read_text().strip() if locked.exists() else None
+
+
+def _abandoned(handshaken: SidecarProcess, hermes_home: pathlib.Path, repo: pathlib.Path) -> pathlib.Path:
+    """A Talaria worktree with uncommitted work, idle for two days, whose lock names a sidecar that has since exited."""
+    tree = pathlib.Path(handshaken.result("worktree.create", {"profile_home": str(hermes_home), "repo_root": str(repo)})["path"])
+    (tree / "draft.txt").write_text("unsaved work\n")
+    exited = subprocess.Popen(["true"])
+    exited.wait()
+    _git("worktree", "unlock", str(tree), cwd=repo)
+    _git("worktree", "lock", "--reason", f"hermes pid={exited.pid}", str(tree), cwd=repo)
+    admin = (tree / tree.joinpath(".git").read_text().split("gitdir:", 1)[1].strip()).resolve()
+    old = time.time() - 48 * 3600
+    for path in (tree / "draft.txt", admin / "HEAD", admin / "logs" / "HEAD", tree):
+        os.utime(path, (old, old))
+    return tree
+
+
+_SWEEP = """
+import json, sys
+try:
+    from hermes_cli import worktree_sweep
+except ImportError:
+    print("null"); raise SystemExit
+settings = worktree_sweep.sweep_settings()
+plan = worktree_sweep.plan_sweep(sys.argv[1], 24, settings)
+worktree_sweep.execute_plan(sys.argv[1], plan, settings)
+print(json.dumps({d.name: d.action for d in plan}))
+"""
+
+
+def test_a_retained_worktree_survives_the_agents_sweep_after_a_restart(handshaken: SidecarProcess, hermes_home: pathlib.Path) -> None:
+    repo = _repo(hermes_home.parent / "project")
+    _git("add", ".", cwd=repo)
+    _git("commit", "--quiet", "-m", "init", cwd=repo)
+    kept, control = _abandoned(handshaken, hermes_home, repo), _abandoned(handshaken, hermes_home, repo)
+
+    handshaken.call("worktree.retain", {"paths": [str(kept)]})
+    swept = subprocess.run([AGENT_PYTHON, "-c", _SWEEP, str(repo)], env=isolated_env(hermes_home, PYTHONPATH=str(AGENT_DIR)),
+                           capture_output=True, text=True, timeout=120, check=True)
+    plan = json.loads(swept.stdout.strip().splitlines()[-1])
+
+    assert (kept / "draft.txt").exists(), f"retained worktree was swept: {plan}"
+    assert _lock_reason(kept) == f"hermes pid={handshaken.proc.pid}"
+    if plan is not None:  # v0.22.3 added the sweep; earlier releases never remove a dirty tree
+        assert plan == {kept.name: "skip-live-lock", control.name: "archive-remove"}, plan
+        assert not control.exists()

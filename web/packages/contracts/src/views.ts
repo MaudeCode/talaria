@@ -359,7 +359,9 @@ export const SessionSchema = z.looseObject({
   can_compress: z.boolean().optional().describe('TAL-614: a manual compression would start now: writable, no running turn, and at least four model-history messages. Only the full session detail carries it; absent means no.'),
   confirms_deep_truncate: z.boolean().optional().describe('TAL-929: this server holds a `session.truncate` that discards more than one user turn until it is confirmed; absent on older servers, which cut at once.'),
   source_label: NullableString.optional(), session_source: NullableString.optional(), raw_source: NullableString.optional(), parent_session_id: NullableString.optional(), worktree_path: NullableString.optional(),
-  worktree_branch: NullableString.optional(), worktree_repo_root: NullableString.optional(), share_token: NullableString.optional(), share_url: NullableString.optional(), share_created_at: NullableNumber.optional(), manual_title: z.boolean().optional(),
+  worktree_branch: NullableString.optional(), worktree_repo_root: NullableString.optional(),
+  worktree_retained: z.literal(true).optional().describe('TAL-1254: the last sidecar start found this worktree gone from git; the Agent\'s sweep keeps an archived one under `refs/hermes/archive/`. Absent while the worktree exists.'),
+  share_token: NullableString.optional(), share_url: NullableString.optional(), share_created_at: NullableNumber.optional(), manual_title: z.boolean().optional(),
   compression_anchor_summary: NullableString.optional(), compression_recovery: z.record(z.string(), Json).optional(), recommended_recovery_action: NullableString.optional(), compression_recovery_action: NullableString.optional(),
   compression_recovery_source_session_id: NullableString.optional(), gateway_routing: Json.optional(), _messages_offset: z.number().optional(), _messages_truncated: z.boolean().optional(), _msg_limit_max: z.number().optional(), _load_revision: z.string().optional(),
   /**

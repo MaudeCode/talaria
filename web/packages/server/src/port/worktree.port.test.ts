@@ -4,11 +4,12 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { allSessions } from '../sessions/list.js'
+import { WORKTREE_RETAIN_RETRY_MS } from '../sessions/service.js'
 
 type Json = Record<string, unknown>
 const post = (s: TestServer, path: string, body: unknown): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
@@ -280,5 +281,120 @@ describe('worktree status against a real git worktree', () => {
     expect(await status()).toMatchObject({ locked_by_stream: true, removable: false })
     s.deps.registry.liveIds.delete('stream-live')
     expect(await status()).toMatchObject({ locked_by_stream: false, removable: true })
+  })
+})
+
+describe('TAL-1254: a restarted sidecar retains the worktree chats before it is ready', () => {
+  let s: TestServer
+  let sidecar: FakeSidecar
+  let ws: string
+  const retained: { status: string; paths: string[] }[] = []
+  let missing = new Set<string>()
+  let unconfirmed = new Set<string>()
+  beforeAll(async () => {
+    sidecar = new FakeSidecar()
+    let created = 0
+    sidecar.respond('worktree.create', (params) => {
+      const path = join(params.repo_root, '.worktrees', `hermes-${++created}`)
+      mkdirSync(path, { recursive: true })
+      return { path, branch: `hermes/${created}`, repo_root: params.repo_root, base: null }
+    })
+    sidecar.respond('worktree.retain', (params) => {
+      retained.push({ status: sidecar.status, paths: [...params.paths].sort() })
+      return { results: Object.fromEntries(params.paths.filter((p) => !unconfirmed.has(p)).map((p) => [p, missing.has(p) ? 'missing' as const : 'retained' as const])) }
+    })
+    s = await bootTestServer({ sidecar })
+    ws = realpathSync(join(s.state, 'workspace'))
+    mkdirSync(join(ws, '.git'), { recursive: true })
+  })
+  afterAll(() => s.close())
+  const create = async (body: Json = { workspace: ws, worktree: true }): Promise<Json> => (await json(await post(s, '/api/session/new', body))).session as Json
+  const detail = async (sid: unknown): Promise<Json> => (await json(await s.get(`/api/session?session_id=${String(sid)}`))).session as Json
+
+  it('retains exactly the unarchived worktree paths and flags a missing one as retained', async () => {
+    const [kept, gone, archived] = [await create(), await create(), await create()]
+    await create({ workspace: ws })
+    await post(s, '/api/session/archive', { session_id: archived.session_id, archived: true })
+    missing = new Set([String(gone.worktree_path)])
+    retained.length = 0
+
+    await sidecar.restart()
+
+    expect(retained).toEqual([{ status: 'starting', paths: [String(kept.worktree_path), String(gone.worktree_path)].sort() }])
+    expect(await detail(gone.session_id)).toMatchObject({ worktree_retained: true, worktree_path: gone.worktree_path, worktree_branch: gone.worktree_branch })
+    expect((await detail(kept.session_id)).worktree_retained).toBeUndefined()
+
+    missing = new Set()
+    retained.length = 0
+    await post(s, '/api/session/archive', { session_id: archived.session_id, archived: false })
+    s.deps.sessionStore.sessions.delete(String(gone.session_id)) // read back from its file, as after a Web restart
+    await sidecar.restart()
+    expect(retained).toEqual([{ status: 'ready', paths: [String(archived.worktree_path)] }, { status: 'starting', paths: [String(kept.worktree_path), String(gone.worktree_path), String(archived.worktree_path)].sort() }])
+    expect((await detail(gone.session_id)).worktree_retained).toBeUndefined()
+  })
+
+  it('retains a worktree chat the session index lost or still lists as archived', async () => {
+    const [lost, unarchived] = [await create(), await create()]
+    await s.deps.sessionStore.pruneFromIndex(String(lost.session_id))
+    const row = (await s.deps.sessionStore.readIndexEntries()).find((r) => r.session_id === unarchived.session_id)
+    await s.deps.sessionStore.writeIndex([{ ...row, archived: true }])
+    retained.length = 0
+
+    await sidecar.restart()
+
+    expect(retained.flatMap((call) => call.paths)).toEqual(expect.arrayContaining([String(lost.worktree_path), String(unarchived.worktree_path)]))
+  })
+
+  it('retains an unreadable worktree chat from its index row and retries until its file reads', async () => {
+    const unreadable = await create()
+    const file = join(s.state, 'sessions', `${String(unreadable.session_id)}.json`)
+    s.deps.sessionStore.sessions.delete(String(unreadable.session_id))
+    chmodSync(file, 0)
+    vi.useFakeTimers({ toFake: ['setTimeout'] })
+    try {
+      retained.length = 0
+      await sidecar.restart()
+      expect(retained.flatMap((call) => call.paths)).toContain(String(unreadable.worktree_path))
+      chmodSync(file, 0o644)
+      retained.length = 0
+      await vi.advanceTimersByTimeAsync(WORKTREE_RETAIN_RETRY_MS)
+      await vi.waitFor(() => { expect(retained.flatMap((call) => call.paths)).toContain(String(unreadable.worktree_path)) })
+    } finally {
+      chmodSync(file, 0o644)
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps retrying while the session directory cannot be listed', async () => {
+    const listed = await create()
+    const dir = join(s.state, 'sessions')
+    chmodSync(dir, 0)
+    vi.useFakeTimers({ toFake: ['setTimeout'] })
+    try {
+      retained.length = 0
+      await sidecar.restart()
+      chmodSync(dir, 0o755)
+      await vi.advanceTimersByTimeAsync(WORKTREE_RETAIN_RETRY_MS)
+      await vi.waitFor(() => { expect(retained.flatMap((call) => call.paths)).toContain(String(listed.worktree_path)) })
+    } finally {
+      chmodSync(dir, 0o755)
+      vi.useRealTimers()
+    }
+  })
+
+  it('retries a worktree the sidecar could not lock until it confirms it', async () => {
+    const pending = await create()
+    unconfirmed = new Set([String(pending.worktree_path)])
+    vi.useFakeTimers({ toFake: ['setTimeout'] })
+    try {
+      await sidecar.restart()
+      retained.length = 0
+      unconfirmed = new Set()
+      await vi.advanceTimersByTimeAsync(WORKTREE_RETAIN_RETRY_MS)
+      await vi.waitFor(() => { expect(retained.flatMap((call) => call.paths)).toContain(String(pending.worktree_path)) })
+      retained.length = 0
+      await vi.advanceTimersByTimeAsync(WORKTREE_RETAIN_RETRY_MS)
+      expect(retained).toEqual([])
+    } finally { vi.useRealTimers() }
   })
 })

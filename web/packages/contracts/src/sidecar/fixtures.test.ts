@@ -27,7 +27,7 @@ describe('sidecar method fixtures (recorded from the pinned Agent)', () => {
 
   it('records every method that is not credential, network, or process bound', () => {
     const seen = new Set(recorded.map(([method]) => method))
-    const unexercised = new Set(['rpc.cancel', 'rpc.methods', 'runtime.shutdown', 'goals.restore', 'commands.exec', 'providers.resolve_runtime', 'oauth.start', 'oauth.poll', 'oauth.cancel', 'oauth.submit_redirect', 'plugins.oauth_logout', 'aux.complete', 'stt.transcribe', 'stt.stream', 'stt.stream_audio', 'gateway.control', 'gateway.restart', 'mcp.reload', 'cron.run', 'worktree.create', 'chat.start', 'chat.interrupt', 'chat.steer', 'chat.steer_withdraw', 'chat.steer_now', 'chat.evict_agent', 'chat.commit_memory', 'chat.refine', 'chat.compress', 'chat.compress_finalize', 'approval.respond', 'approval.pending', 'approval.set_yolo', 'clarify.respond', 'config.set'])
+    const unexercised = new Set(['rpc.cancel', 'rpc.methods', 'runtime.shutdown', 'goals.restore', 'commands.exec', 'providers.resolve_runtime', 'oauth.start', 'oauth.poll', 'oauth.cancel', 'oauth.submit_redirect', 'plugins.oauth_logout', 'aux.complete', 'stt.transcribe', 'stt.stream', 'stt.stream_audio', 'gateway.control', 'gateway.restart', 'mcp.reload', 'cron.run', 'worktree.create', 'worktree.retain', 'chat.start', 'chat.interrupt', 'chat.steer', 'chat.steer_withdraw', 'chat.steer_now', 'chat.evict_agent', 'chat.commit_memory', 'chat.refine', 'chat.compress', 'chat.compress_finalize', 'approval.respond', 'approval.pending', 'approval.set_yolo', 'clarify.respond', 'config.set'])
     const missing = Object.keys(SIDECAR_METHODS).filter((m) => !seen.has(m as SidecarMethodName) && !unexercised.has(m))
     expect(missing).toEqual([])
   })

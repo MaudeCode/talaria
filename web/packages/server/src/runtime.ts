@@ -880,6 +880,8 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     },
     log,
   })
+  // TAL-1254: every (re)started sidecar owns the worktree chats' locks before it reports ready, so the Agent's sweep keeps them.
+  await sidecar?.addReadyGate?.((call) => sessions.retainWorktrees(call))
 
   return deps
 }

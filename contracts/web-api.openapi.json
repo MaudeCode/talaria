@@ -6241,6 +6241,10 @@
                             }
                           ]
                         },
+                        "worktree_retained": {
+                          "const": true,
+                          "description": "TAL-1254: the last sidecar start found this worktree gone from git; the Agent's sweep keeps an archived one under `refs/hermes/archive/`. Absent while the worktree exists."
+                        },
                         "share_token": {
                           "anyOf": [
                             {
@@ -9534,6 +9538,10 @@
                             }
                           ]
                         },
+                        "worktree_retained": {
+                          "const": true,
+                          "description": "TAL-1254: the last sidecar start found this worktree gone from git; the Agent's sweep keeps an archived one under `refs/hermes/archive/`. Absent while the worktree exists."
+                        },
                         "share_token": {
                           "anyOf": [
                             {
@@ -12378,6 +12386,10 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "worktree_retained": {
+                          "const": true,
+                          "description": "TAL-1254: the last sidecar start found this worktree gone from git; the Agent's sweep keeps an archived one under `refs/hermes/archive/`. Absent while the worktree exists."
                         },
                         "share_token": {
                           "anyOf": [
@@ -17107,6 +17119,10 @@
                             }
                           ]
                         },
+                        "worktree_retained": {
+                          "const": true,
+                          "description": "TAL-1254: the last sidecar start found this worktree gone from git; the Agent's sweep keeps an archived one under `refs/hermes/archive/`. Absent while the worktree exists."
+                        },
                         "share_token": {
                           "anyOf": [
                             {
@@ -21460,6 +21476,10 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "worktree_retained": {
+                          "const": true,
+                          "description": "TAL-1254: the last sidecar start found this worktree gone from git; the Agent's sweep keeps an archived one under `refs/hermes/archive/`. Absent while the worktree exists."
                         },
                         "share_token": {
                           "anyOf": [
@@ -26538,6 +26558,10 @@
                             }
                           ]
                         },
+                        "worktree_retained": {
+                          "const": true,
+                          "description": "TAL-1254: the last sidecar start found this worktree gone from git; the Agent's sweep keeps an archived one under `refs/hermes/archive/`. Absent while the worktree exists."
+                        },
                         "share_token": {
                           "anyOf": [
                             {
@@ -29335,6 +29359,10 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "worktree_retained": {
+                          "const": true,
+                          "description": "TAL-1254: the last sidecar start found this worktree gone from git; the Agent's sweep keeps an archived one under `refs/hermes/archive/`. Absent while the worktree exists."
                         },
                         "share_token": {
                           "anyOf": [
@@ -32196,6 +32224,10 @@
                             }
                           ]
                         },
+                        "worktree_retained": {
+                          "const": true,
+                          "description": "TAL-1254: the last sidecar start found this worktree gone from git; the Agent's sweep keeps an archived one under `refs/hermes/archive/`. Absent while the worktree exists."
+                        },
                         "share_token": {
                           "anyOf": [
                             {
@@ -35053,6 +35085,10 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "worktree_retained": {
+                          "const": true,
+                          "description": "TAL-1254: the last sidecar start found this worktree gone from git; the Agent's sweep keeps an archived one under `refs/hermes/archive/`. Absent while the worktree exists."
                         },
                         "share_token": {
                           "anyOf": [
@@ -46397,6 +46433,10 @@
                             }
                           ]
                         },
+                        "worktree_retained": {
+                          "const": true,
+                          "description": "TAL-1254: the last sidecar start found this worktree gone from git; the Agent's sweep keeps an archived one under `refs/hermes/archive/`. Absent while the worktree exists."
+                        },
                         "share_token": {
                           "anyOf": [
                             {
@@ -49206,6 +49246,10 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "worktree_retained": {
+                          "const": true,
+                          "description": "TAL-1254: the last sidecar start found this worktree gone from git; the Agent's sweep keeps an archived one under `refs/hermes/archive/`. Absent while the worktree exists."
                         },
                         "share_token": {
                           "anyOf": [
@@ -52405,6 +52449,10 @@
                             }
                           ]
                         },
+                        "worktree_retained": {
+                          "const": true,
+                          "description": "TAL-1254: the last sidecar start found this worktree gone from git; the Agent's sweep keeps an archived one under `refs/hermes/archive/`. Absent while the worktree exists."
+                        },
                         "share_token": {
                           "anyOf": [
                             {
@@ -55482,6 +55530,10 @@
                                   "type": "null"
                                 }
                               ]
+                            },
+                            "worktree_retained": {
+                              "const": true,
+                              "description": "TAL-1254: the last sidecar start found this worktree gone from git; the Agent's sweep keeps an archived one under `refs/hermes/archive/`. Absent while the worktree exists."
                             },
                             "share_token": {
                               "anyOf": [

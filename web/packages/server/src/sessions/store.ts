@@ -298,7 +298,7 @@ export class SessionStore {
     return matches
   }
 
-  async persistedIds(): Promise<Set<string>> { return this.backend.ids() }
+  async persistedIds(opts: { strict?: boolean } = {}): Promise<Set<string>> { return this.backend.ids(opts) }
   async hasPersistedSessionFiles(): Promise<boolean> { return (await this.persistedIds()).size > 0 }
   async readIndexEntries(): Promise<Record<string, unknown>[]> { return (await this.index()).entries }
   async indexMessageCounts(entries?: Record<string, unknown>[]): Promise<Map<string, number>> {
