@@ -84,7 +84,10 @@ export const CommandBundleSchema = z.object({ name: z.string(), description: z.s
 export const CommandBundleInvocationSchema = z.object({ name: z.string(), source: z.literal('bundle'), message: z.string(), loaded_skills: z.array(z.string()), missing_skills: z.array(z.string()) })
 export const COMMANDS_METHODS = {
   'commands.registry': { params: ProfileHomeParams, result: z.object({ commands: z.array(CommandSchema) }) },
-  /** With `session_id`, a plugin command runs under that chat's session binding and `workspace` (TAL-904). */
+  /**
+   * With `session_id`, a plugin command runs under that chat's session binding and `workspace` (TAL-904) and receives the session
+   * as its handler declares it; every recognised command fires the Agent's `pre_command` hook with that session (TAL-1267).
+   */
   'commands.exec': { params: ProfileHomeParams.extend({ command: z.string().min(1), session_id: z.string().min(1).optional(), workspace: z.string().optional() }), result: z.object({ output: z.string(), source: z.enum(['agent', 'plugin']) }) },
   /**
    * `/<prompt built-in> [args]` as the turn text (`message`) the Agent's builder writes for the session's profile, workspace and toolsets.

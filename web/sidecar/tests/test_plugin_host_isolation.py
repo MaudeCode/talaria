@@ -6,6 +6,7 @@ Each profile ships a synthetic third-party plugin whose command reports the proc
 
 from __future__ import annotations
 
+import json
 import pathlib
 
 import pytest
@@ -127,5 +128,58 @@ def test_plugin_command_runs_under_the_invoking_chats_session_binding(tmp_path: 
         assert bound["output"] == f"chat-904|{workspace}"
         # Without a chat (Settings) nothing is bound.
         assert sidecar.result("commands.exec", params)["output"] == "|"
+    finally:
+        sidecar.close()
+
+
+CONTEXT_PLUGIN = """
+import json
+
+
+def _observe(**kwargs):
+    with open({log!r}, "a") as handle:
+        handle.write(json.dumps(kwargs) + "\\n")
+
+
+def register(ctx):
+    ctx.register_command("probe-context", lambda args, *, session_id="", platform="": f"{{args}}|{{session_id}}|{{platform}}",
+                         description="Probe")
+    ctx.register_command("probe-legacy", lambda args: f"legacy|{{args}}", description="Probe")
+    ctx.register_hook("pre_command", _observe)
+"""
+
+
+@requires_agent
+def test_web_commands_pass_session_context_to_plugins_and_fire_pre_command(tmp_path: pathlib.Path) -> None:
+    """TAL-1267: like the Agent's CLI, TUI and gateway, a Web command passes its session to a plugin handler that declares
+    it (v0.22.3+ ``invoke_plugin_command``) and fires ``pre_command`` once per recognised command."""
+    home = tmp_path / "home" / ".hermes"
+    log = tmp_path / "pre_command.jsonl"
+    path = home / "plugins" / "probe-context"
+    path.mkdir(parents=True)
+    (path / "plugin.yaml").write_text("name: probe-context\nversion: 0.0.1\ndescription: Synthetic probe\n")
+    (path / "__init__.py").write_text(CONTEXT_PLUGIN.format(log=str(log)))
+    (home / "config.yaml").write_text("plugins:\n  enabled: [probe-context]\n")
+    sidecar = SidecarProcess(home)
+    try:
+        params = {"profile_home": str(home)}
+        context = sidecar.result("commands.exec", {**params, "command": "/probe-context hi", "session_id": "chat-1267"})
+        # Agents before v0.22.3 have no context-aware dispatch: the handler keeps its one-argument call.
+        dispatch = AGENT_DIR is not None and (AGENT_DIR / "hermes_cli/plugin_command_dispatch.py").is_file()
+        assert context["output"] == ("hi|chat-1267|webui" if dispatch else "hi||")
+        assert sidecar.result("commands.exec", {**params, "command": "/probe-legacy there"})["output"] == "legacy|there"
+        assert sidecar.result("commands.exec", {**params, "command": "/reload_skills", "session_id": "chat-1267"})["source"] == "agent"
+        error, _ = sidecar.call("commands.exec", {**params, "command": "/definitely-not-a-command"})
+        assert error.get("error", {}).get("data", {}).get("condition") == "command_not_found", error
+
+        # The Agent stamps its own telemetry fields beside the hook arguments.
+        arguments = ("surface", "command", "alias_used", "args_raw", "session_key", "platform")
+        observed = [{key: row[key] for key in arguments} for row in map(json.loads, log.read_text().splitlines())] if log.exists() else []
+        webui = {"surface": "webui", "platform": "webui"}
+        assert observed == [
+            {**webui, "command": "probe-context", "alias_used": "probe-context", "args_raw": "hi", "session_key": "chat-1267"},
+            {**webui, "command": "probe-legacy", "alias_used": "probe-legacy", "args_raw": "there", "session_key": None},
+            {**webui, "command": "reload-skills", "alias_used": "reload_skills", "args_raw": "", "session_key": "chat-1267"},
+        ]
     finally:
         sidecar.close()

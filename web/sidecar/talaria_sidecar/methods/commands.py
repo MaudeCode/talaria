@@ -32,7 +32,8 @@ _RELOAD_SKILLS_LOCK = threading.Lock()
 _CODEX_RUNTIME_LOCK = threading.Lock()
 
 
-def parse_slash_command(command: str) -> tuple[str, str]:
+def _split_slash_command(command: str) -> tuple[str, str]:
+    """The command name as typed (lowercase, no slash) and its raw arguments."""
     raw = str(command or "").strip()
     if not raw:
         raise InvalidParams("command is required")
@@ -41,7 +42,12 @@ def parse_slash_command(command: str) -> tuple[str, str]:
     base = (parts[0] if parts else "").strip().lower()
     if not base:
         raise InvalidParams("command is required")
-    return _ALIASES.get(base, base), parts[1] if len(parts) > 1 else ""
+    return base, parts[1] if len(parts) > 1 else ""
+
+
+def parse_slash_command(command: str) -> tuple[str, str]:
+    base, args = _split_slash_command(command)
+    return _ALIASES.get(base, base), args
 
 
 def _expand_plan(args: str, **_turn) -> str:
@@ -327,11 +333,21 @@ def _credits() -> str:
     return "\n".join(lines)
 
 
-def execute_agent_command(command: str) -> str | None:
+def _fire_pre_command(command: str, session_id: str) -> None:
+    """The Agent's observer-only ``pre_command`` hook, which every local surface fires before a recognised command runs."""
+    from hermes_cli.plugins import fire_pre_command_hook
+
+    typed, arg = _split_slash_command(command)
+    fire_pre_command_hook(surface="webui", command=_ALIASES.get(typed, typed), alias_used=typed, args_raw=arg,
+                          session_key=session_id or None, platform="webui")
+
+
+def execute_agent_command(command: str, session_id: str = "") -> str | None:
     """Run one of the allowlisted agent-side runtime commands; None when not one."""
     canonical, arg_string = parse_slash_command(command)
     if canonical not in _ALLOWED:
         return None
+    _fire_pre_command(command, session_id)
     if canonical == "reload-mcp":
         return _reload_mcp()
     if canonical == "reload-skills":
@@ -341,7 +357,16 @@ def execute_agent_command(command: str) -> str | None:
     return _credits()
 
 
-def execute_plugin_command(command: str) -> str | None:
+def _invoke_plugin_handler(handler, arg: str, session_id: str):
+    """``handler(arg)`` plus the session context it declares, as every Agent surface calls it (v0.22.3+)."""
+    try:
+        from hermes_cli.plugin_command_dispatch import invoke_plugin_command
+    except ImportError:  # Delete this fallback once v0.22.3 is the oldest supported Agent.
+        return handler(arg)
+    return invoke_plugin_command(handler, arg, source=None, session_id=session_id, session_key=session_id, platform="webui")
+
+
+def execute_plugin_command(command: str, session_id: str = "") -> str | None:
     """Run a plugin-registered slash command; None when no plugin owns it."""
     base, arg = parse_slash_command(command)
     try:
@@ -354,8 +379,9 @@ def execute_plugin_command(command: str) -> str | None:
         raise RpcError("plugin command lookup failed", condition="plugins_unavailable") from exc
     if not handler:
         return None
+    _fire_pre_command(command, session_id)
     try:
-        return str(resolve_plugin_command_result(handler(arg)) or "(no output)")
+        return str(resolve_plugin_command_result(_invoke_plugin_handler(handler, arg, session_id)) or "(no output)")
     except Exception as exc:  # noqa: BLE001 - user-facing text, never a transport error
         log.warning("Plugin command %r execution failed", base, exc_info=True)
         return f"Plugin command error: {type(exc).__name__}"
@@ -598,16 +624,16 @@ def register(registry) -> None:
     @registry.method("commands.exec")
     def exec_(ctx: CallContext, params: dict) -> dict:
         command = str(params.get("command") or "")
+        session_id = str(params.get("session_id") or "").strip()
         with scoped_home(profile_home_param(params)):
-            output = execute_agent_command(command)
+            output = execute_agent_command(command, session_id)
             source = "agent"
             if output is None:
                 from .chat import _turn_identity
 
                 # TAL-904: a chat's plugin command runs under that chat's session and workspace, as its turns do.
-                session_id = str(params.get("session_id") or "").strip()
                 with _turn_identity(session_id, str(params.get("workspace") or "")) if session_id else contextlib.nullcontext():
-                    output = execute_plugin_command(command)
+                    output = execute_plugin_command(command, session_id)
                 source = "plugin"
         if output is None:
             raise RpcError(f"unknown command {parse_slash_command(command)[0]!r}", condition="command_not_found")
