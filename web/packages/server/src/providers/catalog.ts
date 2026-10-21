@@ -551,6 +551,7 @@ export class ProviderCatalog {
       else this.liveIds.delete(key)
     }
     this.providersCache.clear()
+    for (const key of this.pickerLimitsCache.keys()) if (!profileHome || key === profileHome) this.pickerLimitsCache.delete(key)
     if (opts.preserveConfirmed) return
     for (const key of [...this.lastQuotaSources.keys()]) if (!profileHome || key.startsWith(`${profileHome}\0`)) this.lastQuotaSources.delete(key)
     // Credentials changed: the last pool answers no longer stand in for a failed lookup.
@@ -1076,30 +1077,50 @@ export class ProviderCatalog {
     return this.remember(profileHome, { source, unconfirmed, attempt }, { ...defaults, groups: stamped, aliases, configured_model_badges: this.badges(kept, active, defaultModel, fallbackCfg) })
   }
 
-  /**
-   * TAL-807: the picker catalog (`/api/models`) with each group's live pool rate limit, read per request so an expired one
-   * is gone, and its quota level. The cached catalog holds neither; a failed read leaves them out.
-   */
+  private readonly pickerLimitsCache = new Map<string, { source: string; at?: number; limits: SidecarResult<'usage.limits'>['limits']; read?: Promise<void> }>()
+
+  /** Bounded, shared pool-limit reads; a warm picker serves its snapshot during refresh. */
+  private async pickerLimits(profileHome: string, providers: SidecarParams<'usage.limits'>['providers']): Promise<SidecarResult<'usage.limits'>['limits']> {
+    const fingerprint = this.sourceFingerprint(profileHome)
+    const source = JSON.stringify([fingerprint, providers])
+    let cached = this.pickerLimitsCache.get(profileHome)
+    if (cached?.source !== source) {
+      cached = { source, limits: {} }
+      this.pickerLimitsCache.set(profileHome, cached)
+    }
+    const entry = cached
+    if ((entry.at === undefined || this.deps.now() - entry.at >= ACCOUNT_USAGE_CACHE_TTL_S) && !entry.read) {
+      entry.read = (async () => {
+        try {
+          const sidecar = this.deps.sidecar()
+          entry.limits = sidecar ? (await sidecar.call('usage.limits', { profile_home: profileHome, providers }, { timeoutMs: 3_000 })).limits : {}
+        } catch (error) {
+          entry.limits = {}
+          this.deps.log(`[catalog] pool limits failed: ${str((error as Error).message)}`)
+        }
+        entry.at = this.deps.now()
+      })().finally(() => { delete entry.read })
+    }
+    if (entry.at === undefined) await entry.read
+    return fingerprint === this.sourceFingerprint(profileHome) && this.pickerLimitsCache.get(profileHome) === entry ? entry.limits : {}
+  }
+
+  /** TAL-807: the picker adds pool limits and quota levels without storing them in the model catalog. */
   async pickerModels(profileHome: string, profile: string): Promise<ModelsCatalog> {
     const catalog = await this.models(profileHome)
     const entries = (g: ModelGroup): ModelEntry[] => [...g.models, ...(g.extra_models ?? [])]
-    let limits: SidecarResult<'usage.limits'>['limits'] = {}
-    try {
-      const sidecar = this.deps.sidecar()
-      const providers = catalog.groups.map((g) => ({ slug: g.provider_id, models: entries(g).map((e) => e.bare_id ?? e.id) }))
-      if (sidecar) limits = (await sidecar.call('usage.limits', { profile_home: profileHome, providers })).limits
-    } catch (error) {
-      this.deps.log(`[catalog] pool limits failed: ${str((error as Error).message)}`)
-    }
+    const providers = catalog.groups.map((g) => ({ slug: g.provider_id, models: entries(g).map((e) => e.bare_id ?? e.id) }))
+    const limits = await this.pickerLimits(profileHome, providers)
+    const active = (resetsAt: string): boolean => Date.parse(resetsAt) / 1000 > this.deps.now()
     for (const g of catalog.groups) {
       const limit = limits[g.provider_id]
-      if (limit?.scope === 'account') g.limit = limit
+      if (limit?.scope === 'account' && active(limit.resets_at)) g.limit = limit
       if (limit?.scope === 'models') {
         // The sidecar answers by bare id; the picker names entries by id.
         const cooled: Record<string, string> = {}
         for (const e of entries(g)) {
           const resetsAt = limit.models[e.bare_id ?? e.id]
-          if (resetsAt) { e.limit = { scope: 'model', resets_at: resetsAt }; cooled[e.id] = resetsAt }
+          if (resetsAt && active(resetsAt)) { e.limit = { scope: 'model', resets_at: resetsAt }; cooled[e.id] = resetsAt }
         }
         if (Object.keys(cooled).length) g.limit = { scope: 'models', models: cooled }
       }

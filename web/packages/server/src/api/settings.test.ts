@@ -1363,6 +1363,8 @@ describe('the model picker shows pool rate limits and the account quota level (T
   let windows: Json[] = []
   interface Group { provider_id: string; limit?: unknown; quota_level?: string; models: { id: string; limit?: unknown }[] }
   const anthropic = async (): Promise<Group> => ((await json(await s.get('/api/models'))).groups as Group[]).find((g) => g.provider_id === 'anthropic')!
+  // Fixture changes represent a new pool snapshot; explicit refresh evicts the picker cache.
+  const setLimits = (value: typeof limits): void => { limits = value; s.deps.catalog.invalidate(s.state) }
   beforeAll(async () => {
     sidecar = new FakeSidecar()
     s = await bootTestServer({ sidecar, now: () => NOW })
@@ -1378,7 +1380,7 @@ describe('the model picker shows pool rate limits and the account quota level (T
 
   // Runs first: it needs the cold account-usage cache.
   it('the quota level follows the tightest account-scope window; an Opus weekly window at 100% never marks the account', async () => {
-    limits = {}
+    setLimits({})
     windows = [
       { label: 'Current session', used_percent: 10, reset_at: '2026-09-28T12:00:00Z', scope: 'account' },
       { label: 'Current week', used_percent: 40, reset_at: '2026-10-03T08:00:00Z', scope: 'account' },
@@ -1394,26 +1396,26 @@ describe('the model picker shows pool rate limits and the account quota level (T
     expect((await anthropic()).quota_level).toBe('critical')
 
     // An account limit already says the login is out: the group carries the limit alone.
-    limits = { anthropic: { scope: 'account', resets_at: RESET } }
+    setLimits({ anthropic: { scope: 'account', resets_at: RESET } })
     expect(await anthropic()).toMatchObject({ limit: { scope: 'account', resets_at: RESET } })
     expect((await anthropic()).quota_level).toBeUndefined()
-    limits = {}
+    setLimits({})
   })
 
   it('an account-wide pool limit marks the group, and a model cooldown only that model', async () => {
-    limits = { anthropic: { scope: 'account', resets_at: RESET } }
+    setLimits({ anthropic: { scope: 'account', resets_at: RESET } })
     let group = await anthropic()
     expect(group.limit).toEqual({ scope: 'account', resets_at: RESET })
     expect(group.models.map((m) => m.limit)).toEqual([undefined, undefined])
     expect(sidecar.calls.filter((c) => c.method === 'usage.limits').at(-1)?.params).toMatchObject({ providers: expect.arrayContaining([{ slug: 'anthropic', models: ['claude-opus-4-7', 'claude-sonnet-4-6'] }]) as unknown })
 
-    limits = { anthropic: { scope: 'models', models: { 'claude-opus-4-7': RESET } } }
+    setLimits({ anthropic: { scope: 'models', models: { 'claude-opus-4-7': RESET } } })
     group = await anthropic()
     expect(group.limit).toEqual({ scope: 'models', models: { 'claude-opus-4-7': RESET } })
     expect(group.models.map((m) => [m.id, m.limit])).toEqual([['claude-opus-4-7', { scope: 'model', resets_at: RESET }], ['claude-sonnet-4-6', undefined]])
 
     // An expired limit is gone from the sidecar's answer, so it is gone from the picker.
-    limits = {}
+    setLimits({})
     group = await anthropic()
     expect(group.limit).toBeUndefined()
     expect(group.models.every((m) => m.limit === undefined)).toBe(true)
@@ -1422,9 +1424,12 @@ describe('the model picker shows pool rate limits and the account quota level (T
   it('an Agent that cannot say, or a failing read, leaves the catalog without limits and without an error', async () => {
     const restore = sidecar.responderFor('usage.limits')
     sidecar.respond('usage.limits', () => { throw new SidecarError('unknown method', { code: -32601, condition: 'method_not_found' }) })
+    s.deps.catalog.invalidate(s.state)
+    const reads = sidecar.calls.filter((c) => c.method === 'usage.limits').length
     try {
       const res = await s.get('/api/models')
       expect(res.status).toBe(200)
+      expect(sidecar.calls.filter((c) => c.method === 'usage.limits')).toHaveLength(reads + 1)
       const group = ((await json(res)).groups as Group[]).find((g) => g.provider_id === 'anthropic')!
       expect(group.limit).toBeUndefined()
     } finally {

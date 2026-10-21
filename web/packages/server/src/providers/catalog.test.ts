@@ -1,16 +1,143 @@
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AgentConfig, parseProviderQualifiedModel } from '../config/agent-config.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
-import { ProviderCatalog, repairSessionModel, splitPickerOverflow, type ModelEntry, type ModelsCatalog } from './catalog.js'
+import { ProviderCatalog, repairSessionModel, splitPickerOverflow, type ModelEntry, type ModelGroup, type ModelsCatalog } from './catalog.js'
 import { writeEnvFile } from '../test/env-file.js'
+import type { SidecarResult } from '@maudecode/talaria-web-contracts'
 
 type Json = Record<string, unknown>
 interface Entry { id: string; provider_id?: string; bare_id?: string }
 interface Group { provider_id: string; models: Entry[]; extra_models?: Entry[] }
+
+describe('bounded picker pool limits (TAL-1222)', () => {
+  let home: string
+  let sidecar: FakeSidecar
+  let catalog: ProviderCatalog
+  const resetsAt = '2026-10-21T13:00:00Z'
+  const limits = { ollama: { scope: 'account' as const, resets_at: resetsAt } }
+  const calls = (): number => sidecar.calls.filter((c) => c.method === 'usage.limits').length
+  const picker = (): Promise<ModelsCatalog> => catalog.pickerModels(home, 'synthetic')
+  const group = (result: ModelsCatalog): ModelGroup | undefined => result.groups.find((g) => g.provider_id === 'ollama')
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-21T12:00:00Z'))
+    home = mkdtempSync(join(tmpdir(), 'talaria-picker-limits-'))
+    writeFileSync(join(home, 'config.yaml'), '# synthetic configuration\n')
+    sidecar = new FakeSidecar()
+    sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config: { model: { provider: 'ollama', default: 'llama3.2' }, providers: { ollama: { base_url: 'http://ollama.test/v1', models: ['llama3.2'] } } } }))
+    sidecar.respond('providers.auth_status', (p) => ({ status: { logged_in: false, provider: p.provider ?? '' } }))
+    sidecar.respond('plugins.providers', () => ({ providers: [] }))
+    sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: p.provider === 'ollama' ? ['llama3.2'] : [] }))
+    sidecar.respond('usage.limits', () => ({ limits }))
+    catalog = new ProviderCatalog({ sidecar: () => sidecar, config: new AgentConfig({ sidecar: () => sidecar, env: {} }), env: {}, now: () => Date.now() / 1000, log: () => undefined, costBudget: () => null, isRootProfileHome: () => true })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    rmSync(home, { recursive: true, force: true })
+  })
+
+  it('settles a non-answering limits read in three seconds and caches the failure for 45 seconds', async () => {
+    // The responder never answers; emulate the real client's transport deadline.
+    sidecar.respond('usage.limits', (_p, _emit, opts) => new Promise((_resolve, reject) => {
+      setTimeout(() => { reject(new Error('sidecar call usage.limits timed out')) }, opts.timeoutMs ?? 120_000)
+    }))
+    let result: ModelsCatalog | undefined
+    const pending = picker().then((value) => { result = value })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(calls()).toBe(1)
+    await vi.advanceTimersByTimeAsync(2_999)
+    expect(result).toBeUndefined()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(result, 'picker must resolve when the three-second limits deadline expires').toBeDefined()
+    await pending
+    expect(result!.groups.every((g) => g.limit === undefined)).toBe(true)
+    await picker()
+    expect(calls()).toBe(1)
+    await vi.advanceTimersByTimeAsync(44_999)
+    await picker()
+    expect(calls()).toBe(1)
+    await vi.advanceTimersByTimeAsync(1)
+    await picker()
+    expect(calls()).toBe(2)
+  })
+
+  it('shares cold reads and serves cached limits while one expired read refreshes', async () => {
+    let resolve!: (value: SidecarResult<'usage.limits'>) => void
+    sidecar.respond('usage.limits', () => new Promise((done) => { resolve = done }))
+    const first = picker()
+    const second = picker()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(calls()).toBe(1)
+    resolve({ limits })
+    expect(group(await first)?.limit).toEqual(limits.ollama)
+    expect(group(await second)?.limit).toEqual(limits.ollama)
+    await vi.advanceTimersByTimeAsync(45_000)
+    expect(group(await picker())?.limit).toEqual(limits.ollama)
+    expect(group(await picker())?.limit).toEqual(limits.ollama)
+    expect(calls()).toBe(2)
+    resolve({ limits: {} })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(group(await picker())?.limit).toBeUndefined()
+    expect(calls()).toBe(2)
+  })
+
+  it('clears stale limits after a failed refresh and throttles retries', async () => {
+    expect(group(await picker())?.limit).toEqual(limits.ollama)
+    let reject!: (reason: Error) => void
+    sidecar.respond('usage.limits', () => new Promise((_resolve, fail) => { reject = fail }))
+    await vi.advanceTimersByTimeAsync(45_000)
+    expect(group(await picker())?.limit).toEqual(limits.ollama)
+    expect(calls()).toBe(2)
+    reject(new Error('limits unavailable'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(group(await picker())?.limit).toBeUndefined()
+    expect(calls()).toBe(2)
+  })
+
+  it('drops expired account and model limits even while the cache is fresh', async () => {
+    const reset = new Date(Date.now() + 1_000).toISOString()
+    sidecar.respond('usage.limits', () => ({ limits: { ollama: { scope: 'account', resets_at: reset } } }))
+    expect(group(await picker())?.limit).toBeDefined()
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(group(await picker())?.limit).toBeUndefined()
+    expect(calls()).toBe(1)
+    catalog.invalidate(home)
+    sidecar.respond('usage.limits', () => ({ limits: { ollama: { scope: 'models', models: { 'llama3.2': new Date(Date.now() + 1_000).toISOString() } } } }))
+    expect(group(await picker())?.models[0]?.limit).toBeDefined()
+    await vi.advanceTimersByTimeAsync(1_000)
+    const expired = group(await picker())
+    expect(expired?.limit).toBeUndefined()
+    expect(expired?.models[0]?.limit).toBeUndefined()
+    expect(calls()).toBe(2)
+  })
+
+  it('isolates homes and discards cached and in-flight limits after credentials change', async () => {
+    expect(group(await picker())?.limit).toBeDefined()
+    const otherHome = mkdtempSync(join(tmpdir(), 'talaria-picker-other-'))
+    try {
+      sidecar.respond('usage.limits', () => ({ limits: {} }))
+      expect(group(await catalog.pickerModels(otherHome, 'other'))?.limit).toBeUndefined()
+      expect(calls()).toBe(2)
+    } finally { rmSync(otherHome, { recursive: true, force: true }) }
+    let resolve!: (value: SidecarResult<'usage.limits'>) => void
+    sidecar.respond('usage.limits', () => new Promise((done) => { resolve = done }))
+    writeFileSync(join(home, 'auth.json'), '{"account":"new"}')
+    const pending = picker()
+    await vi.advanceTimersByTimeAsync(0)
+    writeFileSync(join(home, 'auth.json'), '{"account":"newer"}')
+    resolve({ limits })
+    expect(group(await pending)?.limit).toBeUndefined()
+    sidecar.respond('usage.limits', () => ({ limits: {} }))
+    expect(group(await picker())?.limit).toBeUndefined()
+    expect(calls()).toBe(4)
+  })
+})
 
 describe.each([
   ['openrouter', 'OPENROUTER_API_KEY', []],
