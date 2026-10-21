@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Provider sign-in from Web now trusts the same certificates as Hermes, so it works behind a corporate CA and keeps working after the Agent reinstalls its dependencies.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

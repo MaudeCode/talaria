@@ -2554,6 +2554,21 @@
       "cases": [
         ""
       ]
+    },
+    "tests/test_oauth_tls.py::test_the_sign_in_client_trusts_an_exported_ca_bundle_on_top_of_the_agents_platform_store": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: the sign-in HTTP client trusts an exported CA bundle on top of the Agent's platform store. Builds the client with the real installed release's agent.ssl_verify and truststore, not a fabricated resolver.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_oauth_tls.py::test_a_sign_in_survives_a_deleted_certifi_bundle": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a sign-in survives a deleted certifi bundle. Exercises the real installed release's certifi rotation recovery and its own xAI discovery request, not a fabricated resolver.",
+      "cases": [
+        "[client]",
+        "[xai]"
+      ]
     }
   }
 }

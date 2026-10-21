@@ -14,6 +14,7 @@ import contextlib
 import logging
 import os
 import secrets
+import ssl
 import threading
 import time
 from dataclasses import dataclass, field
@@ -123,9 +124,24 @@ def _now_z() -> str:
 
 
 def _client(timeout: float, **kwargs: Any) -> Any:
+    """Every flow's HTTP client, verifying TLS as the Agent's own sign-in does: the OS trust store, and (v0.22.3+) a
+    certifi bundle an install-environment rotation deleted under this process, re-derived process-wide."""
     import httpx
 
-    return httpx.Client(timeout=httpx.Timeout(timeout), headers={"Accept": "application/json"}, **kwargs)
+    return httpx.Client(timeout=httpx.Timeout(timeout), headers={"Accept": "application/json"}, verify=_verify(), **kwargs)
+
+
+def _verify() -> Any:
+    try:
+        from agent.ssl_verify import resolve_httpx_verify
+    except ImportError:  # an Agent without it keeps httpx's default
+        return True
+    verify = resolve_httpx_verify()
+    # The resolver hands over the platform store alone when SSL_CERT_FILE/SSL_CERT_DIR is set; httpx's default trusted
+    # that bundle, so keep it, on top of the platform store the resolver installed (as ``platform_ssl_context`` does).
+    cafile, capath = os.environ.get("SSL_CERT_FILE", "").strip(), os.environ.get("SSL_CERT_DIR", "").strip()
+    cafile, capath = (cafile if os.path.isfile(cafile) else None), (capath if os.path.isdir(capath) else None)
+    return ssl.create_default_context(cafile=cafile, capath=capath) if cafile or capath else verify
 
 
 # ── providers: (begin, wait, save) over the Agent's own steps ──────────
@@ -287,8 +303,10 @@ def _codex_save(flow: Flow, state: dict, tokens: dict) -> None:
 def _xai_begin() -> tuple[dict, dict]:
     from hermes_cli.auth import _xai_oauth_discovery, _xai_oauth_request_device_code
 
-    discovery = _xai_oauth_discovery(20.0)
     with _client(20.0) as client:
+        # The Agent's discovery is a bare ``httpx.get``: building the client first gives it the platform store and a
+        # certifi re-derived after a rotation.
+        discovery = _xai_oauth_discovery(20.0)
         data = _xai_oauth_request_device_code(client)
     display = {"user_code": str(data["user_code"]), "verification_url": str(data.get("verification_uri_complete") or data["verification_uri"]),
                "expires_in": int(data["expires_in"]), "interval": int(data["interval"])}
