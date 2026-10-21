@@ -312,8 +312,77 @@ for (const virtualize of [false, true]) {
     expect(requests).toEqual(Array.from({ length: 16 }, (_, index) => 1880 - index * 120))
     await expect(page.getByRole('button', { name: 'Load older messages' })).toHaveCount(0)
     await expect(page.locator('[data-history-sentinel]')).toHaveCount(0)
+    // Temporary passive CI diagnosis: record realization before a descendant geometry read can change it.
+    const historyTrace = virtualize ? null : await page.getByText('history question 1', { exact: true }).evaluateHandle((text) => {
+      const pane = document.getElementById('messages')!, row = text.closest<HTMLElement>('[data-message-key]')!
+      const events: Record<string, unknown>[] = []
+      const record = (event: Record<string, unknown>) => {
+        events.push({ time: performance.now(), ...event })
+        if (events.length > 128) events.shift()
+      }
+      const position = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollTop')!
+      Object.defineProperty(pane, 'scrollTop', {
+        configurable: true,
+        get: () => position.get!.call(pane) as number,
+        set: (requested: number) => {
+          const before = position.get!.call(pane) as number
+          position.set!.call(pane, requested)
+          record({ type: 'write', before, requested, after: position.get!.call(pane), stack: new Error().stack })
+        },
+      })
+      const originalScrollTo = pane.scrollTo.bind(pane)
+      pane.scrollTo = (x?: ScrollToOptions | number, y?: number) => {
+        const before = pane.scrollTop
+        if (typeof x === 'number') originalScrollTo(x, y ?? 0)
+        else originalScrollTo(x)
+        record({ type: 'scrollTo', before, requested: x, after: pane.scrollTop, stack: new Error().stack })
+      }
+      const onScroll = () => record({ type: 'scroll', top: pane.scrollTop })
+      const onVisibility = (event: Event) => {
+        if (event.target === row) record({ type: 'contentvisibility', skipped: (event as Event & { skipped: boolean }).skipped, top: pane.scrollTop })
+      }
+      pane.addEventListener('scroll', onScroll)
+      row.addEventListener('contentvisibilityautostatechange', onVisibility)
+      const observer = new IntersectionObserver((entries) => {
+        for (const entry of entries) record({
+          type: 'intersection', target: entry.target === row ? 'row' : 'text', top: pane.scrollTop,
+          ratio: entry.intersectionRatio, intersecting: entry.isIntersecting,
+          bounds: [entry.boundingClientRect.x, entry.boundingClientRect.y, entry.boundingClientRect.width, entry.boundingClientRect.height],
+          intersection: [entry.intersectionRect.x, entry.intersectionRect.y, entry.intersectionRect.width, entry.intersectionRect.height],
+        })
+      })
+      observer.observe(row); observer.observe(text)
+      record({ type: 'installed', top: pane.scrollTop })
+      return { events, stop: () => {
+        observer.disconnect(); pane.removeEventListener('scroll', onScroll)
+        row.removeEventListener('contentvisibilityautostatechange', onVisibility)
+        Reflect.deleteProperty(pane, 'scrollTop'); Reflect.deleteProperty(pane, 'scrollTo')
+      } }
+    })
     await page.locator('#messages').evaluate((el) => { el.dispatchEvent(new WheelEvent('wheel', { deltaY: -1, bubbles: true })); el.scrollTop = 0 })
-    await expect(page.getByText('history question 1', { exact: true })).toBeInViewport()
+    try {
+      await expect(page.getByText('history question 1', { exact: true })).toBeInViewport()
+      if (historyTrace) console.info('Passive history trace success', JSON.stringify(await historyTrace.evaluate((probe) => probe.events)))
+    } catch (error) {
+      if (!historyTrace) throw error
+      const events = await historyTrace.evaluate((probe) => probe.events)
+      console.info('Passive history trace', JSON.stringify(events))
+      await testInfo.attach('passive-history-trace', { body: JSON.stringify(events), contentType: 'application/json' })
+      // Diagnose only after preserving passive evidence; keep the original assertion failure.
+      await page.locator('[data-message-key="1"]').evaluate((row) => { row.style.contentVisibility = 'visible' })
+      const recovered = await page.getByText('history question 1', { exact: true }).evaluate((text) => new Promise<boolean>((resolve) => {
+        const deadline = setTimeout(() => { observer.disconnect(); resolve(false) }, 1000)
+        const observer = new IntersectionObserver((entries) => { clearTimeout(deadline); observer.disconnect(); resolve(entries[0]!.isIntersecting) })
+        observer.observe(text)
+      }))
+      console.info('History row visible recovery', recovered)
+      throw error
+    } finally {
+      if (historyTrace) {
+        await historyTrace.evaluate((probe) => probe.stop())
+        await historyTrace.dispose()
+      }
+    }
     if (!virtualize) {
       const path = testInfo.outputPath(`history-start-${testInfo.project.name}.png`)
       await page.screenshot({ path })
