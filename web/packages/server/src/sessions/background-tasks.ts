@@ -297,6 +297,9 @@ export function withBackgroundLinks<T>(messages: T[], receipts: Receipt[]): T[] 
   })
 }
 
+/** TAL-1305: waits before re-reading after a refresh that could not reach the Agent (a sidecar restart, a busy call). */
+const REFRESH_RETRY_MS = [1_000, 4_000, 15_000]
+
 export interface BackgroundActivityDeps {
   store: BackgroundTaskStore
   sidecar: () => SidecarLike | null
@@ -336,18 +339,22 @@ export class BackgroundActivity {
   private readonly refreshAgain = new Set<string>()
   /**
    * TAL-1305: work the Agent started mid-turn. Re-reads the session's records so a change reaches every client now
-   * (the store announces it). One read per session at a time; asking during one reads once more after it.
+   * (the store announces it). One read per session at a time; asking during one reads once more after it. A read that
+   * cannot reach the Agent tries again after each of `REFRESH_RETRY_MS`: it may be the work's only announcement.
    */
-  refresh(sid: string, profile: string | null): void {
+  refresh(sid: string, profile: string | null, attempt = 0): void {
     if (this.refreshing.has(sid)) { this.refreshAgain.add(sid); return }
     this.refreshing.add(sid)
     void (async () => {
+      let reached = false
       try {
         do {
           this.refreshAgain.delete(sid)
-          try { await this.snapshot(sid, profile, { agentOnly: true }) } catch (error) { this.deps.log(`[webui] WARNING: background refresh for ${sid} failed: ${(error as Error).message}`) }
+          try { reached = (await this.snapshot(sid, profile, { agentOnly: true })).agent_available } catch (error) { reached = false; this.deps.log(`[webui] WARNING: background refresh for ${sid} failed: ${(error as Error).message}`) }
         } while (this.refreshAgain.has(sid))
       } finally { this.refreshing.delete(sid) }
+      const delay = REFRESH_RETRY_MS[attempt]
+      if (!reached && delay !== undefined) setTimeout(() => { this.refresh(sid, profile, attempt + 1) }, delay).unref()
     })()
   }
 

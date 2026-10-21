@@ -2,7 +2,7 @@ import { testSessionDocuments } from '../test/storage.js'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { BackgroundActivity, BackgroundTaskStore, backgroundLink, dispatchedDelegationIds, eventReceipt, startsBackgroundWork, taskView } from './background-tasks.js'
 import type { SidecarLike } from '../sidecar/client.js'
 
@@ -144,10 +144,51 @@ describe('background task records (TAL-372)', () => {
     const sidecar = { call: () => Promise.reject(new Error('agent down')) } as unknown as SidecarLike
     const logged: string[] = []
     const activity = new BackgroundActivity({ store, sidecar: () => sidecar, profileHome: () => dir, liveStream: () => false, now: () => 200, log: (line) => { logged.push(line) } })
-    activity.refresh('s', null)
-    await expect.poll(() => logged.length).toBe(1)
-    await new Promise((r) => setTimeout(r, 20))
-    expect((await store.get('s', 'd1'))?.status).toBe('running')
-    expect(changes).toBe(0)
+    vi.useFakeTimers({ toFake: ['setTimeout'] })
+    try {
+      activity.refresh('s', null)
+      // Every retry fails the same way and changes nothing.
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(logged).toHaveLength(4)
+      expect((await store.get('s', 'd1'))?.status).toBe('running')
+      expect(changes).toBe(0)
+    } finally { vi.useRealTimers() }
+  })
+
+  it('retry a refresh that could not reach the Agent a few times, so the work it started still shows (TAL-1305)', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout'] })
+    try {
+      const dir = tempDir()
+      let changes = 0
+      const store = new BackgroundTaskStore(testSessionDocuments(dir), () => 200, () => { changes += 1 })
+      const unit = { delegation_id: 'd1', origin_ui_session_id: 's', state: 'running', dispatched_at: 10, completed_at: null, updated_at: 11, goals: ['Check logs'], child_statuses: [], has_result: false, live_status: 'running' }
+      let calls = 0
+      const sidecar = { call: () => { calls += 1; return calls < 3 ? Promise.reject(new Error('sidecar restarting')) : Promise.resolve({ delegations: [unit], processes: [] }) } } as unknown as SidecarLike
+      const activity = new BackgroundActivity({ store, sidecar: () => sidecar, profileHome: () => dir, liveStream: () => false, now: () => 200, log: () => undefined })
+      activity.refresh('s', null)
+      await vi.waitFor(() => { expect(calls).toBe(1) })
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(calls).toBe(2)
+      await vi.advanceTimersByTimeAsync(4_000)
+      expect(calls).toBe(3)
+      await vi.waitFor(() => { expect(changes).toBe(1) })
+      expect((await store.get('s', 'd1'))?.status).toBe('running')
+      // It found the Agent: no further reads.
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(calls).toBe(3)
+    } finally { vi.useRealTimers() }
+  })
+
+  it('stop retrying a refresh after a few failed reads (TAL-1305)', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout'] })
+    try {
+      const dir = tempDir()
+      let calls = 0
+      const sidecar = { call: () => { calls += 1; return Promise.reject(new Error('agent down')) } } as unknown as SidecarLike
+      const activity = new BackgroundActivity({ store: new BackgroundTaskStore(testSessionDocuments(dir), () => 200), sidecar: () => sidecar, profileHome: () => dir, liveStream: () => false, now: () => 200, log: () => undefined })
+      activity.refresh('s', null)
+      await vi.advanceTimersByTimeAsync(120_000)
+      expect(calls).toBe(4)
+    } finally { vi.useRealTimers() }
   })
 })
