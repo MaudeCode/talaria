@@ -39,12 +39,17 @@ describe('useSessionListStream invalidation (TAL-1209)', () => {
     expect(invalidated(keys.sessions.status('a'))).toBe(false)
   })
 
-  it('refreshes only the list for an initial frame or an event that names no session', () => {
+  it('refreshes only the list for an initial frame', () => {
     const { list, invalidated, emit } = mountWithCache()
     emit('initial', {})
     expect(invalidated(list)).toBe(true)
     expect(invalidated(keys.sessions.detail('a'))).toBe(false)
-    emit('sessions_changed', { type: 'sessions_changed', version: 3, reason: 'session_import' })
-    expect(invalidated(keys.sessions.detail('b'))).toBe(false)
+  })
+
+  it('refreshes every session for an event that names none, such as a delete from another tab', () => {
+    const { invalidated, emit } = mountWithCache()
+    emit('sessions_changed', { type: 'sessions_changed', version: 3, reason: 'session_delete' })
+    expect(invalidated(keys.sessions.detail('a'))).toBe(true)
+    expect(invalidated(keys.sessions.status('a'))).toBe(true)
   })
 })

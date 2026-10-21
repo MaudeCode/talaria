@@ -39,7 +39,11 @@ export function useSessionListStream() {
     let closed = false
     let handle = openSessionListStream({
       onEvent: (ev) => {
-        if (ev.event === 'sessions_changed') invalidateSidebar(qc, ev.data.session_id)
+        if (ev.event === 'sessions_changed') {
+          if (ev.data.session_id) invalidateSidebar(qc, ev.data.session_id)
+          // No id (a delete, an import, or two sessions' events coalesced): any session may have changed.
+          else void qc.invalidateQueries({ queryKey: keys.sessions.all })
+        }
         else if (ev.event === 'initial') invalidateSidebar(qc)
       },
       onError: () => { /* EventSource retries on its own; the poll below covers long outages */ },
