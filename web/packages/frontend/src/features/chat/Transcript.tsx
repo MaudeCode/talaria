@@ -238,9 +238,18 @@ export function Transcript(props: TranscriptProps) {
     if (!saved || !pane || loadedFrom >= saved.from) return
     let frame = 0
     let passes = 0
+    // A merged turn gets a new key and has no remembered intrinsic height yet.
+    // Measure it while restoring the reader, then return it to off-screen containment.
+    const revealed = virtualize ? [] : rows.flatMap((row) => {
+      if (!saved.anchors.some((anchor) => row.key !== anchor.key && row.assistantRows?.some((part) => part.key === anchor.key))) return []
+      const element = pane.querySelector<HTMLElement>(`[data-message-key="${CSS.escape(row.key)}"]`)
+      return element ? [element] : []
+    })
+    for (const element of revealed) element.style.contentVisibility = 'visible'
+    const release = () => { for (const element of revealed) element.style.removeProperty('content-visibility') }
     // A prepend can enable virtualization; its new rows measure over several frames.
     const restore = () => {
-      if (prependRef.current !== saved) return
+      if (prependRef.current !== saved) { release(); return }
       let offset = saved.offset + pane.scrollHeight - saved.height
       for (const candidate of saved.anchors) {
         const anchor = pane.querySelector<HTMLElement>(`[data-message-key="${CSS.escape(candidate.key)}"]`)
@@ -259,10 +268,10 @@ export function Transcript(props: TranscriptProps) {
       else pane.scrollTop = offset
       lastTopRef.current = pane.scrollTop
       if (++passes < 12) frame = requestAnimationFrame(restore)
-      else prependRef.current = null
+      else { prependRef.current = null; release() }
     }
     restore()
-    return () => cancelAnimationFrame(frame)
+    return () => { cancelAnimationFrame(frame); release() }
   }, [loadedFrom, rows, virtualize, virtualizer])
   useLayoutEffect(() => { prependRef.current = null; readerAnchor.current = null; entryRef.current = { focus: focusKey }; settlingRef.current = true; lastTopRef.current = 0; pin(true) }, [scope, focusKey, pin])
   useLayoutEffect(() => {

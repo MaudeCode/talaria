@@ -1,4 +1,5 @@
 import type { Page, Route } from '@playwright/test'
+import { createServer, type ServerResponse } from 'node:http'
 import { expect, test } from './fixtures'
 
 // Per-action DOM traces serialize the full 2,000-row fixture; retain failure screenshots.
@@ -11,9 +12,125 @@ const transcript = (sid: string, turns: number, from = 0) => Array.from({ length
 ]).flat()
 
 const distance = (page: Page) => page.locator('#messages').evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight)
+const withoutContainment = 'html.without-containment .msg-row{content-visibility:visible!important}'
 
-/** A virtualized transcript renders only the rows near the viewport, so any row of the session proves it rendered. */
-const shows = (page: Page, sid: string) => expect(page.locator('#messages').getByText(new RegExp(`^${sid} question`)).first()).toBeAttached()
+test('off-screen rows stay searchable and reveal their measured content', async ({ page }, testInfo) => {
+  const sid = 'contained-search'
+  await page.route('**/api/settings', (route) => route.fulfill({ json: { virtualize_transcript: false } }))
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: sid, title: 'Long history', messages: transcript(sid, 300) } } }))
+  await page.goto(`/session/${sid}`)
+  await shows(page, sid)
+  await expect(page.locator('[data-message-key]')).toHaveCount(600)
+  await expect.poll(() => distance(page)).toBeLessThan(2)
+  await page.addStyleTag({ content: withoutContainment })
+  for (const baseline of [true, false]) {
+    await page.evaluate((disabled) => document.documentElement.classList.toggle('without-containment', disabled), baseline)
+    await expect.poll(() => distance(page)).toBeLessThan(2)
+    const path = testInfo.outputPath(`${baseline ? 'before' : 'after'}-${testInfo.project.name}.png`)
+    await page.screenshot({ path })
+    await testInfo.attach(baseline ? 'Before' : 'After', { path, contentType: 'image/png' })
+  }
+  const first = page.locator('[data-message-key="1"] .msg-body')
+  await expect.poll(() => first.evaluate((el) => el.checkVisibility({ contentVisibilityAuto: true }))).toBe(false)
+  // Browser text search still selects skipped content; keyed navigation reveals and measures it.
+  expect(await page.evaluate(() => (window as unknown as { find: (text: string) => boolean }).find('contained-search question 1'))).toBe(true)
+  expect(await page.evaluate(() => window.getSelection()?.toString())).toBe('contained-search question 1')
+  await page.locator('[data-message-key="1"]').evaluate((el) => el.scrollIntoView({ block: 'start' }))
+  await expect(first).toBeInViewport()
+  await expect.poll(() => first.evaluate((el) => el.checkVisibility({ contentVisibilityAuto: true }))).toBe(true)
+  await expect(page.locator('[data-message-key]')).toHaveCount(600)
+})
+
+test('off-screen history halves long tasks during a 200-token stream', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'paired CPU measurements use one fixed viewport')
+  test.setTimeout(180_000)
+  const sid = 'contained-history', streamId = 'contained-run'
+  const messages = transcript(sid, 300).map((message) => message.role === 'assistant' ? {
+    ...message,
+    content: Array.from({ length: 8 }, (_, paragraph) => `Paragraph ${paragraph + 1}: ${message.content} **Verified** with a [reference](https://example.test/report).`).join('\n\n'),
+  } : message)
+  let stream: ServerResponse | undefined
+  const server = createServer((_request, response) => {
+    stream = response
+    response.writeHead(200, { 'content-type': 'text/event-stream', 'access-control-allow-origin': process.env.HERMES_E2E_BASE_URL!, 'access-control-allow-credentials': 'true' })
+    response.write(`event: server_turn_started\ndata: ${JSON.stringify({ session_id: sid, stream_id: streamId })}\n\n`)
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address()
+  if (!address || typeof address === 'string') throw new Error('Missing fixture port')
+  await page.route('**/api/settings', (route) => route.fulfill({ json: { virtualize_transcript: false } }))
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: sid, title: 'Long history', messages, active_stream_id: streamId } } }))
+  await page.route('**/api/chat/stream/status?**', (route) => route.fulfill({ json: { active: true, stream_id: streamId, replay_available: true } }))
+  await page.route('**/api/chat/stream?**', (route) => route.continue({ url: `http://127.0.0.1:${address.port}/stream` }))
+  const cpu = await page.context().newCDPSession(page)
+  await cpu.send('Performance.enable')
+  const readTimings = async () => {
+    const result = await cpu.send('Performance.getMetrics')
+    return Object.fromEntries((result.metrics as { name: string; value: number }[]).map((metric) => [metric.name, metric.value]))
+  }
+  try {
+    const samples: number[] = []
+    const timings: Record<string, number>[] = []
+    // Fixed paired repetitions keep one scheduling outlier from deciding a threshold-count benchmark.
+    for (let trial = 0; trial < 3; trial++) {
+      for (const baseline of [true, false]) {
+        stream?.end()
+        stream = undefined
+        await page.goto(`/session/${sid}`)
+        await expect(page.locator('[data-message-key="600"] .msg-body')).toContainText('Paragraph 8:')
+        await expect(page.locator('[data-message-key]')).toHaveCount(600)
+        await expect.poll(() => !!stream).toBe(true)
+        await expect.poll(() => distance(page)).toBeLessThan(2)
+        // Only this test can disable containment; no benchmark switch ships in the app.
+        await page.addStyleTag({ content: withoutContainment })
+        await page.evaluate((disabled) => document.documentElement.classList.toggle('without-containment', disabled), baseline)
+        await page.waitForTimeout(500)
+        await cpu.send('Emulation.setCPUThrottlingRate', { rate: 6 })
+        const before = await readTimings()
+        await page.evaluate(() => {
+          const w = window as unknown as { longTasks: number; observer: PerformanceObserver }
+          w.longTasks = 0
+          w.observer = new PerformanceObserver((list) => { w.longTasks += list.getEntries().length })
+          w.observer.observe({ type: 'longtask' })
+        })
+        for (let token = 0; token < 200; token++) {
+          stream!.write(`event: token\ndata: ${JSON.stringify({ text: 'word ' })}\n\n`)
+          await page.waitForTimeout(30)
+        }
+        await expect(page.locator('.live-turn .msg-body')).toContainText('word '.repeat(200).trim())
+        await page.waitForTimeout(100)
+        samples.push(await page.evaluate(() => {
+          const w = window as unknown as { longTasks: number; observer: PerformanceObserver }
+          w.longTasks += w.observer.takeRecords().length
+          w.observer.disconnect()
+          return w.longTasks
+        }))
+        const after = await readTimings()
+        timings.push(Object.fromEntries(['TaskDuration', 'ScriptDuration', 'LayoutDuration', 'RecalcStyleDuration'].map((name) => [name, (after[name] ?? 0) - (before[name] ?? 0)])))
+        await cpu.send('Emulation.setCPUThrottlingRate', { rate: 1 })
+      }
+    }
+    const median = (offset: number) => samples.filter((_, i) => i % 2 === offset).toSorted((a, b) => a - b)[1]!
+    const baseline = median(0), contained = median(1)
+    console.info('Long-task samples', { baseline, contained, samples, tokens: 200, timings })
+    await testInfo.attach('long-task-counts', { body: JSON.stringify({ baseline, contained, samples, tokens: 200, timings }), contentType: 'application/json' })
+    expect(baseline, 'baseline must exercise long tasks').toBeGreaterThan(0)
+    expect(contained, 'contained long tasks must be at most half the baseline').toBeLessThanOrEqual(baseline / 2)
+  } finally {
+    await cpu.send('Emulation.setCPUThrottlingRate', { rate: 1 })
+    await cpu.detach()
+    await page.goto('about:blank')
+    server.closeAllConnections()
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+  }
+})
+
+/** Wait for the selected session and lazy Markdown before measuring scroll geometry. */
+async function shows(page: Page, sid: string): Promise<void> {
+  await expect(page.locator('#messages').getByText(new RegExp(`^${sid} question`)).first()).toBeAttached()
+  // Markdown is lazy: mounted user rows alone do not mean the transcript has finished laying out.
+  await expect(page.locator('#messages [data-role="assistant"] .msg-body').last()).not.toBeEmpty()
+}
 
 /** Sidebar-style entry: the router changes the session without reloading the page, so the cached transcript shows at once. */
 async function enter(page: Page, sid: string): Promise<void> {
@@ -259,6 +376,7 @@ for (const [virtualize, repeats] of [[false, 1], [true, 1], [false, 50], [true, 
       release!()
       await expect(group).toHaveCount(0)
       const preserved = page.getByText(anchor.text, { exact: true })
+      if (!virtualize) await expect(page.locator('[data-message-key="331"]')).toHaveCSS('content-visibility', 'auto')
       await expect(preserved).toBeInViewport()
       await expect.poll(async () => Math.abs((await preserved.boundingBox())!.y - anchor.top)).toBeLessThan(2)
       await expect(page.locator('[data-history-sentinel]').getByRole('status')).toHaveCount(0)

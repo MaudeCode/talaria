@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Long chats skip rendering off-screen messages while keeping history searchable.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
