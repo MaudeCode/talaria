@@ -1,9 +1,13 @@
+import { channel } from 'node:diagnostics_channel'
 import { str } from './util.js'
 import { diffHunks } from './text/diff.js'
 import { isRasterDataUri } from './raster-image.js'
 import { snapshotArgs, toolArgs, toolDisplay, toolName } from './sessions/tool-display.js'
 import { hasNativeImages, messageText, normalizeUserDisplay } from './sessions/merge.js'
 import { stripAttachedFilesMarker } from './sessions/session.js'
+
+// Supported work instrumentation carries counts only, never transcript text or credentials.
+const assignmentScan = channel('talaria.redaction.assignment-scan')
 /**
  * Credential redaction and the public session projection (Python
  * `api/helpers.py`). API responses are a hard boundary: transcript-bearing
@@ -564,6 +568,7 @@ function mask(token: string): string {
 function restoreCodeEnvKeyLiterals(original: string, redacted: string): string {
   const literalOccurrences = new Map<string, string>()
   const originalCounts = new Map<string, number>()
+  if (assignmentScan.hasSubscribers) assignmentScan.publish({ purpose: 'restore', characters: original.length })
   for (const m of original.matchAll(ENV_KEY_PREFIX_RE)) {
     const prefix = m[1] ?? ''
     const occurrence = originalCounts.get(prefix) ?? 0
@@ -576,6 +581,7 @@ function restoreCodeEnvKeyLiterals(original: string, redacted: string): string {
   const redactedCounts = new Map<string, number>()
   const pieces: string[] = []
   let last = 0
+  if (assignmentScan.hasSubscribers) assignmentScan.publish({ purpose: 'restore', characters: redacted.length })
   for (const m of redacted.matchAll(ENV_KEY_PREFIX_RE)) {
     const prefix = m[1] ?? ''
     const occurrence = redactedCounts.get(prefix) ?? 0
@@ -1777,7 +1783,10 @@ function redactRules(text: string): string {
   out = redactHeaderCredentials(out, BEARER_RE)
   for (const re of [COOKIE_ANSI_RE, COOKIE_SQ_RE, COOKIE_DQ_RE, COOKIE_BARE_RE]) out = out.replace(re, (whole, head: string, value: string) => (/[A-Za-z0-9]/.test(value) ? `${head}***` : whole))
   out = redactCredentialParams(out)
-  if (hasAssignment) out = out.replace(ENV_RE, (whole, key: string, quote: string, value: string) => (/[A-Za-z0-9]/.test(value) && isEnvCredential(key, value) ? `${key}=${quote}${mask(value)}${quote}` : whole))
+  if (hasAssignment) {
+    if (assignmentScan.hasSubscribers) assignmentScan.publish({ purpose: 'mask', characters: out.length })
+    out = out.replace(ENV_RE, (whole, key: string, quote: string, value: string) => (/[A-Za-z0-9]/.test(value) && isEnvCredential(key, value) ? `${key}=${quote}${mask(value)}${quote}` : whole))
+  }
   out = redactEnvSuffixes(out)
   out = out.replace(LISTED_FLAG_RE, (whole, q: string, dash: string, key: string, gap: string, vq: string | undefined, quotedValue: string | undefined, bare: string | undefined) => {
     // An unquoted value (a number, `True`, a nested list) is masked whole.

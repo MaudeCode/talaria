@@ -1,5 +1,6 @@
 import { crc32 } from 'node:zlib'
-import { describe, expect, it, vi } from 'vitest'
+import { subscribe, unsubscribe } from 'node:diagnostics_channel'
+import { describe, expect, it } from 'vitest'
 import { mightContainSensitiveText, publicToolFrame, redactSensitive, redactSessionData, redactText } from './redact.js'
 import { MessageSchema } from '@maudecode/talaria-web-contracts'
 import { sanitizeShareMessage } from './sessions/shares.js'
@@ -553,32 +554,22 @@ describe('redactSensitive cost', () => {
   })
 
   it('skips assignment-family scans when their required equals delimiter is absent (TAL-1029)', () => {
-    // eslint-disable-next-line @typescript-eslint/unbound-method -- Called with the scanned regex as this below.
-    const nativeExec = RegExp.prototype.exec
-    const scans = new Map<string, number>()
-    const spy = vi.spyOn(RegExp.prototype, 'exec').mockImplementation(function (this: RegExp, text: string) {
-      // Observe the two global assignment regexes, including matchAll's cloned regex.
-      if (this.global && this.source.startsWith('([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)')) {
-        scans.set(this.source, (scans.get(this.source) ?? 0) + 1)
-      }
-      return nativeExec.call(this, text)
-    })
-    let assignmentScans: number
-    let impossibleScans: number
+    const scans: unknown[] = []
+    const onScan = (message: unknown): void => { scans.push(message) }
+    subscribe('talaria.redaction.assignment-scan', onScan)
     try {
       redactSensitive('API_KEY=secret API_KEY=)')
-      assignmentScans = scans.size
-      scans.clear()
+      expect(scans).toContainEqual({ purpose: 'mask', characters: expect.any(Number) as unknown })
+      expect(scans).toContainEqual({ purpose: 'restore', characters: expect.any(Number) as unknown })
+      scans.length = 0
       for (const size of [64 * 1024, 256 * 1024]) {
         const text = `https://example.test/${'UPPERCASE_TOKEN_TEXT/'.repeat(Math.ceil(size / 21))}`.slice(0, size)
         expect(redactSensitive(text)).toBe(text)
       }
-      impossibleScans = [...scans.values()].reduce((sum, count) => sum + count, 0)
+      expect(scans).toEqual([])
     } finally {
-      spy.mockRestore()
+      unsubscribe('talaria.redaction.assignment-scan', onScan)
     }
-    expect(assignmentScans).toBe(2)
-    expect(impossibleScans).toBe(0)
   })
 
   it('stays linear on long runs of scheme and identifier characters', () => {
