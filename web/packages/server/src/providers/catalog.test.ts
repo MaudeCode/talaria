@@ -56,6 +56,31 @@ describe('shared admission catalog discovery (TAL-1196)', () => {
     expect(catalog.sessionModelRepair(home, 'ds-model', 'ollama')).toEqual(['ds-model', 'deepseek'])
   })
 
+  it.each(['profile', 'all'] as const)('retires a pre-refresh build on %s invalidation without discarding confirmed live ids', async (scope) => {
+    let release!: () => void
+    let entered!: () => void
+    const held = new Promise<void>((resolve) => { release = resolve })
+    const started = new Promise<void>((resolve) => { entered = resolve })
+    let first = true
+    sidecar.respond('models.speed_tiers', async (params) => {
+      if (first) { first = false; entered(); await held }
+      return { tiers: params.routes.map(() => []) }
+    })
+    const old = catalog.models(home)
+    await started
+    sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: p.provider === 'deepseek' ? ['ds-new'] : [] }))
+    catalog.invalidate(scope === 'profile' ? home : undefined, 'deepseek', { preserveConfirmed: true })
+    await catalog.liveModelIds(home, 'deepseek', { force: true })
+    let result: ModelsCatalog | undefined
+    const refreshed = catalog.pickerModels(home, 'default').then((value) => { result = value })
+    try {
+      await vi.waitFor(() => { expect(result, 'explicit refresh must not join the pre-refresh build').toBeDefined() })
+      expect(catalog.modelOptionFor(home, 'ds-new', 'deepseek')).toBe('@deepseek:ds-new')
+    } finally { release(); await Promise.all([old, refreshed]) }
+    expect(catalog.modelOptionFor(home, 'ds-new', 'deepseek')).toBe('@deepseek:ds-new')
+    expect(catalog.modelOptionFor(home, 'ds-model', 'deepseek')).toBeNull()
+  })
+
   it.each(['stale', 'failed', 'unconfirmed'] as const)('keeps the pair for %s evidence until a shared background refresh confirms it', async (state) => {
     await catalog.models(home)
     if (state === 'stale') clock += 31
