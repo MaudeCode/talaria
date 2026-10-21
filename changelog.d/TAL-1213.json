@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Replies finish sooner in long chats because saving a chat does less work and no longer waits for the chat list to update.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

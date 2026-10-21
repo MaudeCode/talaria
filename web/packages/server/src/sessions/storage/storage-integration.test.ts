@@ -21,11 +21,18 @@ it('batches concurrent session saves into one index flush', async () => {
     first.messages.push({ role: 'assistant', content: 'first answer' })
     second.messages.push({ role: 'assistant', content: 'second answer' })
     writeIndex.mockRejectedValueOnce(new Error('synthetic index failure'))
-    const failed = await Promise.allSettled([store.save(first), store.save(second)])
-    expect(failed.map((result) => result.status)).toEqual(['rejected', 'rejected'])
+    // The session files are committed; a failed index batch neither fails the saves nor drops their rows.
     await Promise.all([store.save(first), store.save(second)])
+    expect((await store.readIndexEntries()).map((row) => row.message_count)).toEqual([1, 1])
+    await store.queueIndexUpdate([])
     expect(writeIndex).toHaveBeenCalledTimes(3)
     expect((await store.readIndexEntries()).map((row) => row.message_count)).toEqual([2, 2])
+    first.messages.push({ role: 'user', content: 'again' })
+    writeIndex.mockRejectedValueOnce(new Error('synthetic index failure'))
+    await store.save(first)
+    await store.delete(first.session_id)
+    await store.queueIndexUpdate([])
+    expect((await store.readIndexEntries()).map((row) => row.session_id)).toEqual([second.session_id])
   } finally { vi.restoreAllMocks(); await server.close() }
 })
 

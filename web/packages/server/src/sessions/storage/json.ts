@@ -100,15 +100,18 @@ class JsonSessions implements SessionBackend {
     const path = this.path(sid)
     if (change.doc.session_id !== sid) throw new Error('Session document identity does not match its key')
     if (statSignature(path) !== expected) throw new RevisionConflict(sid)
+    const edit = change.messages
+    // Appends and growing splices cannot shrink the file, so with the full list in hand there is no base to re-read.
+    const mayShrink = edit.kind === 'replace' || (edit.kind === 'splice' && edit.deleteCount > edit.rows.length)
     let previous: Record<string, unknown> | null = null
     let previousText: string | null = null
-    if (existsSync(path)) {
+    if ((!change.all || mayShrink) && existsSync(path)) {
       previousText = readFileSync(path, 'utf8')
       try { previous = JSON.parse(previousText) as Record<string, unknown> } catch { /* a replacement may repair corruption */ }
     }
     let rows: Message[] = Array.isArray(previous?.messages) ? [...previous.messages as Message[]] : []
-    const edit = change.messages
-    if (edit.kind === 'replace') rows = [...edit.rows]
+    if (change.all) rows = change.all
+    else if (edit.kind === 'replace') rows = [...edit.rows]
     else if (edit.kind === 'append') rows = rows.concat(edit.rows)
     else if (edit.kind === 'splice') rows = [...rows.slice(0, edit.from), ...edit.rows, ...rows.slice(edit.from + edit.deleteCount)]
     const document: Record<string, unknown> = {}
@@ -118,7 +121,7 @@ class JsonSessions implements SessionBackend {
       if (key === 'anchor_scene_index') document.messages = rows
     }
     document.messages ??= rows
-    const payload = JSON.stringify(document, null, 2)
+    const payload = JSON.stringify(document)
     mkdirSync(this.options.directory, { recursive: true })
     if (previousText !== null && Array.isArray(previous?.messages) && previous.messages.length > rows.length) {
       try { writeAtomic(`${path}.bak`, previousText) } catch { /* backup is best effort */ }
