@@ -64,6 +64,8 @@ export async function ensureAgentRuntimeCurrent(sidecar: SidecarLike | null): Pr
 
 /** The health probe is also the browser's server-reachability probe (30 s), so the readiness check answers well inside it. */
 const CHAT_READINESS_CHECK_TIMEOUT_MS = 5_000
+/** TAL-1254: how soon a worktree lock the sidecar could not confirm is tried again. */
+export const WORKTREE_RETAIN_RETRY_MS = 60_000
 
 /**
  * TAL-951: whether a chat turn would be admitted now. Ready and source-stale incompatible sidecars both run turn
@@ -190,6 +192,7 @@ export class SessionService {
   private readonly compressionJobs: CompressionJobs
   /** TAL-1005: the turns now waiting on their session's compression job before they read its history. */
   private readonly compactionWaiters = new Set<string>()
+  private worktreeRetainRetry: ReturnType<typeof setTimeout> | null = null
 
   constructor(readonly deps: SessionServiceDeps) {
     this.compressionJobs = new CompressionJobs()
@@ -1526,14 +1529,26 @@ export class SessionService {
   /**
    * TAL-1254: relock the worktrees of every unarchived worktree chat (or just `only`) for the running sidecar, so the
    * Agent's worktree sweep reads them as live, and flag each one git no longer has as retained. Runs before a
-   * (re)started sidecar reports ready and when a chat is unarchived; a tree whose state is unknown keeps its flag.
+   * (re)started sidecar reports ready and when a chat is unarchived. The Agent's sweep runs outside Talaria, so a lock
+   * the sidecar could not confirm is retried until git takes it; meanwhile that tree keeps its flag.
    */
   async retainWorktrees(call: SidecarLike['call'], only?: Session): Promise<void> {
     const rows = only ? [only.compact()] : await this.store.readIndexEntries().catch(async () =>
       (await Promise.all([...(await this.store.persistedIds())].map(async (sid) => (await this.store.loadMetadataOnly(sid))?.compact()))).filter((row) => row !== undefined))
     const targets = rows.filter((row) => !row.archived && typeof row.worktree_path === 'string' && row.worktree_path && typeof row.session_id === 'string')
     if (!targets.length) return
-    const { results } = await call('worktree.retain', { paths: [...new Set(targets.map((row) => String(row.worktree_path)))] })
+    let results: Record<string, string>
+    try {
+      ({ results } = await call('worktree.retain', { paths: [...new Set(targets.map((row) => String(row.worktree_path)))] }))
+    } catch (error) {
+      this.retryWorktreeRetention()
+      throw error
+    }
+    const unconfirmed = targets.filter((row) => !results[String(row.worktree_path)]).length
+    if (unconfirmed) {
+      this.deps.log(`[webui] could not lock ${String(unconfirmed)} worktree(s) for the sidecar; retrying`)
+      this.retryWorktreeRetention()
+    }
     for (const row of targets) {
       const state = results[String(row.worktree_path)]
       if (!state || (state === 'missing') === (row[WORKTREE_RETAINED_KEY] === true)) continue
@@ -1548,6 +1563,18 @@ export class SessionService {
         this.publish('session_worktree', s.profile, sid)
       } catch (error) { if (!(error instanceof SessionNotFound)) throw error }
     }
+  }
+
+  /** One pending retry at a time; a sidecar that is not ready by then retains everything in its next ready gate instead. */
+  private retryWorktreeRetention(): void {
+    if (this.worktreeRetainRetry) return
+    this.worktreeRetainRetry = setTimeout(() => {
+      this.worktreeRetainRetry = null
+      const sidecar = this.deps.sidecar?.()
+      if (sidecar?.status !== 'ready') return
+      this.retainWorktrees((method, params, opts) => sidecar.call(method, params, opts)).catch((error: unknown) => { this.deps.log(`[webui] worktree lock retry failed: ${String(error)}`) })
+    }, WORKTREE_RETAIN_RETRY_MS)
+    this.worktreeRetainRetry.unref()
   }
 
   async archive(sid: string, archived: boolean): Promise<Record<string, unknown>> {
