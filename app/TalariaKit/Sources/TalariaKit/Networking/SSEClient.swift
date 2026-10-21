@@ -123,6 +123,7 @@ public enum SSEEvent: Equatable {
     case interimAssistant(InterimAssistantStreamEvent)
     case reasoning(ReasoningStreamEvent)
     case toolStarted(ToolStreamEvent)
+    case toolProgress(ToolStreamEvent)
     case toolCompleted(ToolStreamEvent)
     case title(TitleStreamEvent)
     case metering(MeteringStreamEvent)
@@ -250,6 +251,7 @@ public struct ToolStreamEvent: Decodable, Equatable {
     public let stableID: String?
     public let kind: ToolDisplayKind?
     public let target: String?
+    public let progress: ToolProgress?
     /// TAL-315: the server's result sections, on a completion.
     public let resultView: ToolResultView?
     /// TAL-448: a file edit's change, on a completion.
@@ -262,6 +264,7 @@ public struct ToolStreamEvent: Decodable, Equatable {
         case args
         case kind
         case target
+        case progress
         case resultView = "result_view"
         case editDiff = "edit_diff"
         case duration
@@ -280,7 +283,8 @@ public struct ToolStreamEvent: Decodable, Equatable {
         kind: ToolDisplayKind? = nil,
         target: String? = nil,
         resultView: ToolResultView? = nil,
-        editDiff: ToolEditDiff? = nil
+        editDiff: ToolEditDiff? = nil,
+        progress: ToolProgress? = nil
     ) {
         self.eventType = eventType
         self.name = name
@@ -293,6 +297,7 @@ public struct ToolStreamEvent: Decodable, Equatable {
         self.target = target
         self.resultView = resultView
         self.editDiff = editDiff
+        self.progress = progress
     }
 
     public init(from decoder: Decoder) throws {
@@ -307,6 +312,7 @@ public struct ToolStreamEvent: Decodable, Equatable {
         target = container.decodeLossyStringIfPresent(forKey: .target)
         resultView = try? container.decodeIfPresent(ToolResultView.self, forKey: .resultView)
         editDiff = try? container.decodeIfPresent(ToolEditDiff.self, forKey: .editDiff)
+        progress = try? container.decodeIfPresent(ToolProgress.self, forKey: .progress)
         stableID = container.decodeLossyStringIfPresent(forKey: .stableID)?.nonEmptyToolStreamID
     }
 }
@@ -417,6 +423,10 @@ struct SSEEventDecoder {
         case "tool":
             let payload = decodePayload(ToolStreamEvent.self, eventType: eventType, from: eventData, decoder: decoder)
             return .toolStarted(payload ?? ToolStreamEvent())
+        case "tool_progress":
+            guard let payload = decodePayload(ToolStreamEvent.self, eventType: eventType, from: eventData, decoder: decoder),
+                  payload.stableID != nil else { return .ignored }
+            return .toolProgress(payload)
         case "tool_complete":
             let payload = decodePayload(ToolStreamEvent.self, eventType: eventType, from: eventData, decoder: decoder)
             return .toolCompleted(payload ?? ToolStreamEvent())
@@ -559,6 +569,7 @@ private extension ToolStreamEvent {
         target = nil
         resultView = nil
         editDiff = nil
+        progress = nil
     }
 }
 

@@ -4,8 +4,15 @@ import SwiftUI
 public struct ToolCallStatusDisplay: Equatable {
     let collapsedText: String?
     public let detailText: String
+    public let progressText: String?
 
     public init(toolCall: ToolCall) {
+        let progress = toolCall.isCompleted ? nil : toolCall.progress
+        let parts = [
+            progress?.percent.map { ($0 / 100).formatted(.percent.precision(.fractionLength(0))) },
+            progress?.message
+        ].compactMap { $0 }
+        progressText = parts.isEmpty ? nil : parts.joined(separator: " · ")
         if toolCall.isError == true {
             collapsedText = String(localized: "Failed")
             detailText = String(localized: "Failed")

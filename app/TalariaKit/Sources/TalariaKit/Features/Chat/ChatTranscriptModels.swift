@@ -137,6 +137,7 @@ public struct AssistantTurnLayout: Equatable {
         merged.preview = live.preview ?? call.preview
         merged.resultView = live.resultView ?? call.resultView
         merged.editDiff = live.editDiff ?? call.editDiff
+        merged.progress = live.progress
         return merged
     }
 }
@@ -701,6 +702,7 @@ public struct AssistantActivityTimeline: Equatable {
             args: Self.object(object["args"]),
             kind: ToolDisplayKind(serverValue: Self.string(object["kind"])),
             target: Self.string(object["target"]),
+            progress: ToolProgress(object["progress"]),
             resultView: ToolResultView(object["result_view"]),
             editDiff: ToolEditDiff(object["edit_diff"]),
             duration: Self.number(object["duration"]),
@@ -750,6 +752,7 @@ public struct AssistantActivityTimeline: Equatable {
             args: args,
             kind: ToolDisplayKind(serverValue: Self.string(object["kind"])),
             target: Self.string(object["target"]),
+            progress: ToolProgress(object["progress"]),
             resultView: ToolResultView(object["result_view"]),
             editDiff: ToolEditDiff(object["edit_diff"]),
             duration: Self.number(object["duration"]),

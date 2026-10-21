@@ -761,6 +761,14 @@ final class SSEClientTests: XCTestCase {
         XCTAssertEqual(SSEEventDecoder.decode(eventType: "notices", data: #"{"session_id":"s"}"#), .ignored)
     }
 
+    func testSharedToolProgressIsNotDiscarded() throws {
+        let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: sharedContractFixture("tool-progress")) as? [String: [String: Any]])
+        let frame = try XCTUnwrap(fixture["running"])
+        let data = try JSONSerialization.data(withJSONObject: XCTUnwrap(frame["data"]))
+        let event = SSEEventDecoder.decode(eventType: "tool_progress", data: String(decoding: data, as: UTF8.self))
+        XCTAssertNotEqual(event, .ignored, "The App discarded the server's live MCP tool progress")
+    }
+
     func testPromptReadingRunStatusIsNotDiscarded() throws {
         let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: sharedContractFixture("prompt-reading")) as? [String: [String: Any]])
         for key in ["progress", "unknown", "cleared"] {

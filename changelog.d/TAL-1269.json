@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "See live progress and status messages while MCP tools run in chat.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

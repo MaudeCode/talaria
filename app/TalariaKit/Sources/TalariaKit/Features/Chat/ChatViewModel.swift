@@ -5519,7 +5519,7 @@ public final class ChatViewModel {
             activeBtwAnswer = "Error: \(message)"
             updateActiveBtwMessage(isLoading: false)
             finishBtwStream()
-        case .heartbeat, .ignored, .reasoning, .toolStarted, .toolCompleted, .title, .metering, .steerConsumed, .steerPending, .steerWithdrawn, .notices,
+        case .heartbeat, .ignored, .reasoning, .toolStarted, .toolProgress, .toolCompleted, .title, .metering, .steerConsumed, .steerPending, .steerWithdrawn, .notices,
              .runStatus, .compressing, .compressed:
             break
         }
@@ -5895,11 +5895,43 @@ public final class ChatViewModel {
                 preview: payload.preview,
                 args: payload.args,
                 kind: payload.kind,
-                target: payload.target
+                target: payload.target,
+                progress: payload.progress
             )
         )
         scheduleStreamingScrollTrigger()
         return true
+    }
+
+    @discardableResult
+    private func updateToolProgress(_ payload: ToolStreamEvent) -> Bool {
+        guard let stableID = payload.stableID else { return false }
+        if let index = liveToolCallCompletionIndex(for: payload) {
+            return liveAssistantActivity.updateTool(at: index) { call in
+                var call = call
+                call.progress = payload.progress
+                return call
+            }
+        }
+        // A reload can attach after the start frame. Continue the server's existing scene row in place.
+        guard !liveToolCalls.contains(where: { $0.id == stableID }),
+              let message = messages.last(where: { $0.activityScene?.terminalState == "running" }),
+              var call = AssistantActivityTimeline.authoritativeScene(message: message)?.toolCalls
+                .first(where: { $0.id == stableID && !$0.isCompleted })
+        else { return false }
+        call.progress = payload.progress
+        liveAssistantActivity.appendTool(call)
+        return true
+    }
+
+    private func clearLiveToolProgress() {
+        for index in liveToolCalls.indices where liveToolCalls[index].progress != nil {
+            _ = liveAssistantActivity.updateTool(at: index) { call in
+                var call = call
+                call.progress = nil
+                return call
+            }
+        }
     }
 
     @discardableResult
@@ -6569,12 +6601,14 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
     }
 
     public func streamCoordinatorDidCompleteCurrentResponse(needsTranscriptRefresh: Bool, outcome: ResponseCompletionOutcome) {
+        clearLiveToolProgress()
         responseCompletionNeedsTranscriptRefresh = needsTranscriptRefresh
         responseCompletionOutcome = outcome
         responseCompletionHapticTrigger += 1
     }
 
     public func streamCoordinatorDidFinishStream() {
+        clearLiveToolProgress()
         flushPendingStreamingContent()
         responseCompletionNeedsTranscriptRefresh = false
     }
@@ -6621,6 +6655,11 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
     @discardableResult
     public func streamCoordinatorAppendToolCall(_ payload: ToolStreamEvent) -> Bool {
         appendToolCall(payload)
+    }
+
+    @discardableResult
+    public func streamCoordinatorUpdateToolProgress(_ payload: ToolStreamEvent) -> Bool {
+        updateToolProgress(payload)
     }
 
     @discardableResult
