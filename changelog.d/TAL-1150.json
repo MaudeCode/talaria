@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Keep skills visible and inspectable when switching to newer Hermes Agent versions.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
