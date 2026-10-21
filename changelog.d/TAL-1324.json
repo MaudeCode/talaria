@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Continue canonical chats in profiles served by a verified shared gateway.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

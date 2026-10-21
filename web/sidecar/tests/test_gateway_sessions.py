@@ -147,12 +147,13 @@ def native_owner_stub(tmp_path, monkeypatch):
     from types import SimpleNamespace
     from talaria_sidecar.methods import gateway_sessions as adapter
 
-    owner = SimpleNamespace(receipt=None, replay=[], events=[], payload=None, calls=[], config_failure=None)
+    owner = SimpleNamespace(receipt=None, replay=[], events=[], payload=None, calls=[], config_failure=None,
+                            described={"instance_id": "owner", "profile_id": "profile", "authority_epoch": 1,
+                                       "capabilities": ["durable-admission-v1", "event-replay-v1"]})
     async def rpc(method, **params):
         owner.calls.append((method, params))
         if method == "runtime.describe":
-            return {"instance_id": "owner", "profile_id": "profile", "authority_epoch": 1,
-                    "capabilities": ["durable-admission-v1", "event-replay-v1"]}
+            return owner.described
         if method == "session.resume":
             return {"session_id": params["session_id"], "subscription_id": "viewer", "messages": [], "info": {},
                     "replay_epoch": "epoch", "last_sequence": 4, "execution_generation": 1}
@@ -178,10 +179,72 @@ def native_owner_stub(tmp_path, monkeypatch):
     monkeypatch.setattr(adapter, "_control_refusal", lambda *args: None)
     endpoint = SimpleNamespace(control_home=None, instance_id="owner", profile_id="profile", authority_epoch=1)
     found = SimpleNamespace(endpoint=endpoint, state="ready")
+    owner.endpoint, owner.discovery = endpoint, found
     monkeypatch.setattr(adapter, "_with_owner", lambda home, run: asyncio.run(run(found)))
     owner.session = adapter.session
     owner.run = lambda ctx, params: asyncio.run(adapter._run(ctx, params, tmp_path, found))
     return owner
+
+
+@pytest.mark.parametrize("sha,attached", [
+    ("4d04303818b61bf3aa09278af48356315515965b", True),
+    ("5b147ab036d6d19131bff8d20701b5001eab844a", False),
+    ("0.22.4", False), (None, False), ("unknown", False),
+])
+def test_served_owner_requires_verified_runtime_revision(tmp_path, native_owner_stub, sha, attached):
+    owner = native_owner_stub
+    owner.endpoint.control_home = str(tmp_path.parent)
+    owner.endpoint.code_sha = sha
+    result = owner.run(None, {"session_id": "chat", "action": "snapshot"})
+    assert (result["state"] == "attached") is attached, result
+    if not attached:
+        assert result["reason"] == "served_profile_sessions_unavailable"
+        assert owner.calls == []
+
+
+@pytest.mark.parametrize("field,value", [
+    ("instance_id", "previous-owner"), ("profile_id", "other-profile"), ("authority_epoch", 2),
+    ("authority_epoch", True), ("capabilities", None), ("capabilities", "durable-admission-v1,event-replay-v1"),
+    ("capabilities", []), ("capabilities", ["durable-admission-v1", {}]),
+])
+def test_served_owner_rechecks_authenticated_identity(tmp_path, native_owner_stub, field, value):
+    owner = native_owner_stub
+    owner.endpoint.control_home = str(tmp_path.parent)
+    owner.endpoint.code_sha = "4d04303818b61bf3aa09278af48356315515965b"
+    owner.described[field] = value
+    result = owner.run(None, {"session_id": "chat", "action": "snapshot"})
+    assert (result["state"], result["reason"]) == ("incompatible", "owner_capabilities"), result
+    assert owner.calls == [("runtime.describe", {})]
+
+
+@pytest.mark.parametrize("record", ["unreadable", "{", "null", "{}", '{"nativeContracts":null}',
+    '{"nativeContracts":{"served-local-policy-v1":"0.22.4"}}',
+    '{"nativeContracts":{"served-local-policy-v1":[null]}}'])
+def test_unreadable_served_contract_fails_closed(tmp_path, native_owner_stub, monkeypatch, record):
+    def read(*args, **kwargs):
+        if record == "unreadable":
+            raise OSError("unreadable contract")
+        return record
+    monkeypatch.setattr(Path, "read_text", read)
+    owner = native_owner_stub
+    owner.endpoint.control_home = str(tmp_path.parent)
+    owner.endpoint.code_sha = "4d04303818b61bf3aa09278af48356315515965b"
+    result = owner.run(None, {"session_id": "chat", "action": "snapshot"})
+    assert result["reason"] == "served_profile_sessions_unavailable", result
+    assert owner.calls == []
+
+
+def test_verified_served_owner_keeps_restart_and_diagnostic_gates(tmp_path, native_owner_stub):
+    from talaria_sidecar.methods import gateway_sessions as adapter
+    owner = native_owner_stub
+    owner.endpoint.control_home = str(tmp_path.parent)
+    owner.endpoint.code_sha = "4d04303818b61bf3aa09278af48356315515965b"
+    owner.discovery.state = "draining"
+    result = owner.run(None, {"session_id": "chat", "action": "submit", "text": "wait", "request_id": "wait"})
+    assert (result["state"], result["reason"]) == ("refused", "gateway_restarting"), result
+    assert owner.calls == []
+    assert owner.run(None, {"session_id": "chat", "action": "snapshot"})["state"] == "attached"
+    assert adapter._served(tmp_path, owner.endpoint), "diagnostic creation requires its own verified contract"
 
 
 @pytest.mark.parametrize("receipt", [

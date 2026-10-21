@@ -40,6 +40,19 @@ the checker refuses a record with any other count, a repeated identity, a
 mutable reference, or a pin outside the set. Promoting a newer release replaces
 the oldest entry only after the candidate passes.
 
+The optional `nativeContracts` section records exact boot revisions proven for an
+additional native-owner contract, independently of release promotion. TAL-1324
+verifies `served-local-policy-v1` on Agent v0.22.4. The sidecar admits served
+canonical sessions only when private control discovery reports one of those
+revisions and the authenticated owner's profile, instance, authority epoch and
+session capabilities match. A local checkout or package version cannot authorize
+the connection. Missing or unreadable evidence retains
+`served_profile_sessions_unavailable`. Diagnostic creation remains dedicated-only.
+The existing `[profiles]` compatibility case uses separate loopback model peers,
+creates the primary LOCAL adapter first, and checks the secondary model pick,
+workspace, credentials, tool policy and transcript during a concurrent primary
+turn and after owner replacement. Other supported revisions exercise refusal.
+
 At handshake the sidecar reports `{agent_revision, agent_version, pinned_revision,
 pinned_version, compatible, stale, update_state}`. `compatible` means the Agent
 imported; a different revision than the pin gets a warning and can attempt Agent

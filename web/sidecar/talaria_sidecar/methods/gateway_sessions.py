@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager, closing, suppress
 from importlib.util import find_spec
 import json
 from pathlib import Path
+import re
 import sqlite3
 
 from ..errors import InvalidParams
@@ -113,17 +114,31 @@ async def _connect(home: Path, endpoint):
                 await reader
 
 
-def _served(home: Path, endpoint) -> bool:
-    # v1's served LOCAL route can lose its frozen policy when the shared runner pins
-    # transport identity. A dedicated owner's profile is isolated; a served profile
-    # needs a verified execution contract before Talaria may submit through it.
-    return bool(endpoint.control_home) and Path(endpoint.control_home).resolve() != home
+def _served(home: Path, endpoint, *, allow_verified: bool = False) -> bool:
+    if not endpoint.control_home or Path(endpoint.control_home).resolve() == home:
+        return False
+    if not allow_verified:
+        return True
+    # The private control socket reports the owner's boot revision, not the sidecar's
+    # checkout or a version label. The authenticated describe must still match below.
+    try:
+        record = json.loads((Path(__file__).resolve().parents[2] / "agent_support.json").read_text())
+        revisions = record["nativeContracts"]["served-local-policy-v1"]
+        return (not isinstance(revisions, list)
+                or not all(isinstance(sha, str) and re.fullmatch(r"[0-9a-f]{40}", sha) for sha in revisions)
+                or getattr(endpoint, "code_sha", None) not in revisions)
+    except (OSError, ValueError, KeyError, TypeError):
+        return True
 
 
 def _owner_refusal(described: dict, endpoint) -> dict | None:
-    if (described.get("instance_id") != endpoint.instance_id
+    if (not isinstance(described, dict)
+            or described.get("instance_id") != endpoint.instance_id
             or described.get("profile_id") != endpoint.profile_id
+            or type(described.get("authority_epoch")) is not int
             or described.get("authority_epoch") != endpoint.authority_epoch
+            or not isinstance(described.get("capabilities"), list)
+            or not all(isinstance(capability, str) for capability in described["capabilities"])
             or not _CAPABILITIES.issubset(described.get("capabilities", []))):
         return _refused("incompatible", "owner_capabilities")
     return None
@@ -133,7 +148,7 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
     from hermes_cli.gateway_client import GatewayRPCError
 
     endpoint = discovery.endpoint
-    if _served(home, endpoint):
+    if _served(home, endpoint, allow_verified=True):
         return _refused("incompatible", "served_profile_sessions_unavailable")
     restarting = discovery.state != "ready"
     if restarting and params["action"] not in _RESTART_ACTIONS:
