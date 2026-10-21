@@ -2645,6 +2645,13 @@
       "cases": [
         ""
       ]
+    },
+    "tests/test_gateway_sessions.py::test_real_owner_voice_stop_succeeds_without_admission": {
+      "layer": "compatibility",
+      "reason": "A real native owner consumes a typed stop with no admission after another viewer enables voice; the real Web HTTP boundary must accept its exact receipt. No audio hardware or provider request.",
+      "cases": [
+        ""
+      ]
     }
   }
 }

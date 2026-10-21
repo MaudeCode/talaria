@@ -248,6 +248,11 @@ export class GatewaySessions {
     const closeSubmit = timing?.begin('owner_submit')
     const result = await this.call(target, { action: 'submit', request_id: body.submission_id, text })
     closeSubmit?.(result.receipt ? 'ok' : result.state === 'unavailable' ? 'unknown' : 'refused')
+    if (result.state === 'attached' && result.snapshot && result.receipt?.voice_stopped === true) {
+      const watch = this.watches.get(target.key)
+      return { ok: true, status: 'suppressed', reason: 'voice_stopped', session_id: sid,
+        owner_attachment: this.attachment(result), session: await this.view(base, result, watch?.stream ?? null, target) }
+    }
     if (!result.receipt || !('admission_id' in result.receipt)) throw new HttpFailure(409, 'The owner did not confirm this admission. Reconcile it before resending.', { owner_attachment: this.attachment(result), outcome_unknown: result.state === 'unavailable' })
     const snapshot = result.snapshot
     const watch = snapshot && (snapshot.running || snapshot.pending.some((p) => p.status === 'queued' || p.status === 'started')) ? this.watches.get(target.key) ?? this.watch(target, base, snapshot) : null

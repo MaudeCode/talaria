@@ -163,6 +163,37 @@ describe('canonical owner attachment', () => {
     }
   }
 
+  it.each([false, true])('accepts a voice stop without an admission or replacing an owner watch, running=%s', async (running) => {
+    const snap = snapshot({ running, pending: running ? [admission()] : [] })
+    const watch = running ? await observeOwner(snap) : null
+    const original = sidecar.responderFor('gateway.session')
+    sidecar.respond('gateway.session', (params, emit, opts) => params.action === 'submit'
+      ? { ...attached(snap), receipt: { voice_stopped: true } }
+      : original ? original(params, emit, opts) : attached(snap))
+    try {
+      const response = await post('/api/chat/start', { session_id: sid, message: 'stop', submission_id: 'voice-stop-once' })
+      expect(response.status, await response.clone().text()).toBe(200)
+      const body = await response.json()
+      expect(body).toMatchObject({ ok: true, status: 'suppressed', reason: 'voice_stopped', owner_attachment: { state: 'attached' }, session: { session_id: sid } })
+      expect(body).not.toHaveProperty('admission_id')
+      expect(body).not.toHaveProperty('stream_id')
+      expect(body).not.toHaveProperty('outcome_unknown')
+      expect(s.deps.registry.activeRunStreamForSession(sid)).toBe(watch?.stream ?? null)
+      expect(sidecar.calls.filter((c) => c.method === 'gateway.session' && (c.params as { action: string }).action === 'submit')).toHaveLength(1)
+      expect(sidecar.calls.filter((c) => c.method === 'gateway.session' && (c.params as { action: string }).action === 'watch')).toHaveLength(running ? 1 : 0)
+      expect(sidecar.calls.some((c) => c.method === 'chat.start')).toBe(false)
+    } finally { if (watch) { watch.finish(); await watch.read } }
+  })
+
+  it.each([{ voice_stopped: false }, { voice_stopped: 'true' }, { voice_stopped: true, extra: 'ambiguous' }, { ...admission(), voice_stopped: true }])('keeps an invalid voice-stop receipt unknown (%j)', async (receipt) => {
+    // Inject untrusted output so the fake validates it exactly as the real client does.
+    sidecar.respond('gateway.session', (params) => ({ ...attached(snapshot()), receipt: params.action === 'submit' ? receipt as GatewaySessionResult['receipt'] : null }))
+    const response = await post('/api/chat/start', { session_id: sid, message: 'stop', submission_id: 'invalid-stop' })
+    expect(response.status).toBe(409)
+    expect(await response.json()).toMatchObject({ outcome_unknown: true, owner_attachment: { state: 'unavailable' } })
+    expect(sidecar.calls.filter((c) => c.method === 'gateway.session' && (c.params as { action: string }).action === 'submit')).toHaveLength(1)
+  })
+
   it('keeps the owner watch attached when the reasoning preference is unavailable', async () => {
     let release!: () => void
     const gate = new Promise<void>((resolve) => { release = resolve })

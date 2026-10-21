@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Stopping voice mode in an Agent-owned chat no longer shows an error or leaves the stop message in the conversation.",
+      "highlight": false,
+      "components": ["web", "app"]
+    }
+  ]
+}
