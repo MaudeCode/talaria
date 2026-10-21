@@ -10,7 +10,7 @@ import { str } from '../util.js'
 import { CliSessionSource } from './cli-sessions.js'
 import { GatewayWatcher } from './gateway-watcher.js'
 import { Session } from './session.js'
-import { crashStateDbWorkerForTests, readImportableAgentSessionRowsAsync, setStateDbReadDelayForTests, stopStateDbWorker } from './state-db.js'
+import { crashStateDbWorkerForTests, readImportableAgentSessionRowsAsync, setStateDbReadDelayForTests, stateDbSessionReadAsync, stopStateDbWorker } from './state-db.js'
 
 type Json = Record<string, unknown>
 
@@ -123,6 +123,13 @@ describe('session list state.db reads off the event loop (TAL-920)', () => {
     watcher.stop()
     const agentSessions = (s.deps.relay as unknown as { deps: { agentSessions: (profile: string) => Promise<Json[]> } }).deps.agentSessions
     expect((await agentSessions('default')).map((r) => r.id)).toContain('tg-a')
+    expect(mainThreadOpens.filter((path) => path === dbPath)).toEqual([])
+  })
+
+  it('reads cron admissions and completion links only on the worker', async () => {
+    mainThreadOpens.length = 0
+    expect(await stateDbSessionReadAsync(new Map(), 'stateDbCronJobIds', dbPath)).toEqual(new Map())
+    expect(await stateDbSessionReadAsync(new Map(), 'latestCronSessionInfo', dbPath, ['job1'], ['job1'])).toEqual(new Map([['job1', { session_id: 'cron_job1_1', message_count: 2 }]]))
     expect(mainThreadOpens.filter((path) => path === dbPath)).toEqual([])
   })
 

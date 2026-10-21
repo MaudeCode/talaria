@@ -581,11 +581,45 @@ export function agentSessionRowsExisting(dbPath: string, sessionIds: Iterable<st
   }
 }
 
+/** Scheduler admissions are the identity of gateway-fired cron runs, whose session ids stay local-*. */
+function cronAdmissionJobIds(db: DatabaseSync, terminalOnly = false): Map<string, string> {
+  const found = new Map<string, string>()
+  const cols = tableColumns(db, 'session_admissions')
+  if (!['request_id', 'target_session_id', 'principal_id'].every((col) => cols.has(col)) || (terminalOnly && !cols.has('status'))) return found
+  // The principal predicate selects the Agent's partial covering index, excluding interactive admissions.
+  const rows = db.prepare(`SELECT target_session_id, request_id FROM session_admissions WHERE principal_id = 'cron-owner' AND request_id LIKE 'cron:%'${terminalOnly ? " AND status = 'terminal'" : ''}`).all() as { target_session_id: string; request_id: string }[]
+  for (const row of rows) {
+    const match = /^cron:([^:]+):([^:]+)$/.exec(row.request_id)
+    if (match) found.set(row.target_session_id, match[1]!)
+  }
+  return found
+}
+
+/** Read-only admission lookup, built once per session listing; older Agent stores have none. */
+export function stateDbCronJobIds(dbPath: string): Map<string, string> {
+  if (!existsSync(dbPath)) return new Map()
+  let db: DatabaseSync
+  try { db = openStateDbReadonly(dbPath) } catch { return new Map() }
+  try { return cronAdmissionJobIds(db) } catch { return new Map() } finally { db.close() }
+}
+
+/** Shared job identity rule for completion links and sidebar titles, including legacy job ids with underscores. */
+export function cronSessionJobId(sid: string, jobIds: Iterable<string>, admissions: ReadonlyMap<string, string>): string | null {
+  const admitted = admissions.get(sid)
+  if (admitted) return admitted
+  const legacy = /^cron_(.+)_\d{8}_\d{6}$/.exec(sid)
+  if (legacy) return legacy[1]!
+  // Preserve prefix matching for older non-timestamp session ids.
+  return [...jobIds].filter((id) => sid.startsWith(`cron_${id}_`)).reduce<string | null>((best, id) => best === null || id.length > best.length ? id : best, null)
+}
+
 export interface CronSessionInfo { session_id: string; message_count: number | null }
 
 /**
- * Python `_latest_cron_session_info_for_jobs`: the newest-started cron session for each completed job. A session id
- * belongs to the job with the longest matching `cron_{job_id}_` prefix, so `a` never claims `a_b`'s sessions. A
+ * Python `_latest_cron_session_info_for_jobs`: the newest-started cron session for each completed job, excluding
+ * non-terminal gateway admissions so the next run cannot steal the completion link. A session id
+ * belongs to its scheduler admission's job or its legacy timestamp identity. Non-timestamp ids retain the longest
+ * matching job prefix, so `a` never claims a known `a_b`'s sessions. A
  * missing, locked, or unrecognized state.db answers an empty map; callers send no enrichment.
  */
 export function latestCronSessionInfo(dbPath: string, jobIds: Iterable<string>, completedIds: Iterable<string>): Map<string, CronSessionInfo> {
@@ -598,12 +632,13 @@ export function latestCronSessionInfo(dbPath: string, jobIds: Iterable<string>, 
   try {
     const cols = tableColumns(db, 'sessions')
     if (!cols.has('id') || !cols.has('source')) return found
+    const admissions = cronAdmissionJobIds(db, true)
     const count = cols.has('message_count') ? 's.message_count' : 'NULL'
     const order = cols.has('started_at') ? 'COALESCE(s.started_at, 0) DESC, s.id DESC' : 's.id DESC'
     const rows = db.prepare(`SELECT s.id AS id, ${count} AS message_count FROM sessions s WHERE LOWER(COALESCE(s.source, '')) = 'cron' ORDER BY ${order}`).all() as { id: unknown; message_count: unknown }[]
     for (const row of rows) {
       const sid = typeof row.id === 'string' ? row.id : ''
-      const owner = ids.filter((id) => sid.startsWith(`cron_${id}_`)).reduce<string | null>((best, id) => (best === null || id.length > best.length ? id : best), null)
+      const owner = cronSessionJobId(sid, ids, admissions)
       if (owner === null || !wanted.has(owner) || found.has(owner)) continue
       found.set(owner, { session_id: sid, message_count: Number.isFinite(Number(row.message_count)) && row.message_count !== null ? Math.trunc(Number(row.message_count)) : null })
       if (found.size === wanted.size) break
@@ -979,8 +1014,9 @@ export async function agentSessionRowsExistingAsync(dbPath: string, sessionIds: 
 /**
  * TAL-923: the single-session readers behind chat start, session detail, and the mutation gates, run on the worker.
  * TAL-1162: and the transcript reads behind turn history, settlement, and the detail's page tail.
+ * TAL-1256: shared cron admission identities and completion links use this same dispatcher.
  */
-export const SESSION_READS = { stateDbLocalTargetRead, stateDbSessionRow, stateDbSessionMessages, stateDbCompressionLineage, stateDbSessionRead, stateDbSessionTailRead, stateDbSettlementRead }
+export const SESSION_READS = { stateDbCronJobIds, latestCronSessionInfo, stateDbLocalTargetRead, stateDbSessionRow, stateDbSessionMessages, stateDbCompressionLineage, stateDbSessionRead, stateDbSessionTailRead, stateDbSettlementRead }
 type SessionReadName = keyof typeof SESSION_READS
 
 /**

@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Scheduled task completions open their run and show the task name with newer Hermes Agent versions.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

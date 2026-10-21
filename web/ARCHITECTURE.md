@@ -144,6 +144,13 @@ session, database and WAL revisions, so unchanged older pages do not open SQLite
 serialization before extending an appended prefix; rewritten rows invalidate it. Requests without `msg_limit` retain
 the full projection. No index is written to the Agent database or the session document.
 
+Cron completion links and imported session titles share the read-only identity reader in
+`sessions/state-db.ts`, dispatched on that worker. Gateway-fired runs resolve through the
+scheduler principal's `cron:<job>:<execution>` admission; legacy timestamp ids resolve their
+exact job, including underscores. Completion links only consider terminal admissions, while
+active admissions still name their sessions. Stores without admissions retain legacy behavior.
+This only enriches display metadata and never changes Agent ownership or writes to `state.db`.
+
 ## 4. Sidecar
 
 `sidecar/talaria_sidecar` (`docs/architecture/sidecar-rpc.md`) is spawned as

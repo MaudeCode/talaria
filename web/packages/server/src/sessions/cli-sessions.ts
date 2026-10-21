@@ -9,7 +9,7 @@
  */
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { AGENT_STORAGE_OK, isCliSessionRow, normalizeAgentSessionSource, readImportableAgentSessionRowsAsync, stateDbReadFailure, stateDbStorageAsync, type Dict, type ReadRowsOptions } from './state-db.js'
+import { AGENT_STORAGE_OK, cronSessionJobId, isCliSessionRow, normalizeAgentSessionSource, readImportableAgentSessionRowsAsync, stateDbReadFailure, stateDbSessionReadAsync, stateDbStorageAsync, type Dict, type ReadRowsOptions } from './state-db.js'
 import type { AgentStorage } from '@maudecode/talaria-web-contracts'
 import { latestLineageSidecar, sanitizeSessionRow, type ListParams } from './list.js'
 import type { SessionStore } from './store.js'
@@ -191,12 +191,12 @@ export class CliSessionSource {
     let workspace: string | null = null
     const cliWorkspace = async (): Promise<string> => { workspace ??= (await this.deps.lastWorkspace(profile)); return workspace }
     let cronNames: Map<string, string> | null = null
-    const cronTitle = (sid: string): string | null => {
-      if (!sid.startsWith('cron_')) return null
-      const parts = sid.split('_')
-      if (parts.length < 3) return null
+    let cronAdmissions: Map<string, string> | null = null
+    const cronTitle = async (sid: string): Promise<string | null> => {
       cronNames ??= this.cronJobNames(home)
-      return cronNames.get(parts[1] ?? '') ?? null
+      cronAdmissions ??= await stateDbSessionReadAsync(new Map<string, string>(), 'stateDbCronJobIds', slot.dbPath)
+      const jobId = cronSessionJobId(sid, cronNames.keys(), cronAdmissions)
+      return jobId === null ? null : cronNames.get(jobId) ?? null
     }
     const sidecarMeta = this.sidecarMetaLookup()
     const tombstone = (await this.deps.store.loadDeletedTombstone())
@@ -212,7 +212,7 @@ export class CliSessionSource {
       const sid = str(row.id)
       const meta = normalizeAgentSessionSource(row.source || sourceTag)
       let title = str(row.title) || null
-      if (!title && sourceTag === 'cron') title = cronTitle(sid) ?? title
+      if (!title && sourceTag === 'cron') title = await cronTitle(sid) ?? title
       const lineage = Array.isArray(row._lineage_ids) ? row._lineage_ids.filter((id): id is string => typeof id === 'string') : null
       const lineageIds = lineage ?? [sid]
       const metadata = new Map(await Promise.all(lineageIds.map(async (id) => [id, await sidecarMeta(id)] as const)))
