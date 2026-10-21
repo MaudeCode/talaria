@@ -290,6 +290,8 @@ export const cancelUpdateNotification = (id: string) => orpc().updateNotificatio
 export const performUpdateNotificationAction = (id: string, action_id: string) => orpc().updateNotifications.action({ id, action_id, perform: true, tab_id: tabId })
 export const fetchPlugins = () => orpc().plugins()
 export const savePluginSettings = (key: string, values: Record<string, unknown>, secrets: Record<string, string>) => orpc().pluginSettings({ key, values, secrets })
+export const pluginOauthRedirect = (flowId: string, url: string) => orpc().pluginOAuthRedirect({ flow_id: flowId, url })
+export const pluginOauthLogout = (key: string, id: string) => orpc().pluginOAuthLogout({ key, id })
 export const fetchMcpServers = () => orpc().mcp.servers()
 export const fetchMcpTools = (q: string) => orpc().mcp.tools(q ? { q } : {})
 export const toggleMcpServer = (name: string, enabled: boolean) => orpc().mcp.toggle({ name, enabled })

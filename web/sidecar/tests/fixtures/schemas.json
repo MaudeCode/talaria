@@ -1191,6 +1191,90 @@
     ],
     "additionalProperties": false
   },
+  "plugins.oauth_status": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "supported": {
+        "type": "boolean"
+      },
+      "plugins": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "clients": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "signed_in",
+                      "sign_in_needed",
+                      "revoked",
+                      "logged_out"
+                    ]
+                  },
+                  "authorize_host": {
+                    "type": "string"
+                  },
+                  "token_host": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "state",
+                  "authorize_host",
+                  "token_host"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "key",
+            "clients"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": [
+      "supported",
+      "plugins"
+    ],
+    "additionalProperties": false
+  },
+  "plugins.oauth_logout": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "key": {
+        "type": "string"
+      },
+      "id": {
+        "type": "string"
+      },
+      "removed": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "key",
+      "id",
+      "removed"
+    ],
+    "additionalProperties": false
+  },
   "plugins.settings_save": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
@@ -5099,13 +5183,21 @@
         "type": "integer",
         "minimum": -9007199254740991,
         "maximum": 9007199254740991
+      },
+      "redirect_uri": {
+        "type": "string"
+      },
+      "authorize_host": {
+        "type": "string"
+      },
+      "token_host": {
+        "type": "string"
       }
     },
     "required": [
       "flow_id",
       "provider",
       "status",
-      "user_code",
       "verification_url",
       "expires_in",
       "interval"
@@ -5149,6 +5241,42 @@
     "additionalProperties": false
   },
   "oauth.cancel": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "flow_id": {
+        "type": "string"
+      },
+      "provider": {
+        "type": "string"
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "approved",
+          "denied",
+          "expired",
+          "cancelled",
+          "error"
+        ]
+      },
+      "error": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    },
+    "required": [
+      "flow_id",
+      "provider",
+      "status",
+      "error"
+    ],
+    "additionalProperties": false
+  },
+  "oauth.submit_redirect": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "properties": {

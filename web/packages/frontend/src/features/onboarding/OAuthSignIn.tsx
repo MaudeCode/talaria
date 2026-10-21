@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { Button } from '../../ui/Button'
@@ -10,8 +10,12 @@ const message = (e: unknown): string => (e instanceof Error ? e.message : String
 /**
  * TAL-398: one provider's device-code sign-in. The server runs the flow and saves the credential; this shows the code,
  * polls the flow's status at the interval the server names, and cancels a pending flow it leaves behind.
+ * TAL-1276: a plugin client's browser sign-in has no code; its panel names the hosts the server reports, and `children`
+ * adds what the flow takes besides the link (the pasted redirect address). `compact` leaves the signed-in line to the caller.
  */
-export function OAuthSignIn({ provider, label, signedIn, onApproved }: { provider: string; label: string; signedIn: boolean; onApproved: (provider: string) => void }) {
+export function OAuthSignIn({ provider, label, signedIn, onApproved, idPrefix = 'onboardingOauth', compact = false, children }: {
+  provider: string; label: string; signedIn: boolean; onApproved: (provider: string) => void; idPrefix?: string; compact?: boolean; children?: (flow: Flow) => ReactNode
+}) {
   const [flow, setFlow] = useState<Flow | null>(null)
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
@@ -85,13 +89,14 @@ export function OAuthSignIn({ provider, label, signedIn, onApproved }: { provide
 
   if (pendingId && flow) {
     return (
-      <div className="onboarding-oauth flex flex-col gap-2 rounded-lg border border-border px-3 py-3 text-sm" id="onboardingOauthPanel">
-        <p className="text-muted">{m.oauth_codex_step1()}</p>
-        <a className="break-all text-accent-text underline" href={flow.verification_url} target="_blank" rel="noopener noreferrer" id="onboardingOauthLink">{flow.verification_url}</a>
-        <code className="w-fit rounded-md border border-border2 bg-surface-subtle px-3 py-1.5 font-mono text-lg tracking-widest text-strong" id="onboardingOauthCode">{flow.user_code}</code>
+      <div className="onboarding-oauth flex flex-col gap-2 rounded-lg border border-border px-3 py-3 text-sm" id={`${idPrefix}Panel`}>
+        <p className="text-muted">{flow.user_code ? m.oauth_codex_step1() : m.oauth_plugin_hosts({ authorize_host: flow.authorize_host ?? '', token_host: flow.token_host ?? '' })}</p>
+        <a className="break-all text-accent-text underline" href={flow.verification_url} target="_blank" rel="noopener noreferrer" id={`${idPrefix}Link`}>{flow.verification_url}</a>
+        {flow.user_code && <code className="w-fit rounded-md border border-border2 bg-surface-subtle px-3 py-1.5 font-mono text-lg tracking-widest text-strong" id={`${idPrefix}Code`}>{flow.user_code}</code>}
+        {children?.(flow)}
         <div className="flex items-center justify-between gap-2">
           <span className="text-muted" role="status">{m.oauth_codex_polling()}</span>
-          <Button onClick={() => { void cancel() }} id="onboardingOauthCancelBtn">{m.cancel()}</Button>
+          <Button onClick={() => { void cancel() }} id={`${idPrefix}CancelBtn`}>{m.cancel()}</Button>
         </div>
       </div>
     )
@@ -103,9 +108,9 @@ export function OAuthSignIn({ provider, label, signedIn, onApproved }: { provide
       : flow?.status === 'cancelled' ? m.oauth_cancelled()
         : flow?.status === 'error' ? `${m.oauth_codex_error()}: ${flow.error ?? ''}` : null)
   return (
-    <div className="onboarding-oauth flex flex-col gap-2 text-sm" id="onboardingOauthPanel">
-      {ended ? <p className="text-warning" role="alert">{ended}</p> : done && <p className="text-success" role="status">{m.oauth_signed_in({ provider: label })}</p>}
-      <Button className="w-fit" variant={done ? 'default' : 'primary'} disabled={busy} onClick={() => { void start() }} id="onboardingOauthStartBtn">
+    <div className="onboarding-oauth flex flex-col gap-2 text-sm" id={`${idPrefix}Panel`}>
+      {ended ? <p className="text-warning" role="alert">{ended}</p> : done && !compact && <p className="text-success" role="status">{m.oauth_signed_in({ provider: label })}</p>}
+      <Button className="w-fit" variant={done ? 'default' : 'primary'} disabled={busy} onClick={() => { void start() }} id={`${idPrefix}StartBtn`}>
         {done ? m.oauth_sign_in_again() : m.oauth_sign_in({ provider: label })}
       </Button>
     </div>

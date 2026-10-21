@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { PluginSettingView } from '@maudecode/talaria-web-contracts'
+import type { PluginOAuthClientView, PluginSettingView } from '@maudecode/talaria-web-contracts'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
@@ -9,6 +9,7 @@ import { FieldRow, Switch, TextInput } from '../../ui/Field'
 import { Select } from '../../ui/Select'
 import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
 import { showToast } from '../toast/toast'
+import { OAuthSignIn } from '../onboarding/OAuthSignIn'
 
 export function PluginsSection() {
   const plugins = useQuery({ queryKey: keys.plugins, queryFn: api.fetchPlugins, staleTime: 30_000 })
@@ -34,11 +35,65 @@ export function PluginsSection() {
               <span className={p.enabled !== false ? 'text-[11px] text-success' : 'text-[11px] text-muted'}>{p.enabled !== false ? m.plugins_enabled() : m.plugins_disabled()}{p.activation ? ` · ${p.activation}` : ''}</span>
               {editable && p.settings?.length ? <Button variant="ghost" className="px-2 py-1 text-xs" aria-expanded={open === p.key} onClick={() => setOpen(open === p.key ? null : p.key)}>{m.settings_title()}</Button> : null}
             </div>
+            {p.oauth_clients?.length ? <ul className="mt-2 flex flex-col gap-2">{p.oauth_clients.map((c) => <PluginOAuthClientRow key={c.id} pluginKey={p.key} client={c} editable={editable} />)}</ul> : null}
             {editable && open === p.key && p.settings ? <PluginSettingsForm pluginKey={p.key} fields={p.settings} onSaved={() => setOpen(null)} /> : null}
           </li>
         ))}
       </ul>
     </div>
+  )
+}
+
+const OAUTH_STATE: Record<PluginOAuthClientView['state'], { label: () => string; tone: string }> = {
+  signed_in: { label: m.plugins_oauth_signed_in, tone: 'text-success' },
+  sign_in_needed: { label: m.plugins_oauth_sign_in_needed, tone: 'text-warning' },
+  revoked: { label: m.plugins_oauth_revoked, tone: 'text-warning' },
+  logged_out: { label: m.plugins_oauth_logged_out, tone: 'text-muted' },
+}
+
+/** TAL-1276: one OAuth client the plugin declares, its sign-in state, and its Sign in / Sign out actions for the server owner. */
+function PluginOAuthClientRow({ pluginKey, client, editable }: { pluginKey: string; client: PluginOAuthClientView; editable: boolean }) {
+  const qc = useQueryClient()
+  const refresh = useCallback(() => { void qc.invalidateQueries({ queryKey: keys.plugins }) }, [qc])
+  const signOut = useMutation({
+    mutationFn: () => api.pluginOauthLogout(pluginKey, client.id),
+    onSuccess: refresh,
+    onError: (e) => showToast(e instanceof Error ? e.message : String(e), 5000, 'error'),
+  })
+  const state = OAUTH_STATE[client.state]
+  return (
+    <li className="flex flex-col gap-1 text-xs" data-oauth-client={client.id}>
+      <div className="flex items-center gap-3">
+        <span className="min-w-0 flex-1 truncate font-medium text-text">{client.id}</span>
+        <span className={state.tone}>{state.label()}</span>
+        {editable && client.can_sign_out ? <Button variant="ghost" className="px-2 py-1 text-xs" disabled={signOut.isPending} onClick={() => signOut.mutate()}>{m.plugins_oauth_sign_out()}</Button> : null}
+      </div>
+      {editable && (
+        <OAuthSignIn provider={`plugin:${pluginKey}:${client.id}`} label={client.id} signedIn={client.state === 'signed_in'} onApproved={refresh} idPrefix={`pluginOauth-${pluginKey}-${client.id}-`} compact>
+          {(flow) => flow.flow_id ? <PastedRedirect flowId={flow.flow_id} /> : null}
+        </OAuthSignIn>
+      )}
+    </li>
+  )
+}
+
+/** The address the browser landed on after the approval, for when it runs on another machine than the Agent. */
+function PastedRedirect({ flowId }: { flowId: string }) {
+  const [url, setUrl] = useState('')
+  const submit = useMutation({
+    mutationFn: () => api.pluginOauthRedirect(flowId, url.trim()),
+    onSuccess: () => setUrl(''),
+  })
+  const id = `plugin-oauth-redirect-${flowId}`
+  return (
+    <form className="flex flex-col gap-1" onSubmit={(e) => { e.preventDefault(); submit.mutate() }}>
+      <label className="text-muted" htmlFor={id}>{m.oauth_plugin_paste()}</label>
+      <div className="flex items-center gap-2">
+        <div className="min-w-0 flex-1"><TextInput id={id} autoComplete="off" spellCheck={false} placeholder="http://127.0.0.1/…" value={url} onChange={(e) => setUrl(e.target.value)} /></div>
+        <Button type="submit" disabled={submit.isPending || !url.trim()}>{m.oauth_plugin_paste_submit()}</Button>
+      </div>
+      {submit.isError && <p className="text-warning" role="alert">{submit.error instanceof Error ? submit.error.message : String(submit.error)}</p>}
+    </form>
   )
 }
 

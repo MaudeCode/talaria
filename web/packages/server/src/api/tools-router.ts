@@ -3,7 +3,7 @@ import type { InferContractRouterInputs } from '@orpc/contract'
 import { implement } from '@orpc/server'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
-import { toolsContract, type GatewayMode, type GatewayStatus, type PluginSettingField, type SidecarMethodName, type SidecarParams, type SidecarResult } from '@maudecode/talaria-web-contracts'
+import { toolsContract, type GatewayMode, type GatewayStatus, type PluginOAuthClientView, type PluginSettingField, type SidecarMethodName, type SidecarParams, type SidecarResult } from '@maudecode/talaria-web-contracts'
 import { HttpError, requireFields, type ApiContext } from './router.js'
 import { requestSessionIdGuard } from './session-visibility.js'
 import type { RequestContext } from '../http/context.js'
@@ -24,6 +24,8 @@ import { agentHealth, applyDashboardConfig, dashboardConfig, dashboardStatus, ga
 import { restartGateway } from '../tools/gateway-restart.js'
 import { projectOsDashboard } from '../tools/project-os.js'
 import { PluginSettingsInvalid, planPluginSettings, pluginSettingsView, serializePluginSettingsSave } from '../tools/plugin-settings.js'
+import { checkPastedRedirect } from '../tools/plugin-oauth.js'
+import { oauthCall, oauthView } from './settings-router.js'
 import { credentialShadowed, RuntimeCredentialError, writeRuntimeCredential } from '../providers/runtime-env.js'
 import { EnvWriteError, loadEnvFile } from '../providers/env-file.js'
 import { loadGatewaySessionIdentityMap } from '../sessions/list.js'
@@ -86,6 +88,12 @@ async function pluginIsolationAdvisory(ctx: RequestContext): Promise<boolean> {
 async function pluginSettingsList(ctx: RequestContext) {
   const result = await runningSidecar(ctx).call('plugins.settings', { profile_home: home(ctx) })
   return result.plugins.map((entry) => ({ key: entry.key, fields: pluginSettingsFieldsView(ctx, entry.fields) }))
+}
+
+/** TAL-1276: each plugin's declared OAuth clients by key; empty on an Agent without plugin OAuth. */
+async function pluginOAuthClients(ctx: RequestContext) {
+  const result = await runningSidecar(ctx).call('plugins.oauth_status', { profile_home: home(ctx) })
+  return new Map(result.supported ? result.plugins.map((entry) => [entry.key, entry.clients.map((client) => ({ ...client, can_sign_out: client.state !== 'logged_out' }))]) : [])
 }
 
 const pluginSettingsFieldsView = (ctx: RequestContext, fields: PluginSettingField[]) => {
@@ -626,7 +634,11 @@ export const toolsRouter = os.router({
       // A settings failure leaves the list itself readable.
       const declared = await pluginSettingsList(ctx).catch((error: unknown) => { ctx.deps.log(`[plugins] settings fields failed: ${str((error as Error).message)}`); return [] })
       const settings = new Map(declared.map((entry) => [entry.key, entry.fields]))
-      const plugins = result.plugins.map((plugin) => settings.has(plugin.key) ? { ...plugin, settings: settings.get(plugin.key) } : plugin)
+      // So does an OAuth status failure.
+      const oauth = await pluginOAuthClients(ctx).catch((error: unknown) => { ctx.deps.log(`[plugins] oauth status failed: ${str((error as Error).message)}`); return new Map<string, PluginOAuthClientView[]>() })
+      const plugins = result.plugins.map((plugin) => ({
+        ...plugin, ...(settings.has(plugin.key) ? { settings: settings.get(plugin.key) } : {}), ...(oauth.has(plugin.key) ? { oauth_clients: oauth.get(plugin.key) } : {}),
+      }))
       // An advisory failure leaves the list itself readable.
       const advisory = await pluginIsolationAdvisory(ctx).catch((error: unknown) => { ctx.deps.log(`[plugins] isolation advisory failed: ${str((error as Error).message)}`); return false })
       return { plugins, empty: plugins.length === 0, supported_hooks: result.supported_hooks, read_only: !editable, plugin_isolation_advisory: advisory }
@@ -677,6 +689,22 @@ export const toolsRouter = os.router({
     }
     return { ok: true as const, key: result.key, written: [...result.written, ...secretFields.map((field) => field.key)], settings: pluginSettingsFieldsView(ctx, result.fields) }
   }))),
+  pluginOAuthRedirect: os.pluginOAuthRedirect.handler(({ input, context: { ctx } }) => run(async () => {
+    // Only this flow's own answer reaches the sidecar: its loopback address and its `state`.
+    const verdict = checkPastedRedirect(input.flow_id, home(ctx), input.url)
+    if (verdict === 'unknown') throw new HttpError(404, 'Unknown or expired sign-in.', { condition: 'oauth_flow_not_found' })
+    if (verdict === 'invalid') throw new HttpError(400, 'That is not the address this sign-in sends the browser back to.', { condition: 'oauth_redirect_invalid' })
+    return oauthView(await oauthCall(ctx, 'oauth.submit_redirect', { profile_home: home(ctx), flow_id: input.flow_id, url: input.url }))
+  })),
+  pluginOAuthLogout: os.pluginOAuthLogout.handler(({ input, context: { ctx } }) => run(async () => {
+    try {
+      const result = await runningSidecar(ctx).call('plugins.oauth_logout', { profile_home: home(ctx), key: input.key, id: input.id })
+      return { ok: true as const, removed: result.removed }
+    } catch (error) {
+      if (error instanceof SidecarError && error.condition === 'oauth_unsupported') throw new HttpError(409, error.message, { condition: error.condition })
+      return failure(error)
+    }
+  })),
   updates: {
     check: os.updates.check.handler(({ context: { ctx } }) => run(async () => {
       const settings = (await ctx.deps.settings.load())

@@ -29,9 +29,9 @@ class Registry:
 
 def build_methods(runtime: AgentRuntime) -> dict[str, Handler]:
     registry = Registry(runtime)
-    from . import aux, chat, checkpoints, commands, config, connectors, cron, gateway, goals, kanban, mcp, memory, oauth, process, profiles, providers, skills, state_db, stt, text, toolsets, usage, worktree, write_approval  # noqa: WPS433
+    from . import aux, chat, checkpoints, commands, config, connectors, cron, gateway, goals, kanban, mcp, memory, oauth, plugin_oauth, process, profiles, providers, skills, state_db, stt, text, toolsets, usage, worktree, write_approval  # noqa: WPS433
     from . import runtime as runtime_methods
 
-    for module in (runtime_methods, goals, commands, kanban, state_db, profiles, skills, mcp, stt, cron, providers, oauth, aux, text, process, usage, gateway, worktree, checkpoints, memory, chat, config, toolsets, write_approval, connectors):
+    for module in (runtime_methods, goals, commands, kanban, state_db, profiles, skills, mcp, stt, cron, providers, oauth, plugin_oauth, aux, text, process, usage, gateway, worktree, checkpoints, memory, chat, config, toolsets, write_approval, connectors):
         module.register(registry)
     return registry.methods

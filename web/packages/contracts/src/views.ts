@@ -9,7 +9,7 @@ import { RunStatusSchema } from './run-status.js'
 import { AgentRefreshConfirmationSchema } from './sidecar/runtime.js'
 import { SpeedTierSchema } from './speed.js'
 import { ExecutionModeSchema, OwnerAttachmentSchema } from './gateway-session.js'
-import { CanonicalBotChatSchema, GatewayModeSchema, PluginSettingFieldSchema, SkillCatalogIdentitySchema } from './sidecar/namespaces.js'
+import { CanonicalBotChatSchema, GatewayModeSchema, PluginOAuthClientSchema, PluginSettingFieldSchema, SkillCatalogIdentitySchema } from './sidecar/namespaces.js'
 
 export { SpeedTierSchema } from './speed.js'
 
@@ -1012,9 +1012,18 @@ export type UpdateNotifications = z.infer<typeof UpdateNotificationsSchema>
 /** TAL-806: a plugin setting as Settings shows it; `locked` marks a secret the server's launch environment supplies, so an edit would not take effect. */
 export const PluginSettingViewSchema = PluginSettingFieldSchema.extend({ locked: z.boolean().optional() })
 export type PluginSettingView = z.infer<typeof PluginSettingViewSchema>
+/** TAL-1276: a plugin OAuth client as Settings shows it; `can_sign_out` is true while the profile stores a grant for it (any state but `logged_out`). */
+export const PluginOAuthClientViewSchema = PluginOAuthClientSchema.extend({ can_sign_out: z.boolean() })
+export type PluginOAuthClientView = z.infer<typeof PluginOAuthClientViewSchema>
 export const PluginSchema = z.looseObject({ key: z.string(), name: z.string().optional(), kind: z.string().optional(), enabled: z.boolean().optional(), description: z.string().optional(), version: z.string().optional(), activation: z.string().optional(), is_active_provider: z.boolean().optional(), hooks: z.array(Json).optional(),
   /** TAL-806: the manifest's `config_schema` fields with current values; absent when the plugin declares none. */
-  settings: z.array(PluginSettingViewSchema).optional() })
+  settings: z.array(PluginSettingViewSchema).optional(),
+  /**
+   * TAL-1276: the OAuth clients the manifest declares (Agent v0.22.3+), each with its sign-in state and the two hosts the
+   * sign-in sends the code to. Sign in through `/api/onboarding/oauth/start` with provider `plugin:<key>:<id>`; absent
+   * when the plugin declares none or the Agent cannot sign in to plugin clients.
+   */
+  oauth_clients: z.array(PluginOAuthClientViewSchema).optional() })
 /**
  * `read_only` (TAL-806): this session may not save plugin `settings` (not the server owner, or no sidecar).
  * `plugin_isolation_advisory` (TAL-820): more than one profile has third-party plugins installed and one of those runs them
@@ -1106,6 +1115,13 @@ export const OnboardingProbeSchema = z.looseObject({ ok: z.boolean().optional(),
 export const OnboardingOAuthSchema = z.looseObject({
   ok: z.boolean().optional(), status: z.string().optional(), url: z.string().optional(), verification_url: z.string().optional(), user_code: z.string().optional(), message: z.string().optional(),
   error: z.string().nullable().optional(), flow_id: z.string().optional(), provider: z.string().optional(), expires_in: z.number().int().optional(), interval: z.number().int().optional(),
+  /**
+   * TAL-1276, a plugin client's browser sign-in (`plugin:<key>:<id>`, no `user_code`): `verification_url` is the
+   * authorize link, `authorize_host` and `token_host` the hosts the code goes to, and `redirect_uri` the address the
+   * browser is sent back to. When that address does not open on this machine, send the one the browser shows to
+   * `/api/plugins/oauth/redirect`.
+   */
+  authorize_host: z.string().optional(), token_host: z.string().optional(), redirect_uri: z.string().optional(),
 })
 
 // ── automation ───────────────────────────────────────────────────────────
