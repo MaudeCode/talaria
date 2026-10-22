@@ -69,3 +69,35 @@ it.each([true, false])('reconnect reads each journal once and only the active ta
   expect(io.tails.every(({ path, position }) => path.endsWith('/active.jsonl') && position > Buffer.byteLength(JSON.stringify(first)))).toBe(true)
   await active.close()
 })
+
+it('falls back to a snapshot when an unseen run finishes before idle attachment', async () => {
+  const s = server = await bootTestServer()
+  const session = await s.deps.sessionStore.newSession()
+  const sid = session.session_id
+  const journal = s.deps.journal
+  const past = await journal.writer(sid, 'past')
+  await past.appendSseEvent('token', { text: 'cursor' }, { createdAt: 1 })
+  await past.close()
+  const full = journal.readSessionRunEvents.bind(journal)
+  const readReplay = vi.spyOn(journal, 'readSessionRunEvents').mockImplementationOnce(async (...args) => {
+    const replay = await full(...args)
+    const missed = await journal.writer(sid, 'missed')
+    await missed.appendSseEvent('token', { text: 'finished while idle' }, { createdAt: 2 })
+    await missed.appendSseEvent('stream_end', {}, { createdAt: 3 })
+    await missed.close()
+    const active = await journal.writer(sid, 'successor')
+    const channel = s.deps.registry.create('successor', sid)
+    for (const event of ['token', 'stream_end']) {
+      const row = await active.appendSseEvent(event, { text: 'successor' }, { createdAt: 4 })
+      channel.put([event, row.payload, row.event_id])
+    }
+    await active.close()
+    s.deps.registry.registerActiveRun({ stream_id: 'successor', session_id: sid, started_at: 4, phase: 'running', workspace: '', model: null, provider: null, ephemeral: false })
+    return replay
+  })
+  io.full.length = 0; io.asyncFull.length = 0; io.tails.length = 0
+  const frames = await s.sse(`/api/sessions/${sid}/events`, (f) => f.event === 'session_snapshot' || f.event === 'stream_end', { headers: { 'Last-Event-ID': 'past:1' } })
+  expect(frames.map((f) => f.event)).toEqual(['session_snapshot'])
+  expect(readReplay).toHaveBeenCalledTimes(1)
+  expect(io.full).toHaveLength(1)
+})

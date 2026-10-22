@@ -486,6 +486,9 @@ export class JsonJournal implements JournalBackend {
       const path = this.pathFor(sid, runId)
       const previous = positions.get(runId)
       try {
+        // A run may finish between idle polls; the active tail alone cannot recover that history.
+        const current = await readdir(sessionRoot)
+        if (current.some((name) => name.endsWith('.jsonl') && name !== `${runId}.jsonl` && !positions.has(name.slice(0, -'.jsonl'.length)))) return result('replay_changed')
         const handle = await open(path, 'r')
         try {
           const st = await handle.stat({ bigint: true })
