@@ -7,13 +7,15 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
+import { invalidateSessionQueries } from '../../api/sessionQueries'
+import { TRANSCRIPT_WINDOW } from '@maudecode/talaria-web-contracts'
 import { SessionSchema, type Message, type Session } from '../../contracts'
 import { attachToStream, hasLiveConnection, reconcileSession, discardSession, getStreamContext, subscribeStreamContext, teardown } from '../../stream/connection'
 import { getStreamState, useLiveTurn } from '../../stream/store'
 import { openSessionStream } from '../../api/sse'
 import { writePersisted } from '../../lib/persisted'
 
-export const TRANSCRIPT_WINDOW = 120
+export { TRANSCRIPT_WINDOW } from '@maudecode/talaria-web-contracts'
 
 export interface VisibleMessage {
   index: number
@@ -50,12 +52,15 @@ export function messageKey(message: Message): string | undefined {
 export function useTranscript(sessionId: string | null) {
   const qc = useQueryClient()
   const streamContext = useSyncExternalStore(subscribeStreamContext, getStreamContext, getStreamContext)
-  const [olderState, setOlderState] = useState<{ sid: string | null; items: Message[] }>({ sid: sessionId, items: [] })
-  const older = useMemo(() => (olderState.sid === sessionId ? olderState.items : []), [olderState, sessionId])
-  const setOlder = useCallback((update: (prev: Message[]) => Message[]) => setOlderState((s) => ({ sid: sessionId, items: update(s.sid === sessionId ? s.items : []) })), [sessionId])
-  const [pageState, setPageState] = useState({ sid: sessionId, loading: false, error: false })
-  if (pageState.sid !== sessionId) setPageState({ sid: sessionId, loading: false, error: false })
-  const pageScope = useMemo(() => ({ sessionId }), [sessionId])
+  // useQuery below subscribes to this window; a moved boundary retires its prefix and pending pages together.
+  const windowOffset = qc.getQueryData<{ session: Session }>(keys.sessions.detail(sessionId ?? ''))?.session._messages_offset ?? 0
+  const pageScope = useMemo(() => ({ sessionId, windowOffset, streamContext }), [sessionId, windowOffset, streamContext])
+  const [olderState, setOlderState] = useState<{ scope: typeof pageScope; items: Message[] }>({ scope: pageScope, items: [] })
+  if (olderState.scope !== pageScope) setOlderState({ scope: pageScope, items: [] })
+  const older = useMemo(() => (olderState.scope === pageScope ? olderState.items : []), [olderState, pageScope])
+  const setOlder = useCallback((update: (prev: Message[]) => Message[]) => setOlderState((s) => ({ scope: pageScope, items: update(s.scope === pageScope ? s.items : []) })), [pageScope])
+  const [pageState, setPageState] = useState({ scope: pageScope, loading: false, error: false })
+  if (pageState.scope !== pageScope) setPageState({ scope: pageScope, loading: false, error: false })
   const retiredPages = useRef(new WeakSet<object>())
   const paging = useRef<{ scope: typeof pageScope; loading: boolean; error: boolean; before?: number }>({ scope: pageScope, loading: false, error: false })
   useEffect(() => {
@@ -63,8 +68,8 @@ export function useTranscript(sessionId: string | null) {
     retired.delete(pageScope)
     return () => { retired.add(pageScope) }
   }, [pageScope])
-  const loadingOlder = pageState.sid === sessionId && pageState.loading
-  const olderError = pageState.sid === sessionId && pageState.error
+  const loadingOlder = pageState.scope === pageScope && pageState.loading
+  const olderError = pageState.scope === pageScope && pageState.error
   const attachedStream = useRef<string | null>(null)
   const query = useQuery({
     queryKey: keys.sessions.detail(sessionId ?? ''),
@@ -72,7 +77,7 @@ export function useTranscript(sessionId: string | null) {
       const sid = sessionId ?? ''
       const expectedStreamId = getStreamState().turns[sid]?.streamId
       try {
-        const result = await api.fetchSession(sid, { messages: true, msg_limit: TRANSCRIPT_WINDOW })
+        const result = await api.fetchSession(sid, { messages: true, msg_limit: TRANSCRIPT_WINDOW }, signal)
         if (!signal.aborted) reconcileSession(sid, result.session, expectedStreamId)
         return result
       } catch (error) {
@@ -82,6 +87,7 @@ export function useTranscript(sessionId: string | null) {
     },
     enabled: !!sessionId,
     staleTime: 5_000,
+    refetchOnWindowFocus: false,
     retry: (count, error) => !(error instanceof Error && 'status' in error && (error as { status: number }).status === 404) && count < 1,
   })
   const session: Session | null = query.data?.session ?? null
@@ -108,10 +114,23 @@ export function useTranscript(sessionId: string | null) {
   useEffect(() => {
     if (!sessionId) return
     let retired = false
+    let backgroundCompletion: string | null = null
     const scope = streamContext
-    const stream = openSessionStream(sessionId, { onEvent: ({ data }) => {
-      if (!retired && scope === getStreamContext() && data.session_id === sessionId) void qc.invalidateQueries({ queryKey: keys.sessions.detail(sessionId) })
-    } })
+    let initialized = false
+    const cached = qc.getQueryData<{ session: Session }>(keys.sessions.detail(sessionId))
+    const stream = openSessionStream(sessionId, { onEvent: ({ event, data }) => {
+      if (retired || scope !== getStreamContext() || data.session_id !== sessionId) return
+      if (event === 'initial') {
+        const reconnect = initialized
+        initialized = true
+        if (!reconnect) return
+      }
+      const completion = JSON.stringify(data)
+      const twin = event === 'process_complete' && completion === backgroundCompletion
+      // The server emits the same completion under the current and legacy names, in that order.
+      backgroundCompletion = event === 'bg_task_complete' ? completion : null
+      if (!twin) void qc.invalidateQueries({ queryKey: keys.sessions.detail(sessionId) })
+    } }, cached?.session.message_count)
     return () => { retired = true; stream.close() }
   }, [qc, sessionId, streamContext])
 
@@ -140,9 +159,9 @@ export function useTranscript(sessionId: string | null) {
     request.before = before
     request.loading = true
     request.error = false
-    setPageState({ sid: sessionId, loading: true, error: false })
+    setPageState({ scope: pageScope, loading: true, error: false })
     const scope = getStreamContext()
-    const current = () => !retiredPages.current.has(pageScope) && paging.current === request && scope === getStreamContext()
+    const current = () => !retiredPages.current.has(pageScope) && paging.current === request && scope === getStreamContext() && (qc.getQueryData<{ session: Session }>(keys.sessions.detail(sessionId))?.session._messages_offset ?? 0) === windowOffset
     try {
       const res = await api.fetchSession(sessionId, { messages: true, msg_limit: TRANSCRIPT_WINDOW, msg_before: before, resolve_model: false })
       if (!current()) return
@@ -154,15 +173,15 @@ export function useTranscript(sessionId: string | null) {
       if (current()) request.error = true
     } finally {
       request.loading = false
-      if (current()) setPageState({ sid: sessionId, loading: false, error: request.error })
+      if (current()) setPageState({ scope: pageScope, loading: false, error: request.error })
     }
-  }, [sessionId, session, truncated, older.length, setOlder, pageScope])
+  }, [sessionId, session, truncated, older.length, setOlder, pageScope, qc, windowOffset])
 
   const refresh = useCallback(async (accepted?: unknown, historyCut = false) => {
     if (accepted !== undefined || historyCut) {
       // Retire both the response and its admission/error state when history is replaced.
       paging.current = { scope: pageScope, loading: false, error: false }
-      setPageState({ sid: sessionId, loading: false, error: false })
+      setPageState({ scope: pageScope, loading: false, error: false })
     }
     const scope = getStreamContext()
     const parsed = SessionSchema.safeParse(accepted)
@@ -172,7 +191,7 @@ export function useTranscript(sessionId: string | null) {
       setOlder(() => [])
       discardSession(sessionId)
       qc.setQueryData(keys.sessions.detail(sessionId), { session: parsed.data })
-      void qc.invalidateQueries({ queryKey: keys.sessions.all, predicate: (query) => query.queryKey[1] !== 'detail' })
+      void invalidateSessionQueries(qc, sessionId, { detail: false })
       return
     }
     // Older/mutation row-only responses need a fresh authoritative transcript.

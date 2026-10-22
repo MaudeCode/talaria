@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Avoid repeated credential scans when reopening chats with large tool outputs.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

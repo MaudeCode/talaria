@@ -64,6 +64,19 @@ describe('SidecarClient version mismatch', () => {
     await expect(client.call('config.get', { profile_home: dir, config_path: resolve(dir, 'config.yaml') })).rejects.toMatchObject({ condition: 'agent_incompatible' })
   })
 
+  it('refuses config reads during startup when the live protocol version does not match', async () => {
+    const fixture = resolve(import.meta.dirname, '../../../contracts/fixtures/sidecar/runtime.json')
+    const logs: string[] = []
+    const script = `const fs=require('fs');const value=JSON.parse(fs.readFileSync(process.argv[1],'utf8'))['runtime.handshake'][0].result;require('readline').createInterface({input:process.stdin}).on('line',line=>{const req=JSON.parse(line);process.stderr.write('seen '+req.method+'\\n');if(req.method==='runtime.status')process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:req.id,result:{...value,rpc_version:value.rpc_version+1}})+'\\n')})`
+    client = new SidecarClient({ python: process.execPath, command: [process.execPath, '-e', script, fixture], agentDir: '', sidecarDir, hermesHome: '', log: (line) => logs.push(line) })
+    const starting = client.start().catch(() => undefined)
+    await expect(client.call('config.get', { profile_home: '/synthetic', config_path: '/synthetic/config.yaml' })).rejects.toMatchObject({ condition: 'sidecar_rpc_version_mismatch' })
+    expect(client.status).toBe('starting')
+    expect(logs.filter((line) => line.includes('seen config.get'))).toEqual([])
+    await client.close()
+    await starting
+  })
+
   it('recovers config access when an import-failed sidecar exits', async () => {
     const dir = mkdtempSync(resolve(tmpdir(), 'talaria-sidecar-config-restart-'))
     const fixture = resolve(import.meta.dirname, '../../../contracts/fixtures/sidecar/runtime.json')

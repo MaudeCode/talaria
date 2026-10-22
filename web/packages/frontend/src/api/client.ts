@@ -223,7 +223,7 @@ export function postForm<T>(path: string, form: FormData, schema: ZodType<T>, op
  * link owns URL building and JSON (de)serialisation. Non-2xx answers throw
  * `ApiError` so React code sees one error type for both paths.
  */
-export async function contractFetch(req: Request): Promise<Response> {
+export async function contractFetch(req: Request, dedupe: boolean): Promise<Response> {
   const url = new URL(req.url)
   const path = url.pathname.replace(/^.*?\/api\//, 'api/')
   const headers = new Headers(req.headers)
@@ -233,7 +233,7 @@ export async function contractFetch(req: Request): Promise<Response> {
   const idempotent = req.method === 'GET' || req.method === 'HEAD'
   const body = idempotent ? null : await req.text()
   // Identical in-flight GETs share one transport call until the next mutation (legacy HWEB-43 coalescing).
-  const dedupeKey = idempotent ? `${req.method} ${url.href} @${state.mutationSeq} contract` : null
+  const dedupeKey = idempotent && dedupe ? `${req.method} ${url.href} @${state.mutationSeq} contract` : null
   // Followers share the leader's *processed* outcome (401 redirect, ApiError envelope), never the raw transport promise.
   if (dedupeKey) {
     const existing = state.inflight.get(dedupeKey) as Promise<Response> | undefined

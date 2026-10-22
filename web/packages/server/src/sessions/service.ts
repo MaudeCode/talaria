@@ -52,10 +52,15 @@ export class HttpFailure extends Error {
 
 /**
  * Python `_agent_runtime_barrier_response`: a stale local Agent checkout is refused with a typed 409 before the caller
- * mutates anything. Any other failure of the check is not a verdict and lets the caller proceed.
+ * mutates anything. An unavailable connection is refused before dispatch; other check failures are not a verdict
+ * and let the caller proceed.
  */
 export async function ensureAgentRuntimeCurrent(sidecar: SidecarLike | null): Promise<void> {
   if (!sidecar) return
+  // Runtime RPCs bypass the client's ready gate and can queue behind an unfinished handshake.
+  if (chatReadiness(sidecar).condition === 'sidecar_unavailable') {
+    throw new HttpFailure(503, 'The Agent sidecar is not ready; retry once it finishes starting.', { condition: 'sidecar_unavailable' })
+  }
   try {
     await sidecar.call('runtime.ensure_current', {})
   } catch (error) {

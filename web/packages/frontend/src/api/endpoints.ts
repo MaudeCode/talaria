@@ -68,14 +68,14 @@ export const setReasoningDisplay = (display: 'show' | 'hide') => orpc().reasonin
 
 // Sessions
 export interface SessionListParams { include_archived?: boolean; all_profiles?: boolean; sidebar_source?: 'webui' | 'cli'; exclude_hidden?: boolean }
-export const fetchSessions = (params: SessionListParams = {}) => orpc().sessions.list({ include_archived: flag(params.include_archived), all_profiles: flag(params.all_profiles), sidebar_source: params.sidebar_source, exclude_hidden: flag(params.exclude_hidden) }, { signal: timeout(45_000) })
+export const fetchSessions = (params: SessionListParams = {}, signal?: AbortSignal) => orpc().sessions.list({ include_archived: flag(params.include_archived), all_profiles: flag(params.all_profiles), sidebar_source: params.sidebar_source, exclude_hidden: flag(params.exclude_hidden) }, { signal: timeout(45_000, signal) })
 /** The sidebar filters a search answers within (TAL-308); `project_id: 'none'` selects rows without a project. */
 export interface SessionSearchFilters { project_id: string | undefined; sidebar_source: 'webui' | 'cli' | undefined; include_archived: boolean }
 /** The sidebar's complete, ordered search result; rows carry `match_type` and, for content hits, `match_preview`. */
-export const searchSessions = (q: string, filters: SessionSearchFilters, depth = 5) => orpc().sessions.search({ q, content: '1', depth: String(depth), project_id: filters.project_id, sidebar_source: filters.sidebar_source, include_archived: filters.include_archived ? '1' : '0' })
+export const searchSessions = (q: string, filters: SessionSearchFilters, depth = 5, signal?: AbortSignal) => orpc().sessions.search({ q, content: '1', depth: String(depth), project_id: filters.project_id, sidebar_source: filters.sidebar_source, include_archived: filters.include_archived ? '1' : '0' }, { signal: timeout(30_000, signal) })
 export interface SessionGetParams { messages?: boolean; msg_limit?: number; msg_before?: number; resolve_model?: boolean }
-export const fetchSession = (id: SessionId, params: SessionGetParams = {}) =>
-  orpc().session.get({ session_id: id, messages: params.messages === false ? '0' : undefined, msg_limit: num(params.msg_limit), msg_before: num(params.msg_before), resolve_model: params.resolve_model === false ? '0' : undefined }, { signal: timeout(60_000) })
+export const fetchSession = (id: SessionId, params: SessionGetParams = {}, signal?: AbortSignal) =>
+  orpc().session.get({ session_id: id, messages: params.messages === false ? '0' : undefined, msg_limit: num(params.msg_limit), msg_before: num(params.msg_before), resolve_model: params.resolve_model === false ? '0' : undefined }, { signal: timeout(60_000, signal) })
 export const fetchAnchorScene = (session_id: string, message_ref: string, message_index: number, before: number, signal: AbortSignal) => orpc().session.anchorSceneGet({ session_id, message_ref, message_index: String(message_index), before: String(before), limit: '80' }, { signal: AbortSignal.any([signal, timeout(30_000)]) })
 /** TAL-331: the whole result of a scene tool row a limited response clipped (`result_truncated`). */
 export const fetchToolResult = (session_id: string, tool_call_id: string, signal: AbortSignal) => orpc().session.toolResult({ session_id, tool_call_id }, { signal: AbortSignal.any([signal, timeout(30_000)]) })

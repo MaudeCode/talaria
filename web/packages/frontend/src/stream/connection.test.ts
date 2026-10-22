@@ -41,6 +41,30 @@ const { showToast } = await import('../features/toast/toast')
 const SID = 'sess-1'
 const token = (text: string): ChatEvent => parseChatEvent('token', JSON.stringify({ text }))!
 
+describe('terminal cache handoff', () => {
+  beforeEach(() => { opened.length = 0; readyState = 1; resetStreamStoreForTests() })
+  afterEach(() => resetConnectionsForTests())
+
+  it.each(['done', 'cancel', 'apperror', 'error'])('installs %s without refetching, but reloads an incomplete terminal snapshot', async (event) => {
+    const qc = new QueryClient()
+    configureStream({ queryClient: qc })
+    const settled = sessionFixture({ session_id: SID, messages: [{ role: 'assistant', content: 'Settled' }] })
+    const fetch = vi.fn(() => Promise.resolve({ session: settled }))
+    const observer = new QueryObserver(qc, { queryKey: keys.sessions.detail(SID), initialData: { session: sessionFixture({ session_id: SID, messages: [] }) }, staleTime: Infinity, queryFn: fetch })
+    const release = observer.subscribe(() => undefined)
+    try {
+      await attachToStream(SID, 'cache-run')
+      opened[0]!.onEvent(parseChatEvent(event, JSON.stringify({ session: settled }))!, '')
+      expect(qc.getQueryData(keys.sessions.detail(SID))).toEqual({ session: settled })
+      expect(fetch).not.toHaveBeenCalled()
+      await attachToStream(SID, 'incomplete-run')
+      opened[1]!.onEvent(parseChatEvent(event, JSON.stringify({ session: { session_id: SID } }))!, '')
+      await qc.refetchQueries({ queryKey: keys.sessions.detail(SID), type: 'active' }, { cancelRefetch: false })
+      expect(fetch).toHaveBeenCalledTimes(1)
+    } finally { release(); qc.clear() }
+  })
+})
+
 describe('stream attach cursor (TAL-316)', () => {
   it('retains the complete live turn through A -> B -> A and resumes only unseen frames (TAL-1050)', async () => {
     await attachToStream(SID, 'run-a', { transcript_seq: { stream_id: 'run-a', seq: 0 } })

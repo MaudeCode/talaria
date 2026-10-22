@@ -5,6 +5,9 @@ import { Archive, ArchiveRestore, Filter, GitBranch, Plus, Search, Upload, X } f
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
+import { invalidateSessionQueries } from '../../api/sessionQueries'
+import { getStreamState, hasRecentTerminalSession } from '../../stream/store'
+import { hasLiveConnection } from '../../stream/connection'
 import { openSessionListStream } from '../../api/sse'
 import type { SessionRow } from '../../contracts'
 import { PanelHead, PanelHeadButton } from '../../shell/Sidebar'
@@ -20,15 +23,18 @@ import { showToast } from '../toast/toast'
 import { useResourceEffects, useResourceMutation, withEffects } from './useResourceMutation'
 
 export function useSessionListQuery(params: api.SessionListParams = {}) {
-  return useQuery({ queryKey: keys.sessions.list(params as Record<string, string | boolean | number | undefined>), queryFn: () => api.fetchSessions(params), staleTime: 10_000 })
+  return useQuery({ queryKey: keys.sessions.list(params as Record<string, string | boolean | number | undefined>), queryFn: ({ signal }) => api.fetchSessions(params, signal), staleTime: 10_000 })
 }
 
 /**
  * TAL-1209: refetch the sidebar rows (list and search) and every query of the named session; other sessions' transcripts,
  * status, and background work stay cached, so a run's event stream does not refetch every mounted session.
  */
-function invalidateSidebar(qc: QueryClient, sessionId?: string | null) {
-  void qc.invalidateQueries({ predicate: ({ queryKey: [root, kind, id] }) => root === 'sessions' && (kind === 'list' || kind === 'search' || (!!sessionId && id === sessionId)) })
+function invalidateSidebar(qc: QueryClient, sessionId?: string | null, reason?: string) {
+  const cachedTerminal = !!sessionId && hasRecentTerminalSession(sessionId) && !!qc.getQueryData(keys.sessions.detail(sessionId))
+  // The sidebar can arrive first; a followed run supplies its snapshot or reconciles on stream loss.
+  const awaitingTerminal = !!sessionId && reason === 'session_done' && hasLiveConnection(sessionId) && getStreamState().turns[sessionId]?.doneAt === null
+  void invalidateSessionQueries(qc, sessionId, { detail: !cachedTerminal && !awaitingTerminal })
 }
 
 /** One EventSource for sidebar invalidation (`sessions_changed`), bounded to the panel's lifetime. */
@@ -39,7 +45,7 @@ export function useSessionListStream() {
     let handle = openSessionListStream({
       onEvent: (ev) => {
         if (ev.event === 'sessions_changed') {
-          if (ev.data.session_id) invalidateSidebar(qc, ev.data.session_id)
+          if (ev.data.session_id) invalidateSidebar(qc, ev.data.session_id, ev.data.reason)
           // No id (a delete, an import, or two sessions' events coalesced): any session may have changed.
           else void qc.invalidateQueries({ queryKey: keys.sessions.all })
         }
@@ -193,7 +199,7 @@ export function SessionListPanel() {
   // TAL-308: the server searches within the visible project, source tab and archive state; the local title filter covers the wait.
   const q = filter.trim()
   const searchFilters: api.SessionSearchFilters = { project_id: project === NO_PROJECT ? 'none' : (project ?? undefined), sidebar_source: cliCount > 0 ? source : undefined, include_archived: showArchived }
-  const search = useQuery({ queryKey: keys.sessions.search(q, searchFilters), queryFn: () => api.searchSessions(q, searchFilters), enabled: q.length >= 2, staleTime: 15_000 })
+  const search = useQuery({ queryKey: keys.sessions.search(q, searchFilters), queryFn: ({ signal }) => api.searchSessions(q, searchFilters, 5, signal), enabled: q.length >= 2, staleTime: 15_000 })
   const webuiCount = rows.length - cliCount
   // TAL-785: the server says when state.db could not serve the Agent sessions; an empty list alone would read as deleted history.
   const storage = data?.agent_storage
