@@ -20,7 +20,7 @@ import { showToast } from '../toast/toast'
 import { useResourceEffects, useResourceMutation, withEffects } from './useResourceMutation'
 
 export function useSessionListQuery(params: api.SessionListParams = {}) {
-  return useQuery({ queryKey: keys.sessions.list(params as Record<string, string | boolean | number | undefined>), queryFn: () => api.fetchSessions(params), staleTime: 10_000 })
+  return useQuery({ queryKey: keys.sessions.list(params as Record<string, string | boolean | number | undefined>), queryFn: ({ signal }) => api.fetchSessions(params, signal), staleTime: 10_000 })
 }
 
 /**
@@ -193,7 +193,7 @@ export function SessionListPanel() {
   // TAL-308: the server searches within the visible project, source tab and archive state; the local title filter covers the wait.
   const q = filter.trim()
   const searchFilters: api.SessionSearchFilters = { project_id: project === NO_PROJECT ? 'none' : (project ?? undefined), sidebar_source: cliCount > 0 ? source : undefined, include_archived: showArchived }
-  const search = useQuery({ queryKey: keys.sessions.search(q, searchFilters), queryFn: () => api.searchSessions(q, searchFilters), enabled: q.length >= 2, staleTime: 15_000 })
+  const search = useQuery({ queryKey: keys.sessions.search(q, searchFilters), queryFn: ({ signal }) => api.searchSessions(q, searchFilters, 5, signal), enabled: q.length >= 2, staleTime: 15_000 })
   const webuiCount = rows.length - cliCount
   // TAL-785: the server says when state.db could not serve the Agent sessions; an empty list alone would read as deleted history.
   const storage = data?.agent_storage

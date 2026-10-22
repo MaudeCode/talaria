@@ -14,7 +14,7 @@ import { appRoot } from '../lib/appRoot'
 export type ContractClient = ContractRouterClient<typeof routeContract>
 const DEFAULT_TIMEOUT_MS = 30_000
 /** Per-call timeout for long routes: `orpc().chat.start(body, { signal: timeout(60_000) })`. */
-export const timeout = (ms: number): AbortSignal => AbortSignal.timeout(ms)
+export const timeout = (ms: number, signal?: AbortSignal): AbortSignal => signal ? AbortSignal.any([signal, AbortSignal.timeout(ms)]) : AbortSignal.timeout(ms)
 
 function createClient(): ContractClient {
   const link = new OpenAPILink(routeContract, {

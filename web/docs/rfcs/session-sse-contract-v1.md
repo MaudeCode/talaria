@@ -14,8 +14,16 @@
 | `GET /api/session/stream?session_id=` | Viewed-session invalidation across idle and running periods. |
 
 Web's transcript hook and App's existing session-event transport keep the viewed
-session's stream open. `initial`, `session-updated`, `server_turn_started`,
+session's stream open. `session-updated`, `server_turn_started`,
 `bg_task_complete`, and `process_complete` invalidate authoritative session detail.
+Web sends the cached server-owned `message_count` as `known_count` when available,
+including zero, so subscribe recovery can signal missed persisted messages. Its
+first `initial` leaves the ordinary mount fetch/cache policy in charge; subsequent
+`initial` frames resync once per reconnect. Window focus does not refetch the open
+transcript. Cancelled detail, list and search queries abort their HTTP transport
+while retaining their existing request deadlines. Consecutive identical queued
+`session-updated` signals coalesce for stalled subscribers; distinct payloads and
+intervening events keep their order.
 The global sidebar feed remains independent. Reconnection refreshes detail even
 when no change was retained while the client was absent.
 

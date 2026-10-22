@@ -2,7 +2,7 @@ import { createServer, type ServerResponse } from 'node:http'
 import type { Page } from '@playwright/test'
 import { expect, test } from './fixtures'
 
-test.use({ serviceWorkers: 'block' })
+test.use({ serviceWorkers: 'block', video: 'on' })
 
 /** Switching sessions leaves nothing of the previous one behind: its queue, YOLO state, or compression (TAL-517). */
 
@@ -143,4 +143,64 @@ test('leaving a session mid-compression stops it: the next session stays unlocke
   await page.waitForTimeout(2500)
   await expect(page).toHaveURL(/\/session\/switch-compress-b$/)
   expect(polls - seen).toBeLessThanOrEqual(1)
+})
+
+
+test.describe('viewed-session cache', () => {
+  test('cached entry and tab focus avoid reloads while reconnect resyncs once', async ({ page }, testInfo) => {
+    const feeds: { sid: string; response: ServerResponse; knownCount: string | null }[] = []
+    const detailCalls: string[] = []
+    const server = createServer((request, response) => {
+      const url = new URL(request.url ?? '/', 'http://fixture')
+      response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Access-Control-Allow-Origin': process.env.HERMES_E2E_BASE_URL!, 'Access-Control-Allow-Credentials': 'true' })
+      response.write('retry: 50\n\n: connected\n\n')
+      feeds.push({ sid: url.searchParams.get('session_id') ?? '', response, knownCount: url.searchParams.get('known_count') })
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const address = server.address()
+    if (!address || typeof address === 'string') throw new Error('Missing fixture port')
+    await page.route('**/api/session?**', (route) => {
+      const sid = new URL(route.request().url()).searchParams.get('session_id') ?? ''
+      detailCalls.push(sid)
+      return route.fulfill({ json: { session: { session_id: sid, title: 'Cached conversation', message_count: 2, messages: transcript(sid) } } })
+    })
+    await page.route('**/api/session/stream?**', (route) => route.continue({ url: `http://127.0.0.1:${address.port}/${new URL(route.request().url()).search}` }))
+    const initial = (feed: typeof feeds[number]) => feed.response.write(`event: initial\ndata: ${JSON.stringify({ session_id: feed.sid })}\n\n`)
+    try {
+      await page.goto('/session/cache-a')
+      await expect(page.locator('#messages').getByText('cache-a answer')).toBeVisible()
+      await expect.poll(() => feeds.length).toBe(1)
+      initial(feeds[0]!)
+      await enter(page, 'cache-b')
+      await expect.poll(() => feeds.length).toBe(2)
+      initial(feeds[1]!)
+      const beforeReturn = detailCalls.filter((sid) => sid === 'cache-a').length
+      await enter(page, 'cache-a')
+      await expect.poll(() => feeds.length).toBe(3)
+      initial(feeds[2]!)
+      await page.waitForTimeout(250)
+      const path = testInfo.outputPath(`cached-entry-${testInfo.project.name}.png`)
+      await page.screenshot({ path })
+      await testInfo.attach('Cached entry', { path, contentType: 'image/png' })
+      expect(detailCalls.filter((sid) => sid === 'cache-a')).toHaveLength(beforeReturn)
+      expect(feeds[2]!.knownCount).toBe('2')
+      // Make the detail stale, then exercise the browser event TanStack uses for window focus.
+      await page.waitForTimeout(5_100)
+      await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+      await page.waitForTimeout(250)
+      expect(detailCalls.filter((sid) => sid === 'cache-a')).toHaveLength(beforeReturn)
+      feeds[2]!.response.end()
+      await expect.poll(() => feeds.length).toBe(4)
+      initial(feeds[3]!)
+      await expect.poll(() => detailCalls.filter((sid) => sid === 'cache-a').length).toBe(beforeReturn + 1)
+      await expect(page.locator('#messages').getByText('cache-a answer')).toBeVisible()
+      const reconnected = testInfo.outputPath(`reconnected-${testInfo.project.name}.png`)
+      await page.screenshot({ path: reconnected })
+      await testInfo.attach('Reconnected', { path: reconnected, contentType: 'image/png' })
+    } finally {
+      await page.close()
+      for (const { response } of feeds) response.end()
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
+  })
 })

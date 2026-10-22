@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import { configureClient, get, post, request, resetClientForTests } from './client'
 import { createMemoryAdapter, makeSession } from '../contracts/adapters/memory'
-import { checkUpdatesNow, fetchSession, fetchUpdatesCheck, renameSession, setReasoningEffort, startChat } from './endpoints'
+import { checkUpdatesNow, fetchSessions, searchSessions, fetchSession, fetchUpdatesCheck, renameSession, setReasoningEffort, startChat } from './endpoints'
 import { isApiError } from '../contracts/common'
 import { resetAppRootForTests } from '../lib/appRoot'
 
@@ -176,3 +176,21 @@ describe('typed client against the in-memory adapter', () => {
     await expect(p).rejects.toMatchObject({ kind: 'aborted' })
   })
 })
+
+
+for (const endpoint of ['detail', 'list', 'search'] as const) {
+  it(`forwards cancellation through the ${endpoint} session endpoint to the transport`, async () => {
+    const signals: AbortSignal[] = []
+    configureClient({ transport: (req) => {
+      if (req.signal) signals.push(req.signal)
+      return new Promise(() => undefined)
+    } })
+    const controller = new AbortController()
+    if (endpoint === 'detail') void fetchSession('cancelled', {}, controller.signal)
+    else if (endpoint === 'list') void fetchSessions({}, controller.signal)
+    else void searchSessions('query', { project_id: undefined, sidebar_source: undefined, include_archived: false }, 5, controller.signal)
+    await vi.waitFor(() => expect(signals).toHaveLength(1))
+    controller.abort()
+    expect(signals[0]!.aborted).toBe(true)
+  })
+}
