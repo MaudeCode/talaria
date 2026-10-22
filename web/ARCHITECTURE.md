@@ -182,6 +182,11 @@ arrival timestamps remain authoritative for event times, tool durations and mete
 The JSON journal keeps at most 1,000 recently used run-to-session resolutions per backend instance.
 Each lookup rechecks the resolved journal or pruned summary and reads its current contents; missing paths
 fall back to discovery and misses are never cached. Session deletion and backend close release cached owners.
+Per-session SSE reconnects read each journal asynchronously once. The replay result owns a request-local
+continuation that reads only the active run's appended bytes before handing off to the live queue.
+The continuation shares the replay's byte/row limits and checks file identity and contiguous sequence;
+an unsafe tail or a newly created non-active journal falls back to a session snapshot.
+No journal offsets persist across requests.
 
 Concurrency: one event loop, no locks. Per-session serialization, stream slots, the coalesced index
 writer, and the update lock are promise-based; `docs/lock-ownership.md` lists the ordering rules that

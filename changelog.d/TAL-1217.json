@@ -1,0 +1,1 @@
+{"entries":[{"category":"Fixed","summary":"Chats reconnect without repeatedly reading their full event history.","highlight":false,"components":["web"]}]}

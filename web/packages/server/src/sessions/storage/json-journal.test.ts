@@ -106,6 +106,61 @@ it('prefers a recreated journal over a warm pruned summary', async () => {
   await writer.close()
 })
 
+it('continues at UTF-8 byte offsets and can catch a run created after the full replay', async () => {
+  const journal = fixture()
+  const writer = await journal.writer('session', 'run')
+  await writer.appendSseEvent('token', { text: '🌲 é' })
+  const replay = await journal.readSessionRunEvents('session', 'run:1')
+  expect(replay.status).toBe('ok')
+  expect(await replay.readActiveTail?.('run')).toMatchObject({ status: 'ok', events: [] })
+  const second = await writer.appendSseEvent('token', { text: 'after the full read' })
+  expect(await replay.readActiveTail?.('run')).toMatchObject({ status: 'ok', events: [second] })
+  const next = await journal.writer('session', 'new-run')
+  const first = await next.appendSseEvent('token', { text: 'new run' })
+  expect(await replay.readActiveTail?.('new-run')).toMatchObject({ status: 'ok', events: [first] })
+})
+
+it.each(['replace', 'truncate', 'remove', 'malformed', 'gap', 'foreign'] as const)('rejects an unsafe active tail after %s', async (change) => {
+  const journal = fixture()
+  const writer = await journal.writer('session', 'run')
+  const first = await writer.appendSseEvent('token', { text: 'first' })
+  const replay = await journal.readSessionRunEvents('session', 'run:1')
+  const path = journal.pathFor('session', 'run')
+  await writer.close()
+  if (change === 'replace') { fs.renameSync(path, path + '.old'); fs.writeFileSync(path, JSON.stringify(first) + '\n') }
+  if (change === 'truncate') fs.truncateSync(path)
+  if (change === 'remove') fs.unlinkSync(path)
+  if (change === 'malformed') fs.appendFileSync(path, '{torn\n')
+  if (change === 'gap' || change === 'foreign') fs.appendFileSync(path, JSON.stringify({ ...first, seq: change === 'gap' ? 3 : 2, event_id: change === 'gap' ? 'run:3' : 'run:2', session_id: change === 'foreign' ? 'another' : 'session' }) + '\n')
+  const tail = await replay.readActiveTail?.('run')
+  expect(tail?.status).toBe(change === 'malformed' ? 'replay_malformed' : change === 'gap' || change === 'foreign' ? 'replay_noncontiguous' : 'replay_changed')
+  expect(tail?.events).toEqual([])
+})
+
+it.each(['bytes', 'rows'] as const)('shares the session replay %s limit with the active tail', async (limit) => {
+  const journal = fixture()
+  const writer = await journal.writer('session', 'run')
+  if (limit === 'rows') {
+    for (let i = 0; i < 4096; i++) await writer.appendSseEvent('token', {})
+  } else await writer.appendSseEvent('token', { text: 'x'.repeat(4 * 1024 * 1024 - 1024) })
+  const replay = await journal.readSessionRunEvents('session', 'run:1')
+  expect(replay.status).toBe('ok')
+  await writer.appendSseEvent('token', { text: 'x'.repeat(2048) })
+  expect(await replay.readActiveTail?.('run')).toMatchObject({ status: `replay_limit_${limit}`, events: [] })
+})
+
+it('preserves cursor validation and missing/pruned/foreign snapshot reasons', async () => {
+  const journal = fixture()
+  await writeRun(journal, 'session')
+  await writeRun(journal, 'other', 'foreign')
+  fs.writeFileSync(join(journal.root(), 'session', 'pruned.summary.json'), '{}')
+  for (const [cursor, status] of [
+    ['', 'ok'], ['bad', 'cursor_invalid'], ['../run:1', 'cursor_invalid'],
+    ['run:0', 'cursor_invalid'], ['run:2', 'cursor_event_missing'],
+    ['missing:1', 'cursor_run_missing'], ['pruned:1', 'cursor_pruned'], ['foreign:1', 'cursor_session_mismatch'],
+  ]) expect((await journal.readSessionRunEvents('session', cursor)).status).toBe(status)
+})
+
 it('invalidates session deletion, including an already removed directory', async () => {
   const journal = fixture()
   for (const removedExternally of [false, true]) {

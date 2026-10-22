@@ -88,7 +88,14 @@ export interface JournalWriter {
   appendSseEvent(event: string, payload: unknown, meta?: JournalEventMeta): Promise<JournalEvent>
   close(): Promise<void>
 }
-export interface SessionJournalReplay { status: string; events: JournalEvent[]; cursor_run_id: string | null; cursor_seq: number | null }
+export interface SessionJournalReplay {
+  status: string
+  events: JournalEvent[]
+  cursor_run_id: string | null
+  cursor_seq: number | null
+  /** Request-local continuation, sharing the full replay's byte/row budget and file offsets. */
+  readActiveTail?: (runId: string) => Promise<SessionJournalReplay>
+}
 export interface JournalBackend {
   open(sid: string, streamId: string, opts: { durability: 'eager' | 'terminal-only' }): Promise<JournalWriter>
   read(sid: string, streamId: string, fromSeq: number): AsyncIterable<JournalEvent>
