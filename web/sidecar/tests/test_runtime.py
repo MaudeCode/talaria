@@ -29,16 +29,21 @@ def receipt_runtime(tmp_path, monkeypatch):
 
 
 def test_ensure_current_caches_expensive_receipt_discovery(receipt_runtime, monkeypatch):
+    import os
     from pathlib import Path
 
     runtime, clock = receipt_runtime
     packed = runtime.agent_dir / '.git/packed-refs'
-    calls = {'glob': 0, 'packed': 0}
-    glob, read_text = Path.glob, Path.read_text
+    calls = {'directory': 0, 'packed': 0}
+    glob, scandir, read_text = Path.glob, os.scandir, Path.read_text
 
     def counted_glob(path, pattern):
-        calls['glob'] += 1
+        calls['directory'] += 1
         return glob(path, pattern)
+
+    def counted_scandir(path):
+        calls['directory'] += 1
+        return scandir(path)
 
     def counted_read(path, *args, **kwargs):
         if path == packed:
@@ -46,16 +51,17 @@ def test_ensure_current_caches_expensive_receipt_discovery(receipt_runtime, monk
         return read_text(path, *args, **kwargs)
 
     monkeypatch.setattr(Path, 'glob', counted_glob)
+    monkeypatch.setattr(os, 'scandir', counted_scandir)
     monkeypatch.setattr(Path, 'read_text', counted_read)
     for _ in range(50):
         runtime.ensure_current()
-    assert calls == {'glob': 2, 'packed': 1}
+    assert calls == {'directory': 2, 'packed': 1}
     clock.now += .999
     runtime.ensure_current()
-    assert calls == {'glob': 2, 'packed': 1}
+    assert calls == {'directory': 2, 'packed': 1}
     clock.now += .001
     runtime.ensure_current()
-    assert calls == {'glob': 4, 'packed': 2}
+    assert calls == {'directory': 4, 'packed': 2}
 
 
 @pytest.mark.parametrize('obligation', ['fixed', 'dependency', 'service', 'claim', 'loose', 'missing-directory', 'packed', 'missing-packed'])
@@ -117,6 +123,27 @@ def test_cached_discovery_fails_closed_and_retries_unreadable_evidence(receipt_r
         with pytest.raises(AgentRuntimeStale) as failure:
             runtime.ensure_current()
         assert failure.value.data['agent_update_state'] == 'unknown'
+    runtime.ensure_current()
+
+
+def test_unreadable_receipt_directory_never_becomes_a_clean_verdict(receipt_runtime):
+    import os
+    from talaria_sidecar.runtime import AgentRuntimeStale
+
+    if not hasattr(os, 'geteuid') or os.geteuid() == 0:
+        pytest.skip('Requires POSIX directory permissions enforced for a non-root user')
+    runtime, clock = receipt_runtime
+    runtime.ensure_current()
+    clock.now += 1
+    pending = runtime.agent_dir / '.git/refs/talaria/autostash/pending'
+    mode = pending.stat().st_mode
+    pending.chmod(0)
+    try:
+        with pytest.raises(AgentRuntimeStale) as failure:
+            runtime.ensure_current()
+        assert failure.value.data['agent_update_state'] == 'unknown'
+    finally:
+        pending.chmod(mode)
     runtime.ensure_current()
 
 

@@ -138,7 +138,12 @@ def _receipt_candidates(path, pattern, cache):
         if previous is not None and previous[0] == stamp and 0 <= now - previous[1] < 1:
             return previous[2]
     if pattern is not None:
-        found = tuple(path.glob(pattern))
+        try:
+            # glob suppresses enumeration errors, which cannot authorize Agent admission.
+            with os.scandir(path) as children:
+                found = tuple(path / child.name for child in children if Path(child.name).match(pattern))
+        except FileNotFoundError:
+            found = ()
     else:
         try:
             found = (path,) if any(' refs/talaria/autostash/pending/' in line for line in path.read_text().splitlines()) else ()
