@@ -261,3 +261,20 @@ def test_cancel_during_source_preparation_never_dispatches_native_work(dashboard
     d.ctx.check_cancelled = check
     with pytest.raises(Cancelled):
         _api(d, monkeypatch, native)(authenticated=True)
+
+
+def test_native_load_trace_does_not_expand_the_entire_snapshot_source(dashboards, monkeypatch):
+    import importlib.util
+    import traceback
+    from pathlib import Path
+    from talaria_sidecar.errors import RpcError
+    original = dashboards.homes[0] / 'plugins/board/dashboard/api.py'
+    original.write_text("PRIVATE_SAMPLE = 'fixture_source_not_for_trace'\nraise RuntimeError('fixture load failure')\n")
+    def native(name, root, api, *args, **kwargs):
+        spec = importlib.util.spec_from_file_location('dashboard_fixture', Path(root) / api)
+        spec.loader.exec_module(importlib.util.module_from_spec(spec))
+    with pytest.raises(RpcError, match='Agent plugin request failed') as failure:
+        _api(dashboards, monkeypatch, native)(authenticated=True)
+    trace = ''.join(traceback.format_exception(type(failure.value), failure.value, failure.value.__traceback__))
+    assert 'fixture load failure' in trace
+    assert 'fixture_source_not_for_trace' not in trace

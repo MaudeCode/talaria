@@ -65,11 +65,12 @@ def _api_source(root, api, source):
             raise RpcError('Agent dashboard source cache is shutting down', condition='plugin_host_unavailable')
         if key in _SOURCES:
             return _SOURCES[key]
-        payload = (f'__file__ = {origin!r}\n'
+        payload = (f'__talaria_source__ = {source!r}\n'
+                   f'__file__ = {origin!r}\n'
                    "__loader__ = __import__('importlib.machinery', fromlist=['SourceFileLoader']).SourceFileLoader(__name__, __file__)\n"
                    "__cached__ = __import__('importlib.util', fromlist=['cache_from_source']).cache_from_source(__file__)\n"
                    "if __spec__ is not None:\n    __spec__.origin = __file__\n    __spec__.loader = __loader__\n    __spec__.cached = __cached__\n"
-                   f"exec(compile({source!r}, __file__, 'exec'), globals())\n").encode()
+                   "exec(compile(globals().pop('__talaria_source__'), __file__, 'exec'), globals())\n").encode()
         if len(_SOURCES) >= 512 or _SOURCE_BYTES + len(payload) > _MAX_SOURCE_BYTES:
             raise RpcError('Agent dashboard source cache is full', condition='plugin_host_unavailable')
         path = None

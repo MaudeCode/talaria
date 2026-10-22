@@ -18,12 +18,15 @@ import os
 from fastapi import APIRouter, Request
 from hermes_cli.web_deps import late
 router = APIRouter()
+calls = 0
 @router.get("/identity")
 async def identity(request: Request):
+    global calls
     late("_require_token")(request)
+    calls += 1
     from pathlib import Path
     return {"home": os.environ["HERMES_HOME"], "source": __file__, "resource": Path(__file__).with_name("profile-resource.txt").read_text(),
-            "origin": __spec__.origin, "loader_source": __loader__.get_filename(__name__), "pid": os.getpid(), "query": str(request.url.query),
+            "origin": __spec__.origin, "loader_source": __loader__.get_filename(__name__), "pid": os.getpid(), "query": str(request.url.query), "calls": calls,
             "credentials": [k for k in request.headers if k.lower() in {"authorization", "cookie", "x-hermes-session-token"}]}
 '''
 secondary = 'talaria-secondary-probe'
@@ -68,16 +71,22 @@ try:
         assert Path(identity['source']).resolve() == (home / 'plugins/board/dashboard/api.py').resolve(), identity
         assert identity['origin'] == identity['source'] == identity['loader_source'], identity
         assert identity['resource'] == home.name + ':board', identity
+        assert identity['calls'] == 1, identity
         assert identity['pid'] != os.getpid() and identity['credentials'] == [] and identity['query'] == 'q=ok', identity
         with scoped_home(home, load_plugins=False):
             host = get_plugin_manager()._plugin_host()
             hosts.append(host)
         # Same cached app, concurrent admitted/refused IPC calls. No HTTP marker grants admission.
+        root = (home / 'plugins/board/dashboard').resolve()
+        source_root, source_api = dashboard_plugins._api_source(str(root), 'api.py', (root / 'api.py').read_bytes())
         def request(admitted):
-            return host.asgi_request('board', str(home / 'plugins/board/dashboard'), 'api.py', 'GET', '/identity',
-                                     'authenticated=true', [('X-Hosted-Http-Authenticated','true')], b'', timeout=10, authenticated=admitted)['status']
+            result = host.asgi_request('board', source_root, source_api, 'GET', '/identity',
+                                      'authenticated=true', [('X-Hosted-Http-Authenticated','true')], b'', timeout=10, authenticated=admitted)
+            return result['status'], json.loads(result['body'])['calls'] if result['status'] == 200 else None
         with ThreadPoolExecutor(max_workers=4) as pool:
-            assert list(pool.map(request, [True, False, True, False])) == [200, 401, 200, 401]
+            results = list(pool.map(request, [True, False, True, False]))
+            assert [status for status, _ in results] == [200, 401, 200, 401]
+            assert sorted(count for _, count in results if count is not None) == [2, 3], results
     assert call('asset', base, name=secondary, path='dist/index.html')['status'] == 404
     secondary_result = call('request', other, name=secondary, **request_params)
     assert secondary_result['status'] == 200, secondary_result
