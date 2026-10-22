@@ -103,11 +103,11 @@ describe('parent snapshot lookup (TAL-1219)', () => {
           await store.save(parent)
         }
         const index = await store.readIndexEntries()
-        if (legacy) await store.deps.storage.sessions.writeIndex(index.map((row) => {
+        if (legacy) writeFileSync(sessionIndexPath(store), JSON.stringify([null, ...index.map((row) => {
           const old = { ...row }
           Reflect.deleteProperty(old, 'pre_compression_snapshot')
           return old
-        }))
+        })]))
         store.sessions.clear()
       }
       const load = vi.spyOn(store, 'loadMetadataOnly')

@@ -768,9 +768,8 @@ export async function buildSessionListPayload(store: SessionStore, params: ListP
   }
   const identity = params.gatewayIdentity ?? new Map<string, GatewayIdentity>()
   const indexedParents = new Map((await store.readIndexEntries().catch(() => [])).flatMap((row) => {
-    const clean = sanitizeSessionRow(row, store, 'index')
     // Older indexes omit the flag; only an explicit boolean can replace the document read.
-    return clean && typeof clean.pre_compression_snapshot === 'boolean' ? [[str(clean.session_id), clean] as const] : []
+    return typeof row?.session_id === 'string' && typeof row.pre_compression_snapshot === 'boolean' ? [[row.session_id, row] as const] : []
   }))
   const snapshots = new Set<string>()
   for (const parent of new Set(scoped.map((row) => str(row.parent_session_id)))) {
