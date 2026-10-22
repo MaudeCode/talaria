@@ -33,7 +33,11 @@ test('shows the session\'s Agent notices and follows the server\'s live list', a
   await page.route('**/api/chat/stream/status?**', (route) => route.fulfill({ json: { active: true, stream_id: 'notice-run', replay_available: false } }))
   const streams: ServerResponse[] = []
   let seq = 0
-  const send = (event: 'notices', data: { session_id: string; notices: typeof notices }) => { notices = data.notices; seq += 1; for (const r of streams) r.write(`id: notice-run:${String(seq)}\nevent: ${event}\ndata: ${JSON.stringify(data)}\n\n`) }
+  const send = (event: 'notices', data: { session_id: string; notices: typeof notices }) => {
+    notices = data.notices
+    seq += 1
+    for (const r of streams) if (!r.destroyed && !r.writableEnded) r.write(`id: notice-run:${String(seq)}\nevent: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+  }
   const server = createServer((_request, response) => {
     response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Access-Control-Allow-Origin': process.env.HERMES_E2E_BASE_URL!, 'Access-Control-Allow-Credentials': 'true' })
     response.write(`id: notice-run:${String(++seq)}\nevent: token\ndata: ${JSON.stringify({ text: 'Looking at your calendar.' })}\n\n`)
@@ -48,13 +52,17 @@ test('shows the session\'s Agent notices and follows the server\'s live list', a
     const tab = (text: string) => page.locator('#composerWrap').getByText(text)
     await expect(tab(memory.text)).toBeVisible()
     if (process.env.TAL803_SHOTS) await page.screenshot({ path: `${process.env.TAL803_SHOTS}/notice-${testInfo.project.name}.png` })
-    await expect.poll(() => streams.length).toBeGreaterThan(0)
+    await expect(page.locator('.live-turn .msg-body')).toContainText('Looking at your calendar.')
     send('notices', { session_id: sid, notices: [] })
     await expect(tab(memory.text)).toHaveCount(0)
     const refreshed = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/session')
     releaseInitial()
     await refreshed
     await expect(tab(memory.text)).toHaveCount(0)
+    await page.reload()
+    await expect(page.locator('#messages').getByText('Plan the week', { exact: true })).toBeVisible()
+    await expect(tab(memory.text)).toHaveCount(0)
+    await expect(page.locator('.live-turn .msg-body')).toContainText('Looking at your calendar.')
     if (process.env.TAL1227_SHOTS) await page.screenshot({ path: `${process.env.TAL1227_SHOTS}/before-${testInfo.project.name}.png` })
     send('notices', { session_id: sid, notices: [pending] })
     await expect(tab(pending.text)).toBeVisible()

@@ -97,7 +97,7 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     const saved = await json(res)
     expect(saved.name).toBe('my-skill')
     expect(readFileSync(String(saved.path), 'utf8')).toContain('# hi')
-    expect(walkSkillFiles(join(s.state, 'skills'))).toEqual([join(s.state, 'skills', 'custom', 'my-skill', 'SKILL.md')])
+    expect(await walkSkillFiles(join(s.state, 'skills'))).toEqual([join(s.state, 'skills', 'custom', 'my-skill', 'SKILL.md')])
     res = await post(s, '/api/skills/save', { name: '../escape', content: 'x' })
     expect(res.status).toBe(400)
     sidecar.respond('skills.find', (params) => ({ found: params.name === 'my-skill', skill_dir: params.name === 'my-skill' ? join(s.state, 'skills', 'custom', 'my-skill') : null, skill_md: params.name === 'my-skill' ? join(s.state, 'skills/custom/my-skill/SKILL.md') : null }))

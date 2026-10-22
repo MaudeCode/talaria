@@ -272,6 +272,8 @@ describe('chat turns through the sidecar', () => {
     const clockSidecar = new FakeSidecar()
     const clockServer = await bootTestServer({ sidecar: clockSidecar, now: () => now })
     let release: (() => void) | undefined
+    let started!: () => void
+    const turnStarted = new Promise<void>((resolve) => { started = resolve })
     try {
       const sid = await newSession(clockServer)
       clockSidecar.respond('chat.start', (_params, emit) => new Promise((resolve) => {
@@ -279,8 +281,10 @@ describe('chat turns through the sidecar', () => {
         vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
         emit({ event: 'notice', data: { key: 'band', kind: 'ttl', ttl_ms: 200, text: 'Usage at 90%' } })
         release = () => { resolve(completed([{ role: 'user', content: 'go' }, { role: 'assistant', content: 'ok' }])) }
+        started()
       }))
       const start = await json(await post(clockServer, '/api/chat/start', { session_id: sid, message: 'go' }))
+      await turnStarted
       const channel = clockServer.deps.registry.peek(String(start.stream_id))!
       const live = subscription === 'live' ? channel.subscribeWithSnapshot()[0] : null
       now = 1000.199
@@ -1888,6 +1892,7 @@ describe('chat turns through the sidecar', () => {
     expect(res.status).toBe(200)
     const next = await json(res)
     expect(next.stream_id).not.toBe(background)
+    await s.sse(`/api/chat/stream?stream_id=${String(next.stream_id)}`, (f) => f.event === 'token')
     release()
     await s.sse(`/api/chat/stream?stream_id=${String(next.stream_id)}&replay=1`, (f) => f.event === 'stream_end')
     const messages = ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages as Json[]

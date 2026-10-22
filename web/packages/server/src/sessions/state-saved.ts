@@ -2,24 +2,57 @@
  * Python `_persistent_state_snapshot` / `_persistent_state_changes`: lightweight memory and skill file signatures
  * taken before and after a turn so the stream can toast `state_saved` when the agent wrote them.
  */
-import { statSync } from 'node:fs'
-import { basename, dirname, join, relative } from 'node:path'
+import { lstat, stat } from 'node:fs/promises'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 import { walkSkillFiles } from '../tools/skills.js'
 
 export interface PersistentStateSnapshot { memory: Record<string, string>; skills: Record<string, string> }
 
 const MEMORY_FILES: [string, string[]][] = [['memory', ['memories', 'MEMORY.md']], ['user', ['memories', 'USER.md']], ['soul', ['SOUL.md']]]
+const skillInventories = new Map<string, { files: string[]; directories: Map<string, string | null> }>()
 
-function fileSignature(path: string): string | null {
-  try { const st = statSync(path, { bigint: true }); return `${st.mtimeNs}:${st.size}` } catch { return null }
+async function fileSignature(path: string, followSymlinks = true): Promise<string | null> {
+  try {
+    const st = await (followSymlinks ? stat : lstat)(path, { bigint: true })
+    if (!followSymlinks && st.isSymbolicLink()) return null
+    return `${st.dev}:${st.ino}:${st.mtimeNs}:${st.ctimeNs}:${st.size}`
+  } catch { return null }
 }
 
-export function persistentStateSnapshot(profileHome: string | null): PersistentStateSnapshot {
+export async function persistentStateSnapshot(profileHome: string | null): Promise<PersistentStateSnapshot> {
   const out: PersistentStateSnapshot = { memory: {}, skills: {} }
   if (!profileHome) return out
-  for (const [key, parts] of MEMORY_FILES) { const sig = fileSignature(join(profileHome, ...parts)); if (sig !== null) out.memory[key] = sig }
+  profileHome = resolve(profileHome)
+  await Promise.all(MEMORY_FILES.map(async ([key, parts]) => {
+    const sig = await fileSignature(join(profileHome, ...parts))
+    if (sig !== null) out.memory[key] = sig
+  }))
   const skillsDir = join(profileHome, 'skills')
-  for (const file of walkSkillFiles(skillsDir)) { const sig = fileSignature(file); if (sig !== null) out.skills[relative(skillsDir, file).replaceAll('\\', '/')] = sig }
+  let inventory = skillInventories.get(profileHome)
+  // Deep additions change their immediate parent, while in-place edits change only the file.
+  const unchanged = inventory && (await Promise.all([...inventory.directories].map(async ([dir, sig]) =>
+    (await fileSignature(dir, dir === skillsDir)) === sig,
+  ))).every(Boolean)
+  if (!inventory || !unchanged) {
+    const directories = new Map<string, string | null>()
+    let complete = true
+    const files = await walkSkillFiles(skillsDir, {
+      beforeRead: async (dir) => { directories.set(dir, await fileSignature(dir, dir === skillsDir)) },
+      onReadError: () => { complete = false },
+    })
+    inventory = { files, directories }
+    skillInventories.delete(profileHome)
+    if (complete) {
+      skillInventories.set(profileHome, inventory)
+      // Deleted profiles must not accumulate inventories for the lifetime of the server.
+      if (skillInventories.size > 32) skillInventories.delete(skillInventories.keys().next().value!)
+    }
+  }
+  const signatures = await Promise.all(inventory.files.map((file) => fileSignature(file, false)))
+  for (const [i, file] of inventory.files.entries()) {
+    const sig = signatures[i]!
+    if (sig !== null) out.skills[relative(skillsDir, file).replaceAll('\\', '/')] = sig
+  }
   return out
 }
 

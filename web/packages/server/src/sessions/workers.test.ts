@@ -677,7 +677,11 @@ describe('background wakeups carry their update metadata (TAL-371)', () => {
     for (let i = 0; i < 60; i += 1) {
       const messages = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages as Json[]
       const row = messages.find((m) => m._source === 'process_wakeup')
-      if (row && !s.deps.registry.activeRuns.size) return row
+      if (row && typeof row._turn_id === 'string') {
+        await s.deps.turns.finished(row._turn_id)
+        const settled = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages as Json[]
+        return settled.find((m) => m._source === 'process_wakeup')
+      }
       await new Promise((r) => setTimeout(r, 50))
     }
     return undefined
@@ -691,13 +695,35 @@ describe('background wakeups carry their update metadata (TAL-371)', () => {
 
   it('a finished delegation batch is a delegation update', async () => {
     const sid = await newSid()
-    await s.deps.completions.processOne({ process_id: 'deleg_ok', delegation_id: 'deleg_ok', type: 'async_delegation', origin_ui_session_id: sid, consumed: false, goals: ['Audit the PVCs', 'Check\nbackups'], results: [{ status: 'completed' }, { status: 'success' }] })
-    const row = await wakeupRow(sid)
-    expect(row, 'the wakeup row settled into the transcript').toBeDefined()
-    // TAL-460: one completion line per finished agent, from the structured event.
-    expect(row?._background_update).toEqual({ kind: 'delegation', attention: false, count: 1, summary: 'ASYNC DELEGATION BATCH COMPLETE — deleg_ok', review_state: 'reviewed', lines: [
-      { kind: 'agent', status: 'completed', label: 'Audit the PVCs', review_state: 'reviewed' }, { kind: 'agent', status: 'completed', label: 'Check', review_state: 'reviewed' },
-    ] })
+    const chat = sidecar.responderFor('chat.start')
+    let started!: () => void
+    const running = new Promise<void>((resolve) => { started = resolve })
+    let release = (): void => undefined
+    sidecar.respond('chat.start', (params) => new Promise((resolve) => {
+      release = () => { resolve({ ...completed('Handled.'), messages: [{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Handled.' }] }) }
+      started()
+    }))
+    const get = s.get
+    const read = vi.spyOn(s, 'get')
+    try {
+      await s.deps.completions.processOne({ process_id: 'deleg_ok', delegation_id: 'deleg_ok', type: 'async_delegation', origin_ui_session_id: sid, consumed: false, goals: ['Audit the PVCs', 'Check\nbackups'], results: [{ status: 'completed' }, { status: 'success' }] })
+      await running
+      const stream = (await s.deps.sessionStore.get(sid)).active_stream_id!
+      // The response was projected while running, but the worker finishes before its caller reads it.
+      read.mockImplementationOnce(async (path, init) => {
+        const response = await get(path, init)
+        await response.clone().text()
+        release()
+        await s.deps.turns.finished(stream)
+        return response
+      })
+      const row = await wakeupRow(sid)
+      expect(row, 'the wakeup row settled into the transcript').toBeDefined()
+      // TAL-460: one completion line per finished agent, from the structured event.
+      expect(row?._background_update).toEqual({ kind: 'delegation', attention: false, count: 1, summary: 'ASYNC DELEGATION BATCH COMPLETE — deleg_ok', review_state: 'reviewed', lines: [
+        { kind: 'agent', status: 'completed', label: 'Audit the PVCs', review_state: 'reviewed' }, { kind: 'agent', status: 'completed', label: 'Check', review_state: 'reviewed' },
+      ] })
+    } finally { release(); read.mockRestore(); sidecar.respond('chat.start', chat) }
   })
 
   it('a failed process completion is a process update that needs attention', async () => {

@@ -757,7 +757,8 @@ export class TurnRunner {
       }
       // Python `_public_prefill_context_status`: the session-recall prefill hook was dropped with TAL-245, so the
       // context frame always reports the not-configured shape.
-      const persistentBefore = persistentStateSnapshot(deps.profileHome(s.profile))
+      const persistentHome = deps.profileHome(s.profile)
+      const persistentBefore = await persistentStateSnapshot(persistentHome)
       await put('context_status', { session_id: sessionId, prefill: { status: 'not_configured', source: 'none', label: '', message_count: 0 } })
       // Setup awaits can outlive a gateway adoption, so the owner is rechecked right before dispatch.
       await deps.service().assertWritable(s)
@@ -968,6 +969,12 @@ export class TurnRunner {
       const withImages = <T extends Record<string, unknown>>(rows: T[]): T[] => withNativeImagesRestored(rows, conversationHistory, apiHistory)
       result.messages = withImages(result.messages)
       if (result.context_messages) result.context_messages = withImages(result.context_messages)
+      // Snapshot IO must finish before the cancellation/ownership gates and final transcript writeback.
+      let persistentChanges: ReturnType<typeof persistentStateChanges> | null = null
+      if (!opts.ephemeral && result.status === 'completed' && !this.registry.cancelled.has(streamId)) {
+        try { persistentChanges = persistentStateChanges(persistentBefore, await persistentStateSnapshot(persistentHome)) }
+        catch (error) { deps.log(`[webui] persistent state change detection failed for ${sessionId}: ${(error as Error).message}`) }
+      }
       // TAL-1162: the settlement's one state.db read runs on the worker before the gates below decide, so a Stop that
       // lands during it takes the cancel path instead of racing this writeback.
       const settlement = await deps.service().settlementRead(s)
@@ -1137,9 +1144,8 @@ export class TurnRunner {
       deps.events.publish('session_done', { profile: s.profile, sessionId: s.session_id })
       // Python `_persistent_state_changes`: toast memory/skill files the agent wrote during the turn.
       try {
-        const changes = persistentStateChanges(persistentBefore, persistentStateSnapshot(deps.profileHome(s.profile)))
-        if (changes.memory_saved) (await put('state_saved', { session_id: sessionId, kind: 'memory', action: 'saved' }))
-        for (const change of changes.skills) (await put('state_saved', { session_id: sessionId, kind: 'skill', action: change.action, name: change.name }))
+        if (persistentChanges?.memory_saved) (await put('state_saved', { session_id: sessionId, kind: 'memory', action: 'saved' }))
+        for (const change of persistentChanges?.skills ?? []) (await put('state_saved', { session_id: sessionId, kind: 'skill', action: change.action, name: change.name }))
       } catch (error) {
         deps.log(`[webui] persistent state change detection failed for ${sessionId}: ${(error as Error).message}`)
       }
