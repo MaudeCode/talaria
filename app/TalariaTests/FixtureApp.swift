@@ -218,16 +218,12 @@ extension XCTestCase {
     /// The chat composer's text view, once the chat has one.
     @MainActor
     func composerTextView(in window: UIWindow, timeout: TimeInterval = 10) async -> UITextView? {
-        func find(_ view: UIView) -> UITextView? {
-            if let text = view as? UITextView, text.isEditable { return text }
-            return view.subviews.lazy.compactMap(find).first
-        }
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            if let text = find(window) { return text }
+            if let text = window.firstView(ofType: UITextView.self, where: \.isEditable) { return text }
             try? await Task.sleep(for: .milliseconds(50))
         }
-        return find(window)
+        return window.firstView(ofType: UITextView.self, where: \.isEditable)
     }
 
     /// Types `text` into the composer the way the keyboard does: through the text view's own input path, so the
