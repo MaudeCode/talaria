@@ -222,6 +222,18 @@ replay, session replacement, profile change, and unmount. Invariants from
 `docs/rfcs/live-to-final-assistant-replies.md` are asserted in
 `packages/frontend/src/stream/reducer.test.ts`.
 
+The chat controls retain their published snapshot across text-only updates and
+replay-cursor advances. `Transcript` subscribes to the complete published turn
+itself, so streamed text and reasoning update without rendering the composer and
+side panel again. Every other turn field still invalidates the controls, including
+prompts, errors, warnings, connection state and settlement. Controlled transcript
+views continue to render their supplied `live` prop.
+
+Unvirtualized settled rows share a layout/style-contained history block, separate
+from the changing live tail. Its height remains content-sized; the existing row
+containment keeps history searchable and lets reader anchors measure visible rows.
+The opt-in virtualizer retains its existing measurement ownership.
+
 Passive navigation closes the transport and invalidates pending status/settlement
 requests, retaining each existing `LiveTurn` with its cursor in the same store.
 Returning paints that turn immediately and reconnects from its last applied event.

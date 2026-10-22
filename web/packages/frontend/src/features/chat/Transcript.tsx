@@ -16,6 +16,7 @@ import { Button } from '../../ui/Button'
 import { LoadingState } from '../../ui/States'
 import { onScrollRequest, requestComposerRest } from './sendMotion'
 import { useAutoRead } from './useAutoRead'
+import { useLiveTurn } from '../../stream/store'
 
 const VIRTUALIZE_AT = 200
 /** How long after a wheel or touch move a scroll still counts as the reader's own. */
@@ -25,6 +26,8 @@ export interface TranscriptProps {
   rows: VisibleMessage[]
   disclosureScope?: string
   live: LiveTurn | null
+  /** The connected chat owns its text subscription here; controlled transcript views pass `live` alone. */
+  subscribeToStream?: boolean
   assistantName: string
   mode: ActivityMode
   renderUserMarkdown: boolean
@@ -59,7 +62,9 @@ export interface TranscriptProps {
  * virtualized with TanStack Virtual.
  */
 export function Transcript(props: TranscriptProps) {
-  const { rows: rawRows, live, assistantName, mode, renderUserMarkdown, autoFollow, sessionId, focusKey, actions, tts, truncated, loadedFrom, onLoadOlder, loadingOlder, olderError = false, emptyState, pendingUserText, showJumpButtons, virtualizeLongTranscripts } = props
+  const { rows: rawRows, assistantName, mode, renderUserMarkdown, autoFollow, sessionId, focusKey, actions, tts, truncated, loadedFrom, onLoadOlder, loadingOlder, olderError = false, emptyState, pendingUserText, showJumpButtons, virtualizeLongTranscripts } = props
+  const subscribedLive = useLiveTurn(props.subscribeToStream ? sessionId ?? null : null)
+  const live = props.subscribeToStream ? subscribedLive : props.live
   const scrollRef = useRef<HTMLDivElement>(null)
   const prependRef = useRef<{ from: number; anchors: { key: string; top: number; height: number }[]; height: number; offset: number } | null>(null)
   const [pinned, setPinned] = useState(true)
@@ -374,7 +379,7 @@ export function Transcript(props: TranscriptProps) {
                   )
                 })}
               </div>
-            ) : renderedRows}
+            ) : <div className="messages-inner messages-history">{renderedRows}</div>}
             {(pending || showLiveUser) && <UserMessageRow row={{ index: -1, key: 'pending-user', message: { role: 'user', content: liveUserText, attachments: pending ? props.pendingAttachments ?? [] : live?.userAttachments ?? [] } }} renderMarkdown={renderUserMarkdown} sessionId={sessionId} actions={{}} pending />}
             {showLive && live && <LiveTurnView turn={live} name={assistantName} mode={mode} userVisible omitToolIds={continuedTools} />}
             {/* The settled error row carries the message; only the frame's continuation link lives outside the session. */}

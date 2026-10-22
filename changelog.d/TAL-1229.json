@@ -5,6 +5,12 @@
       "summary": "Reduce repeated profile configuration reads during background activity.",
       "highlight": false,
       "components": ["web"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "Keep long chats responsive while replies stream.",
+      "highlight": false,
+      "components": ["web"]
     }
   ]
 }

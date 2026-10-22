@@ -74,6 +74,24 @@ it('renders each persisted message once while three token frames update the live
   expect(Object.fromEntries(persistedKeys.map((key) => [key, renders.mock.calls.filter(([rendered]) => rendered === key).length]))).toEqual(Object.fromEntries(persistedKeys.map((key) => [key, 1])))
 })
 
+it('updates streamed text without rendering composer controls again until turn state changes', async () => {
+  chat()
+  await screen.findByText('Persisted answer')
+  const token = (text: string, seq: number) => act(() => dispatch({ type: 'event', sessionId: 'memo-chat', streamId: 'live-run', event: { event: 'token', data: { text } }, lastEventId: `live-run:${seq}`, now: Date.now() }))
+  token('First', 1)
+  await screen.findByText('First')
+  composer.mockClear()
+  let text = 'First'
+  for (let seq = 2; seq <= 11; seq++) {
+    token(` word${seq}`, seq)
+    text += ` word${seq}`
+    await screen.findByText(text)
+  }
+  expect(composer).not.toHaveBeenCalled()
+  act(() => dispatch({ type: 'event', sessionId: 'memo-chat', streamId: 'live-run', event: { event: 'cancel', data: {} }, lastEventId: 'live-run:12', now: Date.now() }))
+  await waitFor(() => expect(composer).toHaveBeenLastCalledWith(expect.objectContaining({ busy: false })))
+})
+
 it('locks sending and shows the server restart state on a gateway-owned session', async () => {
   const owner = { state: 'attached' as const, reason: null, restarting: true, can_submit: false, can_interrupt: true, can_attach: false, revision: 1, execution_generation: 1, admissions: [] }
   const session = sessionFixture({ session_id: 'owner-chat', read_only: true, owner_attachment: owner })

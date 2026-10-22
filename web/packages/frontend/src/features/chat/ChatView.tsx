@@ -17,7 +17,7 @@ import { useSettingsQuery, useWorkspacesQuery } from '../../app/queries'
 import type { Session, SessionsList } from '../../contracts'
 import { configureStream, cancelTurn, getStreamContext, startTurn } from '../../stream/connection'
 import { dispatch, useTurnIntent } from '../../stream/store'
-import { isTerminal, runStart } from '../../stream/reducer'
+import { isTerminal, runStart, type LiveTurn } from '../../stream/reducer'
 import { useTranscript, type VisibleMessage } from './useTranscript'
 import { useSessionUpdate } from './useSessionUpdate'
 import { useEditMessage } from './useEditMessage'
@@ -49,6 +49,14 @@ import { bindFirstSend, ownsFirstSend, useFirstSend } from './firstSend'
 
 const TerminalPanel = lazy(() => import('../terminal/TerminalPanel').then((module) => ({ default: module.TerminalPanel })))
 
+// Text and replay cursors belong to the transcript. Every other turn field still updates chat controls.
+const TEXT_FIELDS = new Set<keyof LiveTurn>(['segments', 'reasoningText', 'reasoningTitles', 'lastEventId', 'lastSeq'])
+function sameTurnControls(previous: LiveTurn | null, next: LiveTurn | null): boolean {
+  if (previous === next) return true
+  if (!previous || !next) return false
+  return (Object.keys(next) as (keyof LiveTurn)[]).every((key) => TEXT_FIELDS.has(key) || Object.is(previous[key], next[key]))
+}
+
 export function ChatView({ sessionId }: { sessionId: string | null }) {
   const bootstrap = useBootstrap()
   const locale = useLocale()
@@ -57,7 +65,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
 
   const navigate = useNavigate()
   const settings = useSettingsQuery()
-  const { query, session, rows, base, live, truncated, loadOlder, loadingOlder, olderError, refresh } = useTranscript(sessionId)
+  const { query, session, rows, base, live, truncated, loadOlder, loadingOlder, olderError, refresh } = useTranscript(sessionId, sameTurnControls)
   const intent = useTurnIntent(sessionId)
   const { onEdit, dialog: editDialog, operation, runHistory } = useEditMessage(sessionId, refresh)
   const clarify = useClarify(sessionId, live)
@@ -394,6 +402,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
             disclosureScope={JSON.stringify([bootstrap.profile?.name ?? 'default', sessionId])}
             rows={rows}
             live={live}
+            subscribeToStream
             assistantName={assistantName}
             mode={mode}
             renderUserMarkdown={!!settings.data?.render_user_markdown}
