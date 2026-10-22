@@ -925,6 +925,7 @@ public struct DeepTruncateConfirmation: Equatable, Identifiable {
 public struct ModelSwitchConfirmation: Equatable, Identifiable {
     public let id = UUID()
     public let warnings: [ModelConfirmationRequired.Warning]
+    public var message: String? = nil
     let sessionID: String
     let workspace: String?
     let model: String

@@ -11,6 +11,18 @@ public struct OwnerAttachment: Codable, Equatable, Sendable {
     public let canSubmit: Bool
     public let canInterrupt: Bool
     public let canAttach: Bool
+    public let revision: Int?
+    public let executionGeneration: Int?
+    public let modelChange: ModelChange?
+
+    /// The owner model decision differs from a direct writer's HTTP confirmation refusal.
+    public struct ModelChange: Codable, Equatable, Sendable {
+        public let state: String
+        public let message: String?
+        public let confirm: String?
+        public let model: String?
+        public let provider: String?
+    }
     /// Queued and outcome-unknown inputs, oldest first.
     public let admissions: [OwnerAdmission]
 
@@ -18,15 +30,18 @@ public struct OwnerAttachment: Codable, Equatable, Sendable {
     public var hasUnknownAdmission: Bool { admissions.contains(where: \.isOutcomeUnknown) }
 
     enum CodingKeys: String, CodingKey {
-        case state, reason, canSubmit, canInterrupt, canAttach, admissions
+        case state, reason, canSubmit, canInterrupt, canAttach, revision, executionGeneration, modelChange, admissions
     }
 
-    public init(state: String, reason: String? = nil, canSubmit: Bool, canInterrupt: Bool, canAttach: Bool, admissions: [OwnerAdmission] = []) {
+    public init(state: String, reason: String? = nil, canSubmit: Bool, canInterrupt: Bool, canAttach: Bool, admissions: [OwnerAdmission] = [], revision: Int? = nil, executionGeneration: Int? = nil) {
         self.state = state
         self.reason = reason
         self.canSubmit = canSubmit
         self.canInterrupt = canInterrupt
         self.canAttach = canAttach
+        self.revision = revision
+        self.executionGeneration = executionGeneration
+        self.modelChange = nil
         self.admissions = admissions
     }
 
@@ -41,6 +56,9 @@ public struct OwnerAttachment: Codable, Equatable, Sendable {
         canSubmit = container.decodeLossyBoolIfPresent(forKey: .canSubmit) ?? false
         canInterrupt = container.decodeLossyBoolIfPresent(forKey: .canInterrupt) ?? false
         canAttach = container.decodeLossyBoolIfPresent(forKey: .canAttach) ?? false
+        revision = container.decodeLossyIntIfPresent(forKey: .revision)
+        executionGeneration = container.decodeLossyIntIfPresent(forKey: .executionGeneration)
+        modelChange = try? container.decodeIfPresent(ModelChange.self, forKey: .modelChange)
         admissions = container.decodeLossyArrayIfPresent(OwnerAdmission.self, forKey: .admissions) ?? []
     }
 }

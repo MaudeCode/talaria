@@ -361,8 +361,7 @@ final class TranscriptHostedTests: XCTestCase {
     }
 
     private func historyObserver(in view: UIView) -> ChatScrollObserver.ObserverView? {
-        if let observer = view as? ChatScrollObserver.ObserverView { return observer }
-        return view.subviews.lazy.compactMap { self.historyObserver(in: $0) }.first
+        view.firstView(ofType: ChatScrollObserver.ObserverView.self)
     }
 
     private func historyScroll(in view: UIView) -> UIScrollView? {

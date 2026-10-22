@@ -39,11 +39,18 @@ extension APIClient {
             method: "POST",
             body: OwnerActionRequest(
                 sessionId: sessionID,
-                action: action,
+                action: action.rawValue,
                 admissionId: admission.admissionId,
                 executionGeneration: action == .cancel ? nil : admission.executionGeneration
             )
         )
+    }
+
+    public func ownerAction(sessionID: String, operation: String, payload: [String: JSONValue], expectedRevision: Int, executionGeneration: Int) async throws -> OwnerActionResponse {
+        try await send(endpoint: .chatOwnerAction, method: "POST", body: OwnerActionRequest(
+            sessionId: sessionID, action: "mutate", executionGeneration: executionGeneration,
+            requestId: UUID().uuidString, expectedRevision: expectedRevision, operation: operation, payload: payload
+        ))
     }
 
     public nonisolated func chatStreamURL(streamID: String, replayAfterSeq: Int? = nil) -> URL {
@@ -215,9 +222,13 @@ private struct ChatStartRequest: Encodable {
 
 private struct OwnerActionRequest: Encodable {
     let sessionId: String
-    let action: OwnerAdmission.Action
-    let admissionId: String
-    let executionGeneration: Int?
+    let action: String
+    var admissionId: String? = nil
+    var executionGeneration: Int? = nil
+    var requestId: String? = nil
+    var expectedRevision: Int? = nil
+    var operation: String? = nil
+    var payload: [String: JSONValue]? = nil
 }
 
 private struct SteerWithdrawRequest: Encodable {
