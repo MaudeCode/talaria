@@ -301,7 +301,7 @@ it('keeps a skill edit typed during a save, clearing only the confirmed draft', 
 })
 
 it('uninstalls an extension at once and flips its sidecar consent at once', async () => {
-  vi.mocked(api.extensionAction).mockReturnValue(new Promise(() => undefined))
+  vi.mocked(api.extensionAction).mockReturnValue(new Promise(() => undefined) as never)
   const gallery = extensions()
   gallery.manifests = gallery.manifests.map((e) => ({ ...e, source: 'gallery' }))
   manifests.mockResolvedValue(gallery)
