@@ -293,12 +293,17 @@ def test_watch_forwards_native_progress_and_deduplicates_replay_overlap(native_o
 
 @requires_agent
 def test_real_cron_refusal_matches_public_consumer_fixture(tmp_path):
-    if "CRON_SESSION_READ_ONLY_SURFACE" not in (AGENT_DIR / "gateway/session_cron.py").read_text():
-        pytest.skip("this supported Agent predates typed scheduled-chat refusals")
+    import json
     env = isolated_env(tmp_path / "hermes", HERMES_WEBUI_AGENT_DIR=str(AGENT_DIR))
     result = subprocess.run([AGENT_PYTHON, str(Path(__file__).parent / "fixtures/gateway_cron_refusal.py")],
                             env=env, capture_output=True, text=True, timeout=60, check=False)
     assert result.returncode == 0, result.stdout + result.stderr
+    report = json.loads(result.stdout)
+    if report.get("status") == "unsupported":
+        assert report == {"status": "unsupported", "method": "cron.submit"}
+        pytest.skip("this Agent does not advertise cron.submit")
+    assert report["status"] == "supported"
+    assert report["scheduled_job_calls"] == 0
 
 
 def test_watch_brackets_retained_terminal_events_before_idle_settlement(native_owner_stub):
@@ -313,3 +318,29 @@ def test_watch_brackets_retained_terminal_events_before_idle_settlement(native_o
     native_owner_stub.run(ctx, {"session_id": "chat", "action": "watch"})
     assert emitted[0][0] == "snapshot" and emitted[0][1]["replaying"] is True
     assert emitted[1:] == [("event", event), ("replay_complete", {})]
+
+
+@pytest.mark.parametrize("supported", [True, False])
+def test_cron_refusal_compatibility_observes_runtime_capabilities(tmp_path, monkeypatch, supported):
+    import json
+    from types import SimpleNamespace
+    agent = tmp_path / "agent"
+    (agent / "gateway").mkdir(parents=True)
+    (agent / "gateway/session_cron.py").write_text('"""Refusal metadata can be constructed without a module constant."""\n')
+    monkeypatch.setitem(globals(), "AGENT_DIR", agent)
+    report = {"status": "supported", "scheduled_job_calls": 0} if supported else {"status": "unsupported", "method": "cron.submit"}
+    calls = []
+    def run(command, **kwargs):
+        calls.append((command, kwargs))
+        return SimpleNamespace(returncode=0, stdout=json.dumps(report), stderr="")
+    with monkeypatch.context() as patch:
+        patch.setattr(subprocess, "run", run)
+        if supported:
+            try:
+                test_real_cron_refusal_matches_public_consumer_fixture(tmp_path)
+            except pytest.skip.Exception as exc:
+                pytest.fail(f"Skipped a capable owner before observing its runtime capability: {exc}")
+        else:
+            with pytest.raises(pytest.skip.Exception, match="does not advertise cron.submit"):
+                test_real_cron_refusal_matches_public_consumer_fixture(tmp_path)
+    assert len(calls) == 1, "Every Agent must reach the runtime capability probe before a skip decision"

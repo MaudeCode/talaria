@@ -1,5 +1,6 @@
 """Actual candidate refusal producer and settlement, with execution replaced by a tripwire."""
 import asyncio
+from importlib import import_module
 import json
 import os
 from pathlib import Path
@@ -8,6 +9,16 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 sys.path.insert(0, os.environ['HERMES_WEBUI_AGENT_DIR'])
+try:
+    contracts = import_module('tui_gateway.contracts')
+except ModuleNotFoundError as exc:
+    if exc.name not in {'tui_gateway', 'tui_gateway.contracts'}:
+        raise
+    contracts = None
+# The runtime wire catalog advertises the API; private producer names never decide support.
+if 'cron.submit' not in getattr(contracts, 'CANONICAL_METHODS', {}):
+    print(json.dumps({'status': 'unsupported', 'method': 'cron.submit'}))
+    sys.exit(0)
 from cron import scheduler
 from gateway import session_cron
 from gateway.session_authority import LiveSession, SessionAuthority
@@ -42,6 +53,6 @@ async def probe():
         events = live.event_stream.since(live.event_stream.epoch, 0)
         completion = next(event['payload'] for event in events['events'] if event['type'] == 'message.complete')
         assert {**completion, 'admission_id': 'native-input'} == fixture['completion'], completion
-        print(json.dumps({'completion': completion, 'scheduled_job_calls': run_job.call_count}))
+        print(json.dumps({'status': 'supported', 'completion': completion, 'scheduled_job_calls': run_job.call_count}))
 
 asyncio.run(probe())
