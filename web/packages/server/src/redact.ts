@@ -1865,12 +1865,14 @@ function mightContainKeyword(text: string): boolean {
 const cache = new Map<string, string>()
 const CACHE_MAX = 4096
 const CACHE_MAX_TEXT_LEN = 16384
+const CACHE_MAX_BYTES = 16 * 1024 * 1024
+let cacheBytes = 0
 
 export function redactText(text: unknown, enabled: boolean): unknown {
   if (typeof text !== 'string' || !text) return text
   if (!enabled) return text
   // Separate key domains and hash UTF-16 code units so lone surrogates keep their identity.
-  const key = text.length > CACHE_MAX_TEXT_LEN ? `sha1:${createHash('sha1').update(text, 'utf16le').digest('hex')}` : `text:${text}`
+  const key = text.length > CACHE_MAX_TEXT_LEN ? `sha256:${createHash('sha256').update(text, 'utf16le').digest('hex')}` : `text:${text}`
   const hit = cache.get(key)
   if (hit !== undefined) {
     cache.delete(key)
@@ -1878,11 +1880,17 @@ export function redactText(text: unknown, enabled: boolean): unknown {
     return hit
   }
   const out = mightContainSensitiveText(text) ? redactSensitive(text) : text
-  if (cache.size >= CACHE_MAX) {
-    const oldest = cache.keys().next()
-    if (!oldest.done) cache.delete(oldest.value)
+  // Count both strings conservatively as UTF-16, even when V8 stores them as Latin-1.
+  const bytes = 2 * (key.length + out.length)
+  if (bytes > CACHE_MAX_BYTES) return out
+  while (cache.size >= CACHE_MAX || cacheBytes + bytes > CACHE_MAX_BYTES) {
+    const oldest = cache.entries().next()
+    if (oldest.done) break
+    cacheBytes -= 2 * (oldest.value[0].length + oldest.value[1].length)
+    cache.delete(oldest.value[0])
   }
   cache.set(key, out)
+  cacheBytes += bytes
   return out
 }
 

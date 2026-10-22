@@ -37,7 +37,7 @@ describe('redactText cache', () => {
     const text = `PASSWORD=syntheticCacheIdentity\n${'ordinary output\n'.repeat(14_000)}`
     const expected = text.replace('syntheticCacheIdentity', '***')
     expect(redactText(text, true)).toBe(expected)
-    const hashKey = `sha1:${createHash('sha1').update(text, 'utf16le').digest('hex')}`
+    const hashKey = `sha256:${createHash('sha256').update(text, 'utf16le').digest('hex')}`
     expect(redactText(hashKey, true)).toBe(hashKey)
     for (const suffix of ['\ud800', '\ud801', '\ufffd']) {
       expect(redactText(text + suffix, true)).toBe(expected + suffix)
@@ -52,6 +52,23 @@ describe('redactText cache', () => {
     redactText('cache eviction overflow', true)
     expect(measure(entries[0]).passes).toBe(0)
     expect(measure(entries[1]!).passes).toBeGreaterThan(0)
+  })
+
+  it('evicts old large results before retained strings exceed the byte budget', () => {
+    const payload = 'ordinary budget output\n'.repeat(10_000)
+    const entries = Array.from({ length: 96 }, (_, i) => `${i}\n${payload}`)
+    for (const text of entries) expect(redactText(text, true)).toBe(text)
+    expect(measure(entries[0]!).passes).toBeGreaterThan(0)
+    expect(measure(entries.at(-1)!).passes).toBe(0)
+  })
+
+  it('does not retain a single output larger than the byte budget', () => {
+    const text = 'z'.repeat(8 * 1024 * 1024 + 1)
+    const first = measure(text)
+    const second = measure(text)
+    expect(first.result).toBe(text)
+    expect(second.result).toBe(text)
+    expect(second.passes).toBeGreaterThan(0)
   })
 })
 
