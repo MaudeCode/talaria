@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Fast chat responses stream with less processing overhead.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
