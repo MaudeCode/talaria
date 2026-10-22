@@ -119,7 +119,44 @@ def _native_source_repair(root):
         raise
 
 
-def recovery_receipts(runtime, *, watch=False):
+def _receipt_candidates(path, pattern, cache):
+    """Cache discovery, never receipt presence; missing paths watch their nearest existing ancestor."""
+    key = (path, pattern)
+    if cache is not None:
+        ancestor = path
+        while True:
+            try:
+                stat = ancestor.stat()
+                break
+            except FileNotFoundError:
+                if ancestor == ancestor.parent:
+                    raise
+                ancestor = ancestor.parent
+        stamp = (ancestor, stat.st_dev, stat.st_ino, stat.st_mode, stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size)
+        now = time.monotonic()
+        previous = cache.get(key)
+        if previous is not None and previous[0] == stamp and 0 <= now - previous[1] < 1:
+            return previous[2]
+    if pattern is not None:
+        try:
+            # glob suppresses enumeration errors, which cannot authorize Agent admission.
+            with os.scandir(path) as children:
+                found = tuple(path / child.name for child in children if Path(child.name).match(pattern))
+        except FileNotFoundError:
+            found = ()
+    else:
+        try:
+            found = (path,) if any(' refs/talaria/autostash/pending/' in line for line in path.read_text().splitlines()) else ()
+        except FileNotFoundError:
+            found = ()
+    if cache is not None:
+        if len(cache) >= 16:
+            cache.clear()  # Bound retained paths if an installer repeatedly redirects Git metadata.
+        cache[key] = (stamp, now, found)
+    return found
+
+
+def recovery_receipts(runtime, *, watch=False, discovery_cache=None):
     """Read only the configured checkout's receipts without importing its possibly torn code."""
     root, home = runtime.agent_dir, runtime.hermes_home
     if root is None:
@@ -133,19 +170,15 @@ def recovery_receipts(runtime, *, watch=False):
     paths = [services.recovery_path(root, home), marker, native,
              root / '.update-incomplete', root / '.lazy-refresh-incomplete',
              gitdir / 'hermes-update-pull', root / '.hermes-update-zip-swap']
-    paths.extend(home.glob(native.name + '.*.claim'))
+    paths.extend(_receipt_candidates(home, native.name + '.*.claim', discovery_cache))
     common = gitdir
     try:
         common = (gitdir / (gitdir / 'commondir').read_text().strip()).resolve()
     except FileNotFoundError:
         pass
-    paths.extend((common / 'refs/talaria/autostash/pending').glob('*'))
+    paths.extend(_receipt_candidates(common / 'refs/talaria/autostash/pending', '*', discovery_cache))
     packed = common / 'packed-refs'
-    try:
-        if any(' refs/talaria/autostash/pending/' in line for line in packed.read_text().splitlines()):
-            paths.append(packed)
-    except FileNotFoundError:
-        pass
+    paths.extend(_receipt_candidates(packed, None, discovery_cache))
     def stamps(candidates):
         result = []
         for path in sorted(set(candidates)):

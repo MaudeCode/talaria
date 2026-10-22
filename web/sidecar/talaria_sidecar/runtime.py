@@ -270,6 +270,7 @@ class AgentRuntime:
         self._stale = False
         self._source_changed = False
         self._stale_stamp: tuple | None = None
+        self._receipt_discovery: dict = {}
         self.agent_dir = Path(agent_dir).resolve() if agent_dir else None
         self.pin = read_pin()
         self.loaded = False
@@ -348,7 +349,8 @@ class AgentRuntime:
             return "absent"
         from .agent_mutation import recovery_receipts
         try:
-            receipts, _ = recovery_receipts(self)
+            with self._stale_lock:
+                receipts, _ = recovery_receipts(self, discovery_cache=self._receipt_discovery)
             return 'present' if receipts else 'absent'
         except (OSError, UnicodeError):
             return 'unknown'

@@ -11,6 +11,219 @@ from talaria_sidecar import SIDECAR_RPC_VERSION
 from talaria_sidecar.runtime import read_pin
 
 
+@pytest.fixture
+def receipt_runtime(tmp_path, monkeypatch):
+    from talaria_sidecar.runtime import AgentRuntime
+    from talaria_sidecar import agent_mutation
+    from types import SimpleNamespace
+
+    root, home = tmp_path / 'agent', tmp_path / 'home'
+    (root / '.git/refs/talaria/autostash/pending').mkdir(parents=True)
+    (root / '.git/packed-refs').write_text('# synthetic refs\n')
+    home.mkdir()
+    monkeypatch.setenv('HERMES_WEBUI_STATE_DIR', str(tmp_path / 'state'))
+    monkeypatch.delenv('TALARIA_SIDECAR_WEB_STATE_DIR', raising=False)
+    clock = SimpleNamespace(now=100.0)
+    monkeypatch.setattr(agent_mutation, 'time', SimpleNamespace(monotonic=lambda: clock.now))
+    return AgentRuntime(home, root), clock
+
+
+def test_ensure_current_caches_expensive_receipt_discovery(receipt_runtime, monkeypatch):
+    import os
+    from pathlib import Path
+
+    runtime, clock = receipt_runtime
+    packed = runtime.agent_dir / '.git/packed-refs'
+    calls = {'directory': 0, 'packed': 0}
+    glob, scandir, read_text = Path.glob, os.scandir, Path.read_text
+
+    def counted_glob(path, pattern):
+        calls['directory'] += 1
+        return glob(path, pattern)
+
+    def counted_scandir(path):
+        calls['directory'] += 1
+        return scandir(path)
+
+    def counted_read(path, *args, **kwargs):
+        if path == packed:
+            calls['packed'] += 1
+        return read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, 'glob', counted_glob)
+    monkeypatch.setattr(os, 'scandir', counted_scandir)
+    monkeypatch.setattr(Path, 'read_text', counted_read)
+    for _ in range(50):
+        runtime.ensure_current()
+    assert calls == {'directory': 2, 'packed': 1}
+    clock.now += .999
+    runtime.ensure_current()
+    assert calls == {'directory': 2, 'packed': 1}
+    clock.now += .001
+    runtime.ensure_current()
+    assert calls == {'directory': 4, 'packed': 2}
+
+
+@pytest.mark.parametrize('obligation', ['fixed', 'dependency', 'service', 'claim', 'loose', 'missing-directory', 'packed', 'missing-packed'])
+def test_cached_discovery_immediately_refuses_new_recovery_receipts(receipt_runtime, obligation):
+    from talaria_sidecar.runtime import AgentRuntimeStale
+    from talaria_sidecar.agent_services import recovery_path
+
+    runtime, _ = receipt_runtime
+    root, home = runtime.agent_dir, runtime.hermes_home
+    pending = root / '.git/refs/talaria/autostash/pending'
+    if obligation == 'missing-directory':
+        pending.rmdir()
+    if obligation == 'missing-packed':
+        (root / '.git/packed-refs').unlink()
+    runtime.ensure_current()
+    key = hashlib.sha256(str(root).encode()).hexdigest()[:12]
+    paths = {
+        'fixed': root / '.update-incomplete',
+        'dependency': home.parent / 'state/agent-dependency-sync' / hashlib.sha256(str(root).encode()).hexdigest(),
+        'service': recovery_path(root, home),
+        'claim': home / ('.hermes-update-paused-gateways.' + key + '.json.synthetic.claim'),
+        'loose': pending / 'synthetic',
+        'missing-directory': pending / 'synthetic',
+        'packed': root / '.git/packed-refs',
+        'missing-packed': root / '.git/packed-refs',
+    }
+    marker = paths[obligation]
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text('a' * 40 + ' refs/talaria/autostash/pending/synthetic\n')
+    with pytest.raises(AgentRuntimeStale):
+        runtime.ensure_current()
+    if obligation in {'packed', 'missing-packed'}:
+        marker.write_text('# cleared\n')
+    else:
+        marker.unlink()
+    runtime.ensure_current()
+
+
+@pytest.mark.parametrize('operation', ['stat', 'read'])
+def test_cached_discovery_fails_closed_and_retries_unreadable_evidence(receipt_runtime, monkeypatch, operation):
+    from pathlib import Path
+    from talaria_sidecar.runtime import AgentRuntimeStale
+
+    runtime, clock = receipt_runtime
+    runtime.ensure_current()
+    if operation == 'read':
+        clock.now += 1
+    method = 'stat' if operation == 'stat' else 'read_text'
+    target = runtime.hermes_home if operation == 'stat' else runtime.agent_dir / '.git/packed-refs'
+    original = getattr(Path, method)
+
+    def unreadable(path, *args, **kwargs):
+        if path == target:
+            raise PermissionError('synthetic unreadable evidence')
+        return original(path, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, method, unreadable)
+        with pytest.raises(AgentRuntimeStale) as failure:
+            runtime.ensure_current()
+        assert failure.value.data['agent_update_state'] == 'unknown'
+    runtime.ensure_current()
+
+
+def test_unreadable_receipt_directory_never_becomes_a_clean_verdict(receipt_runtime):
+    import os
+    from talaria_sidecar.runtime import AgentRuntimeStale
+
+    if not hasattr(os, 'geteuid') or os.geteuid() == 0:
+        pytest.skip('Requires POSIX directory permissions enforced for a non-root user')
+    runtime, clock = receipt_runtime
+    runtime.ensure_current()
+    clock.now += 1
+    pending = runtime.agent_dir / '.git/refs/talaria/autostash/pending'
+    mode = pending.stat().st_mode
+    pending.chmod(0)
+    try:
+        with pytest.raises(AgentRuntimeStale) as failure:
+            runtime.ensure_current()
+        assert failure.value.data['agent_update_state'] == 'unknown'
+    finally:
+        pending.chmod(mode)
+    runtime.ensure_current()
+
+
+@pytest.mark.parametrize('layout', ['worktree', 'common'])
+def test_cached_discovery_tracks_git_directory_changes(receipt_runtime, layout):
+    from talaria_sidecar.runtime import AgentRuntimeStale
+
+    runtime, _ = receipt_runtime
+    root = runtime.agent_dir
+    runtime.ensure_current()
+    if layout == 'worktree':
+        (root / '.git').rename(root / 'metadata')
+        (root / '.git').write_text('gitdir: metadata\n')
+        common = root / 'metadata'
+    else:
+        common = root / 'shared'
+        (common / 'refs/talaria/autostash/pending').mkdir(parents=True)
+        (root / '.git/commondir').write_text('../shared\n')
+    (common / 'refs/talaria/autostash/pending/synthetic').write_text('pending\n')
+    with pytest.raises(AgentRuntimeStale):
+        runtime.ensure_current()
+
+
+def test_cached_discovery_keeps_runtime_home_and_web_state_isolated(receipt_runtime, tmp_path, monkeypatch):
+    from talaria_sidecar.runtime import AgentRuntime, AgentRuntimeStale
+
+    runtime, _ = receipt_runtime
+    runtime.ensure_current()
+    other_home = tmp_path / 'other-home'
+    other_home.mkdir()
+    key = hashlib.sha256(str(runtime.agent_dir).encode()).hexdigest()[:12]
+    claim = other_home / ('.hermes-update-paused-gateways.' + key + '.json.synthetic.claim')
+    claim.write_text('pending\n')
+    other = AgentRuntime(other_home, runtime.agent_dir)
+    with pytest.raises(AgentRuntimeStale):
+        other.ensure_current()
+    runtime.ensure_current()
+    state = tmp_path / 'other-state'
+    marker = state / 'agent-dependency-sync' / hashlib.sha256(str(runtime.agent_dir).encode()).hexdigest()
+    marker.parent.mkdir(parents=True)
+    marker.write_text('pending\n')
+    monkeypatch.setenv('TALARIA_SIDECAR_WEB_STATE_DIR', str(state))
+    with pytest.raises(AgentRuntimeStale):
+        runtime.ensure_current()
+    monkeypatch.delenv('TALARIA_SIDECAR_WEB_STATE_DIR')
+    runtime.ensure_current()
+
+
+def test_cached_discovery_does_not_share_checkout_receipts(receipt_runtime, tmp_path):
+    from talaria_sidecar.runtime import AgentRuntime, AgentRuntimeStale
+
+    runtime, _ = receipt_runtime
+    runtime.ensure_current()
+    root = tmp_path / 'other-agent'
+    root.mkdir()
+    other = AgentRuntime(runtime.hermes_home, root)
+    key = hashlib.sha256(str(root).encode()).hexdigest()[:12]
+    claim = runtime.hermes_home / ('.hermes-update-paused-gateways.' + key + '.json.synthetic.claim')
+    claim.write_text('pending\n')
+    runtime.ensure_current()
+    with pytest.raises(AgentRuntimeStale):
+        other.ensure_current()
+
+
+def test_cached_discovery_does_not_hide_revision_drift(receipt_runtime, monkeypatch):
+    from talaria_sidecar import runtime as module
+
+    runtime, _ = receipt_runtime
+    root = runtime.agent_dir
+    (root / '.git/HEAD').write_text('a' * 40)
+    runtime.loaded = True
+    runtime.revision = 'a' * 40
+    monkeypatch.setattr(module, 'read_agent_revision', lambda *_: (root / '.git/HEAD').read_text())
+    runtime.ensure_current()
+    (root / '.git/HEAD').write_text('b' * 40)
+    with pytest.raises(module.AgentRuntimeStale) as failure:
+        runtime.ensure_current()
+    assert failure.value.data['agent_source_changed'] is True
+
+
 @pytest.mark.parametrize('obligation', ['dependency', 'service'])
 def test_same_revision_agent_work_is_blocked_until_durable_web_repair_intent_is_cleared(tmp_path, monkeypatch, obligation):
     from talaria_sidecar.runtime import AgentRuntime, AgentRuntimeStale
