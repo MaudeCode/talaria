@@ -5,6 +5,7 @@ import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { useBootstrap } from '../../app/bootstrap'
+import { useSaveSettings } from '../../app/queries'
 import { Button } from '../../ui/Button'
 import { cn } from '../../ui/cn'
 import { Switch, FieldRow, TextInput, HelpTip } from '../../ui/Field'
@@ -35,7 +36,9 @@ export function SystemSection() {
   const [currentPw, setCurrentPw] = useState('')
   const [confirmShutdown, setConfirmShutdown] = useState(false)
   const fail = (e: unknown) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
-  const setPassword = useMutation({ mutationFn: (body: Record<string, unknown>) => api.saveSettings(body), onSuccess: async () => { showToast(m.system_password_updated()); setPw(''); setCurrentPw(''); await loadBootstrap(); void qc.invalidateQueries() }, onError: fail })
+  // Credentials go through the settings owner too; their `_` keys are never shown before the server answers.
+  const saveSettings = useSaveSettings()
+  const setPassword = useMutation({ mutationFn: (body: Record<string, unknown>) => saveSettings.mutateAsync(body), onSuccess: async () => { showToast(m.system_password_updated()); setPw(''); setCurrentPw(''); await loadBootstrap(); void qc.invalidateQueries() }, onError: fail })
   const restart = useMutation({ mutationFn: api.restartAgent, onSuccess: () => { showToast(m.saved()); void qc.invalidateQueries({ queryKey: keys.health.agent }) }, onError: fail })
   const shutdown = useMutation({ mutationFn: api.shutdownServer, onSuccess: () => markServerStopped(qc), onError: fail })
   // The chosen channel is held locally until its save settles; the cache only catches up on success,

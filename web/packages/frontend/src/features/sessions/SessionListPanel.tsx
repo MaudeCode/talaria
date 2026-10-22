@@ -17,8 +17,7 @@ import { closeMobileSidebar } from '../../shell/useShellState'
 import { inTextField } from '../../shell/useShortcuts'
 import { useLocale } from '../../i18n/useLocale'
 import { showToast } from '../toast/toast'
-import { useResourceIntents, useResourceMutation } from './useResourceMutation'
-import { ResourcePending } from './ResourcePending'
+import { useResourceEffects, useResourceMutation, withEffects } from './useResourceMutation'
 
 export function useSessionListQuery(params: api.SessionListParams = {}) {
   return useQuery({ queryKey: keys.sessions.list(params as Record<string, string | boolean | number | undefined>), queryFn: () => api.fetchSessions(params), staleTime: 10_000 })
@@ -143,7 +142,8 @@ export function SessionListPanel() {
   useSessionListStream()
   const newChat = useNewChat()
   const data = list.data
-  const rows = useMemo(() => (data?.sessions ?? []).filter((r) => showArchived || !r.archived), [data, showArchived])
+  const effects = useResourceEffects()
+  const rows = useMemo(() => withEffects(data?.sessions ?? [], (r) => `session:${r.session_id}`, effects).filter((r) => showArchived || !r.archived), [data, effects, showArchived])
   const cliCount = useMemo(() => rows.filter((r) => r.is_cli_session).length, [rows])
   // TAL-308: the server searches within the visible project, source tab and archive state; the local title filter covers the wait.
   const q = filter.trim()
@@ -154,7 +154,9 @@ export function SessionListPanel() {
   const storage = data?.agent_storage
   const storageNotice = storage?.state === 'corrupt' ? m.agent_storage_corrupt() : storage?.state === 'unavailable' ? m.agent_storage_unavailable() : storage?.state === 'outdated' ? m.agent_storage_outdated() : null
   const hasUnprojected = useMemo(() => rows.some((r) => !r.project_id), [rows])
-  const projectList = projects.data?.projects ?? []
+  const projectList = withEffects(projects.data?.projects ?? [], (p) => `project:${p.project_id}`, effects)
+  const newName = effects['project:new']?.fields?.name
+  const newProject = typeof newName === 'string' ? newName : null
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase()
     let visible = rows
@@ -162,22 +164,22 @@ export function SessionListPanel() {
     if (project === NO_PROJECT) visible = visible.filter((r) => !r.project_id)
     else if (project) visible = visible.filter((r) => r.project_id === project)
     if (!q) return visible
-    if (search.data) return search.data.sessions
+    if (search.data) return withEffects(search.data.sessions, (r) => `session:${r.session_id}`, effects).filter((r) => showArchived || !r.archived)
     return visible.filter((r) => r.title.toLowerCase().includes(q))
-  }, [rows, filter, cliCount, source, project, search.data])
+  }, [rows, filter, cliCount, source, project, search.data, effects, showArchived])
   const previews = useMemo(() => new Map((search.data?.sessions ?? []).flatMap((r) => (r.match_preview ? [[r.session_id, r.match_preview] as const] : []))), [search.data])
   const groups = useMemo(() => groupSessionRows(filtered).map((g) => ({ ...g, label: GROUP_LABEL[g.id]() })), [filtered])
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({})
-  const intents = useResourceIntents()
   const archive = useResourceMutation({
     resource: ({ id }: { id: string; archived: boolean }) => `session:${id}`,
-    intent: ({ archived }) => ({ label: archived ? m.session_batch_archive() : m.session_restore() }),
+    effect: ({ archived }) => ({ fields: { archived } }),
     mutationFn: ({ id, archived }) => api.archiveSession(id, archived),
     onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error'),
   })
   const createProject = useResourceMutation({
     resource: () => 'project:new',
-    intent: (name: string) => ({ title: name, label: m.create() }),
+    effect: (name: string) => ({ fields: { name } }),
+    exclusive: true,
     mutationFn: (name) => api.createProject(name),
     onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error'),
   })
@@ -253,11 +255,11 @@ export function SessionListPanel() {
             <button type="button" className={cn('session-source-tab', source === 'cli' && 'active')} aria-pressed={source === 'cli'} onClick={() => setSource('cli')}>{m.sessions_source_cli({ n: cliCount })}</button>
           </div>
         )}
-        {(projectList.length > 0 || hasUnprojected || intents['project:new']) && (
+        {(projectList.length > 0 || hasUnprojected || newProject) && (
           <div className="project-bar" role="group" aria-label={m.project_filter_label()}>
             <span role="button" tabIndex={0} className={cn('project-chip', !project && 'active')} onClick={() => setProject(null)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setProject(null) }}>{m.project_all()}</span>
             {hasUnprojected && <span role="button" tabIndex={0} className={cn('project-chip no-project', project === NO_PROJECT && 'active')} title={m.project_unassigned_hint()} onClick={() => setProject(NO_PROJECT)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setProject(NO_PROJECT) }}>{m.project_unassigned()}</span>}
-            {intents['project:new'] && <span className="project-chip" aria-busy="true"><span>{intents['project:new'].title}</span> <ResourcePending intent={intents['project:new']} /></span>}
+            {newProject && <span className="project-chip"><span>{newProject}</span></span>}
             {projectList.map((p) => <ProjectChip key={p.project_id} project={p} active={project === p.project_id} onSelect={() => setProject(p.project_id)} onDeleted={() => setProject((cur) => (cur === p.project_id ? null : cur))} />)}
             <span role="button" tabIndex={0} className="project-chip project-chip-add" title={m.project_new()} aria-label={m.project_new()} onClick={() => { const name = window.prompt(m.project_new_prompt()); if (name?.trim()) createProject.mutate(name.trim()) }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { const name = window.prompt(m.project_new_prompt()); if (name?.trim()) createProject.mutate(name.trim()) } }}>+</span>
           </div>
@@ -285,8 +287,7 @@ export function SessionListPanel() {
               <div className="session-date-body" style={isCollapsed ? { display: 'none' } : undefined}>
                 {g.rows.map((row) => {
                   const active = row.session_id === activeId
-                  const pending = intents[`session:${row.session_id}`]
-                  const displayTitle = pending?.title ?? (row.title || m.untitled())
+                  const displayTitle = row.title || m.untitled()
                   const proj = row.project_id ? projectList.find((p) => p.project_id === row.project_id) : undefined
                   return (
                     <Link
@@ -296,7 +297,6 @@ export function SessionListPanel() {
                       onClick={closeMobileSidebar}
                       role="listitem"
                       data-sid={row.session_id}
-                      aria-busy={!!pending}
                       data-source={row.is_cli_session ? (row.source_label ?? 'CLI') : undefined}
                       aria-current={active ? 'page' : undefined}
                       className={cn('session-item', active && 'active', row.is_streaming && 'streaming', row.is_cli_session && 'cli-session', row.attention && 'needs-attention', row.archived && 'archived')}
@@ -308,13 +308,12 @@ export function SessionListPanel() {
                           {proj && <span className="session-project-dot" style={{ background: proj.color ?? 'var(--blue)' }} title={proj.name} />}
                           <span className="session-time">{relativeTime(row.sort_ts)}</span>
                         </div>
-                        <ResourcePending intent={pending} />
                         {previews.get(row.session_id) && <div className="session-search-preview truncate text-[11px] text-muted" title={m.session_search_content_matches()}>{previews.get(row.session_id)}</div>}
                       </div>
                       {/* The rail shows status by color; this says it in words (TAL-365). */}
                       {row.is_streaming ? <span className="sr-only">{m.status_streaming()}</span> : row.attention && <span className="sr-only">{attentionLabel(row.attention.kind)}</span>}
                       <div className="session-actions">
-                        <button type="button" className="session-archive-toggle" disabled={!!pending} title={row.archived ? m.session_restore() : m.session_batch_archive()} aria-label={row.archived ? m.session_restore() : m.session_batch_archive()} onClick={(e) => { e.preventDefault(); e.stopPropagation(); archive.mutate({ id: row.session_id, archived: !row.archived }) }}>
+                        <button type="button" className="session-archive-toggle" title={row.archived ? m.session_restore() : m.session_batch_archive()} aria-label={row.archived ? m.session_restore() : m.session_batch_archive()} onClick={(e) => { e.preventDefault(); e.stopPropagation(); archive.mutate({ id: row.session_id, archived: !row.archived }) }}>
                           {row.archived ? <ArchiveRestore size={14} aria-hidden="true" /> : <Archive size={14} aria-hidden="true" />}
                         </button>
                         <SessionContextMenu row={row} active={active} />
