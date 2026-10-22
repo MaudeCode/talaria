@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Reduced repeated Agent recovery checks while keeping new recovery obligations blocked immediately.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
