@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
-import { dispatch, resetStreamStoreForTests, subscribe, useLiveTurn } from './store'
+import { dispatch, getStreamState, resetStreamStoreForTests, subscribe, useLiveTurn } from './store'
 import { parseChatEvent } from '../contracts/sse'
 
 let frames: FrameRequestCallback[] = []
@@ -22,6 +22,22 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('live-turn store notification', () => {
+  it('publishes pending tokens to React only at the frame boundary, including unrelated renders', () => {
+    start('a')
+    const { result, rerender } = renderHook(() => useLiveTurn('a'))
+    act(() => event('a', 'token', { text: 'pending' }, 1))
+    expect(getStreamState().turns.a!.segments).toEqual([{ kind: 'text', text: 'pending' }])
+    rerender()
+    expect(result.current!.segments).toEqual([])
+    act(() => tick())
+    expect(result.current!.segments).toEqual([{ kind: 'text', text: 'pending' }])
+    act(() => {
+      event('a', 'token', { text: ' last' }, 2)
+      event('a', 'done', {}, 3)
+    })
+    expect(result.current).toMatchObject({ status: 'done', segments: [{ kind: 'text', text: 'pending last' }] })
+  })
+
   it('coalesces token frames into one notification per animation frame and notifies terminal frames immediately', () => {
     start('a')
     const listener = vi.fn()

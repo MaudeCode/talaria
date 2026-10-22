@@ -28,6 +28,7 @@ export function useTurnIntent(sessionId: string | null): TurnIntent {
 }
 
 let state: StreamState = initialStreamState
+let publishedState: StreamState = state
 const listeners = new Set<() => void>()
 let frame: number | null = null
 /** Frames that settle or end a turn; everything else a stream sends waits for the next animation frame. */
@@ -37,6 +38,7 @@ const SETTLING_EVENTS: ReadonlySet<ChatEventName> = new Set(['done', 'error', 'a
 function notifyNow(): void {
   if (frame !== null) cancelAnimationFrame(frame)
   frame = null
+  publishedState = state
   for (const l of listeners) l()
 }
 
@@ -50,7 +52,7 @@ export function dispatch(action: StreamAction): void {
   if (next === state) return
   state = next
   if (action.type !== 'event' || SETTLING_EVENTS.has(action.event.event)) notifyNow()
-  else frame ??= requestAnimationFrame(() => { frame = null; for (const l of listeners) l() })
+  else frame ??= requestAnimationFrame(() => { frame = null; notifyNow() })
 }
 
 export function getStreamState(): StreamState {
@@ -62,9 +64,9 @@ export function subscribe(listener: () => void): () => void {
   return () => listeners.delete(listener)
 }
 
-/** Selects one session's turn, so a frame for another session leaves this snapshot equal and skips the render. */
+/** React reads the last publication; unrelated renders cannot bypass streaming's frame boundary. */
 export function useLiveTurn(sessionId: string | null): LiveTurn | null {
-  const turn = () => sessionId ? state.turns[sessionId] ?? null : null
+  const turn = () => sessionId ? publishedState.turns[sessionId] ?? null : null
   return useSyncExternalStore(subscribe, turn, turn)
 }
 
