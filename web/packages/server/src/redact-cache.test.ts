@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { execFileSync } from 'node:child_process'
 import { describe, expect, it, vi } from 'vitest'
 import { redactText } from './redact.js'
 
@@ -65,5 +66,29 @@ describe('redactText cache', () => {
     expect(first.result).toBe(text)
     expect(second.result).toBe(text)
     expect(second.passes).toBeGreaterThan(0)
+  })
+
+  it('owns cached strings without retaining larger substring backing stores', () => {
+    // A real GC boundary is needed to observe V8 substring backing-store retention.
+    const result = execFileSync(process.execPath, ['--expose-gc', '--input-type=module', '-e', `
+      import { redactText } from ${JSON.stringify(new URL('../dist/redact.js', import.meta.url).href)}
+      function populate() {
+        for (const size of [64, 200 * 1024]) {
+          for (let i = 0; i < 3; i++) {
+            const tail = (String(size) + '-' + i + '\\n' + 'ordinary output\\n'.repeat(Math.ceil(size / 16))).slice(0, size)
+            const input = ('x'.repeat(10 * 1024 * 1024) + tail).slice(-tail.length)
+            if (redactText(input, true) !== tail) throw new Error('unexpected synthetic projection')
+          }
+        }
+      }
+      for (let i = 0; i < 3; i++) global.gc()
+      const before = process.memoryUsage().heapUsed
+      populate()
+      RegExp('').test('sentinel') // Release the engine's last regex input before measuring cache retention.
+      for (let i = 0; i < 3; i++) global.gc()
+      console.log(JSON.stringify({ retainedBytes: process.memoryUsage().heapUsed - before }))
+    `], { encoding: 'utf8', timeout: 20_000 })
+    const { retainedBytes } = JSON.parse(result) as { retainedBytes: number }
+    expect(retainedBytes).toBeLessThan(16 * 1024 * 1024)
   })
 })

@@ -1871,8 +1871,8 @@ let cacheBytes = 0
 export function redactText(text: unknown, enabled: boolean): unknown {
   if (typeof text !== 'string' || !text) return text
   if (!enabled) return text
-  // Separate key domains and hash UTF-16 code units so lone surrogates keep their identity.
-  const key = text.length > CACHE_MAX_TEXT_LEN ? `sha256:${createHash('sha256').update(text, 'utf16le').digest('hex')}` : `text:${text}`
+  // UTF-16 preserves lone-surrogate identity; inline keys must own their backing storage.
+  const key = text.length > CACHE_MAX_TEXT_LEN ? `sha256:${createHash('sha256').update(text, 'utf16le').digest('hex')}` : `text:${Buffer.from(text, 'utf16le').toString('utf16le')}`
   const hit = cache.get(key)
   if (hit !== undefined) {
     cache.delete(key)
@@ -1889,7 +1889,8 @@ export function redactText(text: unknown, enabled: boolean): unknown {
     cacheBytes -= 2 * (oldest.value[0].length + oldest.value[1].length)
     cache.delete(oldest.value[0])
   }
-  cache.set(key, out)
+  // Own the storage: a short substring can otherwise retain its entire parent string.
+  cache.set(key, Buffer.from(out, 'utf16le').toString('utf16le'))
   cacheBytes += bytes
   return out
 }
