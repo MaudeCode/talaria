@@ -172,9 +172,10 @@ export async function handleDashboardPlugin(ctx: RequestContext): Promise<boolea
   const path = ctx.path
   let file: PluginFile | null
   if (path.startsWith('/agent-dashboard-plugins/')) {
-    const [id = '', ...rest] = path.slice('/agent-dashboard-plugins/'.length).split('/')
+    const [grant = '', ...rest] = path.slice('/agent-dashboard-plugins/'.length).split('/')
     await runAgentDashboard(ctx, async (signal) => {
-      file = await plugins.agentAsset(dashboardScope(ctx), id, rest.join('/'), signal)
+      const caller = ctx.authCookie() || ctx.requestProfile !== null ? dashboardScope(ctx) : undefined
+      file = await plugins.agentAssetGrant(grant, rest.join('/'), signal, caller)
       if (file) await sendPanelFile(ctx, file, true)
       else await ctx.json({ error: 'not found' }, { status: 404 })
     })

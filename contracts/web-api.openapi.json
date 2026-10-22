@@ -83412,9 +83412,9 @@
         }
       }
     },
-    "/agent-dashboard-plugins/{id}/{path}": {
+    "/agent-dashboard-plugins/{grant}/{path}": {
       "get": {
-        "summary": "Profile/owner-bound Agent dashboard assets. Explicit Web panel opt-in; sandbox CSP, no-store, contained static types only. Disabled/unknown ids are indistinguishable.",
+        "summary": "Expiring profile/owner-bound Agent dashboard asset grants, usable without cookies. Static only; explicit Web panel opt-in; sandbox CSP, no-store, contained static types only. Disabled/unknown ids are indistinguishable.",
         "tags": [
           "automation"
         ],

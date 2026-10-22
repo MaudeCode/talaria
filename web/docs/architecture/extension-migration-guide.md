@@ -154,7 +154,10 @@ for the native dashboard API. The result is `{ status, headers, body }`, with a
 text body and only its content type. Requests carry request-local admission
 over private IPC, never Talaria or gateway credentials. Profile/login-bound
 opaque ids prevent an old frame from calling a different profile's plugin.
-Switching profiles revokes pending calls and old ids; closing a panel aborts
+Sandboxed subresources have no cookies. Their expiring signed asset grant names
+only the statically served plugin and its already-authorized profile; it carries
+no login token and grants no API authority. Forged/expired grants are refused.
+Switching profiles revokes pending calls, old ids and asset grants; closing a panel aborts
 its outstanding browser calls.
 
 Agent-host HTTP is buffered, limited to 512 KiB and a native request timeout of

@@ -959,6 +959,126 @@
     ],
     "additionalProperties": false
   },
+  "plugins.dashboard_list": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "supported": {
+        "type": "boolean"
+      },
+      "plugins": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+            },
+            "label": {
+              "type": "string",
+              "maxLength": 80
+            },
+            "version": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "description": {
+              "type": "string",
+              "maxLength": 300
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "panel": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "has_api": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "name",
+            "label",
+            "version",
+            "description",
+            "enabled",
+            "panel",
+            "has_api"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": [
+      "supported",
+      "plugins"
+    ],
+    "additionalProperties": false
+  },
+  "plugins.dashboard_toggle": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "ok": {
+        "type": "boolean",
+        "const": true
+      }
+    },
+    "required": [
+      "ok"
+    ],
+    "additionalProperties": false
+  },
+  "plugins.dashboard_asset": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "status": {
+        "type": "integer",
+        "minimum": 200,
+        "maximum": 599
+      },
+      "body": {
+        "type": "string"
+      },
+      "content_type": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "body",
+      "content_type"
+    ],
+    "additionalProperties": false
+  },
+  "plugins.dashboard_request": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "status": {
+        "type": "integer",
+        "minimum": 200,
+        "maximum": 599
+      },
+      "body": {
+        "type": "string"
+      },
+      "content_type": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "body",
+      "content_type"
+    ],
+    "additionalProperties": false
+  },
   "plugins.providers": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

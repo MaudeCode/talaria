@@ -4,7 +4,7 @@
  */
 import { extname } from 'node:path'
 import type { FilePreviewKind } from '@maudecode/talaria-web-contracts'
-import { hmacHex, safeEqual } from '../auth/crypto.js'
+import { signAssetGrant, assetGrantValue } from '../auth/crypto.js'
 import { readFileContent, type FileContent } from './fs.js'
 import { AUDIO_VIDEO_PDF_TYPES, INLINE_IMAGE_TYPES, mimeFor } from './media.js'
 
@@ -36,7 +36,6 @@ export function readFilePreview(workspace: string, rel: string): FilePreview {
 
 /** Path prefix of the HTML preview frame's documents and their relative assets. */
 export const PREVIEW_PREFIX = '/workspace-preview/'
-const GRANT_HOURS_MS = 3600_000
 
 /**
  * The HTML preview frame's URL: `workspace-preview/<grant>/<path>`, where the grant signs the workspace root with an
@@ -45,20 +44,14 @@ const GRANT_HOURS_MS = 3600_000
  * the file, is what authorizes the page and its relative assets.
  */
 export function previewUrl(key: Buffer, root: string, rel: string, now = Date.now()): string {
-  const exp = (Math.ceil(now / GRANT_HOURS_MS) + 1) * (GRANT_HOURS_MS / 1000)
-  const grant = `${Buffer.from(root, 'utf8').toString('base64url')}.${String(exp)}`
+  const grant = signAssetGrant(key, 'preview', root, now)
   const path = rel.split('/').filter((part) => part && part !== '.').map(encodeURIComponent).join('/')
-  return `${PREVIEW_PREFIX.slice(1)}${grant}.${hmacHex(key, `preview:${grant}`)}/${path}`
+  return `${PREVIEW_PREFIX.slice(1)}${grant}/${path}`
 }
 
 /** The workspace root a grant path segment authorizes, or null when it is forged or expired. */
 export function previewGrantRoot(key: Buffer, segment: string, now = Date.now()): string | null {
-  const parts = segment.split('.')
-  if (parts.length !== 3) return null
-  const [root, exp, sig] = parts as [string, string, string]
-  if (!safeEqual(sig, hmacHex(key, `preview:${root}.${exp}`))) return null
-  if (!/^\d+$/.test(exp) || Number(exp) * 1000 < now) return null
-  return Buffer.from(root, 'base64url').toString('utf8')
+  return assetGrantValue(key, 'preview', segment, now)
 }
 
 /** RFC 4180 rows (quoted fields, doubled quotes, CRLF), skipping blank lines; stops after `limit` rows. */

@@ -1,13 +1,14 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, settle, test } from './fixtures'
-import { openServerState } from './server'
+import { serverState } from './server'
+import { E2E_PASSWORD } from './global-setup'
 
 // The ordinary browser suite uses replay fixtures; the native path is run explicitly on the cached Agent.
-test('profile Agent dashboard uses the existing sandboxed extension frame and buffered API', async ({ page }, info) => {
+for (const authenticated of [false, true]) test(`profile Agent dashboard uses the sandboxed frame and API, ${authenticated ? 'password authenticated' : 'open'}`, async ({ page }, info) => {
   test.skip(!process.env.HERMES_WEBUI_AGENT_DIR, 'native Agent fixture run only')
   test.setTimeout(120_000)
-  const state = openServerState()
+  const state = serverState(authenticated ? 'authenticated' : 'open')
   const config = join(state, 'config.yaml')
   const saved = existsSync(config) ? readFileSync(config, 'utf8') : null
   const plugin = join(state, 'plugins', 'factory-dashboard')
@@ -21,21 +22,26 @@ test('profile Agent dashboard uses the existing sandboxed extension frame and bu
   // Preserve the isolated server's existing config, with one explicit disabled synthetic plugin.
   writeFileSync(config, 'plugins:\n  enabled: []\n  disabled: [factory-dashboard]\n')
   try {
-    await page.goto('/settings/extensions')
+    if (authenticated) {
+      await page.goto(`${process.env.HERMES_E2E_AUTH_BASE_URL}/settings/extensions`)
+      await page.locator('#pw').fill(E2E_PASSWORD)
+      await page.getByRole('button', { name: /sign in/i }).click()
+      await expect(page).toHaveURL(/\/settings\/extensions$/)
+    } else await page.goto('/settings/extensions')
     await settle(page)
     const row = page.locator('[data-source="agent-plugin"]').filter({ hasText: 'Factory dashboard' })
     await expect(row).toBeVisible()
     await expect(row).not.toContainText(/agent-[a-f0-9]{40}/)
     await expect(page.getByText('web_extension_migration_required', { exact: true })).toHaveCount(0)
     await expect(row.getByRole('switch')).not.toBeChecked()
-    if (process.env.TAL1326_SHOTS) await page.screenshot({ path: `${process.env.TAL1326_SHOTS}/before-${info.project.name}.png` })
+    if (process.env.TAL1326_SHOTS) await page.screenshot({ path: `${process.env.TAL1326_SHOTS}/${authenticated ? 'auth-' : ''}before-${info.project.name}.png` })
     await row.getByRole('switch').click()
     await expect(row.getByRole('switch')).toBeChecked()
     await row.getByRole('link', { name: 'Open', exact: true }).click()
     await expect(page.frameLocator('iframe').getByText('Profile API connected')).toBeVisible({ timeout: 30_000 })
     await expect(page.locator('.extension-panel')).toHaveAttribute('data-status', 'ready')
     await expect(page.getByText('Saved', { exact: true })).not.toBeVisible()
-    if (process.env.TAL1326_SHOTS) await page.screenshot({ path: `${process.env.TAL1326_SHOTS}/after-${info.project.name}.png` })
+    if (process.env.TAL1326_SHOTS) await page.screenshot({ path: `${process.env.TAL1326_SHOTS}/${authenticated ? 'auth-' : ''}after-${info.project.name}.png` })
   } finally {
     if (saved !== null) writeFileSync(config, saved)
     else rmSync(config, { force: true })

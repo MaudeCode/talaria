@@ -24,6 +24,9 @@ _HEADERS = {'accept', 'content-type', 'if-none-match', 'if-modified-since'}
 _QUERY_CREDENTIALS = {'token', 'ticket', 'internal', 'display_ticket', 'attach', 'profile', 'native_dial', 'api_key', 'access_token'}
 _MAX_ASSET = 8 * 1024 * 1024
 _MAX_API = 512 * 1024
+# Resolve only the operator-selected launch home, never a plugin-controlled descendant.
+_RAW_BASE_HOME = homes._PROCESS_HOME.parent.parent if homes._PROCESS_HOME.parent.name == 'profiles' else homes._PROCESS_HOME
+_BASE_HOME = _RAW_BASE_HOME.resolve()
 
 
 def _path(raw):
@@ -35,14 +38,40 @@ def _path(raw):
     return raw
 
 
-def _read(root: Path, rel: str, limit=_MAX_ASSET):
-    """Open each component beneath the discovered dashboard without following symlinks."""
-    if not _path(rel) or root.is_symlink() or root.parent.is_symlink():
+def _asset_root(plugin, home):
+    root = Path(plugin['_dir'])
+    if plugin.get('source') == 'user':
+        allowed = {Path(home) / 'plugins', _RAW_BASE_HOME / 'plugins', _BASE_HOME / 'plugins'}
+        if root.parent.parent not in allowed:
+            return None
+        for base in (_RAW_BASE_HOME, _BASE_HOME):
+            try:
+                relative = root.relative_to(base)
+            except ValueError:
+                continue
+            return _BASE_HOME / relative, _BASE_HOME
+        return None
+    from hermes_cli.plugins import get_bundled_plugins_dir
+    bundled = Path(get_bundled_plugins_dir())
+    if root.parent.parent not in {bundled, bundled / 'memory'}:
+        return None
+    # The Agent source is trusted; its plugins directory and every descendant are still opened no-follow.
+    anchor = bundled.parent.resolve()
+    return anchor / root.relative_to(bundled.parent), anchor
+
+
+def _read(root: Path, rel: str, limit=_MAX_ASSET, *, anchor: Path):
+    """Open from the trusted home/source, rejecting symlinks in every root and asset component."""
+    if not _path(rel):
         return None
     fd = None
     try:
-        fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-        parts = rel.split('/')
+        relative = root.relative_to(anchor)
+        if any(part == '..' for part in relative.parts):
+            return None
+        # Even an ancestor replaced after anchor canonicalization cannot redirect this traversal.
+        parts = [*anchor.parts[1:], *relative.parts, *rel.split('/')]
+        fd = os.open(anchor.anchor, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
         for i, part in enumerate(parts):
             child = os.open(part, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK |
                             (os.O_DIRECTORY if i < len(parts) - 1 else 0), dir_fd=fd)
@@ -81,8 +110,11 @@ def _plugins(home):
         name = plugin.get('name')
         if not isinstance(name, str) or not _NAME.fullmatch(name) or plugin.get('source') not in ('user', 'bundled'):
             continue
-        root = Path(plugin['_dir'])
-        raw = _read(root, 'manifest.json', 64 * 1024)
+        located = _asset_root(plugin, home)
+        if located is None:
+            continue
+        root, anchor = located
+        raw = _read(root, 'manifest.json', 64 * 1024, anchor=anchor)
         try:
             manifest = json.loads(raw) if raw else {}
         except (ValueError, UnicodeDecodeError):
@@ -92,7 +124,7 @@ def _plugins(home):
         # The existing Web protocol's panel opt-in distinguishes Web documents from native Desktop SDK bundles.
         panel = manifest.get('panel')
         compatible = isinstance(panel, str) and len(panel) <= 256 and _path(panel) and panel.startswith(('dist/', 'static/')) and panel.endswith('.html')
-        out.append({**plugin, 'panel': panel if compatible else None,
+        out.append({**plugin, '_dir': str(root), '_asset_anchor': str(anchor), 'panel': panel if compatible else None,
                     'enabled': _plugin_api_mount_skip_reason(plugin, enabled, disabled) is None})
     return out
 
@@ -117,7 +149,7 @@ def _request(ctx, plugin, params):
     if params.get('websocket') or any(k == 'accept' and 'text/event-stream' in v.lower() for k, v in headers):
         return _reply(501, b'Agent plugin host supports buffered HTTP only', 'text/plain; charset=utf-8')
     api = plugin.get('_api_file')
-    if not isinstance(api, str) or not _path(api) or _read(Path(plugin['_dir']), api) is None:
+    if not isinstance(api, str) or not _path(api) or _read(Path(plugin['_dir']), api, anchor=Path(plugin['_asset_anchor'])) is None:
         return _reply()
     from hermes_cli.plugins import get_plugin_manager
     body = base64.b64decode(params.get('body') or '', validate=True)
@@ -193,7 +225,7 @@ def register(registry):
             if not isinstance(path, str) or not path.startswith(('dist/', 'static/')):
                 return _reply()
             content_type = _MIME.get(Path(path).suffix.lower())
-            body = _read(Path(plugin['_dir']), path) if content_type else None
+            body = _read(Path(plugin['_dir']), path, anchor=Path(plugin['_asset_anchor'])) if content_type else None
             ctx.check_cancelled()
             return _reply(200, body, content_type) if body is not None else _reply()
 

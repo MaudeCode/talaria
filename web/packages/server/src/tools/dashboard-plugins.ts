@@ -3,10 +3,11 @@
  * Settings enable gate (`dashboard_plugins`, default off), and the bytes behind `/plugins/plugin.css`, the sandboxed
  * panel document, plugin static assets, and tab pages. A disabled or unknown plugin serves nothing (null → 404).
  */
-import { createHmac, randomBytes } from 'node:crypto'
+import { createHash, createHmac, randomBytes } from 'node:crypto'
 import type { AgentDashboardPluginSchema, SidecarResult } from '@maudecode/talaria-web-contracts'
 import type { z } from 'zod'
 import type { RequestContext } from '../http/context.js'
+import { signAssetGrant, assetGrantValue } from '../auth/crypto.js'
 import { activeProfileName } from '../auth/gate.js'
 import { SidecarError, type SidecarLike } from '../sidecar/client.js'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
@@ -37,8 +38,8 @@ export interface PluginFile { body: Buffer; contentType: string }
 
 export interface AgentDashboardScope { home: string; owner: string }
 export const isAgentDashboardId = (id: string): boolean => /^agent-[a-f0-9]{40}$/.test(id)
-export function dashboardScope(ctx: RequestContext): AgentDashboardScope {
-  return { home: ctx.deps.profileHome(activeProfileName(ctx)), owner: ctx.authCookie() || ctx.notificationOwner || 'local-owner' }
+export function dashboardScope(ctx: RequestContext, profile = activeProfileName(ctx)): AgentDashboardScope {
+  return { home: ctx.deps.profileHome(profile), owner: createHash('sha256').update(ctx.authCookie() || ctx.notificationOwner || 'local-owner').digest('hex') }
 }
 type AgentPlugin = z.infer<typeof AgentDashboardPluginSchema>
 
@@ -51,6 +52,7 @@ const html = (body: Buffer | string): PluginFile => ({ body: Buffer.isBuffer(bod
 
 export class DashboardPlugins {
   private readonly bindingKey = randomBytes(32)
+  private readonly assetScopes = new Map<string, { scope: AgentDashboardScope; generation: string }>()
   private readonly owners = new Map<string, { generation: string; pending: Set<AbortController> }>()
   constructor(private readonly deps: DashboardPluginDeps) {}
 
@@ -78,6 +80,22 @@ export class DashboardPlugins {
 
   private agentId(scope: AgentDashboardScope, name: string): string {
     return 'agent-' + createHmac('sha256', this.bindingKey).update(JSON.stringify([scope.home, scope.owner, this.owner(scope).generation, name])).digest('hex').slice(0, 40)
+  }
+
+  private panelGrant(scope: AgentDashboardScope, id: string, panel: string): string {
+    if (!this.assetScopes.has(id) && this.assetScopes.size >= 2048) this.assetScopes.delete(this.assetScopes.keys().next().value!)
+    // Store a credential hash, never the login cookie. The grant names only this static source.
+    this.assetScopes.set(id, { scope: { ...scope }, generation: this.owner(scope).generation })
+    return `agent-dashboard-plugins/${signAssetGrant(this.bindingKey, 'agent-dashboard', id)}/${panel}`
+  }
+
+  async agentAssetGrant(segment: string, path: string, signal?: AbortSignal, caller?: AgentDashboardScope): Promise<PluginFile | null> {
+    const id = assetGrantValue(this.bindingKey, 'agent-dashboard', segment)
+    const binding = id ? this.assetScopes.get(id) : undefined
+    const scope = binding?.scope
+    if (!id || !scope || binding.generation !== this.owner(scope).generation || (caller && (caller.owner !== scope.owner || caller.home !== scope.home))) return null
+    // Rechecks current consent and the owner's generation, including after a profile switch.
+    return this.agentAsset(scope, id, path, signal)
   }
 
   private async agentCall<T>(scope: AgentDashboardScope, call: (sidecar: SidecarLike, signal: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<T> {
@@ -112,7 +130,7 @@ export class DashboardPlugins {
       const id = this.agentId(scope, plugin.name)
       return { id, display_id: plugin.name, name: text(plugin.label, 80) || plugin.name, version: text(plugin.version, 40), description: text(plugin.description, 300),
         source: 'agent-plugin', agent_host: true, enabled: plugin.enabled, can_toggle: plugin.panel !== null,
-        panel: plugin.panel ? `agent-dashboard-plugins/${id}/${plugin.panel}` : null,
+        panel: plugin.panel ? this.panelGrant(scope, id, plugin.panel) : null,
         nav: plugin.panel ? { label: text(plugin.label, 40) || plugin.name } : null,
         capabilities: plugin.has_api && plugin.panel ? ['sidecar'] : [], permissions: {}, settings_schema: [], theme: null, tts: null, sidecar: null,
         legacy_injection: false, warnings: plugin.panel ? [] : ['web_extension_migration_required'] }

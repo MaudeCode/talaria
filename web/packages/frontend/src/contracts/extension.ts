@@ -55,7 +55,7 @@ export const ExtensionManifestSchema = z.object({
   /** The server's decision that Settings shows an enable switch for this row. */
   can_toggle: z.boolean(),
   /** App-relative URL of the sandboxed panel document, or null for a headless extension. */
-  panel: z.string().max(400).nullable(),
+  panel: z.string().max(600).nullable(),
   nav: z.object({ label: z.string().min(1).max(40), icon: z.string().max(40).optional() }).nullable(),
   capabilities: z.array(CapabilitySchema).max(16),
   permissions: z.record(z.string().max(64), z.boolean()).optional(),

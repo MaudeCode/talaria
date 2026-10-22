@@ -14,7 +14,11 @@ from talaria_sidecar.errors import Cancelled
 @pytest.fixture
 def dashboards(tmp_path, monkeypatch):
     current = contextvars.ContextVar('dashboard_home')
-    homes = [tmp_path / 'alpha', tmp_path / 'beta']
+    homes = [tmp_path / 'alpha', tmp_path / 'alpha' / 'profiles' / 'beta']
+    from talaria_sidecar.methods import dashboard_plugins
+    monkeypatch.setattr(dashboard_plugins, '_BASE_HOME', homes[0].resolve(), raising=False)
+    monkeypatch.setattr(dashboard_plugins, '_RAW_BASE_HOME', homes[0], raising=False)
+    monkeypatch.setattr('talaria_sidecar.home._PROCESS_HOME', homes[0])
     plugins = {}
     for home in homes:
         names = ['board'] + (['secondary'] if home.name == 'beta' else [])
@@ -150,3 +154,32 @@ def test_http_limits_cancellation_and_unsupported_transports(dashboards, monkeyp
         assert d.call('request', d.homes[0], name='board', path='/', authenticated=True, websocket=True)['status'] == 501
     else:
         assert call(authenticated=True)['status'] == {'timeout': 504, 'oversize': 502, 'stream': 501}[outcome]
+
+
+@pytest.mark.parametrize('ancestor', ['plugins', 'profiles'])
+def test_symlinked_plugins_ancestor_never_serves_assets_or_reaches_native_api(dashboards, monkeypatch, tmp_path, ancestor):
+    d = dashboards
+    home = d.homes[0] if ancestor == 'plugins' else d.homes[1]
+    d.consent[str(home)].add('board')
+    plugins_dir = d.homes[0] / ancestor
+    outside = tmp_path / 'outside-plugins'
+    plugins_dir.rename(outside)
+    plugins_dir.symlink_to(outside, target_is_directory=True)
+    assert d.call('asset', home, name='board', path='dist/index.html')['status'] == 404
+    def native(*args, **kwargs):
+        raise AssertionError('symlinked ancestor reached executable native host')
+    call = _api(d, monkeypatch, native)
+    assert call(home, authenticated=True)['status'] == 404
+
+
+def test_plugin_directory_names_do_not_become_url_paths(dashboards):
+    d = dashboards
+    home = d.homes[0]
+    original = home / 'plugins/board'
+    renamed = home / 'plugins/board copy'
+    original.rename(renamed)
+    d.plugins[str(home)][0]['_dir'] = str(renamed / 'dashboard')
+    result = d.call('asset', home, name='board', path='dist/index.html')
+    assert result['status'] == 200
+    import base64
+    assert base64.b64decode(result['body']) == b'<p>alpha:board</p>'

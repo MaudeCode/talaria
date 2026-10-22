@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 
@@ -51,6 +51,8 @@ it('uses owner-bound ids and discards a delayed asset after a profile switch', a
   plugins.invalidateOwner(scope)
   resolve({ status: 200, body: Buffer.from('old-profile-secret').toString('base64'), content_type: 'text/html' })
   await rejected
+  const grant = String(one.panel).split('/')[1]!
+  expect(await plugins.agentAssetGrant(grant, 'dist/index.html')).toBeNull()
   const next = (await plugins.agentManifests(scope))[0]!
   expect(next.id).not.toBe(one.id)
   expect(await plugins.agentAsset(scope, String(one.id), 'dist/index.html')).toBeNull()
@@ -87,4 +89,44 @@ it('returns an explicit 501 for an admitted WebSocket without retrying the Agent
   })
   expect(status).toBe(501)
   expect(fake.calls.filter((c) => c.method === 'plugins.dashboard_request')).toHaveLength(1)
+})
+
+it('loads password-authenticated dashboard assets without cookies while keeping API authority private', async () => {
+  const fake = new FakeSidecar()
+  fake.respond('plugins.dashboard_list', () => ({ supported: true, plugins: [{ name: 'board', label: 'Board', version: '', description: '', enabled: true, panel: 'dist/index.html', has_api: true }] }))
+  fake.respond('plugins.dashboard_asset', ({ path }) => ({ status: 200, body: Buffer.from(path.endsWith('.js') ? 'window.dashboardLoaded = true' : '<script src="app.js"></script>').toString('base64'), content_type: path.endsWith('.js') ? 'application/javascript' : 'text/html' }))
+  s = await bootTestServer({ sidecar: fake, env: { HERMES_WEBUI_PASSWORD: 'synthetic dashboard password' } })
+  const login = await s.get('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: 'synthetic dashboard password' }) })
+  const cookie = (login.headers.getSetCookie()[0] ?? '').split(';')[0] ?? ''
+  const manifests = await (await s.get('/api/extensions/manifests', { headers: { cookie } })).json() as { manifests: { id: string; source: string; panel: string }[] }
+  const row = manifests.manifests.find((m) => m.source === 'agent-plugin')!
+  const url = new URL('/' + row.panel, s.base)
+  const asset = new URL('app.js', url)
+  // A sandboxed frame's subresource fetch has no session cookie.
+  const js = await s.get(asset.pathname)
+  expect(js.status, 'the authenticated panel must not redirect its cookie-free assets to login').toBe(200)
+  expect(await js.text()).toBe('window.dashboardLoaded = true')
+  expect(js.headers.get('content-security-policy')).toContain('sandbox allow-scripts')
+  const segment = asset.pathname.split('/')[2]!
+  const forged = segment.slice(0, -1) + (segment.endsWith('0') ? '1' : '0')
+  expect((await s.get(asset.pathname.replace(segment, forged))).status).toBe(404)
+  expect((await s.get(`/api/extensions/${row.id}/sidecar/identity`, { headers: { origin: s.base } })).status).toBe(401)
+})
+
+
+it('expires static grants and keeps their profile scope separate from API ids', async () => {
+  const fake = new FakeSidecar()
+  fake.respond('plugins.dashboard_list', () => ({ supported: true, plugins: [{ name: 'board', label: 'Board', version: '', description: '', enabled: true, panel: 'dist/index.html', has_api: true }] }))
+  fake.respond('plugins.dashboard_asset', () => ({ status: 200, body: Buffer.from('static').toString('base64'), content_type: 'text/html' }))
+  s = await bootTestServer({ sidecar: fake })
+  const scope = { home: s.state, owner: 'owner' }
+  const plugins = s.deps.dashboardPlugins
+  const row = (await plugins.agentManifests(scope))[0]!
+  const grant = String(row.panel).split('/')[1]!
+  expect(await plugins.agentAssetGrant(grant, 'dist/index.html')).not.toBeNull()
+  expect(await plugins.agentAssetGrant(grant, 'dist/index.html', undefined, { ...scope, home: scope.home + '/profiles/other' })).toBeNull()
+  expect(await plugins.agentAssetGrant(grant, 'dist/index.html', undefined, { ...scope, owner: 'other-owner' })).toBeNull()
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 3 * 3_600_000)
+  try { expect(await plugins.agentAssetGrant(grant, 'dist/index.html')).toBeNull() }
+  finally { clock.mockRestore() }
 })

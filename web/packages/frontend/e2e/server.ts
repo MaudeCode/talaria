@@ -85,8 +85,9 @@ export async function bootServer(baseUrl: string, extraEnv: Record<string, strin
 
 export function saveHandles(handles: ServerHandle[]): void { writeFileSync(STATE_FILE, JSON.stringify(handles)) }
 
-/** State directory of the open (no-password) server, for specs that seed server-read files. */
-export function openServerState(): string { return (JSON.parse(readFileSync(STATE_FILE, 'utf8')) as ServerHandle[])[0]!.state }
+/** Disposable server state for specs that seed server-read files. */
+export function serverState(kind: 'open' | 'authenticated'): string { return (JSON.parse(readFileSync(STATE_FILE, 'utf8')) as ServerHandle[])[kind === 'open' ? 0 : 1]!.state }
+export function openServerState(): string { return serverState('open') }
 
 export function stopServers(): void {
   let handles: ServerHandle[] = []

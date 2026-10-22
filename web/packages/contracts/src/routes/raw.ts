@@ -102,7 +102,7 @@ export const RAW_ROUTES: readonly RawRoute[] = [
     responses: { 200: { description: 'Asset bytes.', contentType: 'application/octet-stream' }, 404: { description: 'Not found (never explains why).', contentType: 'application/json' } },
   },
   {
-    method: 'GET', path: '/agent-dashboard-plugins/{id}/{path}', summary: 'Profile/owner-bound Agent dashboard assets. Explicit Web panel opt-in; sandbox CSP, no-store, contained static types only. Disabled/unknown ids are indistinguishable.', tags: ['automation'],
+    method: 'GET', path: '/agent-dashboard-plugins/{grant}/{path}', summary: 'Expiring profile/owner-bound Agent dashboard asset grants, usable without cookies. Static only; explicit Web panel opt-in; sandbox CSP, no-store, contained static types only. Disabled/unknown ids are indistinguishable.', tags: ['automation'],
     responses: { 200: { description: 'Asset bytes.', contentType: 'application/octet-stream' }, 404: { description: 'Not found.', contentType: 'application/json' } },
   },
   {

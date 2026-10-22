@@ -21,17 +21,22 @@ router = APIRouter()
 @router.get("/identity")
 async def identity(request: Request):
     late("_require_token")(request)
-    return {"home": os.environ["HERMES_HOME"], "pid": os.getpid(), "query": str(request.url.query),
+    return {"home": os.environ["HERMES_HOME"], "source": __file__, "pid": os.getpid(), "query": str(request.url.query),
             "credentials": [k for k in request.headers if k.lower() in {"authorization", "cookie", "x-hermes-session-token"}]}
 '''
+secondary = 'talaria-secondary-probe'
 for home in (base, other):
-    (home / 'plugins/board/dashboard/dist').mkdir(parents=True)
-    (home / 'config.yaml').write_text('plugins:\n  isolation: in_process\n  enabled: [board]\n')
-    (home / 'plugins/board/plugin.yaml').write_text('name: board\nversion: 0.0.1\ndescription: Synthetic dashboard\n')
-    (home / 'plugins/board/__init__.py').write_text('raise AssertionError("dashboard must never import this entrypoint")\n')
-    (home / 'plugins/board/dashboard/manifest.json').write_text(json.dumps({'name':'board', 'panel':'dist/index.html', 'api':'api.py'}))
-    (home / 'plugins/board/dashboard/dist/index.html').write_text(f'<p>{home.name}</p>')
-    (home / 'plugins/board/dashboard/api.py').write_text(api)
+    names = ['board'] + ([secondary] if home == other else [])
+    home.mkdir(parents=True, exist_ok=True)
+    (home / 'config.yaml').write_text('plugins:\n  isolation: in_process\n  enabled: ' + json.dumps(names) + '\n')
+    for name in names:
+        plugin = home / 'plugins' / name
+        (plugin / 'dashboard/dist').mkdir(parents=True)
+        (plugin / 'plugin.yaml').write_text(f'name: {name}\nversion: 0.0.1\ndescription: Synthetic dashboard\n')
+        (plugin / '__init__.py').write_text('raise AssertionError("dashboard must never import this entrypoint")\n')
+        (plugin / 'dashboard/manifest.json').write_text(json.dumps({'name':name, 'panel':'dist/index.html', 'api':'api.py'}))
+        (plugin / 'dashboard/dist/index.html').write_text(f'<p>{home.name}:{name}</p>')
+        (plugin / 'dashboard/api.py').write_text(api)
 registry = Registry(NS(load=lambda: None, ensure_current=lambda: None))
 dashboard_plugins.register(registry)
 ctx = NS(check_cancelled=lambda: None)
@@ -43,15 +48,21 @@ if not call('list', base)['supported']:
     sys.exit(0)
 from hermes_cli.plugins import get_plugin_manager
 hosts = []
+request_params = dict(authenticated=True, path='/identity', method='GET', query='profile=wrong&token=secret&q=ok',
+                      headers={'authorization':'secret', 'cookie':'secret'}, body='', websocket=False)
 try:
+    assert secondary not in [p['name'] for p in call('list', base)['plugins']]
+    assert secondary in [p['name'] for p in call('list', other)['plugins']]
     for home in (base, other):
         row = next(p for p in call('list', home)['plugins'] if p['name'] == 'board')
         assert row['panel'] == 'dist/index.html' and row['enabled'], row
-        result = call('request', home, name='board', authenticated=True, path='/identity', method='GET', query='profile=wrong&token=secret&q=ok',
-                      headers={'authorization':'secret', 'cookie':'secret'}, body='', websocket=False)
+        asset = call('asset', home, name='board', path='dist/index.html')
+        assert base64.b64decode(asset['body']) == f'<p>{home.name}:board</p>'.encode(), asset
+        result = call('request', home, name='board', **request_params)
         assert result['status'] == 200, result
         identity = json.loads(base64.b64decode(result['body']))
         assert Path(identity['home']).resolve() == home.resolve(), identity
+        assert Path(identity['source']).resolve() == (home / 'plugins/board/dashboard/api.py').resolve(), identity
         assert identity['pid'] != os.getpid() and identity['credentials'] == [] and identity['query'] == 'q=ok', identity
         with scoped_home(home, load_plugins=False):
             host = get_plugin_manager()._plugin_host()
@@ -62,6 +73,12 @@ try:
                                      'authenticated=true', [('X-Hosted-Http-Authenticated','true')], b'', timeout=10, authenticated=admitted)['status']
         with ThreadPoolExecutor(max_workers=4) as pool:
             assert list(pool.map(request, [True, False, True, False])) == [200, 401, 200, 401]
+    assert call('asset', base, name=secondary, path='dist/index.html')['status'] == 404
+    secondary_result = call('request', other, name=secondary, **request_params)
+    assert secondary_result['status'] == 200, secondary_result
+    secondary_identity = json.loads(base64.b64decode(secondary_result['body']))
+    assert Path(secondary_identity['source']).resolve() == (other / 'plugins' / secondary / 'dashboard/api.py').resolve(), secondary_identity
+    assert secondary_identity['pid'] == hosts[1].pid
     call('toggle', other, name='board', enabled=False)
     assert not next(p for p in call('list', other)['plugins'] if p['name'] == 'board')['enabled']
     assert next(p for p in call('list', base)['plugins'] if p['name'] == 'board')['enabled']
