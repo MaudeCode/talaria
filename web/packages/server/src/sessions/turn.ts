@@ -758,7 +758,8 @@ export class TurnRunner {
       }
       // Python `_public_prefill_context_status`: the session-recall prefill hook was dropped with TAL-245, so the
       // context frame always reports the not-configured shape.
-      const persistentBefore = persistentStateSnapshot(deps.profileHome(s.profile))
+      const persistentHome = deps.profileHome(s.profile)
+      const persistentBefore = await persistentStateSnapshot(persistentHome)
       await put('context_status', { session_id: sessionId, prefill: { status: 'not_configured', source: 'none', label: '', message_count: 0 } })
       // Setup awaits can outlive a gateway adoption, so the owner is rechecked right before dispatch.
       await deps.service().assertWritable(s)
@@ -1138,7 +1139,7 @@ export class TurnRunner {
       deps.events.publish('session_done', { profile: s.profile, sessionId: s.session_id })
       // Python `_persistent_state_changes`: toast memory/skill files the agent wrote during the turn.
       try {
-        const changes = persistentStateChanges(persistentBefore, persistentStateSnapshot(deps.profileHome(s.profile)))
+        const changes = persistentStateChanges(persistentBefore, await persistentStateSnapshot(persistentHome))
         if (changes.memory_saved) (await put('state_saved', { session_id: sessionId, kind: 'memory', action: 'saved' }))
         for (const change of changes.skills) (await put('state_saved', { session_id: sessionId, kind: 'skill', action: change.action, name: change.name }))
       } catch (error) {

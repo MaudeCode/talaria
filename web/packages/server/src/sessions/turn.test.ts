@@ -1,17 +1,54 @@
 import { describe, expect, it, vi } from 'vitest'
+import { mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import type { SidecarParams, SidecarResultInput } from '@maudecode/talaria-web-contracts'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer } from '../test/harness.js'
+import { walkSkillFiles } from '../tools/skills.js'
 import { classifyProviderError } from './turn.js'
+
+vi.mock('node:fs', { spy: true })
+vi.mock('../tools/skills.js', { spy: true })
+
+const completedTurn = (params: SidecarParams<'chat.start'>): SidecarResultInput<'chat.start'> => ({
+  status: 'completed', messages: [...params.conversation_history, { role: 'user', content: params.user_message }, { role: 'assistant', content: 'answer' }], final_response: 'answer', error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '',
+  usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: 0 }, context: { context_length: 200000 }, model: 'test-model', provider: 'test', compressed: false,
+  agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [],
+})
+
+it('walks 500 skills once without synchronous skill IO during an unchanged turn', async () => {
+  const sidecar = new FakeSidecar()
+  sidecar.respond('chat.start', completedTurn)
+  const server = await bootTestServer({ sidecar })
+  try {
+    const root = join(server.state, 'skills')
+    for (let i = 0; i < 500; i += 1) {
+      const dir = join(root, 'custom', `skill-${String(i)}`)
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, 'SKILL.md'), `# Skill ${String(i)}\n`)
+    }
+    const session = await server.deps.sessionStore.newSession()
+    vi.mocked(readdirSync).mockClear()
+    vi.mocked(statSync).mockClear()
+    vi.mocked(walkSkillFiles).mockClear()
+    const start = await server.get('/api/chat/start', { method: 'POST', body: JSON.stringify({ session_id: session.session_id, message: 'hello' }), headers: { 'content-type': 'application/json' } })
+    expect(start.status).toBe(200)
+    const { stream_id: streamId } = await start.json() as { stream_id: string }
+    const frames = await server.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'done')
+    expect(frames.map((f) => f.event), JSON.stringify(frames)).toContain('done')
+    expect(frames.filter((f) => f.event === 'state_saved')).toEqual([])
+    expect.soft(vi.mocked(readdirSync).mock.calls.filter(([path]) => String(path).startsWith(root))).toHaveLength(0)
+    expect.soft(vi.mocked(statSync).mock.calls.filter(([path]) => String(path).startsWith(root))).toHaveLength(0)
+    expect(walkSkillFiles).toHaveBeenCalledTimes(1)
+    expect(await vi.mocked(walkSkillFiles).mock.results[0]?.value).toHaveLength(500)
+  } finally { vi.clearAllMocks(); await server.close() }
+})
 
 it('sends done once the session document is written, without waiting for the index flush', async () => {
   const sidecar = new FakeSidecar()
   let releaseTurn!: () => void
   const turnGate = new Promise<void>((resolve) => { releaseTurn = resolve })
-  sidecar.respond('chat.start', async (params) => (await turnGate, {
-    status: 'completed', messages: [...params.conversation_history, { role: 'user', content: params.user_message }, { role: 'assistant', content: 'answer' }], final_response: 'answer', error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '',
-    usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: 0 }, context: { context_length: 200000 }, model: 'test-model', provider: 'test', compressed: false,
-    agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [],
-  }))
+  sidecar.respond('chat.start', async (params) => { await turnGate; return completedTurn(params) })
   const server = await bootTestServer({ sidecar })
   let releaseIndex!: () => void
   const indexGate = new Promise<void>((resolve) => { releaseIndex = resolve })

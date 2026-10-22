@@ -134,6 +134,11 @@ config, extension state) are written only by the server. Agent-owned files (`con
 skills, memories) are read and written as file formats by the server; `state.db` writes and the
 `delete_cli_session` transaction go through the sidecar.
 
+Turn `state_saved` notices compare asynchronous memory and skill signatures before and after execution.
+The server retains at most 32 profile skill inventories, reusing discovered paths while every visited
+directory's identity and timestamps match. File signatures are refreshed each time so in-place skill
+edits remain visible; changed directories trigger one pruned walk, and incomplete walks are not cached.
+
 Deleted-session relay acknowledgements live in `talaria-relay-deleted.json` under the Web state directory.
 `RelayService` stages the session, canonical originating profile, identity and completion cutoff before
 the session file is removed, including while the publisher is unavailable. A failed outbox write leaves

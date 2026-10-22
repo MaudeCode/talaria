@@ -1,7 +1,8 @@
 /** Skills panel: list/view through the Agent (sidecar `skills.*`), file writes and config.yaml toggles here (Python `api/routes.py` skills section). */
 import { decodeText, makeAnchoredDir, openAnchoredCreateFd, openAnchoredFd, openAnchoredWriteFd, rmtreeAnchored } from '../workspace/fs.js'
 import { resolvePathLikePython } from '../workspace/paths.js'
-import { closeSync, fstatSync, mkdirSync, lstatSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { closeSync, fstatSync, mkdirSync, lstatSync, readFileSync, writeFileSync } from 'node:fs'
+import { readdir } from 'node:fs/promises'
 import { join, relative, resolve, sep } from 'node:path'
 import type { SidecarLike } from '../sidecar/client.js'
 import { dict, isDict, type AgentConfig, type Dict } from '../config/agent-config.js'
@@ -168,14 +169,15 @@ export function toggleName(raw: unknown, name: string, enabled: boolean): string
 }
 
 /** Every `SKILL.md` under the skills root, skipping vendored trees (Python `_iter_skill_md_pruned`). */
-export function walkSkillFiles(root: string): string[] {
+export async function walkSkillFiles(root: string, observer: { beforeRead?: (dir: string) => Promise<void>; onReadError?: () => void } = {}): Promise<string[]> {
   const out: string[] = []
-  const walk = (dir: string): void => {
+  const walk = async (dir: string): Promise<void> => {
+    await observer.beforeRead?.(dir)
     let entries: import('node:fs').Dirent[]
-    try { entries = readdirSync(dir, { withFileTypes: true }) } catch { return }
+    try { entries = await readdir(dir, { withFileTypes: true }) } catch { observer.onReadError?.(); return }
     if (entries.some((e) => e.isFile() && e.name === 'SKILL.md')) out.push(join(dir, 'SKILL.md'))
-    for (const e of entries) if (e.isDirectory() && !EXCLUDED_DIRS.has(e.name)) walk(join(dir, e.name))
+    for (const e of entries) if (e.isDirectory() && !EXCLUDED_DIRS.has(e.name)) await walk(join(dir, e.name))
   }
-  walk(root)
+  await walk(root)
   return out
 }
