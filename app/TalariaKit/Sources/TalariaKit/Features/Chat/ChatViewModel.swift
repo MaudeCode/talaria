@@ -137,16 +137,20 @@ public final class ChatViewModel {
     /// True from the first paint until the first session load answers, unless the
     /// selected row reported the session idle.
     private var isConfirmingRunState = false
-    /// Shows that the run state is still being confirmed while no run is adopted. Over a populated
-    /// transcript the "Syncing messages" pill already says the server is being checked (TAL-436).
-    public var showsRunStateCheck: Bool { isConfirmingRunState && activeStreamID == nil && !isSyncingTranscript }
+    /// A populated transcript's pending load already owns its freshness check, including silent reconciliation.
+    public var showsRunStateCheck: Bool {
+        isConfirmingRunState && activeStreamID == nil && !isSubmittingMessage && !isReconcilingPopulatedTranscript
+    }
+    private var isReconcilingPopulatedTranscript: Bool { isLoading && hasMessages }
     /// Loads started by pull-to-refresh; the system refresh spinner covers them.
     private var userRefreshLoadGenerations: Set<Int> = []
     /// Loads belonging to the current send/response reconcile silently, even if they outlive it.
     private var routineReconciliationLoadGenerations: Set<Int> = []
+    /// Invalidates a delayed freshness pill when send/response work supersedes it, even if that work finishes fast.
+    public private(set) var transcriptSyncPresentationGeneration = 0
     /// Opening and refreshing a populated transcript shows freshness; routine response work does not.
     public var isSyncingTranscript: Bool {
-        isLoading && userRefreshLoadGenerations.isEmpty && hasMessages
+        isReconcilingPopulatedTranscript && userRefreshLoadGenerations.isEmpty
             && !isSubmittingMessage && activeStreamID == nil
             && (activeSessionLoadRequestGenerations.isEmpty
                 || !activeSessionLoadRequestGenerations.subtracting(routineReconciliationLoadGenerations).isEmpty)
@@ -1615,6 +1619,7 @@ public final class ChatViewModel {
         activeSessionLoadRequestGenerations.insert(loadRequestGeneration)
         if isRoutineReconciliation || isSubmittingMessage || activeStreamID != nil {
             routineReconciliationLoadGenerations.insert(loadRequestGeneration)
+            transcriptSyncPresentationGeneration &+= 1
         }
         isLoading = true
         if isUserRefresh {
@@ -3038,6 +3043,7 @@ public final class ChatViewModel {
         isStartingChat = true
         isStartingMessageSend = true
         routineReconciliationLoadGenerations.formUnion(activeSessionLoadRequestGenerations)
+        transcriptSyncPresentationGeneration &+= 1
         sendErrorMessage = nil
         lastError = nil
         archiveLiveActivityIfNeeded()

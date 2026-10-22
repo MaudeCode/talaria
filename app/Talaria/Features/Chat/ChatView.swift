@@ -553,7 +553,8 @@ struct ChatView: View {
         .task(id: didCompleteInitialAppearance) {
             await handleInitialAppearanceTask()
         }
-        .delayedStatus(viewModel.isSyncingTranscript, isVisible: $showsSyncingPill)
+        .delayedStatus(viewModel.isSyncingTranscript, isVisible: $showsSyncingPill,
+                       resetGeneration: viewModel.transcriptSyncPresentationGeneration)
         .onChange(of: scenePhase) {
                 handleScenePhaseChange(scenePhase)
             }
@@ -1602,7 +1603,7 @@ struct ChatView: View {
             hasActiveStream: viewModel.activeStreamID != nil,
             activeStreamRecoveryState: viewModel.activeStreamRecoveryState,
             isCancellingStream: viewModel.isCancellingStream,
-            isSyncingTranscript: showsSyncingPill && viewModel.isSyncingTranscript,
+            isSyncingTranscript: showsSyncingPill,
             isBackgroundTurn: viewModel.isBackgroundTurnActive,
             activeRunStartedAt: viewModel.activeRunStartedAt,
             isCompressing: viewModel.isCompressingSession,

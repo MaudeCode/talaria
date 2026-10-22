@@ -9,6 +9,7 @@ public struct DelayedStatusVisibility: Sendable {
     public private(set) var isVisible = false
     private var activeSince: Date?
     private var visibleSince: Date?
+    private var resetGeneration = 0
 
     public init() {}
 
@@ -18,7 +19,12 @@ public struct DelayedStatusVisibility: Sendable {
     }
 
     /// Feeds the condition's current value. Call again at `nextDeadline` while it is non-nil.
-    public mutating func update(isActive: Bool, now: Date) {
+    /// A new reset generation discards the previous operation's delay and visible hold.
+    public mutating func update(isActive: Bool, now: Date, resetGeneration: Int = 0) {
+        if self.resetGeneration != resetGeneration {
+            reset()
+            self.resetGeneration = resetGeneration
+        }
         if !isActive {
             activeSince = nil
         } else if activeSince == nil {

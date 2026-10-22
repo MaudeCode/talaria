@@ -5,6 +5,36 @@ import XCTest
 // TAL-436: "Syncing messages" tracks a populated transcript's reconcile with the server.
 @MainActor
 extension ChatViewModelSendTests {
+    func testCachedRunCheckStaysHiddenWhenSendAdoptsAnUnconfirmedLoad() async throws {
+        let context = try makeContext()
+        let server = URL(string: "https://cached-send-run-check.test")!
+        try CacheStore.cacheMessages([
+            ChatMessage(role: "user", content: "Cached question", timestamp: 1_770_000_001, messageId: "cached-user"),
+            ChatMessage(role: "assistant", content: "Cached answer", timestamp: 1_770_000_002, messageId: "cached-answer")
+        ], serverURL: server, sessionID: "session-abc", in: context)
+        let requests = DeferredRequests()
+        DeferredMockURLProtocol.setOnRequest({ _ = requests.append($0) }, forHost: server.host!)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: server.host!) }
+        let viewModel = try makeViewModel(server: server, protocolClasses: [DeferredMockURLProtocol.self]) { _ in
+            throw URLError(.badURL)
+        }
+        viewModel.prepareInitialMessageLoad(modelContext: context)
+        XCTAssertTrue(viewModel.isSyncingTranscript)
+        XCTAssertFalse(viewModel.showsRunStateCheck)
+        let load = Task { await viewModel.loadMessages(modelContext: context) }
+        try await waitUntil { requests.count == 1 }
+        let send = Task { await viewModel.sendMessage("Next question") }
+        try await waitUntil { requests.count == 2 }
+        XCTAssertFalse(viewModel.showsRunStateCheck, "A routine load must not add a Checking chip beside Starting.")
+        requests.request(at: 1).complete(withJSON: #"{"error":"Send failed"}"#, statusCode: 500)
+        let sent = await send.value
+        XCTAssertFalse(sent)
+        XCTAssertFalse(viewModel.showsRunStateCheck, "A failed send must not reveal a redundant check while its load remains held.")
+        requests.request(at: 0).complete(withJSON: Self.syncStatusSessionJSON)
+        await load.value
+        XCTAssertFalse(viewModel.showsRunStateCheck)
+    }
+
     func testRoutineReloadBeforeSendACKDoesNotIntroduceASyncPhase() async throws {
         try await checkSendReloadStatus(acknowledgesFirst: false)
     }

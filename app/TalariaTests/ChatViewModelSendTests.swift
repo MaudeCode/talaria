@@ -186,35 +186,39 @@ extension ChatViewModelSendTests {
 
 @MainActor
 extension ChatViewModelSendTests {
+    func testOrdinarySyncPillKeepsItsMinimumVisibleHold() async throws {
+        let (viewModel, _, window, requests) = try await makeHeldSyncChat(host: "ordinary-sync-hold.test")
+        let reload = Task { await viewModel.loadMessages() }
+        _ = try await requireElement(in: window, label: "Syncing messages with the server")
+        requests.request(at: 1).complete(withJSON: Self.hostedSyncTranscript)
+        await reload.value
+        XCTAssertFalse(viewModel.isSyncingTranscript)
+        settle(0.05)
+        XCTAssertNotNil(HostedAccessibility.element(in: window, label: "Syncing messages with the server"),
+                        "Ordinary completion must honor the minimum-visible hold instead of flashing the sync pill.")
+        let cleared = await awaitNoElement(in: window) { $0.accessibilityLabel == "Syncing messages with the server" }
+        XCTAssertTrue(cleared)
+    }
+
+    func testFastFailedSendDoesNotRestoreHeldSyncPresentation() async throws {
+        let (viewModel, _, window, requests) = try await makeHeldSyncChat(host: "fast-send-sync-hold.test")
+        let reload = Task { await viewModel.loadMessages() }
+        _ = try await requireElement(in: window, label: "Syncing messages with the server")
+        let send = Task { await viewModel.sendMessage("Failed question") }
+        let started = await awaitCondition { requests.count == 3 }
+        XCTAssertTrue(started)
+        requests.request(at: 2).complete(withJSON: #"{"error":"Send failed"}"#, statusCode: 500)
+        let sent = await send.value
+        XCTAssertFalse(sent)
+        requests.request(at: 1).complete(withJSON: Self.hostedSyncTranscript)
+        await reload.value
+        settle(0.05)
+        XCTAssertNil(HostedAccessibility.element(in: window, label: "Syncing messages with the server"),
+                     "A fast failed send must cancel the previous sync hold, not reveal it again.")
+    }
+
     func testSendProgressNeverShowsSyncingDuringAHeldReload() async throws {
-        let fixture = try FixtureApp(for: self)
-        let requests = DeferredRequests()
-        let host = "hosted-send-sync.test"
-        DeferredMockURLProtocol.setOnRequest({ request in
-            if ["/api/session", "/api/chat/start"].contains(request.request.url?.path ?? "") {
-                _ = requests.append(request)
-            } else {
-                request.complete(withJSON: "{}")
-            }
-        }, forHost: host)
-        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
-        let stream = SpySSEStreamingClient()
-        let summary = SessionSummary(sessionId: "session-abc", title: "Send status")
-        let viewModel = try makeViewModel(streamClient: stream, sessionSummary: summary,
-            server: URL(string: "https://\(host)")!, protocolClasses: [DeferredMockURLProtocol.self]) { _ in
-            throw URLError(.badURL)
-        }
-        defer { viewModel.suspendStreamForNavigation(); viewModel.cleanupPollingTasks() }
-        let transcript = #"{"session":{"session_id":"session-abc","messages":[{"role":"user","content":"Earlier question","message_id":"earlier-user"},{"role":"assistant","content":"Earlier answer","message_id":"earlier-answer"}]}}"#
-        let initial = Task { await viewModel.loadMessages() }
-        let initialStarted = await awaitCondition { requests.count == 1 }
-        XCTAssertTrue(initialStarted)
-        requests.request(at: 0).complete(withJSON: transcript)
-        await initial.value
-        let window = try hostWindow(NavigationStack {
-            ChatView(session: summary, server: URL(string: "https://\(host)")!, onAPIError: { _ in },
-                     loadsInitialMessages: false, viewModel: viewModel)
-        }.modelContainer(fixture.cache))
+        let (viewModel, stream, window, requests) = try await makeHeldSyncChat(host: "hosted-send-sync.test")
         let reload = Task { await viewModel.loadMessages() }
         _ = try await requireElement(in: window, label: "Syncing messages with the server")
         attachHostedScreenshot(window, name: "send-status-before-submission")
@@ -232,8 +236,41 @@ extension ChatViewModelSendTests {
         stream.emit(.token("Live answer"))
         _ = try await requireElement(in: window, label: "Live answer")
         XCTAssertNil(HostedAccessibility.element(in: window, label: "Syncing messages with the server"))
-        requests.request(at: 1).complete(withJSON: transcript)
+        requests.request(at: 1).complete(withJSON: Self.hostedSyncTranscript)
         await reload.value
     }
 
+    private static let hostedSyncTranscript = #"{"session":{"session_id":"session-abc","messages":[{"role":"user","content":"Earlier question","message_id":"earlier-user"},{"role":"assistant","content":"Earlier answer","message_id":"earlier-answer"}]}}"#
+
+    private func makeHeldSyncChat(host: String) async throws -> (ChatViewModel, SpySSEStreamingClient, UIWindow, DeferredRequests) {
+        let fixture = try FixtureApp(for: self)
+        let requests = DeferredRequests()
+        DeferredMockURLProtocol.setOnRequest({ request in
+            if ["/api/session", "/api/chat/start"].contains(request.request.url?.path ?? "") {
+                _ = requests.append(request)
+            } else {
+                request.complete(withJSON: "{}")
+            }
+        }, forHost: host)
+        addTeardownBlock { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+        let stream = SpySSEStreamingClient()
+        let summary = SessionSummary(sessionId: "session-abc", title: "Send status")
+        let viewModel = try makeViewModel(streamClient: stream, sessionSummary: summary,
+            server: URL(string: "https://\(host)")!, protocolClasses: [DeferredMockURLProtocol.self]) { _ in
+            throw URLError(.badURL)
+        }
+        addTeardownBlock {
+            await MainActor.run { viewModel.suspendStreamForNavigation(); viewModel.cleanupPollingTasks() }
+        }
+        let initial = Task { await viewModel.loadMessages() }
+        let initialStarted = await awaitCondition { requests.count == 1 }
+        XCTAssertTrue(initialStarted)
+        requests.request(at: 0).complete(withJSON: Self.hostedSyncTranscript)
+        await initial.value
+        let window = try hostWindow(NavigationStack {
+            ChatView(session: summary, server: URL(string: "https://\(host)")!, onAPIError: { _ in },
+                     loadsInitialMessages: false, viewModel: viewModel)
+        }.modelContainer(fixture.cache))
+        return (viewModel, stream, window, requests)
+    }
 }
