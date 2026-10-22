@@ -44,6 +44,15 @@ export function isApiError(value: unknown): value is ApiError {
   return value instanceof ApiError
 }
 
+/**
+ * A definite refusal (4xx except 408, or a failure before the request left) leaves the server unchanged, so an
+ * optimistic display rolls back at once. Lost responses, timeouts and 5xx answers may have landed: reconcile first.
+ */
+export function isDefiniteRefusal(error: unknown): boolean {
+  if (!isApiError(error)) return true
+  return (error.kind === 'http' || error.kind === 'unauthorized') && error.status >= 400 && error.status < 500 && error.status !== 408
+}
+
 /** Parse a server body with a schema; wrap failure as a typed `invalid_payload` error (never a blank UI). */
 export function parseOrThrow<T>(schema: z.ZodType<T>, value: unknown, path: string): T {
   const result = schema.safeParse(value)

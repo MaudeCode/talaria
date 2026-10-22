@@ -1,4 +1,5 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
+import { useResourceMutation } from './useResourceMutation'
 import type { WorktreeStatus } from '@maudecode/talaria-web-contracts'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
@@ -12,11 +13,13 @@ import { showToast } from '../toast/toast'
  * removal is blocked and whether it needs `force`; the dialog words that check and sends the server's `force_required`.
  */
 export function WorktreeRemoveDialog({ sessionId, onClose }: { sessionId: string; onClose: () => void }) {
-  const qc = useQueryClient()
   const worktree = useQuery({ queryKey: keys.sessions.worktree(sessionId), queryFn: () => api.fetchWorktreeStatus(sessionId), staleTime: 0, gcTime: 0 })
-  const remove = useMutation({
+  const remove = useResourceMutation({
+    resource: () => `session:${sessionId}`,
+    effect: () => ({ fields: { worktree_branch: null } }),
+    exclusive: true,
     mutationFn: (force: boolean) => api.removeWorktree(sessionId, force),
-    onSuccess: () => { onClose(); showToast(m.session_worktree_removed()); void qc.invalidateQueries({ queryKey: keys.sessions.all }) },
+    onSuccess: () => showToast(m.session_worktree_removed()),
     onError: (e) => showToast(m.session_worktree_remove_failed() + (e instanceof Error ? e.message : ''), 4000, 'error'),
   })
   const status = worktree.data?.status
@@ -25,7 +28,7 @@ export function WorktreeRemoveDialog({ sessionId, onClose }: { sessionId: string
       <WorktreeRemoveCheck status={status} error={worktree.error} />
       <div className="mt-4 flex justify-end gap-2">
         <Button onClick={onClose}>{m.cancel()}</Button>
-        <Button variant="danger" disabled={!status?.removable || remove.isPending} onClick={() => { if (status) remove.mutate(status.force_required) }}>
+        <Button variant="danger" disabled={!status?.removable} onClick={() => { if (status) { remove.mutate(status.force_required); onClose() } }}>
           {status?.force_required ? m.session_worktree_force_remove() : m.session_worktree_remove_confirm_label()}
         </Button>
       </div>

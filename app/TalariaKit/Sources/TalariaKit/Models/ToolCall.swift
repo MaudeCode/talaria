@@ -8,6 +8,7 @@ public struct ToolCall: Identifiable, Equatable {
     /// Server-derived display fields; nil from an older server (shown as an unknown tool with no target).
     public var kind: ToolDisplayKind?
     public var target: String?
+    public var progress: ToolProgress?
     public var duration: Double?
     public var isError: Bool?
     public var isCompleted: Bool
@@ -28,6 +29,7 @@ public struct ToolCall: Identifiable, Equatable {
         args: [String: JSONValue]?,
         kind: ToolDisplayKind? = nil,
         target: String? = nil,
+        progress: ToolProgress? = nil,
         resultView: ToolResultView? = nil,
         editDiff: ToolEditDiff? = nil,
         duration: Double? = nil,
@@ -41,6 +43,7 @@ public struct ToolCall: Identifiable, Equatable {
         self.args = args
         self.kind = kind
         self.target = target
+        self.progress = progress
         self.resultView = resultView
         self.editDiff = editDiff
         self.duration = duration
@@ -55,6 +58,28 @@ public struct ToolCall: Identifiable, Equatable {
             return String(localized: "Tool")
         }
         return trimmedName
+    }
+}
+
+/// Server-owned MCP progress. Unlike result sections, this value exists only while a tool runs.
+public struct ToolProgress: Decodable, Equatable {
+    public let percent: Double?
+    public let message: String?
+
+    enum CodingKeys: String, CodingKey { case percent, message }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        percent = container.decodeLossyDoubleIfPresent(forKey: .percent)
+        message = container.decodeLossyStringIfPresent(forKey: .message)
+    }
+
+    init?(_ value: JSONValue?) {
+        guard case .object = value,
+              let data = try? JSONEncoder().encode(value),
+              let progress = try? JSONDecoder().decode(Self.self, from: data)
+        else { return nil }
+        self = progress
     }
 }
 
@@ -263,6 +288,7 @@ public struct ToolCallGroup: Identifiable, Equatable {
             args: arguments(from: function?["arguments"] ?? object["args"]),
             kind: ToolDisplayKind(serverValue: object["kind"]?.stringValue),
             target: object["target"]?.stringValue,
+            progress: ToolProgress(object["progress"]),
             resultView: ToolResultView(object["result_view"]),
             editDiff: ToolEditDiff(object["edit_diff"]),
             duration: object["duration"]?.numberValue,

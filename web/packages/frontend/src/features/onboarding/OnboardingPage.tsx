@@ -5,7 +5,7 @@ import { useForm } from '@tanstack/react-form'
 import { z } from 'zod'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
-import { useOnboardingQuery } from '../../app/queries'
+import { useOnboardingQuery, useSaveSettings } from '../../app/queries'
 import type { OnboardingStatus } from '../../contracts'
 import { Button } from '../../ui/Button'
 import { TextInput } from '../../ui/Field'
@@ -48,6 +48,7 @@ export function OnboardingPage() {
   const status = useOnboardingQuery()
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const saveSettings = useSaveSettings()
   const [step, setStep] = useState(0)
   const [errorNotice, setErrorNotice] = useState<Notice>(null)
   const [busy, setBusy] = useState(false)
@@ -125,7 +126,7 @@ export function OnboardingPage() {
     if (!workspaces.some((w) => w.path === v.workspace)) await api.addWorkspace(v.workspace)
     const body: Record<string, unknown> = { default_workspace: v.workspace }
     if (v.password) body._set_password = v.password
-    await api.saveSettings(body)
+    await saveSettings.mutateAsync(body)
   }
 
   async function finish(v: FormValues) {

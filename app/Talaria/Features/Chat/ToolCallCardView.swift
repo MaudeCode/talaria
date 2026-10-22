@@ -97,7 +97,15 @@ struct ToolCallCardView: View {
                 .foregroundStyle(statusColor)
                 .frame(width: 16, height: 16)
 
-            titleText
+            VStack(alignment: .leading, spacing: 2) {
+                titleText
+                if let progress = ToolCallStatusDisplay(toolCall: toolCall).progressText {
+                    Text(progress)
+                        .font(AppFont.caption())
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
 
             // TAL-448: a file edit's added and removed line counts, beside its label.
             if let editDiff = toolCall.editDiff {
@@ -129,6 +137,7 @@ struct ToolCallCardView: View {
     /// The row's spoken label: what the call did, its status, a file edit's counts, and a delegation's progress.
     static func accessibilityText(for toolCall: ToolCall, detail: String) -> String {
         var label = String(localized: "\(AssistantActivitySummary.label(for: toolCall)), \(detail)")
+        if let progress = ToolCallStatusDisplay(toolCall: toolCall).progressText { label += ", \(progress)" }
         if let editDiff = toolCall.editDiff {
             label += ", \(String(localized: "\(editDiff.added) added")), \(String(localized: "\(editDiff.removed) removed"))"
         }

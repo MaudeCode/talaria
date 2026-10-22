@@ -1978,6 +1978,8 @@ private final class CoordinatorDelegateSpy: ChatStreamCoordinatorDelegate {
         true
     }
 
+    func streamCoordinatorUpdateToolProgress(_ payload: ToolStreamEvent) -> Bool { true }
+
     func streamCoordinatorCompleteToolCall(_ payload: ToolStreamEvent) -> Bool {
         true
     }
