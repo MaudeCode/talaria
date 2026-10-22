@@ -79,7 +79,7 @@ struct ComposerSecondaryControlsView<Leading: View>: View {
             case .workspace:
                 ComposerWorkspaceSelectorButton(
                     title: state.workspaceTitle ?? "",
-                    isDisabled: state.isDisabled,
+                    isDisabled: state.workspaceIsDisabled,
                     color: .secondary,
                     controlFont: AppFont.footnote(),
                     chevronFont: AppFont.caption2(),

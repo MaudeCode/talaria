@@ -503,6 +503,11 @@
         ""
       ]
     },
+    "tests/test_chat_finalize.py::test_archive_notifies_profile_plugins_without_finalizing_or_writing_state": {
+      "layer": "compatibility",
+      "reason": "Real supported-Agent emitter and plugin discovery must deliver the owning profile archive event without finalization or a SessionDB open; boundary fakes cannot prove native lifecycle dispatch.",
+      "cases": ["[record]", "[raises]"]
+    },
     "tests/test_chat_finalize.py::test_finalize_runs_profile_plugin_without_starting_a_turn": {
       "layer": "compatibility",
       "reason": "Actual supported-Agent lifecycle plugin dispatch, profile scoping and native hook-failure result extraction must remain compatible.",

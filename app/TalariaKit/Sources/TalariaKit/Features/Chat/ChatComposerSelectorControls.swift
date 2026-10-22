@@ -3,7 +3,7 @@ import SwiftUI
 /// The selectors in the composer's control strip, after model and reasoning (TAL-629).
 public struct ComposerSecondaryControlsState: Equatable {
 
-    public init(workspaceTitle: String?, profileOptions: [ProfileSummary], selectedProfileName: String?, selectedProfileTitle: String?, gitBranch: ComposerSecondaryControlsState.GitBranch?, toolsetsTitle: String? = nil, isDisabled: Bool) {
+    public init(workspaceTitle: String?, profileOptions: [ProfileSummary], selectedProfileName: String?, selectedProfileTitle: String?, gitBranch: ComposerSecondaryControlsState.GitBranch?, toolsetsTitle: String? = nil, isDisabled: Bool, workspaceIsDisabled: Bool? = nil) {
         self.workspaceTitle = workspaceTitle
         self.toolsetsTitle = toolsetsTitle
         self.profileOptions = profileOptions
@@ -11,6 +11,7 @@ public struct ComposerSecondaryControlsState: Equatable {
         self.selectedProfileTitle = selectedProfileTitle
         self.gitBranch = gitBranch
         self.isDisabled = isDisabled
+        self.workspaceIsDisabled = workspaceIsDisabled ?? isDisabled
     }
 
     public struct GitBranch: Equatable {
@@ -42,6 +43,7 @@ public struct ComposerSecondaryControlsState: Equatable {
     /// The session's toolsets (TAL-631); nil hides the control.
     public let toolsetsTitle: String?
     public let isDisabled: Bool
+    public let workspaceIsDisabled: Bool
 
     /// The selectors the strip shows, by how often each changes: workspace, git branch, toolsets, then profile.
     public var selectors: [Selector] {

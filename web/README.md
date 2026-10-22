@@ -203,6 +203,12 @@ account, profile, and session. The browser retains the last 1024 automatic attem
 attempts. If coordination storage is unavailable, automatic playback stays quiet; **Read aloud** remains
 available. Opening saved history does not start automatic playback.
 
+Deliberately archiving a stored Talaria chat notifies its profile plugins through the Agent's
+`on_session_delete` hook with `reason=archive`, after the local archive commits. Repeated archive
+requests, unarchive and automatic cleanup send no event. This notification preserves the chat,
+approvals and Agent database; plugin failures do not undo the archive. Older Agents without the
+emitter retain the existing archive behavior.
+
 ### Remote access
 
 Bind to loopback and use an SSH tunnel or Tailscale, or set `HERMES_WEBUI_HOST=0.0.0.0` with

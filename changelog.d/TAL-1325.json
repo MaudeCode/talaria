@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Profile plugins can respond when you archive a chat.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

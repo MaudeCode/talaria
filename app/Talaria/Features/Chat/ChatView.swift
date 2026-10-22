@@ -289,7 +289,7 @@ struct ChatView: View {
             isChromeCompact: isComposerChromeCompact,
             errorMessage: prompt == nil ? viewModel.sendErrorMessage : nil,
             warningMessage: prompt == nil ? viewModel.streamWarningMessage : nil,
-            configurationErrorMessage: prompt == nil ? viewModel.composerConfigurationErrorMessage : nil,
+            configurationErrorMessage: prompt == nil ? (viewModel.composerConfigurationErrorMessage ?? viewModel.ownerModelChangeMessage) : nil,
             contextWindowSnapshot: viewModel.contextWindowSnapshot,
             gitViewModel: gitAvailabilityViewModel,
             modelGroups: viewModel.modelCatalogGroups,
@@ -835,7 +835,7 @@ struct ChatView: View {
                     Task { await viewModel.confirmModelSwitch(confirmation) }
                 }
             } message: { confirmation in
-                Text(confirmation.warnings.map { "\($0.title)\n\n\($0.message)" }.joined(separator: "\n\n"))
+                Text(confirmation.message ?? confirmation.warnings.map { "\($0.title)\n\n\($0.message)" }.joined(separator: "\n\n"))
             }
             .alert(
                 "Discard Later Messages?",

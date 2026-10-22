@@ -468,6 +468,26 @@ Heartbeat-only prompts persist with `display_kind: hidden`; clients receive `_di
 Meaningful agent replies and batches containing completions remain visible. Heartbeats emit neither
 `bg_task_complete` nor `process_complete`. Agents without heartbeat support return empty formatter text.
 
+## Deliberate archive notification
+
+RPC v49 extends `chat.finalize_session` with `reason=archive` and optional `lineage` IDs.
+Unlike clear/delete finalization, this branch only calls the installed Agent's
+`emit_session_deleted` with `reason=archive`, the logical primary ID and the persisted
+local conversation lineage. The emitter receives a path-only database identity for the
+owning profile; notification never opens or writes `state.db`, closes the session or
+clears approvals. Agents without the emitter do nothing.
+
+The server dispatches once under the shared archive mutation lock, after an unarchived
+to archived local save commits. Same-state requests, unarchive and cleanup do not dispatch.
+The transition uses persisted before/after archive metadata; a refused save reports a conflict
+without notifying. Delivery is best effort, with no retry after a committed archive. Archive
+RPC replies acknowledge worker scheduling immediately, so bulk actions do not serialize slow
+plugin callbacks. Archive work shares at most four daemon workers and a queue of 256 pending
+callbacks. Queued and running items use the existing release roster to retain profile custody
+until completion; profile deletion and shutdown fence new admission. A full queue drops the new
+best-effort notification with a payload-free warning, without undoing or retrying the archive.
+Archive callback diagnostics expose one payload-free warning instead of raw exceptions.
+
 ## Versioning
 
 `rpc_version` is an integer in the contracts package

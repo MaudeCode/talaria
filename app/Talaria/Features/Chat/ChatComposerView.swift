@@ -994,7 +994,8 @@ struct MessageComposerView: View {
                 )
                 : nil,
             toolsetsTitle: sessionToolsets?.title,
-            isDisabled: isConfigurationControlDisabled
+            isDisabled: isConfigurationControlDisabled,
+            workspaceIsDisabled: isModelAndWorkspaceControlDisabled
         )
     }
 
@@ -1008,7 +1009,7 @@ struct MessageComposerView: View {
             isLoadingModels: isLoadingModels,
             favoriteModelKeys: favoriteModelKeys,
             recentModelKeys: recentModelKeys,
-            isDisabled: isConfigurationControlDisabled,
+            isDisabled: isModelAndWorkspaceControlDisabled,
             maxWidth: modelControlMaxWidth,
             color: metaControlColor,
             controlFont: metaControlFont,
@@ -1164,10 +1165,14 @@ struct MessageComposerView: View {
         optimisticWorkspacePath ?? selectedWorkspacePath
     }
 
-    /// An owner chat's model, workspace and toolsets belong to its owner, and it takes no files (TAL-1043).
+    private var isModelAndWorkspaceControlDisabled: Bool {
+        isAnsweringClarification || isReadOnly || isSending || isCompressingSession || (isWaitingForStream && ownerAttachment == nil) || isUpdatingConfiguration
+            || sessionStart != nil || ownerAttachment.map { !$0.isAttached || $0.revision == nil || $0.executionGeneration == nil } == true
+    }
+
+    /// Only model and workspace have owner mutation paths; the other settings and files stay disabled.
     private var isConfigurationControlDisabled: Bool {
-        isAnsweringClarification || isReadOnly || isSending || isCompressingSession || isWaitingForStream || isUpdatingConfiguration
-            || sessionStart != nil || ownerAttachment != nil
+        isModelAndWorkspaceControlDisabled || ownerAttachment != nil
     }
 
     private var hasUnreadyAttachments: Bool {
