@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Saving or creating a scheduled task, adding Kanban tasks and comments, archiving a board, picking models, reordering or renaming spaces, dismissing notifications and background results, and removing profiles, skills, extensions, connector accounts or passkeys now show the result at once, and undo themselves with an error if the server refuses.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
