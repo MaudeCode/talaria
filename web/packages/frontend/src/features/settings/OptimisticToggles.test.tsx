@@ -136,7 +136,8 @@ it.each(cases)('$name keeps an unknown outcome shown until a later read decides 
   expect(control('alpha')).toBeChecked()
   expect(control('alpha')).not.toHaveAttribute('aria-disabled', 'true')
   c.read().mockResolvedValue(c.snapshot())
-  await act(async () => { await qc.refetchQueries({ queryKey: c.key }) })
+  // Every displayed snapshot the write covers reads again.
+  await act(async () => { await qc.refetchQueries() })
   await waitFor(() => expect(control('alpha')).not.toBeChecked())
   expect(c.write()).toHaveBeenCalledTimes(1)
   expect(qc.getQueryData(c.key)).toEqual(c.snapshot())
@@ -213,7 +214,7 @@ it('keeps a connector tool shown through a failed tool refresh until a later rea
   expect(tool).toBeChecked()
   expect(control('beta')).not.toHaveAttribute('aria-disabled', 'true')
   vi.mocked(api.fetchConnectorTools).mockResolvedValue(cached)
-  await act(async () => { await qc.refetchQueries({ queryKey: keys.connectors.tools('alpha') }) })
+  await act(async () => { await qc.refetchQueries({ queryKey: keys.connectors.all }) })
   await waitFor(() => expect(tool).not.toBeChecked())
   expect(api.setConnectorRule).toHaveBeenCalledOnce()
 })
@@ -250,4 +251,19 @@ it('review regression: extension state text activates its switch and a second pr
   await userEvent.click(within(row).getByText('Enabled', { exact: true }))
   expect(toggle).not.toBeChecked()
   expect(api.extensionAction).toHaveBeenCalledOnce()
+})
+
+it('reads the server revision before the next connector rule after an unknown outcome', async () => {
+  const c = cases[3]!
+  const first = deferred<never>()
+  c.write().mockReturnValueOnce(first.promise).mockResolvedValue({ ok: true, revision: 'rev-3' } as never)
+  setup(c)
+  await screen.findByRole('switch', { name: /^alpha(?:[: ]|$)/ })
+  fireEvent.click(control('alpha'))
+  fireEvent.click(control('beta'))
+  await waitFor(() => expect(control('beta')).toBeChecked())
+  // The first write may have landed: the server moved to rev-2 although its answer was lost.
+  c.read().mockResolvedValue({ ...connectors(), policy_revision: 'rev-2' })
+  await act(async () => { first.reject(new ApiError({ kind: 'network', path: '/x', message: 'Connection lost' })); await Promise.resolve() })
+  await waitFor(() => expect(api.setConnectorRule).toHaveBeenLastCalledWith('beta', 'rev-2', { enabled: true }))
 })

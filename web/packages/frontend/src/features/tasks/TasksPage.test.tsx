@@ -206,6 +206,18 @@ describe('TasksPage', () => {
     await waitFor(() => expect(detail.getByRole('button', { name: /^run now$/i })).toBeEnabled())
   })
 
+  it('keeps each job\'s Run now busy until its own request settles, never sending a second run', async () => {
+    vi.mocked(api.cronAction).mockImplementation(() => new Promise(() => undefined))
+    const detail = await openJob('Digest')
+    await userEvent.click(detail.getByRole('button', { name: /^run now$/i }))
+    await selectJob('Feed')
+    await userEvent.click(detail.getByRole('button', { name: /^run now$/i }))
+    await selectJob('Digest')
+    expect(detail.getByRole('button', { name: /^run now$/i })).toBeDisabled()
+    fireEvent.click(detail.getByRole('button', { name: /^run now$/i }))
+    expect(vi.mocked(api.cronAction).mock.calls.filter(([action]) => action === 'run')).toHaveLength(2)
+  })
+
   it('discards delete confirmation when the owning profile is replaced', async () => {
     const mounted = renderPage([full, feed])
     const detail = await selectJob('Digest')

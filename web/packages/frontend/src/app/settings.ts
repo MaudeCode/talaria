@@ -3,6 +3,7 @@ import { keys } from '../api/queryKeys'
 import * as api from '../api/endpoints'
 import { getStreamContext } from '../stream/connection'
 import { isDefiniteRefusal } from '../contracts/common'
+import { settleOnNextRead } from '../features/sessions/useResourceMutation'
 import { m } from '../paraglide/messages.js'
 import type { Settings } from '../contracts'
 
@@ -90,17 +91,21 @@ export function useSaveSettings() {
           for (const key of fields) if (state.fields.get(key)?.sequence === sequence) state.fields.delete(key)
           publish()
         }
-        // A refusal rolls back at once; an unknown outcome keeps the shown value until a fresh read decides it.
+        // A refusal rolls back at once; an unknown outcome keeps the shown value until a successful read decides it.
         if (!unknown) settle()
         state.active.delete(sequence)
         release()
-        try {
-          if (current() && (unknown || state.active.size === 0)) {
+        if (unknown && current()) {
+          try {
             await qc.cancelQueries({ queryKey: keys.settings })
-            if (current()) await qc.invalidateQueries({ queryKey: keys.settings })
+            await qc.query({ queryKey: keys.settings, queryFn: api.fetchSettings, staleTime: 0 })
+            settle()
+          } catch {
+            settleOnNextRead(qc, () => current() && [...fields].some((key) => state.fields.get(key)?.sequence === sequence), settle, keys.settings)
           }
-        } finally {
-          if (unknown) settle()
+        } else if (current() && state.active.size === 0) {
+          await qc.cancelQueries({ queryKey: keys.settings })
+          if (current()) await qc.invalidateQueries({ queryKey: keys.settings })
         }
       }
     },

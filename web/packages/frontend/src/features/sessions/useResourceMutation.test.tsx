@@ -200,6 +200,28 @@ describe('optimistic resource ownership', () => {
     await waitFor(() => expect(result.current.intents).toEqual({}))
   })
 
+  it('after a failed reconciliation, waits for every displayed snapshot to read again before settling', async () => {
+    const { qc, wrapper } = harness()
+    const family = ['kanban', 'board', 'default']
+    const view = vi.fn().mockResolvedValueOnce('view').mockRejectedValue(new Error('offline'))
+    const stats = vi.fn().mockResolvedValueOnce('stats').mockRejectedValue(new Error('offline'))
+    const { result } = renderHook(() => ({
+      view: useQuery({ queryKey: [...family, 'view'], queryFn: view }),
+      stats: useQuery({ queryKey: [...family, 'stats'], queryFn: stats }),
+      intents: useResourceEffects(),
+      write: useResourceMutation({ resource: () => 'card', queryKey: family, effect: () => ({ fields: { status: 'done' } }), mutationFn: () => Promise.reject(new ApiError({ kind: 'timeout', path: '/x', message: 'timed out' })) }),
+    }), { wrapper })
+    await waitFor(() => expect(result.current.stats.data).toBe('stats'))
+    await act(async () => { await result.current.write.mutateAsync().catch(() => undefined) })
+    await waitFor(() => expect(view).toHaveBeenCalledTimes(2))
+    stats.mockResolvedValue('stats again')
+    await act(async () => { await qc.refetchQueries({ queryKey: [...family, 'stats'] }) })
+    expect(result.current.intents.card?.fields?.status).toBe('done')
+    view.mockResolvedValue('view again')
+    await act(async () => { await qc.refetchQueries({ queryKey: [...family, 'view'] }) })
+    await waitFor(() => expect(result.current.intents).toEqual({}))
+  })
+
   it('drops removed rows and patches fields for display', () => {
     const rows = [{ id: 'a', title: 'A' }, { id: 'b', title: 'B' }, { id: 'c', title: 'C' }]
     expect(withEffects(rows, (r) => r.id, { a: { remove: true }, b: { fields: { title: 'Renamed' } } })).toEqual([{ id: 'b', title: 'Renamed' }, { id: 'c', title: 'C' }])

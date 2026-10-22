@@ -170,6 +170,19 @@ describe('shared optimistic settings', () => {
     expect(result.current.settings.data?.sound_enabled).toBe(true)
   })
 
+  it('keeps an unknown outcome shown through a failed reread until a later read succeeds', async () => {
+    vi.mocked(api.saveSettings).mockRejectedValue(new ApiError({ kind: 'network', path: '/api/settings', message: 'connection lost' }))
+    vi.mocked(api.fetchSettings).mockRejectedValue(new ApiError({ kind: 'http', status: 503, path: '/api/settings', message: 'unavailable' }))
+    const { result, qc } = setup()
+    act(() => result.current.save.mutate({ sound_enabled: true }))
+    await waitFor(() => expect(result.current.save.error?.message).toBe('connection lost'))
+    await waitFor(() => expect(api.fetchSettings).toHaveBeenCalled())
+    expect(result.current.settings.data?.sound_enabled).toBe(true)
+    vi.mocked(api.fetchSettings).mockResolvedValue(initial)
+    await act(async () => { await qc.refetchQueries({ queryKey: keys.settings }) })
+    await waitFor(() => expect(result.current.settings.data?.sound_enabled).toBe(false))
+  })
+
   it.each(['context', 'cache'] as const)('ignores completions after a %s reset', async (reset) => {
     const held = deferred<Settings>()
     vi.mocked(api.saveSettings).mockReturnValue(held.promise)

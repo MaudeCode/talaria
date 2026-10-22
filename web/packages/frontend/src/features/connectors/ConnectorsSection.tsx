@@ -37,9 +37,13 @@ function useRule() {
     queryKey: keys.connectors.all,
     readKeys: () => [keys.connectors.page, ['connectors', 'tools']],
     mutationFn: ({ connector, revision, rule }: { connector: string; revision: string; rule: Rule }) => {
-      const write = chain.current.catch(() => undefined).then(async () => {
+      // After a write whose outcome is unknown, only the server knows the current revision: read it before the next one.
+      const write = chain.current.then(() => qc.getQueryData<{ policy_revision?: string | null }>(keys.connectors.page)?.policy_revision, async () => {
+        confirmed.current = null
+        return (await api.fetchConnectors()).policy_revision
+      }).then(async (latest) => {
         // Until the page rereads, its revision is the one this tab's last confirmed write already advanced.
-        const read = qc.getQueryData<{ policy_revision?: string | null }>(keys.connectors.page)?.policy_revision ?? revision
+        const read = latest ?? revision
         const base = confirmed.current?.read === read ? confirmed.current.next : read
         const result = await api.setConnectorRule(connector, base, rule)
         confirmed.current = { read, next: result.revision }

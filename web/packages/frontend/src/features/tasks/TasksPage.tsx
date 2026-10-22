@@ -4,7 +4,7 @@
  * can be linked and the browser back button works; the editor is transient.
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useMutationState, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { Copy, Pause, Play, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
@@ -30,6 +30,7 @@ import { getStreamContext } from '../../stream/connection'
 
 type CronAction = Parameters<typeof api.cronAction>[0]
 type CronWrite = Exclude<CronAction, 'run'>
+const runKey = ['cron-run'] as const
 
 /** The job as pause, resume or delete leaves it, shown until the server's next read. */
 function cronEffect(action: CronWrite): ResourceEffect {
@@ -94,8 +95,11 @@ export function useTasksWorkbench(selectedId: string | null, onSelect: (id: stri
     onSuccess: (_res, vars) => showToast(vars.action === 'pause' ? m.cron_job_paused() : vars.action === 'resume' ? m.cron_job_resumed() : m.cron_job_deleted()),
     onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error'),
   })
-  // Run now executes on the server: only its button is busy until the run starts.
+  // Run now executes on the server: each job's button stays busy until its own run request settles, so a run is never sent twice.
+  const starting = new Set(useMutationState({ filters: { mutationKey: runKey, status: 'pending' }, select: (mutation) => mutation.state.variables as { job: CronJob; context: object } | undefined })
+    .flatMap((run) => run?.context === context ? [cronResource(run.job)] : []))
   const runNow = useMutation({
+    mutationKey: runKey,
     mutationFn: ({ job, context: owner }: { job: CronJob; context: object }) => {
       if (owner !== getStreamContext()) throw new Error(m.error_generic())
       return api.cronAction('run', { job_id: jobId(job) })
@@ -125,11 +129,10 @@ export function useTasksWorkbench(selectedId: string | null, onSelect: (id: stri
   }, [selectedId, lastRun, qc])
   const run = (act: CronAction, job: CronJob) => {
     if (job.read_only) return
-    if (act === 'run') { runNow.mutate({ job, context }); return }
+    if (act === 'run') { if (!starting.has(cronResource(job))) runNow.mutate({ job, context }); return }
     if (act === 'delete' && selection.current === jobId(job)) onSelect(null)
     action.mutate({ action: act, job, context })
   }
-  const starting = runNow.isPending && runNow.variables.context === context ? cronResource(runNow.variables.job) : null
   const select = (id: string | null) => { selection.current = id; setEditor(null); onSelect(id); closeMobileSidebar() }
   const startEditor = (mode: EditorMode, job: CronJob | null) => { setEditor({ mode, job }); closeMobileSidebar() }
 
@@ -172,7 +175,7 @@ export function useTasksWorkbench(selectedId: string | null, onSelect: (id: stri
         job={selected}
         jobs={jobs}
         state={cronState(selected, running.has(jobId(selected)))}
-        starting={starting === cronResource(selected)}
+        starting={starting.has(cronResource(selected))}
         unwritable={unwritable}
         onAction={(act) => run(act, selected)}
         onEdit={() => startEditor('edit', selected)}

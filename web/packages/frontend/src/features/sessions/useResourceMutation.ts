@@ -121,13 +121,24 @@ async function reconcileSnapshot(qc: QueryClient, current: () => boolean, resour
   ])
 }
 
-/** After a failed reconciliation the effect stays until any later successful read of the covered snapshots. */
-function settleOnNextRead(qc: QueryClient, current: () => boolean, clear: () => void, queryKey?: QueryKey, readKeys?: ResourceRead[]) {
+/**
+ * After a failed reconciliation the effect stays until every displayed snapshot it covers has read successfully since;
+ * with none displayed, the next successful read of any of them settles it.
+ */
+export function settleOnNextRead(qc: QueryClient, current: () => boolean, clear: () => void, queryKey?: QueryKey, readKeys?: ResourceRead[]) {
   const filter = resourceReadFilter(readKeys)
   const covered = (query: Query) => readQueryKeys(queryKey).some((key) => matchQuery({ queryKey: key }, query)) && (!filter.predicate || filter.predicate(query))
+  const waiting = new Set(qc.getQueryCache().findAll({ type: 'active', predicate: covered }).map((query) => query.queryHash))
   const unsubscribe = qc.getQueryCache().subscribe((event) => {
     if (!current()) { unsubscribe(); return }
-    if (event.type === 'updated' && event.action.type === 'success' && covered(event.query as Query)) { unsubscribe(); clear() }
+    const query = event.query as Query
+    if (!covered(query)) return
+    if (event.type === 'removed') waiting.delete(query.queryHash)
+    else if (event.type === 'updated' && event.action.type === 'success') {
+      if (!waiting.size) { unsubscribe(); clear(); return }
+      waiting.delete(query.queryHash)
+    } else return
+    if (!waiting.size) { unsubscribe(); clear() }
   })
 }
 
