@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Chats can start while another chat refreshes its MCP tools.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

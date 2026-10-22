@@ -1409,16 +1409,17 @@ def refresh_profile_agents_mcp_tools(home) -> None:
 
     target = os.path.realpath(home)
     with _AGENT_CACHE_LOCK:
-        failed = []
-        for session_id, entry in list(_AGENT_CACHE.items()):
-            if os.path.realpath(entry[2]) != target:
-                continue
-            try:
-                refresh_agent_mcp_tools(entry[0], quiet_mode=True, content_aware=True)
-            except Exception:  # noqa: BLE001
-                log.warning("Failed to refresh MCP tools for session %s; evicting its agent", session_id, exc_info=True)
-                failed.append(_AGENT_CACHE.pop(session_id))
-        _release_agents_locked(failed)
+        entries = [(sid, entry[0]) for sid, entry in _AGENT_CACHE.items() if os.path.realpath(entry[2]) == target]
+    for session_id, agent in entries:
+        try:
+            refresh_agent_mcp_tools(agent, quiet_mode=True, content_aware=True)
+        except Exception:  # noqa: BLE001
+            log.warning("Failed to refresh MCP tools for session %s", session_id, exc_info=True)
+            with _AGENT_CACHE_LOCK:
+                cached = _AGENT_CACHE.get(session_id)
+                # A turn may have replaced or evicted this agent while its refresh ran.
+                if cached is not None and cached[0] is agent:
+                    _release_agents_locked([_AGENT_CACHE.pop(session_id)])
 
 
 @contextlib.contextmanager
