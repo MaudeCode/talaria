@@ -9,7 +9,8 @@ import type { AsyncLocalStorage } from 'node:async_hooks'
 import type { DnsLookup, PinnedFetch } from './pinned.js'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { TLSSocket } from 'node:tls'
-import { gzipSync } from 'node:zlib'
+import { gzip } from 'node:zlib'
+import { promisify } from 'node:util'
 import type { ServerConfig } from '../config.js'
 import { truthy } from '../config.js'
 import { parseCookieHeader } from '../auth/cookies.js'
@@ -374,10 +375,17 @@ export class RequestContext {
     if (opts.security ?? true) Object.assign(headers, this.securityHeaders())
     Object.assign(headers, opts.headers ?? {})
     let body = opts.body === undefined ? Buffer.alloc(0) : Buffer.isBuffer(opts.body) ? opts.body : Buffer.from(opts.body, 'utf8')
-    if (opts.gzip && body.length > 1024 && this.acceptsGzip()) {
-      body = gzipSync(body, { level: 4 })
-      headers['Content-Encoding'] = 'gzip'
+    if (opts.gzip) {
+      const encoded = await encodeJsonResponse(body, this.header('accept-encoding')).catch((error: unknown) => {
+        this.res.destroy(error instanceof Error ? error : new Error(String(error)))
+        throw error
+      })
+      body = encoded.body
+      if (encoded.gzipped) headers['Content-Encoding'] = 'gzip'
+      const vary = Array.isArray(headers.Vary) ? headers.Vary.join(', ') : headers.Vary
+      headers.Vary = vary ? `${vary}, Accept-Encoding` : 'Accept-Encoding'
     }
+    if (this.res.destroyed) return
     headers['Content-Length'] = String(body.length)
     this.reportOnlyPolicy(headers, opts.security ?? true)
     const cookies = [...(Array.isArray(headers['Set-Cookie']) ? headers['Set-Cookie'] : headers['Set-Cookie'] ? [headers['Set-Cookie']] : []), ...this.pendingCookies]
@@ -458,7 +466,7 @@ export class RequestContext {
       await this.send({ status: 304, headers: { ETag: opts.etag, 'Cache-Control': 'no-store', ...opts.headers }, security: opts.security ?? true })
       return
     }
-    const body = opts.pretty === false ? JSON.stringify(payload) : JSON.stringify(payload, null, 2)
+    const body = opts.pretty === true ? JSON.stringify(payload, null, 2) : JSON.stringify(payload)
     const headers: HeaderMap = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...opts.headers }
     if (opts.etag) headers.ETag = opts.etag
     await this.send({ status, headers, body, gzip: true, security: opts.security ?? true })
@@ -554,4 +562,12 @@ export function acceptsEncoding(header: string | undefined, coding: string): boo
     if (name === '*') wildcard = q
   }
   return wildcard !== null && wildcard > 0
+}
+
+const gzipAsync = promisify(gzip)
+
+/** Encode already-serialized JSON bytes, including oRPC output, without blocking the event loop on gzip. */
+export async function encodeJsonResponse(payload: Buffer, acceptEncoding: string | undefined): Promise<{ body: Buffer; gzipped: boolean }> {
+  if (payload.length <= 1024 || !acceptsEncoding(acceptEncoding, 'gzip')) return { body: payload, gzipped: false }
+  return { body: await gzipAsync(payload, { level: 6 }), gzipped: true }
 }

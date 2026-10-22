@@ -6,7 +6,6 @@
 import { ServerResponse, type IncomingHttpHeaders, type IncomingMessage, type OutgoingHttpHeaders } from 'node:http'
 import type { Socket } from 'node:net'
 import type { Duplex } from 'node:stream'
-import { gzipSync } from 'node:zlib'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { ORPCError, type Router } from '@orpc/server'
@@ -23,7 +22,7 @@ import { toolsRouter } from './api/tools-router.js'
 import { automationRouter } from './api/automation-router.js'
 import { handleDashboardPlugin, handleExtensionSidecarProxy, handleExtensionStatic, handleKanbanEventsStream, handleTerminalOutput, matchSidecarProxy } from './api/automation-raw.js'
 import { handleApprovalStream, handleChatStream, handleClarifyStream, handleGatewayStream, handleSessionEvents, handleSessionJournalStream, handleSessionStream, sessionEventsPathSessionId } from './api/sse-routes.js'
-import { BodyError, RequestContext, acceptsEncoding, loggedUrl, type AppDeps, type HeaderMap } from './http/context.js'
+import { BodyError, RequestContext, acceptsEncoding, encodeJsonResponse, loggedUrl, type AppDeps, type HeaderMap } from './http/context.js'
 import { activeProfileName, checkAuth, checkCsrf, clearProfileCookieHeader, csrfError, getProfileCookie, isCsrfExemptPath, isPublicPath } from './auth/gate.js'
 import { guardQuerySessionId } from './api/session-visibility.js'
 import { checkSameOriginBrowserRequest } from './http/origin.js'
@@ -191,7 +190,6 @@ function bodyCap(path: string): { bytes: number; status: number } {
   const bytes = ROUTE_BODY_CAPS[path]
   return bytes === undefined ? { bytes: ORPC_MAX_BODY_BYTES, status: 413 } : { bytes, status: 400 }
 }
-const GZIP_MIN_BYTES = 1024
 
 /**
  * Cap the bytes oRPC may buffer from a request body: a chunked body carries no `Content-Length`, so the declared-size
@@ -222,7 +220,7 @@ function gzipJsonResponse(req: { headers: IncomingHttpHeaders }, res: ServerResp
   const accept = req.headers['accept-encoding']
   if (!acceptsEncoding(Array.isArray(accept) ? accept.join(',') : accept, 'gzip')) return
   const writeHead = res.writeHead.bind(res)
-  const end = res.end.bind(res)
+  const end = res.end.bind(res) as (...args: unknown[]) => ServerResponse
   let pending: [number, OutgoingHttpHeaders | undefined] | null = null
   let armed = true
   const flush = (): void => { if (pending) { writeHead(pending[0], pending[1]); pending = null } }
@@ -239,17 +237,21 @@ function gzipJsonResponse(req: { headers: IncomingHttpHeaders }, res: ServerResp
       const ct = headers['content-type']
       const type = typeof ct === 'string' ? ct : ''
       const body = Buffer.from(chunk, 'utf8')
-      if (type.startsWith('application/json') && body.length > GZIP_MIN_BYTES && !headers['content-encoding']) {
-        const gz = gzipSync(body, { level: 4 })
-        pending = [pending[0], { ...headers, 'content-encoding': 'gzip', 'content-length': String(gz.length), vary: 'Accept-Encoding' }]
+      if (type.startsWith('application/json') && !headers['content-encoding']) {
+        const status = pending[0]
         armed = false
-        flush()
-        return end(gz)
+        void encodeJsonResponse(body, Array.isArray(accept) ? accept.join(',') : accept).then((encoded) => {
+          if (res.destroyed) return
+          pending = [status, { ...headers, ...(encoded.gzipped ? { 'content-encoding': 'gzip' } : {}), 'content-length': String(encoded.body.length), vary: headers.vary ? `${headers.vary}, Accept-Encoding` : 'Accept-Encoding' }]
+          flush()
+          end(encoded.body, ...rest)
+        }).catch((error: unknown) => { res.destroy(error instanceof Error ? error : new Error(String(error))) })
+        return res
       }
     }
     armed = false
     flush()
-    return (end as (...a: unknown[]) => ServerResponse)(chunk, ...rest)
+    return end(chunk, ...rest)
   }) as typeof res.end
 }
 
