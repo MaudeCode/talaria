@@ -12,6 +12,7 @@ const streams: { event: (event: ChatEvent, id: string) => void; replay: unknown;
 vi.mock('../../api/endpoints', () => ({ fetchSession: vi.fn(), fetchStreamStatus: vi.fn() }))
 vi.mock('../../api/sse', () => ({
   SSE_CLOSED: 2,
+  openSessionStream: vi.fn(() => ({ close: vi.fn(), readyState: () => 1 })),
   openChatStream: (_id: string, replay: unknown, cb: { onEvent: (event: ChatEvent, id: string) => void }) => {
     const close = vi.fn()
     streams.push({ event: cb.onEvent, replay, close })
@@ -171,3 +172,29 @@ for (const outcome of ['resolve', 'reject'] as const) {
     expect(result.current.rows.map((row) => row.message.content)).toEqual(['replacement older', 'replacement latest'])
   })
 }
+
+
+it('refreshes idle notice detail and retires the viewed-session feed on session and context changes', async () => {
+  const feeds = await import('../../api/sse')
+  const { teardownAll } = await import('../../stream/connection')
+  vi.mocked(api.fetchSession).mockImplementation((sid) => Promise.resolve({ session: sessionFixture({ session_id: sid, notices: [{ key: 'plugin', level: 'info', text: 'Plugin finished', expires_at: null }] }) }))
+  const { result, rerender, unmount } = historyHook()
+  const open = vi.mocked(feeds.openSessionStream)
+  expect(open).toHaveBeenCalledWith('history', expect.any(Object))
+  const first = open.mock.calls[0]![1]
+  const closed = open.mock.results[0]!.value.close
+  act(() => { first.onEvent({ event: 'session-updated', data: { session_id: 'history' } }) })
+  await waitFor(() => { expect(result.current.session?.notices?.[0]?.text).toBe('Plugin finished') })
+  rerender({ sid: 'other' })
+  expect(closed).toHaveBeenCalledTimes(1)
+  await waitFor(() => { expect(result.current.session?.session_id).toBe('other') })
+  vi.mocked(api.fetchSession).mockClear()
+  act(() => { first.onEvent({ event: 'session-updated', data: { session_id: 'history' } }) })
+  expect(api.fetchSession).not.toHaveBeenCalled()
+  const previous = open.mock.results.at(-1)!.value.close
+  act(() => { teardownAll() })
+  expect(previous).toHaveBeenCalledTimes(1)
+  expect(open.mock.calls.at(-1)![0]).toBe('other')
+  unmount()
+  expect(open.mock.results.at(-1)!.value.close).toHaveBeenCalledTimes(1)
+})

@@ -122,6 +122,13 @@ export const SessionListEventSchema = z.discriminatedUnion('event', [
 ])
 export type SessionListEvent = z.infer<typeof SessionListEventSchema>
 
+/** `/api/session/stream`: invalidate session detail, including while its native owner is idle. */
+export const SESSION_STREAM_EVENT_NAMES = ['initial', 'session-updated', 'server_turn_started', 'bg_task_complete', 'process_complete'] as const
+export const SessionStreamEventSchema = z.object({
+  event: z.enum(SESSION_STREAM_EVENT_NAMES), data: z.looseObject({ session_id: z.string() }),
+})
+export type SessionStreamEvent = z.infer<typeof SessionStreamEventSchema>
+
 /** Parse a raw SSE frame (`event` name + JSON `data`) into a typed chat event; unknown names are dropped, malformed data rejected. */
 export function parseChatEvent(event: string, rawData: string): ChatEvent | null {
   let data: unknown

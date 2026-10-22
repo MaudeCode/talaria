@@ -1,0 +1,72 @@
+{
+  "session_id": "local-24fa9f4bfead2fe04a0da5932e866e42cbba68160044a1cbbb9285cfcccc3cea",
+  "info": {
+    "config_warning": "Project plugins were skipped"
+  },
+  "events": [
+    {
+      "type": "notification.show",
+      "session_id": "local-24fa9f4bfead2fe04a0da5932e866e42cbba68160044a1cbbb9285cfcccc3cea",
+      "payload": {
+        "text": "Plugin started",
+        "level": "info",
+        "kind": "sticky",
+        "key": "plugin-message:fixture:job",
+        "id": "plugin-message:fixture:job"
+      },
+      "replay_epoch": "owner-epoch",
+      "seq": 1
+    },
+    {
+      "type": "notification.show",
+      "session_id": "local-24fa9f4bfead2fe04a0da5932e866e42cbba68160044a1cbbb9285cfcccc3cea",
+      "payload": {
+        "text": "Plugin finished",
+        "level": "info",
+        "kind": "sticky",
+        "key": "plugin-message:fixture:job",
+        "id": "plugin-message:fixture:job"
+      },
+      "replay_epoch": "owner-epoch",
+      "seq": 2
+    }
+  ],
+  "session": {
+    "session_id": "local-24fa9f4bfead2fe04a0da5932e866e42cbba68160044a1cbbb9285cfcccc3cea",
+    "title": "Native chat",
+    "active_stream_id": null,
+    "is_streaming": false,
+    "read_only": true,
+    "can_branch": false,
+    "can_pin": false,
+    "can_archive": false,
+    "can_delete": false,
+    "can_duplicate": false,
+    "source_kind": "cli",
+    "is_messaging_session": false,
+    "sort_ts": 100,
+    "agent_running": false,
+    "notices": [
+      {
+        "key": "owner-fixture:config-warning",
+        "level": "warn",
+        "text": "Project plugins were skipped",
+        "expires_at": null
+      },
+      {
+        "key": "owner-fixture:plugin:plugin-message:fixture:job",
+        "level": "info",
+        "text": "Plugin finished",
+        "expires_at": null
+      }
+    ],
+    "read_only_reason": "This session is owned by the Agent gateway and is display-only in Talaria."
+  },
+  "invalidation": {
+    "event": "session-updated",
+    "data": {
+      "session_id": "local-24fa9f4bfead2fe04a0da5932e866e42cbba68160044a1cbbb9285cfcccc3cea",
+      "source": "native_owner"
+    }
+  }
+}

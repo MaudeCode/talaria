@@ -6,6 +6,28 @@ import os
 /// an input whose outcome is unknown and a queued one; `--ui-test-owner-chat-batch` serves an owner the App cannot
 /// reattach. Owner actions settle the input they name, and Retry returns its text as the server's draft.
 extension UITestFixtureURLProtocol {
+    static let nativeNoticesArgument = "--ui-test-native-notices"
+    static let nativeNoticePhase = OSAllocatedUnfairLock(initialState: 0)
+    static let nativeNoticeStreams = OSAllocatedUnfairLock<[ObjectIdentifier: UITestFixtureURLProtocol]>(initialState: [:])
+    static var servesNativeNotices: Bool { ProcessInfo.processInfo.arguments.contains(nativeNoticesArgument) }
+
+    static func advanceNativeNotices() {
+        nativeNoticePhase.withLock { $0 += 1 }
+        for stream in nativeNoticeStreams.withLock({ Array($0.values) }) {
+            stream.client?.urlProtocol(stream, didLoad: Data("event: session-updated\ndata: {\"session_id\":\"\(sessionID)\"}\n\n".utf8))
+        }
+    }
+
+    func startNativeNoticeStream(url: URL) {
+        let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "text/event-stream"])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        Self.nativeNoticeStreams.withLock { $0[ObjectIdentifier(self)] = self }
+        client?.urlProtocol(self, didLoad: Data("event: initial\ndata: {\"session_id\":\"\(Self.sessionID)\"}\n\n".utf8))
+        if Self.servesNativeNotices {
+            client?.urlProtocol(self, didLoad: Data("event: session-updated\ndata: {\"session_id\":\"\(Self.sessionID)\"}\n\n".utf8))
+        }
+    }
+
     static let ownerChatArgument = "--ui-test-owner-chat"
     static let ownerChatBatchArgument = "--ui-test-owner-chat-batch"
     static let ownerUnknownText = "Run the migration against staging"
@@ -20,7 +42,7 @@ extension UITestFixtureURLProtocol {
 
     static var servesOwnerChat: Bool {
         let arguments = ProcessInfo.processInfo.arguments
-        return arguments.contains(ownerChatArgument) || arguments.contains(ownerChatBatchArgument)
+        return arguments.contains(ownerChatArgument) || arguments.contains(ownerChatBatchArgument) || servesNativeNotices
     }
 
     static func ownerSessionResponse() -> Data {
@@ -44,6 +66,11 @@ extension UITestFixtureURLProtocol {
         detail["read_only"] = true
         detail["read_only_reason"] = "This session is owned by the Agent gateway and is display-only in Talaria."
         detail["owner_attachment"] = ownerAttachment()
+        if servesNativeNotices {
+            let warning: [String: Any] = ["key": "owner-fixture:config-warning", "level": "warn", "text": "Project plugins were skipped", "expires_at": NSNull()]
+            let plugin: [String: Any] = ["key": "owner-fixture:plugin:job", "level": "info", "text": "Plugin finished", "expires_at": NSNull()]
+            detail["notices"] = nativeNoticePhase.withLock { $0 == 1 ? [warning, plugin] : [warning] }
+        }
         return detail
     }
 
@@ -78,6 +105,10 @@ extension UITestFixtureURLProtocol {
     }
 
     private static func ownerAttachment() -> [String: Any] {
+        if servesNativeNotices {
+            return ["state": "attached", "reason": NSNull(), "can_submit": true, "can_interrupt": false, "can_attach": false,
+                    "revision": 1, "execution_generation": 0, "active_admission": NSNull(), "admissions": []]
+        }
         if ProcessInfo.processInfo.arguments.contains(ownerChatBatchArgument) {
             return ["state": "incompatible", "reason": "native_clarify_batch_unavailable", "can_submit": false, "can_interrupt": false,
                     "can_attach": false, "revision": NSNull(), "execution_generation": NSNull(), "active_admission": NSNull(), "admissions": []]

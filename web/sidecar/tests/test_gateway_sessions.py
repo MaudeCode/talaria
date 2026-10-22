@@ -150,7 +150,7 @@ def native_owner_stub(tmp_path, monkeypatch):
     from types import SimpleNamespace
     from talaria_sidecar.methods import gateway_sessions as adapter
 
-    owner = SimpleNamespace(receipt=None, replay=[], events=[], payload=None, calls=[], config_failure=None,
+    owner = SimpleNamespace(receipt=None, replay=[], events=[], frames=[], info={}, payload=None, calls=[], config_failure=None,
                             described={"instance_id": "owner", "profile_id": "profile", "authority_epoch": 1,
                                        "capabilities": ["durable-admission-v1", "event-replay-v1"]})
     async def rpc(method, **params):
@@ -158,7 +158,7 @@ def native_owner_stub(tmp_path, monkeypatch):
         if method == "runtime.describe":
             return owner.described
         if method == "session.resume":
-            return {"session_id": params["session_id"], "subscription_id": "viewer", "messages": [], "info": {},
+            return {"session_id": params["session_id"], "subscription_id": "viewer", "messages": [], "info": owner.info,
                     "replay_epoch": "epoch", "last_sequence": 4, "execution_generation": 1, **getattr(owner, "snapshot_extra", {})}
         if method in {"session.mutate", "prompt.steer_queued", "prompt.replace_queued"}:
             owner.payload = params.get("payload")
@@ -183,7 +183,9 @@ def native_owner_stub(tmp_path, monkeypatch):
         assert home == tmp_path and selected is endpoint
         queue = asyncio.Queue()
         for event in owner.events:
-            queue.put_nowait({"params": event})
+            queue.put_nowait({"method": "event", "params": event})
+        for frame in owner.frames:
+            queue.put_nowait(frame)
         yield SimpleNamespace(rpc=rpc), queue
     monkeypatch.setitem(sys.modules, "hermes_cli.gateway_client", SimpleNamespace(GatewayRPCError=RuntimeError))
     monkeypatch.setattr(adapter, "_connect", connect)
@@ -195,6 +197,24 @@ def native_owner_stub(tmp_path, monkeypatch):
     owner.session = adapter.session
     owner.run = lambda ctx, params: asyncio.run(adapter._run(ctx, params, tmp_path, found))
     return owner
+
+
+@pytest.mark.parametrize("boundary", ["warning", "replay"])
+def test_idle_notice_replay_and_snapshot_warning(native_owner_stub, boundary):
+    from types import SimpleNamespace
+    owner = native_owner_stub
+    owner.info = {"config_warning": "Project plugins were skipped", "system_prompt": "private"}
+    owner.replay = [{"type": "notification.show", "session_id": "native", "replay_epoch": "epoch", "seq": seq,
+                     "payload": {"key": "plugin-message:fixture:job", "text": text, "level": "info", "kind": "sticky"}}
+                    for seq, text in [(1, "Plugin started"), (2, "Plugin finished")]]
+    frames = []
+    ctx = SimpleNamespace(cancelled=True, emit=lambda kind, data: frames.append((kind, data)))
+    owner.run(ctx, {"session_id": "native", "action": "watch"})
+    if boundary == "warning":
+        assert frames[0][1]["snapshot"]["info"] == {"config_warning": "Project plugins were skipped"}
+    else:
+        assert [data["payload"]["text"] for kind, data in frames if kind == "event"] == ["Plugin started", "Plugin finished"]
+    assert not any(method.startswith("prompt.") for method, _ in owner.calls)
 
 
 @pytest.mark.parametrize("sha,attached", [
@@ -398,3 +418,64 @@ def test_context_detail_prebuild_and_foreign_authority_are_unavailable(native_ow
     native_owner_stub.described['profile_id'] = 'foreign'
     assert native_owner_stub.run(None, {'session_id': 'native', 'action': 'context_detail'})['state'] == 'incompatible'
     assert native_owner_stub.calls == [('runtime.describe', {})]
+
+
+@requires_agent
+def test_real_plugin_notice_producer_replays_without_turn_stamp(native_owner_stub, tmp_path):
+    import json
+    from types import SimpleNamespace
+    if not (AGENT_DIR / "gateway/plugin_messages.py").exists():
+        pytest.skip("this supported Agent has no plugin post/edit API")
+    fixture_path = SIDECAR_ROOT.parent.parent / "contracts/fixtures/web-native-notices.json"
+    env = isolated_env(tmp_path / "producer", HERMES_WEBUI_AGENT_DIR=str(AGENT_DIR))
+    result = subprocess.run([AGENT_PYTHON, str(Path(__file__).parent / "fixtures/gateway_notice_producer.py"),
+                             str(AGENT_DIR), str(fixture_path)], env=env, capture_output=True, text=True, timeout=30, check=False)
+    assert result.returncode == 0, result.stdout + result.stderr
+    fixture = json.loads(fixture_path.read_text())
+    owner = native_owner_stub
+    owner.replay = fixture["events"]
+    owner.info = fixture["info"]
+    for event in owner.replay:
+        event["replay_epoch"] = "epoch"
+    frames = []
+    owner.run(SimpleNamespace(cancelled=True, emit=lambda kind, data: frames.append((kind, data))),
+              {"session_id": fixture["session_id"], "action": "watch"})
+    assert frames[0][1]["snapshot"]["info"] == fixture["info"]
+    assert [data["payload"]["text"] for kind, data in frames if kind == "event"] == ["Plugin started", "Plugin finished"]
+
+
+def test_idle_observation_ignores_arbitrary_native_requests(native_owner_stub):
+    from types import SimpleNamespace
+    owner = native_owner_stub
+    notice = {"session_id": "native", "type": "notification.show", "seq": 5, "replay_epoch": "epoch", "payload": {"key": "job", "text": "Untrusted request"}}
+    owner.frames = [{"method": "unrecognized-operation", "id": "do-not-answer", "params": notice},
+                    {"method": "event", "params": {**notice, "payload": {"key": "job", "text": "Real event"}}}]
+    frames = []
+    ctx = SimpleNamespace(cancelled=False)
+    def emit(kind, data):
+        frames.append((kind, data))
+        if kind == "event":
+            ctx.cancelled = True
+    ctx.emit = emit
+    owner.run(ctx, {"session_id": "native", "action": "watch"})
+    assert [data["payload"]["text"] for kind, data in frames if kind == "event"] == ["Real event"]
+    assert not any(method == "unrecognized-operation" for method, _ in owner.calls)
+
+
+def test_late_old_epoch_notice_does_not_clear_current_replay(native_owner_stub):
+    from types import SimpleNamespace
+    owner = native_owner_stub
+    def notice(seq, text, epoch="epoch"):
+        return {"session_id": "native", "type": "notification.show", "seq": seq, "replay_epoch": epoch,
+                "payload": {"key": "job", "text": text}}
+    owner.events = [notice(5, "Current post"), notice(100, "Old owner", "obsolete"), notice(6, "Current edit")]
+    frames = []
+    ctx = SimpleNamespace(cancelled=False)
+    def emit(kind, data):
+        frames.append((kind, data))
+        if kind == "event" and data["payload"]["text"] == "Current edit":
+            ctx.cancelled = True
+    ctx.emit = emit
+    owner.run(ctx, {"session_id": "native", "action": "watch"})
+    assert [data["payload"]["text"] for kind, data in frames if kind == "event"] == ["Current post", "Current edit"]
+    assert not any(kind == "snapshot" and data.get("replay_gap") for kind, data in frames)

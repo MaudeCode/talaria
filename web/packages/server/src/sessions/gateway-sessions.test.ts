@@ -11,6 +11,7 @@ import { CANONICAL_READ_ONLY_REASON, type StateDbWorkerRequest } from './state-d
 import { GatewaySessions } from './gateway-sessions.js'
 
 const fixture = JSON.parse(readFileSync(new URL('../test/fixtures/canonical-ownership.json', import.meta.url), 'utf8')) as { sessions: Record<string, string>; diagnostic: Record<'safe' | 'ignore_config' | 'fresh', string>; schema: string[]; inserts: string[] }
+const nativeNotices = JSON.parse(readFileSync(new URL('../../../../../contracts/fixtures/web-native-notices.json', import.meta.url), 'utf8')) as { events: Record<string, unknown>[] }
 const ownerEvents = JSON.parse(readFileSync(new URL('../test/fixtures/gateway-owner-events.json', import.meta.url), 'utf8')) as { events: Record<string, unknown>[] }
 const cronRefusal = JSON.parse(readFileSync(new URL('../../../../../contracts/fixtures/native-cron-refusal.json', import.meta.url), 'utf8')) as { completion: Record<string, unknown>; event: { event: string; data: Record<string, unknown> } }
 const sid = fixture.sessions.cli!
@@ -147,6 +148,168 @@ describe('canonical owner attachment', () => {
     }
   })
 
+  it('restores a native session config warning without admitting or starting a turn', async () => {
+    sidecar.respond('gateway.session', () => attached(snapshot({ info: { config_warning: 'Project plugins were skipped' } })))
+    const source = vi.spyOn(s.deps.sessions, 'stateDbSources').mockResolvedValue(new Map([[sid, { source: 'cli', canonical: true }]]))
+    try {
+      const detail = await s.deps.sessions.owner!.project({ session_id: sid, title: 'Native chat', read_only_reason: CANONICAL_READ_ONLY_REASON })
+      expect(detail.notices).toEqual([expect.objectContaining({ level: 'warn', text: 'Project plugins were skipped', expires_at: null })])
+      expect(detail.active_stream_id).toBeNull()
+      expect(detail.agent_running).toBe(false)
+      expect(sidecar.calls.some((call) => call.method === 'chat.start')).toBe(false)
+    } finally { source.mockRestore() }
+  })
+
+  it('claims the HTTP stream slot and validates visibility before attaching a native viewer', async () => {
+    sidecar.calls.length = 0
+    expect((await s.get('/api/session/stream?session_id=bad%2Fsession')).status).toBe(404)
+    const claim = vi.spyOn(s.deps.streamSlots, 'claim').mockReturnValue(null)
+    try { expect((await s.get(`/api/session/stream?session_id=${sid}`)).status).toBe(503) }
+    finally { claim.mockRestore() }
+    expect(sidecar.calls.filter((call) => call.method === 'gateway.session')).toEqual([])
+    expect(s.deps.channels.subscriberCount(sid)).toBe(0)
+  })
+
+  it('shares idle native observation between viewers and delivers keyed edits after a turn settles', async () => {
+    let emit: ((frame: Omit<StreamFrame, 'seq'>) => void) | undefined
+    let aborted = false
+    let snap = snapshot()
+    sidecar.respond('gateway.session', (params, send, opts) => {
+      if (params.action !== 'watch') return { ...attached(snap), receipt: params.action === 'receipt' ? { ...admission('terminal'), outcome: 'completed' } : null }
+      emit = send
+      send({ event: 'snapshot', data: attached(snap) })
+      return new Promise((resolve) => { opts.signal!.addEventListener('abort', () => { aborted = true; resolve(attached(snap)) }, { once: true }) })
+    })
+    let viewers = 0
+    const streams = [0, 1].map((index) => s.sse(`/api/session/stream?session_id=${sid}`, (frame) => {
+      if (frame.event === 'initial') viewers++
+      return frame.event === 'test-end' || index === 0 && frame.event === 'test-first'
+    }))
+    const detail = async () => SessionEnvelopeSchema.parse(await (await s.get(`/api/session?session_id=${sid}`)).json()).session
+    const notice = (seq: number, text: string, stamps: Record<string, unknown> = {}) => { emit!({ event: 'event', data: {
+      type: 'notification.show', session_id: sid, replay_epoch: snap.replay_epoch, seq, payload: { key: 'plugin-message:fixture:job', text, level: 'success' }, ...stamps,
+    } }) }
+    try {
+      await vi.waitFor(() => { expect(viewers).toBe(2) }, { timeout: 10_000 })
+      await vi.waitFor(() => { expect(sidecar.calls.filter((call) => call.method === 'gateway.session' && (call.params as { action: string }).action === 'watch')).toHaveLength(1) }, { timeout: 10_000 })
+      await vi.waitFor(() => { expect(emit).toBeDefined() })
+      expect(s.deps.registry.activeRunStreamForSession(sid)).toBeNull()
+      for (const event of nativeNotices.events) emit!({ event: 'event', data: event })
+      notice(5, 'Plugin started')
+      notice(6, 'Plugin finished')
+      notice(6, 'Duplicate replay must not replace the edit')
+      notice(7, 'Other session', { session_id: 'other-session' })
+      await vi.waitFor(async () => { expect((await detail()).notices).toEqual([expect.objectContaining({ text: 'Plugin finished', level: 'success' })]) })
+      expect((await detail()).is_streaming).toBe(false)
+      snap = snapshot({ running: true, pending: [admission()], last_sequence: 6 })
+      emit!({ event: 'snapshot', data: attached(snap) })
+      await vi.waitFor(() => { expect(s.deps.registry.activeRunStreamForSession(sid)).not.toBeNull() })
+      const stream = s.deps.registry.activeRunStreamForSession(sid)!
+      const run = s.sse(`/api/chat/stream?stream_id=${stream}&replay=1&after_seq=0`, (frame) => frame.event === 'stream_end')
+      snap = snapshot({ last_sequence: 7 })
+      emit!({ event: 'event', data: { type: 'session.info', payload: { authority_epoch: 1, execution_generation: 1, running: false, pending: [] } } })
+      expect((await run).some((frame) => frame.event === 'done')).toBe(true)
+      await vi.waitFor(() => { expect(s.deps.registry.activeRunStreamForSession(sid)).toBeNull() })
+      expect(aborted).toBe(false)
+      notice(8, 'Idle edit after completion')
+      await vi.waitFor(async () => { expect((await detail()).notices?.map((notice) => notice.text)).toEqual(['Idle edit after completion']) })
+      s.deps.channels.emit(sid, 'test-first', {})
+      expect((await streams[0]!).some((frame) => frame.event === 'session-updated')).toBe(true)
+      expect(aborted).toBe(false)
+      expect(sidecar.calls.filter((call) => call.method === 'gateway.session' && (call.params as { action: string }).action === 'watch')).toHaveLength(1)
+    } finally { s.deps.channels.emit(sid, 'test-end', {}); await Promise.all(streams) }
+    for (const frames of await Promise.all(streams)) expect(frames.some((frame) => frame.event === 'session-updated')).toBe(true)
+    await vi.waitFor(() => { expect(aborted).toBe(true) })
+    expect(sidecar.calls.some((call) => call.method === 'chat.start')).toBe(false)
+  })
+
+  it('resets only native notices on an owner epoch or replay gap and rejects late old frames', async () => {
+    let emit!: (frame: Omit<StreamFrame, 'seq'>) => void
+    let snap = snapshot({ info: { config_warning: 'Launch warning' } })
+    sidecar.respond('gateway.session', (params, send, opts) => {
+      if (params.action !== 'watch') return attached(snap)
+      emit = send
+      send({ event: 'snapshot', data: attached(snap) })
+      return new Promise((resolve) => { opts.signal!.addEventListener('abort', () => { resolve(attached(snap)) }, { once: true }) })
+    })
+    const controller = new AbortController()
+    const lease = await s.deps.sessions.owner!.observe(sid, 'default', controller.signal)
+    const base = { session_id: sid, read_only_reason: CANONICAL_READ_ONLY_REASON, notices: [{ key: 'unrelated', text: 'Direct notice', level: 'info', expires_at: null }] }
+    const detail = () => s.deps.sessions.owner!.project(base)
+    try {
+      await vi.waitFor(() => { expect(emit).toBeDefined() })
+      const event = (type: string, seq: number, epoch = snap.replay_epoch) => { emit({ event: 'event', data: { type, seq, session_id: sid, replay_epoch: epoch, payload: { key: 'plugin', text: 'Plugin notice' } } }) }
+      event('notification.show', 5)
+      expect((await detail()).notices).toHaveLength(3)
+      event('notification.clear', 6)
+      expect((await detail()).notices).toHaveLength(2)
+      event('notification.show', 7)
+      emit({ event: 'snapshot', data: { ...attached(snap), replay_gap: true } })
+      expect((await detail()).notices).toEqual([base.notices[0], expect.objectContaining({ text: 'Launch warning' })])
+      snap = snapshot({ authority_epoch: 2, replay_epoch: 'replacement', info: { config_warning: 'Replacement warning' } })
+      emit({ event: 'snapshot', data: attached(snap) })
+      event('notification.show', 100, 'owner-epoch')
+      expect((await detail()).notices).toEqual([base.notices[0], expect.objectContaining({ text: 'Replacement warning' })])
+      event('notification.show', 1)
+      expect((await detail()).notices).toHaveLength(3)
+    } finally { controller.abort(); lease?.release(); await lease?.ended }
+  })
+
+  it('isolates idle transports and channels by profile/session and reattaches after disconnect', async () => {
+    const home = join(s.state, 'profiles', 'work')
+    mkdirSync(home, { recursive: true })
+    const other = new DatabaseSync(join(home, 'state.db'))
+    other.exec(fixture.schema.join('\n'))
+    for (const sql of fixture.inserts) other.exec(sql)
+    const connections = new Map<string, { send: (frame: Omit<StreamFrame, 'seq'>) => void; stop: () => void; signal: AbortSignal }>()
+    sidecar.respond('gateway.session', (params, send, opts) => {
+      const snap = snapshot({ session_id: params.session_id, stored_session_id: params.session_id, info: { config_warning: 'Restored warning' } })
+      if (params.action !== 'watch') return attached(snap)
+      return new Promise((resolve) => {
+        connections.set(JSON.stringify([params.profile_home, params.session_id]), { send, stop: () => { resolve(attached(snap)) }, signal: opts.signal! })
+        opts.signal!.addEventListener('abort', () => { resolve(attached(snap)) }, { once: true })
+        send({ event: 'snapshot', data: attached(snap) })
+      })
+    })
+    const held: { controller: AbortController; lease: Awaited<ReturnType<GatewaySessions['observe']>> }[] = []
+    const subs = [['default', sid], ['work', sid], ['default', fixture.sessions.tui!]].map(([profile, session]) => ({ profile: profile!, sid: session!, sub: s.deps.channels.subscribe(session!, profile) }))
+    try {
+      for (const item of subs) {
+        const controller = new AbortController()
+        const lease = await s.deps.sessions.owner!.observe(item.sid, item.profile, controller.signal)
+        held.push({ controller, lease })
+      }
+      await vi.waitFor(() => { expect(connections.size).toBe(3) })
+      for (const item of subs) item.sub.queue.length = 0
+      const key = JSON.stringify([s.state, sid])
+      const first = connections.get(key)!
+      const event = { type: 'notification.show', session_id: sid, replay_epoch: 'owner-epoch', seq: 5, payload: { key: 'same-plugin-key', text: 'Root only' } }
+      first.send({ event: 'event', data: event })
+      expect(subs.map((item) => item.sub.queue.length)).toEqual([1, 0, 0])
+      for (const [index, item] of subs.entries()) {
+        const view = await s.deps.sessions.owner!.project({ session_id: item.sid, profile: item.profile, read_only_reason: CANONICAL_READ_ONLY_REASON })
+        expect((view.notices as { text: string }[]).map((notice) => notice.text)).toEqual(index === 0 ? ['Restored warning', 'Root only'] : ['Restored warning'])
+      }
+      first.stop()
+      await held[0]!.lease!.ended
+      const controller = new AbortController()
+      const lease = await s.deps.sessions.owner!.observe(sid, 'default', controller.signal)
+      held.push({ controller, lease })
+      await vi.waitFor(() => { expect(connections.get(key)).not.toBe(first) })
+      first.send({ event: 'event', data: { ...event, seq: 100, payload: { ...event.payload, text: 'Late detached frame' } } })
+      connections.get(key)!.send({ event: 'event', data: event })
+      const view = await s.deps.sessions.owner!.project({ session_id: sid, read_only_reason: CANONICAL_READ_ONLY_REASON })
+      expect((view.notices as { text: string }[]).map((notice) => notice.text)).toEqual(['Restored warning', 'Root only'])
+      expect(sidecar.calls.filter((call) => call.method === 'gateway.session' && (call.params as { action: string }).action === 'watch')).toHaveLength(4)
+    } finally {
+      for (const item of held) { item.controller.abort(); item.lease?.release() }
+      await Promise.all(held.flatMap((item) => item.lease ? [item.lease.ended] : []))
+      for (const item of subs) s.deps.channels.unsubscribe(item.sid, item.sub)
+      other.close()
+    }
+    for (const connection of connections.values()) expect(connection.signal.aborted).toBe(true)
+  })
+
   it('projects only owner controls and never groups the active turn under a steering row', async () => {
     const pending = [
       { ...admission(), admission_id: 'steering', steering: true, text: 'Correction' },
@@ -192,7 +355,7 @@ describe('canonical owner attachment', () => {
     const headers = { cookie: `hermes_profile=${profile}` }
     sidecar.respond('gateway.session', (params, send, opts) => {
       if (params.session_id !== initial.session_id || params.profile_home !== s.deps.profileHome(profile)) return original!(params, send, opts)
-      if (params.action !== 'watch') return { ...attached(snap), receipt: params.action === 'receipt' ? { ...admission('terminal'), outcome } : null }
+      if (params.action !== 'watch') return { ...attached(snap), receipt: params.action === 'receipt' ? { ...admission('terminal'), admission_id: params.admission_id!, execution_generation: snap.execution_generation, authority_epoch: snap.authority_epoch, outcome } : null }
       emit = send
       send({ event: 'snapshot', data: attached(snap) })
       return new Promise((resolve) => { opts.signal!.addEventListener('abort', () => { resolve(attached(snap)) }, { once: true }) })
@@ -306,6 +469,68 @@ describe('canonical owner attachment', () => {
     expect(serialized).toContain('Start a new chat to send it.')
     expect(serialized).not.toContain(secret)
     expect(serialized).not.toContain('private-provider')
+  })
+
+  const holdOwnerReceipt = () => {
+    const original = sidecar.responderFor('gateway.session')!
+    let resolve!: (result: GatewaySessionResult) => void
+    const receipt = new Promise<GatewaySessionResult>((release) => { resolve = release })
+    let requested = false
+    sidecar.respond('gateway.session', (params, send, opts) => {
+      if (params.action === 'receipt' && !requested) { requested = true; return receipt }
+      return original(params, send, opts)
+    })
+    return { get requested() { return requested }, release: () => { resolve({ ...attached(snapshot()), receipt: { ...admission('terminal'), outcome: 'completed' } }) } }
+  }
+
+  it('keeps a new native turn observable while the previous projection is settling', async () => {
+    const first = await observeOwner(snapshot({ running: true, pending: [admission()] }))
+    const controller = new AbortController()
+    const viewer = await s.deps.sessions.owner!.observe(sid, 'default', controller.signal)
+    const receipt = holdOwnerReceipt()
+    try {
+      first.finish()
+      await vi.waitFor(() => { expect(receipt.requested).toBe(true) })
+      first.snapshot({ running: true, execution_generation: 2, pending: [{ ...admission(), admission_id: 'successor-input', input_id: 'successor-request', execution_generation: 2 }] })
+      await vi.waitFor(() => {
+        expect(s.deps.registry.activeRunStreamForSession(sid)).not.toBe(first.stream)
+        expect(s.deps.registry.activeRunStreamForSession(sid)).not.toBeNull()
+      })
+      const next = s.deps.registry.activeRunStreamForSession(sid)!
+      receipt.release()
+      const previous = await first.read
+      expect(previous.find((frame) => frame.event === 'done')?.data).not.toHaveProperty('session')
+      const read = s.sse(`/api/chat/stream?stream_id=${next}&replay=1&after_seq=0`, (frame) => frame.event === 'stream_end')
+      first.event('message.delta', { text: 'Next turn output' }, 2)
+      first.finish(2)
+      expect((await read).filter((frame) => frame.event === 'token').map((frame) => frame.data)).toEqual([{ text: 'Next turn output' }])
+      expect(sidecar.calls.filter((call) => call.method === 'gateway.session' && (call.params as { action: string }).action === 'watch')).toHaveLength(1)
+    } finally {
+      receipt.release()
+      first.finish(2)
+      controller.abort(); viewer?.release()
+      await first.read
+    }
+  })
+
+  it('waits for a settling run projection during server shutdown', async () => {
+    const first = await observeOwner(snapshot({ running: true, pending: [admission()] }))
+    const controller = new AbortController()
+    const viewer = await s.deps.sessions.owner!.observe(sid, 'default', controller.signal)
+    const receipt = holdOwnerReceipt()
+    first.finish()
+    await vi.waitFor(() => { expect(receipt.requested).toBe(true) })
+    const closing = s.deps.sessions.owner!.close()
+    try {
+      await viewer?.ended
+      const state = await Promise.race([closing.then(() => 'closed'), new Promise<string>((resolve) => { setImmediate(() => { resolve('waiting') }) })])
+      expect(state).toBe('waiting')
+    } finally {
+      receipt.release()
+      controller.abort(); viewer?.release()
+      await closing
+      await first.read
+    }
   })
 
   it('carries native MCP progress on one tool row through completion', async () => {
@@ -464,7 +689,7 @@ describe('canonical owner attachment', () => {
     let release!: () => void
     const gate = new Promise<void>((resolve) => { release = resolve })
     s.deps.sessions.owner = new GatewaySessions({ service: s.deps.sessions, sidecar: s.deps.sidecar,
-      registry: s.deps.registry, journal: s.deps.journal, events: s.deps.events, profileHome: s.deps.profileHome,
+      registry: s.deps.registry, journal: s.deps.journal, events: s.deps.events, channels: s.deps.channels, profileHome: s.deps.profileHome,
       activeProfile: s.deps.activeProfile, redactEnabled: s.deps.sessions.deps.redactEnabled, now: s.deps.nowSeconds, log: s.deps.log,
       showReasoning: async () => { await gate; throw new Error('synthetic config unavailable') },
     })

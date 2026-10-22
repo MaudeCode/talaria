@@ -2,15 +2,16 @@ import { unavailableContextDetail, type ContextDetail } from '@maudecode/talaria
 /** One native-owner seam. Talaria observes its history and never settles it into a local Session. */
 import type { StartupTiming } from '../startup-timing.js'
 import { createHash, randomUUID } from 'node:crypto'
-import { GatewayClarifyBatchSchema, GatewaySessionResultSchema, type ClarifyAnswers, type ClarifyStep, type ExecutionModes, type GatewayClarifyBatch, type GatewayCreateParams, type GatewaySessionParams, type GatewaySessionResult, type GatewaySnapshot, type OwnerAttachment, type ModelChange } from '@maudecode/talaria-web-contracts'
-import type { SidecarLike } from '../sidecar/client.js'
+import { SessionNoticeSchema, GatewayClarifyBatchSchema, GatewaySessionResultSchema, type ClarifyAnswers, type ClarifyStep, type ExecutionModes, type GatewayClarifyBatch, type GatewayCreateParams, type GatewaySessionParams, type GatewaySessionResult, type GatewaySnapshot, type OwnerAttachment, type ModelChange } from '@maudecode/talaria-web-contracts'
+import type { SidecarLike, StreamFrame } from '../sidecar/client.js'
 import { redactNestedMessageContainers, publicToolFrame, redactString } from '../redact.js'
 import { str } from '../util.js'
 import { PendingPrompts } from './pending.js'
 import { clarifyReply } from './pending.js'
 import type { SessionService } from './service.js'
 import { HttpFailure } from './service.js'
-import type { StreamRegistry } from './streams.js'
+import type { SessionChannels, StreamRegistry } from './streams.js'
+import { SessionNotices } from './notices.js'
 import type { RunJournal, RunJournalWriter } from './journal.js'
 import { SessionEventBus } from './events.js'
 import { messageWindowForDisplay, messagesForLimitedPayload } from './window.js'
@@ -23,7 +24,9 @@ type Row = Record<string, unknown>
 interface Target { sid: string; profile: string; home: string; key: string }
 /** An owner clarify batch and the question ids the owner still waits on, from its last `clarify.lock` reply. */
 type Batch = GatewayClarifyBatch & { remaining: string[] }
-interface Watch { stream: string; controller: AbortController; snapshot: GatewaySnapshot; batch: Batch | null; restarting: boolean; worker?: Promise<void>; reconcile?: () => void }
+interface Watch { stream: string; controller: AbortController; snapshot: GatewaySnapshot; batch: Batch | null; restarting: boolean; reconcile?: () => void }
+/** The attach-only transport outlives individual run projections while a viewer holds it. */
+interface Observation { controller: AbortController; snapshot: GatewaySnapshot; listeners: Set<(frame: StreamFrame) => void>; leases: number; ended: Promise<GatewaySessionResult> }
 
 const ownerStreamPrefix = (home: string): string => `owner-${createHash('sha256').update(home).digest('hex').slice(0, 16)}-`
 const ownerStateId = (identity: string): string => `owner-${createHash('sha256').update(identity).digest('hex')}`
@@ -81,6 +84,10 @@ function modelChange(receipt: Row, selection: Row = {}): ModelChange {
 
 export class GatewaySessions {
   private readonly watches = new Map<string, Watch>()
+  private readonly runWorkers = new Set<Promise<void>>()
+  private readonly observations = new Map<string, Observation>()
+  private readonly noticeEpochs = new Map<string, { identity: string; sequence: number }>()
+  private readonly notices: SessionNotices
   private readonly modelMutations = new Map<string, number>()
   private readonly modelChanges = new Map<string, { epoch: number; replay: string; change: ModelChange }>()
 
@@ -97,9 +104,114 @@ export class GatewaySessions {
   }
   constructor(private readonly deps: {
     service: SessionService; sidecar: () => SidecarLike | null; registry: StreamRegistry;
-    journal: RunJournal; events: SessionEventBus; profileHome: (profile: string) => string;
+    journal: RunJournal; events: SessionEventBus; channels: SessionChannels; profileHome: (profile: string) => string;
     activeProfile: () => string; showReasoning: (home: string) => Promise<boolean>; redactEnabled: () => boolean; now: () => number; log: (line: string) => void;
-  }) {}
+  }) { this.notices = new SessionNotices(deps.now) }
+
+  private addNativeNotice(target: Target, key: string, frame: Row): void {
+    const text = typeof frame.text === 'string' ? frame.text.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '') : ''
+    this.notices.add(target.key, { ...frame, key, text, lapses_with_agent: true })
+  }
+
+  private noticeState(target: Target, snapshot: GatewaySnapshot, reset = false) {
+    const identity = ownerStateId(JSON.stringify([target.key, snapshot.authority_epoch, snapshot.replay_epoch]))
+    let state = this.noticeEpochs.get(target.key)
+    if (state?.identity !== identity || reset) {
+      this.notices.reset(target.key)
+      state = { identity, sequence: reset ? snapshot.last_sequence : 0 }
+      this.noticeEpochs.set(target.key, state)
+    }
+    const warning = typeof snapshot.info.config_warning === 'string' ? snapshot.info.config_warning : ''
+    if (warning.trim()) this.addNativeNotice(target, `${identity}:config-warning`, { text: warning, level: 'warn' })
+    return state
+  }
+
+  private nativeNotices(target: Target, snapshot: GatewaySnapshot, existing?: unknown) {
+    const observed = this.observations.get(target.key)?.snapshot
+    this.noticeState(target, observed && observed.authority_epoch >= snapshot.authority_epoch ? observed : snapshot)
+    const direct = SessionNoticeSchema.array().safeParse(existing)
+    return [...(direct.success ? direct.data : []), ...this.notices.list(target.key)]
+  }
+
+  private changed(target: Target): void {
+    this.deps.channels.emit(target.sid, 'session-updated', { session_id: target.sid, source: 'native_owner' }, target.profile)
+  }
+
+  /** One shared connection, acquired by viewers and run projections, with no local Agent admission. */
+  private transport(target: Target, base: Row, snapshot: GatewaySnapshot): Observation {
+    const prior = this.observations.get(target.key)
+    if (prior && !prior.controller.signal.aborted) return prior
+    const observation: Observation = { controller: new AbortController(), snapshot, listeners: new Set(), leases: 0, ended: Promise.resolve({ state: 'unavailable', reason: 'owner_connection_lost', snapshot: null, receipt: null }) }
+    this.observations.set(target.key, observation)
+    this.noticeState(target, snapshot)
+    observation.ended = (async () => {
+      const showReasoning = await this.deps.showReasoning(target.home).catch(() => false)
+      const sidecar = this.deps.sidecar()
+      if (!sidecar || observation.controller.signal.aborted) return { state: 'unavailable' as const, reason: 'sidecar_unavailable', snapshot: null, receipt: null }
+      return sidecar.call('gateway.session', { profile_home: target.home, session_id: target.sid, action: 'watch', show_reasoning: showReasoning }, {
+        signal: observation.controller.signal, timeoutMs: 0,
+        onStream: (frame) => {
+          if (observation.controller.signal.aborted || this.observations.get(target.key) !== observation) return
+          if (frame.event === 'snapshot') {
+            const result = GatewaySessionResultSchema.parse(frame.data)
+            if (result.snapshot?.session_id !== target.sid) return
+            observation.snapshot = result.snapshot
+            this.noticeState(target, result.snapshot, result.replay_gap === true)
+            if ((result.snapshot.running || result.snapshot.pending.some((p) => p.status === 'queued' || p.status === 'started')) && !this.watches.has(target.key)) this.watch(target, base, result.snapshot)
+            this.changed(target)
+          } else if (frame.event === 'event') {
+            const event = frame.data as Row
+            const data = (event.payload ?? {}) as Row
+            if (event.type === 'notification.show' || event.type === 'notification.clear') {
+              const snap = observation.snapshot
+              const state = this.noticeState(target, snap)
+              if (event.session_id !== target.sid || event.replay_epoch !== snap.replay_epoch
+                  || event.authority_epoch !== undefined && event.authority_epoch !== snap.authority_epoch
+                  || !Number.isSafeInteger(event.seq) || Number(event.seq) <= state.sequence) return
+              state.sequence = Number(event.seq)
+              const key = typeof data.key === 'string' ? data.key : typeof data.id === 'string' ? data.id : ''
+              if (!key) return
+              const scopedKey = `${state.identity}:plugin:${ownerStateId(key)}`
+              if (event.type === 'notification.clear') this.notices.clear(target.key, scopedKey)
+              else this.addNativeNotice(target, scopedKey, data)
+              this.changed(target)
+            } else if (event.type === 'session.info') {
+              if (data.authority_epoch !== observation.snapshot.authority_epoch || Number(data.execution_generation) < observation.snapshot.execution_generation) return
+              observation.snapshot = { ...observation.snapshot, ...data }
+              if ((observation.snapshot.running || observation.snapshot.pending.some((p) => p.status === 'queued' || p.status === 'started')) && !this.watches.has(target.key)) this.watch(target, base, observation.snapshot)
+              this.changed(target)
+            } else if (event.type === 'session.updated') this.changed(target)
+          }
+          for (const listener of observation.listeners) listener(frame)
+        },
+      })
+    })().catch(() => ({ state: 'unavailable' as const, reason: 'owner_connection_lost', snapshot: null, receipt: null })).finally(() => {
+      observation.controller.abort()
+      if (this.observations.get(target.key) === observation) this.observations.delete(target.key)
+      this.changed(target)
+    })
+    return observation
+  }
+
+  private lease(observation: Observation): () => void {
+    observation.leases++
+    let held = true
+    return () => { if (!held) return; held = false; if (--observation.leases === 0) observation.controller.abort() }
+  }
+
+  /** Called only after the existing HTTP owner has authorized and claimed a viewer's stream slot. */
+  async observe(sid: string, profile: string, signal: AbortSignal): Promise<{ release: () => void; ended: Promise<GatewaySessionResult> } | null> {
+    const target = await this.target(sid, profile)
+    if (!target || signal.aborted) return null
+    const base = await this.deps.service.detail(sid, {})
+    const result = await this.call(target, { action: 'snapshot' })
+    if (signal.aborted) return null
+    if (!result.snapshot || result.state !== 'attached') return { release: () => undefined, ended: Promise.resolve(result) }
+    const observation = this.transport(target, base, result.snapshot)
+    const release = this.lease(observation)
+    signal.addEventListener('abort', release, { once: true })
+    return { release: () => { signal.removeEventListener('abort', release); release() }, ended: observation.ended }
+  }
 
   private async target(sid: string, profile = this.deps.activeProfile()): Promise<Target | null> {
     if (sid.length === 0 || sid !== sid.trim()) return null
@@ -208,6 +320,7 @@ export class GatewaySessions {
     const snapshot = result.snapshot
     const fields: Row = { ...base, owner_attachment: this.attachment({ ...result, model_change: this.currentModelChange(target, snapshot) }), composer_state_key: ownerStateId(target.key), context_detail_key: this.contextDetailKey(target, snapshot), active_stream_id: stream, is_streaming: Boolean(stream) }
     if (snapshot) {
+      fields.notices = this.nativeNotices(target, snapshot, base.notices)
       const observed = this.watches.get(target.key)?.snapshot
       const nativeRows = [...snapshot.messages]
       const active = stream ? runningAdmission(snapshot) : null
@@ -389,6 +502,17 @@ export class GatewaySessions {
   private watch(target: Target, base: Row, snapshot: GatewaySnapshot, admissionId?: string): Watch {
     const watch: Watch = { stream: `${ownerStreamPrefix(target.home)}${randomUUID()}`, controller: new AbortController(), snapshot, batch: null, restarting: false }
     this.watches.set(target.key, watch)
+    const observation = this.transport(target, base, snapshot)
+    const release = this.lease(observation)
+    let receive: ((frame: StreamFrame) => void) | null = null
+    const buffered: StreamFrame[] = [{ event: 'snapshot', seq: 0, data: { state: 'attached', reason: null, snapshot, receipt: null } }]
+    const listener = (frame: StreamFrame) => {
+      if (receive) receive(frame)
+      else if (buffered.length < 4096) buffered.push(frame)
+      else watch.controller.abort()
+    }
+    observation.listeners.add(listener)
+    watch.controller.signal.addEventListener('abort', () => { observation.listeners.delete(listener); release() }, { once: true })
     const registry = this.deps.registry
     const channel = registry.create(watch.stream, target.sid)
     registry.registerActiveRun({ stream_id: watch.stream, session_id: target.sid, phase: 'running', started_at: this.deps.now(), workspace: str(base.workspace), model: str(base.model) || null, provider: null, ephemeral: false, origin: 'user' })
@@ -434,6 +558,9 @@ export class GatewaySessions {
         // A model pick resolves at the owner's next claim boundary, after the turn becomes idle.
         if (terminal || replaying || this.modelMutations.has(target.key) || this.currentModelChange(target, watch.snapshot)?.state === 'deferred') return
         terminal = true
+        // A new claim may arrive while this turn's receipt is being read. Give it its own projection immediately.
+        if (this.watches.get(target.key) === watch) this.watches.delete(target.key)
+        registry.retire(watch.stream)
         await clearTools()
         const current = await this.call(target, { action: 'snapshot' })
         const rawReceipt = activeAdmission ? (await this.call(target, { action: 'receipt', admission_id: activeAdmission })).receipt : null
@@ -444,11 +571,14 @@ export class GatewaySessions {
           && receipt?.status === 'terminal' && receipt.outcome === 'failed' && completion && completion.admission === activeAdmission
           && receipt.authority_epoch === watch.snapshot.authority_epoch && receipt.execution_generation === watch.snapshot.execution_generation
           ? { message: completion.message, type: completion.type, code: completion.code, retryable: completion.retryable } : null
+        // A terminal frame for the previous generation must not overwrite the newer turn's state.
+        const session = current.snapshot && !sameExecution(current.snapshot, observation.snapshot)
+          ? undefined : { ...await this.view(base, current, null, target), ...usage }
         await put(cancelled ? 'cancel' : failed ? 'apperror' : 'done', { session_id: target.sid,
           terminal_state: cancelled ? 'cancelled' : failed ? 'error' : 'completed',
           ...(failed ? refusal ?? { message: 'The owning Agent could not complete this turn', type: current.reason ?? 'owner_turn_failed' } : {}),
           ...(Object.keys(usage).length ? { usage } : {}),
-          session: { ...await this.view(base, current, null, target), ...usage } })
+          ...(session ? { session } : {}) })
         await put('stream_end', { session_id: target.sid })
         watch.controller.abort()
       }
@@ -469,12 +599,8 @@ export class GatewaySessions {
         if (clarify) await put('clarify', clarify)
       }
       await prompts(snapshot)
-      const sidecar = this.deps.sidecar()
-      if (!sidecar) throw new Error('sidecar_unavailable')
       if (watch.controller.signal.aborted) return
-      const result = await sidecar.call('gateway.session', { profile_home: target.home, session_id: target.sid, action: 'watch', show_reasoning: showReasoning }, {
-        signal: watch.controller.signal, timeoutMs: 0,
-        onStream: (frame) => {
+      receive = (frame) => {
           enqueue(async () => {
             if (frame.event === 'replay_complete') {
               replaying = false
@@ -506,6 +632,10 @@ export class GatewaySessions {
             const event = frame.data as Row
             const data = (event.payload ?? {}) as Row
             const kind = str(event.type)
+            if (kind === 'notification.show' || kind === 'notification.clear') {
+              await put('notices', { session_id: target.sid, notices: this.nativeNotices(target, observation.snapshot, base.notices) })
+              return
+            }
             if (kind === 'request.cancel') {
               // The owner withdraws a settled, timed-out or interrupted batch from every viewer.
               if (!watch.batch || watch.batch.request_id !== data.id) return
@@ -596,8 +726,16 @@ export class GatewaySessions {
             }
 
           })
-        },
-      })
+      }
+      for (const frame of buffered.splice(0)) receive(frame)
+      const result = await Promise.race([
+        observation.ended,
+        new Promise<GatewaySessionResult>((resolve) => {
+          const stopped = () => { resolve({ state: 'attached', reason: null, snapshot: watch.snapshot, receipt: null }) }
+          if (watch.controller.signal.aborted) stopped()
+          else watch.controller.signal.addEventListener('abort', stopped, { once: true })
+        }),
+      ])
       await chain
       if (streamError) throw streamError instanceof Error ? streamError : new Error('Owner stream projection failed')
       if (!terminal) {
@@ -606,24 +744,32 @@ export class GatewaySessions {
         watch.controller.abort()
       }
     }
-    watch.worker = worker().catch((error: unknown) => {
+    const running = worker().catch((error: unknown) => {
       // Closing the sidecar after a terminal snapshot is expected; every other exit is observable.
       if (!terminal) channel.put(['apperror', { message: 'The owning Agent connection ended', type: 'owner_unavailable', terminal_state: 'error' }, null])
       this.deps.log(`[webui] owner observation ended: ${error instanceof Error ? error.name : 'error'}`)
     }).finally(async () => {
       watch.controller.abort()
+      observation.listeners.delete(listener)
+      release()
       try { await closeWriter?.close() } catch { this.deps.log('[webui] owner observation journal could not close') }
       if (this.watches.get(target.key) === watch) this.watches.delete(target.key)
       registry.retire(watch.stream)
+      this.changed(target)
       this.deps.events.publish('owner_changed', { profile: target.profile, sessionId: target.sid })
+      this.runWorkers.delete(running)
     })
+    this.runWorkers.add(running)
     return watch
   }
 
   async close(): Promise<void> {
+    const observations = [...this.observations.values()]
+    for (const observation of observations) observation.controller.abort()
     const watches = [...this.watches.values()]
     for (const watch of watches) watch.controller.abort()
-    await Promise.allSettled(watches.flatMap((watch) => watch.worker ? [watch.worker] : []))
+    await Promise.allSettled([...this.runWorkers])
+    await Promise.allSettled(observations.map((observation) => observation.ended))
     this.modelChanges.clear()
   }
 }

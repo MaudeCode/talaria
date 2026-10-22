@@ -13,10 +13,15 @@ public enum SessionEventFrame: Equatable, Sendable {
 
 enum SessionEventFrameDecoder {
     static func decode(eventType: String, data: String) -> SessionEventFrame {
-        guard eventType == "sessions_changed",
-              let payload = try? JSONDecoder().decode(Payload.self, from: Data(data.utf8)) else {
+        guard let payload = try? JSONDecoder().decode(Payload.self, from: Data(data.utf8)) else {
             return .ignored
         }
+        if eventType == "initial", let sessionID = payload.session_id, !sessionID.isEmpty { return .keepalive }
+        if ["session-updated", "server_turn_started", "bg_task_complete", "process_complete"].contains(eventType) {
+            guard let sessionID = payload.session_id, !sessionID.isEmpty else { return .ignored }
+            return .changed(.changed(reason: eventType, sessionID: sessionID))
+        }
+        guard eventType == "sessions_changed" else { return .ignored }
         return .changed(.changed(reason: payload.reason, sessionID: payload.session_id))
     }
 
@@ -43,7 +48,7 @@ public protocol SessionEventStreaming: AnyObject {
     func stop()
 }
 
-/// The app's one `/api/sessions/events` subscription transport (TAL-434).
+/// Shared transport for the sidebar feed and the viewed session's invalidation feed.
 @MainActor
 public final class SessionEventStreamClient: SessionEventStreaming {
     private let baseConfiguration: URLSessionConfiguration
@@ -139,14 +144,14 @@ public enum SessionEventsMonitor {
     public static func run(
         url: URL,
         client: SessionEventStreaming,
-        onChange: @escaping @MainActor (SessionsChange) -> Void,
+        onChange: @escaping @MainActor (SessionsChange) async -> Void,
         sleep: @escaping (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) async {
         var failures = 0
         var hasConnected = false
         while !Task.isCancelled {
             // `nil` marks the connection's end; iteration also ends when the task is cancelled.
-            let (frames, continuation) = AsyncStream<SessionEventFrame?>.makeStream()
+            let (frames, continuation) = AsyncStream<SessionEventFrame?>.makeStream(bufferingPolicy: .bufferingNewest(64))
             client.start(
                 url: url,
                 onFrame: { continuation.yield($0) },
@@ -158,11 +163,11 @@ public enum SessionEventsMonitor {
                 if !isLive, frame == .keepalive || frame.isChange {
                     isLive = true
                     failures = 0
-                    if hasConnected { onChange(.resync) }
+                    if hasConnected { await onChange(.resync) }
                     hasConnected = true
                 }
                 if case .changed(let change) = frame {
-                    onChange(change)
+                    await onChange(change)
                 }
             }
             continuation.finish()

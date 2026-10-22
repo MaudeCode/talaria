@@ -2,7 +2,7 @@
 
 - **Status:** Implemented
 - **Created:** 2026-07-04
-- **Updated:** 2026-09-27
+- **Updated:** 2026-10-21
 
 ## Endpoints
 
@@ -11,6 +11,29 @@
 | `GET /api/chat/stream?stream_id=` | One run's live events, with journal replay on reconnect. |
 | `GET /api/sessions/{session_id}/events` | Per-session relay: replays the session's run journal from a cursor, then follows the active run. |
 | `GET /api/sessions/events` | Global session-list invalidation (`sessions_changed`); not a lifecycle stream. |
+| `GET /api/session/stream?session_id=` | Viewed-session invalidation across idle and running periods. |
+
+Web's transcript hook and App's existing session-event transport keep the viewed
+session's stream open. `initial`, `session-updated`, `server_turn_started`,
+`bg_task_complete`, and `process_complete` invalidate authoritative session detail.
+The global sidebar feed remains independent. Reconnection refreshes detail even
+when no change was retained while the client was absent.
+
+For canonical native chats, authorized viewers and an active run share one
+attach-only native subscription, keyed by profile home and session. The last
+viewer releases its lease without interrupting a run; the last lease closes the
+native subscription. Idle observation creates no active stream or Agent admission.
+Native transport loss closes the viewed-session HTTP stream so its existing client
+reconnect policy reattaches. Stream slots, disconnects and backpressure retain the
+HTTP SSE owner's cleanup path.
+
+Native plugin post/edit events replace notices by owner/replay/session-scoped key.
+Session launch `config_warning` uses the same existing `notices` field and renderer.
+Notice events require session and replay identity plus ordered sequence; turn
+frames retain their execution-generation fences. A replay gap clears ephemeral
+native notices and restores the snapshot warning. It cannot reconstruct plugin
+history absent from the owner's replay. Direct notices and global startup-warning
+placement are unchanged.
 
 The per-session relay lives in `handleSessionJournalStream`
 (`packages/server/src/api/sse-routes.ts`). It relays journal rows with their

@@ -214,6 +214,26 @@ describe('event streams deliver past the old 4 MiB cut-off', () => {
     expect(got.filter((f) => f.event === 'bg_task_complete').at(-1)?.data).toMatchObject({ n: 200 })
   })
 
+  it('releases the native observation and stream slot when a paused session reader disconnects', async () => {
+    const release = vi.fn()
+    const observe = vi.spyOn(s.deps.sessions.owner!, 'observe').mockResolvedValue({ release, ended: new Promise(() => undefined) })
+    await vi.waitFor(() => { expect(s.deps.streamSlots.active).toBe(0) })
+    const slotsBefore = s.deps.streamSlots.active
+    const client = read(`${s.base}/api/session/stream?session_id=${sid}`, true)
+    try {
+      await subscribed(() => s.deps.channels.subscriberCount(sid))
+      await vi.waitFor(() => { expect(observe).toHaveBeenCalledTimes(1) })
+      for (let n = 0; n < 256; n++) s.deps.channels.emit(sid, 'session-updated', { session_id: sid, text: FRAME_TEXT })
+      client.destroy()
+      await client.done
+      await vi.waitFor(() => {
+        expect(release).toHaveBeenCalledTimes(1)
+        expect(s.deps.channels.subscriberCount(sid)).toBe(0)
+        expect(s.deps.streamSlots.active).toBe(slotsBefore)
+      })
+    } finally { client.destroy(); observe.mockRestore() }
+  })
+
   it('a live run resumes every journaled frame past 4 MiB', async () => {
     const channel = s.deps.registry.create('run-resume', sid)
     await run('run-resume', 3000)

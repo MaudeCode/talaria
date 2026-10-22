@@ -1,4 +1,5 @@
 import { settingsContract, ReasoningUnsupportedSchema } from './routes/settings.js'
+import { SessionStreamEventSchema } from './sse.js'
 import { RpcRequestSchema } from './sidecar/rpc.js'
 import { ModelConfirmationRequiredSchema, sessionsContract } from './routes/sessions.js'
 import { ChatStartResponseSchema, MessageSchema, SessionSchema, ToolCallSchema } from './views.js'
@@ -16,6 +17,16 @@ describe('contracts package', () => {
     const fixture = shared('fixtures/native-cron-refusal.json') as { event: unknown }
     expect(ChatEventSchema.parse(fixture.event)).toEqual(fixture.event)
   })
+  it('shares native idle notices and session invalidation with both clients', () => {
+    const fixture = shared('fixtures/web-native-notices.json') as { session: unknown; invalidation: unknown }
+    const session = SessionSchema.parse(fixture.session)
+    expect(session.notices?.map((notice) => notice.text)).toEqual(['Project plugins were skipped', 'Plugin finished'])
+    expect(session.active_stream_id).toBeNull()
+    expect(session.is_streaming).toBe(false)
+    expect(SessionStreamEventSchema.parse(fixture.invalidation).data.session_id).toBe(session.session_id)
+    expect(SessionStreamEventSchema.safeParse({ event: 'session-updated', data: {} }).success).toBe(false)
+  })
+
   it('accepts the shared closed voice-stop receipt and existing suppressed response', () => {
     const fixture = shared('fixtures/gateway-owner.json') as { voice_stop_receipt: unknown; voice_stop_response: unknown }
     const result = { state: 'attached', reason: null, snapshot: null, receipt: fixture.voice_stop_receipt }

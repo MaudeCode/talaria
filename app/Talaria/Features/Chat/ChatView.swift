@@ -593,7 +593,7 @@ struct ChatView: View {
                 guard notification.object as? URL == server else { return }
                 Task { await loadMessages(appliesInitialFocus: false) }
             }
-            .modifier(ChatLiveSync(viewModel: viewModel, onAPIError: onAPIError))
+            .modifier(ChatLiveSync(viewModel: viewModel, server: server, sessionID: session.sessionId, onAPIError: onAPIError))
             .onChange(of: showsLiveActivityResponseExcerpts) {
                 viewModel.setShowsLiveActivityResponseExcerpts(showsLiveActivityResponseExcerpts)
             }
@@ -3290,12 +3290,24 @@ private struct ChatDraftSyncModifier: ViewModifier {
 /// server announces a change to this chat; a run the chat is already streaming is left alone.
 private struct ChatLiveSync: ViewModifier {
     let viewModel: ChatViewModel
+    let server: URL
+    let sessionID: String?
     let onAPIError: (Error) -> Void
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
 
     func body(content: Content) -> some View {
         content
+            .task(id: [scenePhase == .active ? "active" : "inactive", server.absoluteString, viewModel.selectedProfileName ?? "", sessionID ?? ""]) {
+                guard scenePhase == .active, let sessionID, !sessionID.isEmpty else { return }
+                await SessionEventsMonitor.run(
+                    url: Endpoint.sessionStream(sessionID: sessionID).url(relativeTo: server),
+                    client: SessionEventStreamClient()
+                ) { change in
+                    await viewModel.handleSessionsChange(change, modelContext: modelContext)
+                    reportLastError()
+                }
+            }
             .task(id: scenePhase == .active) {
                 guard scenePhase == .active else { return }
                 await viewModel.recoverWhenServerReturns(modelContext: modelContext, afterAttempt: reportLastError)

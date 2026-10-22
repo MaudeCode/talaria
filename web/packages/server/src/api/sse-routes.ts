@@ -350,12 +350,21 @@ export async function handleSessionStream(ctx: RequestContext): Promise<void> {
   if (!(await ctx.deps.sessions.sessionIdVisible(sid))) { (await ctx.json({ error: 'Session not found' }, { status: 404 })); return }
   const knownRaw = ctx.query.get('known_count') ?? ''
   const knownCount = knownRaw !== '' && /^-?\d+$/.test(knownRaw) ? Number.parseInt(knownRaw, 10) : null
-  const sub = ctx.deps.channels.subscribe(sid)
   const sse = (await claimOrReject(ctx, false))
-  if (!sse) { ctx.deps.channels.unsubscribe(sid, sub); return }
+  if (!sse) return
+  const profile = ctx.deps.activeProfile()
+  const sub = ctx.deps.channels.subscribe(sid, profile)
+  const controller = new AbortController()
+  const abort = () => { controller.abort(); sub.wake?.() }
+  ctx.res.once('close', abort)
+  let observation: Awaited<ReturnType<NonNullable<typeof ctx.deps.sessions.owner>['observe']>> = null
+  let nativeEnded = false
   try {
     sse.start()
     sse.event('initial', { session_id: sid })
+    observation = await ctx.deps.sessions.owner?.observe(sid, profile, controller.signal) ?? null
+    void observation?.ended.then(() => { nativeEnded = true; sub.wake?.() })
+    if (sse.isClosed) return
     const recover = ctx.deps.registry.attachableRunForSession(sid)
     if (recover) {
       let pendingStartedAt: number | null = null
@@ -371,12 +380,16 @@ export async function handleSessionStream(ctx: RequestContext): Promise<void> {
     }
     for (;;) {
       if (!(await sse.ready())) return
+      if (nativeEnded) return
       const item = await nextSessionItem(sub, SSE_HEARTBEAT_INTERVAL_MS)
-      if (sse.isClosed) return
+      if (sse.isClosed || nativeEnded || controller.signal.aborted) return
       if (!item) { sse.comment('keepalive'); continue }
       sse.event(item[0], item[1])
     }
   } finally {
+    ctx.res.removeListener('close', abort)
+    controller.abort()
+    observation?.release()
     ctx.deps.channels.unsubscribe(sid, sub)
     sse.end()
   }

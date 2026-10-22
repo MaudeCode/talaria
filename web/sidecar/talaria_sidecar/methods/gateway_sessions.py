@@ -73,7 +73,7 @@ def _snapshot(value: dict) -> dict:
     # display rows, not those bindings or the inventory's system prompt and credential hint.
     message_keys = {"role", "content", "tool_calls", "tool_call_id", "name", "timestamp", "message_id", "row_id",
                     "reasoning", "reasoning_content", "display_kind", "finish_reason"}
-    info_keys = {"title", "model", "cwd", "source", "provider"}
+    info_keys = {"title", "model", "cwd", "source", "provider", "config_warning"}
     return {**value, "messages": [{k: v for k, v in row.items() if k in message_keys} for row in value["messages"]],
             "info": {k: v for k, v in value["info"].items() if k in info_keys}}
 
@@ -240,7 +240,9 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                 epoch, sequence = snap["replay_epoch"], snap["last_sequence"]
             else:
                 for event in replay["events"]:
-                    if (event.get("type") == "session.updated"
+                    if event.get("session_id") != sid or event.get("replay_epoch") != epoch:
+                        continue
+                    if (event.get("type") in {"session.updated", "notification.show", "notification.clear"}
                             or event.get("execution_generation") == snap["execution_generation"]
                             or event.get("type") == "session.info" and event.get("payload", {}).get("execution_generation") == snap["execution_generation"]):
                         ctx.emit("event", event)
@@ -269,6 +271,8 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                     if request.get("session_id") == sid:
                         ctx.emit("clarify_batch", {"request_id": frame["id"], "questions": request.get("questions", [])})
                     continue
+                if frame.get("method") != "event":
+                    continue
                 event = frame.get("params", {})
                 if event.get("session_id") != sid:
                     continue
@@ -277,7 +281,12 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                         raise GatewayRPCError(reason)
                 if (event.get("type") == "session.replay_gap" or event.get("replay_epoch") != epoch
                         or event.get("seq", sequence + 1) > sequence + 1):
-                    snap = await snapshot()
+                    current = await snapshot()
+                    # A queued frame from an obsolete epoch is not a gap in the current subscription.
+                    if (event.get("type") != "session.replay_gap" and event.get("replay_epoch") != epoch
+                            and current["replay_epoch"] == epoch):
+                        continue
+                    snap = current
                     ctx.emit("snapshot", {**result, "snapshot": snap, "replay_gap": True})
                     epoch, sequence = snap["replay_epoch"], snap["last_sequence"]
                     continue
