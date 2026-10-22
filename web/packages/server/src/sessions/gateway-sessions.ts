@@ -26,7 +26,7 @@ interface Target { sid: string; profile: string; home: string; key: string }
 type Batch = GatewayClarifyBatch & { remaining: string[] }
 interface Watch { stream: string; controller: AbortController; snapshot: GatewaySnapshot; batch: Batch | null; restarting: boolean; reconcile?: () => void }
 /** The attach-only transport outlives individual run projections while a viewer holds it. */
-interface Observation { controller: AbortController; snapshot: GatewaySnapshot; listeners: Set<(frame: StreamFrame) => void>; leases: number; ended: Promise<GatewaySessionResult> }
+interface Observation { controller: AbortController; snapshot: GatewaySnapshot; replaying: boolean; completion: StreamFrame | null; listeners: Set<(frame: StreamFrame) => void>; leases: number; ended: Promise<GatewaySessionResult> }
 
 const ownerStreamPrefix = (home: string): string => `owner-${createHash('sha256').update(home).digest('hex').slice(0, 16)}-`
 const ownerStateId = (identity: string): string => `owner-${createHash('sha256').update(identity).digest('hex')}`
@@ -141,7 +141,7 @@ export class GatewaySessions {
   private transport(target: Target, base: Row, snapshot: GatewaySnapshot): Observation {
     const prior = this.observations.get(target.key)
     if (prior && !prior.controller.signal.aborted) return prior
-    const observation: Observation = { controller: new AbortController(), snapshot, listeners: new Set(), leases: 0, ended: Promise.resolve({ state: 'unavailable', reason: 'owner_connection_lost', snapshot: null, receipt: null }) }
+    const observation: Observation = { controller: new AbortController(), snapshot, replaying: true, completion: null, listeners: new Set(), leases: 0, ended: Promise.resolve({ state: 'unavailable', reason: 'owner_connection_lost', snapshot: null, receipt: null }) }
     this.observations.set(target.key, observation)
     this.noticeState(target, snapshot)
     observation.ended = (async () => {
@@ -155,10 +155,15 @@ export class GatewaySessions {
           if (frame.event === 'snapshot') {
             const result = GatewaySessionResultSchema.parse(frame.data)
             if (result.snapshot?.session_id !== target.sid) return
+            const completed = observation.completion?.data as Row | undefined
+            if (result.replay_gap || completed && (completed.authority_epoch !== result.snapshot.authority_epoch || completed.replay_epoch !== result.snapshot.replay_epoch)) observation.completion = null
             observation.snapshot = result.snapshot
+            observation.replaying = (frame.data as Row).replaying === true
             this.noticeState(target, result.snapshot, result.replay_gap === true)
             if ((result.snapshot.running || result.snapshot.pending.some((p) => p.status === 'queued' || p.status === 'started')) && !this.watches.has(target.key)) this.watch(target, base, result.snapshot)
             this.changed(target)
+          } else if (frame.event === 'replay_complete') {
+            observation.replaying = false
           } else if (frame.event === 'event') {
             const event = frame.data as Row
             const data = (event.payload ?? {}) as Row
@@ -180,6 +185,10 @@ export class GatewaySessions {
               observation.snapshot = { ...observation.snapshot, ...data }
               if ((observation.snapshot.running || observation.snapshot.pending.some((p) => p.status === 'queued' || p.status === 'started')) && !this.watches.has(target.key)) this.watch(target, base, observation.snapshot)
               this.changed(target)
+            } else if (event.type === 'message.complete' && event.session_id === target.sid
+                && event.authority_epoch === observation.snapshot.authority_epoch && event.replay_epoch === observation.snapshot.replay_epoch
+                && Number.isSafeInteger(event.execution_generation) && Number(event.execution_generation) >= observation.snapshot.execution_generation) {
+              observation.completion = frame
             } else if (event.type === 'session.updated') this.changed(target)
           }
           for (const listener of observation.listeners) listener(frame)
@@ -504,8 +513,13 @@ export class GatewaySessions {
     this.watches.set(target.key, watch)
     const observation = this.transport(target, base, snapshot)
     const release = this.lease(observation)
+    let activeAdmission = admissionId ?? runningAdmission(snapshot)?.admission_id ?? snapshot.pending.find((p) => !p.steering)?.admission_id
     let receive: ((frame: StreamFrame) => void) | null = null
-    const buffered: StreamFrame[] = [{ event: 'snapshot', seq: 0, data: { state: 'attached', reason: null, snapshot, receipt: null } }]
+    const buffered: StreamFrame[] = [{ event: 'snapshot', seq: 0, data: { state: 'attached', reason: null, snapshot, receipt: null, replaying: true } }]
+    const completed = observation.completion?.data as Row | undefined
+    if (completed?.authority_epoch === snapshot.authority_epoch && completed.replay_epoch === snapshot.replay_epoch
+        && completed.execution_generation === snapshot.execution_generation && ((completed.payload ?? {}) as Row).admission_id === activeAdmission) buffered.push(observation.completion!)
+    if (!observation.replaying) buffered.push({ event: 'replay_complete', seq: 0, data: {} })
     const listener = (frame: StreamFrame) => {
       if (receive) receive(frame)
       else if (buffered.length < 4096) buffered.push(frame)
@@ -520,7 +534,6 @@ export class GatewaySessions {
     let terminal = false
     let streamError: unknown = null
     let closeWriter: RunJournalWriter | null = null
-    let activeAdmission = admissionId ?? runningAdmission(snapshot)?.admission_id ?? snapshot.pending.find((p) => !p.steering)?.admission_id
     const enqueue = (work: () => Promise<void>) => {
       chain = chain.then(async () => { if (!terminal && !streamError) await work() })
         .catch((error: unknown) => { streamError = error; watch.controller.abort() })
@@ -533,7 +546,7 @@ export class GatewaySessions {
       closeWriter = writer
       const showReasoning = await this.deps.showReasoning(target.home).catch(() => false)
       let completion: { admission: string; message: string; type: 'cron_session_read_only'; code: 'cron_session_read_only'; retryable: false } | null = null
-      let replaying = false
+      let replaying = true
       let usage: Row = {}
       let reasoning = ''
       let titles = new ReasoningTitleTracker()

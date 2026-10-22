@@ -401,7 +401,7 @@ describe('canonical owner attachment', () => {
     }
   }
 
-  it('replays a cron refusal that settled before the submit acknowledgement', async () => {
+  it.each([false, true])('replays a cron refusal that settled before the submit acknowledgement, viewed=%s', async (viewed) => {
     const snap = snapshot()
     sidecar.respond('gateway.session', (params, send, opts) => {
       if (params.action === 'watch') {
@@ -412,11 +412,15 @@ describe('canonical owner attachment', () => {
       }
       return { ...attached(snap), receipt: ['submit', 'receipt'].includes(params.action) ? { ...admission('terminal'), outcome: 'failed' } : null }
     })
-    const response = await post('/api/chat/start', { session_id: sid, submission_id: 'fast-refusal', message: 'ordinary input' })
-    const body = await response.json() as { stream_id?: string }
-    expect(body.stream_id).toBeTruthy()
-    const frames = await s.sse(`/api/chat/stream?stream_id=${body.stream_id}&replay=1`, (f) => f.event === 'apperror')
-    expect(frames.find((f) => f.event === 'apperror')?.data).toMatchObject(cronRefusal.event.data)
+    const controller = new AbortController()
+    const observer = viewed ? await s.deps.sessions.owner!.observe(sid, 'default', controller.signal) : null
+    try {
+      const response = await post('/api/chat/start', { session_id: sid, submission_id: 'fast-refusal', message: 'ordinary input' })
+      const body = await response.json() as { stream_id?: string }
+      expect(body.stream_id).toBeTruthy()
+      const frames = await s.sse(`/api/chat/stream?stream_id=${body.stream_id}&replay=1`, (f) => f.event === 'apperror')
+      expect(frames.find((f) => f.event === 'apperror')?.data).toMatchObject(cronRefusal.event.data)
+    } finally { controller.abort(); observer?.release(); await observer?.ended }
   })
 
   it('preserves the real cron refusal through public SSE and journal replay exactly once', async () => {
