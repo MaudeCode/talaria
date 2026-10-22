@@ -218,6 +218,8 @@ function TaskListPanel({ jobs, pending, error, otherProfileCount, allProfiles, r
       <div key={id}>
         <button
           type="button"
+          // A job the server has not created yet has nothing to open.
+          disabled={id.includes(':new:')}
           onClick={() => onSelect(id)}
           aria-current={active ? 'page' : undefined}
           data-job-id={id}

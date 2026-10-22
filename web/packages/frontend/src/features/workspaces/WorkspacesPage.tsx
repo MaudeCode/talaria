@@ -30,6 +30,8 @@ export function WorkspacesPage() {
   const order = effects['workspace-order']?.value
   const shown = withCreated(withEffects(ws.data?.workspaces ?? [], (w) => `workspace:${w.path}`, effects), 'workspace', effects)
   const list = order ? [...shown].sort((a, b) => rank(order, a.path) - rank(order, b.path)) : shown
+  // A space still being added has no server entry to move, rename or remove yet.
+  const confirmed = new Set((ws.data?.workspaces ?? []).map((w) => w.path))
   const move = (index: number, delta: number) => {
     const next = [...list]
     const target = index + delta
@@ -39,7 +41,7 @@ export function WorkspacesPage() {
     if (!a || !b) return
     next[index] = b
     next[target] = a
-    reorder.mutate(next.map((w) => w.path))
+    reorder.mutate(next.map((w) => w.path).filter((path) => confirmed.has(path)))
   }
   return (
     <HubPage title={m.tab_workspaces()} help={m.workspace_desc()} actions={<PanelHeadButton label={m.workspace_add()} className="primary" onClick={() => setAdding(true)}><Plus size={16} aria-hidden="true" /></PanelHeadButton>}>
@@ -53,10 +55,12 @@ export function WorkspacesPage() {
               <div className="flex items-center gap-2 text-sm font-medium text-text"><span className="truncate">{w.name}</span>{ws.data?.last === w.path && <span className="rounded-full bg-accent-bg px-2 py-0.5 text-[10px] uppercase tracking-wider text-accent-text">{m.workspace_current()}</span>}</div>
               <div className="truncate font-mono text-[11px] text-muted">{w.path}</div>
             </div>
-            <IconButton label={m.workspace_move_up()} onClick={() => move(i, -1)} disabled={i === 0}><ArrowUp size={14} aria-hidden="true" /></IconButton>
-            <IconButton label={m.workspace_move_down()} onClick={() => move(i, 1)} disabled={i === list.length - 1}><ArrowDown size={14} aria-hidden="true" /></IconButton>
-            <IconButton label={m.rename()} onClick={() => setRenaming({ path: w.path, name: w.name })}><Pencil size={14} aria-hidden="true" /></IconButton>
-            <IconButton label={m.remove()} onClick={() => setRemoving(w.path)}><Trash2 size={14} aria-hidden="true" /></IconButton>
+            {confirmed.has(w.path) && <>
+              <IconButton label={m.workspace_move_up()} onClick={() => move(i, -1)} disabled={i === 0}><ArrowUp size={14} aria-hidden="true" /></IconButton>
+              <IconButton label={m.workspace_move_down()} onClick={() => move(i, 1)} disabled={i === list.length - 1}><ArrowDown size={14} aria-hidden="true" /></IconButton>
+              <IconButton label={m.rename()} onClick={() => setRenaming({ path: w.path, name: w.name })}><Pencil size={14} aria-hidden="true" /></IconButton>
+              <IconButton label={m.remove()} onClick={() => setRemoving(w.path)}><Trash2 size={14} aria-hidden="true" /></IconButton>
+            </>}
           </li>
         ))}
       </ul>

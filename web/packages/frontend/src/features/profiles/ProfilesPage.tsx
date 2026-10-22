@@ -60,6 +60,7 @@ export function ProfilesPage() {
       <ul className="flex flex-col gap-2" id="profilesPanel">
         {list.map((p) => {
           const isActive = p.name === active
+          const provisional = !profiles.data?.profiles.some((confirmedProfile) => confirmedProfile.name === p.name)
           return (
             <li key={p.name} className={cn('flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface px-3 py-2.5', isActive && 'border-accent-bg-strong')} data-profile={p.name}>
               <div className="min-w-0 flex-1 basis-48">
@@ -77,11 +78,14 @@ export function ProfilesPage() {
                   {(p.enabled_skills ?? p.skill_count) !== undefined && <span>{m.profile_skill_count({ count: p.enabled_skills ?? p.skill_count ?? 0 })}</span>}
                 </div>
               </div>
-              <div className="ml-auto flex items-center gap-3">
-                {p.canonical_session && <Button onClick={() => openBotChat(p.name)} disabled={switchProfile.isPending}>{m.profile_open_bot_chat()}</Button>}
-                {!isActive && <Button onClick={() => switchProfile.mutate(p.name, { onSuccess: () => { showToast(m.profile_switched({ name: p.name })); window.location.reload() } })} title={m.profile_switch_title()}>{m.profile_use()}</Button>}
-                {!p.is_default && !isActive && <IconButton label={m.profile_delete_title()} onClick={() => setDeleting(p.name)}><Trash2 size={14} aria-hidden="true" /></IconButton>}
-              </div>
+              {/* A profile the server has not created yet has nothing to open, use or delete. */}
+              {!provisional && (
+                <div className="ml-auto flex items-center gap-3">
+                  {p.canonical_session && <Button onClick={() => openBotChat(p.name)} disabled={switchProfile.isPending}>{m.profile_open_bot_chat()}</Button>}
+                  {!isActive && <Button onClick={() => switchProfile.mutate(p.name, { onSuccess: () => { showToast(m.profile_switched({ name: p.name })); window.location.reload() } })} title={m.profile_switch_title()}>{m.profile_use()}</Button>}
+                  {!p.is_default && !isActive && <IconButton label={m.profile_delete_title()} onClick={() => setDeleting(p.name)}><Trash2 size={14} aria-hidden="true" /></IconButton>}
+                </div>
+              )}
             </li>
           )
         })}
