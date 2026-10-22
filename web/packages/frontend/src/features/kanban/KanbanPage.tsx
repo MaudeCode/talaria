@@ -239,7 +239,7 @@ export function KanbanPage() {
             })}
           </div>
         )
-        : renderColumns(board.data.columns))}
+        : renderColumns(board.data.columns ?? []))}
       {openTask && <TaskDialog key={JSON.stringify([current, openTaskId])} board={current} task={openTask} readOnly={readOnly} onClose={() => setOpenTaskId(null)} onChanged={() => { void invalidate() }} />}
       {creating && <CreateTaskDialog columns={board.data?.create_statuses ?? []} onClose={() => setCreating(false)} onSubmit={(task) => { setCreating(false); createTask.mutate({ ...task, board: current, resource: newResource(createKind(current)) }) }} />}
       {creatingBoard && <CreateBoardDialog onClose={() => setCreatingBoard(false)} onCreated={() => { setCreatingBoard(false); setSelected([]); void invalidate() }} />}

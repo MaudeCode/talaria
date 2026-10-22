@@ -16,7 +16,7 @@ import { teardownAll } from '../../stream/connection'
 import { showToast } from '../toast/toast'
 import { ApiError } from '../../contracts'
 
-vi.mock('../../api/endpoints', () => ({ fetchSkills: vi.fn(), fetchSkillsUsage: vi.fn(), toggleSkill: vi.fn(), fetchMcpServers: vi.fn(), fetchMcpTools: vi.fn(), toggleMcpServer: vi.fn(), fetchExtensionRegistry: vi.fn(), extensionAction: vi.fn(), fetchConnectors: vi.fn(), fetchConnectorTools: vi.fn(), setConnectorRule: vi.fn() }))
+vi.mock('../../api/endpoints', () => ({ fetchSkillContent: vi.fn(), deleteSkill: vi.fn(), saveSkill: vi.fn(), fetchSkills: vi.fn(), fetchSkillsUsage: vi.fn(), toggleSkill: vi.fn(), fetchMcpServers: vi.fn(), fetchMcpTools: vi.fn(), toggleMcpServer: vi.fn(), fetchExtensionRegistry: vi.fn(), extensionAction: vi.fn(), fetchConnectors: vi.fn(), fetchConnectorTools: vi.fn(), setConnectorRule: vi.fn() }))
 vi.mock('../../shell/AppShell', () => ({ HubPage: ({ children, toolbar }: { children: ReactNode; toolbar?: ReactNode }) => <main>{toolbar}{children}</main> }))
 vi.mock('../pending-writes/PendingWritesPanel', () => ({ PendingWritesPanel: () => null }))
 vi.mock('../toast/toast', () => ({ showToast: vi.fn() }))
@@ -266,4 +266,36 @@ it('reads the server revision before the next connector rule after an unknown ou
   c.read().mockResolvedValue({ ...connectors(), policy_revision: 'rev-2' })
   await act(async () => { first.reject(new ApiError({ kind: 'network', path: '/x', message: 'Connection lost' })); await Promise.resolve() })
   await waitFor(() => expect(api.setConnectorRule).toHaveBeenLastCalledWith('beta', 'rev-2', { enabled: true }))
+})
+||||||| parent of eb4ab8a8f (TAL-1179: delete skills, answer staged writes and keep editors editable while saving)
+
+it('deletes a skill at once, returning to the list without it, and restores it on refusal', async () => {
+  let refuse!: (error: unknown) => void
+  vi.mocked(api.fetchSkillContent).mockResolvedValue({ name: 'alpha', content: '# alpha', editable: true, linked_files: {} } as never)
+  vi.mocked(api.deleteSkill).mockReturnValue(new Promise((_, reject) => { refuse = reject }) as never)
+  setup(cases[0]!)
+  await userEvent.click(await screen.findByRole('button', { name: /^alpha/ }))
+  await userEvent.click(await screen.findByRole('button', { name: 'Delete' }))
+  await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete' }))
+  expect(await screen.findByRole('switch', { name: /^beta/ })).toBeInTheDocument()
+  expect(screen.queryByRole('switch', { name: /^alpha/ })).toBeNull()
+  await act(async () => { refuse(new ApiError({ kind: 'http', status: 409, path: '/x', message: 'Skill in use' })); await Promise.resolve() })
+  expect(await screen.findByRole('switch', { name: /^alpha/ })).toBeInTheDocument()
+  expect(showToast).toHaveBeenCalledWith('Skill in use', 4000, 'error')
+})
+
+it('keeps a skill edit typed during a save, clearing only the confirmed draft', async () => {
+  let answer!: (value: unknown) => void
+  vi.mocked(api.fetchSkillContent).mockResolvedValue({ name: 'alpha', content: '# alpha', editable: true, linked_files: {} } as never)
+  vi.mocked(api.saveSkill).mockReturnValue(new Promise((resolve) => { answer = resolve }) as never)
+  setup(cases[0]!)
+  await userEvent.click(await screen.findByRole('button', { name: /^alpha/ }))
+  const editor = await screen.findByRole('textbox')
+  await userEvent.type(editor, '!')
+  await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+  await userEvent.type(editor, '?')
+  expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
+  await act(async () => { answer({ ok: true }); await Promise.resolve() })
+  await waitFor(() => expect(showToast).toHaveBeenCalled())
+  expect(editor).toHaveValue('# alpha!?')
 })

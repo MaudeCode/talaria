@@ -37,7 +37,13 @@ export function MemoryPage() {
       await api.writeMemory({ section: target, content: d.text, revision: d.revision })
       return qc.refetchQueries({ queryKey: keys.memory }, { throwOnError: true }).then(() => true, () => false)
     },
-    onSuccess: (refetched, vars) => { showToast(m.memory_saved()); if (refetched) setDraft((d) => without(d, vars.target)) },
+    // Edits typed while the save ran stay, now on the revision the save produced.
+    onSuccess: (refetched, vars) => {
+      showToast(m.memory_saved())
+      if (!refetched) return
+      const revision = qc.getQueryData<Awaited<ReturnType<typeof api.fetchMemory>>>(keys.memory)?.[`${vars.target}_revision`]
+      setDraft((d) => { const now = d[vars.target]; return !now || now.text === vars.draft.text ? without(d, vars.target) : { ...d, [vars.target]: { ...now, revision: revision ?? now.revision } } })
+    },
     onError: (e, vars) => {
       if (isApiError(e) && e.code === 'memory_conflict') setConflict((c) => ({ ...c, [vars.target]: e.message }))
       else showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
@@ -77,7 +83,7 @@ export function MemoryPage() {
           </div>
           <textarea
             value={text}
-            readOnly={!current?.writable || write.isPending}
+            readOnly={!current?.writable}
             onChange={(e) => { const value = e.target.value; setDraft((d) => ({ ...d, [section]: { text: value, revision: d[section]?.revision ?? (section === 'project_context' ? '' : data[`${section}_revision`]) } })) }}
             rows={22}
             spellCheck={false}
