@@ -17,7 +17,7 @@ import { ConfirmDialog, Dialog } from '../../ui/Dialog'
 import { EmptyState, ErrorState, LoadingState, formatDate } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { cn } from '../../ui/cn'
-import { useResourceEffects, useResourceMutation, type ResourceEffect } from '../sessions/useResourceMutation'
+import { useResourceEffects, useResourceMutation, withEffect, type ResourceEffect } from '../sessions/useResourceMutation'
 import { getStreamContext } from '../../stream/connection'
 
 // Same owner for single-card and bulk writes; profile/server identity comes from the connection context.
@@ -130,8 +130,12 @@ export function KanbanPage() {
   const stale = board.isPlaceholderData || !board.data
   const readOnly = serverReadOnly || stale
   const currentBoard = boards.data?.boards.find((b) => b.slug === current)
-  // The dialog follows the board's current copy of the task, so its actions track every refetch.
-  const openTask = useMemo(() => columns.flatMap((c) => c.tasks).find((t) => String(t.id) === openTaskId) ?? null, [columns, openTaskId])
+  // The dialog follows the board's current copy of the task, so its actions track every refetch; a pending move
+  // shows in it even when the target column is off screen.
+  const openTask = useMemo(() => {
+    const found = (board.data?.columns ?? []).flatMap((c) => c.tasks).find((t) => String(t.id) === openTaskId)
+    return found ? withEffect(found, effects[cardResource(current, String(found.id))]) : null
+  }, [board.data, openTaskId, current, effects])
   // Selection is local UI state; a selected card a later filter hides drops out, so bulk acts only on cards on screen.
   const shown = new Set(columns.flatMap((c) => c.tasks.map((t) => String(t.id))))
   const shownSelected = selected.filter((id) => shown.has(id))
