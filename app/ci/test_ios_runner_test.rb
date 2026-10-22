@@ -4,6 +4,8 @@
 require "minitest/autorun"
 require "json"
 require "yaml"
+require "open3"
+require "tmpdir"
 
 class TestIOSRunnerTest < Minitest::Test
   WORKFLOWS = File.expand_path("../../.github/workflows", __dir__)
@@ -81,12 +83,62 @@ class TestIOSRunnerTest < Minitest::Test
 
   def test_every_workflow_selects_xcode_through_setup_xcode
     # One pin: setup-xcode selects Xcode 27.1 (the iOS 27.1 SDK iPhone Duo layouts need) and exports the newest
-    # installed runtime that SDK runs as IOS_SIMULATOR_OS; the hosted image has no iOS 27.1 runtime (TAL-471).
+    # installed runtime with its CI iPhone 17 as IOS_SIMULATOR_OS.
     action = YAML.safe_load_file(File.expand_path("../../.github/actions/setup-xcode/action.yml", __dir__))
     assert_equal("27.1", action["inputs"]["xcode-version"]["default"])
     assert_includes(action["runs"]["steps"].last["run"], 'echo "IOS_SIMULATOR_OS=${simulator_os}" >> "$GITHUB_ENV"')
     Dir[File.join(WORKFLOWS, "*.yml")].each do |path|
       refute_match(/xcode-version|XCODE_VERSION|show-sdk-version/, File.read(path, encoding: "UTF-8"), File.basename(path))
+    end
+  end
+
+  def test_xcode_setup_selects_the_newest_runtime_with_the_required_iphone
+    action = YAML.safe_load_file(File.expand_path("../../.github/actions/setup-xcode/action.yml", __dir__))
+    runtimes = %w[27.0 27.1 27.2].map do |version|
+      { "identifier" => "com.apple.CoreSimulator.SimRuntime.iOS-#{version.tr('.', '-')}",
+        "version" => version, "isAvailable" => true }
+    end
+    device = ->(name, available = true) { { "name" => name, "isAvailable" => available } }
+    cases = [
+      [{ "27.0" => [device.call("iPhone 17")], "27.1" => [device.call("iPhone Duo")] }, "27.0"],
+      [{ "27.0" => [device.call("iPhone 17")], "27.1" => [device.call("iPhone 17")],
+         "27.2" => [device.call("iPhone 17")] }, "27.1"],
+      [{ "27.0" => [device.call("iPhone 17")], "27.1" => [device.call("iPhone 17", false)] }, "27.0"],
+      [{ "27.1" => [device.call("iPhone Duo")] }, nil]
+    ]
+    Dir.mktmpdir("xcode-runtime-test") do |root|
+      File.write(File.join(root, "xcodebuild"), "#!/bin/sh\nprintf 'Xcode 27.1\\nBuild version fixture\\n'\n")
+      File.write(File.join(root, "xcode-select"), "#!/bin/sh\nprintf '/fixture/Xcode/Contents/Developer\\n'\n")
+      File.write(File.join(root, "xcrun"), <<~'SH')
+        #!/bin/sh
+        case "$*" in
+          '--sdk iphoneos --show-sdk-version') printf '27.1\n' ;;
+          'simctl list runtimes') printf 'Synthetic runtimes\n' ;;
+          'simctl list runtimes --json') cat "$TALARIA_TEST_RUNTIMES" ;;
+          'simctl list devices available --json') cat "$TALARIA_TEST_DEVICES" ;;
+          *) echo "Unexpected xcrun arguments: $*" >&2; exit 1 ;;
+        esac
+      SH
+      %w[xcodebuild xcode-select xcrun].each { |name| File.chmod(0o755, File.join(root, name)) }
+      runtime_path, devices_path, env_path = %w[runtimes.json devices.json github-env].map { |name| File.join(root, name) }
+      File.write(runtime_path, JSON.generate("runtimes" => runtimes))
+      cases.each do |devices, expected|
+        inventory = devices.transform_keys { |version| "com.apple.CoreSimulator.SimRuntime.iOS-#{version.tr('.', '-')}" }
+        File.write(devices_path, JSON.generate("devices" => inventory))
+        File.write(env_path, "")
+        output, errors, status = Open3.capture3(
+          { "PATH" => "#{root}:#{ENV.fetch('PATH')}", "XCODE_VERSION" => "27.1", "GITHUB_ENV" => env_path,
+            "TALARIA_TEST_RUNTIMES" => runtime_path, "TALARIA_TEST_DEVICES" => devices_path },
+          "bash", "-c", action["runs"]["steps"].last["run"]
+        )
+        if expected
+          assert(status.success?, "#{output}\n#{errors}")
+          assert_includes(File.read(env_path), "IOS_SIMULATOR_OS=#{expected}\n", "Select a runtime containing an available iPhone 17")
+        else
+          refute(status.success?, "No matching device must fail closed")
+          refute_includes(File.read(env_path), "IOS_SIMULATOR_OS=")
+        end
+      end
     end
   end
 

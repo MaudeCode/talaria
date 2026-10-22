@@ -47,7 +47,9 @@ public enum ActiveSessionStateRefreshResult: Equatable {
 @MainActor
 @Observable
 public final class SessionListViewModel {
-    public private(set) var sessions: [SessionSummary] = []
+    public private(set) var sessions: [SessionSummary] = [] {
+        didSet { invalidateSessionPresentation() }
+    }
     public private(set) var isLoading = false
     public private(set) var isCreatingSession = false
     public var isCreatingProject: Bool { pendingChanges["project:new"].map { !$0.requiresRefresh } ?? false }
@@ -88,7 +90,9 @@ public final class SessionListViewModel {
     /// Server totals for the automated-session groups from the last successful list
     /// load (TAL-482). nil until then or from an older server; the groups then count
     /// the loaded rows instead.
-    public private(set) var automatedSessionCounts: AutomatedSessionCounts?
+    public private(set) var automatedSessionCounts: AutomatedSessionCounts? {
+        didSet { cachedSessionGroups = nil }
+    }
     /// The Agent's session storage health from the last list load (TAL-830), kept in the response cache so a
     /// relaunch still explains an empty list. nil until then or from an older server.
     public private(set) var agentStorage: AgentStorage?
@@ -100,12 +104,16 @@ public final class SessionListViewModel {
 
     /// The server's complete, ordered result for `activeRemoteSearch` (TAL-308);
     /// nil until it arrives, while the list shows local title matches.
-    private(set) var remoteSearchResults: [SessionSummary]?
+    private(set) var remoteSearchResults: [SessionSummary]? {
+        didSet { invalidateSessionPresentation() }
+    }
     /// Server-redacted excerpts for the content matches in `remoteSearchResults`,
     /// keyed by session ID. Set and cleared together with the results so an
     /// excerpt never outlives the query that produced it.
     private(set) var remoteContentSearchPreviews: [String: String] = [:]
-    private var activeRemoteSearch: RemoteSearchScope?
+    private var activeRemoteSearch: RemoteSearchScope? {
+        didSet { invalidateSessionPresentation() }
+    }
     private var loadGeneration = 0
     /// Every full-list reload goes through here — the automatic tick,
     /// pull-to-refresh, the return refresh, the active-row monitor and the
@@ -197,13 +205,54 @@ public final class SessionListViewModel {
         try? FileManager.default.removeItem(at: exportsRootDirectory)
     }()
 
+    #if DEBUG
+    @ObservationIgnored var sessionFilterDidVisit: (() -> Void)?
+    #endif
+    @ObservationIgnored private var cachedVisibleSessions: (
+        query: String, projectID: String?, visibility: AutomatedSessionVisibility, rows: [SessionSummary]
+    )?
+    @ObservationIgnored private var cachedSessionGroups: ScheduledSessionGroups?
+
+    private func invalidateSessionPresentation() {
+        cachedVisibleSessions = nil
+        cachedSessionGroups = nil
+    }
+
     public func visibleSessions(
         searchText rawSearchText: String,
         selectedProjectID: String?,
         automatedVisibility: AutomatedSessionVisibility = .showAll
     ) -> [SessionSummary] {
         let query = Self.normalizedSearchQuery(rawSearchText)
-        let baseSessions = sessions.filter { automatedVisibility.shows($0) }
+        // Cache hits must still register the dependencies of a SwiftUI body.
+        _ = sessions
+        _ = activeRemoteSearch
+        _ = remoteSearchResults
+        if let cachedVisibleSessions,
+           cachedVisibleSessions.query == query,
+           cachedVisibleSessions.projectID == selectedProjectID,
+           cachedVisibleSessions.visibility == automatedVisibility {
+            return cachedVisibleSessions.rows
+        }
+        let rows = computeVisibleSessions(
+            query: query, selectedProjectID: selectedProjectID, automatedVisibility: automatedVisibility
+        )
+        cachedVisibleSessions = (query, selectedProjectID, automatedVisibility, rows)
+        cachedSessionGroups = nil
+        return rows
+    }
+
+    private func computeVisibleSessions(
+        query: String,
+        selectedProjectID: String?,
+        automatedVisibility: AutomatedSessionVisibility
+    ) -> [SessionSummary] {
+        let baseSessions = sessions.filter {
+            #if DEBUG
+            sessionFilterDidVisit?()
+            #endif
+            return automatedVisibility.shows($0)
+        }
         let projectFilteredSessions = baseSessions.filter { session in
             guard let selectedProjectID else { return true }
             return session.projectId == selectedProjectID
@@ -256,6 +305,8 @@ public final class SessionListViewModel {
             selectedProjectID: selectedProjectID,
             automatedVisibility: automatedVisibility
         )
+        _ = automatedSessionCounts
+        if let cachedSessionGroups { return cachedSessionGroups }
 
         var groups = ScheduledSessionGroups(
             ordinary: candidates.filter { !$0.isCronSession && !$0.isWebhookSession },
@@ -275,6 +326,7 @@ public final class SessionListViewModel {
         )
         groups.scheduledCountIsPartial = automatedSessionCounts?.scheduledIsPartial ?? false
         groups.webhookCountIsPartial = automatedSessionCounts?.webhookIsPartial ?? false
+        cachedSessionGroups = groups
         return groups
     }
 
