@@ -72,7 +72,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   // Edit, /clear and /undo show their cut at once; the reread of the session confirms it.
   const cutFrom = useResourceEffects<number>()[transcriptCut(sessionId ?? '')]?.value
   const shownRows = useMemo(() => typeof cutFrom === 'number' ? rows.filter((row) => row.index < cutFrom) : rows, [rows, cutFrom])
-  const lastExchange = () => [...rows].reverse().find((row) => row.message.role === 'user')?.index
+  const lastExchange = useMemo(() => [...rows].reverse().find((row) => row.message.role === 'user')?.index, [rows])
   const intent = useTurnIntent(sessionId)
   const { onEdit, dialog: editDialog, operation, runHistory } = useEditMessage(sessionId, refresh)
   const clarify = useClarify(sessionId, live)
@@ -298,7 +298,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
       case 'terminal': setTerminalOpen((t) => !t); return true
       case 'title': if (sessionId && args) renameSession(args); return true
       case 'retry': if (sessionId) return await onRegenerate() ? true : 'refused'; return true
-      case 'undo': if (sessionId) return await runHistory(m.history_undoing(), async (current) => { const r = await api.undoSession(sessionId); if (!current()) return; if ('error' in r) throw new Error(r.error); await refresh(undefined, true) }, lastExchange()) ? true : 'refused'; return true
+      case 'undo': if (sessionId) return await runHistory(m.history_undoing(), async (current) => { const r = await api.undoSession(sessionId); if (!current()) return; if ('error' in r) throw new Error(r.error); await refresh(undefined, true) }, lastExchange) ? true : 'refused'; return true
       case 'compress': if (sessionId) { void runCompression(sessionId) } return true
       case 'usage': if (sessionId) { const u = await api.fetchSessionUsage(sessionId); showToast(`${(u.input_tokens ?? 0).toLocaleString()} in · ${(u.output_tokens ?? 0).toLocaleString()} out${u.estimated_cost ? ` · $${u.estimated_cost.toFixed(4)}` : ''}`, 4000) } return true
       case 'yolo': onToggleYolo(); return true
@@ -331,7 +331,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
       case 'voice': showToast(m.voice_error(), 3000); return true
       default: return false
     }
-  }, [renameSession, sessionId, navigate, refresh, qc, onToggleYolo, onModelChange, onWorkspaceChange, onRegenerate, reasoning, setReasoning, runCompression, runHistory])
+  }, [renameSession, sessionId, navigate, refresh, qc, onToggleYolo, onModelChange, onWorkspaceChange, onRegenerate, reasoning, setReasoning, runCompression, runHistory, lastExchange, sendSessionWrite])
 
   const onBranch = useCallback(async (row: VisibleMessage) => {
     if (!sessionId) return

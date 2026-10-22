@@ -133,7 +133,7 @@ export const Composer = memo(function Composer(props: ComposerProps) {
   const { sessionId, session, busy, streamId, settings, onEnsureSession, onLocalCommand, terminalOpen, onToggleTerminal, onModelChange, onWorkspaceChange, onNewWorktreeChat, onRemoveWorktree, onToolsetsChange, onExecutionModeChange, onReasoningChange, reasoning, reasoningLevels, reasoningSupported = true, pendingChoices, locked = false, yolo, onToggleYolo, queued, onQueue, onQueueChange, clarify, notices = [] } = props
   const bootstrap = useBootstrap()
   const qc = useQueryClient()
-  const startBackground = useStartBackground()
+  const launchBackground = useStartBackground().mutate
   const localStateId = composerStateId(session)
   const [text, setText] = useState(() => (localStateId ? readLocalDraft(localStateId) : ''))
   const [draftIdentity, setDraftIdentity] = useState(localStateId)
@@ -475,7 +475,7 @@ export const Composer = memo(function Composer(props: ComposerProps) {
           try { target = session ?? (await onEnsureSession()) } catch (e) { showToast(e instanceof Error ? e.message : String(e), 4000, 'error'); return }
           // Only the submitted draft clears; a refusal puts the prompt back beside anything typed since.
           setText((current) => current === text ? '' : current)
-          startBackground.mutate({ resource: backgroundLaunch(target.session_id), sessionId: target.session_id, prompt: cmd.args }, {
+          launchBackground({ resource: backgroundLaunch(target.session_id), sessionId: target.session_id, prompt: cmd.args }, {
             onError: (e) => { if (isDefiniteRefusal(e) && commandScope === getStreamContext()) setText((current) => current.trim() ? `${current}\n\n${text}` : text) },
           })
           return
@@ -542,7 +542,7 @@ export const Composer = memo(function Composer(props: ComposerProps) {
         textarea.current?.focus()
       }
     } finally { submitting.current = false }
-  }, [nativeOwner, localStateId, text, files, sending, session, onEnsureSession, busy, busyMode, sessionId, trySteer, locked, queueEntry, onQueue, onLocalCommand, bootstrap.profile, qc, askBtw, runCommand, catalog])
+  }, [nativeOwner, localStateId, text, files, sending, session, onEnsureSession, busy, busyMode, sessionId, trySteer, locked, queueEntry, onQueue, onLocalCommand, bootstrap.profile, qc, askBtw, runCommand, catalog, launchBackground])
 
   const applySuggestion = (s: CommandSuggestion) => { setText(`/${s.name} `); textarea.current?.focus() }
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
