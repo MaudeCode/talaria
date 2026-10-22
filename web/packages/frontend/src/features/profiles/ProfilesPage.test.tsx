@@ -13,6 +13,7 @@ vi.mock(import('../../api/endpoints'), async (importOriginal) => ({
     active: 'default',
     single_profile_mode: false,
   })),
+  deleteProfile: vi.fn(), createProfile: vi.fn(),
   switchProfile: vi.fn(() => Promise.resolve({ profiles: [{ name: 'scout', canonical_session: { session_id: 'scout-root', tip_session_id: 'scout-live' } }], active: 'scout', is_default: false, default_model: null, default_model_provider: null, default_workspace: null })),
 }))
 import * as api from '../../api/endpoints'
@@ -71,5 +72,27 @@ describe('ProfilesPage', () => {
     } finally {
       vi.unstubAllGlobals()
     }
+  })
+})
+
+describe('profile writes show their result at once (TAL-1179)', () => {
+  it('removes a deleted profile at once after confirmation', async () => {
+    vi.mocked(api.deleteProfile).mockReturnValue(new Promise(() => undefined))
+    renderPage()
+    const scout = (await screen.findByText('scout')).closest('li')!
+    await userEvent.click(within(scout).getByRole('button', { name: 'Delete this profile' }))
+    await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete' }))
+    expect(api.deleteProfile).toHaveBeenCalledWith('scout')
+    expect(screen.queryByText('scout')).toBeNull()
+  })
+
+  it('closes New profile on Create and shows the profile at once', async () => {
+    vi.mocked(api.createProfile).mockReturnValue(new Promise(() => undefined))
+    renderPage()
+    await screen.findByText('scout')
+    await userEvent.click(screen.getByRole('button', { name: 'Create profile' }))
+    await userEvent.type(screen.getByRole('textbox', { name: 'Name' }), 'writer{Enter}')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.getByText('writer')).toBeInTheDocument()
   })
 })

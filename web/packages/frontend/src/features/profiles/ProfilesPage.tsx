@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type { GatewayMode } from '@maudecode/talaria-web-contracts'
 import { Plus, Trash2 } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
@@ -15,6 +14,7 @@ import { ConfirmDialog, Dialog } from '../../ui/Dialog'
 import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { cn } from '../../ui/cn'
+import { useResourceEffects, useResourceMutation, withCreated, withEffects } from '../sessions/useResourceMutation'
 import { appUrl } from '../../lib/appRoot'
 
 // TAL-805: `gateway_running` labels rows from a server without `gateway_mode`; delete the fallback once every supported server ships the field.
@@ -22,14 +22,23 @@ const GATEWAY_MODE_LABEL: Record<GatewayMode, () => string> = {
   own: m.profile_gateway_running, served: m.profile_gateway_served, parked: m.profile_gateway_parked, standalone: m.profile_gateway_standalone, stopped: m.profile_gateway_stopped,
 }
 
+type NewProfile = Record<string, unknown> & { name: string; default_model?: string | undefined }
+
 export function ProfilesPage() {
-  const qc = useQueryClient()
   const profiles = useProfilesQuery()
   const switchProfile = useSwitchProfile()
   const [creating, setCreating] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
-  const del = useMutation({ mutationFn: (name: string) => api.deleteProfile(name), onSuccess: () => { showToast(m.profile_deleted_toast()); void qc.invalidateQueries({ queryKey: keys.profiles }) }, onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error') })
-  const list = profiles.data?.profiles ?? []
+  const onError = (e: unknown) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
+  const del = useResourceMutation({ resource: (name: string) => `profile:${name}`, queryKey: keys.profiles, effect: () => ({ remove: true }), mutationFn: (name) => api.deleteProfile(name), onSuccess: () => showToast(m.profile_deleted_toast()), onError })
+  // A new profile shows at once by its name; the server fills in the rest on its reread.
+  const create = useResourceMutation({
+    resource: ({ name }: NewProfile) => `profile:new:${name}`, queryKey: keys.profiles, exclusive: true,
+    effect: ({ name, default_model }) => ({ fields: { name, model: default_model } }),
+    mutationFn: (body) => api.createProfile(body), onSuccess: () => showToast(m.profile_created_toast()), onError,
+  })
+  const effects = useResourceEffects()
+  const list = withCreated(withEffects(profiles.data?.profiles ?? [], (p) => `profile:${p.name}`, effects), 'profile', effects)
   const active = profiles.data?.active
   // TAL-213: the server resolves each profile's canonical Bot Chat. Opening it always reasserts the profile (another tab
   // may have moved the shared cookie) and opens the chat from the row the switch just resolved.
@@ -77,26 +86,21 @@ export function ProfilesPage() {
           )
         })}
       </ul>
-      {creating && <CreateProfileDialog existing={list.map((p) => p.name)} onClose={() => setCreating(false)} onCreated={() => { setCreating(false); void qc.invalidateQueries({ queryKey: keys.profiles }) }} />}
+      {creating && <CreateProfileDialog existing={list.map((p) => p.name)} onClose={() => setCreating(false)} onSubmit={(body) => { setCreating(false); create.mutate(body) }} />}
       <ConfirmDialog open={deleting !== null} onOpenChange={(o) => { if (!o) setDeleting(null) }} title={m.profile_delete_confirm_title({ name: deleting ?? '' })} description={m.profile_delete_confirm_body()} confirmLabel={m.delete()} cancelLabel={m.cancel()} danger onConfirm={() => { if (deleting) del.mutate(deleting) }} />
     </HubPage>
   )
 }
 
-function CreateProfileDialog({ existing, onClose, onCreated }: { existing: string[]; onClose: () => void; onCreated: () => void }) {
+/** Closes on Create: the profile shows at once while the server creates it. */
+function CreateProfileDialog({ existing, onClose, onSubmit }: { existing: string[]; onClose: () => void; onSubmit: (body: NewProfile) => void }) {
   const [name, setName] = useState('')
   const [cloneFrom, setCloneFrom] = useState('')
   const [model, setModel] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const create = useMutation({
-    mutationFn: () => api.createProfile({ name: name.trim(), clone_from: cloneFrom || undefined, clone_config: !!cloneFrom, default_model: model.trim() || undefined }),
-    onSuccess: () => { showToast(m.profile_created_toast()); onCreated() },
-    onError: (e) => setError(e instanceof Error ? e.message : String(e)),
-  })
   const valid = /^[a-z0-9][a-z0-9-]{0,63}$/.test(name.trim())
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }} title={m.profile_create()}>
-      <form onSubmit={(e) => { e.preventDefault(); if (valid) create.mutate() }} className="flex flex-col gap-1">
+      <form onSubmit={(e) => { e.preventDefault(); if (valid) onSubmit({ name: name.trim(), clone_from: cloneFrom || undefined, clone_config: !!cloneFrom, default_model: model.trim() || undefined }) }} className="flex flex-col gap-1">
         <FieldRow label={m.profile_name_label()} htmlFor="profileName"><TextInput id="profileName" autoFocus value={name} onChange={(e) => setName(e.target.value.toLowerCase())} placeholder={m.profile_name_placeholder()} aria-invalid={name !== '' && !valid} /></FieldRow>
         <FieldRow label={m.profile_clone_from()} htmlFor="profileClone">
           <Select id="profileClone" value={cloneFrom} onValueChange={(v) => setCloneFrom(v)} className="w-full">
@@ -105,8 +109,7 @@ function CreateProfileDialog({ existing, onClose, onCreated }: { existing: strin
           </Select>
         </FieldRow>
         <FieldRow label={m.profile_default_model_label()} htmlFor="profileModel"><TextInput id="profileModel" value={model} onChange={(e) => setModel(e.target.value)} placeholder={m.model_custom_placeholder()} /></FieldRow>
-        {error && <div role="alert" className="text-sm text-error">{error}</div>}
-        <div className="mt-3 flex justify-end gap-2"><Button onClick={onClose}>{m.cancel()}</Button><Button type="submit" variant="primary" disabled={!valid || create.isPending}>{m.create()}</Button></div>
+        <div className="mt-3 flex justify-end gap-2"><Button onClick={onClose}>{m.cancel()}</Button><Button type="submit" variant="primary" disabled={!valid}>{m.create()}</Button></div>
       </form>
     </Dialog>
   )

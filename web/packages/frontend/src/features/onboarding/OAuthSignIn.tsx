@@ -78,11 +78,17 @@ export function OAuthSignIn({ provider, label, signedIn, onApproved, idPrefix = 
     }
   }
 
+  // The sign-in panel closes on Cancel; a refused cancel brings the pending flow back with the error.
   async function cancel() {
-    if (!pendingId) return
+    if (!pendingId || !flow) return
+    const pending = flow
+    setFlow({ ...pending, status: 'cancelled' })
     try {
-      setFlow({ ...flow, ...(await api.onboardingOauthCancel(pendingId)) })
+      const cancelled = await api.onboardingOauthCancel(pendingId)
+      if (mounted.current) setFlow((current) => current?.flow_id === pending.flow_id ? { ...current, ...cancelled } : current)
     } catch (e) {
+      if (!mounted.current) return
+      setFlow((current) => current?.flow_id === pending.flow_id ? pending : current)
       setFailure(message(e))
     }
   }

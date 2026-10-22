@@ -91,4 +91,17 @@ describe('OAuthSignIn', () => {
     view.unmount()
     expect(api.onboardingOauthCancel).toHaveBeenCalledTimes(2)
   })
+
+  it('closes the sign-in on Cancel at once and brings it back when the cancel is refused (TAL-1179)', async () => {
+    vi.mocked(api.onboardingOauthPoll).mockResolvedValue({ ok: true, status: 'pending', flow_id: 'flow-1' })
+    let refuse!: (error: unknown) => void
+    vi.mocked(api.onboardingOauthCancel).mockReturnValueOnce(new Promise((_, reject) => { refuse = reject }) as never)
+    render(<OAuthSignIn provider="openai-codex" label="ChatGPT" signedIn={false} onApproved={vi.fn()} />)
+    await startFlow()
+    await act(async () => { screen.getByRole('button', { name: 'Cancel' }).click(); await Promise.resolve() })
+    expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull()
+    expect(screen.getByRole('alert')).toHaveTextContent('Sign-in cancelled.')
+    await act(async () => { refuse(new Error('Cancel failed')); await Promise.resolve() })
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
+  })
 })

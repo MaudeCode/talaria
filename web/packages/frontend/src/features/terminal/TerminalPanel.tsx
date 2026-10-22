@@ -73,9 +73,10 @@ export function TerminalPanel({ sessionId, workspace, onClose }: { sessionId: st
     }
   }, [sessionId, workspace])
 
-  const close = async () => {
-    await post('api/terminal/close', { session_id: sessionId }, OkSchema, { retries: 0 }).catch(() => undefined)
+  // The panel closes at once; the server stops the shell behind it.
+  const close = () => {
     onClose()
+    void post('api/terminal/close', { session_id: sessionId }, OkSchema, { retries: 0 }).catch(() => undefined)
   }
   const restart = async () => {
     try {
@@ -105,7 +106,7 @@ export function TerminalPanel({ sessionId, workspace, onClose }: { sessionId: st
           <Button variant="ghost" onClick={() => term.current?.clear()}>{m.terminal_clear()}</Button>
           <Button variant="ghost" onClick={() => { const sel = term.current?.getSelection() ?? ''; void navigator.clipboard.writeText(sel).then(() => showToast(m.copied())) }}>{m.terminal_copy_output()}</Button>
           <Button variant="ghost" onClick={() => { void restart() }}>{m.terminal_restart()}</Button>
-          <Button variant="ghost" onClick={() => { void close() }}>{m.terminal_close()}</Button>
+          <Button variant="ghost" onClick={close}>{m.terminal_close()}</Button>
         </div>
       </div>
       <div ref={host} className="composer-terminal-surface px-2 py-1" style={{ height }} aria-label="Workspace terminal" role="application" />

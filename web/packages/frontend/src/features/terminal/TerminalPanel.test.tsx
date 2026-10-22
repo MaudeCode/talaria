@@ -54,3 +54,13 @@ describe('TerminalPanel', () => {
     expect(opened[0]).toContain('api/terminal/output?session_id=s1')
   })
 })
+
+it('closes the panel at once, before the server stops the shell (TAL-1179)', async () => {
+  vi.mocked(post).mockImplementation((path: string) => path === 'api/terminal/close' ? new Promise(() => undefined) : Promise.resolve({ ok: true, running: true }))
+  const onClose = vi.fn()
+  const view = render(<TerminalPanel sessionId="s1" workspace="/w" onClose={onClose} />)
+  await act(async () => { await new Promise((r) => setTimeout(r, 0)) })
+  await act(async () => { view.getByRole('button', { name: 'Close' }).click(); await Promise.resolve() })
+  expect(onClose).toHaveBeenCalledOnce()
+  expect(post).toHaveBeenCalledWith('api/terminal/close', { session_id: 's1' }, expect.anything(), { retries: 0 })
+})

@@ -3,21 +3,28 @@
  * running work, and a finished `/background` result until someone dismisses it. Every client reads the same records.
  */
 import { useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, Check, CircleHelp, Clock, LoaderCircle, X } from 'lucide-react'
 import type { BackgroundLink, BackgroundTask, BackgroundReviewState } from '@maudecode/talaria-web-contracts'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { Markdown } from '../chat/render/Markdown'
 import { m } from '../../paraglide/messages.js'
+import { showToast } from '../toast/toast'
+import { useResourceEffects, useResourceMutation, withEffects } from '../sessions/useResourceMutation'
 
 /** Running work changes on the Agent's side; a quiet refresh keeps the card current between server notices. */
 const LIVE_REFRESH_MS = 15_000
 
+const backgroundResource = (sessionId: string, taskId: string) => `background:${sessionId}:${taskId}`
+
+/** The session's background work as the user sees it: a dismissed result leaves at once. */
 export function useBackgroundTasks(sessionId: string | null | undefined) {
+  const effects = useResourceEffects()
   return useQuery({
     queryKey: keys.background(sessionId ?? ''),
     queryFn: () => api.fetchBackgroundTasks(sessionId ?? ''),
+    select: (data) => ({ ...data, tasks: withEffects(data.tasks, (task) => backgroundResource(sessionId ?? '', task.task_id), effects) }),
     enabled: Boolean(sessionId),
     refetchInterval: (query) => (query.state.data?.tasks.some((t) => t.active) ? LIVE_REFRESH_MS : false),
   })
@@ -57,9 +64,9 @@ export function StatusIcon({ status }: { status: BackgroundTask['status'] | Back
 
 function TaskRow({ sessionId, task }: { sessionId: string; task: BackgroundTask }) {
   const [open, setOpen] = useState(false)
-  const qc = useQueryClient()
   const result = useQuery({ queryKey: keys.backgroundResult(sessionId, task.task_id), queryFn: () => api.fetchBackgroundResult(sessionId, task.task_id), enabled: open && task.result_available })
-  const dismiss = useMutation({ mutationFn: () => api.dismissBackgroundTask(sessionId, task.task_id), onSuccess: () => qc.invalidateQueries({ queryKey: keys.background(sessionId) }) })
+  // Dismissing removes the result from view; it never cancels the work or erases its history.
+  const dismiss = useResourceMutation({ resource: () => backgroundResource(sessionId, task.task_id), queryKey: keys.background(sessionId), effect: () => ({ remove: true }), mutationFn: () => api.dismissBackgroundTask(sessionId, task.task_id), onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error') })
   return (
     <li className="bg-work-task flex min-w-0 flex-col gap-1" data-task-id={task.task_id} data-status={task.status}>
       <div className="flex min-w-0 items-center gap-1.5">
@@ -67,7 +74,7 @@ function TaskRow({ sessionId, task }: { sessionId: string; task: BackgroundTask 
         <span className="min-w-0 flex-1 truncate" title={task.title}><span className="text-muted">{kindLabel(task.kind)}</span> {task.title}</span>
         <span className="shrink-0 text-[11px] text-muted">{task.agents && task.agents.total > 1 ? agentsSummary(task.agents) : statusLabel(task.status)}</span>
         {task.result_available && <button type="button" className="composer-notice-action" aria-expanded={open} onClick={() => setOpen((o) => !o)}>{open ? m.bg_hide_result() : m.bg_show_result()}</button>}
-        {task.dismissible && <button type="button" className="composer-notice-action" disabled={dismiss.isPending} onClick={() => dismiss.mutate()}>{m.notice_dismiss()}</button>}
+        {task.dismissible && <button type="button" className="composer-notice-action" onClick={() => dismiss.mutate()}>{m.notice_dismiss()}</button>}
       </div>
       {open && (
         <div className="bg-work-result max-h-72 overflow-auto rounded-md bg-surface-subtle px-2 py-1 text-[13px]">
