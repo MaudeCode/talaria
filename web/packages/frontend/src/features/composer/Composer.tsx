@@ -4,6 +4,7 @@ import { Mic, Paperclip, Square, ArrowUp, TerminalSquare, SlidersHorizontal, Lis
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
+import { invalidateSessionQueries } from '../../api/sessionQueries'
 import type { Session, Settings } from '../../contracts'
 import type { ExecutionMode, OwnerActionRequest } from '@maudecode/talaria-web-contracts'
 import { adoptTurn, cancelTurn, getStreamContext, retryPendingTurn, startTurn } from '../../stream/connection'
@@ -517,7 +518,7 @@ export const Composer = memo(function Composer(props: ComposerProps) {
           await startTurn({ sessionId: target.session_id, message: value, request: turnRequest(target, bootstrap.profile?.name ?? 'default') })
           if (scope !== getStreamContext()) return
           endFirstSend()
-          void qc.invalidateQueries({ queryKey: keys.sessions.all })
+          void invalidateSessionQueries(qc)
         } catch (e) {
           if (scope !== getStreamContext()) return
           showToast(e instanceof Error ? e.message : String(e), 5000, 'error')
@@ -533,7 +534,7 @@ export const Composer = memo(function Composer(props: ComposerProps) {
         const target = session
         const attachments = files.flatMap((f) => (f.status === 'done' && f.upload ? [f.upload] : []))
         await startTurn({ sessionId: target.session_id, message: value, files, request: { ...turnRequest(target, bootstrap.profile?.name ?? 'default'), ...(attachments.length ? { attachments } : {}) } })
-        if (scope === getStreamContext()) void qc.invalidateQueries({ queryKey: keys.sessions.all })
+        if (scope === getStreamContext()) void invalidateSessionQueries(qc)
       } catch (e) {
         if (scope !== getStreamContext()) return
         showToast(e instanceof Error ? e.message : String(e), 5000, 'error')

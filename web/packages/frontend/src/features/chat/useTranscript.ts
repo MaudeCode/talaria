@@ -7,13 +7,15 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
+import { invalidateSessionQueries } from '../../api/sessionQueries'
+import { TRANSCRIPT_WINDOW } from '@maudecode/talaria-web-contracts'
 import { SessionSchema, type Message, type Session } from '../../contracts'
 import { attachToStream, hasLiveConnection, reconcileSession, discardSession, getStreamContext, subscribeStreamContext, teardown } from '../../stream/connection'
 import { getStreamState, useLiveTurn } from '../../stream/store'
 import { openSessionStream } from '../../api/sse'
 import { writePersisted } from '../../lib/persisted'
 
-export const TRANSCRIPT_WINDOW = 120
+export { TRANSCRIPT_WINDOW } from '@maudecode/talaria-web-contracts'
 
 export interface VisibleMessage {
   index: number
@@ -109,6 +111,7 @@ export function useTranscript(sessionId: string | null) {
   useEffect(() => {
     if (!sessionId) return
     let retired = false
+    let backgroundCompletion: string | null = null
     const scope = streamContext
     let initialized = false
     const cached = qc.getQueryData<{ session: Session }>(keys.sessions.detail(sessionId))
@@ -119,7 +122,11 @@ export function useTranscript(sessionId: string | null) {
         initialized = true
         if (!reconnect) return
       }
-      void qc.invalidateQueries({ queryKey: keys.sessions.detail(sessionId) })
+      const completion = JSON.stringify(data)
+      const twin = event === 'process_complete' && completion === backgroundCompletion
+      // The server emits the same completion under the current and legacy names, in that order.
+      backgroundCompletion = event === 'bg_task_complete' ? completion : null
+      if (!twin) void qc.invalidateQueries({ queryKey: keys.sessions.detail(sessionId) })
     } }, cached?.session.message_count)
     return () => { retired = true; stream.close() }
   }, [qc, sessionId, streamContext])
@@ -181,7 +188,7 @@ export function useTranscript(sessionId: string | null) {
       setOlder(() => [])
       discardSession(sessionId)
       qc.setQueryData(keys.sessions.detail(sessionId), { session: parsed.data })
-      void qc.invalidateQueries({ queryKey: keys.sessions.all, predicate: (query) => query.queryKey[1] !== 'detail' })
+      void invalidateSessionQueries(qc, sessionId, { detail: false })
       return
     }
     // Older/mutation row-only responses need a fresh authoritative transcript.

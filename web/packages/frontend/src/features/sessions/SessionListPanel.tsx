@@ -5,6 +5,8 @@ import { Archive, ArchiveRestore, Filter, GitBranch, Plus, Search, Upload, X } f
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
+import { invalidateSessionQueries } from '../../api/sessionQueries'
+import { hasRecentTerminalSession } from '../../stream/store'
 import { openSessionListStream } from '../../api/sse'
 import type { SessionRow } from '../../contracts'
 import { PanelHead, PanelHeadButton } from '../../shell/Sidebar'
@@ -28,7 +30,8 @@ export function useSessionListQuery(params: api.SessionListParams = {}) {
  * status, and background work stay cached, so a run's event stream does not refetch every mounted session.
  */
 function invalidateSidebar(qc: QueryClient, sessionId?: string | null) {
-  void qc.invalidateQueries({ predicate: ({ queryKey: [root, kind, id] }) => root === 'sessions' && (kind === 'list' || kind === 'search' || (!!sessionId && id === sessionId)) })
+  const cachedTerminal = !!sessionId && hasRecentTerminalSession(sessionId) && !!qc.getQueryData(keys.sessions.detail(sessionId))
+  void invalidateSessionQueries(qc, sessionId, { detail: !cachedTerminal })
 }
 
 /** One EventSource for sidebar invalidation (`sessions_changed`), bounded to the panel's lifetime. */
