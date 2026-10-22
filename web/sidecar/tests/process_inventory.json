@@ -2686,7 +2686,7 @@
     },
     "tests/test_dashboard_host_compat.py::test_native_dashboard_host_profile_and_request_admission": {
       "layer": "compatibility",
-      "reason": "Actual supported-Agent dashboard discovery, per-profile child-host execution and concurrent request-local authentication on one cached plugin app. Synthetic homes/plugins only; older Agents must fail closed. These native host and admission properties cannot be proved by boundary fakes.",
+      "reason": "Actual supported-Agent dashboard discovery, verified-source loading with original module/resource location, per-profile child-host execution and concurrent request-local authentication on one cached plugin app. Synthetic homes/plugins only; older Agents must fail closed. These native host and admission properties cannot be proved by boundary fakes.",
       "cases": [
         ""
       ]

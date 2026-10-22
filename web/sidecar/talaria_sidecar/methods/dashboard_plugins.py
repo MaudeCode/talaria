@@ -2,11 +2,14 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import inspect
 import json
 import os
 import re
 import stat
+import tempfile
+import threading
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode
 
@@ -27,6 +30,63 @@ _MAX_API = 512 * 1024
 # Resolve only the operator-selected launch home, never a plugin-controlled descendant.
 _RAW_BASE_HOME = homes._PROCESS_HOME.parent.parent if homes._PROCESS_HOME.parent.name == 'profiles' else homes._PROCESS_HOME
 _BASE_HOME = _RAW_BASE_HOME.resolve()
+_SOURCE_LOCK = threading.Lock()
+_SOURCE_DIRECTORY = None
+_SOURCES = {}
+_SOURCE_BYTES = 0
+_SOURCE_CLOSED = False
+_MAX_SOURCE_BYTES = 64 * 1024 * 1024
+
+
+def close_dashboard_sources():
+    """Release the native loader's source cache after the RPC server has stopped admitting calls."""
+    global _SOURCE_DIRECTORY, _SOURCE_BYTES, _SOURCE_CLOSED
+    with _SOURCE_LOCK:
+        _SOURCE_CLOSED = True
+        if _SOURCE_DIRECTORY is not None:
+            _SOURCE_DIRECTORY.cleanup()
+            _SOURCE_DIRECTORY = None
+        _SOURCES.clear()
+        _SOURCE_BYTES = 0
+
+
+def _api_source(root, api, source):
+    """Give the unchanged native loader a private, stable copy of the bytes we verified.
+
+    Preserve the plugin module's original location for relative resources and tracebacks.
+    Content-addressing reuses its cached app; retain files through timeouts/late host work,
+    bounded by count/bytes and owned by the sidecar until shutdown.
+    """
+    global _SOURCE_DIRECTORY, _SOURCE_BYTES
+    origin = str(Path(root) / api)
+    key = hashlib.sha256(os.fsencode(origin) + b'\0' + source).hexdigest()
+    with _SOURCE_LOCK:
+        if _SOURCE_CLOSED:
+            raise RpcError('Agent dashboard source cache is shutting down', condition='plugin_host_unavailable')
+        if key in _SOURCES:
+            return _SOURCES[key]
+        payload = (f'__file__ = {origin!r}\n'
+                   "__loader__ = __import__('importlib.machinery', fromlist=['SourceFileLoader']).SourceFileLoader(__name__, __file__)\n"
+                   "__cached__ = __import__('importlib.util', fromlist=['cache_from_source']).cache_from_source(__file__)\n"
+                   "if __spec__ is not None:\n    __spec__.origin = __file__\n    __spec__.loader = __loader__\n    __spec__.cached = __cached__\n"
+                   f"exec(compile({source!r}, __file__, 'exec'), globals())\n").encode()
+        if len(_SOURCES) >= 512 or _SOURCE_BYTES + len(payload) > _MAX_SOURCE_BYTES:
+            raise RpcError('Agent dashboard source cache is full', condition='plugin_host_unavailable')
+        path = None
+        try:
+            if _SOURCE_DIRECTORY is None:
+                _SOURCE_DIRECTORY = tempfile.TemporaryDirectory(prefix='talaria-dashboard-source-')
+            path = Path(_SOURCE_DIRECTORY.name) / f'{key}.py'
+            with path.open('xb') as file:
+                file.write(payload)
+            path.chmod(0o400)
+        except OSError as exc:
+            if path is not None:
+                path.unlink(missing_ok=True)
+            raise RpcError('Agent dashboard source unavailable', condition='plugin_host_unavailable') from exc
+        _SOURCES[key] = (str(path.parent), path.name)
+        _SOURCE_BYTES += len(payload)
+        return _SOURCES[key]
 
 
 def _path(raw):
@@ -149,7 +209,10 @@ def _request(ctx, plugin, params):
     if params.get('websocket') or any(k == 'accept' and 'text/event-stream' in v.lower() for k, v in headers):
         return _reply(501, b'Agent plugin host supports buffered HTTP only', 'text/plain; charset=utf-8')
     api = plugin.get('_api_file')
-    if not isinstance(api, str) or not _path(api) or _read(Path(plugin['_dir']), api, anchor=Path(plugin['_asset_anchor'])) is None:
+    if not isinstance(api, str) or not _path(api):
+        return _reply()
+    source = _read(Path(plugin['_dir']), api, anchor=Path(plugin['_asset_anchor']))
+    if source is None:
         return _reply()
     from hermes_cli.plugins import get_plugin_manager
     body = base64.b64decode(params.get('body') or '', validate=True)
@@ -160,9 +223,11 @@ def _request(ctx, plugin, params):
     method = params.get('method', 'GET')
     if method not in {'GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'}:
         raise InvalidParams('Unsupported plugin HTTP method')
+    root, snapshot_api = _api_source(plugin['_dir'], api, source)
+    ctx.check_cancelled()
     try:
         result = get_plugin_manager()._plugin_host().asgi_request(
-            plugin['name'], plugin['_dir'], api, method, path, query, headers, body,
+            plugin['name'], root, snapshot_api, method, path, query, headers, body,
             timeout=10.0, authenticated=True)
     except TimeoutError:
         ctx.check_cancelled()

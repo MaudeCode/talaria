@@ -165,3 +165,12 @@ Agent-host HTTP is buffered, limited to 512 KiB and a native request timeout of
 retried. Cancellation and profile changes abandon late results. The Agent host
 has no operation to cancel its running handler, so it may finish independently.
 Agents without request-local hosted admission do not expose this source.
+
+The sidecar gives the unchanged native loader a private snapshot of the verified
+API source, preserving its original module location for relative resources and
+tracebacks. The private module restores the original module metadata and compiles
+only the snapshotted bytes; it does not reopen the original source. Repeated calls
+reuse the same source version and cached native app;
+an edited source gets its own version. Snapshots survive request timeouts and are
+removed when the sidecar shuts down. The process caps this cache at 512 source
+versions and 64 MiB of generated source, refusing further loads when full.

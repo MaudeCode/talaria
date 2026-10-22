@@ -16,6 +16,7 @@ def dashboards(tmp_path, monkeypatch):
     current = contextvars.ContextVar('dashboard_home')
     homes = [tmp_path / 'alpha', tmp_path / 'alpha' / 'profiles' / 'beta']
     from talaria_sidecar.methods import dashboard_plugins
+    monkeypatch.setattr(dashboard_plugins, '_SOURCE_CLOSED', False)
     monkeypatch.setattr(dashboard_plugins, '_BASE_HOME', homes[0].resolve(), raising=False)
     monkeypatch.setattr(dashboard_plugins, '_RAW_BASE_HOME', homes[0], raising=False)
     monkeypatch.setattr('talaria_sidecar.home._PROCESS_HOME', homes[0])
@@ -57,7 +58,10 @@ def dashboards(tmp_path, monkeypatch):
     monkeypatch.setitem(sys.modules, 'hermes_cli.plugins_cmd', NS(
         _resolve_plugin_key=lambda name: name,
         _activate_key=lambda key, enable: consent[current.get()].add(key) if enable else consent[current.get()].discard(key)))
-    return NS(homes=homes, plugins=plugins, consent=consent, call=call, ctx=ctx, methods=methods, current=current, Host=Host)
+    try:
+        yield NS(homes=homes, plugins=plugins, consent=consent, call=call, ctx=ctx, methods=methods, current=current, Host=Host)
+    finally:
+        dashboard_plugins.close_dashboard_sources()
 
 
 def test_dashboard_plugins_keep_same_name_discovery_assets_and_consent_in_the_selected_profile(dashboards):
@@ -183,3 +187,77 @@ def test_plugin_directory_names_do_not_become_url_paths(dashboards):
     assert result['status'] == 200
     import base64
     assert base64.b64decode(result['body']) == b'<p>alpha:board</p>'
+
+
+def test_native_loader_uses_verified_source_and_preserves_module_location(dashboards, monkeypatch):
+    import base64
+    import importlib.util
+    from pathlib import Path
+    d = dashboards
+    original = d.homes[0] / 'plugins/board/dashboard/api.py'
+    source = b"from __future__ import annotations\nfrom pathlib import Path\nVALUE = 'verified'\nRESOURCE = Path(__file__).with_name('resource.txt').read_text()\n"
+    original.write_bytes(source)
+    original.with_name('resource.txt').write_text('adjacent profile resource')
+    def native(name, root, api, *args, **kwargs):
+        # An ordinary concurrent edit after validation must not change the entry source being loaded.
+        original.write_bytes(source.replace(b"'verified'", b"'later edit'"))
+        spec = importlib.util.spec_from_file_location('dashboard_fixture', Path(root) / api)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        result = {'value': module.VALUE, 'resource': module.RESOURCE, 'source': module.__file__,
+                  'origin': module.__spec__.origin, 'loader_source': module.__loader__.get_filename(module.__name__)}
+        return {'status': 200, 'body': json.dumps(result).encode(), 'headers': [('content-type', 'application/json')]}
+    result = _api(d, monkeypatch, native)(authenticated=True)
+    assert result['status'] == 200
+    assert json.loads(base64.b64decode(result['body'])) == {
+        'value': 'verified', 'resource': 'adjacent profile resource', 'source': str(original),
+        'origin': str(original), 'loader_source': str(original)}
+
+
+def test_source_snapshot_is_reused_and_retained_until_shutdown_after_timeout(dashboards, monkeypatch):
+    from pathlib import Path
+    from talaria_sidecar.methods.dashboard_plugins import close_dashboard_sources
+    paths = []
+    def native(name, root, api, *args, **kwargs):
+        paths.append(Path(root) / api)
+        assert paths[-1].is_file()
+        raise TimeoutError()
+    call = _api(dashboards, monkeypatch, native)
+    assert call(authenticated=True)['status'] == 504
+    assert call(authenticated=True)['status'] == 504
+    assert paths[0] == paths[1], 'repeated requests must reuse the native cached app'
+    assert paths[0].is_file(), 'a timed-out native load may still need its verified source'
+    close_dashboard_sources()
+    assert not paths[0].exists()
+    from talaria_sidecar.errors import RpcError
+    with pytest.raises(RpcError, match='shutting down'):
+        call(authenticated=True)
+    assert len(paths) == 2, 'shutdown must not recreate a source cache or start more native work'
+
+
+def test_source_cache_exhaustion_refuses_before_starting_native_work(dashboards, monkeypatch):
+    from talaria_sidecar.errors import RpcError
+    monkeypatch.setattr('talaria_sidecar.methods.dashboard_plugins._MAX_SOURCE_BYTES', 0)
+    def native(*args, **kwargs):
+        raise AssertionError('exhausted source cache started native work')
+    with pytest.raises(RpcError, match='source cache is full'):
+        _api(dashboards, monkeypatch, native)(authenticated=True)
+
+
+def test_cancel_during_source_preparation_never_dispatches_native_work(dashboards, monkeypatch):
+    from talaria_sidecar.methods import dashboard_plugins
+    d = dashboards
+    prepare = dashboard_plugins._api_source
+    def source(*args):
+        result = prepare(*args)
+        d.ctx.cancelled = True
+        return result
+    def check():
+        if d.ctx.cancelled:
+            raise Cancelled()
+    def native(*args, **kwargs):
+        raise AssertionError('cancelled source preparation started native work')
+    monkeypatch.setattr(dashboard_plugins, '_api_source', source)
+    d.ctx.check_cancelled = check
+    with pytest.raises(Cancelled):
+        _api(d, monkeypatch, native)(authenticated=True)

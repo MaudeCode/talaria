@@ -21,7 +21,9 @@ router = APIRouter()
 @router.get("/identity")
 async def identity(request: Request):
     late("_require_token")(request)
-    return {"home": os.environ["HERMES_HOME"], "source": __file__, "pid": os.getpid(), "query": str(request.url.query),
+    from pathlib import Path
+    return {"home": os.environ["HERMES_HOME"], "source": __file__, "resource": Path(__file__).with_name("profile-resource.txt").read_text(),
+            "origin": __spec__.origin, "loader_source": __loader__.get_filename(__name__), "pid": os.getpid(), "query": str(request.url.query),
             "credentials": [k for k in request.headers if k.lower() in {"authorization", "cookie", "x-hermes-session-token"}]}
 '''
 secondary = 'talaria-secondary-probe'
@@ -37,6 +39,7 @@ for home in (base, other):
         (plugin / 'dashboard/manifest.json').write_text(json.dumps({'name':name, 'panel':'dist/index.html', 'api':'api.py'}))
         (plugin / 'dashboard/dist/index.html').write_text(f'<p>{home.name}:{name}</p>')
         (plugin / 'dashboard/api.py').write_text(api)
+        (plugin / 'dashboard/profile-resource.txt').write_text(home.name + ':' + name)
 registry = Registry(NS(load=lambda: None, ensure_current=lambda: None))
 dashboard_plugins.register(registry)
 ctx = NS(check_cancelled=lambda: None)
@@ -63,6 +66,8 @@ try:
         identity = json.loads(base64.b64decode(result['body']))
         assert Path(identity['home']).resolve() == home.resolve(), identity
         assert Path(identity['source']).resolve() == (home / 'plugins/board/dashboard/api.py').resolve(), identity
+        assert identity['origin'] == identity['source'] == identity['loader_source'], identity
+        assert identity['resource'] == home.name + ':board', identity
         assert identity['pid'] != os.getpid() and identity['credentials'] == [] and identity['query'] == 'q=ok', identity
         with scoped_home(home, load_plugins=False):
             host = get_plugin_manager()._plugin_host()
@@ -79,6 +84,7 @@ try:
     secondary_identity = json.loads(base64.b64decode(secondary_result['body']))
     assert Path(secondary_identity['source']).resolve() == (other / 'plugins' / secondary / 'dashboard/api.py').resolve(), secondary_identity
     assert secondary_identity['pid'] == hosts[1].pid
+    assert secondary_identity['resource'] == other.name + ':' + secondary
     call('toggle', other, name='board', enabled=False)
     assert not next(p for p in call('list', other)['plugins'] if p['name'] == 'board')['enabled']
     assert next(p for p in call('list', base)['plugins'] if p['name'] == 'board')['enabled']
@@ -89,3 +95,4 @@ try:
 finally:
     for host in hosts:
         host.shutdown()
+    dashboard_plugins.close_dashboard_sources()
