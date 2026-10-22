@@ -1,9 +1,8 @@
 import { statSync, type BigIntStats } from 'node:fs'
 import { stat } from 'node:fs/promises'
 
-/** Cache identity; propagate stat failures so callers retain their missing/unreadable policy. */
-export function fileStatKey(path: string): string {
-  const st = statSync(path, { bigint: true })
+/** Path or held-descriptor cache identity; preserve each caller's missing/unreadable policy. */
+export function fileStatKey(path: string, st: BigIntStats = statSync(path, { bigint: true })): string {
   return `${st.dev}:${st.ino}:${st.mtimeNs}:${st.ctimeNs}:${st.size}`
 }
 

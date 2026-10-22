@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/require-await -- Each JSON transaction completes synchronously before its promise resolves. */
 import { normalizeDraftVersion } from '../drafts.js'
 import { createHash } from 'node:crypto'
-import { chmodSync, mkdirSync, readdirSync, readFileSync, renameSync, unlinkSync } from 'node:fs'
+import { chmodSync, closeSync, fstatSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, unlinkSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 import { writeAtomic } from './json-files.js'
 import { atomicWriteText, atomicWriteTextAsync } from '../../fs/atomic.js'
@@ -157,26 +157,37 @@ export class JsonDocuments implements DocumentBackend {
     const serialized = format.text ? String(value) : JSON.stringify(value, format.sorted ? sortedReplacer : undefined, format.indent)
     if (serialized === undefined) throw new Error('Document must be serializable')
     const text = serialized + (format.newline ? '\n' : '')
+    const binary = namespace === 'auth' && key.endsWith('-key') ? Buffer.from(String(value), 'base64') : null
+    const storedText = binary ? binary.toString('latin1') : text
+    let revision!: string
+    const publish = (staged: string, target: string): void => {
+      // Hold the written inode across rename; a later path lookup could describe an external replacement.
+      const fd = openSync(staged, 'r')
+      try {
+        const before = fstatSync(fd, { bigint: true })
+        renameSync(staged, target)
+        if (format.secret && format.sorted) { try { chmodSync(target, 0o600) } catch { /* legacy best effort */ } }
+        const after = fstatSync(fd, { bigint: true })
+        // An in-place edit during publication must also miss the next cache lookup.
+        const identity = before.mtimeNs === after.mtimeNs && before.size === after.size ? after : before
+        revision = this.remember(namespace, path, storedText, fileStatKey(path, identity)).revision
+      } finally { closeSync(fd) }
+    }
     if (namespace !== 'relay-identities') mkdirSync(dirname(path), { recursive: true })
-    if (namespace === 'auth' && key.endsWith('-key')) writeAtomic(path, Buffer.from(String(value), 'base64'), 0o600)
+    if (binary) writeAtomic(path, binary, 0o600, publish)
     else if (namespace === 'auth') {
       return this.serialize(path, async () => {
         // Stage and fsync off the event loop; compare and publish together without another asynchronous gap.
         const assertCurrent = (): void => { if ((this.raw(namespace, key)?.revision ?? null) !== expected) throw new RevisionConflict(`${namespace}/${key}`) }
         assertCurrent()
-        let revision!: string
         await atomicWriteTextAsync(path, text, { mode: 0o600, commit: (staged, target) => {
           assertCurrent()
-          renameSync(staged, target)
-          // Capture the published identity before yielding to another editor.
-          revision = this.remember(namespace, path, text, fileStatKey(path)).revision
+          publish(staged, target)
         } })
         return revision
       })
-    } else atomicWriteText(path, text, format.secret ? { mode: 0o600 } : {})
-    if (format.secret && format.sorted) { try { chmodSync(path, 0o600) } catch { /* legacy best effort */ } }
-    const storedText = namespace === 'auth' && key.endsWith('-key') ? Buffer.from(String(value), 'base64').toString('latin1') : text
-    return this.remember(namespace, path, storedText, fileStatKey(path)).revision
+    } else atomicWriteText(path, text, { ...(format.secret ? { mode: 0o600 } : {}), commit: publish })
+    return revision
   }
   async delete(namespace: string, key: string, expected?: string | null): Promise<boolean> {
     const path = this.path(namespace, key)

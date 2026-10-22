@@ -126,6 +126,33 @@ it('does not seed auth bytes under an external edit arriving after publication',
   expect((await documents.get('auth', 'sessions'))?.value).toEqual({ external: true })
 })
 
+it.each([
+  ['settings', 'settings', 'settings.json'],
+  ['auth', 'sessions', '.sessions.json'],
+  ['auth', 'signing-key', '.signing_key'],
+] as const)('binds %s/%s seeded bytes to the published inode', async (namespace, key, filename) => {
+  const binary = key === 'signing-key'
+  const rename = vi.mocked(fs.renameSync).getMockImplementation()!
+  vi.mocked(fs.renameSync).mockImplementationOnce((...args) => {
+    rename(...args)
+    const replacement = join(state, 'replacement')
+    fs.writeFileSync(replacement, binary ? 'external' : '{"external":true}')
+    rename(replacement, join(state, filename))
+  })
+  await documents.put(namespace, key, binary ? Buffer.from('ours').toString('base64') : { ours: true }, null)
+  expect((await documents.get(namespace, key))?.value).toEqual(binary ? Buffer.from('external').toString('base64') : { external: true })
+})
+
+it('invalidates seeded bytes when the published inode is edited in place', async () => {
+  const rename = vi.mocked(fs.renameSync).getMockImplementation()!
+  vi.mocked(fs.renameSync).mockImplementationOnce((...args) => {
+    rename(...args)
+    fs.writeFileSync(join(state, 'settings.json'), '{"external":true}')
+  })
+  await documents.put('settings', 'settings', { ours: true }, null)
+  expect((await documents.get('settings', 'settings'))?.value).toEqual({ external: true })
+})
+
 it('bounds resident snapshots and releases them on close', async () => {
   fs.mkdirSync(join(state, 'sessions', '_drafts'), { recursive: true })
   for (let index = 0; index <= 256; index += 1) {
