@@ -194,7 +194,7 @@ describe('optimistic resource ownership', () => {
   it('never ships a pending label', () => {
     const messages = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../messages/en.json'), 'utf8')) as Record<string, string>
     expect(messages).not.toHaveProperty('resource_change_pending')
-    expect(Object.values(messages).some((text) => /^Pending: /.test(text))).toBe(false)
+    expect(Object.values(messages).some((text) => text.startsWith('Pending: '))).toBe(false)
   })
 
   it('leaves an unrelated in-flight history read intact during required snapshot reconciliation', async () => {

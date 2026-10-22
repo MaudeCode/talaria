@@ -127,7 +127,7 @@ function settleOnNextRead(qc: QueryClient, current: () => boolean, clear: () => 
   const covered = (query: Query) => readQueryKeys(queryKey).some((key) => matchQuery({ queryKey: key }, query)) && (!filter.predicate || filter.predicate(query))
   const unsubscribe = qc.getQueryCache().subscribe((event) => {
     if (!current()) { unsubscribe(); return }
-    if (event.type === 'updated' && event.action.type === 'success' && covered(event.query)) { unsubscribe(); clear() }
+    if (event.type === 'updated' && event.action.type === 'success' && covered(event.query as Query)) { unsubscribe(); clear() }
   })
 }
 
