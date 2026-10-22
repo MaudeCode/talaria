@@ -1432,8 +1432,8 @@ export class SessionService {
     }
   }
 
-  async contextDetail(sid: string): Promise<ContextDetail> {
-    if (await this.owner?.isOwned(sid)) return this.owner!.contextDetail(sid)
+  async contextDetail(sid: string, expectedKey: string): Promise<ContextDetail> {
+    if (await this.owner?.isOwned(sid)) return this.owner!.contextDetail(sid, expectedKey)
     const session = await this.get404(sid)
     const profile = this.deps.activeProfile()
     if (session.profile && session.profile !== profile || await this.loadedReadOnlyReason(session)) return unavailableContextDetail()
@@ -1442,6 +1442,7 @@ export class SessionService {
     // The read owns no cache. Compression and model/workspace replacement invalidate its response.
     const marks = (current = session) => this.contextDetailKey(current)
     const before = marks()
+    if (before !== expectedKey) return unavailableContextDetail('changed')
     try {
       const detail = await sidecar.call('chat.context_detail', { session_id: sid, profile_home: this.deps.profileHome(profile), model: session.model, model_provider: session.model_provider, workspace: session.workspace })
       return this.deps.activeProfile() === profile && before === marks(await this.get404(sid)) ? detail : unavailableContextDetail('changed')
@@ -1779,9 +1780,9 @@ export class SessionService {
         if (changed) {
           s.context_length = contextLength
           forgetContextFigures(s)
-          await this.deps.runtime.evictAgent(sid)
         }
       }
+      if (changed || oldWs !== newWs) await this.deps.runtime.evictAgent(sid)
       await this.store.save(s)
     })
     if (str(oldWs) !== str(newWs)) this.deps.runtime.closeTerminal(sid)

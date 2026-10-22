@@ -110,12 +110,12 @@ export class GatewaySessions {
     return { sid, profile, home, key: JSON.stringify([home, sid]) }
   }
 
-  async contextDetail(sid: string): Promise<ContextDetail> {
+  async contextDetail(sid: string, expectedKey: string): Promise<ContextDetail> {
     const profile = this.deps.activeProfile()
     const target = await this.target(sid, profile)
     if (!target) return unavailableContextDetail()
     const result = await this.call(target, { action: 'context_detail' })
-    return profile === this.deps.activeProfile() && result.state === 'attached' ? result.context_detail ?? unavailableContextDetail('unsupported') : unavailableContextDetail('changed')
+    return profile === this.deps.activeProfile() && result.state === 'attached' && this.contextDetailKey(target, result.snapshot) === expectedKey ? result.context_detail ?? unavailableContextDetail('unsupported') : unavailableContextDetail('changed')
   }
 
   async isOwned(sid: string): Promise<boolean> { return (await this.target(sid)) !== null }
@@ -200,9 +200,13 @@ export class GatewaySessions {
     return redactNestedMessageContainers(value, this.deps.redactEnabled()) as OwnerAttachment
   }
 
+  private contextDetailKey(target: Target, snapshot: GatewaySnapshot | null): string | null {
+    return snapshot ? ownerStateId(JSON.stringify([target.key, snapshot.authority_epoch, snapshot.replay_epoch, snapshot.revision, snapshot.execution_generation, snapshot.info, snapshot.last_sequence])) : null
+  }
+
   private async view(base: Row, result: GatewaySessionResult, stream: string | null, target: Target, limit: number | null = 120, before: number | null = null, withMessages = true): Promise<Row> {
     const snapshot = result.snapshot
-    const fields: Row = { ...base, owner_attachment: this.attachment({ ...result, model_change: this.currentModelChange(target, snapshot) }), composer_state_key: ownerStateId(target.key), context_detail_key: snapshot ? ownerStateId(JSON.stringify([target.key, snapshot.authority_epoch, snapshot.replay_epoch, snapshot.revision, snapshot.execution_generation, snapshot.info, snapshot.last_sequence])) : null, active_stream_id: stream, is_streaming: Boolean(stream) }
+    const fields: Row = { ...base, owner_attachment: this.attachment({ ...result, model_change: this.currentModelChange(target, snapshot) }), composer_state_key: ownerStateId(target.key), context_detail_key: this.contextDetailKey(target, snapshot), active_stream_id: stream, is_streaming: Boolean(stream) }
     if (snapshot) {
       const observed = this.watches.get(target.key)?.snapshot
       const nativeRows = [...snapshot.messages]

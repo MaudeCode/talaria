@@ -142,7 +142,7 @@ export const sessionsContract = {
   session: {
     get: oc.route({ method: 'GET', path: '/api/session', tags, summary: 'One session with a bounded message window.' }).input(SessionDetailQuerySchema).output(SessionEnvelopeSchema),
     status: oc.route({ method: 'GET', path: '/api/session/status', tags }).input(SessionQuery).output(SessionStatusSchema),
-    contextDetail: oc.route({ method: 'GET', path: '/api/session/context-detail', tags, summary: 'Read bounded, safe allocation estimates and context-file metadata from the existing Agent only.' }).input(SessionQuery).output(ContextDetailSchema),
+    contextDetail: oc.route({ method: 'GET', path: '/api/session/context-detail', tags, summary: 'Read bounded, safe allocation estimates and context-file metadata from the existing Agent only.' }).input(SessionQuery.extend({ context_detail_key: z.string().min(1).max(128) })).output(ContextDetailSchema),
     usage: oc.route({ method: 'GET', path: '/api/session/usage', tags }).input(SessionQuery).output(SessionUsageSchema),
     new: oc.route({ method: 'POST', path: '/api/session/new', tags }).input(SessionNewRequestSchema).output(SessionEnvelopeSchema.extend({ worktree_skipped: z.string().optional() })),
     executionModes: oc.route({ method: 'GET', path: '/api/session/execution-modes', tags, summary: 'TAL-1040: which execution modes a fresh chat in the active profile can start in now.' }).input(z.object({})).output(ExecutionModesSchema),

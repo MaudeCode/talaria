@@ -13,7 +13,7 @@ test('the existing context inspector renders allocation and safe file metadata o
     messages: [{ role: 'user', content: 'Inspect the context allocation.' }, { role: 'assistant', content: 'Context metadata is available from the conversation control.' }],
     context_used_tokens: 3790, context_window_tokens: 256000, context_usage_percent: 1, can_compress: true,
   } } }))
-  await page.route('**/api/session/context-detail?**', (route) => { reads += 1; return route.fulfill({ json: currentDetail }) })
+  await page.route('**/api/session/context-detail?**', (route) => { expect(new URL(route.request().url()).searchParams.get('context_detail_key')).toBe('synthetic-owner-context'); reads += 1; return route.fulfill({ json: currentDetail }) })
   await page.goto('/session/context-detail')
   await expect(page.locator('#msg')).toBeVisible()
   expect(reads).toBe(0)

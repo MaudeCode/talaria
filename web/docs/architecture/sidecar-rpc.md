@@ -669,8 +669,11 @@ Both paths use the same bounded metadata projection. Category estimates remain
 independent of occupancy, with explicit provenance and unknown counters. File
 bodies, private paths, arbitrary labels and diagnostics never cross this boundary.
 
-`GET /api/session/context-detail` applies session visibility and rejects a resident
-read if the session changes before it returns. Session views carry an opaque
+`GET /api/session/context-detail` requires the displayed `context_detail_key`,
+applies session visibility, and rejects reads from a different rendered identity
+or a resident session that changes before the read returns. Workspace changes
+retire the cached resident Agent through the existing session-update boundary.
+Session views carry an opaque
 `context_detail_key` so clients discard details on context/owner replacement.
 Web mounts the query only inside the existing open ring popover or mobile context
 row, with no retained cache. Unsupported and pre-build reads are unavailable.

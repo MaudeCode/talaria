@@ -27,6 +27,7 @@ describe('context details in the existing inspector', () => {
     expect(fetchContextDetail).not.toHaveBeenCalled()
     await userEvent.click(screen.getByRole('button', { name: /Context window usage/ }))
     expect(await screen.findByText('Estimated tokens by category')).toBeVisible()
+    expect(fetchContextDetail).toHaveBeenCalledWith('context-chat', 'owner-a', expect.any(AbortSignal))
     expect(screen.getByText('Occupancy from local estimate')).toBeVisible()
     expect(screen.getByText('AGENTS.md')).toBeVisible()
     expect(screen.getByText('4,000 characters · ~1,000 tokens')).toBeVisible()
