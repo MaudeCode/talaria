@@ -1,14 +1,17 @@
 import { describe, expect, it, vi } from 'vitest'
-import { mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { SidecarParams, SidecarResultInput } from '@maudecode/talaria-web-contracts'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer } from '../test/harness.js'
 import { walkSkillFiles } from '../tools/skills.js'
 import { classifyProviderError } from './turn.js'
+import { persistentStateSnapshot } from './state-saved.js'
+import { sessionPath } from '../test/storage.js'
 
 vi.mock('node:fs', { spy: true })
 vi.mock('../tools/skills.js', { spy: true })
+vi.mock('./state-saved.js', { spy: true })
 
 const completedTurn = (params: SidecarParams<'chat.start'>): SidecarResultInput<'chat.start'> => ({
   status: 'completed', messages: [...params.conversation_history, { role: 'user', content: params.user_message }, { role: 'assistant', content: 'answer' }], final_response: 'answer', error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '',
@@ -69,6 +72,42 @@ it('sends done once the session document is written, without waiting for the ind
     releaseIndex()
     expect((await store.readIndexEntries()).find((row) => row.session_id === session.session_id)?.message_count).toBe(2)
   } finally { releaseIndex(); vi.restoreAllMocks(); await server.close() }
+})
+
+it('keeps Stop during the post-turn snapshot consistent with the saved terminal state', async () => {
+  const actual = await vi.importActual<typeof import('./state-saved.js')>('./state-saved.js')
+  let entered!: () => void
+  const scanning = new Promise<void>((resolve) => { entered = resolve })
+  let release!: () => void
+  const scanGate = new Promise<void>((resolve) => { release = resolve })
+  let scans = 0
+  vi.mocked(persistentStateSnapshot).mockImplementation(async (profile) => {
+    if (++scans === 2) { entered(); await scanGate }
+    return actual.persistentStateSnapshot(profile)
+  })
+  const sidecar = new FakeSidecar()
+  sidecar.respond('chat.start', completedTurn)
+  sidecar.respond('chat.interrupt', () => ({ ok: true, pending_steer: '' }))
+  const server = await bootTestServer({ sidecar })
+  try {
+    const session = await server.deps.sessionStore.newSession()
+    const start = await server.get('/api/chat/start', { method: 'POST', body: JSON.stringify({ session_id: session.session_id, message: 'hello' }), headers: { 'content-type': 'application/json' } })
+    const { stream_id: streamId } = await start.json() as { stream_id: string }
+    await scanning
+    const stopped = await server.get(`/api/chat/cancel?stream_id=${streamId}`)
+    expect(await stopped.json()).toMatchObject({ cancelled: true })
+    release()
+    const frames = await server.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'cancel')
+    await expect.poll(() => server.deps.registry.activeRuns.has(streamId)).toBe(false)
+    expect(frames.filter((f) => f.event === 'cancel')).toHaveLength(1)
+    expect(frames.filter((f) => f.event === 'done')).toEqual([])
+    const saved = await server.deps.sessionStore.get(session.session_id)
+    expect(saved.messages.at(-1)?._terminal_state).toBe('cancelled')
+    expect(saved.active_stream_id).toBeNull()
+    const durable = JSON.parse(readFileSync(sessionPath(server.deps.sessionStore, session.session_id), 'utf8')) as { messages: { _terminal_state?: string }[]; active_stream_id: string | null }
+    expect(durable.messages.at(-1)?._terminal_state).toBe('cancelled')
+    expect(durable.active_stream_id).toBeNull()
+  } finally { release(); vi.mocked(persistentStateSnapshot).mockReset(); await server.close() }
 })
 
 
