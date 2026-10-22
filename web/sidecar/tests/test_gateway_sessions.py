@@ -1,10 +1,13 @@
 """Canonical owner attachment never creates an independent Agent or starts a daemon."""
 from pathlib import Path
+import json
 import subprocess
 
 import pytest
 
 from conftest import AGENT_DIR, AGENT_PYTHON, SIDECAR_ROOT, SidecarProcess, isolated_env, requires_agent
+
+CRON_REFUSAL = json.loads((Path(__file__).resolve().parents[3] / "contracts/fixtures/native-cron-refusal.json").read_text())
 
 
 @requires_agent
@@ -293,25 +296,25 @@ def test_watch_forwards_native_progress_and_deduplicates_replay_overlap(native_o
 
 @requires_agent
 def test_real_cron_refusal_matches_public_consumer_fixture(tmp_path):
-    import json
     env = isolated_env(tmp_path / "hermes", HERMES_WEBUI_AGENT_DIR=str(AGENT_DIR))
     result = subprocess.run([AGENT_PYTHON, str(Path(__file__).parent / "fixtures/gateway_cron_refusal.py")],
                             env=env, capture_output=True, text=True, timeout=60, check=False)
     assert result.returncode == 0, result.stdout + result.stderr
     report = json.loads(result.stdout)
     if report.get("status") == "unsupported":
-        assert report == {"status": "unsupported", "method": "cron.submit"}
-        pytest.skip("this Agent does not advertise cron.submit")
+        if report.get("method") == "cron.submit":
+            assert report == {"status": "unsupported", "method": "cron.submit"}
+            pytest.skip("this Agent does not advertise cron.submit")
+        assert report == CRON_REFUSAL["legacy_refusal"]
+        pytest.skip("verified legacy cron refusal has no typed descriptor")
     assert report["status"] == "supported"
     assert report["scheduled_job_calls"] == 0
 
 
 def test_watch_brackets_retained_terminal_events_before_idle_settlement(native_owner_stub):
-    import json
     from types import SimpleNamespace
-    fixture = json.loads((Path(__file__).resolve().parents[3] / "contracts/fixtures/native-cron-refusal.json").read_text())
     event = {"session_id": "chat", "type": "message.complete", "seq": 4, "replay_epoch": "epoch",
-             "authority_epoch": 1, "execution_generation": 1, "payload": fixture["completion"]}
+             "authority_epoch": 1, "execution_generation": 1, "payload": CRON_REFUSAL["completion"]}
     native_owner_stub.replay = [event]
     emitted = []
     ctx = SimpleNamespace(cancelled=True, emit=lambda kind, data: emitted.append((kind, data)))
@@ -320,27 +323,39 @@ def test_watch_brackets_retained_terminal_events_before_idle_settlement(native_o
     assert emitted[1:] == [("event", event), ("replay_complete", {})]
 
 
-@pytest.mark.parametrize("supported", [True, False])
-def test_cron_refusal_compatibility_observes_runtime_capabilities(tmp_path, monkeypatch, supported):
-    import json
+@pytest.mark.parametrize("report,outcome", [
+    pytest.param({"status": "supported", "scheduled_job_calls": 0}, "supported", id="True"),
+    pytest.param({"status": "unsupported", "method": "cron.submit"}, "method", id="False"),
+    pytest.param(CRON_REFUSAL["legacy_refusal"], "legacy", id="legacy-refusal"),
+    pytest.param({**CRON_REFUSAL["legacy_refusal"], "source_revision": CRON_REFUSAL["producer_revision"]}, "invalid", id="unexpected-revision"),
+    pytest.param({**CRON_REFUSAL["legacy_refusal"], "reason": "storage_error"}, "invalid", id="unexpected-code"),
+    pytest.param({**CRON_REFUSAL["legacy_refusal"], "scheduled_job_calls": 1}, "invalid", id="unexpected-job"),
+    pytest.param({**CRON_REFUSAL["legacy_refusal"], "captured_result": True}, "invalid", id="captured-result"),
+])
+def test_cron_refusal_compatibility_observes_runtime_capabilities(tmp_path, monkeypatch, report, outcome):
     from types import SimpleNamespace
     agent = tmp_path / "agent"
     (agent / "gateway").mkdir(parents=True)
     (agent / "gateway/session_cron.py").write_text('"""Refusal metadata can be constructed without a module constant."""\n')
     monkeypatch.setitem(globals(), "AGENT_DIR", agent)
-    report = {"status": "supported", "scheduled_job_calls": 0} if supported else {"status": "unsupported", "method": "cron.submit"}
     calls = []
     def run(command, **kwargs):
         calls.append((command, kwargs))
         return SimpleNamespace(returncode=0, stdout=json.dumps(report), stderr="")
     with monkeypatch.context() as patch:
         patch.setattr(subprocess, "run", run)
-        if supported:
+        if outcome == "supported":
             try:
                 test_real_cron_refusal_matches_public_consumer_fixture(tmp_path)
             except pytest.skip.Exception as exc:
                 pytest.fail(f"Skipped a capable owner before observing its runtime capability: {exc}")
-        else:
+        elif outcome == "method":
             with pytest.raises(pytest.skip.Exception, match="does not advertise cron.submit"):
+                test_real_cron_refusal_matches_public_consumer_fixture(tmp_path)
+        elif outcome == "legacy":
+            with pytest.raises(pytest.skip.Exception, match="verified legacy"):
+                test_real_cron_refusal_matches_public_consumer_fixture(tmp_path)
+        else:
+            with pytest.raises(AssertionError):
                 test_real_cron_refusal_matches_public_consumer_fixture(tmp_path)
     assert len(calls) == 1, "Every Agent must reach the runtime capability probe before a skip decision"

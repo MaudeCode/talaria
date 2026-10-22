@@ -8,7 +8,8 @@ import sys
 from types import SimpleNamespace
 from unittest.mock import patch
 
-sys.path.insert(0, os.environ['HERMES_WEBUI_AGENT_DIR'])
+agent = Path(os.environ['HERMES_WEBUI_AGENT_DIR']).resolve()
+sys.path.insert(0, str(agent))
 try:
     contracts = import_module('tui_gateway.contracts')
 except ModuleNotFoundError as exc:
@@ -25,7 +26,7 @@ from gateway.session_authority import LiveSession, SessionAuthority
 from gateway.session_contract import SessionRef
 from gateway.session_settlement_recovery import commit_and_publish
 from hermes_state import SessionDB
-from hermes_state_runtime import admit_session_input, begin_runtime_epoch, claim_session_input
+from hermes_state_runtime import RuntimeStoreError, admit_session_input, begin_runtime_epoch, claim_session_input
 
 home = Path(os.environ['HERMES_HOME'])
 home.mkdir(parents=True, exist_ok=True)
@@ -44,7 +45,18 @@ async def probe():
         row = claim_session_input(db, epoch=authority.epoch, session_id=ref.session_id)
         policy = SimpleNamespace(request_json=json.dumps({'extra_prompt': None, 'request_id': 'cron:job:fire', 'cron_job': {'id': 'job'}}))
         with patch.object(scheduler, 'run_job', side_effect=AssertionError('refused input ran a job')) as run_job:
-            response = await session_cron.execute(authority, ref, row, policy)
+            try:
+                response = await session_cron.execute(authority, ref, row, policy)
+            except RuntimeStoreError as exc:
+                from talaria_sidecar.runtime import read_agent_revision
+                # Only this attested older producer may lack the typed descriptor; a newer downgrade is a failure.
+                legacy = {'status': 'unsupported', 'feature': 'cron_session_read_only',
+                          'source_revision': read_agent_revision(agent, Path(session_cron.__file__).resolve()),
+                          'reason': exc.reason, 'scheduled_job_calls': run_job.call_count,
+                          'captured_result': row['admission_id'] in authority.pending_results}
+                assert legacy == fixture['legacy_refusal'], legacy
+                print(json.dumps(legacy))
+                return
             captured = authority.pending_results.pop(row['admission_id'])
             settlement = {}
             commit_and_publish(authority, live, ref, row, response, 'failed', captured, settlement)
