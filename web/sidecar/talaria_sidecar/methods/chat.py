@@ -756,19 +756,19 @@ def _turn_identity(session_id: str, workspace: str):
 _LEGACY_TOOLSET_ALIASES = {"hermes": ("hermes-cli", "hermes-api-server")}
 
 
-def _turn_toolsets(toolsets) -> list[str]:
+def _turn_toolsets(toolsets, cfg: dict | None = None) -> list[str]:
     """The session's override as sent, else the profile's configured toolsets. ``None`` would hand the Agent every
     registered toolset."""
-    return toolsets if isinstance(toolsets, list) else _profile_toolsets()
+    return toolsets if isinstance(toolsets, list) else _profile_toolsets(cfg)
 
 
-def _profile_toolsets() -> list[str]:
+def _profile_toolsets(cfg: dict | None = None) -> list[str]:
     """The profile's ``platform_toolsets.cli`` through the Agent's own resolver (default-off toolsets stay off), like
     ``hermes chat``. Runs under the call's ``scoped_home``."""
     from hermes_cli.config import load_config
     from hermes_cli.tools_config import _get_platform_tools
 
-    resolved = sorted(_get_platform_tools(load_config() or {}, "cli"))
+    resolved = sorted(_get_platform_tools((load_config() or {}) if cfg is None else cfg, "cli"))
     return list(dict.fromkeys(name for raw in resolved for name in _LEGACY_TOOLSET_ALIASES.get(raw, (raw,))))
 
 
@@ -1033,16 +1033,16 @@ def _notify_archive(home: Path, session_id: str, lineage: list[str] | None) -> N
             log.warning("Session archive notification reported a callback failure")
 
 
-def _profile_fallback_chain() -> list[dict] | None:
+def _profile_fallback_chain(cfg: dict | None = None) -> list[dict] | None:
     """The profile's fallback routes (``fallback_providers`` first, then legacy ``fallback_model``, deduplicated)
     through the Agent's own resolver, like the CLI and gateway. Runs under the call's ``scoped_home``."""
     from hermes_cli.config import load_config
     from hermes_cli.fallback_config import get_fallback_chain
 
-    return get_fallback_chain(load_config() or {}) or None
+    return copy.deepcopy(get_fallback_chain((load_config() or {}) if cfg is None else cfg)) or None
 
 
-def _profile_prefill_messages() -> list[dict] | None:
+def _profile_prefill_messages(cfg: dict | None = None) -> list[dict] | None:
     """The profile's few-shot prefill (``HERMES_PREFILL_MESSAGES_FILE``, then ``prefill_messages_file``, then legacy
     ``agent.prefill_messages_file``; relative to the profile) through the Agent's own loader, like the CLI, gateway and
     Desktop. A missing or empty file is None. Runs under the call's ``scoped_home``."""
@@ -1050,15 +1050,15 @@ def _profile_prefill_messages() -> list[dict] | None:
     from hermes_cli.config import load_config
     from hermes_constants import get_hermes_home
 
-    return _load_prefill_messages(_resolve_prefill_messages_file(load_config() or {}), get_hermes_home()) or None
+    return _load_prefill_messages(_resolve_prefill_messages_file((load_config() or {}) if cfg is None else cfg), get_hermes_home()) or None
 
 
-def _main_model_request_overrides(model: str, provider, base_url: str = "") -> dict | None:
+def _main_model_request_overrides(model: str, provider, base_url: str = "", cfg: dict | None = None) -> dict | None:
     """Predecessor ``_main_model_request_overrides``: the profile's ``model.service_tier`` and ``model.extra_body``
     (written by ``/api/model/set``) apply only to turns on that configured main model. Runs under ``scoped_home``."""
     from hermes_cli.config import load_config
 
-    model_cfg = (load_config() or {}).get("model")
+    model_cfg = ((load_config() or {}) if cfg is None else cfg).get("model")
     if not isinstance(model_cfg, dict):
         return None
     main_model = str(model_cfg.get("default") or model_cfg.get("name") or "").strip()
@@ -1075,15 +1075,15 @@ def _main_model_request_overrides(model: str, provider, base_url: str = "") -> d
     overrides = fast_overrides(model, str(provider or ""), base_url, str(model_cfg.get("service_tier") or "").strip().lower()) or {}
     extra_body = model_cfg.get("extra_body")
     if isinstance(extra_body, dict) and extra_body:
-        overrides["extra_body"] = extra_body
+        overrides["extra_body"] = copy.deepcopy(extra_body)
     return overrides or None
 
 
-def _request_overrides(model: str, provider, runtime: dict) -> dict | None:
+def _request_overrides(model: str, provider, runtime: dict, cfg: dict | None = None) -> dict | None:
     """The resolver's ``request_overrides`` (a custom provider entry's ``extra_body``) under the main-model ones, whose
     ``extra_body`` wins key by key, the Agent's own merge order. Runs under ``scoped_home``."""
     merged = dict(runtime.get("request_overrides") or {})
-    main = _main_model_request_overrides(model, provider, str(runtime.get("base_url") or "")) or {}
+    main = _main_model_request_overrides(model, provider, str(runtime.get("base_url") or ""), cfg) or {}
     extra_body = {**(merged.get("extra_body") or {}), **(main.get("extra_body") or {})}
     merged.update(main)
     if extra_body:
@@ -1091,13 +1091,14 @@ def _request_overrides(model: str, provider, runtime: dict) -> dict | None:
     return merged or None
 
 
-def _provider_routing_kwargs() -> dict:
+def _provider_routing_kwargs(cfg: dict | None = None) -> dict:
     """The profile's OpenRouter ``provider_routing`` and ``openrouter.min_coding_score`` as ``AIAgent`` kwargs, with the
     Agent's own mapping (``gateway/session_worker_construct.routing_agent_kwargs``). The score is coerced like the CLI's
     (``cli_init_mixin``), so a quoted number counts and a value outside 0..1 stays unset. Runs under ``scoped_home``."""
     from hermes_cli.config import load_config
 
-    cfg = load_config() or {}
+    if cfg is None:
+        cfg = load_config() or {}
     routing = cfg.get("provider_routing")
     routing = routing if isinstance(routing, dict) else {}
     openrouter = cfg.get("openrouter")
@@ -1106,13 +1107,13 @@ def _provider_routing_kwargs() -> dict:
         score = float(raw_score) if raw_score not in (None, "") else None
     except (TypeError, ValueError):
         score = None
-    return {
+    return copy.deepcopy({
         "providers_allowed": routing.get("only"), "providers_ignored": routing.get("ignore"),
         "providers_order": routing.get("order"), "provider_sort": routing.get("sort"),
         "provider_require_parameters": routing.get("require_parameters", False),
         "provider_data_collection": routing.get("data_collection"),
         "openrouter_min_coding_score": score if score is not None and 0.0 <= score <= 1.0 else None,
-    }
+    })
 
 
 def _agent_signature(model: str, provider, runtime: dict, toolsets, home: str, kwargs: dict) -> str:
@@ -1144,7 +1145,7 @@ def _agent_signature(model: str, provider, runtime: dict, toolsets, home: str, k
     return json.dumps(bundle, sort_keys=True, default=str)
 
 
-def _agent_kwargs(AIAgent, params: dict, session_id: str, model: str, provider, runtime: dict, toolsets) -> dict:
+def _agent_kwargs(AIAgent, params: dict, session_id: str, model: str, provider, runtime: dict, toolsets, cfg: dict | None = None) -> dict:
     """The ``AIAgent`` arguments of a session's agent apart from a turn's callbacks: the resolved runtime, the session's
     toolsets and budgets, and the profile's fallback chain, request overrides, prefill and checkpoints. Everything
     ``_agent_signature`` reads is here, so an agent ``/refine`` builds (TAL-902) is the one the next turn reuses. Runs under
@@ -1157,7 +1158,7 @@ def _agent_kwargs(AIAgent, params: dict, session_id: str, model: str, provider, 
         platform="webui",
         quiet_mode=True,
         enabled_toolsets=toolsets,
-        disabled_toolsets=disabled_toolsets(),
+        disabled_toolsets=disabled_toolsets(cfg),
         session_id=session_id,
     )
     for name, value in (
@@ -1180,21 +1181,21 @@ def _agent_kwargs(AIAgent, params: dict, session_id: str, model: str, provider, 
     reasoning_config = params.get("reasoning_config")
     if isinstance(reasoning_config, dict) and _supported(AIAgent, "reasoning_config"):
         kwargs["reasoning_config"] = reasoning_config
-    fallback_chain = _profile_fallback_chain()
+    fallback_chain = _profile_fallback_chain(cfg)
     if fallback_chain and _supported(AIAgent, "fallback_model"):
         kwargs["fallback_model"] = fallback_chain
-    request_overrides = _request_overrides(model, provider, runtime)
+    request_overrides = _request_overrides(model, provider, runtime, cfg)
     if request_overrides and _supported(AIAgent, "request_overrides"):
         kwargs["request_overrides"] = request_overrides
-    prefill_messages = _profile_prefill_messages()
+    prefill_messages = _profile_prefill_messages(cfg)
     if prefill_messages and _supported(AIAgent, "prefill_messages"):
         kwargs["prefill_messages"] = prefill_messages
     # TAL-976: the profile's OpenRouter provider routing, as the Agent's own CLI and gateway turns read it.
-    for name, value in _provider_routing_kwargs().items():
+    for name, value in _provider_routing_kwargs(cfg).items():
         if _supported(AIAgent, name):
             kwargs[name] = value
     # TAL-913: the profile's ``checkpoints`` section, as the Agent's own CLI and gateway turns read it.
-    for name, value in checkpoint_kwargs().items():
+    for name, value in checkpoint_kwargs(cfg).items():
         if _supported(AIAgent, name):
             kwargs[name] = value
     return kwargs
@@ -1657,7 +1658,11 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
     if not isinstance(history, list):
         raise InvalidParams("conversation_history must be a list")
     _require_data_use_support(history)
-    toolsets = _turn_toolsets(params.get("enabled_toolsets"))
+    from hermes_cli.config import load_config_readonly
+
+    # Borrow one snapshot per turn; helpers copy values retained by the Agent.
+    cfg = load_config_readonly() or {}
+    toolsets = _turn_toolsets(params.get("enabled_toolsets"), cfg)
     system_message = params.get("system_message")
     home = profile_home_param(params)
     run = _Run(stream_id, session_id, ctx)
@@ -1980,7 +1985,7 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             register_gateway_notify = unregister_gateway_notify = None
         approval_cb = _approval_notifier(session_id, emit) if register_gateway_notify is not None else None
 
-        kwargs = _agent_kwargs(AIAgent, params, session_id, resolved_model, resolved_provider, runtime, toolsets)
+        kwargs = _agent_kwargs(AIAgent, params, session_id, resolved_model, resolved_provider, runtime, toolsets, cfg)
         kwargs.update(stream_delta_callback=on_token, reasoning_callback=on_reasoning, tool_progress_callback=on_tool, clarify_callback=clarify_callback)
         for name, value in (
             ("interim_assistant_callback", on_interim),

@@ -250,6 +250,11 @@ queuing a runtime check behind the handshake. Handshake metadata is read lazily 
 Source-checkout dirty fingerprints compare actual Web content without refreshing the Git index,
 excluding timestamp-only rewrites and unrelated monorepo components from the startup scan.
 
+`chat.start` reads one profile config snapshot for toolsets and Agent construction. Helpers reuse
+that snapshot for fallback routes, prefill, request options, provider routing and checkpoints.
+Mutable options retained by the Agent are copied so it cannot modify the shared read-only config.
+Standalone helper callers still load their own config.
+
 After automatic compression, `chat.start` returns capped model context separately from the full visible
 transcript. The cap preserves paired skill loads' reload markers and failure verdicts even after the raw-output
 budget is exhausted. Skill bodies still spend that budget; inline slash-skill user messages remain intact.

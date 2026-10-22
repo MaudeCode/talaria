@@ -1,13 +1,15 @@
 """Profile toolset policy and catalog. All callers run under ``scoped_home``."""
 
+from __future__ import annotations
+
 from ..home import profile_home_param, scoped_home
 
 
-def disabled_toolsets() -> list[str]:
+def disabled_toolsets(cfg: dict | None = None) -> list[str]:
     from agent.skill_utils import parse_config_string_list
     from hermes_cli.config import load_config
 
-    section = (load_config() or {}).get('agent') or {}
+    section = ((load_config() or {}) if cfg is None else cfg).get('agent') or {}
     return [name.strip() for name in parse_config_string_list(section.get('disabled_toolsets')) if name.strip()]
 
 

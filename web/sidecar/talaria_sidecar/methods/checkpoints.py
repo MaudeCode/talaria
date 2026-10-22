@@ -12,13 +12,13 @@ from ..home import profile_home_param, scoped_home
 from ..rpc import CallContext
 
 
-def checkpoint_kwargs() -> dict:
+def checkpoint_kwargs(cfg: dict | None = None) -> dict:
     """The profile's ``checkpoints`` config as ``AIAgent`` kwargs, resolved as the Agent's gateway does
     (``gateway/run.py::_checkpoint_agent_kwargs``): the legacy ``checkpoints: true`` form, else the section over
     ``DEFAULT_CONFIG``. Only a real ``true`` turns them on, so a quoted ``"false"`` stays off."""
     from hermes_cli.config import DEFAULT_CONFIG, load_config
 
-    section = (load_config() or {}).get("checkpoints", {})
+    section = ((load_config() or {}) if cfg is None else cfg).get("checkpoints", {})
     if isinstance(section, bool):
         section = {"enabled": section}
     elif not isinstance(section, dict):

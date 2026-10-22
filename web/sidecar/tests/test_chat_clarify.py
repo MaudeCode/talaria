@@ -61,10 +61,10 @@ class Ctx:
 chat._agent_class = lambda: Agent
 chat._resolve_runtime = lambda provider, model: {"model": "m", "provider": "p"}
 chat._discover_mcp_tools = lambda run: None
-chat._profile_toolsets = lambda: ["clarify"]
-chat._profile_fallback_chain = lambda: None
-chat._main_model_request_overrides = lambda model, provider, base_url="": None
-chat.checkpoint_kwargs = lambda: {}
+chat._profile_toolsets = lambda cfg=None: ["clarify"]
+chat._profile_fallback_chain = lambda cfg=None: None
+chat._main_model_request_overrides = lambda model, provider, base_url="", cfg=None: None
+chat.checkpoint_kwargs = lambda cfg=None: {}
 result = chat.start(Ctx(), {
     "profile_home": os.environ["HERMES_HOME"], "session_id": "s-clarify", "stream_id": "st-clarify",
     "user_message": "Ask me", "model": "m", "model_provider": "p", "clarify_timeout_seconds": 1 if outcome == "timed_out" else 0,
