@@ -65,9 +65,15 @@ def active_pin(root):
 
 def supported_releases(root):
     record = json.loads((root / "web/sidecar/agent_support.json").read_text())
-    if not isinstance(record, dict) or set(record) != {"schemaVersion", "releases"} or record["schemaVersion"] != 1 \
-            or not isinstance(record["releases"], list):
+    if not isinstance(record, dict) or set(record) - {"schemaVersion", "releases", "nativeContracts"} or record.get("schemaVersion") != 1 \
+            or not isinstance(record.get("releases"), list):
         raise ValueError("invalid Agent support record")
+    contracts = record.get("nativeContracts", {})
+    if (not isinstance(contracts, dict) or set(contracts) - {"served-local-policy-v1"}
+            or any(not isinstance(revisions, list) or not revisions
+                   or any(not isinstance(sha, str) or not re.fullmatch(FORMATS["sourceRevision"], sha) for sha in revisions)
+                   or len(set(revisions)) != len(revisions) for revisions in contracts.values())):
+        raise ValueError("native contracts require verified immutable Agent revisions")
     releases = []
     for entry in record["releases"]:
         if not isinstance(entry, dict) or set(entry) != {*IDENTITY, "validatedBy"} \

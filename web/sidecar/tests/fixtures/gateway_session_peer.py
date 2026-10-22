@@ -462,38 +462,111 @@ async def probe_restart(home, peer, desc, proc):
         viewer.close()
 
 
-async def probe_profiles(home, peer, desc):
+async def probe_profiles(home, peer, desc, proc, env):
+    from dataclasses import replace
     from hermes_cli.gateway_runtime import discover_gateway_endpoint
-    from hermes_cli.gateway_client import _session_ticket, gateway_ws_target
+    from hermes_cli.gateway_runtime_discovery import DiscoveryError
+    from hermes_cli.gateway_client import GatewayClientError, _session_ticket, gateway_ws_target
     from websockets.asyncio.client import connect
     alpha = home / "profiles/alpha"
     discovered = discover_gateway_endpoint(alpha)
     assert discovered.state == "ready" and discovered.endpoint.profile_id == str(alpha), discovered
     url, protocols = gateway_ws_target(discovered.endpoint, _session_ticket(alpha, discovered.endpoint))
     sidecar = SidecarProcess(home)
-    ids = {}
+    verified = getattr(discovered.endpoint, "code_sha", None) == "4d04303818b61bf3aa09278af48356315515965b"
+
+    async def call(target, sid, action, **extra):
+        return await asyncio.to_thread(sidecar.result, "gateway.session", {
+            "profile_home": str(target), "session_id": sid, "action": action, **extra})
+
+    async def settled(target, sid):
+        deadline = time.monotonic() + 40
+        while True:
+            result = await call(target, sid, "snapshot")
+            assert result["state"] == "attached", result
+            if not result["snapshot"]["pending"]:
+                return result["snapshot"]
+            assert time.monotonic() < deadline, result
+            await asyncio.sleep(.03)
     try:
         async with websocket(home, desc) as root_view, connect(url, subprotocols=protocols) as alpha_view:
-            created = await rpc(root_view, "session.create", request_id="same-request", source="cli", model="root-model", toolsets=[])
+            created = await rpc(root_view, "session.create", request_id="same-request", source="cli", model="root-model", toolsets=["terminal"])
             root_id = created["result"]["session_id"]
-            await rpc(root_view, "prompt.submit", session_id=root_id, submission_id="same-input", text="ROOT_HOME")
-            deadline = time.monotonic() + 30
-            while True:
-                result = await asyncio.to_thread(sidecar.result, "gateway.session", {"profile_home": str(home), "session_id": root_id, "action": "snapshot"})
-                assert result["state"] == "attached", result
-                if not result["snapshot"]["pending"]:
-                    break
-                assert time.monotonic() < deadline, result
-                await asyncio.sleep(.03)
-            assert result["snapshot"]["info"]["model"] == "root-model", result
-            created_alpha = await rpc(alpha_view, "session.create", request_id="same-request", source="cli", model="alpha-model", toolsets=[])
+            # Run the primary LOCAL adapter first and keep its turn in flight.
+            await rpc(root_view, "prompt.submit", session_id=root_id, submission_id="same-input", text="BLOCK_STARTED")
+            assert await asyncio.to_thread(peer.blocked.wait, 25), "primary LOCAL adapter did not run"
+            created_alpha = await rpc(alpha_view, "session.create", request_id="same-request", source="tui", model="alpha-model", toolsets=[])
             alpha_id = created_alpha["result"]["session_id"]
-            count = len(peer.requests)
-            for action, extra in (("snapshot", {}), ("submit", {"request_id": "blocked", "text": "MUST_NOT_RUN"})):
-                refused = await asyncio.to_thread(sidecar.result, "gateway.session", {"profile_home": str(alpha), "session_id": alpha_id, "action": action, **extra})
-                assert refused["state"] == "incompatible" and refused["reason"] == "served_profile_sessions_unavailable", refused
-            assert len(peer.requests) == count
+            if not verified:
+                count = len(peer.secondary.requests)
+                for action, extra in (("snapshot", {}), ("submit", {"request_id": "blocked", "text": "MUST_NOT_RUN"})):
+                    refused = await call(alpha, alpha_id, action, **extra)
+                    assert (refused["state"], refused["reason"]) == ("incompatible", "served_profile_sessions_unavailable"), refused
+                assert len(peer.secondary.requests) == count
+                return
+            attached = await call(alpha, alpha_id, "snapshot")
+            assert attached["state"] == "attached", attached
+            snap = attached["snapshot"]
+            workspace = alpha / "picked-workspace"
+            workspace.mkdir()
+            for operation, payload in (("model", {"model": "alpha-picked", "provider": "custom"}),
+                                       ("workspace", {"cwd": str(workspace)})):
+                changed = await call(alpha, alpha_id, "mutate", request_id=operation,
+                    expected_revision=snap["revision"], execution_generation=snap["execution_generation"],
+                    operation=operation, payload=payload)
+                assert changed["state"] == "attached", changed
+                snap = changed["snapshot"]
+            submitted = await call(alpha, alpha_id, "submit", request_id="same-input", text="ALPHA_ONLY")
+            assert submitted["state"] == "attached", submitted
+            final = await settled(alpha, alpha_id)
+            assert final["info"]["model"] == "alpha-picked", final
+            assert final["info"]["cwd"] == str(workspace), final
+            assert "ALPHA_ONLY" in json.dumps(final["messages"]), final
+            assert "BLOCK_STARTED" not in json.dumps(final["messages"]), final
+            assert peer.secondary.requests and all(r["model"] == "alpha-picked" and not r.get("tools") for r in peer.secondary.requests)
+            assert set(peer.secondary.authorization) == {"Bearer alpha-only"}, peer.secondary.authorization
+            assert not peer.release.is_set(), "primary and secondary did not overlap"
+            assert len(peer.requests) == 1 and peer.requests[0]["model"] == "root-model", peer.requests
+            assert peer.requests[0].get("tools"), "primary and secondary tool policies were not distinct"
+            # Each Talaria action reconnects with a fresh ticket; the wrong profile cannot read the row.
+            wrong = await call(home, alpha_id, "snapshot")
+            assert wrong["state"] == "refused", wrong
+            try:
+                _session_ticket(alpha, replace(discovered.endpoint, control_home=str(alpha)))
+            except (OSError, GatewayClientError, DiscoveryError):
+                pass
+            else:
+                raise AssertionError("a wrong control home minted a ticket")
+            peer.release.set()
+            primary = await settled(home, root_id)
+            assert "ALPHA_ONLY" not in json.dumps(primary["messages"]), primary
+            assert set(peer.authorization) == {"Bearer loopback-only"}, peer.authorization
+            proc.kill()
+            proc.wait(timeout=10)
+            with daemon(agent, home, env, barrier=False):
+                successor = discover_gateway_endpoint(alpha)
+                assert successor.state == "ready" and successor.endpoint.instance_id != discovered.endpoint.instance_id, successor
+                try:
+                    _session_ticket(alpha, discovered.endpoint)
+                except (GatewayClientError, DiscoveryError):
+                    pass
+                else:
+                    raise AssertionError("a successor accepted a stale owner identity")
+                restored = await call(alpha, alpha_id, "snapshot")
+                assert restored["state"] == "attached", restored
+                assert restored["snapshot"]["info"]["model"] == "alpha-picked", restored
+                assert restored["snapshot"]["info"]["cwd"] == str(workspace), restored
+                resumed = await call(alpha, alpha_id, "submit", request_id="after-replacement", text="ALPHA_AFTER_RESTART")
+                assert resumed["state"] == "attached", resumed
+                final = await settled(alpha, alpha_id)
+                assert "ALPHA_AFTER_RESTART" in json.dumps(final["messages"]), final
+                assert "BLOCK_STARTED" not in json.dumps(final["messages"]), final
+                assert all(r["model"] == "alpha-picked" and not r.get("tools") for r in peer.secondary.requests)
+                assert set(peer.secondary.authorization) == {"Bearer alpha-only"}, peer.secondary.authorization
+            print(json.dumps({"served_profile": True, "profile_bound_model_key_workspace": True,
+                              "primary_concurrent": True, "reconnect": True, "replacement": True}))
     finally:
+        peer.release.set()
         sidecar.close()
 
 
@@ -780,6 +853,7 @@ def main():
         handler = ProfileModel
     peer = ThreadingHTTPServer(("127.0.0.1", 0), handler)
     peer.authorization = []
+    secondary = None
     if mode in {"approval", "restart"}:
         import shlex
         target = home / "owned-removal"
@@ -798,9 +872,18 @@ def main():
         alpha = home / "profiles/alpha"
         alpha.mkdir(parents=True)
         alpha_config = json.loads((home / "config.yaml").read_text())
+        if mode == "profiles":
+            secondary = ThreadingHTTPServer(("127.0.0.1", 0), ProfileModel)
+            secondary.authorization, secondary.requests = [], []
+            secondary.blocked, secondary.release = threading.Event(), threading.Event()
+            secondary.release.set()
+            threading.Thread(target=secondary.serve_forever, daemon=True).start()
+            peer.secondary = secondary
+            alpha_config["model"]["base_url"] = f"http://127.0.0.1:{secondary.server_port}/v1"
         alpha_config["gateway"] = {"multiplex_profiles": False, "standalone": mode == "dedicated"}
         (alpha / "config.yaml").write_text(json.dumps(alpha_config))
-        (alpha / ".env").write_text("OPENAI_API_KEY=alpha-only\n")
+        alpha_url = alpha_config["model"]["base_url"]
+        (alpha / ".env").write_text(f"OPENAI_API_KEY=alpha-only\nOPENAI_BASE_URL={alpha_url}\n")
     env = child_env()
     env.update(HOME=os.environ["HOME"], HERMES_HOME=str(home), PYTHONPATH=str(agent),
                OPENAI_API_KEY="loopback-only", OPENAI_BASE_URL=url, HERMES_STATE_DB_GUARD_BYPASS="1", HERMES_DISABLE_LAZY_INSTALLS="1")
@@ -829,7 +912,7 @@ def main():
             elif mode == "voice-stop":
                 asyncio.run(probe_voice_stop(home, peer, desc))
             elif mode == "profiles":
-                asyncio.run(probe_profiles(home, peer, desc))
+                asyncio.run(probe_profiles(home, peer, desc, proc, env))
             elif mode in {"approval", "clarify"}:
                 asyncio.run(probe_control(home, peer, desc, mode))
             else:
@@ -838,6 +921,9 @@ def main():
         peer.release.set()
         peer.shutdown()
         peer.server_close()
+        if secondary is not None:
+            secondary.shutdown()
+            secondary.server_close()
 
 
 if __name__ == "__main__":
