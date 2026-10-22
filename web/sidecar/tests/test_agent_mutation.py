@@ -555,13 +555,49 @@ def test_a_confirmed_legacy_target_can_recover_a_paused_broken_environment(owned
 
 
 @pytest.mark.parametrize('stop', ['kill', 'cancel', 'shutdown'])
-def test_owner_death_stops_and_reaps_a_mutator_before_preserving_torn_tree_debt(owned, stop):
+def test_owner_death_stops_and_reaps_a_mutator_before_preserving_torn_tree_debt(owned, stop, request):
     root, home, base, target, sidecar = owned
+    node = request.node
+    # [DEBUG-tal1230-custody] Temporary fixture-only ownership tracing.
+    custody = root / 'hermes_cli/update_custody.py'
+    custody.write_text(custody.read_text() + '''
+import json, os, time
+from pathlib import Path
+def _trace(event, **fields):
+ with (Path(os.environ['HERMES_HOME'])/'ownership-trace').open('a') as out:
+  out.write(json.dumps(dict(event=event, ns=time.monotonic_ns(), caller=os.getpid(), **fields))+'\\n')
+_original_killpg=os.killpg
+def _killpg(pgid, sig):
+ _trace('killpg',pgid=pgid,sig=sig)
+ result=_original_killpg(pgid,sig)
+ _trace('killpg-done',pgid=pgid,sig=sig)
+ return result
+os.killpg=_killpg
+_original_popen=popen
+def popen(argv, **kwargs):
+ child=_original_popen(argv,**kwargs)
+ try: pgid=os.getpgid(child.pid)
+ except ProcessLookupError: pgid=None
+ _trace('popen',pid=child.pid,pgid=pgid,argv=argv)
+ original_poll,original_wait=child.poll,child.wait
+ def poll():
+  result=original_poll()
+  if result is not None: _trace('poll-exit',pid=child.pid,result=result)
+  return result
+ def wait(*args,**kwargs):
+  result=original_wait(*args,**kwargs)
+  _trace('wait-exit',pid=child.pid,result=result)
+  return result
+ child.poll,child.wait=poll,wait
+ return child
+''')
     hook = root / 'monitor.py'
     hook.write_text(f'''#!{sys.executable}
-import os, time
+import json, os, time
 from pathlib import Path
 home=Path({str(home)!r})
+with (home/'ownership-trace').open('a') as out:
+ out.write(json.dumps(dict(event='hook',ns=time.monotonic_ns(),pid=os.getpid(),ppid=os.getppid(),pgid=os.getpgid(0)))+'\\n')
 (home/'mutator.pid').write_text(str(os.getpid()))
 (home/'torn').touch()
 while True:
@@ -583,7 +619,12 @@ while True:
     wait_for(lambda: json.loads((home / 'pause-record.json').read_text()).get('owner') == 'unowned')
     before = (home / 'mutator-writes').stat().st_size
     time.sleep(.2)
-    assert (home / 'mutator-writes').stat().st_size == before
+    after = (home / 'mutator-writes').stat().st_size
+    node.user_properties.append(('tal1230_owner_trace', json.dumps({
+        'before': before, 'after': after, 'trace': (home / 'ownership-trace').read_text(),
+        'survivors': [row for row in process_snapshot() if str(root) in row[3] or str(home) in row[3]],
+    })))
+    assert after == before
     assert json.loads((home / 'pause-record.json').read_text())['resume_needed'] is True
     assert not (home / 'resumed').exists()
 
