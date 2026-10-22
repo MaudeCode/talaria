@@ -28,8 +28,6 @@ function QueueCancelButton({ disabled, onClick }: { disabled: boolean; onClick: 
  */
 export function QueueCard({ sessionId, queued, onChange, pendingId, admissions = [], onAdmissionAction }: { sessionId: string; queued: QueuedTurn[]; onChange: (queued: QueuedTurn[]) => void; pendingId?: string | undefined; admissions?: OwnerAttachment['admissions'] | undefined; onAdmissionAction?: ((request: OwnerActionRequest) => Promise<void>) | undefined }) {
   const [editing, setEditing] = useState<string | null>(null)
-  const [pending, setPending] = useState(false)
-  const inFlight = useRef(false)
   const replacements = useRef(new Map<string, { text: string; submission_id: string }>())
   const discard = useRef(false)
   const dragging = useRef<string | null>(null)
@@ -40,16 +38,14 @@ export function QueueCard({ sessionId, queued, onChange, pendingId, admissions =
     if (from < 0 || to < 0 || to >= queued.length || to === from) return
     onChange(moveItem(queued, from, to))
   }
+  // The owner shows each action's result at once; ChatView reports a refusal and the row comes back.
   const runAdmission = async (request: OwnerActionRequest): Promise<boolean> => {
-    if (!onAdmissionAction || inFlight.current) return false
-    inFlight.current = true
-    setPending(true)
+    if (!onAdmissionAction) return false
     try { await onAdmissionAction(request); return true }
-    catch { return false } // ChatView reports the refusal; retain the draft and request identity for an explicit retry.
-    finally { inFlight.current = false; setPending(false) }
+    catch { return false }
   }
   // Enter and a click away save; Escape keeps the old text. An unconfirmed native edit keeps its draft and identity.
-  const finishEdit = async (id: string, e: FocusEvent<HTMLInputElement>, native: boolean) => {
+  const finishEdit = (id: string, e: FocusEvent<HTMLInputElement>, native: boolean) => {
     const text = e.currentTarget.value.trim()
     if (discard.current) { discard.current = false; setEditing(null); return }
     if (native && text) {
@@ -58,15 +54,16 @@ export function QueueCard({ sessionId, queued, onChange, pendingId, admissions =
         replacement = { text, submission_id: randomHex() }
         replacements.current.set(id, replacement)
       }
-      if (!await runAdmission({ session_id: sessionId, action: 'replace_queued', admission_id: id, ...replacement })) return
-      replacements.current.delete(id)
+      // The edit shows at once; an unconfirmed one keeps its request identity so a later save is the same submission.
+      const sent = replacement
+      void runAdmission({ session_id: sessionId, action: 'replace_queued', admission_id: id, ...sent }).then((ok) => { if (ok && replacements.current.get(id) === sent) replacements.current.delete(id) })
     } else if (!native) onChange(queued.map((q) => (q.id === id && (text || q.attachments.length) ? { ...q, text } : q)))
     setEditing((current) => current === id ? null : current)
   }
   // Native and local rows share their editor, icon, focus behavior and accessible wording.
   const editableText = (id: string, text: string, disabled: boolean, native = false, canEdit = true, suffix = '') => <>
     {editing === id
-      ? <input className="queue-card-input" disabled={disabled} aria-label={m.queued_edit()} defaultValue={text} autoFocus onBlur={(e) => { void finishEdit(id, e, native) }} onKeyDown={onEditKey} />
+      ? <input className="queue-card-input" disabled={disabled} aria-label={m.queued_edit()} defaultValue={text} autoFocus onBlur={(e) => { finishEdit(id, e, native) }} onKeyDown={onEditKey} />
       : <span className="queue-card-text truncate" title={text}>{text}{suffix}</span>}
     {canEdit && editing !== id && <button type="button" disabled={disabled} className="steer-action min-h-11 min-w-11 shrink-0" aria-label={m.queued_edit()} title={m.queued_edit()} onClick={() => { setEditing(id) }}><Pencil size={14} aria-hidden="true" /></button>}
   </>
@@ -101,11 +98,11 @@ export function QueueCard({ sessionId, queued, onChange, pendingId, admissions =
       <ol className="queue-card-list flex flex-col">
         {admissions.map((q) => (
           <li key={q.admission_id} className="queue-card-row">
-            {editableText(q.admission_id, q.text ?? '', pending, true, q.actions.includes('edit'))}
+            {editableText(q.admission_id, q.text ?? '', false, true, q.actions.includes('edit'))}
             {q.status === 'unknown' && <span className="text-muted text-xs">{m.owner_outcome_unknown()}</span>}
-            {q.actions.includes('steer') && <button type="button" disabled={pending} className="steer-action min-h-11 min-w-11 shrink-0" aria-label={m.composer_steer()} title={m.composer_steer()} onClick={() => { void runAdmission({ session_id: sessionId, action: 'steer_queued', admission_id: q.admission_id }) }}><ArrowUp size={14} aria-hidden="true" /></button>}
-            {q.actions.includes('cancel') && <QueueCancelButton disabled={pending} onClick={() => { void runAdmission({ session_id: sessionId, action: 'cancel', admission_id: q.admission_id }) }} />}
-            {q.actions.map((action) => action === 'edit' || action === 'steer' || action === 'cancel' ? null : <Button key={action} disabled={pending} variant="ghost" className="min-h-11 min-w-11 shrink-0" title={action === 'retry' ? m.owner_retry_help() : undefined} onClick={() => {
+            {q.actions.includes('steer') && <button type="button" className="steer-action min-h-11 min-w-11 shrink-0" aria-label={m.composer_steer()} title={m.composer_steer()} onClick={() => { void runAdmission({ session_id: sessionId, action: 'steer_queued', admission_id: q.admission_id }) }}><ArrowUp size={14} aria-hidden="true" /></button>}
+            {q.actions.includes('cancel') && <QueueCancelButton disabled={false} onClick={() => { void runAdmission({ session_id: sessionId, action: 'cancel', admission_id: q.admission_id }) }} />}
+            {q.actions.map((action) => action === 'edit' || action === 'steer' || action === 'cancel' ? null : <Button key={action} variant="ghost" className="min-h-11 min-w-11 shrink-0" title={action === 'retry' ? m.owner_retry_help() : undefined} onClick={() => {
               if (q.execution_generation !== null) void runAdmission({ session_id: sessionId, action, admission_id: q.admission_id, execution_generation: q.execution_generation })
             }}>{action === 'retry' ? m.retry() : m.discard()}</Button>)}
           </li>

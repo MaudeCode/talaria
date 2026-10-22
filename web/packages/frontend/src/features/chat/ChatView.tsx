@@ -1,5 +1,5 @@
 import type { OwnerActionRequest } from '@maudecode/talaria-web-contracts'
-import { useResourceEffects, useResourceMutation, withEffect } from '../sessions/useResourceMutation'
+import { useResourceEffects, useResourceMutation, withEffect, withEffects } from '../sessions/useResourceMutation'
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -57,6 +57,9 @@ function sameTurnControls(previous: LiveTurn | null, next: LiveTurn | null): boo
   return (Object.keys(next) as (keyof LiveTurn)[]).every((key) => TEXT_FIELDS.has(key) || Object.is(previous[key], next[key]))
 }
 
+type AdmissionRequest = Extract<OwnerActionRequest, { admission_id: string }>
+const admissionResource = (sessionId: string, admissionId: string) => `owner-admission:${sessionId}:${admissionId}`
+
 export function ChatView({ sessionId }: { sessionId: string | null }) {
   const bootstrap = useBootstrap()
   const locale = useLocale()
@@ -95,7 +98,12 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     api.fetchSessionYolo(yoloSessionId).then((r) => { if (current) setYolo(r.yolo_enabled) }).catch(() => { if (current) setYolo(false) })
     return () => { current = false }
   }, [yoloSessionId])
-  const yoloOn = yoloSessionId ? yolo : false
+  // A late YOLO answer belongs to the chat that sent it.
+  const yoloSession = useRef(yoloSessionId)
+  useEffect(() => { yoloSession.current = yoloSessionId }, [yoloSessionId])
+  const yoloEffect = useResourceEffects<boolean>()[`yolo:${sessionId}`]
+  const yoloShown = typeof yoloEffect?.value === 'boolean' ? yoloEffect.value : yolo
+  const yoloOn = yoloSessionId ? yoloShown : false
 
   // Queue drain: when the live turn settles, send the next queued message. A queue a reload restored onto a session
   // whose run ended meanwhile has no turn to settle; the server reporting no active stream starts it instead.
@@ -146,23 +154,51 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   // Reasoning effort is server state shared with the CLI (config.yaml), keyed on the session's model.
   const reasoningKey = ['reasoning', session?.model ?? null, session?.model_provider ?? null] as const
   const reasoningStatus = useQuery({ queryKey: reasoningKey, queryFn: () => api.fetchReasoning(session?.model, session?.model_provider), enabled: !!sessionId, staleTime: 30_000 })
-  const reasoning = reasoningStatus.data?.reasoning_effort || null
+  const reasoningResource = JSON.stringify(['reasoning', session?.model ?? null, session?.model_provider ?? null])
+  const reasoningEffect = useResourceEffects<string | null>()[reasoningResource]
+  // The chosen effort shows at once; the server's answer replaces it.
+  const reasoning = reasoningEffect && 'value' in reasoningEffect ? reasoningEffect.value ?? null : reasoningStatus.data?.reasoning_effort || null
   const reasoningLevels = reasoningStatus.data?.supported_efforts
   const reasoningSupported = reasoningStatus.data?.supports_reasoning_effort !== false || reasoningStatus.data?.supports_thinking_toggle === true
+  const reasoningWrite = useResourceMutation({
+    resource: ({ resource }: { resource: string; key: readonly unknown[]; level: string | null; model: string | null | undefined; provider: string | null | undefined; sid: string | undefined }) => resource,
+    queryKey: ['reasoning'], readKeys: ({ key }) => [{ queryKey: key, exact: true }],
+    effect: ({ level }) => ({ value: level }),
+    mutationFn: ({ level, model, provider, sid }) => api.setReasoningEffort(level ?? '', model, provider, sid),
+    onSuccess: (status, { key }) => { qc.setQueryData(key, status); showToast(`${m.composer_control_reasoning()}: ${status.reasoning_effort || m.reasoning_default()}`) },
+    onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error'),
+  })
+  const sendReasoning = reasoningWrite.mutate
   const setReasoning = useCallback((level: string | null) => {
-    void api.setReasoningEffort(level ?? '', session?.model, session?.model_provider, sessionId ?? undefined)
-      .then((status) => { qc.setQueryData(reasoningKey, status); showToast(`${m.composer_control_reasoning()}: ${status.reasoning_effort || m.reasoning_default()}`) })
-      .catch((e: unknown) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error'))
+    sendReasoning({ resource: reasoningResource, key: reasoningKey, level, model: session?.model, provider: session?.model_provider, sid: sessionId ?? undefined })
   // eslint-disable-next-line react-hooks/exhaustive-deps -- reasoningKey is derived from session model/provider
-  }, [qc, sessionId, session?.model, session?.model_provider])
+  }, [sendReasoning, reasoningResource, sessionId, session?.model, session?.model_provider])
 
   const { updateSession, dialog: modelDialog, notice: modelNotice, confirming } = useSessionUpdate(sessionId, refresh, session?.owner_attachment)
+  // Session controls (toolsets, personality) show the choice at once; the reread of the session confirms it.
+  const sessionWrite = useResourceMutation({
+    resource: ({ sid }: { sid: string; fields: Record<string, unknown>; run: () => Promise<unknown> }) => `session:${sid}`,
+    queryKey: keys.sessions.all, readKeys: ({ sid }) => [{ queryKey: keys.sessions.detail(sid), exact: true }],
+    effect: ({ fields }) => ({ fields }),
+    mutationFn: ({ run }) => run(),
+    onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error'),
+  })
+  const sendSessionWrite = sessionWrite.mutate
 
+  // An owner input the user cancels, discards or steers leaves the queue at once, and an edit shows its new text;
+  // a refusal brings it back. Retry is executed by the server, so it waits.
+  const admissionWrite = useResourceMutation({
+    resource: (request: AdmissionRequest) => admissionResource(request.session_id, request.admission_id),
+    queryKey: keys.sessions.all, readKeys: (request) => [{ queryKey: keys.sessions.detail(request.session_id), exact: true }],
+    effect: (request) => request.action === 'replace_queued' ? { fields: { text: request.text } } : { remove: true },
+    mutationFn: (request) => api.ownerAction(request),
+  })
+  const sendAdmission = admissionWrite.mutateAsync
   const onOwnerAction = useCallback(async (request: OwnerActionRequest) => {
     if (!sessionId || request.session_id !== sessionId) return
     const scope = getStreamContext()
     try {
-      const result = await api.ownerAction(request)
+      const result = request.action === 'cancel' || request.action === 'steer_queued' || request.action === 'replace_queued' || request.action === 'discard' ? await sendAdmission(request) : await api.ownerAction(request)
       if (scope !== getStreamContext()) return
       await refresh(result.session)
       if (scope === getStreamContext() && result.draft !== undefined) returnToComposer(sessionId, result.draft)
@@ -170,13 +206,20 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
       if (scope === getStreamContext()) showToast(error instanceof Error ? error.message : String(error), 4000, 'error')
       throw error
     }
-  }, [sessionId, refresh])
+  }, [sessionId, refresh, sendAdmission])
 
   const onModelChange = useCallback((model: string, provider: string | null) => { if (!sessionId) { setPending((p) => ({ ...p, model, model_provider: provider })); return } updateSession({ model, model_provider: provider }) }, [sessionId, updateSession])
   const onWorkspaceChange = useCallback((path: string) => { if (!sessionId) { setPending((p) => ({ ...p, workspace: path })); return } updateSession({ workspace: path }) }, [sessionId, updateSession])
   const onExecutionModeChange = useCallback((mode: ExecutionMode) => { setPending((p) => ({ ...p, execution_mode: mode })) }, [])
-  const onToolsetsChange = useCallback((toolsets: string[] | null) => { if (!sessionId) { setPending((p) => ({ ...p, enabled_toolsets: toolsets })); return } void api.setSessionToolsets(sessionId, toolsets).then(() => refresh()).catch((e: unknown) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error')) }, [sessionId, refresh])
-  const onToggleYolo = useCallback(() => { if (!sessionId) return; void api.setSessionYolo(sessionId, !yolo).then((r) => setYolo(r.yolo_enabled)).catch((e: unknown) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error')) }, [sessionId, yolo])
+  const onToolsetsChange = useCallback((toolsets: string[] | null) => { if (!sessionId) { setPending((p) => ({ ...p, enabled_toolsets: toolsets })); return } sendSessionWrite({ sid: sessionId, fields: { enabled_toolsets: toolsets }, run: () => api.setSessionToolsets(sessionId, toolsets) }) }, [sessionId, sendSessionWrite])
+  const yoloWrite = useResourceMutation({
+    resource: ({ sid }: { sid: string; on: boolean }) => `yolo:${sid}`, queryKey: ['yolo'], effect: ({ on }) => ({ value: on }),
+    mutationFn: ({ sid, on }) => api.setSessionYolo(sid, on),
+    onSuccess: (r, { sid }) => { if (sid === yoloSession.current) setYolo(r.yolo_enabled) },
+    onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error'),
+  })
+  const sendYolo = yoloWrite.mutate
+  const onToggleYolo = useCallback(() => { if (!sessionId) return; sendYolo({ sid: sessionId, on: !yoloShown }) }, [sessionId, yoloShown, sendYolo])
 
   // Regenerate, `/retry`, and the error notice's Retry: the server drops the last exchange, then its prompt and files are resent.
   // One at a time: a second retry while the first is pending would drop the exchange before it too.
@@ -259,7 +302,8 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
       case 'reasoning': {
         const arg = args.trim().toLowerCase()
         if (!arg) { showToast(`${m.composer_control_reasoning()}: ${reasoning ?? m.reasoning_default()}`, 4000); return true }
-        if (arg === 'show' || arg === 'on' || arg === 'hide' || arg === 'off') { await api.setReasoningDisplay(arg === 'show' || arg === 'on' ? 'show' : 'hide'); void qc.invalidateQueries({ queryKey: keys.settings }); return true }
+        // Nothing on the page shows the display choice, so the command finishes at once; a refusal reports itself.
+        if (arg === 'show' || arg === 'on' || arg === 'hide' || arg === 'off') { void api.setReasoningDisplay(arg === 'show' || arg === 'on' ? 'show' : 'hide').then(() => qc.invalidateQueries({ queryKey: keys.settings }), (e: unknown) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error')); return true }
         setReasoning(arg === 'default' ? null : arg)
         return true
       }
@@ -267,7 +311,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
       case 'workspace': if (args) onWorkspaceChange(args); return true
       case 'personality': {
         // TAL-612: alone it lists the personalities and changes nothing.
-        if (args) { if (sessionId) { await api.setPersonality(sessionId, args); await refresh() } return true }
+        if (args) { if (sessionId) sendSessionWrite({ sid: sessionId, fields: { personality: args }, run: () => api.setPersonality(sessionId, args) }); return true }
         try {
           const { personalities } = await api.fetchPersonalities()
           if (!personalities.length) showToast(m.no_personalities(), 4000)
@@ -299,8 +343,17 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
 
   const mode = (settings.data?.chat_activity_display_mode as ActivityMode | undefined) ?? 'compact_worklog'
   const assistantName = session?.assistant_name ?? bootstrap.assistant_name
-  const sessionEffect = useResourceEffects()[`session:${sessionId}`]
-  const shownSession = session && withEffect(session, sessionEffect)
+  const resourceEffects = useResourceEffects()
+  const sessionEffect = resourceEffects[`session:${sessionId}`]
+  const shownSession = useMemo(() => session && withEffect(session, sessionEffect), [session, sessionEffect])
+  // The composer shows a pick awaiting confirmation and the owner inputs as the user's pending actions leave them.
+  const composerSession = useMemo(() => {
+    if (!shownSession) return null
+    const owner = shownSession.owner_attachment
+    const admissions = owner && withEffects(owner.admissions, (admission) => admissionResource(shownSession.session_id, admission.admission_id), resourceEffects)
+    if (!confirming && (!owner || admissions?.length === owner.admissions.length && admissions.every((a, i) => a === owner.admissions[i]))) return shownSession
+    return { ...shownSession, ...(confirming ? chosenFields(confirming) : {}), ...(owner && admissions ? { owner_attachment: { ...owner, admissions } } : {}) }
+  }, [shownSession, confirming, resourceEffects])
   // Until the transcript arrives the header shows the title the sidebar already has for this session.
   const listedTitle = sessionId ? qc.getQueryData<SessionsList>(keys.sessions.list({}))?.sessions.find((r) => r.session_id === sessionId)?.title : undefined
   const title = shownSession?.title ?? listedTitle ?? ''
@@ -440,7 +493,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
         </div>
         <Composer
           sessionId={sessionId}
-          session={shownSession && confirming ? { ...shownSession, ...chosenFields(confirming) } : shownSession ?? null}
+          session={composerSession}
           pendingChoices={sessionId ? undefined : pending}
           busy={!!live && !isTerminal(live.status)}
           streamId={live?.streamId ?? null}

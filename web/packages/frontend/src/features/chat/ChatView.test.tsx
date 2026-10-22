@@ -7,6 +7,7 @@ import { keys } from '../../api/queryKeys'
 import { sessionFixture } from '../../test/fixtures'
 import { dispatch, resetStreamStoreForTests } from '../../stream/store'
 import { resetConnectionsForTests } from '../../stream/connection'
+import { ApiError } from '../../contracts/common'
 
 const { renders, navigate, composer } = vi.hoisted(() => ({ renders: vi.fn(), navigate: vi.fn(), composer: vi.fn() }))
 vi.mock('@tanstack/react-router', async (original) => ({ ...await original<object>(), useNavigate: () => navigate, useSearch: () => ({}) }))
@@ -27,6 +28,7 @@ vi.mock('../../api/endpoints', async (original) => ({
   fetchClarifyPending: () => Promise.resolve({ pending: null }),
   fetchAgentHealth: () => Promise.resolve({ available: true }),
   branchSession: vi.fn(() => Promise.resolve({ session_id: 'branched' })),
+  setSessionToolsets: vi.fn(), setSessionYolo: vi.fn(), setReasoningEffort: vi.fn(), setPersonality: vi.fn(), ownerAction: vi.fn(),
 }))
 // Probe the real row bodies inside their existing React.memo boundary, without a production test prop.
 vi.mock('./MessageRow', async (original) => {
@@ -119,4 +121,56 @@ it('updates row controls when the server changes read-only and branching capabil
   await waitFor(() => expect(screen.getByRole('button', { name: 'Edit message' })).toBeInTheDocument())
   expect(screen.getByRole('button', { name: 'Regenerate response' })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Branch from here' })).toBeInTheDocument()
+})
+
+type ComposerProps = { session: { enabled_toolsets?: string[] | null; owner_attachment?: { admissions: { admission_id: string }[] } } | null; yolo: boolean; reasoning: string | null
+  onToolsetsChange: (t: string[] | null) => void; onToggleYolo: () => void; onReasoningChange: (level: string | null) => void
+  onLocalCommand: (name: string, args: string) => Promise<boolean | 'refused'>; onOwnerAction: (request: object) => Promise<void> }
+const lastComposer = () => composer.mock.calls.at(-1)![0] as ComposerProps
+
+it('shows toolsets, YOLO and reasoning choices to the composer before the writes answer (TAL-1384)', async () => {
+  const held = () => new Promise<never>(() => undefined)
+  vi.mocked(api.setSessionToolsets).mockReturnValue(held())
+  vi.mocked(api.setSessionYolo).mockReturnValue(held())
+  vi.mocked(api.setReasoningEffort).mockReturnValue(held())
+  chat(false)
+  await screen.findByText('Persisted answer')
+  await waitFor(() => expect(lastComposer().session).not.toBeNull())
+  act(() => { lastComposer().onToolsetsChange(['web']) })
+  await waitFor(() => expect(lastComposer().session?.enabled_toolsets).toEqual(['web']))
+  act(() => { lastComposer().onToggleYolo() })
+  await waitFor(() => expect(lastComposer().yolo).toBe(true))
+  act(() => { lastComposer().onReasoningChange('high') })
+  await waitFor(() => expect(lastComposer().reasoning).toBe('high'))
+  expect(api.setSessionToolsets).toHaveBeenCalledWith('memo-chat', ['web'])
+  expect(api.setSessionYolo).toHaveBeenCalledWith('memo-chat', true)
+})
+
+it('rolls a refused YOLO change back and finishes /personality without waiting (TAL-1384)', async () => {
+  let refuse!: (error: unknown) => void
+  vi.mocked(api.setSessionYolo).mockReturnValue(new Promise((_, reject) => { refuse = reject }) as never)
+  vi.mocked(api.setPersonality).mockReturnValue(new Promise(() => undefined) as never)
+  chat(false)
+  await screen.findByText('Persisted answer')
+  await waitFor(() => expect(lastComposer().session).not.toBeNull())
+  act(() => { lastComposer().onToggleYolo() })
+  await waitFor(() => expect(lastComposer().yolo).toBe(true))
+  await act(async () => { refuse(new ApiError({ kind: 'http', status: 403, path: '/x', message: 'Not allowed' })); await Promise.resolve() })
+  await waitFor(() => expect(lastComposer().yolo).toBe(false))
+  await expect(lastComposer().onLocalCommand('personality', 'pirate')).resolves.toBe(true)
+  expect(api.setPersonality).toHaveBeenCalledWith('memo-chat', 'pirate')
+})
+
+it('drops a discarded owner input from the composer at once (TAL-1384)', async () => {
+  const owner = { state: 'attached' as const, reason: null, restarting: false, can_submit: true, can_interrupt: true, can_attach: false, revision: 1, execution_generation: 1,
+    admissions: [{ admission_id: 'a1', text: 'first', status: 'unknown', actions: ['retry', 'discard'], execution_generation: 1 }, { admission_id: 'a2', text: 'second', status: 'queued', actions: ['cancel'], execution_generation: 1 }] }
+  const session = sessionFixture({ session_id: 'owner-chat', owner_attachment: owner as never })
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  vi.mocked(api.fetchSession).mockResolvedValue({ session })
+  qc.setQueryData(keys.sessions.detail(session.session_id), { session })
+  vi.mocked(api.ownerAction).mockReturnValue(new Promise(() => undefined) as never)
+  render(<QueryClientProvider client={qc}><ChatView sessionId={session.session_id} /></QueryClientProvider>)
+  await waitFor(() => expect(lastComposer().session?.owner_attachment?.admissions).toHaveLength(2))
+  void lastComposer().onOwnerAction({ session_id: 'owner-chat', action: 'discard', admission_id: 'a1', execution_generation: 1 })
+  await waitFor(() => expect(lastComposer().session?.owner_attachment?.admissions.map((a) => a.admission_id)).toEqual(['a2']))
 })
