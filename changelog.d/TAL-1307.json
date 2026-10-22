@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Updated the supported Hermes Agent versions to 0.22.2, 0.22.3 and 0.22.4.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
