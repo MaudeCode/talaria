@@ -19,7 +19,7 @@ import { configureStream, cancelTurn, getStreamContext, startTurn } from '../../
 import { dispatch, useTurnIntent } from '../../stream/store'
 import { isTerminal, runStart, type LiveTurn } from '../../stream/reducer'
 import { useTranscript, type VisibleMessage } from './useTranscript'
-import { useSessionUpdate } from './useSessionUpdate'
+import { chosenFields, useSessionUpdate } from './useSessionUpdate'
 import { useEditMessage } from './useEditMessage'
 import { Transcript } from './Transcript'
 import { TranscriptSkeleton } from './TranscriptSkeleton'
@@ -156,7 +156,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps -- reasoningKey is derived from session model/provider
   }, [qc, sessionId, session?.model, session?.model_provider])
 
-  const { updateSession, dialog: modelDialog, notice: modelNotice } = useSessionUpdate(sessionId, refresh, session?.owner_attachment)
+  const { updateSession, dialog: modelDialog, notice: modelNotice, confirming } = useSessionUpdate(sessionId, refresh, session?.owner_attachment)
 
   const onOwnerAction = useCallback(async (request: OwnerActionRequest) => {
     if (!sessionId || request.session_id !== sessionId) return
@@ -172,8 +172,8 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     }
   }, [sessionId, refresh])
 
-  const onModelChange = useCallback((model: string, provider: string | null) => { if (!sessionId) { setPending((p) => ({ ...p, model, model_provider: provider })); return } void updateSession({ model, model_provider: provider }) }, [sessionId, updateSession])
-  const onWorkspaceChange = useCallback((path: string) => { if (!sessionId) { setPending((p) => ({ ...p, workspace: path })); return } void updateSession({ workspace: path }) }, [sessionId, updateSession])
+  const onModelChange = useCallback((model: string, provider: string | null) => { if (!sessionId) { setPending((p) => ({ ...p, model, model_provider: provider })); return } updateSession({ model, model_provider: provider }) }, [sessionId, updateSession])
+  const onWorkspaceChange = useCallback((path: string) => { if (!sessionId) { setPending((p) => ({ ...p, workspace: path })); return } updateSession({ workspace: path }) }, [sessionId, updateSession])
   const onExecutionModeChange = useCallback((mode: ExecutionMode) => { setPending((p) => ({ ...p, execution_mode: mode })) }, [])
   const onToolsetsChange = useCallback((toolsets: string[] | null) => { if (!sessionId) { setPending((p) => ({ ...p, enabled_toolsets: toolsets })); return } void api.setSessionToolsets(sessionId, toolsets).then(() => refresh()).catch((e: unknown) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error')) }, [sessionId, refresh])
   const onToggleYolo = useCallback(() => { if (!sessionId) return; void api.setSessionYolo(sessionId, !yolo).then((r) => setYolo(r.yolo_enabled)).catch((e: unknown) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error')) }, [sessionId, yolo])
@@ -440,7 +440,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
         </div>
         <Composer
           sessionId={sessionId}
-          session={session}
+          session={shownSession && confirming ? { ...shownSession, ...chosenFields(confirming) } : shownSession ?? null}
           pendingChoices={sessionId ? undefined : pending}
           busy={!!live && !isTerminal(live.status)}
           streamId={live?.streamId ?? null}

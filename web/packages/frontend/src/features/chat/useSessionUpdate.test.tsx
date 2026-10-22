@@ -8,15 +8,21 @@ import { ApiError } from '../../contracts/common'
 import { teardownAll } from '../../stream/connection'
 import type { OwnerAttachment } from '@maudecode/talaria-web-contracts'
 import { useSessionUpdate } from './useSessionUpdate'
+import { useResourceEffects } from '../sessions/useResourceMutation'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 const refresh = vi.fn(() => Promise.resolve())
 const body = { model: 'contributor', model_provider: 'custom' }
 const nativeOwner: OwnerAttachment = { state: 'attached', reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 8, execution_generation: 3, admissions: [] }
 const refusal = (token: string, message = 'This model may train on your conversation.') => new ApiError({ kind: 'http', status: 409, path: '/api/session/update', message, body: { error: message, type: 'model_confirmation_required', confirm_token: token, warnings: [{ kind: 'data_policy', title: 'Warning', model: 'contributor', provider: 'custom', message }] } })
-function Chat({ sid = 's1', owner, change = body }: { sid?: string; owner?: OwnerAttachment; change?: Parameters<typeof api.updateSession>[1] }) {
-  const { updateSession, dialog } = useSessionUpdate(sid, refresh, owner)
-  return <><button onClick={() => { void updateSession(change) }}>Pick model</button>{dialog}</>
+let client = new QueryClient()
+function Chat(props: { sid?: string; owner?: OwnerAttachment; change?: Parameters<typeof api.updateSession>[1] }) {
+  return <QueryClientProvider client={client}><Picker {...props} /></QueryClientProvider>
 }
-beforeEach(() => { vi.mocked(api.updateSession).mockReset(); vi.mocked(api.ownerAction).mockReset(); refresh.mockClear() })
+function Picker({ sid = 's1', owner, change = body }: { sid?: string; owner?: OwnerAttachment; change?: Parameters<typeof api.updateSession>[1] }) {
+  const { updateSession, dialog } = useSessionUpdate(sid, refresh, owner)
+  return <><button onClick={() => { updateSession(change) }}>Pick model</button>{dialog}</>
+}
+beforeEach(() => { client = new QueryClient({ defaultOptions: { mutations: { retry: false } } }); vi.mocked(api.updateSession).mockReset(); vi.mocked(api.ownerAction).mockReset(); refresh.mockClear() })
 it('Cancel leaves the selection unchanged, Confirm sends the exact server token', async () => {
   vi.mocked(api.updateSession).mockRejectedValueOnce(refusal('one')).mockRejectedValueOnce(refusal('two')).mockResolvedValueOnce({ session: sessionFixture({ session_id: 's1', model: 'contributor' }) })
   render(<Chat />)
@@ -134,4 +140,23 @@ it('keeps a cancelled native confirmation closed when a workspace response repea
   expect(screen.queryByRole('alertdialog')).toBeNull()
   expect(api.ownerAction).toHaveBeenLastCalledWith(expect.objectContaining({ operation: 'workspace', payload: { cwd: '/trusted-workspace' } }))
   expect(api.ownerAction).toHaveBeenCalledTimes(2)
+})
+
+function Shown() {
+  const { updateSession, dialog, confirming } = useSessionUpdate('s1', refresh)
+  const effect = useResourceEffects()['session:s1']
+  const model = confirming?.model ?? effect?.fields?.model
+  return <><button onClick={() => { updateSession(body) }}>Pick model</button><output aria-label="chip">{typeof model === 'string' ? model : 'old'}</output>{dialog}</>
+}
+it('shows the picked model at once, keeps it while confirming, and Cancel rolls it back (TAL-1384)', async () => {
+  let refuse!: (error: unknown) => void
+  vi.mocked(api.updateSession).mockReturnValueOnce(new Promise((_, reject) => { refuse = reject }) as never)
+  render(<QueryClientProvider client={client}><Shown /></QueryClientProvider>)
+  await userEvent.click(screen.getByText('Pick model'))
+  await waitFor(() => expect(screen.getByLabelText('chip')).toHaveTextContent('contributor'))
+  await act(async () => { refuse(refusal('one')); await Promise.resolve() })
+  expect(await screen.findByRole('alertdialog')).toBeInTheDocument()
+  expect(screen.getByLabelText('chip')).toHaveTextContent('contributor')
+  await userEvent.click(screen.getByText('Cancel'))
+  await waitFor(() => expect(screen.getByLabelText('chip')).toHaveTextContent('old'))
 })
