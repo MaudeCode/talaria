@@ -1,10 +1,11 @@
 /** TAL-819: the Agent's staged skill or memory writes on the Skills and Memory pages, each with its diff, approve and reject. */
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { Button } from '../../ui/Button'
 import { showToast } from '../toast/toast'
+import { useResourceEffects, useResourceMutation, withEffects } from '../sessions/useResourceMutation'
 
 type Kind = 'skills' | 'memory'
 
@@ -12,24 +13,27 @@ export function PendingWritesPanel({ kind }: { kind: Kind }) {
   const qc = useQueryClient()
   // Background reviews and cron runs stage writes while the page is open; there is no event for them, so the panel polls.
   const pending = useQuery({ queryKey: keys.pendingWrites(kind), queryFn: () => api.fetchPendingWrites(kind), staleTime: 15_000, refetchInterval: 30_000 })
-  const review = useMutation({
-    mutationFn: ({ verb, id, revision }: { verb: 'approve' | 'reject'; id: string; revision: string }) => api.reviewPendingWrites(verb, kind, [{ id, revision }]),
+  // An answered item leaves the list at once; one the server did not apply returns with the reread.
+  const effects = useResourceEffects()
+  const review = useResourceMutation({
+    resource: ({ id }: { verb: 'approve' | 'reject'; id: string; revision: string }) => `pending-write:${kind}:${id}`,
+    queryKey: keys.pendingWrites(kind),
+    effect: () => ({ remove: true }),
+    mutationFn: ({ verb, id, revision }) => api.reviewPendingWrites(verb, kind, [{ id, revision }]),
     onSuccess: ({ results }) => {
       for (const r of results) showToast(r.message, r.done ? 2500 : 4000, r.done ? 'info' : 'error')
-    },
-    onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error'),
-    onSettled: () => {
-      void qc.invalidateQueries({ queryKey: keys.pendingWrites(kind) })
       void qc.invalidateQueries({ queryKey: kind === 'skills' ? keys.skills.all : keys.memory })
       void qc.invalidateQueries({ queryKey: keys.profiles })
     },
+    onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error'),
   })
-  if (!pending.data?.visible) return null
+  const items = withEffects(pending.data?.items ?? [], (item) => `pending-write:${kind}:${item.id}`, effects)
+  if (!pending.data?.visible || items.length === 0) return null
   return (
     <section aria-labelledby={`pending-${kind}-title`} className="mb-6 flex flex-col gap-1" id={`pending-${kind}`}>
       <h3 id={`pending-${kind}-title`} className="text-[11px] font-semibold uppercase tracking-wider text-muted">{m.pending_writes_title()}</h3>
       <ul className="flex flex-col divide-y divide-border-subtle">
-        {pending.data.items.map((item) => (
+        {items.map((item) => (
           <li key={item.id} className="flex flex-col gap-1.5 py-2.5">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
               <div className="min-w-0 flex-1">
@@ -37,8 +41,8 @@ export function PendingWritesPanel({ kind }: { kind: Kind }) {
                 <div className="font-mono text-[11px] text-muted">{item.target} · {item.op}</div>
               </div>
               <div className="flex gap-2">
-                <Button variant="primary" disabled={review.isPending || !item.approvable} onClick={() => review.mutate({ verb: 'approve', id: item.id, revision: item.revision })}>{m.pending_writes_approve()}</Button>
-                <Button variant="ghost" disabled={review.isPending} onClick={() => review.mutate({ verb: 'reject', id: item.id, revision: item.revision })}>{m.pending_writes_reject()}</Button>
+                <Button variant="primary" disabled={!item.approvable} onClick={() => review.mutate({ verb: 'approve', id: item.id, revision: item.revision })}>{m.pending_writes_approve()}</Button>
+                <Button variant="ghost" onClick={() => review.mutate({ verb: 'reject', id: item.id, revision: item.revision })}>{m.pending_writes_reject()}</Button>
               </div>
             </div>
             <details>

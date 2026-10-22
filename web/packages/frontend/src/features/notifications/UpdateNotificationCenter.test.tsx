@@ -15,7 +15,8 @@ vi.mock('@tanstack/react-router', () => ({ useNavigate: () => vi.fn() }))
 vi.mock('../toast/toast', () => ({ dismissToast: vi.fn(), removeToast: vi.fn(), showRichToast: vi.fn(), showToast: vi.fn() }))
 vi.mock('../notices/ServerStoppedOverlay', () => ({ ServerStoppedOverlay: () => null }))
 import * as api from '../../api/endpoints'
-import { UpdateNotificationProvider, useUpdateProgress } from './UpdateNotificationCenter'
+import { UpdateNotificationCenterButton, UpdateNotificationProvider, useUpdateProgress } from './UpdateNotificationCenter'
+import { ApiError } from '../../contracts/common'
 
 type Step = UpdateNotification['steps'][number]
 const AGENT = ['Installing', 'Restarting Talaria Web', 'Restarting gateway', 'Agent responding']
@@ -155,5 +156,54 @@ describe('UpdateNotificationProvider Updating dialog (TAL-1138)', () => {
     await renderProvider()
     await serve([failed])
     expect(updating('Hermes Agent')).toBeNull()
+  })
+})
+
+describe('notification writes show their result at once (TAL-1179)', () => {
+  const finished = (id: string, title: string, extra: Partial<UpdateNotification> = {}) => record({ id, title, phase: 'complete', steps: [], presents_dialog: false, ...extra })
+  async function open(rows: UpdateNotification[]) {
+    server.rows = rows
+    vi.mocked(api.fetchUpdateNotifications).mockImplementation(() => Promise.resolve({ ...list(), unread_count: rows.filter((row) => row.unread).length, clearable_count: rows.filter((row) => row.can_dismiss).length, can_clear: true }))
+    qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+    render(<QueryClientProvider client={qc}><UpdateNotificationProvider><UpdateNotificationCenterButton placement="rail" /></UpdateNotificationProvider></QueryClientProvider>)
+    return screen.findByRole('button', { name: 'Notifications' })
+  }
+
+  it('clears the badge on open, before the reads answer', async () => {
+    vi.mocked(api.readUpdateNotification).mockReturnValue(new Promise(() => undefined))
+    const button = await open([finished('a', 'First'), finished('b', 'Second')])
+    expect(await screen.findByLabelText('2 unread update notifications')).toBeInTheDocument()
+    await userEvent.click(button)
+    expect(api.readUpdateNotification).toHaveBeenCalledTimes(2)
+    expect(screen.queryByLabelText(/unread update notifications/)).toBeNull()
+  })
+
+  it('dismisses a row at once and brings it back when refused', async () => {
+    vi.mocked(api.readUpdateNotification).mockReturnValue(new Promise(() => undefined))
+    let refuse!: (error: unknown) => void
+    vi.mocked(api.dismissUpdateNotification).mockReturnValue(new Promise((_, reject) => { refuse = reject }) as never)
+    await userEvent.click(await open([finished('a', 'First'), finished('b', 'Second')]))
+    const dialog = within(await screen.findByRole('dialog', { name: 'Notifications' }))
+    await userEvent.click(within(dialog.getByText('First').closest('li')!).getByRole('button', { name: 'Dismiss' }))
+    expect(dialog.queryByText('First')).toBeNull()
+    refuse(new ApiError({ kind: 'http', status: 409, path: '/x', message: 'Still running' }))
+    expect(await dialog.findByText('First')).toBeInTheDocument()
+  })
+
+  it('clears every dismissible row at once; rows the server keeps return with its answer', async () => {
+    vi.mocked(api.readUpdateNotification).mockReturnValue(new Promise(() => undefined))
+    let answer!: (value: UpdateNotifications) => void
+    vi.mocked(api.clearUpdateNotifications).mockReturnValue(new Promise((resolve) => { answer = resolve }))
+    const kept = finished('b', 'Second')
+    await userEvent.click(await open([finished('a', 'First'), kept, finished('c', 'Pinned', { can_dismiss: false })]))
+    const dialog = within(await screen.findByRole('dialog', { name: 'Notifications' }))
+    await userEvent.click(dialog.getByRole('button', { name: 'Clear all' }))
+    expect(dialog.queryByText('First')).toBeNull()
+    expect(dialog.queryByText('Second')).toBeNull()
+    expect(dialog.getByText('Pinned')).toBeInTheDocument()
+    server.rows = [kept, finished('c', 'Pinned', { can_dismiss: false })]
+    await act(async () => { answer({ ...list(), notifications: server.rows }); await Promise.resolve() })
+    expect(await dialog.findByText('Second')).toBeInTheDocument()
+    expect(dialog.queryByText('First')).toBeNull()
   })
 })

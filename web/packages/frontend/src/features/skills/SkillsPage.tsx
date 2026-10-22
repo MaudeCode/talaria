@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { ChevronLeft, Search } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
@@ -11,7 +11,7 @@ import { ConfirmDialog } from '../../ui/Dialog'
 import { EmptyState, ErrorState, LoadingState, formatBytes } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { cn } from '../../ui/cn'
-import { useResourceEffects, useResourceMutation } from '../sessions/useResourceMutation'
+import { useResourceEffects, useResourceMutation, withEffects } from '../sessions/useResourceMutation'
 import { ResourceSwitch } from '../sessions/ResourceSwitch'
 import { PendingWritesPanel } from '../pending-writes/PendingWritesPanel'
 
@@ -21,13 +21,13 @@ export function SkillsPage() {
   const [selected, setSelected] = useState<string | null>(null)
   const skills = useQuery({ queryKey: keys.skills.all, queryFn: () => api.fetchSkills(), staleTime: 30_000 })
   const usage = useQuery({ queryKey: keys.skills.usage, queryFn: api.fetchSkillsUsage, staleTime: 60_000 })
-  const list = useMemo(() => skills.data?.skills ?? [], [skills.data])
+  const effects = useResourceEffects<boolean>()
+  const list = useMemo(() => withEffects(skills.data?.skills ?? [], (s) => `skill:${s.name}`, effects), [skills.data, effects])
   const categories = useMemo(() => [...new Set(list.map((s) => s.category).filter((c): c is string => !!c))].sort(), [list])
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     return list.filter((s) => (!category || s.category === category) && (!q || s.name.toLowerCase().includes(q) || (s.description ?? '').toLowerCase().includes(q)))
   }, [list, query, category])
-  const effects = useResourceEffects<boolean>()
   const toggle = useResourceMutation({ resource: ({ name }: { name: string; enabled: boolean }) => `skill:${name}`, effect: ({ enabled }) => ({ value: enabled }), queryKey: keys.skills.all, readKeys: () => [{ queryKey: keys.skills.all, exact: true }], mutationFn: ({ name, enabled }: { name: string; enabled: boolean }) => api.toggleSkill(name, enabled), onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error') })
 
   if (selected) return <SkillDetail name={selected} onBack={() => setSelected(null)} />
@@ -76,13 +76,20 @@ export function SkillsPage() {
 }
 
 function SkillDetail({ name, onBack }: { name: string; onBack: () => void }) {
-  const qc = useQueryClient()
   const content = useQuery({ queryKey: keys.skills.content(name), queryFn: () => api.fetchSkillContent(name) })
   const [draft, setDraft] = useState<string | null>(null)
   const [confirm, setConfirm] = useState(false)
   const [file, setFile] = useState<string | null>(null)
-  const save = useMutation({ mutationFn: (text: string) => api.saveSkill(name, text), onSuccess: () => { showToast(m.skill_saved()); setDraft(null); void qc.invalidateQueries({ queryKey: keys.skills.all }) }, onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error') })
-  const del = useMutation({ mutationFn: () => api.deleteSkill(name), onSuccess: () => { void qc.invalidateQueries({ queryKey: keys.skills.all }); onBack() }, onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error') })
+  // The editor keeps the submitted text; a confirmed save clears only a draft nobody edited since. A later save waits for
+  // the one in flight, so the server always ends on the newest text.
+  const save = useResourceMutation({
+    resource: () => `skill-content:${name}`, queryKey: keys.skills.all, readKeys: () => [{ queryKey: keys.skills.content(name), exact: true }],
+    effect: (text: string) => ({ value: text }),
+    mutationFn: (text) => api.saveSkill(name, text),
+    onSuccess: (_, text) => { showToast(m.skill_saved()); setDraft((d) => d === text ? null : d) },
+    onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error'),
+  })
+  const del = useResourceMutation({ resource: () => `skill:${name}`, effect: () => ({ remove: true }), queryKey: keys.skills.all, readKeys: () => [{ queryKey: keys.skills.all, exact: true }], mutationFn: () => api.deleteSkill(name), onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error') })
   const text = draft ?? content.data?.content ?? ''
   const linked = Object.entries(content.data?.linked_files ?? {})
   if (file) return <SkillFile name={name} file={file} onBack={() => setFile(null)} />
@@ -98,7 +105,7 @@ function SkillDetail({ name, onBack }: { name: string; onBack: () => void }) {
             <textarea value={text} readOnly={content.data.editable === false} onChange={(e) => setDraft(e.target.value)} rows={24} spellCheck={false} placeholder={m.skill_content_placeholder()} className="w-full rounded-md border border-border bg-code-bg p-3 font-mono text-[12.5px] text-pre-text" />
           </label>
           {content.data.editable !== false && <div className="flex gap-2">
-            <Button variant="primary" disabled={draft === null || save.isPending} onClick={() => { if (draft !== null) save.mutate(draft) }}>{m.save()}</Button>
+            <Button variant="primary" disabled={draft === null} onClick={() => { if (draft !== null) save.mutate(draft) }}>{m.save()}</Button>
             <Button variant="ghost" className="text-error" onClick={() => setConfirm(true)}>{m.delete()}</Button>
           </div>}
           {linked.length > 0 && (
@@ -114,7 +121,7 @@ function SkillDetail({ name, onBack }: { name: string; onBack: () => void }) {
           )}
         </div>
       )}
-      <ConfirmDialog open={confirm} onOpenChange={setConfirm} title={m.skill_delete_confirm({ a0: name })} confirmLabel={m.delete()} cancelLabel={m.cancel()} danger onConfirm={() => del.mutate()} />
+      <ConfirmDialog open={confirm} onOpenChange={setConfirm} title={m.skill_delete_confirm({ a0: name })} confirmLabel={m.delete()} cancelLabel={m.cancel()} danger onConfirm={() => { del.mutate(); onBack() }} />
     </HubPage>
   )
 }

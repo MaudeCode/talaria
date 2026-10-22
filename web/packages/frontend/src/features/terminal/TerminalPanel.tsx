@@ -9,6 +9,7 @@ import { openTerminalStream, type SseHandle } from '../../api/sse'
 import { z } from 'zod'
 import { Button } from '../../ui/Button'
 import { showToast } from '../toast/toast'
+import { isDefiniteRefusal } from '../../contracts/common'
 
 const StartSchema = z.looseObject({ ok: z.boolean().optional(), running: z.boolean().optional(), error: z.string().optional(), message: z.string().optional() })
 const OkSchema = z.looseObject({ ok: z.boolean().optional(), closed: z.boolean().optional(), error: z.string().optional() })
@@ -17,7 +18,7 @@ const OkSchema = z.looseObject({ ok: z.boolean().optional(), closed: z.boolean()
  * Workspace terminal on bundled xterm (no CDN). Protocol: POST start, POST input
  * (serialised so keystrokes keep their order), SSE output, POST resize, POST close.
  */
-export function TerminalPanel({ sessionId, workspace, onClose }: { sessionId: string; workspace: string | undefined; onClose: () => void }) {
+export function TerminalPanel({ sessionId, workspace, onClose, onReopen = () => undefined }: { sessionId: string; workspace: string | undefined; onClose: () => void; onReopen?: () => void }) {
   const host = useRef<HTMLDivElement>(null)
   const term = useRef<Terminal | null>(null)
   const fit = useRef<FitAddon | null>(null)
@@ -73,9 +74,19 @@ export function TerminalPanel({ sessionId, workspace, onClose }: { sessionId: st
     }
   }, [sessionId, workspace])
 
-  const close = async () => {
-    await post('api/terminal/close', { session_id: sessionId }, OkSchema, { retries: 0 }).catch(() => undefined)
+  // The panel closes at once while the server stops the shell. A refusal reopens it with the error; closing is
+  // idempotent, so an unknown outcome is settled by asking once more.
+  const close = () => {
     onClose()
+    const send = () => post('api/terminal/close', { session_id: sessionId }, OkSchema, { retries: 0 })
+    void (async () => {
+      try { await send() } catch (first) {
+        let error = first
+        if (!isDefiniteRefusal(first)) { try { await send(); return } catch (second) { error = second } }
+        onReopen()
+        showToast(error instanceof Error ? error.message : String(error), 4000, 'error')
+      }
+    })()
   }
   const restart = async () => {
     try {
@@ -105,7 +116,7 @@ export function TerminalPanel({ sessionId, workspace, onClose }: { sessionId: st
           <Button variant="ghost" onClick={() => term.current?.clear()}>{m.terminal_clear()}</Button>
           <Button variant="ghost" onClick={() => { const sel = term.current?.getSelection() ?? ''; void navigator.clipboard.writeText(sel).then(() => showToast(m.copied())) }}>{m.terminal_copy_output()}</Button>
           <Button variant="ghost" onClick={() => { void restart() }}>{m.terminal_restart()}</Button>
-          <Button variant="ghost" onClick={() => { void close() }}>{m.terminal_close()}</Button>
+          <Button variant="ghost" onClick={close}>{m.terminal_close()}</Button>
         </div>
       </div>
       <div ref={host} className="composer-terminal-surface px-2 py-1" style={{ height }} aria-label="Workspace terminal" role="application" />

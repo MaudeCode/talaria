@@ -18,6 +18,8 @@ const CATALOG = {
   ],
 }
 
+const toast = vi.hoisted(() => vi.fn())
+vi.mock('../toast/toast', () => ({ showToast: toast }))
 vi.mock('../../api/endpoints', () => ({
   fetchAuxiliaryModels: vi.fn(),
   setAuxiliaryModel: vi.fn(),
@@ -56,8 +58,9 @@ describe('Auxiliary models settings', () => {
     expect(rows[5]).not.toHaveTextContent('Not in catalog')
   })
 
-  it('searches the catalog, saves the picked entry with its provider, and shows the server state', async () => {
-    vi.mocked(api.setAuxiliaryModel).mockResolvedValue({ ok: true, auxiliary: auxState({ title_generation: pinnedBeta }) })
+  it('searches the catalog, shows the pick in the list at once, and adopts the server state', async () => {
+    let answer!: (value: Awaited<ReturnType<typeof api.setAuxiliaryModel>>) => void
+    vi.mocked(api.setAuxiliaryModel).mockReturnValue(new Promise((resolve) => { answer = resolve }))
     renderSetting()
     const list = await openList()
     await userEvent.click(list.getByRole('button', { name: /Title generation/ }))
@@ -69,7 +72,10 @@ describe('Auxiliary models settings', () => {
     expect(api.setAuxiliaryModel).toHaveBeenCalledWith('title_generation', '@custom:beta:llama3', 'custom:beta')
     const after = within(await screen.findByRole('list', { name: 'Auxiliary Models' }))
     expect(after.getByRole('button', { name: /Title generation/ })).toHaveTextContent('beta · Llama3')
-    expect(api.fetchAuxiliaryModels).toHaveBeenCalledTimes(1)
+    vi.mocked(api.fetchAuxiliaryModels).mockResolvedValue(auxState({ title_generation: pinnedBeta }))
+    answer({ ok: true, auxiliary: auxState({ title_generation: pinnedBeta }) })
+    await waitFor(() => expect(api.fetchAuxiliaryModels).toHaveBeenCalledTimes(2))
+    expect(after.getByRole('button', { name: /Title generation/ })).toHaveTextContent('beta · Llama3')
   })
 
   it('ticks only the server-selected entry when two providers list the same bare model', async () => {
@@ -84,22 +90,24 @@ describe('Auxiliary models settings', () => {
     expect(within(dialog).getByRole('button', { name: /^Auto/ })).toHaveAttribute('aria-pressed', 'false')
   })
 
-  it('keeps the prior value and shows the error when a write fails', async () => {
-    vi.mocked(api.setAuxiliaryModel).mockRejectedValue(new Error('provider-qualified auxiliary model must match the selected provider'))
+  it('returns the slot to its prior value and shows the error when a write is refused', async () => {
+    let refuse!: (error: unknown) => void
+    vi.mocked(api.setAuxiliaryModel).mockReturnValue(new Promise((_, reject) => { refuse = reject }))
     renderSetting()
     await userEvent.click((await openList()).getByRole('button', { name: /Title generation/ }))
     const dialog = screen.getByRole('dialog')
     await userEvent.type(within(dialog).getByRole('textbox', { name: /Custom model ID/ }), '@openai:')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent('must match the selected provider')
     expect(api.setAuxiliaryModel).toHaveBeenCalledWith('title_generation', '@openai:', null)
-    expect(within(dialog).getByRole('button', { name: /^Auto/ })).toHaveAttribute('aria-pressed', 'true')
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Back' }))
-    expect((await screen.findByRole('list', { name: 'Auxiliary Models' }))).toHaveTextContent('Auto · Anthropic · Claude Sonnet 4.6')
+    const list = await screen.findByRole('list', { name: 'Auxiliary Models' })
+    expect(within(list).getByRole('button', { name: /Title generation/ })).toHaveTextContent('@openai:')
+    refuse(new Error('provider-qualified auxiliary model must match the selected provider'))
+    await waitFor(() => expect(within(list).getByRole('button', { name: /Title generation/ })).toHaveTextContent('Auto · Anthropic · Claude Sonnet 4.6'))
+    expect(toast).toHaveBeenCalledWith('provider-qualified auxiliary model must match the selected provider', 4000, 'error')
   })
 
   it('resets every task only after confirmation', async () => {
-    vi.mocked(api.setAuxiliaryModel).mockResolvedValue({ ok: true, auxiliary: auxState() })
+    vi.mocked(api.setAuxiliaryModel).mockReturnValue(new Promise(() => undefined))
     renderSetting()
     await openList()
     await userEvent.click(screen.getByRole('button', { name: 'Reset all to auto' }))
@@ -107,7 +115,8 @@ describe('Auxiliary models settings', () => {
     expect(api.setAuxiliaryModel).not.toHaveBeenCalled()
     await userEvent.click(screen.getByRole('button', { name: 'Reset all to auto' }))
     await userEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Reset all to auto' }))
-    await waitFor(() => expect(api.setAuxiliaryModel).toHaveBeenCalledWith('__reset__', '', undefined))
+    expect(api.setAuxiliaryModel).toHaveBeenCalledWith('__reset__', '', undefined)
+    // Every slot reads Auto at once, including the off-catalog pin.
     expect((await screen.findByRole('list', { name: 'Auxiliary Models' }))).not.toHaveTextContent('Not in catalog')
   })
 })

@@ -16,7 +16,7 @@ import { teardownAll } from '../../stream/connection'
 import { showToast } from '../toast/toast'
 import { ApiError } from '../../contracts'
 
-vi.mock('../../api/endpoints', () => ({ fetchSkills: vi.fn(), fetchSkillsUsage: vi.fn(), toggleSkill: vi.fn(), fetchMcpServers: vi.fn(), fetchMcpTools: vi.fn(), toggleMcpServer: vi.fn(), fetchExtensionRegistry: vi.fn(), extensionAction: vi.fn(), fetchConnectors: vi.fn(), fetchConnectorTools: vi.fn(), setConnectorRule: vi.fn() }))
+vi.mock('../../api/endpoints', () => ({ removeConnectorAccount: vi.fn(), fetchSkillContent: vi.fn(), deleteSkill: vi.fn(), saveSkill: vi.fn(), fetchSkills: vi.fn(), fetchSkillsUsage: vi.fn(), toggleSkill: vi.fn(), fetchMcpServers: vi.fn(), fetchMcpTools: vi.fn(), toggleMcpServer: vi.fn(), fetchExtensionRegistry: vi.fn(), extensionAction: vi.fn(), fetchConnectors: vi.fn(), fetchConnectorTools: vi.fn(), setConnectorRule: vi.fn() }))
 vi.mock('../../shell/AppShell', () => ({ HubPage: ({ children, toolbar }: { children: ReactNode; toolbar?: ReactNode }) => <main>{toolbar}{children}</main> }))
 vi.mock('../pending-writes/PendingWritesPanel', () => ({ PendingWritesPanel: () => null }))
 vi.mock('../toast/toast', () => ({ showToast: vi.fn() }))
@@ -266,4 +266,83 @@ it('reads the server revision before the next connector rule after an unknown ou
   c.read().mockResolvedValue({ ...connectors(), policy_revision: 'rev-2' })
   await act(async () => { first.reject(new ApiError({ kind: 'network', path: '/x', message: 'Connection lost' })); await Promise.resolve() })
   await waitFor(() => expect(api.setConnectorRule).toHaveBeenLastCalledWith('beta', 'rev-2', { enabled: true }))
+})
+
+it('deletes a skill at once, returning to the list without it, and restores it on refusal', async () => {
+  let refuse!: (error: unknown) => void
+  vi.mocked(api.fetchSkillContent).mockResolvedValue({ name: 'alpha', content: '# alpha', editable: true, linked_files: {} })
+  vi.mocked(api.deleteSkill).mockReturnValue(new Promise((_, reject) => { refuse = reject }) as never)
+  setup(cases[0]!)
+  await userEvent.click(await screen.findByRole('button', { name: /^alpha/ }))
+  await userEvent.click(await screen.findByRole('button', { name: 'Delete' }))
+  await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete' }))
+  expect(await screen.findByRole('switch', { name: /^beta/ })).toBeInTheDocument()
+  expect(screen.queryByRole('switch', { name: /^alpha/ })).toBeNull()
+  await act(async () => { refuse(new ApiError({ kind: 'http', status: 409, path: '/x', message: 'Skill in use' })); await Promise.resolve() })
+  expect(await screen.findByRole('switch', { name: /^alpha/ })).toBeInTheDocument()
+  expect(showToast).toHaveBeenCalledWith('Skill in use', 4000, 'error')
+})
+
+it('keeps a skill edit typed during a save, clearing only the confirmed draft', async () => {
+  let answer!: (value: unknown) => void
+  vi.mocked(api.fetchSkillContent).mockResolvedValue({ name: 'alpha', content: '# alpha', editable: true, linked_files: {} })
+  vi.mocked(api.saveSkill).mockReturnValue(new Promise((resolve) => { answer = resolve }) as never)
+  setup(cases[0]!)
+  await userEvent.click(await screen.findByRole('button', { name: /^alpha/ }))
+  const editor = await screen.findByRole('textbox')
+  await userEvent.type(editor, '!')
+  await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+  await userEvent.type(editor, '?')
+  expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
+  await act(async () => { answer({ ok: true }); await Promise.resolve() })
+  await waitFor(() => expect(showToast).toHaveBeenCalled())
+  expect(editor).toHaveValue('# alpha!?')
+})
+
+it('uninstalls an extension at once and flips its sidecar consent at once', async () => {
+  vi.mocked(api.extensionAction).mockReturnValue(new Promise(() => undefined) as never)
+  const gallery = extensions()
+  gallery.manifests = gallery.manifests.map((e) => ({ ...e, source: 'gallery' }))
+  manifests.mockResolvedValue(gallery)
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+  render(<QueryClientProvider client={qc}><BootstrapContext.Provider value={DEFAULT_BOOTSTRAP}><ExtensionsSection /></BootstrapContext.Provider></QueryClientProvider>)
+  const alpha = (await screen.findByRole('switch', { name: /^alpha/ })).closest('li')!
+  await userEvent.click(within(alpha).getByRole('switch', { name: /Allow the proxied sidecar/ }))
+  expect(within(alpha).getByRole('switch', { name: /Allow the proxied sidecar/ })).toBeChecked()
+  expect(api.extensionAction).toHaveBeenCalledWith('sidecar-proxy-consent', { id: 'alpha', consent: true })
+  await userEvent.click(within(alpha).getByRole('button', { name: 'Uninstall' }))
+  await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Uninstall' }))
+  expect(screen.queryByRole('switch', { name: /^alpha/ })).toBeNull()
+  expect(screen.getByRole('switch', { name: /^beta/ })).toBeInTheDocument()
+})
+
+it('removes a disconnected connector account at once', async () => {
+  vi.mocked(api.removeConnectorAccount).mockReturnValue(new Promise(() => undefined))
+  const page = connectors()
+  page.connectors = page.connectors.map((c) => ({ ...c, accounts: [{ connection_id: `${c.slug}-1`, name: `${c.slug} account`, problem: null, status_reason: null }] })) as never
+  vi.mocked(api.fetchConnectors).mockResolvedValue(page as never)
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+  render(<QueryClientProvider client={qc}><ConnectorsSection /></QueryClientProvider>)
+  const account = (await screen.findByText('alpha account')).closest('li')!
+  await userEvent.click(within(account).getByRole('button', { name: 'Disconnect' }))
+  await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Disconnect' }))
+  expect(api.removeConnectorAccount).toHaveBeenCalledWith('alpha-1')
+  expect(screen.queryByText('alpha account')).toBeNull()
+  expect(screen.getByText('beta account')).toBeInTheDocument()
+})
+
+it('sends a second skill save only after the first answers, so the newest text lands last (TAL-1383)', async () => {
+  let first!: (value: unknown) => void
+  vi.mocked(api.fetchSkillContent).mockResolvedValue({ name: 'alpha', content: '# alpha', editable: true, linked_files: {} })
+  vi.mocked(api.saveSkill).mockReturnValueOnce(new Promise((resolve) => { first = resolve }) as never).mockReturnValue(new Promise(() => undefined) as never)
+  setup(cases[0]!)
+  await userEvent.click(await screen.findByRole('button', { name: /^alpha/ }))
+  const editor = await screen.findByRole('textbox')
+  await userEvent.type(editor, '!')
+  await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+  await userEvent.type(editor, '?')
+  await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+  expect(api.saveSkill).toHaveBeenCalledTimes(1)
+  await act(async () => { first({ ok: true }); await Promise.resolve() })
+  await waitFor(() => expect(api.saveSkill).toHaveBeenLastCalledWith('alpha', '# alpha!?'))
 })

@@ -17,8 +17,9 @@ import { ConfirmDialog, Dialog } from '../../ui/Dialog'
 import { EmptyState, ErrorState, LoadingState, formatDate } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { cn } from '../../ui/cn'
-import { useResourceEffects, useResourceMutation, withEffect, type ResourceEffect } from '../sessions/useResourceMutation'
+import { newResource, useResourceEffects, useResourceMutation, withCreated, withEffect, withEffects, type ResourceEffect } from '../sessions/useResourceMutation'
 import { getStreamContext } from '../../stream/connection'
+import { isDefiniteRefusal } from '../../contracts/common'
 
 // Same owner for single-card and bulk writes; profile/server identity comes from the connection context.
 const cardResource = (board: string | undefined, id: string) => JSON.stringify(['kanban', board, id])
@@ -30,13 +31,16 @@ const kanbanReads = (board: string | undefined, ids: string[] = []) => {
 const boardSelection = 'kanban:selection'
 const lanePreference = 'kanban:lanes'
 const linkResource = (board: string | undefined, parent: string, child: string) => JSON.stringify(['kanban-link', board, parent, child])
+const boardResource = (slug: string) => `kanban-board:${slug}`
+// Pending creates per board, as `newResource` ids; their cards are shown but cannot be opened until the server names them.
+const createKind = (board: string | undefined) => `kanban-task-${board ?? ''}`
 
 type KanbanTask = z.infer<typeof KanbanTaskSchema>
 interface KanbanColumn { name: string; label: string; tasks: KanbanTask[] }
 
 /** Cards a pending status write moves leave their column and lead the target column until the server orders them. */
-function withCardEffects(columns: KanbanColumn[], board: string | undefined, effects: Record<string, ResourceEffect>): KanbanColumn[] {
-  const moved: KanbanTask[] = []
+function withCardEffects(columns: KanbanColumn[], board: string | undefined, effects: Record<string, ResourceEffect>, created = true): KanbanColumn[] {
+  const moved: KanbanTask[] = created ? withCreated([], createKind(board), effects) : []
   const kept = columns.map((col) => ({ ...col, tasks: col.tasks.filter((task) => {
     const status = effects[cardResource(board, String(task.id))]?.fields?.status
     if (typeof status !== 'string' || status === col.name) return true
@@ -99,7 +103,10 @@ export function KanbanPage() {
   // assignee lanes, which only its reread brings, so turning them on keeps the switch busy until then.
   const lanesOff = requestedView?.value === false
   const lanesStarting = requestedView?.value === true
-  const current = typeof requestedBoard?.value === 'string' ? requestedBoard.value : boards.data?.current
+  const boardList = useMemo(() => withEffects(boards.data?.boards ?? [], (b) => boardResource(b.slug), effects), [boards.data, effects])
+  // Archiving the current board returns the server to its board that cannot be removed; the reread confirms which.
+  const confirmedBoard = boards.data?.current && effects[boardResource(boards.data.current)]?.remove ? boardList.find((b) => !b.removable)?.slug : boards.data?.current
+  const current = typeof requestedBoard?.value === 'string' ? requestedBoard.value : confirmedBoard
   const selected = selection.context === getStreamContext() && selection.board === current ? selection.ids : []
   const setSelected = (ids: string[]) => setSelection({ context: getStreamContext(), board: current, ids })
   const filters = { include_archived: includeArchived, assignee, tenant, only_mine: onlyMine, search }
@@ -127,13 +134,20 @@ export function KanbanPage() {
     },
     onError: toastError,
   })
-  const archiveBoard = useMutation({ mutationFn: (slug: string) => api.archiveKanbanBoard(slug), onSuccess: () => { showToast(m.kanban_board_archived()); setSelected([]); void invalidate() }, onError: toastError })
+  const archiveBoard = useResourceMutation({ resource: boardResource, queryKey: ['kanban'], effect: () => ({ remove: true }), mutationFn: (slug: string) => api.archiveKanbanBoard(slug), onSuccess: () => showToast(m.kanban_board_archived()), onError: toastError })
+  const createTask = useResourceMutation({
+    resource: ({ resource }: { resource: string; board: string | undefined; title: string; description: string; status: string }) => resource,
+    queryKey: keys.kanban.board(current), readKeys: ({ board }) => kanbanReads(board), exclusive: true,
+    effect: ({ resource, title, status }) => ({ fields: { id: resource, title, status, priority: 0, claim_live: false, has_completion_evidence: false, current_run_started_at: null, requires_running_exit_confirmation: false, available_actions: { block: false, unblock: false, complete: false, archive: false, move_to: [] } } }),
+    mutationFn: ({ board, title, description, status }) => api.createKanbanTask(board, { title, description: description || undefined, status: status || undefined }),
+    onError: toastError,
+  })
   const columns = useMemo(() => withCardEffects(board.data?.columns ?? [], current, effects), [board.data, current, effects])
   const serverReadOnly = !!board.data?.read_only
   // Filter placeholders cannot authorize writes; every write names its board, so a pending switch can.
   const stale = board.isPlaceholderData || !board.data
   const readOnly = serverReadOnly || stale
-  const currentBoard = boards.data?.boards.find((b) => b.slug === current)
+  const currentBoard = boardList.find((b) => b.slug === current)
   // The dialog follows the board's current copy of the task, so its actions track every refetch; a pending move
   // shows in it even when the target column is off screen.
   const openTask = useMemo(() => {
@@ -146,7 +160,9 @@ export function KanbanPage() {
   const toggleSelected = (id: string) => setSelected(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id])
   // A chosen filter value stays listed even when the server's option list no longer carries it.
   const options = (values: unknown[] | undefined, chosen: string) => [...new Set([...(chosen ? [chosen] : []), ...(values ?? []).map(String)])]
-  const renderColumns = (cols: KanbanColumn[]) => <KanbanColumns columns={withCardEffects(cols, current, effects)} readOnly={serverReadOnly} stale={stale} selected={selected} onToggle={toggleSelected} onOpen={setOpenTaskId} />
+  // A new task has no assignee yet, so it shows once: in the unassigned lane, else the first.
+  const createdLane = board.data?.lanes ? Math.max(0, board.data.lanes.findIndex((lane) => !lane.assignee)) : 0
+  const renderColumns = (cols: KanbanColumn[], lane = 0) => <KanbanColumns columns={withCardEffects(cols, current, effects, lane === createdLane)} readOnly={serverReadOnly} stale={stale} selected={selected} onToggle={toggleSelected} onOpen={setOpenTaskId} />
 
   return (
     <HubPage
@@ -159,11 +175,11 @@ export function KanbanPage() {
       }
       toolbar={
         <>
-          {boards.data && boards.data.boards.length > 0 && (
+          {boardList.length > 0 && (
             <label className="flex items-center gap-2 text-xs text-muted">
               {m.kanban_board_label()}
               <Select value={current ?? ''} onValueChange={(v) => { setSelection({ context: getStreamContext(), board: v, ids: [] }); setOpenTaskId(null); setCreating(false); setArchivingBoard(false); switchBoard.mutate(v) }} aria-label={m.kanban_board_label()}>
-                {boards.data.boards.map((b) => <option key={b.slug} value={b.slug}>{b.name ?? b.slug}{b.total !== undefined ? ` (${b.total})` : ''}</option>)}
+                {boardList.map((b) => <option key={b.slug} value={b.slug}>{b.name ?? b.slug}{b.total !== undefined ? ` (${b.total})` : ''}</option>)}
               </Select>
             </label>
           )}
@@ -214,22 +230,22 @@ export function KanbanPage() {
       {board.isSuccess && (board.data.lanes && !lanesOff
         ? (
           <div className="flex flex-col gap-4">
-            {board.data.lanes.map((lane) => {
+            {board.data.lanes.map((lane, laneIndex) => {
               const name = lane.assignee ?? m.kanban_lane_unassigned()
               return (
                 <section key={lane.assignee ?? ''} className="kanban-lane flex flex-col gap-2" aria-label={name}>
                   <header className="flex items-center gap-2 text-sm font-semibold text-text"><span>{name}</span><span className="text-xs font-normal text-muted">{lane.count}</span></header>
-                  {renderColumns(lane.columns)}
+                  {renderColumns(lane.columns, laneIndex)}
                 </section>
               )
             })}
           </div>
         )
-        : renderColumns(columns))}
+        : renderColumns(board.data.columns ?? []))}
       {openTask && <TaskDialog key={JSON.stringify([current, openTaskId])} board={current} task={openTask} readOnly={readOnly} onClose={() => setOpenTaskId(null)} onChanged={() => { void invalidate() }} />}
-      {creating && <CreateTaskDialog board={current} columns={board.data?.create_statuses ?? []} onClose={() => setCreating(false)} onCreated={() => { setCreating(false); void invalidate() }} />}
+      {creating && <CreateTaskDialog columns={board.data?.create_statuses ?? []} onClose={() => setCreating(false)} onSubmit={(task) => { setCreating(false); createTask.mutate({ ...task, board: current, resource: newResource(createKind(current)) }) }} />}
       {creatingBoard && <CreateBoardDialog onClose={() => setCreatingBoard(false)} onCreated={() => { setCreatingBoard(false); setSelected([]); void invalidate() }} />}
-      <ConfirmDialog open={archivingBoard} onOpenChange={setArchivingBoard} title={m.kanban_archive_board_title()} description={m.kanban_archive_board_body({ a0: currentBoard?.name ?? current ?? '' })} confirmLabel={m.kanban_archive()} cancelLabel={m.cancel()} danger onConfirm={() => { if (current) archiveBoard.mutate(current) }} />
+      <ConfirmDialog open={archivingBoard} onOpenChange={setArchivingBoard} title={m.kanban_archive_board_title()} description={m.kanban_archive_board_body({ a0: currentBoard?.name ?? current ?? '' })} confirmLabel={m.kanban_archive()} cancelLabel={m.cancel()} danger onConfirm={() => { if (current) { setSelected([]); setOpenTaskId(null); archiveBoard.mutate(current) } }} />
     </HubPage>
   )
 }
@@ -246,11 +262,12 @@ function KanbanColumns({ columns, readOnly, stale, selected, onToggle, onOpen }:
             {col.tasks.length === 0 && <div className="px-1 py-2 text-xs text-muted">{m.kanban_no_tasks()}</div>}
             {col.tasks.map((task) => {
               const id = String(task.id)
+              const provisional = id.includes(':new:')
               return (
                 <div key={id} className="flex items-start gap-2">
-                  {!readOnly && <input type="checkbox" className="mt-3 shrink-0" checked={selected.includes(id)} disabled={stale} onChange={() => onToggle(id)} aria-label={m.kanban_select_task({ a0: task.title ?? id })} />}
+                  {!readOnly && <input type="checkbox" className="mt-3 shrink-0" checked={selected.includes(id)} disabled={stale || provisional} onChange={() => onToggle(id)} aria-label={m.kanban_select_task({ a0: task.title ?? id })} />}
                   <div className="min-w-0 flex-1">
-                    <button type="button" onClick={() => onOpen(id)} className={cn('kanban-card w-full min-w-0 flex-1 rounded-md border border-border-subtle bg-bg p-2.5 text-left text-sm text-text hover:border-accent-bg-strong', selected.includes(id) && 'selected')} data-task-id={id}>
+                    <button type="button" disabled={provisional} onClick={() => onOpen(id)} className={cn('kanban-card w-full min-w-0 flex-1 rounded-md border border-border-subtle bg-bg p-2.5 text-left text-sm text-text hover:border-accent-bg-strong', selected.includes(id) && 'selected')} data-task-id={id}>
                       <div className="font-medium">{task.title ?? id}</div>
                       <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-muted">
                         {task.assignee && <span>{task.assignee}</span>}
@@ -313,7 +330,17 @@ function TaskDialog({ board, task, readOnly, onClose, onChanged }: { board: stri
   })
   // Dispatch starts a worker on the server: only its button is busy.
   const dispatchTask = useMutation({ mutationFn: () => api.kanbanTaskAction(board, task.id, 'dispatch', {}), onSuccess: () => { showToast(m.saved()); onChanged() }, onError: (e) => { showToast(e instanceof Error ? e.message : String(e), 4000, 'error'); onChanged() } })
-  const commentWrite = useMutation({ mutationFn: (body: Record<string, unknown>) => api.kanbanTaskAction(board, task.id, 'comments', body), onSuccess: () => { showToast(m.saved()); onChanged(); void log.refetch() }, onError: (e) => { showToast(e instanceof Error ? e.message : String(e), 4000, 'error'); onChanged() } })
+  // A sent comment joins the log at once; a refused one stays there with Retry instead of losing its text.
+  const [unsent, setUnsent] = useState<string[]>([])
+  const commentWrite = useResourceMutation({
+    resource: ({ resource }: { resource: string; text: string }) => resource,
+    queryKey: keys.kanban.board(board), readKeys: () => kanbanReads(board, [taskId]), exclusive: true,
+    effect: ({ text }) => ({ fields: { text } }),
+    mutationFn: ({ text }) => api.kanbanTaskAction(board, task.id, 'comments', { body: text, text }),
+    onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error'),
+  })
+  const sendComment = (text: string) => commentWrite.mutate({ text, resource: newResource(`kanban-comment-${board ?? ''}-${taskId}`) }, { onError: (e) => { if (isDefiniteRefusal(e)) setUnsent((rows) => [...rows, text]) } })
+  const sending = withCreated<{ text: string }>([], `kanban-comment-${board ?? ''}-${taskId}`, effects)
   const entries: unknown[] = log.data?.log ?? log.data?.entries ?? []
   // The server owns which actions a card offers and whether leaving Running needs confirmation (TAL-557).
   const actions = task.available_actions
@@ -374,7 +401,7 @@ function TaskDialog({ board, task, readOnly, onClose, onChanged }: { board: stri
         <div>
           <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted">{m.kanban_comments()}</div>
           {!readOnly && (
-            <form onSubmit={(e) => { e.preventDefault(); if (comment.trim()) { commentWrite.mutate({ body: comment.trim(), text: comment.trim() }); setComment('') } }} className="flex gap-2">
+            <form onSubmit={(e) => { e.preventDefault(); if (comment.trim()) { sendComment(comment.trim()); setComment('') } }} className="flex gap-2">
               <TextInput value={comment} onChange={(e) => setComment(e.target.value)} placeholder={m.kanban_add_comment()} aria-label={m.kanban_add_comment()} />
               <Button type="submit">{m.add()}</Button>
             </form>
@@ -383,7 +410,7 @@ function TaskDialog({ board, task, readOnly, onClose, onChanged }: { board: stri
         <div>
           <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted">{m.kanban_log()}</div>
           {log.isPending && <LoadingState />}
-          {log.isSuccess && entries.length === 0 && <div className="text-xs text-muted">—</div>}
+          {log.isSuccess && entries.length === 0 && sending.length === 0 && unsent.length === 0 && <div className="text-xs text-muted">—</div>}
           <ul className="max-h-60 overflow-y-auto text-xs">
             {entries.map((e, i) => {
               const row = typeof e === 'object' && e !== null ? (e as Record<string, unknown>) : {}
@@ -391,6 +418,13 @@ function TaskDialog({ board, task, readOnly, onClose, onChanged }: { board: stri
               const text = [row.message, row.text, row.body, row.event].find((v) => typeof v === 'string')
               return <li key={i} className="border-b border-border-subtle py-1"><span className="text-muted">{formatDate(typeof when === 'number' || typeof when === 'string' ? when : null)}</span> {typeof text === 'string' ? text : JSON.stringify(e)}</li>
             })}
+            {sending.map((row, i) => <li key={`sending-${i}`} className="border-b border-border-subtle py-1">{row.text}</li>)}
+            {unsent.map((text, i) => (
+              <li key={`unsent-${i}`} className="flex items-center gap-2 border-b border-border-subtle py-1">
+                <span className="min-w-0 flex-1">{text}</span>
+                <button type="button" className="linklike shrink-0" onClick={() => { setUnsent((rows) => rows.filter((_, j) => j !== i)); sendComment(text) }}>{m.retry()}</button>
+              </li>
+            ))}
           </ul>
         </div>
       </div>
@@ -398,24 +432,18 @@ function TaskDialog({ board, task, readOnly, onClose, onChanged }: { board: stri
   )
 }
 
-function CreateTaskDialog({ board, columns, onClose, onCreated }: { board: string | undefined; columns: string[]; onClose: () => void; onCreated: () => void }) {
+/** Closes on Create: the card shows at once while the server creates it. */
+function CreateTaskDialog({ columns, onClose, onSubmit }: { columns: string[]; onClose: () => void; onSubmit: (task: { title: string; description: string; status: string }) => void }) {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [status, setStatus] = useState(columns[0] ?? '')
-  const [error, setError] = useState<string | null>(null)
-  const create = useMutation({
-    mutationFn: () => api.createKanbanTask(board, { title: title.trim(), description: description.trim() || undefined, status: status || undefined }),
-    onSuccess: () => { onCreated() },
-    onError: (e) => setError(e instanceof Error ? e.message : String(e)),
-  })
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }} title={m.kanban_new_task()}>
-      <form onSubmit={(e) => { e.preventDefault(); if (title.trim()) create.mutate() }} className="flex flex-col gap-1">
+      <form onSubmit={(e) => { e.preventDefault(); if (title.trim()) onSubmit({ title: title.trim(), description: description.trim(), status }) }} className="flex flex-col gap-1">
         <FieldRow label={m.kanban_task_title()} htmlFor="kanbanTitle"><TextInput id="kanbanTitle" required value={title} onChange={(e) => setTitle(e.target.value)} /></FieldRow>
         <FieldRow label={m.kanban_description_placeholder()} htmlFor="kanbanDesc"><textarea id="kanbanDesc" rows={3} value={description} onChange={(e) => setDescription(e.target.value)} className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-text" /></FieldRow>
         <FieldRow label={m.kanban_column_label()} htmlFor="kanbanStatus"><Select id="kanbanStatus" value={status} onValueChange={(v) => setStatus(v)} className="w-full">{columns.map((c) => <option key={c} value={c}>{c}</option>)}</Select></FieldRow>
-        {error && <div role="alert" className="text-sm text-error">{error}</div>}
-        <div className="mt-3 flex justify-end gap-2"><Button onClick={onClose}>{m.cancel()}</Button><Button variant="primary" type="submit" disabled={create.isPending}>{m.create()}</Button></div>
+        <div className="mt-3 flex justify-end gap-2"><Button onClick={onClose}>{m.cancel()}</Button><Button variant="primary" type="submit">{m.create()}</Button></div>
       </form>
     </Dialog>
   )

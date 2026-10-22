@@ -75,3 +75,18 @@ describe('PluginsSection OAuth clients', () => {
     await waitFor(() => expect(paste).toHaveValue(''))
   })
 })
+
+it('closes plugin settings on Save and shows the saved value at once (TAL-1179)', async () => {
+  const settings = [{ key: 'endpoint', type: 'string' as const, label: 'Endpoint', description: '', required: false, value: 'one' }]
+  vi.mocked(api.fetchPlugins).mockResolvedValue({ plugins: [{ key: 'demo', name: 'Demo', settings }], empty: false, supported_hooks: [], read_only: false })
+  vi.mocked(api.savePluginSettings).mockReturnValueOnce(new Promise(() => undefined))
+  renderPlugins()
+  await userEvent.click(await screen.findByRole('button', { name: 'Settings' }))
+  await userEvent.clear(screen.getByRole('textbox', { name: 'Endpoint' }))
+  await userEvent.type(screen.getByRole('textbox', { name: 'Endpoint' }), 'two')
+  await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+  expect(screen.queryByRole('textbox', { name: 'Endpoint' })).toBeNull()
+  expect(api.savePluginSettings).toHaveBeenCalledWith('demo', { endpoint: 'two' }, {})
+  await userEvent.click(screen.getByRole('button', { name: 'Settings' }))
+  expect(screen.getByRole('textbox', { name: 'Endpoint' })).toHaveValue('two')
+})

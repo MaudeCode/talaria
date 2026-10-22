@@ -11,7 +11,7 @@ import { Button } from '../../ui/Button'
 import { ConfirmDialog } from '../../ui/Dialog'
 import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
 import { showToast } from '../toast/toast'
-import { useResourceEffects, useResourceMutation } from '../sessions/useResourceMutation'
+import { useResourceEffects, useResourceMutation, withEffects } from '../sessions/useResourceMutation'
 import { ResourceSwitch } from '../sessions/ResourceSwitch'
 import { ConnectTargets, useConnectorOperation } from './ConnectTargets'
 
@@ -89,12 +89,14 @@ function ConnectorRow({ connector, ruleBusy, onRule }: { connector: ConnectorVie
     onSuccess: setOperation,
     onError: (error) => showToast(error.message || m.connectors_failed(), 5000, 'error'),
   })
-  const remove = useMutation({
-    mutationFn: (id: string) => api.removeConnectorAccount(id),
+  const remove = useResourceMutation({
+    resource: (id: string) => `connector-account:${id}`, effect: () => ({ remove: true }),
+    queryKey: keys.connectors.all, readKeys: () => [keys.connectors.page],
+    mutationFn: (id) => api.removeConnectorAccount(id),
     onSuccess: () => showToast(m.connectors_disconnected_toast({ name: connector.name })),
-    onError: (error) => showToast(error.message || m.connectors_failed(), 5000, 'error'),
-    onSettled: () => { void qc.invalidateQueries({ queryKey: keys.connectors.page }) },
+    onError: (error) => showToast(error instanceof Error && error.message ? error.message : m.connectors_failed(), 5000, 'error'),
   })
+  const accounts = withEffects(connector.accounts, (account) => `connector-account:${account.connection_id}`, effects)
   return (
     <li className="flex flex-col gap-2 py-3" data-connector={connector.slug}>
       <div className="flex items-center gap-3">
@@ -112,13 +114,13 @@ function ConnectorRow({ connector, ruleBusy, onRule }: { connector: ConnectorVie
           aria-label={m.connectors_enabled_aria({ name: connector.name })} />
       </div>
       {operation && <PageConnect initial={operation} name={connector.name} onDone={() => { setOperation(null); void qc.invalidateQueries({ queryKey: keys.connectors.page }) }} />}
-      {connector.accounts.length > 0 && (
+      {accounts.length > 0 && (
         <ul className="flex flex-col gap-1 pl-9" aria-label={m.connectors_accounts_aria({ name: connector.name })}>
-          {connector.accounts.map((account) => (
+          {accounts.map((account) => (
             <li key={account.connection_id} className="flex items-center gap-2 text-xs">
               <span className="min-w-0 flex-1 truncate text-text">{account.name}</span>
               {account.problem && <span className="text-muted" title={account.status_reason ?? undefined}>{PROBLEM[account.problem]()}</span>}
-              <Button variant="ghost" className="px-2 py-1 text-xs" disabled={remove.isPending} onClick={() => setRemoving({ id: account.connection_id, name: account.name })}>{m.connectors_disconnect()}</Button>
+              <Button variant="ghost" className="px-2 py-1 text-xs" onClick={() => setRemoving({ id: account.connection_id, name: account.name })}>{m.connectors_disconnect()}</Button>
             </li>
           ))}
         </ul>

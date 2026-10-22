@@ -5,7 +5,7 @@ import { RefreshCw } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
-import { useSetDefaultModel } from '../../app/queries'
+import { useDefaultModelChoice, useSetDefaultModel } from '../../app/queries'
 import { post } from '../../api/client'
 import { OkSchema } from '../../contracts'
 import { Button, IconButton } from '../../ui/Button'
@@ -31,6 +31,7 @@ export function ProvidersSection() {
   const quotas = useQuery({ queryKey: keys.providerQuotas, queryFn: () => fetchQuotas(), staleTime: 60_000, refetchInterval: 60_000 })
   const { str } = useSettingField()
   const setDefault = useSetDefaultModel()
+  const chosenModel = useDefaultModelChoice()?.model
   const [editing, setEditing] = useState<string | null>(null)
   const [keyValue, setKeyValue] = useState('')
   const [hosted, setHosted] = useState({ base_url: '', api_key: '', model: '' })
@@ -47,7 +48,7 @@ export function ProvidersSection() {
   if (providers.isPending) return <LoadingState />
   if (providers.isError) return <ErrorState error={providers.error} onRetry={() => { void providers.refetch() }} />
   const active = providers.data.active_provider
-  const defaultModel = str('default_model')
+  const defaultModel = chosenModel ?? str('default_model')
   const quotaNotice = quotas.data?.availability?.unavailable_reason ?? providers.data.availability?.unavailable_reason
   return (
     <div className="flex flex-col gap-3" data-section="providers">
@@ -115,7 +116,7 @@ export function ProvidersSection() {
                   <ul className="mt-1 flex flex-wrap gap-1">
                     {p.models.map((mm) => (
                       <li key={mm.id}>
-                        <button type="button" onClick={() => setDefault.mutate({ model: mm.id, provider: p.id }, { onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error') })} className={cn('rounded-full border px-2 py-0.5 text-[11px]', mm.id === defaultModel ? 'border-accent bg-accent-bg text-accent-text' : 'border-border text-muted hover:text-text')} title={m.providers_set_default()}>{mm.label ?? mm.id}</button>
+                        <button type="button" onClick={() => setDefault.mutate({ model: mm.id, provider: p.id })} className={cn('rounded-full border px-2 py-0.5 text-[11px]', mm.id === defaultModel ? 'border-accent bg-accent-bg text-accent-text' : 'border-border text-muted hover:text-text')} title={m.providers_set_default()}>{mm.label ?? mm.id}</button>
                       </li>
                     ))}
                   </ul>

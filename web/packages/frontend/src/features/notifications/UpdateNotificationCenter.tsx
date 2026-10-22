@@ -12,6 +12,7 @@ import { cn } from '../../ui/cn'
 import { dismissToast, removeToast, showRichToast, showToast, type ToastAction } from '../toast/toast'
 import { StatusIcon, UpdatingDialog, type UpdateDialogTarget } from './UpdatingDialog'
 import { ServerStoppedOverlay } from '../notices/ServerStoppedOverlay'
+import { useResourceEffects, useResourceMutation, withEffects } from '../sessions/useResourceMutation'
 
 /** Server action that asks this tab to load the build the server now serves; the server clears the notice only after verifying it. */
 const RELOAD_ACTION = 'reload'
@@ -125,10 +126,12 @@ export function UpdateNotificationProvider({ children }: { children: ReactNode }
     setTracking(null)
     setFollowing(null)
   }, [notifications.data])
-  const refresh = () => { void qc.invalidateQueries({ queryKey: keys.updateNotifications }) }
-  const dismiss = useMutation({ mutationFn: api.dismissUpdateNotification, onSuccess: refresh, onError: (error) => showToast(`Couldn't dismiss the notification: ${error instanceof Error ? error.message : String(error)}`, 5_000, 'error') })
-  const clear = useMutation({
-    mutationFn: api.clearUpdateNotifications,
+  // Dismiss, Clear all and read show at once; rows the server keeps come back with its answer.
+  const effects = useResourceEffects()
+  const dismiss = useResourceMutation({ resource: (id: string) => `notification:${id}`, queryKey: keys.updateNotifications, effect: () => ({ remove: true }), mutationFn: api.dismissUpdateNotification, onError: (error) => showToast(`Couldn't dismiss the notification: ${error instanceof Error ? error.message : String(error)}`, 5_000, 'error') })
+  const clear = useResourceMutation({
+    resource: (ids: string[]) => ids.map((id) => `notification:${id}`), queryKey: keys.updateNotifications, effect: () => ({ remove: true }),
+    mutationFn: () => api.clearUpdateNotifications(),
     onSuccess: (result) => {
       qc.setQueryData(keys.updateNotifications, result)
       const remaining = new Set(result.notifications.map((row) => `server-${row.id}`))
@@ -149,27 +152,23 @@ export function UpdateNotificationProvider({ children }: { children: ReactNode }
     },
     onError: (error) => showToast(`Couldn't complete that notification action: ${error instanceof Error ? error.message : String(error)}`, 5_000, 'error'),
   })
-  const unread = notifications.data?.unread_count ?? 0
-  const rows = notifications.data?.notifications ?? []
+  const read = useResourceMutation({ resource: (id: string) => `notification-read:${id}`, queryKey: keys.updateNotifications, effect: () => ({ fields: { unread: false } }), mutationFn: api.readUpdateNotification, onError: (error) => showToast(`Couldn't mark the notification read: ${error instanceof Error ? error.message : String(error)}`, 5_000, 'error') })
+  const serverRows = notifications.data?.notifications ?? []
+  const rows = withEffects(withEffects(serverRows, (row) => `notification-read:${row.id}`, effects), (row) => `notification:${row.id}`, effects)
+  // The badge drops each unread row the user just read or removed.
+  const unread = Math.max(0, (notifications.data?.unread_count ?? 0) - serverRows.filter((row) => row.unread && !rows.some((shown) => shown.id === row.id && shown.unread)).length)
 
-  const markRead = useCallback(async (row: UpdateNotification) => {
-    if (!row.unread) return
-    try {
-      await api.readUpdateNotification(row.id)
-      void qc.invalidateQueries({ queryKey: keys.updateNotifications })
-    } catch (error) {
-      showToast(`Couldn't mark the notification read: ${error instanceof Error ? error.message : String(error)}`, 5_000, 'error')
-    }
-  }, [qc])
+  const readMutate = read.mutate
+  const markRead = useCallback((row: UpdateNotification) => { if (row.unread) readMutate(row.id) }, [readMutate])
   const openDestination = useCallback((row: UpdateNotification) => {
     if (row.destination?.key !== 'settings.system') return
     setOpen(false)
     void navigate({ to: '/settings/$section', params: { section: 'system' } })
   }, [navigate])
-  const interact = useCallback(async (row: UpdateNotification, options: { navigate?: boolean; closeToast?: boolean } = {}) => {
+  const interact = useCallback((row: UpdateNotification, options: { navigate?: boolean; closeToast?: boolean } = {}) => {
     if (options.closeToast) dismissToast(`server-${row.id}`)
     if (options.navigate) openDestination(row)
-    await markRead(row)
+    markRead(row)
   }, [markRead, openDestination])
   const performMutation = action.mutateAsync
   const performAction = useCallback((row: UpdateNotification, actionId: string) => performMutation({ id: row.id, actionId }).then(() => undefined), [performMutation])
@@ -239,7 +238,7 @@ export function UpdateNotificationProvider({ children }: { children: ReactNode }
 
   const show = () => {
     setOpen(true)
-    for (const row of rows) if (row.unread) void markRead(row)
+    for (const row of rows) if (row.unread) markRead(row)
   }
 
   // The read endpoint is the dialog's connection probe: a failing or paused poll, or a lost apply not yet answered by a later read.
@@ -268,7 +267,7 @@ export function UpdateNotificationProvider({ children }: { children: ReactNode }
         <BaseDialog.Popup className="fixed right-4 top-4 z-[1301] flex max-h-[calc(100dvh-2rem)] w-[min(94vw,420px)] flex-col overflow-hidden rounded-2xl border border-border bg-surface text-text shadow-md outline-none max-[641px]:inset-x-2 max-[641px]:top-auto max-[641px]:bottom-[calc(8px+env(safe-area-inset-bottom,0px))] max-[641px]:w-auto max-[641px]:max-h-[78dvh]">
           <header className="flex items-start gap-3 border-b border-border px-5 py-4">
             <div className="flex-1 min-w-0"><BaseDialog.Title className="text-base font-semibold text-strong">{m.update_notifications()}</BaseDialog.Title><BaseDialog.Description className="mt-0.5 text-sm text-muted">{m.update_notifications_description()}</BaseDialog.Description></div>
-            <button type="button" className="min-h-9 rounded-lg border-0 bg-transparent px-2 text-xs font-semibold text-accent-text transition-[transform,opacity] active:scale-[.97] disabled:cursor-default disabled:opacity-40" disabled={clear.isPending || notifications.data?.can_clear !== true} onClick={() => clear.mutate()}>{m.update_notifications_clear_all()}</button>
+            <button type="button" className="min-h-9 rounded-lg border-0 bg-transparent px-2 text-xs font-semibold text-accent-text transition-[transform,opacity] active:scale-[.97] disabled:cursor-default disabled:opacity-40" disabled={notifications.data?.can_clear !== true} onClick={() => clear.mutate(rows.filter((row) => row.can_dismiss).map((row) => row.id))}>{m.update_notifications_clear_all()}</button>
             <BaseDialog.Close className="flex size-9 items-center justify-center rounded-lg border-0 bg-transparent text-muted hover:bg-hover hover:text-text" aria-label={m.close()}><X size={18} aria-hidden="true" /></BaseDialog.Close>
           </header>
           <div className="min-h-0 flex-1 overflow-y-auto p-2">
@@ -286,7 +285,7 @@ export function UpdateNotificationProvider({ children }: { children: ReactNode }
                         {row.detail && <p className="mt-1 whitespace-pre-line break-words text-xs leading-5 text-muted">{row.detail}</p>}
                         {(row.actions.length > 0 || row.destination?.key === 'settings.system') && <div className="mt-3 flex flex-wrap gap-2">
                           {row.actions.map((item) => <button key={item.id} type="button" disabled={actionPending} className={cn('inline-flex min-w-24 items-center justify-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-[transform,background,color,opacity] active:scale-[.97] disabled:cursor-wait disabled:opacity-75', item.style === 'primary' ? 'border-accent bg-accent text-accent-fg' : item.style === 'destructive' ? 'border-error bg-error text-white' : 'border-border text-text hover:bg-hover')} onClick={() => action.mutate({ id: row.id, actionId: item.id })}>{item.label}</button>)}
-                          {row.destination?.key === 'settings.system' && <button type="button" className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-text transition-transform active:scale-[.97] hover:bg-hover" onClick={() => { void interact(row, { navigate: true }) }}>{row.destination.label}</button>}
+                          {row.destination?.key === 'settings.system' && <button type="button" className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-text transition-transform active:scale-[.97] hover:bg-hover" onClick={() => { interact(row, { navigate: true }) }}>{row.destination.label}</button>}
                         </div>}
                         <time className="mt-2 block text-[11px] text-muted" dateTime={row.updated_at}>{formatTimestamp(row.updated_at)}</time>
                       </div>

@@ -3,13 +3,32 @@ import { useMutation, useQuery, useQueryClient, type UseQueryOptions } from '@ta
 import { teardownAll } from '../stream/connection'
 import { keys } from '../api/queryKeys'
 import * as api from '../api/endpoints'
+import { useResourceEffects, useResourceMutation } from '../features/sessions/useResourceMutation'
+import { showToast } from '../features/toast/toast'
 
 export { useSettingsQuery, useSaveSettings } from './settings'
 
-/** Default model lives in config.yaml; on success the settings and models queries are refetched so every reader agrees. */
+const toastError = (e: unknown) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
+interface DefaultModel { model: string; provider?: string | null; advanced?: { service_tier: string } }
+
+/**
+ * Default model lives in config.yaml. Every reader shows the chosen model and speed at once (`useDefaultModelChoice`);
+ * settings and the catalog reread to confirm it. A speed change sends the shown model, so it never undoes a model change.
+ */
 export function useSetDefaultModel() {
-  const qc = useQueryClient()
-  return useMutation({ mutationFn: ({ model, provider, advanced }: { model: string; provider?: string | null; advanced?: { service_tier: string } }) => api.setDefaultModel(model, provider, advanced), onSuccess: async () => { await Promise.all([qc.invalidateQueries({ queryKey: keys.settings }), qc.invalidateQueries({ queryKey: keys.models }), qc.invalidateQueries({ queryKey: keys.auxiliaryModels })]) } })
+  return useResourceMutation({
+    resource: () => 'default-model',
+    // Auto auxiliary slots resolve to the default model, so their list rereads with it.
+    queryKey: [], readKeys: () => [keys.settings, keys.models, keys.auxiliaryModels],
+    effect: ({ model, provider, advanced }: DefaultModel) => ({ value: { model, provider: provider ?? null, service_tier: advanced?.service_tier } }),
+    mutationFn: ({ model, provider, advanced }) => api.setDefaultModel(model, provider, advanced),
+    onError: toastError,
+  })
+}
+
+/** The default model and speed the user just chose, until the server's reread confirms them. */
+export function useDefaultModelChoice() {
+  return useResourceEffects<{ model: string; provider: string | null; service_tier?: string | undefined }>()['default-model']?.value
 }
 
 /** TAL-802: whether this profile offers live dictation. */
@@ -21,12 +40,20 @@ export function useAuxiliaryModelsQuery(enabled = true) {
   return useQuery({ queryKey: keys.auxiliaryModels, queryFn: api.fetchAuxiliaryModels, staleTime: 30_000, enabled })
 }
 
-/** Writes one auxiliary slot; the server's refreshed state replaces the cached list. */
+/** One auxiliary slot's write owner; `__reset__` owns every slot. */
+export const auxResource = (task: string) => `aux-model:${task}`
+interface AuxWrite { task: string; model: string; provider?: string | null; tasks?: string[] | undefined; shown: Record<string, unknown> }
+
+/** Writes one auxiliary slot (or resets all): the slot shows the pick at once, and the server's state replaces the list. */
 export function useSetAuxiliaryModel() {
   const qc = useQueryClient()
-  return useMutation({
-    mutationFn: ({ task, model, provider }: { task: string; model: string; provider?: string | null }) => api.setAuxiliaryModel(task, model, provider),
-    onSuccess: (res) => { if (res.auxiliary) qc.setQueryData(keys.auxiliaryModels, res.auxiliary); else void qc.invalidateQueries({ queryKey: keys.auxiliaryModels }) },
+  return useResourceMutation({
+    resource: ({ task, tasks }: AuxWrite) => task === '__reset__' ? (tasks ?? []).map(auxResource) : auxResource(task),
+    queryKey: keys.auxiliaryModels, readKeys: () => [{ queryKey: keys.auxiliaryModels, exact: true }],
+    effect: ({ shown }) => ({ fields: shown }),
+    mutationFn: ({ task, model, provider }) => api.setAuxiliaryModel(task, model, provider),
+    onSuccess: (res) => { if (res.auxiliary) qc.setQueryData(keys.auxiliaryModels, res.auxiliary) },
+    onError: toastError,
   })
 }
 
