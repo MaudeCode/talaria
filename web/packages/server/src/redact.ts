@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { channel } from 'node:diagnostics_channel'
 import { str } from './util.js'
 import { diffHunks } from './text/diff.js'
@@ -1864,20 +1865,33 @@ function mightContainKeyword(text: string): boolean {
 const cache = new Map<string, string>()
 const CACHE_MAX = 4096
 const CACHE_MAX_TEXT_LEN = 16384
+const CACHE_MAX_BYTES = 16 * 1024 * 1024
+let cacheBytes = 0
 
 export function redactText(text: unknown, enabled: boolean): unknown {
   if (typeof text !== 'string' || !text) return text
   if (!enabled) return text
-  if (!mightContainSensitiveText(text)) return text
-  if (text.length > CACHE_MAX_TEXT_LEN) return redactSensitive(text)
-  const hit = cache.get(text)
-  if (hit !== undefined) return hit
-  const out = redactSensitive(text)
-  if (cache.size >= CACHE_MAX) {
-    const oldest = cache.keys().next()
-    if (!oldest.done) cache.delete(oldest.value)
+  // UTF-16 preserves lone-surrogate identity; inline keys must own their backing storage.
+  const key = text.length > CACHE_MAX_TEXT_LEN ? `sha256:${createHash('sha256').update(text, 'utf16le').digest('hex')}` : `text:${Buffer.from(text, 'utf16le').toString('utf16le')}`
+  const hit = cache.get(key)
+  if (hit !== undefined) {
+    cache.delete(key)
+    cache.set(key, hit)
+    return hit
   }
-  cache.set(text, out)
+  const out = mightContainSensitiveText(text) ? redactSensitive(text) : text
+  // Count both strings conservatively as UTF-16, even when V8 stores them as Latin-1.
+  const bytes = 2 * (key.length + out.length)
+  if (bytes > CACHE_MAX_BYTES) return out
+  while (cache.size >= CACHE_MAX || cacheBytes + bytes > CACHE_MAX_BYTES) {
+    const oldest = cache.entries().next()
+    if (oldest.done) break
+    cacheBytes -= 2 * (oldest.value[0].length + oldest.value[1].length)
+    cache.delete(oldest.value[0])
+  }
+  // Own the storage: a short substring can otherwise retain its entire parent string.
+  cache.set(key, Buffer.from(out, 'utf16le').toString('utf16le'))
+  cacheBytes += bytes
   return out
 }
 
