@@ -97,11 +97,11 @@ def agent_env(monkeypatch):
     monkeypatch.setattr(chat, "_PENDING_COMPRESSIONS", {})
     monkeypatch.setattr(chat, "_resolve_runtime", lambda provider, model: {"model": "m", "provider": provider or "p", "api_key": "k", "base_url": "https://example.invalid/v1", "api_mode": "chat_completions"})
     monkeypatch.setattr(chat, "_agent_class", lambda: ThrowawayAgent)
-    monkeypatch.setattr(chat, "disabled_toolsets", lambda: [])
-    monkeypatch.setattr(chat, "_profile_toolsets", lambda: ["file", "web"])
+    monkeypatch.setattr(chat, "disabled_toolsets", lambda cfg=None: [])
+    monkeypatch.setattr(chat, "_profile_toolsets", lambda cfg=None: ["file", "web"])
     monkeypatch.setattr(chat, "_checkpoint_required", lambda: False)
-    monkeypatch.setattr(chat, "_main_model_request_overrides", lambda model, provider, base_url="": None)
-    monkeypatch.setattr(chat, "_profile_prefill_messages", lambda: PREFILL)
+    monkeypatch.setattr(chat, "_main_model_request_overrides", lambda model, provider, base_url="", cfg=None: None)
+    monkeypatch.setattr(chat, "_profile_prefill_messages", lambda cfg=None: PREFILL)
     monkeypatch.setattr(chat, "scoped_home", lambda home: contextlib.nullcontext(home))
     return calls, outcome
 

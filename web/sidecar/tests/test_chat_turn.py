@@ -57,15 +57,18 @@ def _params(stream_id: str, session_id: str = "s1") -> dict:
 
 def _patch(monkeypatch):
     FakeAgent.instances.clear()
+    config = types.ModuleType("hermes_cli.config")
+    config.load_config_readonly = lambda: {}
+    monkeypatch.setitem(sys.modules, "hermes_cli.config", config)
     monkeypatch.setattr(chat, "_resolve_runtime", lambda provider, model: {"model": "m", "provider": "p"})
     monkeypatch.setattr(chat, "_agent_class", lambda: FakeAgent)
-    monkeypatch.setattr(chat, "_profile_toolsets", lambda: ["file", "web"])
-    monkeypatch.setattr(chat, "disabled_toolsets", lambda: [])
-    monkeypatch.setattr(chat, "_profile_fallback_chain", lambda: None)
-    monkeypatch.setattr(chat, "_profile_prefill_messages", lambda: None)
-    monkeypatch.setattr(chat, "_main_model_request_overrides", lambda model, provider, base_url="": None)
-    monkeypatch.setattr(chat, "_provider_routing_kwargs", lambda: {})
-    monkeypatch.setattr(chat, "checkpoint_kwargs", lambda: {})
+    monkeypatch.setattr(chat, "_profile_toolsets", lambda cfg=None: ["file", "web"])
+    monkeypatch.setattr(chat, "disabled_toolsets", lambda cfg=None: [])
+    monkeypatch.setattr(chat, "_profile_fallback_chain", lambda cfg=None: None)
+    monkeypatch.setattr(chat, "_profile_prefill_messages", lambda cfg=None: None)
+    monkeypatch.setattr(chat, "_main_model_request_overrides", lambda model, provider, base_url="", cfg=None: None)
+    monkeypatch.setattr(chat, "_provider_routing_kwargs", lambda cfg=None: {})
+    monkeypatch.setattr(chat, "checkpoint_kwargs", lambda cfg=None: {})
     monkeypatch.setattr(chat, "scoped_home", lambda home: contextlib.nullcontext(home))
 
 
@@ -678,7 +681,7 @@ def test_a_profile_toolset_change_builds_a_fresh_agent(monkeypatch) -> None:
     _patch(monkeypatch)
     chat.start(Ctx(), _params("st-1", "toolsets"))
     assert FakeAgent.instances[0].kwargs["enabled_toolsets"] == ["file", "web"]
-    monkeypatch.setattr(chat, "_profile_toolsets", lambda: ["file"])
+    monkeypatch.setattr(chat, "_profile_toolsets", lambda cfg=None: ["file"])
     chat.start(Ctx(), _params("st-2", "toolsets"))
     assert len(FakeAgent.instances) == 2 and FakeAgent.instances[1].kwargs["enabled_toolsets"] == ["file"]
     chat._AGENT_CACHE.clear()

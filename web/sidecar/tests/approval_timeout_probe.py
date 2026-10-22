@@ -49,8 +49,8 @@ class Ctx:
 
 chat._resolve_runtime = lambda provider, model: {"model": "m", "provider": "p"}
 chat._agent_class = lambda: Agent
-chat._profile_toolsets = lambda: ["terminal"]
-chat._profile_fallback_chain = lambda: None
+chat._profile_toolsets = lambda cfg=None: ["terminal"]
+chat._profile_fallback_chain = lambda cfg=None: None
 ctx = Ctx()
 result = chat.start(ctx, {"profile_home": os.environ["HERMES_HOME"], "session_id": SID, "stream_id": "st-timeout", "user_message": "hi", "conversation_history": [], "model": "m", "model_provider": "p"})
 frames = [(event, data) for event, data in ctx.frames if event.startswith("approval")]

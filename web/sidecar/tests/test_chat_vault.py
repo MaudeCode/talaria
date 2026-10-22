@@ -93,10 +93,10 @@ class Ctx:
 chat._agent_class = lambda: Agent
 chat._resolve_runtime = lambda provider, model: {"model": "m", "provider": "p"}
 chat._discover_mcp_tools = lambda run: None
-chat._profile_toolsets = lambda: ["browser"]
-chat._profile_fallback_chain = lambda: None
-chat._main_model_request_overrides = lambda model, provider, base_url="": None
-chat.checkpoint_kwargs = lambda: {}
+chat._profile_toolsets = lambda cfg=None: ["browser"]
+chat._profile_fallback_chain = lambda cfg=None: None
+chat._main_model_request_overrides = lambda model, provider, base_url="", cfg=None: None
+chat.checkpoint_kwargs = lambda cfg=None: {}
 result = chat.start(Ctx(), {"profile_home": os.environ["HERMES_HOME"], "session_id": "s-vault", "stream_id": "st-vault",
                             "user_message": "Log in", "model": "m", "model_provider": "p"})
 # The turn's thread keeps no prompt once the turn is over.
