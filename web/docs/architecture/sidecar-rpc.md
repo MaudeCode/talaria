@@ -36,7 +36,7 @@ the sidecar being killed closes that pipe, so the supervisor stops the
 writer's process tree and reaps the writer before releasing the lock. A concurrent repair fails
 without starting another writer.
 
-RPC v49 adds the closed `gateway.session` action `export` with `json`, `markdown`
+RPC v53 adds the closed `gateway.session` action `export` with `json`, `markdown`
 or `html` and a server-selected `redact` policy. It calls the already-running
 profile owner's read-only `session.export` once, translating Markdown to native
 `md`. The owner selects its current physical transcript after reset/compression.
