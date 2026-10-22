@@ -89,20 +89,25 @@ describe('parent snapshot lookup (TAL-1219)', () => {
     { indexed: false, snapshot: true },
     { indexed: false, snapshot: false },
     { indexed: false, snapshot: undefined },
-  ])('lists 50 forks with indexed=$indexed, snapshot=$snapshot without redundant parent loads', async ({ indexed, snapshot }) => {
+  ].flatMap((test) => (test.indexed ? [false, true] : [false]).map((legacy) => ({ ...test, legacy }))))('lists 50 forks with indexed=$indexed, snapshot=$snapshot, legacy=$legacy without redundant parent loads', async ({ indexed, snapshot, legacy }) => {
     const server = await bootTestServer()
     const store = server.deps.sessionStore
     try {
       const rows = Array.from({ length: 50 }, (_, i) => ({
-        session_id: `fork_${i}`, parent_session_id: indexed ? `parent_${i}` : 'missing_parent',
+        session_id: `fork_${i}`, parent_session_id: indexed ? legacy ? 'legacy_parent' : `parent_${i}` : 'missing_parent',
         source_tag: 'telegram', chat_id: 'shared_chat', message_count: 2, updated_at: i + 1,
       }))
       if (indexed) {
-        for (const row of rows) {
-          const parent = new Session({ session_id: row.parent_session_id, pre_compression_snapshot: snapshot, archived: true }, { workspace: '/synthetic', model: 'synthetic' })
+        for (const sid of new Set(rows.map((row) => row.parent_session_id))) {
+          const parent = new Session({ session_id: sid, pre_compression_snapshot: snapshot, archived: true }, { workspace: '/synthetic', model: 'synthetic' })
           await store.save(parent)
         }
-        await store.readIndexEntries()
+        const index = await store.readIndexEntries()
+        if (legacy) await store.deps.storage.sessions.writeIndex(index.map((row) => {
+          const old = { ...row }
+          Reflect.deleteProperty(old, 'pre_compression_snapshot')
+          return old
+        }))
         store.sessions.clear()
       }
       const load = vi.spyOn(store, 'loadMetadataOnly')
@@ -116,10 +121,10 @@ describe('parent snapshot lookup (TAL-1219)', () => {
       }
       const expected = (snapshot ? [...rows].reverse() : [rows[49]!]).map((row) => ({ ...row, is_cli_session: false }))
       expect((await buildSessionListPayload(store, params)).sessions).toEqual(expected)
-      expect(load).toHaveBeenCalledTimes(indexed ? 0 : 1)
-      if (!indexed) expect(load).toHaveBeenCalledWith('missing_parent')
+      expect(load).toHaveBeenCalledTimes(indexed && !legacy ? 0 : 1)
+      if (!indexed || legacy) expect(load).toHaveBeenCalledWith(legacy ? 'legacy_parent' : 'missing_parent')
       expect((await buildSessionListPayload(store, params)).sessions).toEqual(expected)
-      expect(load).toHaveBeenCalledTimes(indexed ? 0 : 2)
+      expect(load).toHaveBeenCalledTimes(indexed && !legacy ? 0 : 2)
     } finally { vi.restoreAllMocks(); await server.close() }
   })
 })
