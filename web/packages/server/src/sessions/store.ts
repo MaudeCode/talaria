@@ -35,7 +35,7 @@ export class SessionStore {
   private readonly locks = new Map<string, Promise<void>>()
   private readonly writes = new Map<string, Promise<void>>()
   private readonly resolutions = new Map<string, Promise<void>>()
-  private readonly persistedMessages = new WeakMap<Session, string[]>()
+  private readonly persistedMessages = new WeakMap<Session, { rows: Message[] } | { serialized: string[] }>()
   private indexWriter: Promise<void> = Promise.resolve()
   private readonly indexPending = new Map<string, Record<string, unknown>>()
   private indexFlush: Promise<void> | null = null
@@ -145,13 +145,14 @@ export class SessionStore {
       if (!stored) return null
       const data = sanitizeSessionRow(stored.doc, this, sid)
       if (data?.session_id !== sid) return null
-      const messages = await this.readMessages(sid, { start: 0, end: Infinity })
+      const messages = stored.messages
       if (stored.revision === null || stored.revision !== await this.revision(sid)) continue
       const [rows, collapsed] = collapseAdjacentDuplicatePartials(messages)
-      data.messages = rows
+      // Keep the parsed baseline independent of in-place edits to the resident session.
+      data.messages = structuredClone(rows)
       const session = (await this.construct(data, (data.profile as string | null | undefined) ?? null))
       session.sidecarLoadedSignature = stored.revision
-      this.persistedMessages.set(session, messages.map((row) => JSON.stringify(row)))
+      this.persistedMessages.set(session, { rows: messages })
       if (collapsed && (opts.repairDuplicates ?? true)) { try { await this.save(session, { touchUpdatedAt: false, skipIndex: true }) } catch { /* best effort */ } }
       try { if (opts.drafts ?? true) session.composer_draft = (await this.deps.drafts.read(sid, session.composer_draft)) } catch { /* ignore */ }
       return session
@@ -247,7 +248,9 @@ export class SessionStore {
     const snapshot = rows.map((row) => JSON.stringify(row))
     if (appendOnly) for (let i = 0; i < prefix!.length; i += 1) if (!prefix!.matchesRow(i, snapshot[i]!)) { appendOnly = false; break }
     const indexEntry = session.compact()
-    const previous = this.persistedMessages.get(session)
+    const persisted = this.persistedMessages.get(session)
+    const previous = persisted && ('rows' in persisted ? persisted.rows.map((row) => JSON.stringify(row)) : persisted.serialized)
+    if (previous) this.persistedMessages.set(session, { serialized: previous })
     let messages: SessionChange['messages'] = { kind: 'replace', rows }
     if (previous) {
       let from = 0
@@ -276,7 +279,7 @@ export class SessionStore {
       }
       throw error
     }
-    this.persistedMessages.set(session, snapshot)
+    this.persistedMessages.set(session, { serialized: snapshot })
     if (appendOnly) prefix!.savedAppend(rows, session.sidecarLoadedSignature)
     else delete session.prefixIndex
     // The document is committed; the batched index flush must not delay the caller (the turn's `done`).

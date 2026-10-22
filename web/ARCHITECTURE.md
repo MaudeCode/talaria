@@ -152,7 +152,9 @@ Web runtime persistence is selected by `TALARIA_STORAGE`, defaulting to `json`. 
 `SessionStore` owns resident sessions, mutation locks, write serialization and index projection. Only its
 backend adapter accesses session files. Reads carry opaque revisions; stale writes raise
 `RevisionConflict`, reload the cache and preserve the committed document. Message changes are typed
-as unchanged, append, splice or replace. Content search sends one batch of unmatched candidates through
+as unchanged, append, splice or replace. Full document reads return their parsed messages so a full cache miss
+reads and parses the file once. The store keeps those rows separate from the mutable session and
+computes their diff fingerprints on the first save. Content search sends one batch of unmatched candidates through
 the backend, with cached full transcripts handled by the store. Shared extraction and matching functions
 in `sessions/storage/search-text.ts` define search semantics for every adapter.
 

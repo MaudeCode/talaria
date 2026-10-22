@@ -6,6 +6,8 @@ export type SessionDocument = Record<string, unknown>
 export type SessionIndexEntry = Record<string, unknown>
 export interface StoredSession {
   doc: SessionDocument
+  /** Parsed rows from a full read; empty for metadata-only reads. */
+  messages: Message[]
   messageCount: number | null
   revision: string | null
   /** Older documents without a reliable count need a full load. */
