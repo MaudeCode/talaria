@@ -27,7 +27,8 @@ const FACET: Record<ConnectorToolsView['tools'][number]['facet'], () => string> 
 
 /** The member-rule write every switch on the page makes; a stale revision reloads the page's rules. */
 function useRule() {
-  // Every rule shares one policy revision: writes run one at a time, each on the revision the previous write returned.
+  const qc = useQueryClient()
+  // Every rule shares one policy revision: writes run one at a time, each on the newest revision this tab knows.
   const chain = useRef<Promise<unknown>>(Promise.resolve())
   const confirmed = useRef<{ read: string; next: string } | null>(null)
   return useResourceMutation({
@@ -37,10 +38,11 @@ function useRule() {
     readKeys: () => [keys.connectors.page, ['connectors', 'tools']],
     mutationFn: ({ connector, revision, rule }: { connector: string; revision: string; rule: Rule }) => {
       const write = chain.current.catch(() => undefined).then(async () => {
-        // Until the page rereads, the page's revision is the one this tab already advanced.
-        const base = confirmed.current?.read === revision ? confirmed.current.next : revision
+        // Until the page rereads, its revision is the one this tab's last confirmed write already advanced.
+        const read = qc.getQueryData<{ policy_revision?: string | null }>(keys.connectors.page)?.policy_revision ?? revision
+        const base = confirmed.current?.read === read ? confirmed.current.next : read
         const result = await api.setConnectorRule(connector, base, rule)
-        confirmed.current = { read: revision, next: result.revision }
+        confirmed.current = { read, next: result.revision }
         return result
       })
       chain.current = write

@@ -7,6 +7,7 @@ import { keys } from '../api/queryKeys'
 import { teardownAll } from '../stream/connection'
 import { useSaveSettings, useSettingsQuery } from './queries'
 import * as api from '../api/endpoints'
+import { ApiError } from '../contracts/common'
 
 vi.mock('../api/endpoints', () => ({ fetchSettings: vi.fn(), saveSettings: vi.fn() }))
 const initial = { bot_name: 'Hermes', send_key: 'enter', sidebar_density: 'compact', sound_enabled: false, agent_version: 'fixture', password_enabled: true }
@@ -27,7 +28,7 @@ beforeEach(() => {
   vi.mocked(api.fetchSettings).mockResolvedValue(initial)
 })
 
-describe('shared pending settings', () => {
+describe('shared optimistic settings', () => {
   it('shows requested fields to every reader while the confirmed cache stays unchanged', async () => {
     const held = deferred<Settings>()
     vi.mocked(api.saveSettings).mockReturnValue(held.promise)
@@ -147,14 +148,26 @@ describe('shared pending settings', () => {
     expect(api.saveSettings).toHaveBeenCalledTimes(1)
   })
 
-  it('keeps security and update controls confirmed while ordinary preferences are pending', async () => {
+  it('shows every setting the user changes at once, but never a credential command', async () => {
     vi.mocked(api.saveSettings).mockReturnValue(deferred<Settings>().promise)
     const { result } = setup()
-    act(() => result.current.save.mutate({ sound_enabled: true, password_enabled: false, confirm_external_links: false, auto_update: true }))
+    act(() => result.current.save.mutate({ sound_enabled: true, password_enabled: false, confirm_external_links: false, auto_update: true, api_redact_enabled: false, _set_password: 'secret' }))
     await waitFor(() => expect(result.current.settings.data?.sound_enabled).toBe(true))
-    expect(result.current.settings.data?.password_enabled).toBe(true)
-    expect(result.current.settings.data?.confirm_external_links).toBeUndefined()
-    expect(result.current.settings.data?.auto_update).toBeUndefined()
+    expect(result.current.settings.data).toMatchObject({ password_enabled: false, confirm_external_links: false, auto_update: true, api_redact_enabled: false })
+    expect(result.current.settings.data).not.toHaveProperty('_set_password')
+  })
+
+  it('keeps an unknown outcome shown until the reread decides it', async () => {
+    const reread = deferred<Settings>()
+    vi.mocked(api.saveSettings).mockRejectedValue(new ApiError({ kind: 'timeout', path: '/api/settings', message: 'timed out' }))
+    vi.mocked(api.fetchSettings).mockReturnValue(reread.promise)
+    const { result } = setup()
+    act(() => result.current.save.mutate({ sound_enabled: true }))
+    await waitFor(() => expect(api.fetchSettings).toHaveBeenCalled())
+    expect(result.current.settings.data?.sound_enabled).toBe(true)
+    reread.resolve({ ...initial, sound_enabled: true })
+    await waitFor(() => expect(result.current.save.error?.message).toBe('timed out'))
+    expect(result.current.settings.data?.sound_enabled).toBe(true)
   })
 
   it.each(['context', 'cache'] as const)('ignores completions after a %s reset', async (reset) => {
