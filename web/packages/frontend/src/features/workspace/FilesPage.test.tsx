@@ -29,8 +29,8 @@ async function menu(name: string, item: string) {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  vi.mocked(api.listDir).mockResolvedValue(tree as never)
-  vi.mocked(api.fetchGitInfo).mockResolvedValue({ git: null } as never)
+  vi.mocked(api.listDir).mockResolvedValue(tree)
+  vi.mocked(api.fetchGitInfo).mockResolvedValue({ git: null })
   vi.mocked(api.readFile).mockImplementation((_sid, path) => Promise.resolve({ content: path === 'a.txt' ? 'Original A' : 'Original B', size: 10, preview: 'text' } as never))
 })
 
