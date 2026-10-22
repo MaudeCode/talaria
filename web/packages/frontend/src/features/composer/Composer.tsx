@@ -28,7 +28,8 @@ import { LiveStatusPill } from '../chat/LiveTurnView'
 import { ComposerNotices, type ComposerNotice } from './ComposerNotices'
 import { useBtw } from './useBtw'
 import { useCommandOutput } from './useCommandOutput'
-import { BackgroundWorkCard, useBackgroundTasks } from '../background/BackgroundWork'
+import { BackgroundWorkCard, backgroundLaunch, useBackgroundTasks, useStartBackground } from '../background/BackgroundWork'
+import { isDefiniteRefusal } from '../../contracts/common'
 import { beginFirstSend, endFirstSend, failFirstSend, getFirstSend, ownsFirstSend, useFirstSend } from '../chat/firstSend'
 import { REST_MS, onComposerRestRequest, requestScroll } from '../chat/sendMotion'
 import { MOTION_EASE, prefersReducedMotion } from '../../lib/motion'
@@ -132,6 +133,7 @@ export const Composer = memo(function Composer(props: ComposerProps) {
   const { sessionId, session, busy, streamId, settings, onEnsureSession, onLocalCommand, terminalOpen, onToggleTerminal, onModelChange, onWorkspaceChange, onNewWorktreeChat, onRemoveWorktree, onToolsetsChange, onExecutionModeChange, onReasoningChange, reasoning, reasoningLevels, reasoningSupported = true, pendingChoices, locked = false, yolo, onToggleYolo, queued, onQueue, onQueueChange, clarify, notices = [] } = props
   const bootstrap = useBootstrap()
   const qc = useQueryClient()
+  const startBackground = useStartBackground()
   const localStateId = composerStateId(session)
   const [text, setText] = useState(() => (localStateId ? readLocalDraft(localStateId) : ''))
   const [draftIdentity, setDraftIdentity] = useState(localStateId)
@@ -469,12 +471,13 @@ export const Composer = memo(function Composer(props: ComposerProps) {
         // TAL-372: `/background` runs the prompt in a hidden session; its record and result show behind the background chip.
         if (cmd.name === 'background') {
           if (!cmd.args) { showToast(m.bg_usage(), 2000); return }
-          try {
-            const target = session ?? (await onEnsureSession())
-            await api.startBackground(target.session_id, cmd.args)
-            setText('')
-            void qc.invalidateQueries({ queryKey: keys.background(target.session_id) })
-          } catch (e) { showToast(e instanceof Error ? e.message : String(e), 4000, 'error') }
+          let target: { session_id: string }
+          try { target = session ?? (await onEnsureSession()) } catch (e) { showToast(e instanceof Error ? e.message : String(e), 4000, 'error'); return }
+          // Only the submitted draft clears; a refusal puts the prompt back beside anything typed since.
+          setText((current) => current === text ? '' : current)
+          startBackground.mutate({ resource: backgroundLaunch(target.session_id), sessionId: target.session_id, prompt: cmd.args }, {
+            onError: (e) => { if (isDefiniteRefusal(e) && commandScope === getStreamContext()) setText((current) => current.trim() ? `${current}\n\n${text}` : text) },
+          })
           return
         }
         // TAL-518: a side question never steers or sends; its answer shows behind a composer chip, running or idle.

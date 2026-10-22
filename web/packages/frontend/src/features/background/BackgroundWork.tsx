@@ -11,12 +11,28 @@ import { keys } from '../../api/queryKeys'
 import { Markdown } from '../chat/render/Markdown'
 import { m } from '../../paraglide/messages.js'
 import { showToast } from '../toast/toast'
-import { useResourceEffects, useResourceMutation, withEffects } from '../sessions/useResourceMutation'
+import { newResource, useResourceEffects, useResourceMutation, withCreated, withEffects } from '../sessions/useResourceMutation'
 
 /** Running work changes on the Agent's side; a quiet refresh keeps the card current between server notices. */
 const LIVE_REFRESH_MS = 15_000
 
 const backgroundResource = (sessionId: string, taskId: string) => `background:${sessionId}:${taskId}`
+const launchKind = (sessionId: string) => `background-launch-${sessionId}`
+
+/**
+ * `/background` shows its task at once as running work with the submitted prompt; the server's task replaces it on the
+ * reread, and a refusal removes it. A lost answer is never relaunched: the reread decides.
+ */
+export function useStartBackground() {
+  return useResourceMutation({
+    resource: ({ resource }: { resource: string; sessionId: string; prompt: string }) => resource,
+    queryKey: ['sessions', 'background'], readKeys: ({ sessionId }) => [{ queryKey: keys.background(sessionId), exact: true }], exclusive: true,
+    effect: ({ resource, prompt }) => ({ fields: { task_id: resource, kind: 'background_command', status: 'running', title: prompt, started_at: null, updated_at: 0, completed_at: null, result_available: false, child_sessions: [], exit_code: null, agents: null, pinned: true, dismissible: false, active: true } satisfies BackgroundTask }),
+    mutationFn: ({ sessionId, prompt }) => api.startBackground(sessionId, prompt),
+    onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error'),
+  })
+}
+export const backgroundLaunch = (sessionId: string) => newResource(launchKind(sessionId))
 
 /** The session's background work as the user sees it: a dismissed result leaves at once. */
 export function useBackgroundTasks(sessionId: string | null | undefined) {
@@ -24,7 +40,7 @@ export function useBackgroundTasks(sessionId: string | null | undefined) {
   return useQuery({
     queryKey: keys.background(sessionId ?? ''),
     queryFn: () => api.fetchBackgroundTasks(sessionId ?? ''),
-    select: (data) => ({ ...data, tasks: withEffects(data.tasks, (task) => backgroundResource(sessionId ?? '', task.task_id), effects) }),
+    select: (data) => ({ ...data, tasks: withCreated(withEffects(data.tasks, (task) => backgroundResource(sessionId ?? '', task.task_id), effects), launchKind(sessionId ?? ''), effects) }),
     enabled: Boolean(sessionId),
     refetchInterval: (query) => (query.state.data?.tasks.some((t) => t.active) ? LIVE_REFRESH_MS : false),
   })
