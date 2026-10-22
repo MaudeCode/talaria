@@ -213,6 +213,7 @@ export function Transcript(props: TranscriptProps) {
   useEffect(() => onScrollRequest('follow', () => { if (pinnedRef.current) scrollToBottom(false) }), [scrollToBottom])
 
   const virtualizer = useVirtualizer({
+    enabled: virtualize,
     count: virtualize ? rows.length : 0,
     getScrollElement: () => scrollRef.current,
     estimateSize: (i) => {

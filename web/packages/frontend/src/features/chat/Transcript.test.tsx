@@ -37,6 +37,21 @@ const props = (): TranscriptProps => ({
   showJumpButtons: false, virtualizeLongTranscripts: false,
 })
 
+it('owns virtualizer scroll listeners only while the virtualized window is active', () => {
+  const added = vi.spyOn(HTMLElement.prototype, 'addEventListener')
+  const removed = vi.spyOn(HTMLElement.prototype, 'removeEventListener')
+  const input = { ...props(), truncated: false, rows: projectMessages(Array.from({ length: 240 }, (_, i) => ({ id: i + 1, role: 'user' as const, content: `Row ${i + 1}` }))) }
+  const view = render(<Transcript {...input} />)
+  const pane = view.container.querySelector<HTMLElement>('#messages')!
+  const scrollListeners = () => added.mock.calls.filter(([event, , options], i) => added.mock.contexts[i] === pane && event === 'scroll' && typeof options === 'object' && options.passive)
+  expect(scrollListeners()).toHaveLength(0)
+  view.rerender(<Transcript {...input} virtualizeLongTranscripts />)
+  expect(scrollListeners()).toHaveLength(1)
+  const listener = scrollListeners()[0]![1]
+  view.rerender(<Transcript {...input} />)
+  expect(removed.mock.calls.some(([event, callback], i) => removed.mock.contexts[i] === pane && event === 'scroll' && callback === listener)).toBe(true)
+})
+
 it('keeps row filtering and element creation cached across ten streamed tokens', () => {
   const input = { ...props(), truncated: false, rows: projectMessages([
     { id: 1, role: 'user', content: 'Question', _turn_id: 'turn' },
