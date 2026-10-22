@@ -113,8 +113,10 @@ final class ChatHostedTests: XCTestCase {
         stream.emit(.token("Opening "))
         let opened = await awaitCondition { viewModel.messages.last?.content == "Opening " }
         XCTAssertTrue(opened)
-        settle(0.5)
-        attachHostedScreenshot(window, name: "stream-isolation-before-ticks-\(name)")
+        // Let main-actor startup work finish before resetting the recorder.
+        try await Task.sleep(for: .milliseconds(500))
+        // Snapshot capture can enqueue layout updates. Keep its diagnostics after
+        // the measured reveal window so those updates aren't counted as reveal work.
         evaluations.reset()
         var expected = "Opening "
         for tick in 1...20 {
@@ -123,7 +125,7 @@ final class ChatHostedTests: XCTestCase {
             stream.emit(.token(token))
             let revealed = await awaitCondition { viewModel.messages.last?.content == expected }
             XCTAssertTrue(revealed, "Reveal tick \(tick) never reached the transcript")
-            settle(0.05)
+            try await Task.sleep(for: .milliseconds(50))
         }
         let measured = evaluations.counts
         let counts = XCTAttachment(string: "20 reveal ticks: \(measured)")
