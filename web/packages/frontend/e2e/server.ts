@@ -56,6 +56,9 @@ export async function bootServer(baseUrl: string, extraEnv: Record<string, strin
     HERMES_WEBUI_SKIP_ONBOARDING: '1',
     HERMES_WEBUI_TEST_NETWORK_BLOCK: '1',
     AWS_EC2_METADATA_DISABLED: 'true',
+    // Native Agent trials use their preprovisioned interpreter and no scanner download/updater.
+    HERMES_DISABLE_LAZY_INSTALLS: '1',
+    TIRITH_ENABLED: '0',
     ...extraEnv,
   })
   const log = join(state, 'server.log')

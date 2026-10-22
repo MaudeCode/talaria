@@ -2418,6 +2418,7 @@
 	"extensions_disabled_panel": "This extension is disabled.",
 	"extensions_sidecar_consent": "Allow the proxied sidecar",
 	"extensions_legacy_notice": "This extension still uses injected scripts, which the sandboxed platform no longer runs.",
+	"extensions_web_migration_required": "This dashboard needs a Web extension panel.",
 	"extensions_migration_guide": "Read the migration guide",
 	"extensions_skin_from": "from {name}",
 	"project_all": "All",

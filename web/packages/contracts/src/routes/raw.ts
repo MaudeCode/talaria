@@ -102,7 +102,11 @@ export const RAW_ROUTES: readonly RawRoute[] = [
     responses: { 200: { description: 'Asset bytes.', contentType: 'application/octet-stream' }, 404: { description: 'Not found (never explains why).', contentType: 'application/json' } },
   },
   {
-    method: 'POST', path: '/api/extensions/{id}/sidecar/{path}', summary: 'Consented loopback sidecar proxy (any method); headers stripped, 10 s, 512 KiB.', tags: ['automation'],
+    method: 'GET', path: '/agent-dashboard-plugins/{id}/{path}', summary: 'Profile/owner-bound Agent dashboard assets. Explicit Web panel opt-in; sandbox CSP, no-store, contained static types only. Disabled/unknown ids are indistinguishable.', tags: ['automation'],
+    responses: { 200: { description: 'Asset bytes.', contentType: 'application/octet-stream' }, 404: { description: 'Not found.', contentType: 'application/json' } },
+  },
+  {
+    method: 'POST', path: '/api/extensions/{id}/sidecar/{path}', summary: 'Consented extension proxy (any method); loopback bytes or an Agent-host buffered {status, headers, body} envelope. Profile/owner-bound Agent ids; stripped credentials, 10 s, 512 KiB; streams/WebSockets unsupported.', tags: ['automation'],
     responses: { 403: { description: 'Consent required or cross-origin request.', contentType: 'application/json' }, 409: { description: 'Sidecar unavailable.', contentType: 'application/json' }, 502: { description: 'Upstream failed or too large.', contentType: 'application/json' } },
   },
   {

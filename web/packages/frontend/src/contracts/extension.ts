@@ -48,7 +48,9 @@ export const ExtensionManifestSchema = z.object({
   name: z.string().min(1).max(80),
   version: z.string().max(40).optional(),
   description: z.string().max(300).optional(),
-  source: z.enum(['manifest', 'gallery', 'plugin']),
+  source: z.enum(['manifest', 'gallery', 'plugin', 'agent-plugin']),
+  agent_host: z.boolean().optional(),
+  display_id: z.string().max(64).optional(),
   enabled: z.boolean(),
   /** The server's decision that Settings shows an enable switch for this row. */
   can_toggle: z.boolean(),

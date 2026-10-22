@@ -236,7 +236,7 @@ export class ExtensionHost {
       case 'storage.keys':
         return { keys: Object.keys(readPersistedJson(this.storageKey(), StorageBlob) ?? {}) }
       case 'sidecar.fetch': {
-        if (!this.manifest.sidecar) throw new ProtocolError('no_sidecar', 'No sidecar declared')
+        if (!this.manifest.sidecar && !this.manifest.agent_host) throw new ProtocolError('no_sidecar', 'No sidecar declared')
         const p = SidecarFetchParams.parse(params)
         return this.services.fetchSidecar(this.manifest.id, p)
       }

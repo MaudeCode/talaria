@@ -1,4 +1,5 @@
 /** Settings, profiles, models, providers, reasoning, personalities, onboarding (Python `api/routes.py` handlers of the same paths). */
+import { dashboardScope } from '../tools/dashboard-plugins.js'
 import { implement } from '@orpc/server'
 import { RuntimeCredentialError, writeRuntimeCredential } from '../providers/runtime-env.js'
 import { settingsContract } from '@maudecode/talaria-web-contracts'
@@ -253,6 +254,7 @@ export const settingsRouter = os.router({
       if (bound && name !== bound) throw new HttpError(403, 'Profile is bound to the current session')
       const result = await ctx.deps.profiles.switch(name)
       ctx.deps.catalog.invalidate()
+      ctx.deps.dashboardPlugins.invalidateOwner(dashboardScope(ctx))
       const sessionCookie = ctx.trusted.cookieValue ?? null
       if (!(sessionCookie && bound && name === bound)) ctx.queueCookie(await buildProfileCookie(ctx, name, sessionCookie))
       return result as never

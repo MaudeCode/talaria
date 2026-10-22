@@ -1,0 +1,59 @@
+{
+  "plugins.dashboard_list": [
+    {
+      "params": {
+        "profile_home": "/tmp/hermes"
+      },
+      "result": {
+        "supported": true,
+        "plugins": []
+      }
+    }
+  ],
+  "plugins.dashboard_toggle": [
+    {
+      "params": {
+        "profile_home": "/tmp/hermes",
+        "name": "board",
+        "enabled": true
+      },
+      "result": {
+        "ok": true
+      }
+    }
+  ],
+  "plugins.dashboard_asset": [
+    {
+      "params": {
+        "profile_home": "/tmp/hermes",
+        "name": "board",
+        "path": "dist/index.html"
+      },
+      "result": {
+        "status": 404,
+        "body": "",
+        "content_type": "application/octet-stream"
+      }
+    }
+  ],
+  "plugins.dashboard_request": [
+    {
+      "params": {
+        "profile_home": "/tmp/hermes",
+        "name": "board",
+        "path": "/",
+        "method": "GET",
+        "query": "",
+        "headers": {},
+        "body": "",
+        "authenticated": true,
+        "websocket": false
+      },
+      "result": {
+        "status": 404,
+        "body": "",
+        "content_type": "application/octet-stream"
+      }
+    }
+  ]
+}

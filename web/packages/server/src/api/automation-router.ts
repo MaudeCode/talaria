@@ -9,6 +9,7 @@ import { HttpFailure } from '../sessions/service.js'
 import { SessionNotFound } from '../sessions/store.js'
 import { ConfigUnavailable, type Dict } from '../config/agent-config.js'
 import { SidecarError } from '../sidecar/client.js'
+import { dashboardScope, isAgentDashboardId } from '../tools/dashboard-plugins.js'
 import { ExtensionError } from '../tools/extensions.js'
 import { boardSlug, intQuery, kanbanFailure, truthyQuery, withKanbanPolicy, withStatsTotals } from '../tools/kanban.js'
 import { TerminalNotRunning } from '../tools/terminal.js'
@@ -137,6 +138,10 @@ export const automationRouter = os.router({
     toggle: os.extensions.toggle.handler(({ input, context: { ctx } }) => run(async () => {
       // A listed plugin row persists `dashboard_plugins.<id>`; every other id is an extension override.
       const id = typeof input.id === 'string' ? input.id.trim() : ''
+      if (isAgentDashboardId(id)) {
+        await ctx.deps.dashboardPlugins.setAgentEnabled(dashboardScope(ctx), id, input.enabled)
+        return ctx.deps.extensions.status() as Promise<never>
+      }
       if (!(await manifestList(ctx)).manifests.some((m) => m.id === id && m.source === 'plugin')) return ctx.deps.extensions.setEnabled(input.id, input.enabled) as Promise<never>
       await ctx.deps.dashboardPlugins.setEnabled(id, input.enabled)
       return ctx.deps.extensions.status() as Promise<never>
@@ -198,6 +203,7 @@ async function manifestList(ctx: RequestContext): Promise<{ protocol_version: 1;
   const out = await ctx.deps.extensions.manifests()
   const seen = new Set(out.manifests.map((m) => m.id))
   out.manifests.push(...(await ctx.deps.dashboardPlugins.manifests()).filter((m) => !seen.has(m.id)))
+  out.manifests.push(...await ctx.deps.dashboardPlugins.agentManifests(dashboardScope(ctx)))
   return out
 }
 
