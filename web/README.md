@@ -161,8 +161,9 @@ fences. File uploads and direct-worker-only controls are unavailable on this con
 turn using a whole clarification batch remains read-only because the owner cannot replay that pending
 request to a new viewer; continue it in its native client. Secure setup and sudo passwords are not
 tunneled through Web. Dedicated profile owners use native private-control tickets rather than the
-retired HTTP gateway URL/key settings. A v1 profile served by a shared multiplexer remains read-only
-because that runtime does not preserve the verified native launch policy through execution.
+retired HTTP gateway URL/key settings. Profiles served by a shared multiplexer can use canonical
+sessions when the owner's exact boot revision has passed Talaria's profile-isolation contract.
+Unverified owners remain read-only. Diagnostic fresh chats still require a dedicated owner.
 
 To use an external OpenAI-compatible endpoint as a model, add it in **Settings → Providers**.
 

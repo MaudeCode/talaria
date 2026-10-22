@@ -1,5 +1,8 @@
 {
   "schemaVersion": 1,
+  "nativeContracts": {
+    "served-local-policy-v1": ["4d04303818b61bf3aa09278af48356315515965b"]
+  },
   "releases": [
     {
       "releaseTag": "v0.22.1",

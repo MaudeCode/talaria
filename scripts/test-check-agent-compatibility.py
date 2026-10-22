@@ -195,6 +195,21 @@ class CheckerTests(unittest.TestCase):
         with patch("sys.argv", ["check-agent-compatibility.py", *argv]):
             checker.main()
 
+    def test_native_contract_does_not_promote_a_supported_release(self):
+        path = self.root / "web/sidecar/agent_support.json"
+        record = json.loads(path.read_text())
+        record["nativeContracts"] = {"served-local-policy-v1": ["f" * 40]}
+        path.write_text(json.dumps(record))
+        self.assertEqual(checker.supported_releases(self.root), [checker.stable_identity(r) for r in RELEASES])
+        for invalid in (None, [], {"unknown": ["f" * 40]}, {"served-local-policy-v1": []},
+                        {"served-local-policy-v1": ["0.22.4"]}, {"served-local-policy-v1": [None]},
+                        {"served-local-policy-v1": ["f" * 40, "f" * 40]}):
+            with self.subTest(invalid=invalid):
+                record["nativeContracts"] = invalid
+                path.write_text(json.dumps(record))
+                with self.assertRaises(ValueError):
+                    checker.supported_releases(self.root)
+
     def test_worker_policy_reaches_the_shared_test_entry_point(self):
         original = self.tools.run
         environments = []
