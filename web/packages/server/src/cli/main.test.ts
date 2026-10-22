@@ -13,6 +13,7 @@ const trial = vi.hoisted(() => ({
   deps: null as AppDeps | null,
   listening: vi.fn<(running: RunningServer) => void>(),
   resumed: false,
+  mark: vi.fn<(stage: string) => void>(),
 }))
 
 vi.mock('./dotenv.js', () => ({ loadStartupEnv: vi.fn() }))
@@ -29,7 +30,9 @@ vi.mock('../config.js', async (original) => {
 vi.mock('../runtime.js', async (original) => {
   const runtime = await original<typeof import('../runtime.js')>()
   return { ...runtime, createDeps: async (opts: Parameters<typeof runtime.createDeps>[0]) => {
+    trial.mark('dependency initialization started')
     const deps = await runtime.createDeps(opts)
+    trial.mark('dependency initialization finished')
     // No supervisor, external connection, update, or background job belongs to this startup-order test.
     vi.spyOn(deps.relay, 'start').mockResolvedValue(false)
     vi.spyOn(deps.completions, 'start').mockImplementation(() => undefined)
@@ -43,7 +46,14 @@ vi.mock('../runtime.js', async (original) => {
 vi.mock('../server.js', async (original) => {
   const server = await original<typeof import('../server.js')>()
   return { ...server, startServer: async (...args: Parameters<typeof server.startServer>) => {
+    trial.mark('listener startup started')
     const running = await server.startServer(args[0], args[1], { signals: false })
+    trial.mark('listener startup finished')
+    running.server.on('request', (req, res) => {
+      if (req.url !== '/api/auth/status') return
+      trial.mark('auth request accepted')
+      res.once('finish', () => { trial.mark('auth response finished') })
+    })
     trial.listening(running)
     return running
   } }
@@ -66,19 +76,27 @@ it('serves auth within 500 ms and refuses chat while a five-second handshake is 
   const emitter: import('node:events').EventEmitter = process
   const listeners = events.map((event) => new Set(emitter.listeners(event)))
   vi.stubEnv('TALARIA_WEB_WORKER', '1')
+  vi.stubEnv('HERMES_WEBUI_HOST', '127.0.0.1')
+  vi.stubEnv('HERMES_WEBUI_PORT', '8787')
   let deadline: ReturnType<typeof setTimeout> | undefined
   let failure: unknown
   const started = performance.now()
+  const stages: { stage: string; ms: number }[] = []
+  trial.mark.mockImplementation((stage) => { stages.push({ stage, ms: performance.now() - started }) })
   const serving = main(['serve']).catch((error: unknown) => { failure = error })
   try {
     const reachable = listening.then(async (running) => {
       const base = `http://127.0.0.1:${running.port}`
       const auth = await fetch(`${base}/api/auth/status`)
+      trial.mark('auth response headers received')
       expect(auth.status).toBe(200)
       return base
     })
     const base = await Promise.race([reachable, new Promise<never>((_, reject) => {
-      deadline = setTimeout(() => { reject(new Error('HTTP auth listener was not reachable within 500 ms')) }, 500)
+      deadline = setTimeout(() => {
+        trial.mark('deadline fired')
+        reject(new Error(`HTTP auth listener was not reachable within 500 ms; stages: ${JSON.stringify(stages)}`))
+      }, 500)
     })])
     expect(performance.now() - started).toBeLessThan(500)
     expect(fake.status).toBe('starting')
