@@ -1660,9 +1660,20 @@ export class SessionService {
     let s = (await this.get404(sid, {}, reads))
     s = (await this.store.ensureFull(sid, s))
     await this.withMutationLock(sid, async () => {
+      s = await this.store.ensureFull(sid, await this.store.get(sid))
+      const previous = { archived: s.archived, pinned: s.pinned }
+      const wasArchived = (await this.store.loadMetadataOnly(sid))?.archived ?? false
       s.archived = archived
       if (archived) s.pinned = false
-      await this.store.save(s, { touchUpdatedAt: false })
+      try {
+        await this.store.save(s, { touchUpdatedAt: false })
+        const saved = await this.store.loadMetadataOnly(sid)
+        if (saved?.archived !== archived || saved.pinned !== s.pinned) throw new HttpFailure(409, 'Archive was not saved; reload the chat and retry')
+      } catch (error) {
+        Object.assign(s, previous)
+        throw error
+      }
+      if (archived && !wasArchived) await this.finalizeSession(sid, s.profile, 'archive', stateDbReadLineage(s) ?? undefined)
     }, { allowReadOnly: true })
     const sidecar = this.deps.sidecar?.()
     if (!archived && sidecar) await this.retainWorktrees((method, params, opts) => sidecar.call(method, params, opts), s).catch(() => undefined)
@@ -2187,17 +2198,18 @@ export class SessionService {
     }
   }
 
-  /** Clear and delete share the profile-scoped, best-effort Agent session boundary. */
-  private async finalizeSession(sid: string, profile: string | null, reason: 'clear' | 'delete'): Promise<string[]> {
+  /** Profile-scoped, best-effort lifecycle delivery; archive only notifies plugins. */
+  private async finalizeSession(sid: string, profile: string | null, reason: 'clear' | 'delete' | 'archive', lineage?: string[]): Promise<string[]> {
     const sidecar = this.deps.sidecar?.()
     if (!sidecar || this.deps.profileDeleting?.(profile)) return []
     const release = this.deps.profileActivity?.(profile)
     try {
       return (await sidecar.call('chat.finalize_session', {
         session_id: sid, profile_home: this.deps.profileHome(profile ?? this.deps.activeProfile()), reason,
+        ...(lineage ? { lineage } : {}),
       }, { timeoutMs: 12_000 })).messages
-    } catch (error) {
-      this.deps.log(`[webui] session finalize (${reason}) failed: ${(error as Error).message}`)
+    } catch {
+      this.deps.log(`[webui] session lifecycle (${reason}) failed`)
       return []
     } finally { release?.() }
   }
