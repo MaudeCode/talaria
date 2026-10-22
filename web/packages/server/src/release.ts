@@ -100,15 +100,16 @@ export function loadReleaseInfo(sources: ReleaseSources, opts: { verifyCheckout?
 
 /** `-dirty-<sha1(diff)[:8]>` for changed Web content (a cache fingerprint), else ``. */
 function dirtySuffix(webRoot: string): string {
+  // A version lookup must not refresh the whole Git index behind a Web-only pathspec.
+  const gitDiff = ['-C', webRoot, '-c', 'diff.autoRefreshIndex=false', 'diff']
   try {
-    // diff-index can report stale stat entries as dirty; only Web content contributes to its runtime fingerprint.
-    execFileSync('git', ['-C', webRoot, 'diff', '--quiet', 'HEAD', '--', '.'], { stdio: 'ignore', timeout: 1000 })
+    execFileSync('git', [...gitDiff, '--quiet', 'HEAD', '--', '.'], { stdio: 'ignore', timeout: 1000 })
     return ''
   } catch (error) {
     if ((error as { status?: number }).status !== 1) return ''
   }
   try {
-    const diff = execFileSync('git', ['-C', webRoot, 'diff', '--binary', 'HEAD', '--', '.'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 1000, maxBuffer: 64 * 1024 * 1024 })
+    const diff = execFileSync('git', [...gitDiff, '--binary', 'HEAD', '--', '.'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 1000, maxBuffer: 64 * 1024 * 1024 })
     if (diff) return `-dirty-${createHash('sha1').update(diff, 'utf8').digest('hex').slice(0, 8)}`
   } catch {
     /* fall through */

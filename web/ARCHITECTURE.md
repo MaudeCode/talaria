@@ -245,8 +245,8 @@ The worker starts the sidecar handshake concurrently with server initialization 
 waiting for that handshake. Public pages and authentication remain available during Agent imports;
 chat admission answers `503 sidecar_unavailable` while the sidecar is starting or reconnecting, without
 queuing a runtime check behind the handshake. Handshake metadata is read lazily from the sidecar.
-Source-checkout dirty fingerprints compare actual Web content, excluding timestamp-only rewrites and
-unrelated monorepo components from the startup scan.
+Source-checkout dirty fingerprints compare actual Web content without refreshing the Git index,
+excluding timestamp-only rewrites and unrelated monorepo components from the startup scan.
 
 After automatic compression, `chat.start` returns capped model context separately from the full visible
 transcript. The cap preserves paired skill loads' reload markers and failure verdicts even after the raw-output

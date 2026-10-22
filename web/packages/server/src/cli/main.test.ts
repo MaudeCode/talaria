@@ -28,7 +28,7 @@ vi.mock('node:fs', async (original) => {
 vi.mock('node:child_process', async (original) => {
   const cp = await original<typeof import('node:child_process')>()
   return { ...cp, execFileSync: (...args: Parameters<typeof cp.execFileSync>) => {
-    const command = `${args[0]} ${args[1]?.[2] ?? ''}`
+    const command = `${args[0]} ${['rev-parse', 'describe', 'diff-index', 'diff'].find((name) => args[1]?.includes(name)) ?? ''}`
     trial.mark(`${command} started`)
     try { return cp.execFileSync(...args) } finally { trial.mark(`${command} finished`) }
   } }

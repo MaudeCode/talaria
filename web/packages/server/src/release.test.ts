@@ -26,9 +26,13 @@ describe('release info', () => {
     git('-c', 'user.name=Synthetic', '-c', 'user.email=synthetic@example.test', '-c', 'commit.gpgsign=false', 'commit', '-qm', 'fixture')
     git('tag', 'web-v9.8.7')
     const dev = developmentInfo(WEB_ROOT)
+    const indexPath = join(dir, '.git', 'index')
+    const index = readFileSync(indexPath)
     // Build generators can rewrite identical bytes, leaving the index's stat cache stale.
     utimesSync(file, 2_000_000_000, 2_000_000_000)
+    utimesSync(join(dir, 'app', 'unrelated.swift'), 2_000_000_000, 2_000_000_000)
     expect(detectWebuiVersion(dev, web)).toBe('web-v9.8.7')
+    expect(readFileSync(indexPath)).toEqual(index)
     writeFileSync(join(dir, 'app', 'unrelated.swift'), 'unrelated change\n')
     expect(detectWebuiVersion(dev, web)).toBe('web-v9.8.7')
     writeFileSync(file, 'changed\n')
@@ -38,6 +42,7 @@ describe('release info', () => {
     expect(detectWebuiVersion(dev, web)).toBe(changed)
     writeFileSync(file, 'changed again\n')
     expect(detectWebuiVersion(dev, web)).not.toBe(changed)
+    expect(readFileSync(indexPath)).toEqual(index)
   })
 
   it('packages the same contract versions the monorepo publishes (contracts/versions.json)', () => {
