@@ -777,6 +777,9 @@ async def probe_detail(home, peer, desc):
         async with websocket(home, desc) as native:
             created = await rpc(native, 'session.create', request_id='detail-create', source='cli', toolsets=['delegation'])
             sid = created['result']['session_id']
+            context_params = {'profile_home': str(home), 'session_id': sid, 'action': 'context_detail'}
+            prebuild = await asyncio.to_thread(viewer.result, 'gateway.session', context_params)
+            assert prebuild['context_detail']['reason'] == 'not_built', prebuild
             # Recording can enable the native flag independently of Talaria's pre-fix adapter.
             if os.environ.get('TALARIA_RECORD_OWNER_EVENTS'):
                 assert 'result' in await rpc(native, 'config.set', session_id=sid, key='show_reasoning', value='1')
@@ -806,8 +809,15 @@ async def probe_detail(home, peer, desc):
             assert kinds.index('reasoning.delta') < kinds.index('message.delta'), kinds
             assert 'subagent.start' in kinds and 'subagent.complete' in kinds, kinds
             assert 'session.usage' in kinds and 'message.complete' in kinds, kinds
+            requests_before = len(peer.requests)
+            inspected = await asyncio.to_thread(viewer.result, 'gateway.session', context_params)
+            context = inspected['context_detail']
+            assert context['available'] is True and context['categories'], inspected
+            assert context['source'] in {'provider_usage', 'provider_usage_plus_estimate', 'local_estimate'}, context
+            assert all(set(row) == {'label', 'characters', 'tokens', 'status', 'loaded'} for row in context['files']), context
+            assert len(peer.requests) == requests_before, 'context inspection contacted the synthetic provider'
             viewer.request('rpc.cancel', {'id': watch})
-            print(json.dumps({'live_reasoning': True, 'subagent_progress': True, 'usage': True, 'events': kinds}))
+            print(json.dumps({'context_inspection': True, 'live_reasoning': True, 'subagent_progress': True, 'usage': True, 'events': kinds}))
     finally:
         viewer.close()
 

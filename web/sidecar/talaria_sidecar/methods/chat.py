@@ -2602,6 +2602,46 @@ def register(registry) -> None:
             _release_vault_session(session_id)
         return {"evicted": entry is not None}
 
+    @registry.method("chat.context_detail", requires_agent=False)
+    def context_detail_(ctx: CallContext, params: dict) -> dict:
+        from ..context_detail import project, unavailable
+        home = profile_home_param(params).resolve()
+        sid = str(params.get("session_id") or "")
+        with _AGENT_CACHE_LOCK:
+            cached = _AGENT_CACHE.get(sid)
+            if cached is None:
+                return unavailable("not_built")
+            agent = cached[0]
+            if (Path(cached[2]).resolve() != home or getattr(agent, "model", None) != params.get("model")
+                    or getattr(agent, "provider", None) != params.get("model_provider")):
+                return unavailable("changed")
+            def marks():
+                comp = getattr(agent, "context_compressor", None)
+                return (getattr(agent, "model", None), getattr(agent, "provider", None),
+                        getattr(comp, "compression_count", None), getattr(comp, "last_prompt_tokens", None),
+                        len(getattr(agent, "_session_messages", None) or []))
+            before = marks()
+            # Pin the cache entry across the read just like refine/memory, so eviction defers its release.
+            _COMMITTING.append((agent, cached[2]))
+        try:
+            from agent.context_breakdown import compute_session_context_breakdown
+            from agent.context_file_sources import context_file_sources_for_agent
+            with scoped_home(home), session_workspace(params.get("workspace")):
+                payload = compute_session_context_breakdown(agent, list(getattr(agent, "_session_messages", None) or []))
+                payload['context_files'] = context_file_sources_for_agent(agent)
+            with _AGENT_CACHE_LOCK:
+                if _AGENT_CACHE.get(sid) is not cached or before != marks():
+                    return unavailable("changed")
+            return project(payload)
+        except ImportError:
+            return unavailable("unsupported")
+        except Exception:  # never expose Agent diagnostics, prompt contents or paths
+            return unavailable()
+        finally:
+            with _AGENT_CACHE_LOCK:
+                _COMMITTING.remove((agent, cached[2]))
+                _release_if_dropped_locked(agent, cached[2])
+
     @registry.method("chat.commit_memory", requires_agent=False)
     def commit_memory_(ctx: CallContext, params: dict) -> dict:
         """Predecessor ``commit_session_memory``: flush the cached Agent's memory for a session the user just left.

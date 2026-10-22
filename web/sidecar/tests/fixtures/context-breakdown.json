@@ -1,0 +1,37 @@
+{
+  "categories": [
+    {
+      "id": "system_prompt",
+      "label": "System prompt",
+      "tokens": 2000,
+      "color": "var(--context-usage-system)"
+    },
+    {
+      "id": "rules",
+      "label": "Rules",
+      "tokens": 1000
+    },
+    {
+      "id": "conversation",
+      "label": "Conversation",
+      "tokens": 500
+    }
+  ],
+  "context_used": 3790,
+  "context_max": 256000,
+  "context_percent": 1,
+  "estimated_total": 3500,
+  "context_source": "local_estimate",
+  "context_estimated": true,
+  "model": "fixture-model",
+  "context_files": [
+    {
+      "label": "AGENTS.md (/private/operator/project)",
+      "path": "/private/operator/project/AGENTS.md",
+      "chars": 4000,
+      "est_tokens": 1000,
+      "loaded": true,
+      "status": "loaded"
+    }
+  ]
+}

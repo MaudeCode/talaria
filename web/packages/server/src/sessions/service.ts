@@ -1,3 +1,4 @@
+import { unavailableContextDetail, type ContextDetail } from '@maudecode/talaria-web-contracts'
 import { filterAsync } from '../util.js'
 import { statSignature } from '../fs/stat.js'
 import { SessionPrefixIndex } from './prefix-index.js'
@@ -839,9 +840,14 @@ export class SessionService {
     return redactSessionData(payload, this.deps.redactEnabled())
   }
 
+  /** Opaque read identity, including context changes that do not alter display message counts. */
+  private contextDetailKey(s: Session): string {
+    return createHash('sha256').update(JSON.stringify([s.session_id, s.profile, s.model, s.model_provider, s.workspace, s.updated_at, s.messages.length, s.context_messages, s.post_compression_context_tokens_estimate, s.active_stream_id])).digest('hex')
+  }
+
   /** `compact()` with the wire streaming/read-only flags (TAL-312), for replies that return the session row. */
   async wireRow(s: Session): Promise<Record<string, unknown>> {
-    return withSessionWireFlags((await this.ownerLocked([{ ...s.compact({ contextLengthFor: this.deps.contextLengthFor, modelOptionFor: this.deps.modelOptionFor }), assistant_name: this.assistantName(s), workspace_name: (await this.workspaceNames([s]))(s) }]))[0]!, this.deps.runtime.activeStreamIds)
+    return withSessionWireFlags((await this.ownerLocked([{ ...s.compact({ contextLengthFor: this.deps.contextLengthFor, modelOptionFor: this.deps.modelOptionFor }), context_detail_key: this.contextDetailKey(s), assistant_name: this.assistantName(s), workspace_name: (await this.workspaceNames([s]))(s) }]))[0]!, this.deps.runtime.activeStreamIds)
   }
 
   /**
@@ -1424,6 +1430,22 @@ export class SessionService {
       message_count: full.messages.length, created_at: full.created_at, updated_at: full.updated_at, agent_running: streaming, is_streaming: streaming, active_stream_id: live, active_turn_origin: origin, read_only: readOnly, read_only_reason: readOnlyReason,
       input_tokens: inp, output_tokens: out, total_tokens: inp + out, estimated_cost: full.estimated_cost,
     }
+  }
+
+  async contextDetail(sid: string): Promise<ContextDetail> {
+    if (await this.owner?.isOwned(sid)) return this.owner!.contextDetail(sid)
+    const session = await this.get404(sid)
+    const profile = this.deps.activeProfile()
+    if (session.profile && session.profile !== profile || await this.loadedReadOnlyReason(session)) return unavailableContextDetail()
+    const sidecar = this.deps.sidecar?.()
+    if (!sidecar) return unavailableContextDetail()
+    // The read owns no cache. Compression and model/workspace replacement invalidate its response.
+    const marks = (current = session) => this.contextDetailKey(current)
+    const before = marks()
+    try {
+      const detail = await sidecar.call('chat.context_detail', { session_id: sid, profile_home: this.deps.profileHome(profile), model: session.model, model_provider: session.model_provider, workspace: session.workspace })
+      return this.deps.activeProfile() === profile && before === marks(await this.get404(sid)) ? detail : unavailableContextDetail('changed')
+    } catch { return unavailableContextDetail() }
   }
 
   async usage(sid: string): Promise<Record<string, unknown>> {

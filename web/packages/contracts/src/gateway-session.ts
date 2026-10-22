@@ -1,3 +1,4 @@
+import { ContextDetailSchema } from './context-detail.js'
 import { z } from 'zod'
 
 const ObjectSchema = z.record(z.string(), z.unknown())
@@ -32,6 +33,7 @@ export const GatewaySessionResultSchema = z.object({
     z.strictObject({ voice_stopped: z.literal(true) }),
   ]).nullable(),
   model_change: ModelChangeSchema.optional(),
+  context_detail: ContextDetailSchema.optional(),
   restarting: z.boolean().optional().describe("The owner is in a restart's after-turn wait: parked prompts stay answerable, new work is refused."),
   lock: z.object({ status: z.enum(['ok', 'expired']), remaining: z.array(z.string()).optional() }).optional()
     .describe('`clarify_lock`: the batch question ids the owner still waits on; `expired` when the batch already ended.'),
@@ -44,7 +46,7 @@ export const GatewayClarifyBatchSchema = z.object({
 export type GatewayClarifyBatch = z.infer<typeof GatewayClarifyBatchSchema>
 export const GatewaySessionParamsSchema = z.object({
   profile_home: z.string().min(1), session_id: z.string().min(1),
-  action: z.enum(['snapshot', 'watch', 'submit', 'receipt', 'cancel', 'steer_queued', 'replace_queued', 'interrupt', 'approval', 'clarify', 'clarify_lock', 'discard', 'mutate']),
+  action: z.enum(['snapshot', 'watch', 'context_detail', 'submit', 'receipt', 'cancel', 'steer_queued', 'replace_queued', 'interrupt', 'approval', 'clarify', 'clarify_lock', 'discard', 'mutate']),
   request_id: z.string().min(1).max(128).optional(), text: z.string().optional(),
   submission_id: z.string().min(1).max(128).optional(),
   show_reasoning: z.boolean().optional().describe('The profile display preference negotiated for an owner watch.'),

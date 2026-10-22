@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Popover } from '@base-ui/react/popover'
 import { ChevronDown, Cpu, Brain, Wrench, FolderOpen, GitBranch, Shield } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
-import { useExecutionModesQuery, useModelsQuery, useWorkspacesQuery, useToolsetsCatalogQuery } from '../../app/queries'
+import { useContextDetailQuery, useExecutionModesQuery, useModelsQuery, useWorkspacesQuery, useToolsetsCatalogQuery } from '../../app/queries'
 import { Menu, MenuGroup, MenuGroupLabel, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator } from '../../ui/Menu'
 import { cn } from '../../ui/cn'
 import { catalogEntryById, catalogGroupLabel } from '../../lib/modelEntry'
@@ -201,6 +201,7 @@ export function WorkspaceChip({ value, name, onChange, onNewWorktree, onRemoveWo
  * derived here. `onCompress` runs the chat's manual compression; `compressing` disables it while a job runs.
  */
 export interface ContextFigures {
+  sessionId?: string | undefined; detailKey?: string | null | undefined
   percent: number | null | undefined; used: number | null | undefined; window: number | null | undefined; thresholdPercent?: number | null | undefined
   input?: number | undefined; output?: number | undefined; cacheRead?: number | undefined; cacheWrite?: number | undefined; cacheHitPercent?: number | null | undefined; cost?: number | null | undefined
   onCompress?: (() => void) | undefined; compressing?: boolean | undefined
@@ -227,6 +228,7 @@ const COMPRESS_CLASS = 'self-start rounded-md bg-accent px-3 py-1.5 text-xs font
 
 /** The footer ring; a click opens the usage figures and Compress now, as legacy's ring did. */
 export function ContextRing(figures: ContextFigures) {
+  const [open, setOpen] = useState(false)
   const st = contextStats(figures)
   if (!st) return null
   const { pct, tone: t, title } = st
@@ -235,7 +237,7 @@ export function ContextRing(figures: ContextFigures) {
   const tone = t === 'high' ? 'text-error' : t === 'mid' ? 'text-warning' : 'text-accent'
   return (
     <div className="ctx-indicator-wrap relative flex items-center" id="ctxIndicatorWrap">
-      <Popover.Root>
+      <Popover.Root open={open} onOpenChange={setOpen}>
         <Popover.Trigger className={cn('ctx-indicator relative flex h-8 w-8 items-center justify-center rounded-full', tone)} aria-label={title} title={title} id="ctxIndicator">
           <svg viewBox="0 0 24 24" className="h-6 w-6 -rotate-90" aria-hidden="true">
             <circle cx="12" cy="12" r={r} fill="none" stroke="currentColor" strokeWidth="2" opacity="0.2" />
@@ -245,9 +247,10 @@ export function ContextRing(figures: ContextFigures) {
         </Popover.Trigger>
         <Popover.Portal>
           <Popover.Positioner side="top" align="end" sideOffset={6} className="z-[1500]">
-            <Popover.Popup id="ctxPopup" aria-label={m.composer_context_usage()} className="flex max-w-[min(20rem,calc(100vw-2rem))] flex-col gap-0.5 rounded-md border border-border bg-surface px-3 py-2 text-xs leading-relaxed text-text shadow-md outline-none">
+            <Popover.Popup id="ctxPopup" aria-label={m.composer_context_usage()} className="flex max-h-[min(36rem,70vh)] max-w-[min(22rem,calc(100vw-2rem))] flex-col gap-0.5 overflow-y-auto rounded-md border border-border bg-surface px-3 py-2 text-xs leading-relaxed text-text shadow-md outline-none">
               <span className="font-medium">{st.usage}</span>
               {st.details.map((d) => <span key={d} className="tabular-nums text-muted">{d}</span>)}
+              {open && <ContextDetailRows key={figures.detailKey} sessionId={figures.sessionId} identity={figures.detailKey} />}
               {figures.onCompress && <Popover.Close className={cn(COMPRESS_CLASS, 'mt-1.5')} id="ctxCompressBtn" disabled={figures.compressing} onClick={figures.onCompress}>{m.ctx_compress_now()}</Popover.Close>}
             </Popover.Popup>
           </Popover.Positioner>
@@ -263,12 +266,48 @@ export function ContextRow(figures: ContextFigures) {
   if (!st) return null
   return (
     <div className={cn('composer-mobile-config-action composer-mobile-context-action', st.tone === 'mid' && 'ctx-mid', st.tone === 'high' && 'ctx-high')} role="group" aria-label={m.composer_mobile_context()} id="composerMobileContextAction">
-      <span className="composer-mobile-config-copy composer-mobile-context-copy">
+      <div className="composer-mobile-config-copy composer-mobile-context-copy">
         <span className="composer-mobile-config-kicker">{m.composer_mobile_context()}</span>
         <span className="composer-mobile-config-value">{st.usage}</span>
         {st.details.map((d) => <span key={d} className="composer-mobile-context-detail">{d}</span>)}
+        <ContextDetailRows key={figures.detailKey} sessionId={figures.sessionId} identity={figures.detailKey} />
         {figures.onCompress && <button type="button" className={cn(COMPRESS_CLASS, 'mt-1')} id="composerMobileCompressBtn" disabled={figures.compressing} onClick={figures.onCompress}>{m.ctx_compress_now()}</button>}
-      </span>
+      </div>
     </div>
   )
+}
+
+
+/** The existing ring and overflow row share one metadata renderer and open-only query. */
+function ContextDetailRows({ sessionId, identity }: { sessionId?: string | undefined; identity?: string | null | undefined }) {
+  if (!sessionId || !identity) return <span className="text-muted">{m.context_detail_unavailable()}</span>
+  return <LoadedContextDetail sessionId={sessionId} identity={identity} />
+}
+
+function LoadedContextDetail({ sessionId, identity }: { sessionId: string; identity: string }) {
+  const query = useContextDetailQuery(sessionId, identity)
+  if (query.isPending) return <span role="status" className="text-muted">{m.loading()}</span>
+  if (query.isError || !query.data.available) return <span className="text-muted">{query.data?.reason === 'not_built' ? m.context_detail_not_built() : m.context_detail_unavailable()}</span>
+  const detail = query.data
+  const categories = { system_prompt: m.context_category_system, tool_definitions: m.context_category_tools, rules: m.context_category_rules, skills: m.context_category_skills, mcp: m.context_category_mcp, subagent_definitions: m.context_category_subagents, memory: m.context_category_memory, conversation: m.context_category_conversation }
+  const sources = { provider_usage: m.context_source_provider, local_estimate: m.context_source_local, provider_usage_plus_estimate: m.context_source_mixed }
+  const statuses = { loaded: m.context_file_loaded, truncated: m.context_file_truncated, flagged: m.context_file_flagged, shadowed: m.context_file_shadowed, blocked: m.context_file_blocked, empty: m.context_file_empty, unreadable: m.context_file_unreadable, suppressed: m.context_file_suppressed, unknown: m.context_unknown }
+  return <div className="mt-2 flex min-w-0 flex-col gap-2 border-t border-border pt-2" data-context-detail>
+    <span className="text-muted">{detail.source ? sources[detail.source]() : m.context_unknown()}</span>
+    {detail.used_tokens != null && detail.window_tokens != null && <span className="tabular-nums">{m.context_detail_occupancy({ used: detail.used_tokens.toLocaleString(), total: detail.window_tokens.toLocaleString() })}</span>}
+    <span className="font-medium">{m.context_category_estimates()}</span>
+    <dl className="flex flex-col gap-1">
+      {detail.categories.map((category) => <div key={category.id}>
+        <div className="flex justify-between gap-4"><dt>{categories[category.id]()}</dt><dd className="tabular-nums">~{category.tokens.toLocaleString()}</dd></div>
+        {category.percent != null && <div className="h-0.5 overflow-hidden rounded-full bg-border" aria-hidden="true"><div className="h-full bg-accent" style={{ width: `${category.percent}%` }} /></div>}
+      </div>)}
+    </dl>
+    {detail.current_turn_output_tokens != null && <span>{m.context_current_output({ tokens: detail.current_turn_output_tokens.toLocaleString() })}</span>}
+    {detail.last_turn_output_tokens != null && <span>{m.context_last_output({ tokens: detail.last_turn_output_tokens.toLocaleString() })}</span>}
+    {detail.files.length > 0 && <><span className="font-medium">{m.context_files()}</span><ul className="flex flex-col gap-2">{detail.files.map((file, i) => <li key={i} className="flex flex-col">
+      <span className="flex justify-between gap-4"><span className="font-mono">{file.label === 'Context file' ? m.context_file() : file.label}</span><span>{statuses[file.status]()}</span></span>
+      <span className="tabular-nums text-muted">{m.context_file_size({ characters: file.characters?.toLocaleString() ?? m.context_unknown(), tokens: file.tokens?.toLocaleString() ?? m.context_unknown() })}</span>
+    </li>)}</ul></>}
+    {detail.truncated && <span className="text-muted">{m.context_details_limited()}</span>}
+  </div>
 }

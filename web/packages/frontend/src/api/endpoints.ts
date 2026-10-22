@@ -307,3 +307,5 @@ export const fetchConnectorOperation = (op_id: string) => orpc().connectors.oper
 export const respondConnectorOperation = (move: { op_id: string; action: 'skip' | 'retry' | 'approve' | 'continue'; target?: string; env?: Record<string, string> }) =>
   orpc().connectors.respond(move, { signal: timeout(60_000) })
 export const shutdownServer = () => orpc().ops.shutdown({})
+
+export const fetchContextDetail = (session_id: string, signal?: AbortSignal) => orpc().session.contextDetail({ session_id }, { ...(signal ? { signal } : {}) })

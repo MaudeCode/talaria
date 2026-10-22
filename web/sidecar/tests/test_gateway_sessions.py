@@ -159,10 +159,18 @@ def native_owner_stub(tmp_path, monkeypatch):
             return owner.described
         if method == "session.resume":
             return {"session_id": params["session_id"], "subscription_id": "viewer", "messages": [], "info": {},
-                    "replay_epoch": "epoch", "last_sequence": 4, "execution_generation": 1}
+                    "replay_epoch": "epoch", "last_sequence": 4, "execution_generation": 1, **getattr(owner, "snapshot_extra", {})}
         if method in {"session.mutate", "prompt.steer_queued", "prompt.replace_queued"}:
             owner.payload = params.get("payload")
             return owner.receipt
+        if method == "session.context_breakdown":
+            import json
+            value = json.loads((Path(__file__).parent / "fixtures/context-breakdown.json").read_text())
+            if getattr(owner, 'change_on_context', None):
+                owner.snapshot_extra = owner.change_on_context
+            return getattr(owner, 'context_payload', value)
+        if method == "session.stats":
+            return {"output_tokens": 40, "last_turn_tokens": 12}
         if method == "config.set":
             if owner.config_failure == "refused":
                 raise RuntimeError("unsupported_setting")
@@ -359,3 +367,34 @@ def test_cron_refusal_compatibility_observes_runtime_capabilities(tmp_path, monk
             with pytest.raises(AssertionError):
                 test_real_cron_refusal_matches_public_consumer_fixture(tmp_path)
     assert len(calls) == 1, "Every Agent must reach the runtime capability probe before a skip decision"
+
+
+def test_context_detail_reads_authorized_owner_metadata_without_starting(native_owner_stub):
+    result = native_owner_stub.run(None, {"session_id": "native", "action": "context_detail"})
+    detail = result.get("context_detail", {})
+    assert detail.get("available") is True, result
+    assert detail["used_tokens"] == 3790
+    assert detail["source"] == "local_estimate"
+    assert detail["categories"][1] == {"id": "rules", "tokens": 1000, "percent": 0.390625, "estimated": True}
+    assert detail["files"] == [{"label": "AGENTS.md", "characters": 4000, "tokens": 1000, "status": "loaded", "loaded": True}]
+    assert detail["last_turn_output_tokens"] == 12
+    assert ("session.context_breakdown", {"session_id": "native"}) in native_owner_stub.calls
+    assert native_owner_stub.calls[-1] == ("session.detach", {"session_id": "native", "subscription_id": "viewer"})
+    assert "private" not in str(detail)
+
+
+@pytest.mark.parametrize("change", [{"authority_epoch": 2}, {"replay_epoch": "successor"}, {"revision": 99}, {"session_id": "foreign"}, {"info": {"model": "new-model"}}])
+def test_context_detail_rejects_changed_owner_or_context(native_owner_stub, change):
+    native_owner_stub.change_on_context = change
+    result = native_owner_stub.run(None, {"session_id": "native", "action": "context_detail"})
+    assert result['context_detail']['reason'] == 'changed'
+    assert result['context_detail']['categories'] == []
+
+
+def test_context_detail_prebuild_and_foreign_authority_are_unavailable(native_owner_stub):
+    native_owner_stub.context_payload = {'categories': [], 'context_used': 0, 'context_max': 256000}
+    assert native_owner_stub.run(None, {'session_id': 'native', 'action': 'context_detail'})['context_detail']['reason'] == 'not_built'
+    native_owner_stub.calls.clear()
+    native_owner_stub.described['profile_id'] = 'foreign'
+    assert native_owner_stub.run(None, {'session_id': 'native', 'action': 'context_detail'})['state'] == 'incompatible'
+    assert native_owner_stub.calls == [('runtime.describe', {})]

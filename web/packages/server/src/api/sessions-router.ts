@@ -182,6 +182,10 @@ export const sessionsRouter = os.router({
       await guardVisibility(ctx, input.session_id)
       return (await ctx.deps.sessions.status(input.session_id)) as { session_id: string }
     })),
+    contextDetail: os.session.contextDetail.handler(({ input, context: { ctx } }) => run(async () => {
+      await guardVisibility(ctx, input.session_id)
+      return ctx.deps.sessions.contextDetail(input.session_id)
+    })),
     usage: os.session.usage.handler(({ input, context: { ctx } }) => run(async () => {
       if (!input.session_id) throw new HttpError(400, 'Missing session_id')
       await guardVisibility(ctx, input.session_id)

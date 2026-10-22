@@ -75,3 +75,8 @@ export function useToolsetsCatalogQuery(value: string[] | null, sessionId?: stri
 export function useExecutionModesQuery(enabled = true) {
   return useQuery({ queryKey: keys.executionModes, queryFn: api.fetchExecutionModes, gcTime: 0, retry: false, enabled })
 }
+
+/** Mounted only while the inspector is open. Never reuse another owner/context's details. */
+export function useContextDetailQuery(sessionId: string, identity: string) {
+  return useQuery({ queryKey: keys.sessions.contextDetail(sessionId, identity), queryFn: ({ signal }) => api.fetchContextDetail(sessionId, signal), gcTime: 0, staleTime: 0, retry: false })
+}
