@@ -75,11 +75,12 @@ extension APIClient {
         try await send(endpoint: .reasoning(model: model, provider: provider), method: "GET")
     }
 
-    public func saveReasoningEffort(_ effort: String) async throws -> ReasoningStatusResponse {
+    /// Chat changes carry their session; nil is reserved for explicit profile settings.
+    public func saveReasoningEffort(_ effort: String, sessionID: String?) async throws -> ReasoningStatusResponse {
         try await send(
             endpoint: .reasoning(),
             method: "POST",
-            body: ReasoningEffortRequest(effort: effort)
+            body: ReasoningEffortRequest(effort: effort, sessionId: sessionID)
         )
     }
 
@@ -269,6 +270,7 @@ private struct CommandExecRequest: Encodable {
 
 private struct ReasoningEffortRequest: Encodable {
     let effort: String
+    let sessionId: String?
 }
 
 private struct UpdateNotificationReadRequest: Encodable { let read: Bool }

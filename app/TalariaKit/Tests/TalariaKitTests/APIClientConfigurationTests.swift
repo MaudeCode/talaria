@@ -343,6 +343,7 @@ final class APIClientConfigurationTests: APIClientTestCase {
             let data = try XCTUnwrap(apiTestBodyData(from: request))
             let body = try JSONSerialization.jsonObject(with: data) as? [String: Any]
             XCTAssertEqual(body?["effort"] as? String, "xhigh")
+            XCTAssertNil(body?["session_id"], "Explicit profile settings remain unscoped")
 
             return apiTestJSONResponse("""
             {
@@ -352,7 +353,7 @@ final class APIClientConfigurationTests: APIClientTestCase {
             """, for: request)
         }
 
-        let response = try await client.saveReasoningEffort("xhigh")
+        let response = try await client.saveReasoningEffort("xhigh", sessionID: nil)
 
         XCTAssertEqual(response.ok, true)
         XCTAssertEqual(response.effectiveEffort, "xhigh")

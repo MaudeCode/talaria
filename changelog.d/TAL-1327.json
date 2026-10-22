@@ -5,7 +5,8 @@
       "summary": "Reasoning commands in native chats no longer change profile defaults.",
       "highlight": false,
       "components": [
-        "web"
+        "web",
+        "app"
       ]
     }
   ]

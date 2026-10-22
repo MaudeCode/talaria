@@ -9,6 +9,51 @@ import XCTest
 /// The fixture chat's media, long bodies, background work and pending steers, hosted in process (TAL-856).
 @MainActor
 final class ChatHostedTests: XCTestCase {
+    func testNativeReasoningRefusalIsVisibleWithoutChangingEffort() async throws {
+        let fixture = try FixtureApp(for: self)
+        let summary = SessionSummary(sessionId: "session-abc", title: "Native reasoning")
+        let session = UITestFixtureURLProtocol.diagnosticSession([
+            "session_id": "session-abc",
+            "messages": [["role": "user", "content": "Continue the native conversation", "message_id": "native-user"]]
+        ], mode: "normal")
+        let sessionJSON = String(decoding: try JSONSerialization.data(withJSONObject: ["session": session]), as: UTF8.self)
+        let refusal = "Reasoning changes are unavailable for this conversation"
+        var effortRequests = 0
+        let viewModel = try makeScriptedChatViewModel(streamClient: ScriptedSSEStreamingClient(), sessionSummary: summary) { request in
+            switch request.url?.path {
+            case "/api/session": return apiTestJSONResponse(sessionJSON, for: request)
+            case "/api/reasoning" where request.httpMethod == "POST":
+                effortRequests += 1
+                XCTAssertEqual(try apiTestJSONBody(from: request)["session_id"] as? String, "session-abc")
+                return apiTestJSONResponse(#"{"error":"\#(refusal)","code":"reasoning_unsupported"}"#, statusCode: 409, for: request)
+            case "/api/reasoning": return apiTestJSONResponse(#"{"reasoning_effort":"medium"}"#, for: request)
+            default: return apiTestJSONResponse("{}", for: request)
+            }
+        }
+        defer {
+            viewModel.cleanupPollingTasks()
+            MockURLProtocol.requestHandler = nil
+        }
+        await viewModel.loadMessages()
+        let window = try hostWindow(NavigationStack {
+            ChatView(session: summary, server: UITestFixtureEnvironment.serverURL, onAPIError: { _ in },
+                     loadsInitialMessages: false, viewModel: viewModel)
+        }.modelContainer(fixture.cache), size: HostedSize.phone)
+        _ = try await requireElement(in: window, label: "Select reasoning effort")
+        let configured = await awaitCondition { viewModel.selectedReasoningEffort == "medium" }
+        XCTAssertTrue(configured)
+        let initialEffort = viewModel.selectedReasoningEffort
+        settle(0.5)
+        attachHostedScreenshot(window, name: "native-reasoning-before")
+        _ = await viewModel.executeSlashCommand(try XCTUnwrap(SlashCommandCatalog.command(named: "reasoning")), args: "high")
+        let refusalElement = await awaitElement(in: window) { $0.accessibilityLabel?.contains(refusal) == true }
+        XCTAssertNotNil(refusalElement)
+        XCTAssertEqual(viewModel.selectedReasoningEffort, initialEffort)
+        XCTAssertEqual(effortRequests, 1)
+        settle(0.5)
+        attachHostedScreenshot(window, name: "native-reasoning-after")
+    }
+
     func testRevealTicksOnlyEvaluateTheMessageList() async throws {
         try await checkRevealTickIsolation(size: CGSize(width: 320, height: 844), name: "phone")
     }

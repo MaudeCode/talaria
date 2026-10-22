@@ -776,6 +776,7 @@ extension ChatViewModelSendTests {
         ) { request in
             switch request.url?.path {
             case "/api/reasoning" where request.httpMethod == "POST":
+                XCTAssertEqual(try apiTestJSONBody(from: request)["session_id"] as? String, "session-abc")
                 return apiTestJSONResponse(#"{"ok": true, "reasoning_effort": "xhigh"}"#, for: request)
             case "/api/session/update":
                 return apiTestJSONResponse("""

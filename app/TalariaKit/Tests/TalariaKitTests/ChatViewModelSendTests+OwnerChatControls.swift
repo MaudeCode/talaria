@@ -7,6 +7,32 @@ import XCTest
 extension ChatViewModelSendTests {
     private static let queuedAttachment = #"{"state":"attached","reason":null,"can_submit":true,"can_interrupt":true,"can_attach":false,"revision":3,"execution_generation":2,"admissions":[{"admission_id":"queued-1","sequence":4,"status":"queued","outcome":null,"authority_epoch":1,"execution_generation":2,"text":"Then summarize","actions":["cancel","pause"]}]}"#
 
+    func testNativeReasoningPickerAndSlashCarrySessionScopeWithoutGlobalFallback() async throws {
+        let log = OwnerRequestLog()
+        let normal = try Self.ownerAttachmentJSON("normal")
+        let viewModel = try ownerViewModel(log, session: { Self.ownerSessionObject(attachment: normal) }) { path, request in
+            guard path == "/api/reasoning", request.httpMethod == "POST" else { return nil }
+            let body = try? apiTestJSONBody(from: request)
+            XCTAssertEqual(body?["session_id"] as? String, "session-abc")
+            if body?["session_id"] != nil {
+                return apiTestJSONResponse(#"{"error":"Reasoning changes are unavailable for this conversation","code":"reasoning_unsupported"}"#, statusCode: 409, for: request)
+            }
+            return apiTestJSONResponse(#"{"reasoning_effort":"high"}"#, for: request)
+        }
+        await viewModel.loadMessages()
+        XCTAssertTrue(viewModel.ownerAttachment?.isAttached == true)
+        let initialEffort = viewModel.selectedReasoningEffort
+        let changed = await viewModel.selectReasoningEffort("high")
+        XCTAssertFalse(changed)
+        XCTAssertEqual(viewModel.selectedReasoningEffort, initialEffort)
+        XCTAssertTrue(viewModel.composerConfigurationErrorMessage?.contains("unavailable for this conversation") == true)
+        _ = await viewModel.executeSlashCommand(try XCTUnwrap(SlashCommandCatalog.command(named: "reasoning")), args: "xhigh")
+        XCTAssertEqual(viewModel.selectedReasoningEffort, initialEffort)
+        XCTAssertTrue(viewModel.composerConfigurationErrorMessage?.contains("unavailable for this conversation") == true)
+        XCTAssertEqual(log.bodies["/api/reasoning"]?.count, 2, "One scoped request per action, without a profile retry")
+        XCTAssertNil(log.bodies["/api/chat/owner-action"])
+    }
+
     func testSharedOwnerFixturesDecodeTheServersCapabilities() throws {
         let decoder = APIClient.responseDecoder()
         func attachment(_ key: String) throws -> OwnerAttachment {
