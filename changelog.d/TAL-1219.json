@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Session lists avoid repeated disk reads for saved parent chats.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

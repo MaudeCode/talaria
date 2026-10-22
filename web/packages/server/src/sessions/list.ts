@@ -767,9 +767,15 @@ export async function buildSessionListPayload(store: SessionStore, params: ListP
     otherProfileCount = params.isolatedProfileMode ? 0 : merged.length - scoped.length
   }
   const identity = params.gatewayIdentity ?? new Map<string, GatewayIdentity>()
+  const indexedParents = new Map((await store.readIndexEntries().catch(() => [])).flatMap((row) => {
+    // Older indexes omit the flag; only an explicit boolean can replace the document read.
+    return typeof row?.session_id === 'string' && typeof row.pre_compression_snapshot === 'boolean' ? [[row.session_id, row] as const] : []
+  }))
   const snapshots = new Set<string>()
   for (const parent of new Set(scoped.map((row) => str(row.parent_session_id)))) {
-    if (/^[a-z0-9_]+$/.test(parent) && (await store.loadMetadataOnly(parent))?.pre_compression_snapshot) snapshots.add(parent)
+    if (!/^[a-z0-9_]+$/.test(parent)) continue
+    const row = indexedParents.get(parent) ?? await store.loadMetadataOnly(parent)
+    if (row?.pre_compression_snapshot) snapshots.add(parent)
   }
   const isPreCompressionSnapshotId = (sid: string): boolean => snapshots.has(sid)
   const dedupeOpts = { showPrevious: params.showPreviousMessagingSessions, identity, isPreCompressionSnapshotId }

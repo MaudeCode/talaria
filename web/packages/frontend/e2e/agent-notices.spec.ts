@@ -17,15 +17,16 @@ const credits = { key: 'credits.usage_band', level: 'info', text: "You've used 9
 /** TAL-803: the session's Agent notices sit in the composer's status tab; the server's `notices` event replaces them live. */
 test('shows the session\'s Agent notices and follows the server\'s live list', async ({ page }, testInfo) => {
   const sid = 'agent-notices'
+  let notices = [memory]
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: {
     session_id: sid, title: 'Plan the week', active_stream_id: 'notice-run', is_streaming: true, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true,
     transcript_seq: null, messages: [{ role: 'user', id: 1, content: 'Plan the week', _turn_id: 'notice-run' }],
-    notices: [memory],
+    notices,
   } } }))
   await page.route('**/api/chat/stream/status?**', (route) => route.fulfill({ json: { active: true, stream_id: 'notice-run', replay_available: false } }))
   const streams: ServerResponse[] = []
   let seq = 0
-  const send = (event: string, data: unknown) => { seq += 1; for (const r of streams) r.write(`id: notice-run:${String(seq)}\nevent: ${event}\ndata: ${JSON.stringify(data)}\n\n`) }
+  const send = (event: 'notices', data: { session_id: string; notices: typeof notices }) => { notices = data.notices; seq += 1; for (const r of streams) r.write(`id: notice-run:${String(seq)}\nevent: ${event}\ndata: ${JSON.stringify(data)}\n\n`) }
   const server = createServer((_request, response) => {
     response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Access-Control-Allow-Origin': process.env.HERMES_E2E_BASE_URL!, 'Access-Control-Allow-Credentials': 'true' })
     response.write(`id: notice-run:${String(++seq)}\nevent: token\ndata: ${JSON.stringify({ text: 'Looking at your calendar.' })}\n\n`)
