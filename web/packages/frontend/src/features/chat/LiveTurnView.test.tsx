@@ -25,7 +25,7 @@ afterEach(() => {
 function liveRun() {
   storeDispatch({ type: 'start', sessionId: 's', streamId: 'run', turnId: 'turn', userMessageId: 'u', userText: 'Inspect', now: 0 })
   let seq = 0
-  const dispatch = (action: StreamAction) => { act(() => { storeDispatch(action); if (vi.isFakeTimers()) vi.advanceTimersByTime(16) }) }
+  const dispatch = (action: StreamAction) => { act(() => { storeDispatch(action); if (vi.isFakeTimers()) vi.advanceTimersByTime(17) }) }
   return {
     emit(event: ChatEvent) { dispatch({ type: 'event', sessionId: 's', streamId: 'run', event, lastEventId: `run:${++seq}`, now: seq }) },
     dispatch,
