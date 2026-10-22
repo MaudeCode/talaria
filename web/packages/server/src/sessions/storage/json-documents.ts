@@ -5,6 +5,7 @@ import { chmodSync, mkdirSync, readdirSync, readFileSync, renameSync, unlinkSync
 import { dirname, join, relative } from 'node:path'
 import { writeAtomic } from './json-files.js'
 import { atomicWriteText, atomicWriteTextAsync } from '../../fs/atomic.js'
+import { fileStatKey } from '../../fs/stat.js'
 import { InvalidDocument, RevisionConflict, type DocumentBackend, type StoredDocument } from './backend.js'
 
 interface Format { directory?: string; files?: Record<string, string>; indent?: number; sorted?: boolean; secret?: boolean; text?: boolean; newline?: boolean }
@@ -30,10 +31,14 @@ const sortedReplacer = (_key: string, value: unknown): unknown => value && typeo
 
 const documentWrites = new Map<string, Promise<unknown>>()
 
+// Like AgentConfig's snapshot, but JSON parsing stays lazy so byte limits run first.
+interface CachedDocument { signature: string; text: string; revision: string; parsed?: { value: unknown } }
+
 export class JsonDocuments implements DocumentBackend {
   closed = false
   constructor(private readonly stateDir: string, private readonly profileHome: (profile: string) => string = (profile) => profile === 'default' ? stateDir : join(stateDir, 'profiles', profile), private readonly sessionDirectory: string = join(stateDir, 'sessions')) {}
   private readonly pending = new Set<Promise<unknown>>()
+  private readonly cache = new Map<string, CachedDocument>()
 
   private serialize<T>(path: string, operation: () => Promise<T>): Promise<T> {
     const result = (documentWrites.get(path) ?? Promise.resolve()).catch(() => undefined).then(operation)
@@ -47,6 +52,7 @@ export class JsonDocuments implements DocumentBackend {
   async close(): Promise<void> {
     while (this.pending.size) await Promise.allSettled([...this.pending])
     this.closed = true
+    this.cache.clear()
   }
 
   private format(namespace: string, key?: string): Format {
@@ -85,24 +91,47 @@ export class JsonDocuments implements DocumentBackend {
     if (!path) throw new Error(`Unknown document key ${namespace}/${key}`)
     return join(this.stateDir, path)
   }
-  private raw(namespace: string, key: string): { text: string; revision: string } | null {
-    let text: string
-    try { text = readFileSync(this.path(namespace, key), namespace === 'auth' && key.endsWith('-key') ? 'latin1' : 'utf8') } catch (error) {
+  private remember(namespace: string, path: string, text: string, signature: string): CachedDocument {
+    const entry: CachedDocument = { text, signature, revision: createHash('sha256').update(text).digest('hex') }
+    if (namespace === 'drafts') {
+      try {
+        const value = JSON.parse(text) as unknown
+        entry.parsed = { value }
+        const version = normalizeDraftVersion((value as Record<string, unknown> | null)?._draft_version)
+        if (version !== null) entry.revision = version
+      } catch { /* hash malformed bytes */ }
+    }
+    this.cache.delete(path)
+    this.cache.set(path, entry)
+    if (this.cache.size > 256) this.cache.delete(this.cache.keys().next().value!)
+    return entry
+  }
+  private raw(namespace: string, key: string): CachedDocument | null {
+    const path = this.path(namespace, key)
+    try {
+      const signature = fileStatKey(path)
+      const hit = this.cache.get(path)
+      if (hit?.signature === signature) {
+        this.cache.delete(path)
+        this.cache.set(path, hit)
+        return hit
+      }
+      // Bind bytes to the pre-read identity, never to a replacement arriving during the read.
+      const text = readFileSync(path, namespace === 'auth' && key.endsWith('-key') ? 'latin1' : 'utf8')
+      return this.remember(namespace, path, text, signature)
+    } catch (error) {
+      this.cache.delete(path)
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
       throw error
     }
-    let revision = createHash('sha256').update(text).digest('hex')
-    if (namespace === 'drafts') {
-      try { const version = normalizeDraftVersion((JSON.parse(text) as Record<string, unknown>)._draft_version); if (version !== null) revision = version } catch { /* hash malformed bytes */ }
-    }
-    return { text, revision }
   }
   async get(namespace: string, key: string, opts: { maxBytes?: number } = {}): Promise<StoredDocument | null> {
     const raw = this.raw(namespace, key)
     if (!raw) return null
     if (opts.maxBytes !== undefined && Buffer.byteLength(raw.text) > opts.maxBytes) throw new InvalidDocument(raw.revision, new Error('Document byte limit exceeded'), 'too-large')
     try {
-      const value = namespace === 'auth' && key.endsWith('-key') ? Buffer.from(raw.text, 'latin1').toString('base64') : this.format(namespace, key).text ? raw.text : JSON.parse(raw.text) as unknown
+      raw.parsed ??= { value: namespace === 'auth' && key.endsWith('-key') ? Buffer.from(raw.text, 'latin1').toString('base64') : this.format(namespace, key).text ? raw.text : JSON.parse(raw.text) as unknown }
+      const value = structuredClone(raw.parsed.value)
       if (namespace === 'relay' && key === 'config' && value && typeof value === 'object') {
         const config = value as Record<string, unknown>
         if (typeof config.private_key_path === 'string') {
@@ -135,12 +164,19 @@ export class JsonDocuments implements DocumentBackend {
         // Stage and fsync off the event loop; compare and publish together without another asynchronous gap.
         const assertCurrent = (): void => { if ((this.raw(namespace, key)?.revision ?? null) !== expected) throw new RevisionConflict(`${namespace}/${key}`) }
         assertCurrent()
-        await atomicWriteTextAsync(path, text, { mode: 0o600, commit: (staged, target) => { assertCurrent(); renameSync(staged, target) } })
-        return this.raw(namespace, key)!.revision
+        let revision!: string
+        await atomicWriteTextAsync(path, text, { mode: 0o600, commit: (staged, target) => {
+          assertCurrent()
+          renameSync(staged, target)
+          // Capture the published identity before yielding to another editor.
+          revision = this.remember(namespace, path, text, fileStatKey(path)).revision
+        } })
+        return revision
       })
     } else atomicWriteText(path, text, format.secret ? { mode: 0o600 } : {})
     if (format.secret && format.sorted) { try { chmodSync(path, 0o600) } catch { /* legacy best effort */ } }
-    return this.raw(namespace, key)!.revision
+    const storedText = namespace === 'auth' && key.endsWith('-key') ? Buffer.from(String(value), 'base64').toString('latin1') : text
+    return this.remember(namespace, path, storedText, fileStatKey(path)).revision
   }
   async delete(namespace: string, key: string, expected?: string | null): Promise<boolean> {
     const path = this.path(namespace, key)
@@ -149,6 +185,7 @@ export class JsonDocuments implements DocumentBackend {
       if (expected !== undefined && (current?.revision ?? null) !== expected) throw new RevisionConflict(`${namespace}/${key}`)
       if (!current) return Promise.resolve(false)
       unlinkSync(path)
+      this.cache.delete(path)
       return Promise.resolve(true)
     })
   }
