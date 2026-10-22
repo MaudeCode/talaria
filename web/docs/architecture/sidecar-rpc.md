@@ -1,5 +1,15 @@
 # Sidecar RPC (TAL-245)
 
+`plugins.catalog` reads the native reviewed catalog/cache without loading plugins, filters and
+orders it on the sidecar, and returns at most 50 rows per page. Installer-owned metadata supplies
+the installed key and revision. `plugins.install` accepts only a catalog name and an optional
+single-use confirmation token. It uses the native catalog installer staging hook to preview and
+bind the profile, full catalog entry, staged bytes, requirements and scan. Publication remains
+Agent-owned with force and dependency consent disabled. No enable, host capability grant or
+sidecar-proxy permission is performed. Changed or expired evidence requires a new preview.
+The HTTP write is owner-only and never retries an unknown outcome; clients refresh catalog and
+installed rows. Older Agents without the staging boundary report the catalog unsupported.
+
 The TypeScript server never imports Hermes Agent code. Everything that needs
 Agent Python modules runs in one Web-owned sidecar process,
 `python -m talaria_sidecar`, spawned on the Agent's own venv interpreter with

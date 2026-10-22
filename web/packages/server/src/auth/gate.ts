@@ -27,7 +27,7 @@ export const PUBLIC_PATHS = new Set([
 
 export const OPERATOR_ONLY_PATHS = new Set([
   '/api/shutdown', '/api/health/restart', '/api/updates/apply', '/api/updates/force', '/api/updates/clear_lock',
-  '/api/plugins/settings', '/api/plugins/update', '/api/plugins/oauth/redirect', '/api/plugins/oauth/logout',
+  '/api/plugins/settings', '/api/plugins/update', '/api/plugins/install', '/api/plugins/oauth/redirect', '/api/plugins/oauth/logout',
   '/api/extensions/toggle', '/api/extensions/sidecar-proxy-consent', '/api/extensions/install', '/api/extensions/uninstall',
   '/api/gateway/start', '/api/gateway/stop', '/api/gateway/restart', '/api/profile/create', '/api/profile/delete',
   '/api/auth/passkey/register/options', '/api/auth/passkey/register', '/api/auth/passkey/delete', '/api/auth/passkeys',

@@ -91,6 +91,20 @@ export const PluginUpdateResultSchema = z.discriminatedUnion('status', [
   z.object({ key: z.string(), status: z.literal('blocked'), verdict: z.string(), findings: z.string() }),
 ])
 export type PluginUpdateResult = z.infer<typeof PluginUpdateResultSchema>
+
+export const PluginCatalogQuerySchema = z.object({ query: z.string().trim().max(200).default(''), offset: z.coerce.number().int().min(0).max(10000).default(0), limit: z.coerce.number().int().min(1).max(50).default(20) })
+export const PluginInstallInputSchema = z.object({ name: z.string().regex(/^[a-z0-9_-]{1,64}$/), consent_token: z.string().min(1).max(128).optional() })
+export const PluginCatalogSchema = z.object({ supported: z.boolean(), read_only: z.boolean().optional(), entries: z.array(z.object({
+  name: z.string(), title: z.string(), description: z.string(), repo: z.string(), sha: z.string(), tier: z.string(), category: z.string(),
+  requirements: z.array(z.string()), installed_key: z.string().nullable(), installed_sha: z.string().nullable(), can_install: z.boolean(), refusal: z.string().nullable(),
+})), total: z.number().int().nonnegative(), next_offset: z.number().int().nullable() })
+export const PluginInstallResultSchema = z.discriminatedUnion('status', [
+  z.object({ name: z.string(), key: z.string(), status: z.literal('installed'), enabled: z.literal(false) }),
+  z.object({ name: z.string(), status: z.literal('needs_consent'), findings: z.string(), consent_token: z.string() }),
+  z.object({ name: z.string(), status: z.literal('blocked'), findings: z.string() }),
+])
+export type PluginInstallResult = z.infer<typeof PluginInstallResultSchema>
+export type PluginCatalog = z.infer<typeof PluginCatalogSchema>
 export const PluginProviderSchema = z.object({ name: z.string(), display_name: z.string(), auth_type: z.string(), setup: z.enum(['ready', 'missing_cli', 'needs_setup', 'not_loaded', 'unavailable']) })
 /** A skill bundle: `/<name>` loads its `skill_count` skills in one message (TAL-265). */
 export const CommandBundleSchema = z.object({ name: z.string(), description: z.string(), skill_count: z.number().int(), source: z.literal('bundle') })
@@ -114,6 +128,8 @@ export const COMMANDS_METHODS = {
   'commands.moa_preset': { params: ProfileHomeParams.extend({ preset: z.string().nullable().optional() }), result: z.object({ moa: Loose }) },
   'plugins.providers': { params: ProfileHomeParams, result: z.object({ providers: z.array(PluginProviderSchema) }) },
   'plugins.list': { params: ProfileHomeParams.extend({ selected_providers: z.record(z.string(), z.string()).optional() }), result: z.object({ plugins: z.array(z.object({ name: z.string(), key: z.string(), version: z.string(), description: z.string(), enabled: z.boolean(), kind: z.string(), activation: z.string(), hooks: z.array(z.string()), is_active_provider: z.boolean().optional(), update_available: z.boolean().optional(), latest_revision: z.string().optional() })), supported_hooks: z.array(z.string()) }) },
+  'plugins.catalog': { params: ProfileHomeParams.extend(PluginCatalogQuerySchema.shape), result: PluginCatalogSchema },
+  'plugins.install': { params: ProfileHomeParams.extend(PluginInstallInputSchema.shape), result: PluginInstallResultSchema },
   'plugins.update': { params: ProfileHomeParams.extend({ key: z.string().min(1), accept_caution: z.boolean().optional(), consent_token: z.string().min(1).max(128).optional() }), result: PluginUpdateResultSchema },
   /** TAL-820: each profile's `plugins.isolation` and installed third-party plugin count, read without loading a plugin. */
   'plugins.isolation': { params: BaseHomeParams, result: z.object({ profiles: z.array(z.object({ name: z.string(), isolation: z.enum(['in_process', 'host']), third_party_plugins: z.number().int() })) }) },

@@ -636,6 +636,22 @@ export const toolsRouter = os.router({
       return { plugins: [], empty: true, supported_hooks: hooks, read_only: true, unavailable: true }
     }
   })),
+  pluginCatalog: os.pluginCatalog.handler(({ input, context: { ctx } }) => run(async () => {
+    const result = await runningSidecar(ctx).call('plugins.catalog', { profile_home: home(ctx), ...input })
+    const readOnly = !await sessionCanManageServer(ctx, await ensureTrustedAuthSession(ctx))
+    return { ...result, read_only: readOnly, entries: result.entries.map((entry) => ({ ...entry, can_install: !readOnly && entry.can_install })) }
+  })),
+  pluginInstall: os.pluginInstall.handler(({ input, context: { ctx } }) => run(async () => {
+    try {
+      return await runningSidecar(ctx).call('plugins.install', { profile_home: home(ctx), ...input }, { timeoutMs: 0 })
+    } catch (error) {
+      if (error instanceof SidecarError && error.condition === 'plugin_install_consent_changed') throw new HttpError(409, error.message, { condition: error.condition })
+      if (error instanceof SidecarError && error.condition === 'plugin_install_refused') throw new HttpError(409, error.message, { condition: error.condition })
+      if (error instanceof SidecarError && error.condition === 'plugin_catalog_unsupported') throw new HttpError(503, error.message, { condition: error.condition })
+      if (!definitiveRefusal(error)) throw new HttpError(503, 'Install outcome is unknown. Refresh Plugins to check the installed identity before trying again.', { condition: 'plugin_install_unconfirmed' })
+      throw error
+    }
+  })),
   pluginUpdate: os.pluginUpdate.handler(({ input, context: { ctx } }) => run(async () => {
     try {
       return await runningSidecar(ctx).call('plugins.update', { profile_home: home(ctx), key: input.key, accept_caution: input.accept_caution, ...(input.consent_token ? { consent_token: input.consent_token } : {}) }, { timeoutMs: 0 })

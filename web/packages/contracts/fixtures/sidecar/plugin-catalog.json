@@ -1,0 +1,4 @@
+{
+  "plugins.catalog": [{"params":{"profile_home":"<home>","query":"","offset":0,"limit":20},"result":{"supported":true,"entries":[{"name":"catalog-probe","title":"Catalog probe","description":"Synthetic pinned plugin","repo":"https://example.invalid/plugins/catalog-probe","sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","tier":"official","category":"tools","requirements":[],"installed_key":null,"installed_sha":null,"can_install":true,"refusal":null}],"total":1,"next_offset":null}}],
+  "plugins.install": [{"params":{"profile_home":"<home>","name":"catalog-probe"},"result":{"name":"catalog-probe","status":"needs_consent","findings":"Installs disabled. No dependency or capability permission is granted.","consent_token":"synthetic-preview"}}]
+}

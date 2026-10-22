@@ -887,6 +887,18 @@ def register(registry) -> None:
         with scoped_home(profile_home_param(params)):
             return plugin_visibility(params.get("selected_providers") if isinstance(params.get("selected_providers"), dict) else {})
 
+    @registry.method("plugins.catalog")
+    def catalog_(ctx: CallContext, params: dict) -> dict:
+        from .plugin_catalog import catalog
+        with scoped_home(profile_home_param(params)):
+            return catalog(params.get('query', ''), params.get('offset', 0), params.get('limit', 20))
+
+    @registry.method("plugins.install")
+    def install_(ctx: CallContext, params: dict) -> dict:
+        from .plugin_catalog import install
+        with scoped_home(profile_home_param(params)):
+            return install(params.get('name'), params.get('consent_token'))
+
     @registry.method("plugins.update")
     def update(ctx: CallContext, params: dict) -> dict:
         with scoped_home(profile_home_param(params)):
