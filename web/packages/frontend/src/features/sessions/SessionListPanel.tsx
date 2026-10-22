@@ -156,7 +156,8 @@ export function SessionListPanel() {
   const hasUnprojected = useMemo(() => rows.some((r) => !r.project_id), [rows])
   const projectList = withEffects(projects.data?.projects ?? [], (p) => `project:${p.project_id}`, effects)
   const newName = effects['project:new']?.fields?.name
-  const newProject = typeof newName === 'string' ? newName : null
+  // The provisional chip gives way as soon as the server's list carries the created project.
+  const newProject = typeof newName === 'string' && !projectList.some((p) => p.name === newName) ? newName : null
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase()
     let visible = rows

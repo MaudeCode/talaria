@@ -168,11 +168,14 @@ export function useResourceMutation<V, R, T = unknown>(options: {
       }
       let release!: () => void
       const effect: OwnedEffect = { ...shown, context, exclusive, settled: new Promise((resolve) => { release = () => resolve(undefined) }) }
-      const current = () => getStreamContext() === context && ids.every((id) => effects()[id] === effect)
+      // A later write may replace this one on some of its resources; this write still owns the rest.
+      const owned = () => getStreamContext() === context ? ids.filter((id) => effects()[id] === effect) : []
+      const current = () => owned().length > 0
       const clear = () => {
-        if (!current()) return
+        const mine = owned()
+        if (!mine.length) return
         qc.setQueryData(effectKey, (old: Record<string, OwnedEffect> = empty) => {
-          return Object.fromEntries(Object.entries(old).filter(([key]) => !ids.includes(key)))
+          return Object.fromEntries(Object.entries(old).filter(([key]) => !mine.includes(key)))
         })
       }
       qc.setQueryData(effectKey, { ...effects(), ...Object.fromEntries(ids.map((id) => [id, effect])) })

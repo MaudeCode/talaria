@@ -185,6 +185,21 @@ describe('optimistic resource ownership', () => {
     await waitFor(() => expect(result.current.intents).toEqual({}))
   })
 
+  it('settles the rest of a multi-resource write after a later write replaces one of its resources', async () => {
+    const { wrapper } = harness()
+    const bulk = deferred<{ ok: boolean }>()
+    const { result } = renderHook(() => ({
+      intents: useResourceEffects(),
+      write: useResourceMutation({ resource: (ids: string[]) => ids, effect: () => ({ fields: { status: 'done' } }), mutationFn: (ids: string[]) => ids.length > 1 ? bulk.promise : Promise.resolve({ ok: true }) }),
+    }), { wrapper })
+    let many!: Promise<unknown>, one!: Promise<unknown>
+    act(() => { many = result.current.write.mutateAsync(['a', 'b']) })
+    await waitFor(() => expect(Object.keys(result.current.intents).sort()).toEqual(['a', 'b']))
+    act(() => { one = result.current.write.mutateAsync(['a']) })
+    await act(async () => { bulk.resolve({ ok: true }); await Promise.all([many, one]) })
+    await waitFor(() => expect(result.current.intents).toEqual({}))
+  })
+
   it('drops removed rows and patches fields for display', () => {
     const rows = [{ id: 'a', title: 'A' }, { id: 'b', title: 'B' }, { id: 'c', title: 'C' }]
     expect(withEffects(rows, (r) => r.id, { a: { remove: true }, b: { fields: { title: 'Renamed' } } })).toEqual([{ id: 'b', title: 'Renamed' }, { id: 'c', title: 'C' }])
@@ -192,9 +207,9 @@ describe('optimistic resource ownership', () => {
   })
 
   it('never ships a pending label', () => {
-    const messages = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../messages/en.json'), 'utf8')) as Record<string, string>
+    const messages = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../messages/en.json'), 'utf8')) as Record<string, unknown>
     expect(messages).not.toHaveProperty('resource_change_pending')
-    expect(Object.values(messages).some((text) => text.startsWith('Pending: '))).toBe(false)
+    expect(Object.values(messages).some((text) => typeof text === 'string' && text.startsWith('Pending: '))).toBe(false)
   })
 
   it('leaves an unrelated in-flight history read intact during required snapshot reconciliation', async () => {
