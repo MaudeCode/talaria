@@ -356,7 +356,7 @@ export function Transcript(props: TranscriptProps) {
     <div className="messages-shell relative flex flex-1 min-h-0 flex-col">
       <div ref={scrollRef} onScroll={onScroll} onWheel={(e) => { if (e.deltaY !== 0) onReaderScroll() }} onTouchMove={onReaderScroll} onPointerDown={onReaderInput} onKeyDown={onReaderInput} className={cn('messages relative z-0 flex flex-1 flex-col min-h-0 px-5 overflow-y-auto overflow-x-hidden [-webkit-overflow-scrolling:touch] touch-pan-y overscroll-y-contain [overflow-anchor:none] max-[641px]:pl-[max(10px,env(safe-area-inset-left,0))] max-[641px]:pr-[max(10px,env(safe-area-inset-right,0))]', empty && 'messages-empty')} id="messages" role="log" aria-live="off" aria-relevant="additions">
         {empty ? emptyState : (
-          <div ref={innerRef} className="messages-inner mx-auto w-full flex flex-col max-w-(--msg-max) pt-5 pb-[calc(var(--composer-h,0px)+2rem)] max-[641px]:pt-3 max-[641px]:max-w-full max-[641px]:overflow-x-clip max-[641px]:[word-break:break-word] max-[641px]:min-w-0" id="msgInner">
+          <div ref={innerRef} className="messages-inner mx-auto w-full max-w-(--msg-max) pt-5 pb-[calc(var(--composer-h,0px)+2rem)] max-[641px]:pt-3 max-[641px]:max-w-full max-[641px]:overflow-x-clip max-[641px]:[word-break:break-word] max-[641px]:min-w-0" id="msgInner">
             {truncated && (
               <div ref={sentinelRef} className="flex h-11 shrink-0 items-center justify-center" data-history-sentinel>
                 {loadingOlder ? <LoadingState compact /> : olderError ? <div role="alert" className="flex items-center gap-2 text-sm text-muted">{m.error_generic()}<Button variant="ghost" className="min-h-11" onClick={() => requestOlder(true)}>{m.retry()}</Button></div> : null}

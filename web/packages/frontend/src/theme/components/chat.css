@@ -34,8 +34,9 @@
 /* Keep mounted history searchable; the opt-in virtualizer owns its own row measurements. */
 .msg-row{padding:10px 0}
 .messages-inner > .msg-row{content-visibility:auto;contain-intrinsic-size:auto 300px}
+.messages-inner > .msg-row[data-role="user"]{margin-inline-start:auto}
 /* Keep live and latest persisted replies measured across streaming and settlement. */
-.msg-row:is(.live-turn,[data-latest="1"]){content-visibility:visible}
+.msg-row:is(.live-turn,[data-latest="1"]){content-visibility:visible;contain:content}
 .msg-row+.msg-row{border-top:none}
 .msg-role{font-size:12px;font-weight:500;letter-spacing:.01em;margin-bottom:8px;display:flex;align-items:center;gap:8px}
 .msg-role.user{color:var(--msg-role-user-fg)}

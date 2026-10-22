@@ -12,7 +12,7 @@ const transcript = (sid: string, turns: number, from = 0) => Array.from({ length
 ]).flat()
 
 const distance = (page: Page) => page.locator('#messages').evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight)
-const withoutContainment = 'html.without-containment .msg-row{content-visibility:visible!important}'
+const withoutContainment = 'html.without-containment .msg-row{content-visibility:visible!important;contain:none!important}html.without-containment .messages-inner{display:flex!important;flex-direction:column}html.without-containment .messages-inner > .msg-row[data-role="user"]{margin-inline-start:0}'
 
 /** Retain native entries as well as their count so batching cannot hide task duration. */
 interface LongTaskProbe { longTasks: PerformanceEntry[]; observer: PerformanceObserver }
