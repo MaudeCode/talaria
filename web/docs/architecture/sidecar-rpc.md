@@ -661,7 +661,7 @@ rolling back an operation that may already have persisted.
 
 ### Stopping background work
 
-RPC v51 adds `process.stop`. It receives the profile home, owning session id and process/delegation id.
+RPC v52 adds `process.stop`. It receives the profile home, owning session id and process/delegation id.
 It rechecks ownership before killing a process with `consume_output: false` or
 requesting cooperative interruption of a delegation's active subagents. Split units
 select only their task indexes within the call's shared subagent roster. Child
@@ -672,3 +672,23 @@ A stop request never fabricates a terminal receipt. The Agent's existing complet
 path settles the row. The HTTP server publishes `can_stop` only for confirmed running
 owned work, and both Background work and Agents reuse the same Stop/Dismiss action.
 Native owner controls are outside this direct-sidecar API.
+
+### Context inspection
+
+`chat.context_detail` reads only a matching resident Agent in the requested profile,
+model, provider and workspace. It never creates an Agent or calls a model provider.
+`gateway.session` with `action: context_detail` uses the authenticated owner's
+`session.context_breakdown` and optional `session.stats`, fenced by the resumed
+session identity, revision, authority/replay epochs and execution generation.
+Both paths use the same bounded metadata projection. Category estimates remain
+independent of occupancy, with explicit provenance and unknown counters. File
+bodies, private paths, arbitrary labels and diagnostics never cross this boundary.
+
+`GET /api/session/context-detail` requires the displayed `context_detail_key`,
+applies session visibility, and rejects reads from a different rendered identity
+or a resident session that changes before the read returns. Workspace changes
+retire the cached resident Agent through the existing session-update boundary.
+Session views carry an opaque
+`context_detail_key` so clients discard details on context/owner replacement.
+Web mounts the query only inside the existing open ring popover or mobile context
+row, with no retained cache. Unsupported and pre-build reads are unavailable.

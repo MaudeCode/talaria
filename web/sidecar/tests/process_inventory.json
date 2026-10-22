@@ -1156,7 +1156,7 @@
     },
     "tests/test_gateway_sessions.py::test_real_native_owner_shared_admission_and_detach": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: native admission, detach and display negotiation. [profiles] uses two loopback peers and a real multiplexer to prove refusal on unverified boot revisions, or secondary policy, model, workspace, credential and transcript isolation during a concurrent primary LOCAL turn and after owner replacement. Fakes cannot establish the shared runner's actual execution policy. The detail case proves actual reasoning callback installation, child lifecycle forwarding and turn-end usage on the owner WebSocket with a loopback model. [restart] delivers a real SIGUSR1 so the owner's own after-turn restart wait admits Web, then exits once the parked approval is answered.",
+      "reason": "Supported-Agent API compatibility: native admission, detach and display negotiation. [profiles] uses two loopback peers and a real multiplexer to prove refusal on unverified boot revisions, or secondary policy, model, workspace, credential and transcript isolation during a concurrent primary LOCAL turn and after owner replacement. Fakes cannot establish the shared runner's actual execution policy. The detail case proves actual reasoning callback installation, child lifecycle forwarding, turn-end usage and pre-build/resident context inspection on the owner WebSocket with a loopback model, including no extra provider call for inspection. [restart] delivers a real SIGUSR1 so the owner's own after-turn restart wait admits Web, then exits once the parked approval is answered.",
       "cases": [
         "[shared]",
         "[batch]",

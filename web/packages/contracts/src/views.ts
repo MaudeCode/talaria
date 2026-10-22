@@ -340,6 +340,7 @@ export type BranchedFrom = z.infer<typeof BranchedFromSchema>
 
 /** Full session record from `GET /api/session` and mutations returning `session`. */
 export const SessionSchema = z.looseObject({
+  context_detail_key: z.string().nullable().optional().describe('Opaque identity for open-only context details; changes with owner epoch, model and context.'),
   composer_state_key: z.string().optional().describe('Opaque profile-home and owner identity for device-local composer state; never an API session id.'),
   session_id: SessionIdSchema, title: z.string(), workspace: z.string().optional(), created_workspace: z.string().nullable().optional(), model: NullableString.optional(), model_provider: NullableString.optional(),
   model_option_id: NullableString.optional().describe('TAL-301: the catalog entry id the stored model/provider selects; null when none.'),

@@ -3834,6 +3834,17 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "context_detail_key": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Opaque identity for open-only context details; changes with owner epoch, model and context."
+                        },
                         "composer_state_key": {
                           "type": "string",
                           "description": "Opaque profile-home and owner identity for device-local composer state; never an API session id."
@@ -7026,6 +7037,298 @@
         }
       }
     },
+    "/api/session/context-detail": {
+      "get": {
+        "operationId": "session.contextDetail",
+        "summary": "Read bounded, safe allocation estimates and context-file metadata from the existing Agent only.",
+        "tags": [
+          "sessions"
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "context_detail_key",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "available": {
+                      "type": "boolean"
+                    },
+                    "reason": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "not_built",
+                            "unsupported",
+                            "changed",
+                            "unavailable"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "used_tokens": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "window_tokens": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "estimated_total": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "source": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "local_estimate",
+                            "provider_usage",
+                            "provider_usage_plus_estimate"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "estimated": {
+                      "anyOf": [
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "categories": {
+                      "type": "array",
+                      "maxItems": 8,
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "enum": [
+                              "system_prompt",
+                              "tool_definitions",
+                              "rules",
+                              "skills",
+                              "mcp",
+                              "subagent_definitions",
+                              "memory",
+                              "conversation"
+                            ],
+                            "type": "string"
+                          },
+                          "tokens": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "percent": {
+                            "anyOf": [
+                              {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 100
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "estimated": {
+                            "const": true
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "tokens",
+                          "percent",
+                          "estimated"
+                        ]
+                      }
+                    },
+                    "files": {
+                      "type": "array",
+                      "maxItems": 64,
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "enum": [
+                              "AGENTS.md",
+                              "SOUL.md",
+                              ".hermes.md",
+                              "CLAUDE.md",
+                              "GEMINI.md",
+                              "CONTEXT.md",
+                              "Context file"
+                            ],
+                            "type": "string"
+                          },
+                          "characters": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "tokens": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "status": {
+                            "enum": [
+                              "loaded",
+                              "truncated",
+                              "flagged",
+                              "shadowed",
+                              "blocked",
+                              "empty",
+                              "unreadable",
+                              "suppressed",
+                              "unknown"
+                            ],
+                            "type": "string"
+                          },
+                          "loaded": {
+                            "anyOf": [
+                              {
+                                "type": "boolean"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "label",
+                          "characters",
+                          "tokens",
+                          "status",
+                          "loaded"
+                        ]
+                      }
+                    },
+                    "truncated": {
+                      "type": "boolean"
+                    },
+                    "current_turn_output_tokens": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "last_turn_output_tokens": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "available",
+                    "reason",
+                    "used_tokens",
+                    "window_tokens",
+                    "estimated_total",
+                    "source",
+                    "estimated",
+                    "categories",
+                    "files",
+                    "truncated",
+                    "current_turn_output_tokens",
+                    "last_turn_output_tokens"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/session/usage": {
       "get": {
         "operationId": "session.usage",
@@ -7203,6 +7506,17 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "context_detail_key": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Opaque identity for open-only context details; changes with owner epoch, model and context."
+                        },
                         "composer_state_key": {
                           "type": "string",
                           "description": "Opaque profile-home and owner identity for device-local composer state; never an API session id."
@@ -10088,6 +10402,17 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "context_detail_key": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Opaque identity for open-only context details; changes with owner epoch, model and context."
+                        },
                         "composer_state_key": {
                           "type": "string",
                           "description": "Opaque profile-home and owner identity for device-local composer state; never an API session id."
@@ -14964,6 +15289,17 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "context_detail_key": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Opaque identity for open-only context details; changes with owner epoch, model and context."
+                        },
                         "composer_state_key": {
                           "type": "string",
                           "description": "Opaque profile-home and owner identity for device-local composer state; never an API session id."
@@ -19430,6 +19766,17 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "context_detail_key": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Opaque identity for open-only context details; changes with owner epoch, model and context."
+                        },
                         "composer_state_key": {
                           "type": "string",
                           "description": "Opaque profile-home and owner identity for device-local composer state; never an API session id."
@@ -24619,6 +24966,17 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "context_detail_key": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Opaque identity for open-only context details; changes with owner epoch, model and context."
+                        },
                         "composer_state_key": {
                           "type": "string",
                           "description": "Opaque profile-home and owner identity for device-local composer state; never an API session id."
@@ -27457,6 +27815,17 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "context_detail_key": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Opaque identity for open-only context details; changes with owner epoch, model and context."
+                        },
                         "composer_state_key": {
                           "type": "string",
                           "description": "Opaque profile-home and owner identity for device-local composer state; never an API session id."
@@ -30357,6 +30726,17 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "context_detail_key": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Opaque identity for open-only context details; changes with owner epoch, model and context."
+                        },
                         "composer_state_key": {
                           "type": "string",
                           "description": "Opaque profile-home and owner identity for device-local composer state; never an API session id."
@@ -33255,6 +33635,17 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "context_detail_key": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Opaque identity for open-only context details; changes with owner epoch, model and context."
+                        },
                         "composer_state_key": {
                           "type": "string",
                           "description": "Opaque profile-home and owner identity for device-local composer state; never an API session id."
@@ -44710,6 +45101,17 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "context_detail_key": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Opaque identity for open-only context details; changes with owner epoch, model and context."
+                        },
                         "composer_state_key": {
                           "type": "string",
                           "description": "Opaque profile-home and owner identity for device-local composer state; never an API session id."
@@ -47596,6 +47998,17 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "context_detail_key": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Opaque identity for open-only context details; changes with owner epoch, model and context."
+                        },
                         "composer_state_key": {
                           "type": "string",
                           "description": "Opaque profile-home and owner identity for device-local composer state; never an API session id."
@@ -50870,6 +51283,17 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "context_detail_key": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Opaque identity for open-only context details; changes with owner epoch, model and context."
+                        },
                         "composer_state_key": {
                           "type": "string",
                           "description": "Opaque profile-home and owner identity for device-local composer state; never an API session id."
@@ -54046,6 +54470,17 @@
                         "session": {
                           "type": "object",
                           "properties": {
+                            "context_detail_key": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "Opaque identity for open-only context details; changes with owner epoch, model and context."
+                            },
                             "composer_state_key": {
                               "type": "string",
                               "description": "Opaque profile-home and owner identity for device-local composer state; never an API session id."

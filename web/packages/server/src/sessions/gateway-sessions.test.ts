@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { Worker } from 'node:worker_threads'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { SessionEnvelopeSchema, ClarifyPendingEnvelopeSchema, ChatEventSchema, type GatewaySnapshot, type GatewaySessionResult } from '@maudecode/talaria-web-contracts'
+import { ContextDetailSchema, SessionEnvelopeSchema, ClarifyPendingEnvelopeSchema, ChatEventSchema, type GatewaySnapshot, type GatewaySessionResult } from '@maudecode/talaria-web-contracts'
 import type { StreamFrame } from '../sidecar/client.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { FakeSidecar } from '../sidecar/fake.js'
@@ -102,6 +102,33 @@ describe('canonical owner attachment', () => {
   })
   afterEach(async () => { db.close(); await s.close() })
   const post = (path: string, body: unknown) => s.get(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+
+  it.each(['epoch', 'replay', 'model', 'workspace'])('rejects a stale rendered context identity after native %s replacement', async (change) => {
+    const detail = ContextDetailSchema.parse((JSON.parse(readFileSync(new URL('../../../contracts/fixtures/sidecar/context-detail.json', import.meta.url), 'utf8')) as Record<string, { result: unknown }[]>)['chat.context_detail']![0]!.result)
+    let current = snapshot()
+    sidecar.respond('gateway.session', () => ({ ...attached(current), context_detail: detail }))
+    const row = await s.deps.sessions.detail(sid, {})
+    if (change === 'epoch') current = snapshot({ authority_epoch: 2 })
+    else if (change === 'replay') current = snapshot({ replay_epoch: 'successor' })
+    else current = snapshot({ info: { ...current.info, [change === 'model' ? 'model' : 'cwd']: 'replacement' } })
+    const res = await s.get(`/api/session/context-detail?session_id=${sid}&context_detail_key=${String(row.context_detail_key)}`)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ available: false, reason: 'changed', files: [] })
+  })
+
+  it('context metadata uses the native authorized action without resident fallback', async () => {
+    const detail = ContextDetailSchema.parse((JSON.parse(readFileSync(new URL('../../../contracts/fixtures/sidecar/context-detail.json', import.meta.url), 'utf8')) as Record<string, { result: unknown }[]>)['chat.context_detail']![0]!.result)
+    sidecar.respond('gateway.session', (params) => {
+      expect(['snapshot', 'context_detail']).toContain(params.action)
+      expect(params.session_id).toBe(sid)
+      return { ...attached(snapshot()), context_detail: detail }
+    })
+    const row = await s.deps.sessions.detail(sid, {})
+    const res = await s.get(`/api/session/context-detail?session_id=${sid}&context_detail_key=${String(row.context_detail_key)}`)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual(detail)
+    expect(sidecar.calls.some((c) => c.method === 'chat.context_detail' || c.method === 'chat.start')).toBe(false)
+  })
 
   it.each(['high', ''])('refuses native reasoning effort %j without touching profile bytes or dispatching a control', async (effort) => {
     const path = join(s.state, 'config.yaml')

@@ -1,0 +1,77 @@
+{
+  "chat.context_detail": [
+    {
+      "params": {
+        "profile_home": "/synthetic",
+        "session_id": "resident",
+        "model": "fixture-model",
+        "model_provider": "fixture",
+        "workspace": "/synthetic"
+      },
+      "result": {
+        "available": true,
+        "reason": null,
+        "used_tokens": 3790,
+        "window_tokens": 256000,
+        "source": "local_estimate",
+        "estimated": true,
+        "estimated_total": 3500,
+        "categories": [
+          {
+            "id": "system_prompt",
+            "tokens": 2000,
+            "percent": 0.78125,
+            "estimated": true
+          },
+          {
+            "id": "rules",
+            "tokens": 1000,
+            "percent": 0.390625,
+            "estimated": true
+          },
+          {
+            "id": "conversation",
+            "tokens": 500,
+            "percent": 0.1953125,
+            "estimated": true
+          }
+        ],
+        "files": [
+          {
+            "label": "AGENTS.md",
+            "characters": 4000,
+            "tokens": 1000,
+            "status": "loaded",
+            "loaded": true
+          }
+        ],
+        "truncated": false,
+        "current_turn_output_tokens": null,
+        "last_turn_output_tokens": null
+      }
+    },
+    {
+      "params": {
+        "profile_home": "/synthetic",
+        "session_id": "resident",
+        "model": "fixture-model",
+        "model_provider": "fixture",
+        "workspace": "/synthetic"
+      },
+      "result": {
+        "available": false,
+        "reason": "not_built",
+        "used_tokens": null,
+        "window_tokens": null,
+        "source": null,
+        "estimated": null,
+        "estimated_total": null,
+        "categories": [],
+        "files": [],
+        "truncated": false,
+        "current_turn_output_tokens": null,
+        "last_turn_output_tokens": null
+      }
+    }
+  ]
+}

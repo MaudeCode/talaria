@@ -19,6 +19,7 @@ export const keys = {
     list: (params: Record<string, string | boolean | number | undefined>) => ['sessions', 'list', params] as const,
     detail: (id: string) => ['sessions', 'detail', id] as const,
     status: (id: string) => ['sessions', 'status', id] as const,
+    contextDetail: (id: string, identity: string) => ['sessions', 'context-detail', id, identity] as const,
     usage: (id: string) => ['sessions', 'usage', id] as const,
     worktree: (id: string) => ['sessions', 'worktree', id] as const,
     search: (q: string, filters: object) => ['sessions', 'search', q, filters] as const,

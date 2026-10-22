@@ -1,3 +1,4 @@
+import { unavailableContextDetail, type ContextDetail } from '@maudecode/talaria-web-contracts'
 /** One native-owner seam. Talaria observes its history and never settles it into a local Session. */
 import type { StartupTiming } from '../startup-timing.js'
 import { createHash, randomUUID } from 'node:crypto'
@@ -109,6 +110,14 @@ export class GatewaySessions {
     return { sid, profile, home, key: JSON.stringify([home, sid]) }
   }
 
+  async contextDetail(sid: string, expectedKey: string): Promise<ContextDetail> {
+    const profile = this.deps.activeProfile()
+    const target = await this.target(sid, profile)
+    if (!target) return unavailableContextDetail()
+    const result = await this.call(target, { action: 'context_detail' })
+    return profile === this.deps.activeProfile() && result.state === 'attached' && this.contextDetailKey(target, result.snapshot) === expectedKey ? result.context_detail ?? unavailableContextDetail('unsupported') : unavailableContextDetail('changed')
+  }
+
   async isOwned(sid: string): Promise<boolean> { return (await this.target(sid)) !== null }
 
   private async createCall(params: GatewayCreateParams): Promise<GatewaySessionResult> {
@@ -191,9 +200,13 @@ export class GatewaySessions {
     return redactNestedMessageContainers(value, this.deps.redactEnabled()) as OwnerAttachment
   }
 
+  private contextDetailKey(target: Target, snapshot: GatewaySnapshot | null): string | null {
+    return snapshot ? ownerStateId(JSON.stringify([target.key, snapshot.authority_epoch, snapshot.replay_epoch, snapshot.revision, snapshot.execution_generation, snapshot.info, snapshot.last_sequence])) : null
+  }
+
   private async view(base: Row, result: GatewaySessionResult, stream: string | null, target: Target, limit: number | null = 120, before: number | null = null, withMessages = true): Promise<Row> {
     const snapshot = result.snapshot
-    const fields: Row = { ...base, owner_attachment: this.attachment({ ...result, model_change: this.currentModelChange(target, snapshot) }), composer_state_key: ownerStateId(target.key), active_stream_id: stream, is_streaming: Boolean(stream) }
+    const fields: Row = { ...base, owner_attachment: this.attachment({ ...result, model_change: this.currentModelChange(target, snapshot) }), composer_state_key: ownerStateId(target.key), context_detail_key: this.contextDetailKey(target, snapshot), active_stream_id: stream, is_streaming: Boolean(stream) }
     if (snapshot) {
       const observed = this.watches.get(target.key)?.snapshot
       const nativeRows = [...snapshot.messages]

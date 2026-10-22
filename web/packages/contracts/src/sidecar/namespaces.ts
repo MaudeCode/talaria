@@ -1,3 +1,4 @@
+import { ContextDetailSchema } from '../context-detail.js'
 import { z } from 'zod'
 import { ProviderPhaseSchema } from '../run-status.js'
 import { SpeedTierSchema } from '../speed.js'
@@ -702,6 +703,8 @@ export const CHAT_METHODS = {
       commit_token: z.string().nullable(),
     }),
   },
+  /** TAL-1333: safe metadata from the existing matching resident Agent, never a new Agent. */
+  'chat.context_detail': { params: ProfileHomeParams.extend({ session_id: z.string().min(1), model: z.string().nullable(), model_provider: z.string().nullable(), workspace: z.string().nullable() }), result: ContextDetailSchema },
   /** TAL-255: second phase of `chat.compress`; `finalized: false` when the token is unknown or already expired. */
   'chat.compress_finalize': { params: z.object({ commit_token: z.string().min(1), committed: z.boolean() }), result: z.object({ finalized: z.boolean() }) },
   /** Archive only emits on_session_delete for the committed local transition; it never closes the Agent session. */

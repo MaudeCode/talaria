@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Inspect context allocation estimates, occupancy sources, and loaded context files from the existing conversation context control.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
