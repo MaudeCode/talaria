@@ -1,10 +1,11 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { allSessions, dedupeCliSidebarSessions, sessionListResponse, type ListPayload, type Row, type RuntimeOverlay } from './list.js'
+import { allSessions, buildSessionListPayload, dedupeCliSidebarSessions, sessionListResponse, type ListParams, type ListPayload, type Row, type RuntimeOverlay } from './list.js'
 import * as sessionRows from './storage/row.js'
 import { bootTestServer } from '../test/harness.js'
 import { sessionDirectory, sessionIndexPath, sessionPath } from '../test/storage.js'
+import { Session } from './session.js'
 
 const fixture = JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as { session_list: { stored: Row[]; live_stream_ids: string[]; sessions: Row[] } }
 
@@ -77,5 +78,48 @@ describe('Web-created diagnostic chats (TAL-1040)', () => {
     const tip = { session_id: 'tip', _lineage_root_id: 'root', _lineage_tip_id: 'tip', source: 'cli', source_tag: 'cli', message_count: 4, actual_message_count: 4 }
     const other = { session_id: 'other', _lineage_root_id: 'other-root', _lineage_tip_id: 'other', source: 'cli', source_tag: 'cli', message_count: 4, actual_message_count: 4 }
     expect(dedupeCliSidebarSessions([tip, other], new Set(), { ...opts, webCreated: new Set(['root']) }).map((r) => r.session_id)).toEqual(['tip'])
+  })
+})
+
+describe('parent snapshot lookup (TAL-1219)', () => {
+  it.each([
+    { indexed: true, snapshot: true },
+    { indexed: true, snapshot: false },
+    { indexed: true, snapshot: undefined },
+    { indexed: false, snapshot: true },
+    { indexed: false, snapshot: false },
+    { indexed: false, snapshot: undefined },
+  ])('lists 50 forks with indexed=$indexed, snapshot=$snapshot without redundant parent loads', async ({ indexed, snapshot }) => {
+    const server = await bootTestServer()
+    const store = server.deps.sessionStore
+    try {
+      const rows = Array.from({ length: 50 }, (_, i) => ({
+        session_id: `fork_${i}`, parent_session_id: indexed ? `parent_${i}` : 'missing_parent',
+        source_tag: 'telegram', chat_id: 'shared_chat', message_count: 2, updated_at: i + 1,
+      }))
+      if (indexed) {
+        for (const row of rows) {
+          const parent = new Session({ session_id: row.parent_session_id, pre_compression_snapshot: snapshot, archived: true }, { workspace: '/synthetic', model: 'synthetic' })
+          await store.save(parent)
+        }
+        await store.readIndexEntries()
+        store.sessions.clear()
+      }
+      const load = vi.spyOn(store, 'loadMetadataOnly')
+      if (!indexed && snapshot !== undefined) load.mockResolvedValue(new Session({ session_id: 'missing_parent', pre_compression_snapshot: snapshot }, { workspace: '/synthetic', model: 'synthetic' }))
+      const params: ListParams = {
+        webuiRows: rows, activeProfile: 'default', allProfiles: false, includeArchived: false,
+        excludeHidden: false, visibleOnly: false, showCliSessions: false, showClaudeCodeSessions: false,
+        showPreviousMessagingSessions: false, showCronSessions: false, showWebhookSessions: false,
+        showKanbanSessions: false, requestVisibilityOverrides: true, sidebarSource: null,
+        archivedLimit: null, archivedOffset: 0, isolatedProfileMode: false, profilesMatch: () => true,
+      }
+      const expected = (snapshot ? [...rows].reverse() : [rows[49]!]).map((row) => ({ ...row, is_cli_session: false }))
+      expect((await buildSessionListPayload(store, params)).sessions).toEqual(expected)
+      expect(load).toHaveBeenCalledTimes(indexed ? 0 : 1)
+      if (!indexed) expect(load).toHaveBeenCalledWith('missing_parent')
+      expect((await buildSessionListPayload(store, params)).sessions).toEqual(expected)
+      expect(load).toHaveBeenCalledTimes(indexed ? 0 : 2)
+    } finally { vi.restoreAllMocks(); await server.close() }
   })
 })
