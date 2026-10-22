@@ -176,11 +176,6 @@ public enum ChatActiveRunStatusPolicy {
             return ChatActiveRunStatusPresentation(kind: .starting)
         }
 
-        // Syncing stands in for run progress and recovery until the transcript is current.
-        if isSyncingTranscript {
-            return ChatActiveRunStatusPresentation(kind: .syncing)
-        }
-
         if let recovery = ChatActiveRunStatusPresentation(
             recoveryState: activeStreamRecoveryState,
             runStartedAt: activeRunStartedAt
@@ -191,6 +186,11 @@ public enum ChatActiveRunStatusPolicy {
         // A manual command has its own server job, outside the active turn.
         if isCompressing {
             return ChatActiveRunStatusPresentation(kind: .compressing, runStartedAt: compressionStartedAt)
+        }
+
+        // A delayed freshness pill must never replace response progress or recovery.
+        if isSyncingTranscript, !hasActiveStream, serverRunStatus == nil, compressionStartedAt == nil {
+            return ChatActiveRunStatusPresentation(kind: .syncing)
         }
 
         if hasServerRunStatus {

@@ -1602,7 +1602,7 @@ struct ChatView: View {
             hasActiveStream: viewModel.activeStreamID != nil,
             activeStreamRecoveryState: viewModel.activeStreamRecoveryState,
             isCancellingStream: viewModel.isCancellingStream,
-            isSyncingTranscript: showsSyncingPill,
+            isSyncingTranscript: showsSyncingPill && viewModel.isSyncingTranscript,
             isBackgroundTurn: viewModel.isBackgroundTurnActive,
             activeRunStartedAt: viewModel.activeRunStartedAt,
             isCompressing: viewModel.isCompressingSession,
@@ -1846,14 +1846,16 @@ struct ChatView: View {
     private func loadMessages(
         appliesInitialFocus: Bool = true,
         isUserRefresh: Bool = false,
-        joinsLoadInFlight: Bool = false
+        joinsLoadInFlight: Bool = false,
+        isRoutineReconciliation: Bool = false
     ) async {
         // A new chat has nothing to load until its session exists (TAL-636).
         guard viewModel.hasSession else { return }
         if joinsLoadInFlight {
             await viewModel.refreshSession(modelContext: modelContext, isUserRefresh: isUserRefresh)
         } else {
-            await viewModel.loadMessages(modelContext: modelContext, isUserRefresh: isUserRefresh)
+            await viewModel.loadMessages(modelContext: modelContext, isUserRefresh: isUserRefresh,
+                                         isRoutineReconciliation: isRoutineReconciliation)
         }
         // The chat closed meanwhile; its cleanup already suspended the stream and polling.
         guard !Task.isCancelled else { return }
@@ -2884,7 +2886,7 @@ struct ChatView: View {
             defer { endResponseCompletionBackgroundTask() }
 
             if viewModel.responseCompletionNeedsTranscriptRefresh {
-                await loadMessages()
+                await loadMessages(isRoutineReconciliation: true)
             }
 
             await ResponseCompletionNotificationService.scheduleResponseCompletedIfAllowed(

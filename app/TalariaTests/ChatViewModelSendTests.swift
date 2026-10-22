@@ -183,3 +183,57 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(speechSynthesizer.spokenStrings, [spoken])
     }
 }
+
+@MainActor
+extension ChatViewModelSendTests {
+    func testSendProgressNeverShowsSyncingDuringAHeldReload() async throws {
+        let fixture = try FixtureApp(for: self)
+        let requests = DeferredRequests()
+        let host = "hosted-send-sync.test"
+        DeferredMockURLProtocol.setOnRequest({ request in
+            if ["/api/session", "/api/chat/start"].contains(request.request.url?.path ?? "") {
+                _ = requests.append(request)
+            } else {
+                request.complete(withJSON: "{}")
+            }
+        }, forHost: host)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+        let stream = SpySSEStreamingClient()
+        let summary = SessionSummary(sessionId: "session-abc", title: "Send status")
+        let viewModel = try makeViewModel(streamClient: stream, sessionSummary: summary,
+            server: URL(string: "https://\(host)")!, protocolClasses: [DeferredMockURLProtocol.self]) { _ in
+            throw URLError(.badURL)
+        }
+        defer { viewModel.suspendStreamForNavigation(); viewModel.cleanupPollingTasks() }
+        let transcript = #"{"session":{"session_id":"session-abc","messages":[{"role":"user","content":"Earlier question","message_id":"earlier-user"},{"role":"assistant","content":"Earlier answer","message_id":"earlier-answer"}]}}"#
+        let initial = Task { await viewModel.loadMessages() }
+        let initialStarted = await awaitCondition { requests.count == 1 }
+        XCTAssertTrue(initialStarted)
+        requests.request(at: 0).complete(withJSON: transcript)
+        await initial.value
+        let window = try hostWindow(NavigationStack {
+            ChatView(session: summary, server: URL(string: "https://\(host)")!, onAPIError: { _ in },
+                     loadsInitialMessages: false, viewModel: viewModel)
+        }.modelContainer(fixture.cache))
+        let reload = Task { await viewModel.loadMessages() }
+        _ = try await requireElement(in: window, label: "Syncing messages with the server")
+        attachHostedScreenshot(window, name: "send-status-before-submission")
+        let send = Task { await viewModel.sendMessage("Next question") }
+        let sendStarted = await awaitCondition { requests.count == 3 }
+        XCTAssertTrue(sendStarted)
+        _ = try await requireElement(in: window, label: "Hermes is starting a response")
+        requests.request(at: 2).complete(withJSON: #"{"session_id":"session-abc","stream_id":"stream-123"}"#)
+        let sent = await send.value
+        XCTAssertTrue(sent)
+        _ = try await requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Hermes is working on the response") == true }
+        settle(0.5)
+        XCTAssertNil(HostedAccessibility.element(in: window, label: "Syncing messages with the server"))
+        attachHostedScreenshot(window, name: "send-status-response-with-held-reload")
+        stream.emit(.token("Live answer"))
+        _ = try await requireElement(in: window, label: "Live answer")
+        XCTAssertNil(HostedAccessibility.element(in: window, label: "Syncing messages with the server"))
+        requests.request(at: 1).complete(withJSON: transcript)
+        await reload.value
+    }
+
+}

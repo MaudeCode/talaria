@@ -142,8 +142,15 @@ public final class ChatViewModel {
     public var showsRunStateCheck: Bool { isConfirmingRunState && activeStreamID == nil && !isSyncingTranscript }
     /// Loads started by pull-to-refresh; the system refresh spinner covers them.
     private var userRefreshLoadGenerations: Set<Int> = []
-    /// True while a populated transcript is being reconciled with the server (TAL-436).
-    public var isSyncingTranscript: Bool { isLoading && userRefreshLoadGenerations.isEmpty && hasMessages }
+    /// Loads belonging to the current send/response reconcile silently, even if they outlive it.
+    private var routineReconciliationLoadGenerations: Set<Int> = []
+    /// Opening and refreshing a populated transcript shows freshness; routine response work does not.
+    public var isSyncingTranscript: Bool {
+        isLoading && userRefreshLoadGenerations.isEmpty && hasMessages
+            && !isSubmittingMessage && activeStreamID == nil
+            && (activeSessionLoadRequestGenerations.isEmpty
+                || !activeSessionLoadRequestGenerations.subtracting(routineReconciliationLoadGenerations).isEmpty)
+    }
     @ObservationIgnored private var pendingStreamingScrollTriggerTask: Task<Void, Never>?
     @ObservationIgnored private var pendingAssistantTokenText = ""
     @ObservationIgnored private var pendingReasoningText = ""
@@ -1590,7 +1597,8 @@ public final class ChatViewModel {
     public func loadMessages(
         modelContext: ModelContext? = nil,
         waitsForPendingMessageSend: Bool = true,
-        isUserRefresh: Bool = false
+        isUserRefresh: Bool = false,
+        isRoutineReconciliation: Bool = false
     ) async {
         if let modelContext { runStatusCacheContext = modelContext }
         guard let sessionID else {
@@ -1605,6 +1613,9 @@ public final class ChatViewModel {
         sessionLoadRequestGeneration &+= 1
         let loadRequestGeneration = sessionLoadRequestGeneration
         activeSessionLoadRequestGenerations.insert(loadRequestGeneration)
+        if isRoutineReconciliation || isSubmittingMessage || activeStreamID != nil {
+            routineReconciliationLoadGenerations.insert(loadRequestGeneration)
+        }
         isLoading = true
         if isUserRefresh {
             userRefreshLoadGenerations.insert(loadRequestGeneration)
@@ -1613,6 +1624,7 @@ public final class ChatViewModel {
         cacheErrorMessage = nil
         lastError = nil
         defer {
+            routineReconciliationLoadGenerations.remove(loadRequestGeneration)
             userRefreshLoadGenerations.remove(loadRequestGeneration)
             finishSessionLoadRequest(loadRequestGeneration)
             // An older load can still apply after a newer one fails, so loading lasts until the last ends.
@@ -3025,6 +3037,7 @@ public final class ChatViewModel {
         pendingFirstMessageID = preparesSession && appendsUserMessage ? localMessageID : nil
         isStartingChat = true
         isStartingMessageSend = true
+        routineReconciliationLoadGenerations.formUnion(activeSessionLoadRequestGenerations)
         sendErrorMessage = nil
         lastError = nil
         archiveLiveActivityIfNeeded()
@@ -5257,12 +5270,16 @@ public final class ChatViewModel {
         await syncWithServer(modelContext: modelContext, joinsLoadInFlight: true)
     }
 
-    private func syncWithServer(modelContext: ModelContext?, joinsLoadInFlight: Bool) async {
+    private func syncWithServer(
+        modelContext: ModelContext?,
+        joinsLoadInFlight: Bool,
+        isRoutineReconciliation: Bool = false
+    ) async {
         if activeStreamID == nil {
             if joinsLoadInFlight {
                 await refreshSession(modelContext: modelContext)
             } else {
-                await loadMessages(modelContext: modelContext)
+                await loadMessages(modelContext: modelContext, isRoutineReconciliation: isRoutineReconciliation)
             }
         }
         // A joined load outlives a caller that was cancelled (its chat closed or its scene went
@@ -5311,7 +5328,14 @@ public final class ChatViewModel {
     /// load in flight, so this always reads afresh.
     public func handleSessionsChange(_ change: SessionsChange, modelContext: ModelContext? = nil) async {
         guard let sessionID, SessionsChangeTrigger.session(sessionID).matches(change) else { return }
-        await syncWithServer(modelContext: modelContext, joinsLoadInFlight: false)
+        // Routine announcements also arrive after local completion; reconnect resyncs still show freshness.
+        let isRoutineReconciliation: Bool
+        switch change {
+        case .changed: isRoutineReconciliation = true
+        case .resync: isRoutineReconciliation = false
+        }
+        await syncWithServer(modelContext: modelContext, joinsLoadInFlight: false,
+                             isRoutineReconciliation: isRoutineReconciliation)
         // TAL-372: a background task that changed announces it the same way.
         await refreshBackgroundTasks()
     }

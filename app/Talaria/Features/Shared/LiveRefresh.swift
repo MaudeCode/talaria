@@ -39,6 +39,10 @@ private struct DelayedStatusModifier: ViewModifier {
                     update()
                 }
             }
+            .onDisappear {
+                status.reset()
+                isVisible = false
+            }
     }
 
     private func update() {

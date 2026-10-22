@@ -12,6 +12,11 @@ public struct DelayedStatusVisibility: Sendable {
 
     public init() {}
 
+    /// A disappearing screen must not carry a visible hold or pending deadline into its next appearance.
+    public mutating func reset() {
+        self = Self()
+    }
+
     /// Feeds the condition's current value. Call again at `nextDeadline` while it is non-nil.
     public mutating func update(isActive: Bool, now: Date) {
         if !isActive {

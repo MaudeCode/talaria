@@ -627,7 +627,7 @@ final class ChatActiveRunStatusPolicyTests: XCTestCase {
         XCTAssertEqual(presentation?.isSyncing, true)
     }
 
-    func testSyncingHidesRunProgressAndRecovery() {
+    func testRecoveryOutranksADelayedSyncPill() {
         let presentation = ChatActiveRunStatusPolicy.presentation(
             isStartingChat: false,
             hasActiveStream: true,
@@ -636,7 +636,15 @@ final class ChatActiveRunStatusPolicyTests: XCTestCase {
             isSyncingTranscript: true
         )
 
-        XCTAssertEqual(presentation?.kind, .syncing)
+        XCTAssertEqual(presentation?.kind, .reconnecting)
+    }
+
+    func testHealthyResponseOutranksADelayedSyncPill() {
+        XCTAssertEqual(ChatActiveRunStatusPolicy.presentation(
+            isStartingChat: false, hasActiveStream: true,
+            activeStreamRecoveryState: .idle, isCancellingStream: false,
+            isSyncingTranscript: true
+        )?.kind, .active)
     }
 
     func testRecoveryStatesMapToTheirChipsAndAHealthyStreamToNone() {

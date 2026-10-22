@@ -5,6 +5,147 @@ import XCTest
 // TAL-436: "Syncing messages" tracks a populated transcript's reconcile with the server.
 @MainActor
 extension ChatViewModelSendTests {
+    func testRoutineReloadBeforeSendACKDoesNotIntroduceASyncPhase() async throws {
+        try await checkSendReloadStatus(acknowledgesFirst: false)
+    }
+
+    func testRoutineReloadAfterSendACKDoesNotIntroduceASyncPhase() async throws {
+        try await checkSendReloadStatus(acknowledgesFirst: true)
+    }
+
+    func testFailedSendDoesNotRevealAnOverlappingSyncPhase() async throws {
+        try await checkSendReloadStatus(acknowledgesFirst: false, failsSend: true)
+    }
+
+    func testCompletionAnnouncementReconcilesSilentlyButReconnectShowsFreshness() async throws {
+        let requests = LockedCounter()
+        let held = expectation(description: "completion reconcile held")
+        let reconnectHeld = expectation(description: "reconnect resync held")
+        let release = DispatchSemaphore(value: 0)
+        let viewModel = try makeViewModel { request in
+            if request.url?.path == "/api/background/tasks" {
+                return apiTestJSONResponse(#"{"tasks":[]}"#, for: request)
+            }
+            let count = requests.increment()
+            if count > 1 {
+                (count == 2 ? held : reconnectHeld).fulfill()
+                XCTAssertEqual(release.wait(timeout: .now() + .seconds(5)), .success)
+            }
+            return apiTestJSONResponse(Self.syncStatusSessionJSON, for: request)
+        }
+        defer { release.signal(); viewModel.cleanupPollingTasks() }
+        await viewModel.loadMessages()
+        let reconcile = Task { await viewModel.handleSessionsChange(.changed(reason: "session_done", sessionID: "session-abc")) }
+        await fulfillment(of: [held], timeout: 10)
+        XCTAssertTrue(viewModel.isLoading)
+        XCTAssertFalse(viewModel.isSyncingTranscript, "A completion announcement is routine reconciliation, not a send phase.")
+        release.signal()
+        await reconcile.value
+        let reconnect = Task { await viewModel.handleSessionsChange(.resync) }
+        await fulfillment(of: [reconnectHeld], timeout: 10)
+        XCTAssertTrue(viewModel.isSyncingTranscript, "A reconnect must visibly recheck freshness.")
+        release.signal()
+        await reconnect.value
+        XCTAssertEqual(viewModel.messages.compactMap(\.content), ["Fresh question", "Fresh answer"])
+    }
+
+    private func checkSendReloadStatus(acknowledgesFirst: Bool, failsSend: Bool = false) async throws {
+        let host = "send-sync-\(acknowledgesFirst)-\(failsSend).test"
+        let requests = DeferredRequests()
+        DeferredMockURLProtocol.setOnRequest({ _ = requests.append($0) }, forHost: host)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+        let stream = SpySSEStreamingClient()
+        let viewModel = try makeViewModel(streamClient: stream, server: URL(string: "https://\(host)")!,
+            protocolClasses: [DeferredMockURLProtocol.self]) { _ in throw URLError(.badURL) }
+        defer { viewModel.suspendStreamForNavigation(); viewModel.cleanupPollingTasks() }
+        let initial = Task { await viewModel.loadMessages() }
+        try await waitUntil { requests.count == 1 }
+        requests.request(at: 0).complete(withJSON: Self.syncStatusSessionJSON)
+        await initial.value
+
+        let reload = Task { await viewModel.loadMessages() }
+        try await waitUntil { requests.count == 2 }
+        XCTAssertTrue(viewModel.isSyncingTranscript)
+        let send = Task { await viewModel.sendMessage("Next question") }
+        try await waitUntil { requests.count == 3 }
+        XCTAssertFalse(viewModel.isSyncingTranscript, "Submitting a message ends the visible freshness check.")
+        let optimisticID = try XCTUnwrap(viewModel.messages.last?.messageId)
+        if !acknowledgesFirst && !failsSend {
+            requests.request(at: 1).complete(withJSON: Self.syncStatusSessionJSON)
+        }
+        requests.request(at: 2).complete(withJSON: failsSend ? #"{"error":"Send failed"}"# :
+            #"{"session_id":"session-abc","stream_id":"stream-123"}"#, statusCode: failsSend ? 500 : 200)
+        let sent = await send.value
+        XCTAssertEqual(sent, !failsSend)
+        XCTAssertFalse(viewModel.isSyncingTranscript, "An overlapping reload must never become a post-send sync phase.")
+        if failsSend {
+            XCTAssertNotNil(viewModel.sendErrorMessage)
+            XCTAssertFalse(viewModel.messages.contains { $0.messageId == optimisticID })
+        } else {
+            await viewModel.reconnectStreamIfNeeded()
+            stream.emit(.token("Live answer"), lastEventID: "stream-123:1")
+            try await waitUntil { viewModel.messages.last?.content == "Live answer" }
+            XCTAssertFalse(viewModel.isSyncingTranscript, "Streaming output must remain visible while a reload is held.")
+            XCTAssertEqual(viewModel.messages.filter { $0.messageId == optimisticID }.count, 1)
+            if !acknowledgesFirst { await reload.value }
+            stream.emit(.done(DoneStreamEvent()))
+            try await waitUntil { viewModel.activeStreamID == nil }
+            XCTAssertFalse(viewModel.isSyncingTranscript, "Completion must not reveal a held routine reload.")
+        }
+        if acknowledgesFirst || failsSend {
+            requests.request(at: 1).complete(withJSON: Self.syncStatusSessionJSON)
+        }
+        await reload.value
+        XCTAssertFalse(viewModel.isLoading)
+
+        // A later foreground/reopen freshness check remains visible, even after a local send.
+        let refresh = Task { await viewModel.loadMessages() }
+        try await waitUntil { requests.count >= 4 }
+        XCTAssertTrue(viewModel.isSyncingTranscript)
+        requests.request(at: requests.count - 1).complete(withJSON: Self.syncStatusSessionJSON)
+        await refresh.value
+        XCTAssertFalse(viewModel.isSyncingTranscript)
+
+        let completionReload = Task { await viewModel.loadMessages(isRoutineReconciliation: true) }
+        try await waitUntil { requests.count == 5 }
+        XCTAssertTrue(viewModel.isLoading)
+        XCTAssertFalse(viewModel.isSyncingTranscript, "Completion-triggered reconciliation is background work.")
+        requests.request(at: 4).complete(withJSON: Self.syncStatusSessionJSON)
+        await completionReload.value
+    }
+
+    func testNewChatReloadDuringTheResponseStaysSilentAfterFastCompletion() async throws {
+        let held = expectation(description: "response reload held")
+        let release = DispatchSemaphore(value: 0)
+        let stream = SpySSEStreamingClient()
+        let viewModel = try makeViewModel(streamClient: stream, sessionSummary: SessionSummary(title: "New Chat")) { request in
+            if request.url?.path == "/api/chat/start" {
+                return apiTestJSONResponse(#"{"session_id":"session-abc","stream_id":"stream-123"}"#, for: request)
+            }
+            held.fulfill()
+            XCTAssertEqual(release.wait(timeout: .now() + .seconds(5)), .success)
+            return apiTestJSONResponse(Self.syncStatusSessionJSON, for: request)
+        }
+        defer { release.signal(); viewModel.suspendStreamForNavigation(); viewModel.cleanupPollingTasks() }
+        let sent = await viewModel.sendMessage("First question", waitForSession: {
+            viewModel.adoptCreatedSession(SessionSummary(sessionId: "session-abc", title: "New Chat"))
+            return true
+        })
+        XCTAssertTrue(sent)
+        await viewModel.reconnectStreamIfNeeded()
+        let reload = Task { await viewModel.loadMessages() }
+        await fulfillment(of: [held], timeout: 10)
+        XCTAssertTrue(viewModel.isLoading)
+        XCTAssertFalse(viewModel.isSyncingTranscript)
+        stream.emit(.token("First answer"), lastEventID: "stream-123:1")
+        try await waitUntil { viewModel.messages.last?.content == "First answer" }
+        stream.emit(.done(DoneStreamEvent()))
+        try await waitUntil { viewModel.activeStreamID == nil }
+        XCTAssertFalse(viewModel.isSyncingTranscript)
+        release.signal()
+        await reload.value
+    }
+
     func testCacheFirstOpenSyncsUntilTheServerTranscriptArrives() async throws {
         let context = try makeContext()
         try CacheStore.cacheMessages(
