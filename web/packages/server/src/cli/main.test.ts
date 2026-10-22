@@ -18,6 +18,21 @@ const trial = vi.hoisted(() => ({
 
 vi.mock('./dotenv.js', () => ({ loadStartupEnv: vi.fn() }))
 vi.mock('../sidecar/discover.js', () => ({ launchSidecar: () => trial.sidecar }))
+vi.mock('node:fs', async (original) => {
+  const fs = await original<typeof import('node:fs')>()
+  return { ...fs, fsyncSync: (fd: number) => {
+    trial.mark('filesystem flush started')
+    try { fs.fsyncSync(fd) } finally { trial.mark('filesystem flush finished') }
+  } }
+})
+vi.mock('node:child_process', async (original) => {
+  const cp = await original<typeof import('node:child_process')>()
+  return { ...cp, execFileSync: (...args: Parameters<typeof cp.execFileSync>) => {
+    const command = `${args[0]} ${args[1]?.[2] ?? ''}`
+    trial.mark(`${command} started`)
+    try { return cp.execFileSync(...args) } finally { trial.mark(`${command} finished`) }
+  } }
+})
 vi.mock('../config.js', async (original) => {
   const config = await original<typeof import('../config.js')>()
   return { ...config, loadConfig: (opts: Parameters<typeof config.loadConfig>[0]) => config.loadConfig({ ...opts, env: {
