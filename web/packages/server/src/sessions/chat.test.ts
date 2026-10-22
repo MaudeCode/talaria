@@ -1189,7 +1189,8 @@ describe('chat turns through the sidecar', () => {
 
   it('relays the Agent\'s password-manager prompts and hands their answers only to the Agent (TAL-887)', async () => {
     const sid = await newSession(s)
-    const secrets = { master: 'correct horse battery', password: 's3cret-pass', code: '481516' }
+    // Track the submitted answers; the vault-code prompt below is declined.
+    const secrets = { master: 'correct horse battery', password: 's3cret-pass' }
     const replies: string[] = []
     let release: (response: string) => void = () => undefined
     sidecar.respond('clarify.respond', (params) => { replies.push(params.response); release(params.response); return { ok: true, clarify_id: String(params.clarify_id) } })
