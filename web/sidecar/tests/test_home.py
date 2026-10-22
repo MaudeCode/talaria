@@ -281,6 +281,20 @@ def test_scoped_home_reuses_file_scopes_and_reloads_edits(tmp_path, cached_scope
     assert cached_scopes.active.get() is None
 
 
+def test_scope_cache_preserves_dashboard_plugin_loading_refusal(tmp_path, monkeypatch, cached_scopes):
+    home = tmp_path / "dashboard"
+    home.mkdir()
+    (home / ".env").write_text("KEY=file\n")
+    plugins = types.ModuleType("hermes_cli.plugins")
+    plugins.discover_plugins = lambda: pytest.fail("dashboard scope must not load user plugins")
+    monkeypatch.setitem(sys.modules, "hermes_cli.plugins", plugins)
+    sys.modules["hermes_cli.env_loader"].hydrate_profile_secret_sources = lambda home: pytest.fail("dashboard scope must not hydrate user secret sources")
+    for _ in range(2):
+        with home_module.scoped_home(home, load_plugins=False):
+            assert cached_scopes.secrets.get() == {"KEY": "file"}
+    assert cached_scopes.reads.count(("secrets", home)) == 1
+
+
 def test_scope_cache_preserves_dynamic_secrets_and_private_bindings(tmp_path, cached_scopes, scope_calls):
     home = tmp_path / "work"
     home.mkdir()
