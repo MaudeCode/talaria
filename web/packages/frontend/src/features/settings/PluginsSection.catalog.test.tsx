@@ -16,12 +16,25 @@ beforeEach(() => {
   vi.mocked(api.fetchPlugins).mockResolvedValue({ plugins: [], read_only: false })
   vi.mocked(api.fetchPluginCatalog).mockResolvedValue({ supported: true, read_only: false, entries: [entry], total: 1, next_offset: null })
 })
-async function setup() {
+async function setup(installAvailable = true) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   render(<QueryClientProvider client={qc}><PluginsSection /></QueryClientProvider>)
   fireEvent.click(await screen.findByRole('button', { name: 'Catalog' }))
-  return screen.findByRole('button', { name: 'Install disabled' })
+  return installAvailable ? screen.findByRole('button', { name: 'Install disabled' }) : screen.findByRole('region', { name: 'Catalog' })
 }
+
+it('distinguishes an empty installed list from the available catalog', async () => {
+  await setup()
+  expect(screen.getByText('No installed plugins')).toBeVisible()
+  expect(screen.getByText('Probe')).toBeVisible()
+})
+
+it('distinguishes empty catalog results from an empty installed list', async () => {
+  vi.mocked(api.fetchPluginCatalog).mockResolvedValue({ supported: true, read_only: false, entries: [], total: 0, next_offset: null })
+  await setup(false)
+  expect(await screen.findByText('No matching plugins')).toBeVisible()
+  expect(screen.getByText('No installed plugins')).toBeVisible()
+})
 
 it('previews once, confirms the exact token and reconciles the installed identity', async () => {
   const held = deferred<Awaited<ReturnType<typeof api.installPlugin>>>()

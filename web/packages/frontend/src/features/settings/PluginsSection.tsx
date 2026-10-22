@@ -57,7 +57,7 @@ export function PluginsSection() {
       {browsing && <PluginCatalogList />}
       {plugins.data.read_only && <div className="text-xs text-warning">{m.plugins_read_only()}</div>}
       {plugins.data.plugin_isolation_advisory && <div className="text-xs text-warning" data-advisory="plugin-isolation">{m.plugins_isolation_advisory()}</div>}
-      {list.length === 0 && <EmptyState>{m.plugins_empty()}</EmptyState>}
+      {list.length === 0 && <EmptyState>{browsing ? m.plugins_catalog_no_installed() : m.plugins_empty()}</EmptyState>}
       <ul className="flex flex-col divide-y divide-border-subtle">
         {list.map((p) => (
           <PluginRow key={p.key} title={<>{p.name ?? p.key}{p.version ? <span className="ml-1 text-[11px] text-muted">v{p.version}</span> : null}</>} description={`${p.kind ? `${p.kind} · ` : ''}${p.description ?? ''}`} actions={<>
@@ -131,7 +131,7 @@ function PluginCatalogList() {
     </form>
     {catalog.isPending ? <LoadingState /> : catalog.isError ? <ErrorState error={catalog.error} onRetry={() => { void catalog.refetch() }} /> : <>
       {!catalog.data.supported && <p className="py-2 text-xs text-muted">{m.plugins_catalog_unsupported()}</p>}
-      {catalog.data.supported && catalog.data.total === 0 && <EmptyState>{m.plugins_empty()}</EmptyState>}
+      {catalog.data.supported && catalog.data.total === 0 && <EmptyState>{m.plugins_catalog_empty()}</EmptyState>}
       <ul className="flex flex-col divide-y divide-border-subtle">{catalog.data.entries.map((entry) => <PluginRow key={entry.name} title={entry.title} description={entry.description} actions={<>
         <span className="text-[11px] text-muted">{entry.tier} · {entry.category}</span>
         {entry.installed_key && <span className="text-xs text-muted">{m.plugins_catalog_on_disk()}</span>}

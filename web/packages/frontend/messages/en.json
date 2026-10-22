@@ -1,4 +1,6 @@
 {
+  "plugins_catalog_no_installed": "No installed plugins",
+  "plugins_catalog_empty": "No matching plugins",
   "plugins_catalog": "Catalog",
   "plugins_catalog_search": "Search plugins",
   "plugins_catalog_changed": "The profile changed. Review this plugin again.",
