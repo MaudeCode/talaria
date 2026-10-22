@@ -370,4 +370,15 @@ describe('Kanban writes show their result while the server is held (TAL-1179)', 
     await userEvent.click(screen.getByRole('combobox', { name: 'Board' }))
     expect(screen.queryByRole('option', { name: 'Other' })).toBeNull()
   })
+
+  it('shows a new task once when the board is laid out in lanes (TAL-1383)', async () => {
+    vi.mocked(api.createKanbanTask).mockReturnValue(new Promise(() => undefined) as never)
+    const lanes = snapshot(undefined, true)
+    vi.mocked(api.fetchKanbanBoard).mockResolvedValue({ ...lanes, lanes: [{ assignee: 'scout', count: 2, columns: byStatus([task(), task('B')]) }, { assignee: null, count: 0, columns: byStatus([]) }] })
+    renderPage()
+    await screen.findByRole('region', { name: 'scout' })
+    await userEvent.click(screen.getByRole('button', { name: 'New task' }))
+    await userEvent.type(screen.getByRole('textbox', { name: 'Title' }), 'Fresh task{Enter}')
+    expect(screen.getAllByRole('button', { name: /^Fresh task/ })).toHaveLength(1)
+  })
 })

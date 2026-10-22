@@ -106,7 +106,9 @@ export function JobForm({ mode, job, jobs, onCancel, onSubmitted, onCreated }: {
       const model = (untouched ? job?.model : v.model) || null
       const provider = model ? (untouched ? job?.provider ?? null : v.model_provider) : null
       // Shown in the list until the server's reread replaces it.
-      const shown = { name: v.name, schedule_input: v.schedule, schedule_display: v.schedule, prompt: v.prompt, script: v.script, no_agent: v.no_agent, monitor: v.monitor, continuity: v.continuity, deliver: v.deliver || 'local', profile: v.profile, toast_notifications: v.toast_notifications, reasoning_effort: v.reasoning_effort || null }
+      const shown = { name: v.name, schedule_input: v.schedule, schedule_display: v.schedule, prompt: v.prompt, script: v.script, no_agent: v.no_agent, monitor: v.monitor, continuity: v.continuity, context_from: v.context_from, deliver: v.deliver || 'local', profile: v.profile, toast_notifications: v.toast_notifications, reasoning_effort: v.reasoning_effort || null,
+        // A picked catalog entry shows as its bare model, as the server stores it.
+        model: untouched ? model : catalogEntryById(models.data, v.model)?.bare_id ?? model, provider, model_option_id: untouched ? job?.model_option_id ?? null : v.model || null }
       if (isEdit && job) {
         // Every field is sent so the agent's documented clearing semantics stay
         // reachable ('' clears script/monitor, [] clears context_from, false

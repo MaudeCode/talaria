@@ -330,3 +330,19 @@ it('removes a disconnected connector account at once', async () => {
   expect(screen.queryByText('alpha account')).toBeNull()
   expect(screen.getByText('beta account')).toBeInTheDocument()
 })
+
+it('sends a second skill save only after the first answers, so the newest text lands last (TAL-1383)', async () => {
+  let first!: (value: unknown) => void
+  vi.mocked(api.fetchSkillContent).mockResolvedValue({ name: 'alpha', content: '# alpha', editable: true, linked_files: {} })
+  vi.mocked(api.saveSkill).mockReturnValueOnce(new Promise((resolve) => { first = resolve }) as never).mockReturnValue(new Promise(() => undefined) as never)
+  setup(cases[0]!)
+  await userEvent.click(await screen.findByRole('button', { name: /^alpha/ }))
+  const editor = await screen.findByRole('textbox')
+  await userEvent.type(editor, '!')
+  await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+  await userEvent.type(editor, '?')
+  await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+  expect(api.saveSkill).toHaveBeenCalledTimes(1)
+  await act(async () => { first({ ok: true }); await Promise.resolve() })
+  await waitFor(() => expect(api.saveSkill).toHaveBeenLastCalledWith('alpha', '# alpha!?'))
+})

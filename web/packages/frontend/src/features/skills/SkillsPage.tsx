@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { ChevronLeft, Search } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
@@ -76,13 +76,19 @@ export function SkillsPage() {
 }
 
 function SkillDetail({ name, onBack }: { name: string; onBack: () => void }) {
-  const qc = useQueryClient()
   const content = useQuery({ queryKey: keys.skills.content(name), queryFn: () => api.fetchSkillContent(name) })
   const [draft, setDraft] = useState<string | null>(null)
   const [confirm, setConfirm] = useState(false)
   const [file, setFile] = useState<string | null>(null)
-  // The editor keeps the submitted text; a confirmed save clears only a draft nobody edited since.
-  const save = useMutation({ mutationFn: (text: string) => api.saveSkill(name, text), onSuccess: (_, text) => { showToast(m.skill_saved()); setDraft((d) => d === text ? null : d); void qc.invalidateQueries({ queryKey: keys.skills.all }) }, onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error') })
+  // The editor keeps the submitted text; a confirmed save clears only a draft nobody edited since. A later save waits for
+  // the one in flight, so the server always ends on the newest text.
+  const save = useResourceMutation({
+    resource: () => `skill-content:${name}`, queryKey: keys.skills.all, readKeys: () => [{ queryKey: keys.skills.content(name), exact: true }],
+    effect: (text: string) => ({ value: text }),
+    mutationFn: (text) => api.saveSkill(name, text),
+    onSuccess: (_, text) => { showToast(m.skill_saved()); setDraft((d) => d === text ? null : d) },
+    onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error'),
+  })
   const del = useResourceMutation({ resource: () => `skill:${name}`, effect: () => ({ remove: true }), queryKey: keys.skills.all, readKeys: () => [{ queryKey: keys.skills.all, exact: true }], mutationFn: () => api.deleteSkill(name), onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error') })
   const text = draft ?? content.data?.content ?? ''
   const linked = Object.entries(content.data?.linked_files ?? {})

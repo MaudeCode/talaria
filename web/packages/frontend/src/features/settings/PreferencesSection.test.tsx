@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
@@ -86,4 +86,16 @@ it('shows a chosen speed and default model at once, sending the shown model with
   expect(speed).toHaveTextContent('Standard')
   expect(model).toHaveTextContent('GPT-5.6 Sol')
   expect(setDefaultModel).toHaveBeenCalledTimes(1)
+})
+
+it('rereads the auxiliary slots after the default model changes (TAL-1383)', async () => {
+  vi.mocked(fetchAuxiliaryModels).mockResolvedValue({ main: {}, tasks: [] })
+  vi.mocked(fetchModels).mockResolvedValue({ groups: [{ provider: 'OpenAI Codex', provider_id: 'openai-codex', models: [{ id: '@openai-codex:gpt-5.6-sol', label: 'GPT-5.6 Sol', provider_id: 'openai-codex' }] }] })
+  vi.mocked(setDefaultModel).mockResolvedValue({ ok: true, model: 'gpt-5.6-sol', provider: 'openai-codex' })
+  renderSection()
+  await waitFor(() => expect(fetchAuxiliaryModels).toHaveBeenCalled())
+  const before = vi.mocked(fetchAuxiliaryModels).mock.calls.length
+  await userEvent.click(await screen.findByRole('combobox', { name: 'Default Model' }))
+  await userEvent.click(await screen.findByRole('option', { name: 'GPT-5.6 Sol' }))
+  await waitFor(() => expect(vi.mocked(fetchAuxiliaryModels).mock.calls.length).toBeGreaterThan(before))
 })

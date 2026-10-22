@@ -39,8 +39,8 @@ type KanbanTask = z.infer<typeof KanbanTaskSchema>
 interface KanbanColumn { name: string; label: string; tasks: KanbanTask[] }
 
 /** Cards a pending status write moves leave their column and lead the target column until the server orders them. */
-function withCardEffects(columns: KanbanColumn[], board: string | undefined, effects: Record<string, ResourceEffect>): KanbanColumn[] {
-  const moved: KanbanTask[] = withCreated([], createKind(board), effects)
+function withCardEffects(columns: KanbanColumn[], board: string | undefined, effects: Record<string, ResourceEffect>, created = true): KanbanColumn[] {
+  const moved: KanbanTask[] = created ? withCreated([], createKind(board), effects) : []
   const kept = columns.map((col) => ({ ...col, tasks: col.tasks.filter((task) => {
     const status = effects[cardResource(board, String(task.id))]?.fields?.status
     if (typeof status !== 'string' || status === col.name) return true
@@ -160,7 +160,9 @@ export function KanbanPage() {
   const toggleSelected = (id: string) => setSelected(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id])
   // A chosen filter value stays listed even when the server's option list no longer carries it.
   const options = (values: unknown[] | undefined, chosen: string) => [...new Set([...(chosen ? [chosen] : []), ...(values ?? []).map(String)])]
-  const renderColumns = (cols: KanbanColumn[]) => <KanbanColumns columns={withCardEffects(cols, current, effects)} readOnly={serverReadOnly} stale={stale} selected={selected} onToggle={toggleSelected} onOpen={setOpenTaskId} />
+  // A new task has no assignee yet, so it shows once: in the unassigned lane, else the first.
+  const createdLane = board.data?.lanes ? Math.max(0, board.data.lanes.findIndex((lane) => !lane.assignee)) : 0
+  const renderColumns = (cols: KanbanColumn[], lane = 0) => <KanbanColumns columns={withCardEffects(cols, current, effects, lane === createdLane)} readOnly={serverReadOnly} stale={stale} selected={selected} onToggle={toggleSelected} onOpen={setOpenTaskId} />
 
   return (
     <HubPage
@@ -228,12 +230,12 @@ export function KanbanPage() {
       {board.isSuccess && (board.data.lanes && !lanesOff
         ? (
           <div className="flex flex-col gap-4">
-            {board.data.lanes.map((lane) => {
+            {board.data.lanes.map((lane, laneIndex) => {
               const name = lane.assignee ?? m.kanban_lane_unassigned()
               return (
                 <section key={lane.assignee ?? ''} className="kanban-lane flex flex-col gap-2" aria-label={name}>
                   <header className="flex items-center gap-2 text-sm font-semibold text-text"><span>{name}</span><span className="text-xs font-normal text-muted">{lane.count}</span></header>
-                  {renderColumns(lane.columns)}
+                  {renderColumns(lane.columns, laneIndex)}
                 </section>
               )
             })}

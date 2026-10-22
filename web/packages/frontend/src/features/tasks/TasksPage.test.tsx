@@ -356,6 +356,18 @@ describe('TasksPage', () => {
     expect(sidebar.getAllByRole('button', { name: /Weekly report/ })).toHaveLength(1)
   })
 
+  it('shows a changed model in the task at once after Save (TAL-1383)', async () => {
+    vi.mocked(api.cronAction).mockImplementation(() => new Promise(() => undefined))
+    vi.mocked(api.fetchModels).mockResolvedValue({ groups: [{ provider: 'OpenAI Codex', provider_id: 'openai-codex', models: [{ id: '@openai-codex:gpt-5.6-sol', label: 'Sol', provider_id: 'openai-codex', bare_id: 'gpt-5.6-sol' }, { id: '@openai-codex:gpt-6-astra', label: 'Astra', provider_id: 'openai-codex', bare_id: 'gpt-6-astra' }] }] })
+    const detail = await openJob('Digest')
+    await userEvent.click(detail.getByRole('button', { name: /^edit/i }))
+    const form = within(await screen.findByRole('form', { name: /edit job/i }))
+    await userEvent.click(form.getByRole('combobox', { name: /model override/i }))
+    await userEvent.click(await screen.findByRole('option', { name: 'Astra' }))
+    await userEvent.click(form.getByRole('button', { name: /^save$/i }))
+    expect(await screen.findByText('openai-codex/gpt-6-astra')).toBeInTheDocument()
+  })
+
   it('ticks the server-paired entry for each stored pair and saves a picked colon-bearing id with its own provider (TAL-301)', async () => {
     const entry = (id: string, label: string, provider_id: string, bare_id: string) => ({ id, label, provider_id, bare_id })
     vi.mocked(api.fetchModels).mockResolvedValue({
