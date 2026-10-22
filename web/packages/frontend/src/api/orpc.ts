@@ -13,14 +13,24 @@ import { appRoot } from '../lib/appRoot'
 
 export type ContractClient = ContractRouterClient<typeof routeContract>
 const DEFAULT_TIMEOUT_MS = 30_000
+const deadlineOnlySignals = new WeakSet<AbortSignal>()
 /** Per-call timeout for long routes: `orpc().chat.start(body, { signal: timeout(60_000) })`. */
-export const timeout = (ms: number, signal?: AbortSignal): AbortSignal => signal ? AbortSignal.any([signal, AbortSignal.timeout(ms)]) : AbortSignal.timeout(ms)
+export const timeout = (ms: number, signal?: AbortSignal): AbortSignal => {
+  const deadline = AbortSignal.timeout(ms)
+  if (signal) return AbortSignal.any([signal, deadline])
+  deadlineOnlySignals.add(deadline)
+  return deadline
+}
 
 function createClient(): ContractClient {
   const link = new OpenAPILink(routeContract, {
     // Contract paths are absolute (`/api/...`); the app root carries any subpath mount.
     url: () => appRoot().href.replace(/\/+$/, ''),
-    fetch: (request, init, options) => contractFetch(options.signal ? request : new Request(request, { signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS) })),
+    fetch: (request, init, options) => contractFetch(
+      options.signal ? request : new Request(request, { signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS) }),
+      // Caller-owned cancellation must never abort another read that shares the URL.
+      !options.signal || deadlineOnlySignals.has(options.signal),
+    ),
   })
   return createORPCClient(link)
 }

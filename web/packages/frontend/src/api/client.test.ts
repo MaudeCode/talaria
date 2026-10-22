@@ -194,3 +194,32 @@ for (const endpoint of ['detail', 'list', 'search'] as const) {
     expect(signals[0]!.aborted).toBe(true)
   })
 }
+
+
+for (const endpoint of ['detail', 'list', 'search'] as const) {
+  it(`starts an independent replacement ${endpoint} read before the old abort settles`, async () => {
+    const pending: { signal: AbortSignal | undefined; resolve: (response: Response) => void; reject: (error: Error) => void }[] = []
+    configureClient({ transport: (req) => new Promise((resolve, reject) => { pending.push({ signal: req.signal, resolve, reject }) }) })
+    const read = (signal: AbortSignal) => endpoint === 'detail' ? fetchSession('replacement', {}, signal)
+      : endpoint === 'list' ? fetchSessions({}, signal)
+        : searchSessions('query', { project_id: undefined, sidebar_source: undefined, include_archived: false }, 5, signal)
+    const oldController = new AbortController()
+    const replacementController = new AbortController()
+    const old = read(oldController.signal).catch((error: unknown) => error)
+    await vi.waitFor(() => expect(pending).toHaveLength(1))
+    oldController.abort()
+    const replacement = read(replacementController.signal).catch((error: unknown) => error)
+    try {
+      await vi.waitFor(() => expect(pending).toHaveLength(2))
+      expect(pending[0]!.signal?.aborted).toBe(true)
+      expect(pending[1]!.signal?.aborted).toBe(false)
+      pending[0]!.reject(new DOMException('old read aborted', 'AbortError'))
+      pending[1]!.resolve(Response.json(endpoint === 'detail' ? { session: makeSession({ session_id: 'replacement', title: 'Replacement' }) } : { sessions: [] }))
+      await expect(old).resolves.toMatchObject({ kind: 'aborted' })
+      await expect(replacement).resolves.toMatchObject(endpoint === 'detail' ? { session: { title: 'Replacement' } } : { sessions: [] })
+    } finally {
+      for (const request of pending) request.reject(new DOMException('test cleanup', 'AbortError'))
+      await Promise.all([old, replacement])
+    }
+  })
+}

@@ -21,7 +21,9 @@ including zero, so subscribe recovery can signal missed persisted messages. Its
 first `initial` leaves the ordinary mount fetch/cache policy in charge; subsequent
 `initial` frames resync once per reconnect. Window focus does not refetch the open
 transcript. Cancelled detail, list and search queries abort their HTTP transport
-while retaining their existing request deadlines. Consecutive identical queued
+while retaining their existing request deadlines. Caller-cancellable reads own
+independent transports; reads without caller cancellation retain in-flight
+coalescing. Consecutive identical queued
 `session-updated` signals coalesce for stalled subscribers; distinct payloads and
 intervening events keep their order.
 The global sidebar feed remains independent. Reconnection refreshes detail even
