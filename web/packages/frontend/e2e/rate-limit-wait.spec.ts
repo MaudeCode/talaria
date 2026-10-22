@@ -29,6 +29,7 @@ test('the run status shows a rate-limit wait until the server clears it, with St
     await page.goto(`/session/${sid}`)
     const status = page.locator('.composer-notices .live-run-status')
     await expect(status).toContainText('Working')
+    await expect.poll(() => stream).not.toBeNull()
     const shot = async (name: string) => { if (process.env.TAL821_SHOTS) await page.screenshot({ path: `${process.env.TAL821_SHOTS}/${name}-${testInfo.project.name}.png` }) }
     await shot('before')
     const until = new Date(Date.now() + 17 * 60_000)

@@ -759,13 +759,17 @@ def probe_recovery(home, peer, env):
 
 class DetailModel(Model):
     """A loopback model that reasons, delegates one child, then answers."""
+    FOLLOWUP_COMPLETE = 'Owner detail follow-up complete.'
+
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
         self.server.requests.append(body)
         messages = body.get('messages', [])
         prompt = next((m.get('content', '') for m in reversed(messages) if m['role'] == 'user'), '')
-        delegate = prompt == 'NATIVE_DETAIL' and not any(m['role'] == 'tool' for m in messages)
-        message = {'role': 'assistant', 'content': None if delegate else 'Owner detail complete.',
+        has_tool_result = any(m['role'] == 'tool' for m in messages)
+        delegate = prompt == 'NATIVE_DETAIL' and not has_tool_result
+        final = self.FOLLOWUP_COMPLETE if has_tool_result and prompt != 'NATIVE_DETAIL' else 'Owner detail complete.'
+        message = {'role': 'assistant', 'content': None if delegate else final,
                    'reasoning_content': '**Inspecting the task**\nCheck the supplied facts.'}
         if delegate:
             message['tool_calls'] = [{'id': 'detail-delegate', 'type': 'function', 'function': {
@@ -814,6 +818,7 @@ async def probe_detail(home, peer, desc):
             assert 'result' in submitted, submitted
             events = []
             ran = False
+            followup_complete = False
             async with asyncio.timeout(75):
                 while True:
                     frame = await asyncio.to_thread(viewer.next_message, 20)
@@ -823,8 +828,12 @@ async def probe_detail(home, peer, desc):
                         continue
                     events.append(event)
                     ran = ran or event.get('payload', {}).get('running') is True
-                    if ran and event.get('type') == 'session.info' and event.get('payload', {}).get('running') is False:
+                    followup_complete = followup_complete or (event.get('type') == 'message.complete'
+                        and event.get('payload', {}).get('text') == DetailModel.FOLLOWUP_COMPLETE)
+                    if (ran and followup_complete and event.get('type') == 'session.info'
+                            and event.get('payload', {}).get('running') is False):
                         break
+            assert followup_complete, 'the child completion follow-up must finish before context inspection'
             kinds = [e['type'] for e in events]
             if os.environ.get('TALARIA_RECORD_OWNER_EVENTS'):
                 Path(os.environ['TALARIA_RECORD_OWNER_EVENTS']).write_text(json.dumps({'release': 'v0.22.3',
@@ -834,8 +843,15 @@ async def probe_detail(home, peer, desc):
             assert 'subagent.start' in kinds and 'subagent.complete' in kinds, kinds
             assert 'session.usage' in kinds and 'message.complete' in kinds, kinds
             requests_before = len(peer.requests)
-            inspected = await asyncio.to_thread(viewer.result, 'gateway.session', context_params)
-            context = inspected['context_detail']
+            # Background subagent events may follow the parent's idle event; inspect one stable owner snapshot.
+            deadline = time.monotonic() + 10
+            while True:
+                inspected = await asyncio.to_thread(viewer.result, 'gateway.session', context_params)
+                context = inspected['context_detail']
+                if context.get('reason') != 'changed':
+                    break
+                assert time.monotonic() < deadline, inspected
+                await asyncio.sleep(.03)
             assert context['available'] is True and context['categories'], inspected
             assert context['source'] in {'provider_usage', 'provider_usage_plus_estimate', 'local_estimate'}, context
             assert all(set(row) == {'label', 'characters', 'tokens', 'status', 'loaded'} for row in context['files']), context

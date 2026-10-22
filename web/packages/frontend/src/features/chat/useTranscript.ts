@@ -12,6 +12,7 @@ import { TRANSCRIPT_WINDOW } from '@maudecode/talaria-web-contracts'
 import { SessionSchema, type Message, type Session } from '../../contracts'
 import { attachToStream, hasLiveConnection, reconcileSession, discardSession, getStreamContext, subscribeStreamContext, teardown } from '../../stream/connection'
 import { getStreamState, useLiveTurn } from '../../stream/store'
+import type { LiveTurn } from '../../stream/reducer'
 import { openSessionStream } from '../../api/sse'
 import { writePersisted } from '../../lib/persisted'
 
@@ -49,7 +50,7 @@ export function messageKey(message: Message): string | undefined {
 }
 
 
-export function useTranscript(sessionId: string | null) {
+export function useTranscript(sessionId: string | null, equalLive?: (previous: LiveTurn | null, next: LiveTurn | null) => boolean) {
   const qc = useQueryClient()
   const streamContext = useSyncExternalStore(subscribeStreamContext, getStreamContext, getStreamContext)
   // useQuery below subscribes to this window; a moved boundary retires its prefix and pending pages together.
@@ -91,7 +92,7 @@ export function useTranscript(sessionId: string | null) {
     retry: (count, error) => !(error instanceof Error && 'status' in error && (error as { status: number }).status === 404) && count < 1,
   })
   const session: Session | null = query.data?.session ?? null
-  const live = useLiveTurn(sessionId)
+  const live = useLiveTurn(sessionId, equalLive)
 
   // Remember the last visible session (validated id) for the next boot.
   useEffect(() => {

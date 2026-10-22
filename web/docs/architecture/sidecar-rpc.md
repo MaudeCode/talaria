@@ -228,6 +228,14 @@ which the Vitest fixture test validates and `FakeSidecar` answers from.
 Every method takes the explicit `profile_home` (or `base_home`) the server
 resolved; the sidecar never reads the active-profile cookie or file. Calls run
 under Hermes Agent's context-local home override (`talaria_sidecar/home.py`).
+The sidecar memoizes the Agent-built secret and terminal scopes for at most 64
+recently used homes. Each call checks `.env` and `config.yaml` file identities,
+timestamps, sizes and modes; cache hits recheck that stamp under the cache lock,
+and changed files rebuild the scopes. Secret snapshots
+also track external-source values, managed credentials and launch policy inputs.
+Bindings receive private copies. Uncertain file stats and raised build failures
+are not memoized; terminal-policy failures retain the Agent's refusal scope. Older Agents without
+the cache input APIs retain their original uncached behavior.
 
 | Namespace | Methods | Streams |
 |---|---|---|

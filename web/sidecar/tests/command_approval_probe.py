@@ -20,8 +20,7 @@ from talaria_sidecar import home
 from talaria_sidecar.methods import Registry, chat
 
 # Keep real context-local home binding; credentials, terminals and processes are unrelated.
-home._secret_scope = lambda value, **_kwargs: contextlib.nullcontext(value)
-home._terminal_scope = contextlib.nullcontext
+home._secret_scope = home._terminal_scope = lambda value, *_args, **_kwargs: contextlib.nullcontext(value)
 home._recover_processes = lambda _: None
 base = Path(os.environ["HERMES_HOME"])
 named = base / "profiles" / "named"

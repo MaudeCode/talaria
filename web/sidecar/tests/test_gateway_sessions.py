@@ -444,7 +444,7 @@ def test_context_detail_reads_authorized_owner_metadata_without_starting(native_
     assert "private" not in str(detail)
 
 
-@pytest.mark.parametrize("change", [{"authority_epoch": 2}, {"replay_epoch": "successor"}, {"revision": 99}, {"session_id": "foreign"}, {"info": {"model": "new-model"}}])
+@pytest.mark.parametrize("change", [{"authority_epoch": 2}, {"replay_epoch": "successor"}, {"revision": 99}, {"last_sequence": 5}, {"session_id": "foreign"}, {"info": {"model": "new-model"}}])
 def test_context_detail_rejects_changed_owner_or_context(native_owner_stub, change):
     native_owner_stub.change_on_context = change
     result = native_owner_stub.run(None, {"session_id": "native", "action": "context_detail"})
