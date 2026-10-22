@@ -95,6 +95,10 @@ export function KanbanPage() {
   const effects = useResourceEffects<string | boolean>()
   const requestedBoard = effects[boardSelection]
   const requestedView = effects[lanePreference]
+  // Flat columns are already on the page, so turning lanes off shows at once. Lanes group cards by the server's
+  // assignee lanes, which only its reread brings, so turning them on keeps the switch busy until then.
+  const lanesOff = requestedView?.value === false
+  const lanesStarting = requestedView?.value === true
   const current = typeof requestedBoard?.value === 'string' ? requestedBoard.value : boards.data?.current
   const selected = selection.context === getStreamContext() && selection.board === current ? selection.ids : []
   const setSelected = (ids: string[]) => setSelection({ context: getStreamContext(), board: current, ids })
@@ -182,7 +186,7 @@ export function KanbanPage() {
           )}
           <label className="flex items-center gap-1.5 text-xs text-muted"><Switch checked={onlyMine} onCheckedChange={(checked) => setOnlyMine(checked)} aria-label={m.kanban_only_mine()} /> {m.kanban_only_mine()}</label>
           <label className="flex items-center gap-1.5 text-xs text-muted"><Switch checked={includeArchived} onCheckedChange={(checked) => setIncludeArchived(checked)} aria-label={m.kanban_include_archived()} /> {m.kanban_include_archived()}</label>
-          {board.data && <label className="flex items-center gap-1.5 text-xs text-muted"><Switch checked={typeof requestedView?.value === 'boolean' ? requestedView.value : board.data.lane_by_profile} onCheckedChange={(checked) => saveView.mutate(checked)} aria-label={m.kanban_lanes_by_profile()} /> {m.kanban_lanes_by_profile()}</label>}
+          {board.data && <label className="flex items-center gap-1.5 text-xs text-muted"><Switch checked={!lanesOff && board.data.lane_by_profile} disabled={lanesStarting} aria-busy={lanesStarting || undefined} onCheckedChange={(checked) => saveView.mutate(checked)} aria-label={m.kanban_lanes_by_profile()} /> {m.kanban_lanes_by_profile()}</label>}
           {serverReadOnly && <span className="text-xs text-warning">{m.kanban_read_only()}</span>}
         </>
       }
@@ -207,7 +211,7 @@ export function KanbanPage() {
           <Button onClick={() => setSelected([])}>{m.kanban_clear_selection()}</Button>
         </div>
       )}
-      {board.isSuccess && (board.data.lanes
+      {board.isSuccess && (board.data.lanes && !lanesOff
         ? (
           <div className="flex flex-col gap-4">
             {board.data.lanes.map((lane) => {

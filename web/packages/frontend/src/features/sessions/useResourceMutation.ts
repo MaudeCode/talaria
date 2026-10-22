@@ -178,9 +178,15 @@ export function useResourceMutation<V, R, T = unknown>(options: {
         throw busy
       }
       let release!: () => void
-      const effect: OwnedEffect = { ...shown, context, exclusive, settled: new Promise((resolve) => { release = () => resolve(undefined) }) }
+      const settled = new Promise((resolve) => { release = () => resolve(undefined) })
+      // A replacing write keeps the fields of the write it replaces that it does not set itself (rename, then recolor).
+      const mine: Record<string, OwnedEffect> = Object.fromEntries(ids.map((id) => {
+        const before = effects()[id]?.context === context ? effects()[id]?.fields : undefined
+        const fields = before && shown.fields ? { ...before, ...shown.fields } : shown.fields ?? before
+        return [id, { ...shown, ...(fields ? { fields } : {}), context, exclusive, settled }]
+      }))
       // A later write may replace this one on some of its resources; this write still owns the rest.
-      const owned = () => getStreamContext() === context ? ids.filter((id) => effects()[id] === effect) : []
+      const owned = () => getStreamContext() === context ? ids.filter((id) => effects()[id] === mine[id]) : []
       const current = () => owned().length > 0
       const clear = () => {
         const mine = owned()
@@ -189,7 +195,7 @@ export function useResourceMutation<V, R, T = unknown>(options: {
           return Object.fromEntries(Object.entries(old).filter(([key]) => !mine.includes(key)))
         })
       }
-      qc.setQueryData(effectKey, { ...effects(), ...Object.fromEntries(ids.map((id) => [id, effect])) })
+      qc.setQueryData(effectKey, { ...effects(), ...mine })
       let outcome: 'confirmed' | 'refused' | 'unknown' = 'unknown'
       try {
         // A replaced write still reaches the server first, so the newest request lands last.

@@ -170,18 +170,24 @@ describe('Kanban writes show their result while the server is held (TAL-1179)', 
     expect(screen.getByRole('combobox', { name: 'Board' })).toBeEnabled()
   })
 
-  it('flips the lane preference at once, keeps it usable, then renders returned lanes', async () => {
+  it('keeps the lanes switch busy until the server brings lanes, and turns them off at once', async () => {
     const write = deferred<Awaited<ReturnType<typeof api.updateKanbanConfig>>>()
-    vi.mocked(api.updateKanbanConfig).mockReturnValue(write.promise)
+    vi.mocked(api.updateKanbanConfig).mockReturnValueOnce(write.promise).mockReturnValue(new Promise(() => undefined))
     renderPage()
     const toggle = await screen.findByRole('switch', { name: /Lanes by profile/ })
     await userEvent.click(toggle)
-    expect(toggle).toBeChecked()
-    expect(toggle).toBeEnabled()
+    // Lanes are grouped by the server, so the switch waits for them rather than claiming a layout it cannot show.
+    expect(toggle).not.toBeChecked()
+    expect(toggle).toHaveAttribute('aria-busy', 'true')
     vi.mocked(api.fetchKanbanBoard).mockResolvedValue(snapshot(undefined, true))
     await act(async () => { write.resolve({}); await Promise.resolve() })
     await screen.findByRole('region', { name: 'scout' })
-    expect(toggle).toBeChecked()
+    await waitFor(() => expect(toggle).toBeChecked())
+    expect(toggle).not.toHaveAttribute('aria-busy')
+    await userEvent.click(toggle)
+    expect(toggle).not.toBeChecked()
+    expect(screen.queryByRole('region', { name: 'scout' })).toBeNull()
+    expect(columnIds('todo')).toEqual(['A', 'B'])
   })
 
   it('changes nothing when leaving Running is cancelled, and moves at once after Continue', async () => {

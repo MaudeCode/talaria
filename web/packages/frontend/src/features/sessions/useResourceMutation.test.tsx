@@ -222,6 +222,18 @@ describe('optimistic resource ownership', () => {
     await waitFor(() => expect(result.current.intents).toEqual({}))
   })
 
+  it('keeps the fields of a replaced write that the replacing write does not set', async () => {
+    const { wrapper } = harness()
+    const { result } = renderHook(() => ({
+      intents: useResourceEffects(),
+      write: useResourceMutation({ resource: () => 'project:p', effect: (fields: Record<string, unknown>) => ({ fields }), mutationFn: () => new Promise<never>(() => undefined) }),
+    }), { wrapper })
+    act(() => { result.current.write.mutate({ name: 'Renamed' }) })
+    await waitFor(() => expect(result.current.intents['project:p']?.fields).toEqual({ name: 'Renamed' }))
+    act(() => { result.current.write.mutate({ color: '#f5c542' }) })
+    await waitFor(() => expect(result.current.intents['project:p']?.fields).toEqual({ name: 'Renamed', color: '#f5c542' }))
+  })
+
   it('drops removed rows and patches fields for display', () => {
     const rows = [{ id: 'a', title: 'A' }, { id: 'b', title: 'B' }, { id: 'c', title: 'C' }]
     expect(withEffects(rows, (r) => r.id, { a: { remove: true }, b: { fields: { title: 'Renamed' } } })).toEqual([{ id: 'b', title: 'Renamed' }, { id: 'c', title: 'C' }])
