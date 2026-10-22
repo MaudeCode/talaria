@@ -21,6 +21,7 @@ import type { z } from 'zod'
 import type { UpdateApplySchema, UpdateTargetSchema, UpdateVersionSchema } from '../../contracts'
 import { useUpdateProgress } from '../notifications/UpdateNotificationCenter'
 import { McpSection } from './McpSection'
+import { useResourceEffects, useResourceMutation, withEffects } from '../sessions/useResourceMutation'
 import { markServerStopped } from '../notices/useRuntimeNotices'
 
 export function SystemSection() {
@@ -102,7 +103,8 @@ export function SystemSection() {
     onSuccess: () => { showToast(m.system_passkey_registered()); void qc.invalidateQueries({ queryKey: ['auth', 'passkeys'] }); void loadBootstrap() },
     onError: fail,
   })
-  const deletePasskey = useMutation({ mutationFn: (id: string) => api.passkeyDelete(id), onSuccess: () => { void qc.invalidateQueries({ queryKey: ['auth', 'passkeys'] }) }, onError: fail })
+  const effects = useResourceEffects()
+  const deletePasskey = useResourceMutation({ resource: (id: string) => `passkey:${id}`, effect: () => ({ remove: true }), queryKey: ['auth', 'passkeys'], mutationFn: (id) => api.passkeyDelete(id), onError: fail })
   if (settings.isPending) return <LoadingState />
   if (settings.isError) return <ErrorState error={settings.error} onRetry={() => { void settings.refetch() }} />
   const canManage = bootstrap.auth.can_manage_server
@@ -191,7 +193,7 @@ export function SystemSection() {
         <div>
           <h3 className="mb-1.5 text-sm font-medium text-text">{m.system_passkeys()}</h3>
           <ul className="text-sm">
-            {(passkeys.data?.credentials ?? []).map((k) => (
+            {withEffects(passkeys.data?.credentials ?? [], (k) => `passkey:${k.id}`, effects).map((k) => (
               <li key={k.id} className="flex items-center justify-between gap-2 py-1"><span>{k.label || k.id}</span><Button variant="ghost" className="text-error" onClick={() => deletePasskey.mutate(k.id)}>{m.delete()}</Button></li>
             ))}
           </ul>

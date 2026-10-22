@@ -14,7 +14,7 @@ import { ConfirmDialog } from '../../ui/Dialog'
 import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { useBootstrap } from '../../app/bootstrap'
-import { useResourceEffects, useResourceMutation, type ResourceEffect } from '../sessions/useResourceMutation'
+import { useResourceEffects, useResourceMutation, withEffects, type ResourceEffect } from '../sessions/useResourceMutation'
 import { ResourceSwitch } from '../sessions/ResourceSwitch'
 import { cn } from '../../ui/cn'
 
@@ -38,6 +38,20 @@ export function ExtensionsSection() {
     onSuccess: () => showToast(m.saved()),
     onError: (e) => showToast(e instanceof Error ? e.message : String(e), 5000, 'error'),
   })
+  const uninstall = useResourceMutation({
+    resource: (id: string) => `extension:${id}`, effect: () => ({ remove: true }),
+    queryKey: keys.extensions.all, readKeys: () => [keys.extensions.manifests, keys.extensions.status],
+    mutationFn: async (id) => { await api.extensionAction('uninstall', { id }) },
+    onSuccess: () => showToast(m.saved()),
+    onError: (e) => showToast(e instanceof Error ? e.message : String(e), 5000, 'error'),
+  })
+  const consent = useResourceMutation({
+    resource: ({ id }: { id: string; consent: boolean }) => `extension-consent:${id}`, effect: ({ consent }) => ({ value: consent }),
+    queryKey: keys.extensions.all, readKeys: () => [keys.extensions.manifests, keys.extensions.status],
+    mutationFn: async ({ id, consent }) => { await api.extensionAction('sidecar-proxy-consent', { id, consent }) },
+    onError: (e) => showToast(e instanceof Error ? e.message : String(e), 5000, 'error'),
+  })
+  // Install fetches and verifies a package on the server: only its button waits.
   const act = useMutation({
     mutationFn: async ({ action, body }: { action: Parameters<typeof api.extensionAction>[0]; body: Record<string, unknown> }) => { await api.extensionAction(action, body) },
     onSuccess: () => { showToast(m.saved()); invalidate() },
@@ -45,7 +59,7 @@ export function ExtensionsSection() {
   })
   if (manifests.isPending) return <LoadingState />
   if (manifests.isError && !manifests.data) return <ErrorState error={manifests.error} onRetry={() => { void manifests.refetch() }} />
-  const list = manifests.data?.manifests ?? []
+  const list = withEffects(manifests.data?.manifests ?? [], (e) => `extension:${e.id}`, effects)
   const gallery = (registry.data?.entries ?? registry.data?.extensions ?? []) as { id?: string; name?: string; description?: string; version?: string; download_url?: string; sha256?: string }[]
   const installed = new Set(list.map((e) => e.id))
   const canManage = bootstrap.auth.can_manage_server
@@ -56,7 +70,7 @@ export function ExtensionsSection() {
         <h2 className="mb-2 text-sm font-semibold text-text">{m.extensions_installed()}</h2>
         {list.length === 0 && <EmptyState>{m.extensions_none()}</EmptyState>}
         <ul className="flex flex-col gap-2">
-          {list.map((e) => <ExtensionRow key={e.id} ext={e} canManage={canManage} effect={effects[`extension:${e.id}`]} onToggle={(enabled) => toggle.mutate({ id: e.id, enabled })} onConsent={(consent) => act.mutate({ action: 'sidecar-proxy-consent', body: { id: e.id, consent } })} onUninstall={() => setConfirmUninstall(e.id)} />)}
+          {list.map((e) => <ExtensionRow key={e.id} ext={e} canManage={canManage} effect={effects[`extension:${e.id}`]} consentEffect={effects[`extension-consent:${e.id}`]} onToggle={(enabled) => toggle.mutate({ id: e.id, enabled })} onConsent={(value) => consent.mutate({ id: e.id, consent: value })} onUninstall={() => setConfirmUninstall(e.id)} />)}
         </ul>
       </section>
       <section>
@@ -73,12 +87,12 @@ export function ExtensionsSection() {
           ))}
         </ul>
       </section>
-      <ConfirmDialog open={confirmUninstall !== null} onOpenChange={(o) => { if (!o) setConfirmUninstall(null) }} title={m.extensions_uninstall()} description={confirmUninstall ?? ''} confirmLabel={m.extensions_uninstall()} cancelLabel={m.cancel()} danger onConfirm={() => { if (confirmUninstall) act.mutate({ action: 'uninstall', body: { id: confirmUninstall } }) }} />
+      <ConfirmDialog open={confirmUninstall !== null} onOpenChange={(o) => { if (!o) setConfirmUninstall(null) }} title={m.extensions_uninstall()} description={confirmUninstall ?? ''} confirmLabel={m.extensions_uninstall()} cancelLabel={m.cancel()} danger onConfirm={() => { if (confirmUninstall) uninstall.mutate(confirmUninstall) }} />
     </div>
   )
 }
 
-function ExtensionRow({ ext, canManage, effect, onToggle, onConsent, onUninstall }: { ext: ExtensionManifest; effect: ResourceEffect<boolean> | undefined; canManage: boolean; onToggle: (enabled: boolean) => void; onConsent: (consent: boolean) => void; onUninstall: () => void }) {
+function ExtensionRow({ ext, canManage, effect, consentEffect, onToggle, onConsent, onUninstall }: { ext: ExtensionManifest; effect: ResourceEffect<boolean> | undefined; consentEffect: ResourceEffect<boolean> | undefined; canManage: boolean; onToggle: (enabled: boolean) => void; onConsent: (consent: boolean) => void; onUninstall: () => void }) {
   const perms = Object.entries(ext.permissions ?? {}).filter(([, v]) => v).map(([k]) => k)
   return (
     <li className={cn('rounded-lg border border-border bg-surface p-3 text-sm', !ext.enabled && 'opacity-80')} data-extension-id={ext.id} data-source={ext.source}>
@@ -101,7 +115,7 @@ function ExtensionRow({ ext, canManage, effect, onToggle, onConsent, onUninstall
       {ext.sidecar && (
         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted">
           <span className="font-mono">{ext.sidecar.origin}</span>
-          {canManage && <label className="flex items-center gap-1"><Switch checked={!!ext.sidecar.consented} onCheckedChange={(checked) => onConsent(checked)} /> {m.extensions_sidecar_consent()}</label>}
+          {canManage && <label className="flex items-center gap-1"><ResourceSwitch effect={consentEffect} checked={!!ext.sidecar.consented} onCheckedChange={(checked) => onConsent(checked)} /> {m.extensions_sidecar_consent()}</label>}
         </div>
       )}
       {ext.legacy_injection && (

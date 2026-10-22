@@ -6,6 +6,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BootstrapContext } from '../../app/bootstrap'
 import { DEFAULT_BOOTSTRAP } from '../../contracts/adapters/memory'
+import { ApiError } from '../../contracts/common'
 import { keys } from '../../api/queryKeys'
 
 let settingsState: Record<string, unknown> = {}
@@ -567,5 +568,24 @@ describe('SystemSection version list (TAL-946)', () => {
       await userEvent.click(region.getByRole('button', { name: /more version/ }))
       expect(region.getAllByRole('button', { name: 'Summarize with AI' })).toHaveLength(1)
     }
+  })
+})
+
+describe('passkeys (TAL-1179)', () => {
+  it('removes a deleted passkey at once and restores it with the error on refusal', async () => {
+    let refuse!: (error: unknown) => void
+    vi.mocked(api.passkeysList).mockResolvedValue({ credentials: [{ id: 'k1', label: 'Laptop' }, { id: 'k2', label: 'Phone' }] } as never)
+    vi.mocked(api.passkeyDelete).mockReturnValue(new Promise((_, reject) => { refuse = reject }) as never)
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+    const bootstrap = { ...DEFAULT_BOOTSTRAP, auth: { ...DEFAULT_BOOTSTRAP.auth, passkey_feature_flag: true } }
+    render(<QueryClientProvider client={qc}><BootstrapContext.Provider value={bootstrap}><SystemSection /></BootstrapContext.Provider></QueryClientProvider>)
+    const row = (await screen.findByText('Laptop')).closest('li')!
+    await userEvent.click(within(row).getByRole('button', { name: 'Delete' }))
+    expect(api.passkeyDelete).toHaveBeenCalledWith('k1')
+    expect(screen.queryByText('Laptop')).toBeNull()
+    expect(screen.getByText('Phone')).toBeInTheDocument()
+    refuse(new ApiError({ kind: 'http', status: 403, path: '/x', message: 'Last passkey' }))
+    expect(await screen.findByText('Laptop')).toBeInTheDocument()
+    expect(showToast).toHaveBeenCalledWith(expect.stringContaining('Last passkey'), expect.any(Number), 'error')
   })
 })
