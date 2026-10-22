@@ -834,8 +834,15 @@ async def probe_detail(home, peer, desc):
             assert 'subagent.start' in kinds and 'subagent.complete' in kinds, kinds
             assert 'session.usage' in kinds and 'message.complete' in kinds, kinds
             requests_before = len(peer.requests)
-            inspected = await asyncio.to_thread(viewer.result, 'gateway.session', context_params)
-            context = inspected['context_detail']
+            # Background subagent events may follow the parent's idle event; inspect one stable owner snapshot.
+            deadline = time.monotonic() + 10
+            while True:
+                inspected = await asyncio.to_thread(viewer.result, 'gateway.session', context_params)
+                context = inspected['context_detail']
+                if context.get('reason') != 'changed':
+                    break
+                assert time.monotonic() < deadline, inspected
+                await asyncio.sleep(.03)
             assert context['available'] is True and context['categories'], inspected
             assert context['source'] in {'provider_usage', 'provider_usage_plus_estimate', 'local_estimate'}, context
             assert all(set(row) == {'label', 'characters', 'tokens', 'status', 'loaded'} for row in context['files']), context
