@@ -105,6 +105,7 @@ it('paints retained output before delayed detail/status and reconnects once on A
   const { result, rerender } = renderHook(({ sid }) => useTranscript(sid), { initialProps: { sid: 'a' }, wrapper })
   await waitFor(() => expect(streams).toHaveLength(1))
   act(() => streams[0]!.event(parseChatEvent('token', JSON.stringify({ text: 'Already visible.' }))!, 'run-a:7'))
+  await waitFor(() => expect(result.current.live && liveText(result.current.live)).toBe('Already visible.'))
   rerender({ sid: 'b' })
   expect(streams[0]!.close).toHaveBeenCalledOnce()
   await qc.invalidateQueries({ queryKey: keys.sessions.detail('a'), refetchType: 'none' })

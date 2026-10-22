@@ -28,29 +28,37 @@ export function useTurnIntent(sessionId: string | null): TurnIntent {
 }
 
 let state: StreamState = initialStreamState
+let publishedState: StreamState = state
 const listeners = new Set<() => void>()
 let frame: number | null = null
+let publication: ReturnType<typeof setTimeout> | null = null
 /** Frames that settle or end a turn; everything else a stream sends waits for the next animation frame. */
 const SETTLING_EVENTS: ReadonlySet<ChatEventName> = new Set(['done', 'error', 'apperror', 'cancel', 'compressed', 'stream_end'])
 
 /** Notifies every subscriber now and drops a notification already waiting for the next frame. */
 function notifyNow(): void {
   if (frame !== null) cancelAnimationFrame(frame)
+  if (publication !== null) clearTimeout(publication)
   frame = null
+  publication = null
+  publishedState = state
   for (const l of listeners) l()
 }
 
 /**
  * Applies the action at once, so synchronous readers of `getStreamState` stay current, but streaming frames commit
- * to React at most once per animation frame: several tokens can arrive within one frame. Settling frames and every
- * non-stream action notify immediately.
+ * to React at most once per animation frame: several tokens can arrive within one frame. Publication yields out of
+ * the rendering callback so synchronous React work does not lengthen that frame's layout and paint task.
+ * Settling frames and every non-stream action notify immediately, cancelling either pending stage.
  */
 export function dispatch(action: StreamAction): void {
   const next = streamReducer(state, action)
   if (next === state) return
   state = next
   if (action.type !== 'event' || SETTLING_EVENTS.has(action.event.event)) notifyNow()
-  else frame ??= requestAnimationFrame(() => { frame = null; for (const l of listeners) l() })
+  else frame ??= requestAnimationFrame(() => {
+    publication = setTimeout(() => { frame = null; publication = null; notifyNow() }, 0)
+  })
 }
 
 export function getStreamState(): StreamState {
@@ -62,9 +70,9 @@ export function subscribe(listener: () => void): () => void {
   return () => listeners.delete(listener)
 }
 
-/** Selects one session's turn, so a frame for another session leaves this snapshot equal and skips the render. */
+/** React reads the last publication; unrelated renders cannot bypass streaming's frame boundary. */
 export function useLiveTurn(sessionId: string | null): LiveTurn | null {
-  const turn = () => sessionId ? state.turns[sessionId] ?? null : null
+  const turn = () => sessionId ? publishedState.turns[sessionId] ?? null : null
   return useSyncExternalStore(subscribe, turn, turn)
 }
 

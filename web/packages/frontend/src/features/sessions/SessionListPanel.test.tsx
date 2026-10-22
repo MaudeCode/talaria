@@ -118,7 +118,7 @@ describe('session list date groups (TAL-306)', () => {
   })
 
   it('buckets by the server sort_ts, not a client-picked timestamp', () => {
-    const at = Date.now()
+    const at = new Date(2026, 9, 22, 12).getTime()
     const day = 86_400
     const recent = { ...rows.find((r) => r.session_id === 'tal306-newest')!, sort_ts: at / 1000 - 60, last_message_at: at / 1000 - 30 * day, updated_at: at / 1000 - 30 * day }
     expect(groupSessionRows([recent], at).map((g) => g.id)).toEqual(['today'])

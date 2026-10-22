@@ -108,20 +108,25 @@ export function Transcript(props: TranscriptProps) {
   const anchorFrame = useRef<number | null>(null)
   const rememberReaderAnchor = useCallback(() => {
     // Following owns the scroll position; a reader anchor is only used away from the bottom.
-    if (followsRef.current() || anchorFrame.current !== null) return
+    if (followsRef.current()) { readerAnchor.current = null; return }
+    if (anchorFrame.current !== null) return
     anchorFrame.current = requestAnimationFrame(() => {
       anchorFrame.current = null
       if (followsRef.current()) return
       const pane = scrollRef.current
       if (!pane) return
       const bounds = pane.getBoundingClientRect()
-      const visible = [...pane.querySelectorAll<HTMLElement>('[data-message-key]')].filter((row) => {
+      readerAnchor.current = null
+      // Rows are in visual order; leave later contained history unmeasured once the anchor is known.
+      for (const row of pane.querySelectorAll<HTMLElement>('[data-message-key]')) {
         const rect = row.getBoundingClientRect()
-        return rect.bottom > bounds.top && rect.top < bounds.bottom
-      })
-      const row = visible.find((row) => row.getBoundingClientRect().top >= bounds.top) ?? visible[0]
-      const key = row?.dataset.messageKey
-      readerAnchor.current = row && key ? { key, top: row.getBoundingClientRect().top - bounds.top } : null
+        if (rect.top >= bounds.bottom) break
+        if (rect.bottom <= bounds.top) continue
+        const key = row.dataset.messageKey
+        if (!key) continue
+        if (!readerAnchor.current || rect.top >= bounds.top) readerAnchor.current = { key, top: rect.top - bounds.top }
+        if (rect.top >= bounds.top) break
+      }
     })
   }, [])
 
@@ -133,7 +138,7 @@ export function Transcript(props: TranscriptProps) {
   // A hand scroll (wheel or touch) that moves the transcript asks the composer to rest; a gesture against an edge
   // moves nothing, and programmatic follow and entry jumps record their own position, so neither does.
   const handAtRef = useRef(-Infinity)
-  const onReaderInput = useCallback(() => { prependRef.current = null }, [])
+  const onReaderInput = useCallback(() => { prependRef.current = null; readerAnchor.current = null }, [])
   const onReaderScroll = useCallback(() => { onReaderInput(); handAtRef.current = performance.now() }, [onReaderInput])
 
   const onScroll = useCallback(() => {
@@ -174,7 +179,9 @@ export function Transcript(props: TranscriptProps) {
     const inner = innerRef.current
     const pane = scrollRef.current
     if (!inner || !pane) return
-    const follow = () => {
+    const follow = (fromMutation = false) => {
+      // Settling entry must follow lazy content synchronously; steady streaming can wait for resize.
+      if (fromMutation && !settlingRef.current && followsRef.current() && performance.now() - handAtRef.current >= HAND_SCROLL_MS) return
       // A reader scroll can precede its browser event; reconcile it before following a DOM mutation.
       if (pane.scrollTop !== lastTopRef.current) onScroll()
       if (followsRef.current()) scrollToBottom(false)
@@ -190,11 +197,11 @@ export function Transcript(props: TranscriptProps) {
     }
     follow()
     if (typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(follow)
+    const observer = new ResizeObserver(() => follow())
     observer.observe(inner)
     observer.observe(pane)
-    // Suspense can reveal descendants without rerendering this pane; follow insertion before the next frame.
-    const mutations = new MutationObserver(follow)
+    // Suspense can move a reader's anchor without changing the total content height.
+    const mutations = new MutationObserver(() => follow(true))
     mutations.observe(inner, { childList: true, subtree: true, characterData: true })
     return () => { observer.disconnect(); mutations.disconnect() }
   }, [empty, scope, scrollToBottom, virtualize, rememberReaderAnchor, onScroll])
@@ -206,6 +213,7 @@ export function Transcript(props: TranscriptProps) {
   useEffect(() => onScrollRequest('follow', () => { if (pinnedRef.current) scrollToBottom(false) }), [scrollToBottom])
 
   const virtualizer = useVirtualizer({
+    enabled: virtualize,
     count: virtualize ? rows.length : 0,
     getScrollElement: () => scrollRef.current,
     estimateSize: (i) => {
@@ -253,9 +261,18 @@ export function Transcript(props: TranscriptProps) {
     if (!saved || !pane || loadedFrom >= saved.from) return
     let frame = 0
     let passes = 0
+    // A merged turn gets a new key and has no remembered intrinsic height yet.
+    // Measure it while restoring the reader, then return it to off-screen containment.
+    const revealed = virtualize ? [] : rows.flatMap((row) => {
+      if (!saved.anchors.some((anchor) => row.key !== anchor.key && row.assistantRows?.some((part) => part.key === anchor.key))) return []
+      const element = pane.querySelector<HTMLElement>(`[data-message-key="${CSS.escape(row.key)}"]`)
+      return element ? [element] : []
+    })
+    for (const element of revealed) element.style.contentVisibility = 'visible'
+    const release = () => { for (const element of revealed) element.style.removeProperty('content-visibility') }
     // A prepend can enable virtualization; its new rows measure over several frames.
     const restore = () => {
-      if (prependRef.current !== saved) return
+      if (prependRef.current !== saved) { release(); return }
       let offset = saved.offset + pane.scrollHeight - saved.height
       for (const candidate of saved.anchors) {
         const anchor = pane.querySelector<HTMLElement>(`[data-message-key="${CSS.escape(candidate.key)}"]`)
@@ -274,10 +291,10 @@ export function Transcript(props: TranscriptProps) {
       else pane.scrollTop = offset
       lastTopRef.current = pane.scrollTop
       if (++passes < 12) frame = requestAnimationFrame(restore)
-      else prependRef.current = null
+      else { prependRef.current = null; release() }
     }
     restore()
-    return () => cancelAnimationFrame(frame)
+    return () => { cancelAnimationFrame(frame); release() }
   }, [loadedFrom, rows, virtualize, virtualizer])
   useLayoutEffect(() => { prependRef.current = null; readerAnchor.current = null; entryRef.current = { focus: focusKey }; settlingRef.current = true; lastTopRef.current = 0; pin(true) }, [scope, focusKey, pin])
   useLayoutEffect(() => {
@@ -317,7 +334,8 @@ export function Transcript(props: TranscriptProps) {
     return () => observer.disconnect()
   }, [scope, truncated, loadingOlder, olderError, requestOlder])
 
-  const renderRow = (row: VisibleMessage, i: number) => (
+  const continuedTurn = continued ? live ?? undefined : undefined
+  const renderRow = useCallback((row: VisibleMessage, i: number) => (
     row.message._background_update
       ? <BackgroundUpdateRow key={row.key} row={row} />
       : row.message._marker_kind
@@ -328,15 +346,17 @@ export function Transcript(props: TranscriptProps) {
       ? <DeliveryRow key={row.key} row={row} />
       : row.message.role === 'user'
       ? <UserMessageRow key={row.key} row={row} renderMarkdown={renderUserMarkdown} sessionId={sessionId} actions={actions} />
-      : <AssistantMessageRow sessionId={sessionId} scope={props.disclosureScope} key={row.key} row={row} name={assistantName} mode={mode} actions={actions} tts={tts} isLast={i === lastAssistantIndex && !showLive} continuation={row === continued ? live ?? undefined : undefined} />
-  )
+      : <AssistantMessageRow sessionId={sessionId} scope={props.disclosureScope} key={row.key} row={row} name={assistantName} mode={mode} actions={actions} tts={tts} isLast={i === lastAssistantIndex && !showLive} retainHeight={i === lastAssistantIndex} continuation={row === continued ? continuedTurn : undefined} />
+  ), [renderUserMarkdown, sessionId, actions, props.disclosureScope, assistantName, mode, tts, lastAssistantIndex, showLive, continued, continuedTurn])
+  // Reuse mounted history; the opt-in virtualizer still creates only its visible window.
+  const renderedRows = useMemo(() => virtualize ? null : rows.map(renderRow), [virtualize, rows, renderRow])
 
   return (
     <WorklogDisclosureProvider key={scope} scope={scope ?? ""}>
     <div className="messages-shell relative flex flex-1 min-h-0 flex-col">
       <div ref={scrollRef} onScroll={onScroll} onWheel={(e) => { if (e.deltaY !== 0) onReaderScroll() }} onTouchMove={onReaderScroll} onPointerDown={onReaderInput} onKeyDown={onReaderInput} className={cn('messages relative z-0 flex flex-1 flex-col min-h-0 px-5 overflow-y-auto overflow-x-hidden [-webkit-overflow-scrolling:touch] touch-pan-y overscroll-y-contain [overflow-anchor:none] max-[641px]:pl-[max(10px,env(safe-area-inset-left,0))] max-[641px]:pr-[max(10px,env(safe-area-inset-right,0))]', empty && 'messages-empty')} id="messages" role="log" aria-live="off" aria-relevant="additions">
         {empty ? emptyState : (
-          <div ref={innerRef} className="messages-inner mx-auto w-full flex flex-col max-w-(--msg-max) pt-5 pb-[calc(var(--composer-h,0px)+2rem)] max-[641px]:pt-3 max-[641px]:max-w-full max-[641px]:overflow-x-clip max-[641px]:[word-break:break-word] max-[641px]:min-w-0" id="msgInner">
+          <div ref={innerRef} className="messages-inner mx-auto w-full max-w-(--msg-max) pt-5 pb-[calc(var(--composer-h,0px)+2rem)] max-[641px]:pt-3 max-[641px]:max-w-full max-[641px]:overflow-x-clip max-[641px]:[word-break:break-word] max-[641px]:min-w-0" id="msgInner">
             {truncated && (
               <div ref={sentinelRef} className="flex h-11 shrink-0 items-center justify-center" data-history-sentinel>
                 {loadingOlder ? <LoadingState compact /> : olderError ? <div role="alert" className="flex items-center gap-2 text-sm text-muted">{m.error_generic()}<Button variant="ghost" className="min-h-11" onClick={() => requestOlder(true)}>{m.retry()}</Button></div> : null}
@@ -354,7 +374,7 @@ export function Transcript(props: TranscriptProps) {
                   )
                 })}
               </div>
-            ) : rows.map((row, i) => renderRow(row, i))}
+            ) : renderedRows}
             {(pending || showLiveUser) && <UserMessageRow row={{ index: -1, key: 'pending-user', message: { role: 'user', content: liveUserText, attachments: pending ? props.pendingAttachments ?? [] : live?.userAttachments ?? [] } }} renderMarkdown={renderUserMarkdown} sessionId={sessionId} actions={{}} pending />}
             {showLive && live && <LiveTurnView turn={live} name={assistantName} mode={mode} userVisible omitToolIds={continuedTools} />}
             {/* The settled error row carries the message; only the frame's continuation link lives outside the session. */}

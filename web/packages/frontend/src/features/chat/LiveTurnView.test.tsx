@@ -25,7 +25,7 @@ afterEach(() => {
 function liveRun() {
   storeDispatch({ type: 'start', sessionId: 's', streamId: 'run', turnId: 'turn', userMessageId: 'u', userText: 'Inspect', now: 0 })
   let seq = 0
-  const dispatch = (action: StreamAction) => { act(() => storeDispatch(action)) }
+  const dispatch = (action: StreamAction) => { act(() => { storeDispatch(action); if (vi.isFakeTimers()) vi.advanceTimersByTime(17) }) }
   return {
     emit(event: ChatEvent) { dispatch({ type: 'event', sessionId: 's', streamId: 'run', event, lastEventId: `run:${++seq}`, now: seq }) },
     dispatch,
@@ -103,7 +103,7 @@ describe('live status', () => {
     expect(pills(view.container)).toHaveLength(0)
   })
 
-  it('labels the run with the laurel, the rate, and the reconnect state', () => {
+  it('labels the run with the laurel, the rate, and the reconnect state', async () => {
     const run = liveRun()
     run.emit({ event: 'metering', data: { tps: 42.14 } })
     const view = render(<LiveStatusPill sessionId={run.turn.sessionId} />)
@@ -111,7 +111,7 @@ describe('live status', () => {
     expect(rest).toHaveLength(0)
     expect(pill).toHaveAttribute('role', 'status')
     expect(pill).toHaveTextContent('Working')
-    expect(pill).toHaveTextContent('42.1 tok/s')
+    await waitFor(() => expect(pill).toHaveTextContent('42.1 tok/s'))
     expect(pill!.querySelectorAll('svg.live-laurel .laurel-leaf')).toHaveLength(10)
     run.reconnect()
     view.rerender(<LiveStatusPill sessionId={run.turn.sessionId} />)
@@ -120,28 +120,28 @@ describe('live status', () => {
 })
 
 describe('server-selected prompt reading (TAL-1058)', () => {
-  it('renders known and unknown progress in the existing accessible status, and clears terminal state', () => {
+  it('renders known and unknown progress in the existing accessible status, and clears terminal state', async () => {
     const run = liveRun()
     const view = render(<LiveStatusPill sessionId={run.turn.sessionId} />)
     for (const progress_percent of [0, 42, 100, null]) {
       run.emit({ event: 'run_status', data: { session_id: 's', status: { phase: 'prompt_reading', progress_percent } } })
       view.rerender(<LiveStatusPill sessionId={run.turn.sessionId} />)
-      expect(view.getByRole('status')).toHaveTextContent(progress_percent === null ? /^Reading prompt$/ : `Reading prompt · ${progress_percent}%`)
+      await waitFor(() => expect(view.getByRole('status')).toHaveTextContent(progress_percent === null ? /^Reading prompt$/ : `Reading prompt · ${progress_percent}%`))
       expect(view.container.querySelectorAll('.live-laurel')).toHaveLength(1)
     }
     run.emit({ event: 'run_status', data: { session_id: 's', status: { phase: 'compressing' } } })
     view.rerender(<LiveStatusPill sessionId={run.turn.sessionId} />)
-    expect(view.getByRole('status')).toHaveTextContent(/^Compressing context$/)
+    await waitFor(() => expect(view.getByRole('status')).toHaveTextContent(/^Compressing context$/))
     run.emit({ event: 'run_status', data: { session_id: 's', status: { phase: 'working' } } })
     view.rerender(<LiveStatusPill sessionId={run.turn.sessionId} />)
-    expect(view.getByRole('status')).toHaveTextContent('Working')
+    await waitFor(() => expect(view.getByRole('status')).toHaveTextContent('Working'))
     run.emit({ event: 'done', data: {} })
     expect(run.turn.runStatus).toBeNull()
     run.emit({ event: 'run_status', data: { session_id: 's', status: { phase: 'prompt_reading', progress_percent: 42 } } })
     expect(run.turn.runStatus).toBeNull()
   })
 
-  it('keeps newer server progress when a retained stream resumes from a cached session snapshot', () => {
+  it('keeps newer server progress when a retained stream resumes from a cached session snapshot', async () => {
     const run = liveRun()
     run.emit({ event: 'run_status', data: { session_id: 's', status: { phase: 'prompt_reading', progress_percent: 42 } } })
     const cursor = run.turn.lastEventId
@@ -152,7 +152,7 @@ describe('server-selected prompt reading (TAL-1058)', () => {
     expect(run.turn.lastEventId).toBe(cursor)
     run.emit({ event: 'run_status', data: { session_id: 's', status: { phase: 'working' } } })
     view.rerender(<LiveStatusPill sessionId={run.turn.sessionId} />)
-    expect(view.getByRole('status')).toHaveTextContent('Working')
+    await waitFor(() => expect(view.getByRole('status')).toHaveTextContent('Working'))
   })
 
   it('attaches current server status without replay and replaces stale status, including explicit null', () => {

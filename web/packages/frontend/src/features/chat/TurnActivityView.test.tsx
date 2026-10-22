@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import sceneCases from './__fixtures__/activity-scene-boundaries.json'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -6,7 +7,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { Transcript } from './Transcript'
 import { AssistantMessageRow } from './MessageRow'
 import { TurnActivityView } from './TurnActivityView'
-import { WorklogDisclosureProvider } from './blocks/Worklog'
+import { useDisclosure, WorklogDisclosureProvider } from './blocks/Worklog'
 import { groupAssistantTurns, liveActivity, persistedActivity, type TurnActivity } from './turnActivity'
 import { projectMessages } from './useTranscript'
 import { initialStreamState, streamReducer, type LiveTurn } from '../../stream/reducer'
@@ -43,6 +44,22 @@ const rows = (...list: Record<string, unknown>[]): SceneRows => list.map((row, o
 function completed(id: string) { return { event: 'tool_complete', data: { id, name: 'read_file', kind: 'read', target: `${id}.txt`, result: `Contents of ${id}` } } as const }
 
 describe('turn worklog presentation', () => {
+  it('keeps settled disclosure consumers still while sibling content streams', () => {
+    const rendered = vi.fn()
+    const Choice = memo(function Choice() {
+      const [open, toggle] = useDisclosure('settled-turn', false)
+      rendered(open)
+      return <button onClick={toggle}>{open ? 'Collapse settled turn' : 'Expand settled turn'}</button>
+    })
+    const content = (token: number) => <WorklogDisclosureProvider scope="profile/s"><Choice /><span>{'word '.repeat(token)}</span></WorklogDisclosureProvider>
+    const view = render(content(0))
+    for (let token = 1; token <= 10; token++) view.rerender(content(token))
+    expect(rendered).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Expand settled turn' }))
+    expect(screen.getByRole('button', { name: 'Collapse settled turn' })).toBeInTheDocument()
+    expect(rendered).toHaveBeenLastCalledWith(true)
+  })
+
   it('labels a tool from the server kind and target, never from its name or args', () => {
     const run = liveRun()
     run.emit({ event: 'tool', data: { id: 'x', name: 'merge_pull_request', kind: 'shell', target: 'git status', args: { command: 'rm -rf /', path: 'secret.txt' } } })

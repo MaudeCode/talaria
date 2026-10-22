@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Long chats stay responsive and keep your place when older messages load.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

@@ -6,6 +6,9 @@ import { expect, settle, test } from './fixtures'
 const shot = async (page: Page, name: string) => { if (process.env.TAL565_SHOTS) await page.screenshot({ path: `${process.env.TAL565_SHOTS}/${name}.png` }) }
 const serverProject = async (page: Page, id: string) => ((await (await page.request.get('/api/projects')).json()) as { projects: { project_id: string; name: string; color?: string | null }[] }).projects.find((p) => p.project_id === id)
 
+// Optimistic chips update before their writes reach the server.
+const expectServerProject = (page: Page, id: string) => expect.poll(() => serverProject(page, id))
+
 test('a project chip renames, recolors and deletes its project', async ({ page }, testInfo) => {
   const name = `Alpha ${testInfo.project.name}`
   const created = await page.request.post('/api/projects/create', { data: { name } })
@@ -37,12 +40,12 @@ test('a project chip renames, recolors and deletes its project', async ({ page }
   await dialog.getByRole('button', { name: 'Save' }).click()
   await expect(chip(`${name} renamed`)).toBeVisible()
   await expect(chip(name)).toHaveCount(0)
-  expect((await serverProject(page, id))?.name).toBe(`${name} renamed`)
+  await expectServerProject(page, id).toMatchObject({ name: `${name} renamed` })
 
   // Recolor: picking a swatch stores it and the chip's dot shows it.
   await (await openMenu(`${name} renamed`)).getByRole('menuitemradio', { name: 'Green' }).click()
   await expect(chip(`${name} renamed`).locator('.color-dot')).toHaveCSS('background-color', 'rgb(80, 200, 120)')
-  expect((await serverProject(page, id))?.color).toBe('#50c878')
+  await expectServerProject(page, id).toMatchObject({ color: '#50c878' })
   const green = (await openMenu(`${name} renamed`)).getByRole('menuitemradio', { name: 'Green' })
   await expect(green).toHaveAttribute('aria-checked', 'true')
   // Swatches are touch targets, not just their 16px dots.
@@ -66,6 +69,6 @@ test('a project chip renames, recolors and deletes its project', async ({ page }
   await expect(chip(`${name} renamed`)).toHaveCount(0)
   await expect(chip('All')).toHaveClass(/active/)
   await expect(bar.getByRole('button', { name: 'Project actions' })).toHaveCount(0)
-  expect(await serverProject(page, id)).toBeUndefined()
+  await expectServerProject(page, id).toBeUndefined()
   await page.request.post('/api/projects/delete', { data: { project_id: keeper } })
 })

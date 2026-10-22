@@ -83,6 +83,21 @@ describe('ComposerNotices (TAL-1078)', () => {
     expect(container.querySelector('[data-notice="x"]')).toHaveTextContent('New')
   })
 
+  it('does not measure a lone ticking chip to decide that it stays separate', async () => {
+    const width = vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get')
+    try {
+      const { container, update } = setup([{ id: 'live', content: 'Working 1s' }])
+      const row = container.querySelector('.composer-notices')!
+      expect(row).toHaveClass('is-stacked')
+      update([{ id: 'live', content: 'Working 2s' }])
+      await waitFor(() => expect(row).toHaveTextContent('Working 2s'))
+      // Let the mutation observer's refit frame run for the new elapsed label.
+      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+      expect(row).toHaveClass('is-stacked')
+      expect(width).not.toHaveBeenCalled()
+    } finally { width.mockRestore() }
+  })
+
   it('shares one pill between staying chips and lets a set that leaves together fade as separate capsules (TAL-1300)', async () => {
     const { container, update } = setup([{ id: 'a', content: 'A' }])
     const row = () => container.querySelector('.composer-notices')
