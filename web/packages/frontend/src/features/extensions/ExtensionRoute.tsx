@@ -27,8 +27,9 @@ function useExtensionHost(manifest: ExtensionManifest, iframe: RefObject<HTMLIFr
   useEffect(() => {
     const el = iframe.current
     if (!el || !manifest.panel) return
+    const abort = new AbortController()
     const host = new ExtensionHost(manifest, el, {
-      fetchSidecar: (id, p) => request(`api/extensions/${encodeURIComponent(id)}/sidecar/${sidecarProxyPath(p.path)}`, { method: p.method ?? 'GET', schema: SidecarFetchResult, retries: 0, ...(p.body !== undefined ? { body: p.body } : {}), ...(p.headers ? { headers: p.headers } : {}) }).catch((e: unknown) => {
+      fetchSidecar: (id, p) => request(`api/extensions/${encodeURIComponent(id)}/sidecar/${sidecarProxyPath(p.path)}`, { method: p.method ?? 'GET', schema: SidecarFetchResult, retries: 0, signal: abort.signal, ...(p.body !== undefined ? { body: p.body } : {}), ...(p.headers ? { headers: p.headers } : {}) }).catch((e: unknown) => {
         const err = e as { status?: number; body?: unknown; message?: string }
         return { status: err.status ?? 0, headers: {}, body: typeof err.body === 'string' ? err.body : JSON.stringify(err.body ?? { error: err.message ?? 'sidecar request failed' }) }
       }),
@@ -42,7 +43,7 @@ function useExtensionHost(manifest: ExtensionManifest, iframe: RefObject<HTMLIFr
     const unsub = host.onStatus((s, d) => { setStatus(s); setDetail(d) })
     const onLoad = () => host.start()
     el.addEventListener('load', onLoad)
-    return () => { el.removeEventListener('load', onLoad); unsub(); host.close(); void qc.invalidateQueries({ queryKey: keys.extensions.manifests }) }
+    return () => { abort.abort(); el.removeEventListener('load', onLoad); unsub(); host.close(); void qc.invalidateQueries({ queryKey: keys.extensions.manifests }) }
   }, [manifest, iframe, navigate, qc])
   return { status, detail }
 }

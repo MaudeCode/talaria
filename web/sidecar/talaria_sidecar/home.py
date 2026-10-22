@@ -118,7 +118,7 @@ def _launch_secret_scope(home: Path) -> dict[str, str]:
 
 
 @contextlib.contextmanager
-def _secret_scope(home: Path):
+def _secret_scope(home: Path, *, load_plugins: bool = True):
     """Install ``home``'s credential scope for the call; named profiles run under multiplex semantics."""
     named = _is_named_profile(home)
     try:
@@ -140,14 +140,15 @@ def _secret_scope(home: Path):
         return
     if named:
         activate_multi_profile_hosting()
-        # Plugin managers are per home: load this profile's plugins so the secret sources they register exist.
-        try:
-            from hermes_cli.plugins import discover_plugins
+        # Dashboard hosting must never load third-party code into this sidecar.
+        if load_plugins:
+            try:
+                from hermes_cli.plugins import discover_plugins
 
-            discover_plugins()
-        except Exception:  # noqa: BLE001 - a broken plugin must not block the call, as in the Agent's own discovery
-            log.debug("Plugin discovery failed for %s", home, exc_info=True)
-        hydrate_profile_secret_sources(home)
+                discover_plugins()
+            except Exception:  # noqa: BLE001 - a broken plugin must not block the call, as in the Agent's own discovery
+                log.debug("Plugin discovery failed for %s", home, exc_info=True)
+            hydrate_profile_secret_sources(home)
         secrets = build_profile_secret_scope(home)
     else:
         secrets = launch_secret_scope(home)
@@ -234,7 +235,7 @@ def _recover_processes(home: Path) -> None:
 
 
 @contextlib.contextmanager
-def scoped_home(home: Path):
+def scoped_home(home: Path, *, load_plugins: bool = True):
     """Run the body with Hermes Agent resolving ``get_hermes_home()`` to ``home``."""
     home = Path(home).expanduser()
     try:
@@ -244,7 +245,7 @@ def scoped_home(home: Path):
     if set_hermes_home_override is not None:
         token = set_hermes_home_override(home)
         try:
-            with _secret_scope(home), _terminal_scope(home):
+            with _secret_scope(home, load_plugins=load_plugins), _terminal_scope(home):
                 _recover_processes(home)
                 yield home
         finally:
@@ -254,7 +255,7 @@ def scoped_home(home: Path):
         previous = os.environ.get("HERMES_HOME")
         os.environ["HERMES_HOME"] = str(home)
         try:
-            with _secret_scope(home), _terminal_scope(home):
+            with _secret_scope(home, load_plugins=load_plugins), _terminal_scope(home):
                 _recover_processes(home)
                 yield home
         finally:

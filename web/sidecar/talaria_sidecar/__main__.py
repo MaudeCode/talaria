@@ -45,9 +45,13 @@ def main() -> int:
         # The server closes stdin to stop the sidecar: end every cached agent's memory session on the way out.
         from .methods.chat import drain_agents
         from .agent_mutation import close_all
+        from .methods.dashboard_plugins import close_dashboard_sources
 
-        close_all()
-        drain_agents()
+        try:
+            close_all()
+            drain_agents()
+        finally:
+            close_dashboard_sources()
 
 
 if __name__ == "__main__":

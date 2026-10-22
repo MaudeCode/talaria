@@ -40,3 +40,21 @@ export function splitSigned(value: string): [string, string] | null {
   if (at < 0) return null
   return [value.slice(0, at), value.slice(at + 1)]
 }
+
+const ASSET_GRANT_BUCKET_MS = 3_600_000
+
+/** An expiring, domain-separated capability for cookie-free sandbox subresources. */
+export function signAssetGrant(key: Buffer, namespace: string, value: string, now = Date.now()): string {
+  const exp = (Math.ceil(now / ASSET_GRANT_BUCKET_MS) + 1) * (ASSET_GRANT_BUCKET_MS / 1000)
+  const grant = `${Buffer.from(value, 'utf8').toString('base64url')}.${String(exp)}`
+  return `${grant}.${hmacHex(key, `${namespace}:${grant}`)}`
+}
+
+export function assetGrantValue(key: Buffer, namespace: string, segment: string, now = Date.now()): string | null {
+  const parts = segment.split('.')
+  if (parts.length !== 3) return null
+  const [value, exp, sig] = parts as [string, string, string]
+  if (!safeEqual(sig, hmacHex(key, `${namespace}:${value}.${exp}`))) return null
+  if (!/^\d+$/.test(exp) || Number(exp) * 1000 < now) return null
+  return Buffer.from(value, 'base64url').toString('utf8')
+}

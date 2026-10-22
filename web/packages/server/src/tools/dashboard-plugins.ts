@@ -3,6 +3,13 @@
  * Settings enable gate (`dashboard_plugins`, default off), and the bytes behind `/plugins/plugin.css`, the sandboxed
  * panel document, plugin static assets, and tab pages. A disabled or unknown plugin serves nothing (null → 404).
  */
+import { createHash, createHmac, randomBytes } from 'node:crypto'
+import type { AgentDashboardPluginSchema, SidecarResult } from '@maudecode/talaria-web-contracts'
+import type { z } from 'zod'
+import type { RequestContext } from '../http/context.js'
+import { signAssetGrant, assetGrantValue } from '../auth/crypto.js'
+import { activeProfileName } from '../auth/gate.js'
+import { SidecarError, type SidecarLike } from '../sidecar/client.js'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { escapeHtml } from '../text/markdown.js'
 import { htmlWithHeadTag } from '../workspace/media.js'
@@ -25,9 +32,16 @@ const ASSET_MIME: Record<string, string> = {
   '.map': 'application/json; charset=utf-8', '.txt': 'text/plain; charset=utf-8',
 }
 
-export interface DashboardPluginDeps { env: Record<string, string | undefined>; hermesHome: string; settings: Pick<SettingsStore, 'load' | 'save'> }
+export interface DashboardPluginDeps { env: Record<string, string | undefined>; hermesHome: string; settings: Pick<SettingsStore, 'load' | 'save'>; sidecar?: () => SidecarLike | null }
 interface Plugin { name: string; manifest: Dict; tabPath: string; root: string }
 export interface PluginFile { body: Buffer; contentType: string }
+
+export interface AgentDashboardScope { home: string; owner: string }
+export const isAgentDashboardId = (id: string): boolean => /^agent-[a-f0-9]{40}$/.test(id)
+export function dashboardScope(ctx: RequestContext, profile = activeProfileName(ctx)): AgentDashboardScope {
+  return { home: ctx.deps.profileHome(profile), owner: createHash('sha256').update(ctx.authCookie() || ctx.notificationOwner || 'local-owner').digest('hex') }
+}
+type AgentPlugin = z.infer<typeof AgentDashboardPluginSchema>
 
 /** Add `<base href>` unless the document declares its own. */
 function withBase(body: Buffer, href: string): Buffer {
@@ -37,7 +51,119 @@ function withBase(body: Buffer, href: string): Buffer {
 const html = (body: Buffer | string): PluginFile => ({ body: Buffer.isBuffer(body) ? body : Buffer.from(body, 'utf8'), contentType: ASSET_MIME['.html'] ?? '' })
 
 export class DashboardPlugins {
+  private readonly bindingKey = randomBytes(32)
+  private readonly assetScopes = new Map<string, { scope: AgentDashboardScope; generation: string }>()
+  private readonly owners = new Map<string, { generation: string; pending: Set<AbortController> }>()
   constructor(private readonly deps: DashboardPluginDeps) {}
+
+  private owner(scope: AgentDashboardScope) {
+    // One login generation spans profile homes, so switching revokes its frames in every profile.
+    const key = createHmac('sha256', this.bindingKey).update(scope.owner).digest('hex')
+    let state = this.owners.get(key)
+    if (!state) {
+      // Idle identities may be evicted: their old opaque ids then fail closed.
+      if (this.owners.size >= 512) {
+        const oldest = [...this.owners].find(([, value]) => value.pending.size === 0)
+        if (oldest) this.owners.delete(oldest[0])
+        else throw new ExtensionError('Dashboard host is busy', 503)
+      }
+      state = { generation: randomBytes(16).toString('hex'), pending: new Set<AbortController>() }
+      this.owners.set(key, state)
+    }
+    return state
+  }
+
+  invalidateOwner(scope: AgentDashboardScope): void {
+    const state = this.owner(scope)
+    state.generation = randomBytes(16).toString('hex')
+    for (const pending of state.pending) pending.abort()
+  }
+
+  private agentId(scope: AgentDashboardScope, name: string): string {
+    return 'agent-' + createHmac('sha256', this.bindingKey).update(JSON.stringify([scope.home, scope.owner, this.owner(scope).generation, name])).digest('hex').slice(0, 40)
+  }
+
+  private panelGrant(scope: AgentDashboardScope, id: string, panel: string): string {
+    if (!this.assetScopes.has(id) && this.assetScopes.size >= 2048) this.assetScopes.delete(this.assetScopes.keys().next().value!)
+    // Store a credential hash, never the login cookie. The grant names only this static source.
+    this.assetScopes.set(id, { scope: { ...scope }, generation: this.owner(scope).generation })
+    return `agent-dashboard-plugins/${signAssetGrant(this.bindingKey, 'agent-dashboard', id)}/${panel}`
+  }
+
+  async agentAssetGrant(segment: string, path: string, signal?: AbortSignal, caller?: AgentDashboardScope): Promise<PluginFile | null> {
+    const id = assetGrantValue(this.bindingKey, 'agent-dashboard', segment)
+    const binding = id ? this.assetScopes.get(id) : undefined
+    const scope = binding?.scope
+    if (!id || !scope || binding.generation !== this.owner(scope).generation || (caller && (caller.owner !== scope.owner || caller.home !== scope.home))) return null
+    // Rechecks current consent and the owner's generation, including after a profile switch.
+    return this.agentAsset(scope, id, path, signal)
+  }
+
+  private async agentCall<T>(scope: AgentDashboardScope, call: (sidecar: SidecarLike, signal: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<T> {
+    const sidecar = this.deps.sidecar?.()
+    if (!sidecar) throw new ExtensionError('Agent dashboard host unavailable', 503)
+    const state = this.owner(scope)
+    const generation = state.generation
+    const abort = new AbortController()
+    state.pending.add(abort)
+    const combined = signal ? AbortSignal.any([abort.signal, signal]) : abort.signal
+    try {
+      if (combined.aborted) throw new ExtensionError('not found', 404)
+      const result = await call(sidecar, combined)
+      if (combined.aborted || generation !== state.generation) throw new ExtensionError('not found', 404)
+      return result
+    } catch (error) {
+      if (combined.aborted || generation !== state.generation) throw new ExtensionError('not found', 404)
+      if (error instanceof SidecarError && error.condition === 'sidecar_timeout') throw new ExtensionError('Agent dashboard request timed out', 504)
+      throw error
+    } finally { state.pending.delete(abort) }
+  }
+
+  async agentManifests(scope: AgentDashboardScope, signal?: AbortSignal): Promise<Dict[]> {
+    if (!this.deps.sidecar?.()) return []
+    let list: SidecarResult<'plugins.dashboard_list'>
+    try { list = await this.agentCall(scope, (sc, signal) => sc.call('plugins.dashboard_list', { profile_home: scope.home }, { signal, timeoutMs: 12_000 }), signal) }
+    catch (error) {
+      if (error instanceof SidecarError && (error.code === -32601 || error.condition === 'sidecar_unavailable')) return []
+      throw error
+    }
+    return list.plugins.map((plugin) => {
+      const id = this.agentId(scope, plugin.name)
+      return { id, display_id: plugin.name, name: text(plugin.label, 80) || plugin.name, version: text(plugin.version, 40), description: text(plugin.description, 300),
+        source: 'agent-plugin', agent_host: true, enabled: plugin.enabled, can_toggle: plugin.panel !== null,
+        panel: plugin.panel ? this.panelGrant(scope, id, plugin.panel) : null,
+        nav: plugin.panel ? { label: text(plugin.label, 40) || plugin.name } : null,
+        capabilities: plugin.has_api && plugin.panel ? ['sidecar'] : [], permissions: {}, settings_schema: [], theme: null, tts: null, sidecar: null,
+        legacy_injection: false, warnings: plugin.panel ? [] : ['web_extension_migration_required'] }
+    })
+  }
+
+  private async agentPlugin(scope: AgentDashboardScope, id: string, signal?: AbortSignal): Promise<AgentPlugin | null> {
+    if (!isAgentDashboardId(id)) return null
+    const list = await this.agentCall(scope, (sc, signal) => sc.call('plugins.dashboard_list', { profile_home: scope.home }, { signal, timeoutMs: 12_000 }), signal)
+    return list.plugins.find((p) => this.agentId(scope, p.name) === id) ?? null
+  }
+
+  async setAgentEnabled(scope: AgentDashboardScope, id: string, enabled: unknown): Promise<void> {
+    if (typeof enabled !== 'boolean') throw new ExtensionError('enabled must be a boolean', 400)
+    const plugin = await this.agentPlugin(scope, id)
+    if (!plugin?.panel || this.agentId(scope, plugin.name) !== id) throw new ExtensionError('not found', 404)
+    await this.agentCall(scope, (sc, signal) => sc.call('plugins.dashboard_toggle', { profile_home: scope.home, name: plugin.name, enabled }, { signal }))
+  }
+
+  async agentAsset(scope: AgentDashboardScope, id: string, path: string, signal?: AbortSignal): Promise<PluginFile | null> {
+    const plugin = await this.agentPlugin(scope, id, signal)
+    if (!plugin?.enabled || !plugin.panel || this.agentId(scope, plugin.name) !== id) return null
+    const result = await this.agentCall(scope, (sc, signal) => sc.call('plugins.dashboard_asset', { profile_home: scope.home, name: plugin.name, path }, { signal, timeoutMs: 12_000 }), signal)
+    return result.status === 200 ? { body: Buffer.from(result.body, 'base64'), contentType: result.content_type } : null
+  }
+
+  async agentRequest(scope: AgentDashboardScope, id: string, request: Omit<import('@maudecode/talaria-web-contracts').SidecarParams<'plugins.dashboard_request'>, 'profile_home' | 'name' | 'authenticated'>, signal?: AbortSignal) {
+    const plugin = await this.agentPlugin(scope, id, signal)
+    if (!plugin?.enabled || !plugin.panel || this.agentId(scope, plugin.name) !== id) throw new ExtensionError('not found', 404)
+    const result = await this.agentCall(scope, (sc, signal) => sc.call('plugins.dashboard_request', { ...request, profile_home: scope.home, name: plugin.name, authenticated: true }, { signal, timeoutMs: 12_000 }), signal)
+    return { status: result.status, headers: { 'content-type': result.content_type }, body: Buffer.from(result.body, 'base64').toString('utf8') }
+  }
 
   base(): string {
     const raw = (this.deps.env.HERMES_WEBUI_PLUGINS_DIR ?? '').trim()

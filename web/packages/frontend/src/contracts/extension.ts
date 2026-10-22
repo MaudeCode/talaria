@@ -48,12 +48,14 @@ export const ExtensionManifestSchema = z.object({
   name: z.string().min(1).max(80),
   version: z.string().max(40).optional(),
   description: z.string().max(300).optional(),
-  source: z.enum(['manifest', 'gallery', 'plugin']),
+  source: z.enum(['manifest', 'gallery', 'plugin', 'agent-plugin']),
+  agent_host: z.boolean().optional(),
+  display_id: z.string().max(64).optional(),
   enabled: z.boolean(),
   /** The server's decision that Settings shows an enable switch for this row. */
   can_toggle: z.boolean(),
   /** App-relative URL of the sandboxed panel document, or null for a headless extension. */
-  panel: z.string().max(400).nullable(),
+  panel: z.string().max(600).nullable(),
   nav: z.object({ label: z.string().min(1).max(40), icon: z.string().max(40).optional() }).nullable(),
   capabilities: z.array(CapabilitySchema).max(16),
   permissions: z.record(z.string().max(64), z.boolean()).optional(),

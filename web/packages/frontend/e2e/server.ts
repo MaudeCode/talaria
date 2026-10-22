@@ -56,6 +56,9 @@ export async function bootServer(baseUrl: string, extraEnv: Record<string, strin
     HERMES_WEBUI_SKIP_ONBOARDING: '1',
     HERMES_WEBUI_TEST_NETWORK_BLOCK: '1',
     AWS_EC2_METADATA_DISABLED: 'true',
+    // Native Agent trials use their preprovisioned interpreter and no scanner download/updater.
+    HERMES_DISABLE_LAZY_INSTALLS: '1',
+    TIRITH_ENABLED: '0',
     ...extraEnv,
   })
   const log = join(state, 'server.log')
@@ -82,8 +85,9 @@ export async function bootServer(baseUrl: string, extraEnv: Record<string, strin
 
 export function saveHandles(handles: ServerHandle[]): void { writeFileSync(STATE_FILE, JSON.stringify(handles)) }
 
-/** State directory of the open (no-password) server, for specs that seed server-read files. */
-export function openServerState(): string { return (JSON.parse(readFileSync(STATE_FILE, 'utf8')) as ServerHandle[])[0]!.state }
+/** Disposable server state for specs that seed server-read files. */
+export function serverState(kind: 'open' | 'authenticated'): string { return (JSON.parse(readFileSync(STATE_FILE, 'utf8')) as ServerHandle[])[kind === 'open' ? 0 : 1]!.state }
+export function openServerState(): string { return serverState('open') }
 
 export function stopServers(): void {
   let handles: ServerHandle[] = []
