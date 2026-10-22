@@ -74,8 +74,8 @@ describe('turn boundary cache invalidation (TAL-1210)', () => {
     expect(qc.getQueryState(keys.sessions.detail(SID))?.isInvalidated).toBe(true)
   })
 
-  it('turn start refreshes only lists and the admitted session status', async () => {
-    vi.mocked(api.startChat).mockResolvedValueOnce({ stream_id: 'run-a' })
+  it.each([false, true])('turn start refreshes only lists and the admitted session status, native owner=%s', async (native) => {
+    vi.mocked(api.startChat).mockResolvedValueOnce({ stream_id: 'run-a', ...(native ? { session: sessionFixture({ session_id: SID }), owner_attachment: ChatStartResponseSchema.parse(ownerFixture.voice_stop_response).owner_attachment } : {}) })
     await startTurn({ sessionId: SID, message: 'Next turn', request: {} })
     for (const key of cachedKeys) expect(qc.getQueryState(key)?.isInvalidated).toBe(key[1] === 'list' || (key[1] === 'status' && key[2] === SID))
   })
