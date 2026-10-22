@@ -47,7 +47,7 @@ describe('SessionListPanel search (TAL-308)', () => {
     render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SessionListPanel /></QueryClientProvider>)
     await userEvent.click(await screen.findByRole('button', { name: 'Proj' }))
     await userEvent.type(screen.getByRole('searchbox'), 'zebra')
-    await waitFor(() => { expect(api.searchSessions).toHaveBeenLastCalledWith('zebra', { project_id: 'p1', sidebar_source: 'webui', include_archived: false }) })
+    await waitFor(() => { expect(api.searchSessions).toHaveBeenLastCalledWith('zebra', { project_id: 'p1', sidebar_source: 'webui', include_archived: false }, 5, expect.any(AbortSignal)) })
     // While the request is in flight, the local title filter answers.
     expect(shown()).toEqual(['alpha'])
     answer({ sessions: [{ ...delta, match_type: 'content', match_preview: 'a zebra here' }, { ...alpha, match_type: 'title' }], sidebar_filtered: true, all_profiles: false, active_profile: 'default' })

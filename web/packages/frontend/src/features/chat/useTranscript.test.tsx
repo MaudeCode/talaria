@@ -2,7 +2,7 @@ import { deferred, sessionFixture } from '../../test/fixtures'
 import type { ReactNode } from 'react'
 import { useLayoutEffect, useRef } from 'react'
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { focusManager, QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { ChatEvent } from '../../contracts/sse'
 import { parseChatEvent } from '../../contracts/sse'
@@ -26,10 +26,10 @@ const { resetStreamStoreForTests } = await import('../../stream/store')
 const { resetConnectionsForTests } = await import('../../stream/connection')
 
 beforeEach(() => { vi.resetAllMocks(); streams.length = 0; resetStreamStoreForTests() })
-afterEach(() => { cleanup(); resetConnectionsForTests() })
+afterEach(() => { cleanup(); resetConnectionsForTests(); focusManager.setFocused(undefined) })
 
 function historyHook(loadOnMount = false) {
-  const session = sessionFixture({ session_id: 'history', messages: [{ id: 241, role: 'user', content: 'latest' }], _messages_offset: 240, _messages_truncated: true })
+  const session = sessionFixture({ session_id: 'history', message_count: 241, messages: [{ id: 241, role: 'user', content: 'latest' }], _messages_offset: 240, _messages_truncated: true })
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   qc.setQueryData(keys.sessions.detail('history'), { session })
   const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>
@@ -180,7 +180,7 @@ it('refreshes idle notice detail and retires the viewed-session feed on session 
   vi.mocked(api.fetchSession).mockImplementation((sid) => Promise.resolve({ session: sessionFixture({ session_id: sid, notices: [{ key: 'plugin', level: 'info', text: 'Plugin finished', expires_at: null }] }) }))
   const { result, rerender, unmount } = historyHook()
   const open = vi.mocked(feeds.openSessionStream)
-  expect(open).toHaveBeenCalledWith('history', expect.any(Object))
+  expect(open).toHaveBeenCalledWith('history', expect.any(Object), 241)
   const first = open.mock.calls[0]![1]
   const closed = open.mock.results[0]!.value.close
   act(() => { first.onEvent({ event: 'session-updated', data: { session_id: 'history' } }) })
@@ -197,4 +197,51 @@ it('refreshes idle notice detail and retires the viewed-session feed on session 
   expect(open.mock.calls.at(-1)![0]).toBe('other')
   unmount()
   expect(open.mock.results.at(-1)!.value.close).toHaveBeenCalledTimes(1)
+})
+
+
+it('skips the first initial on fresh cached detail and resyncs once per reconnect', async () => {
+  const feeds = await import('../../api/sse')
+  vi.mocked(api.fetchSession).mockResolvedValue({ session: sessionFixture({ session_id: 'history', messages: [] }) })
+  historyHook()
+  const feed = vi.mocked(feeds.openSessionStream).mock.calls[0]![1]
+  await act(async () => { feed.onEvent({ event: 'initial', data: { session_id: 'history' } }); await Promise.resolve() })
+  expect(api.fetchSession).not.toHaveBeenCalled()
+  await act(async () => { feed.onEvent({ event: 'initial', data: { session_id: 'history' } }); await Promise.resolve() })
+  expect(api.fetchSession).toHaveBeenCalledTimes(1)
+})
+
+it('does not refetch stale transcript detail on window focus with its feed open', async () => {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: true } } })
+  const key = keys.sessions.detail('focus')
+  const data = { session: sessionFixture({ session_id: 'focus', messages: [] }) }
+  qc.setQueryData(key, data)
+  const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+  renderHook(() => useTranscript('focus'), { wrapper })
+  await act(async () => {
+    qc.setQueryData(key, data, { updatedAt: Date.now() - 10_000 })
+    focusManager.setFocused(false)
+    focusManager.setFocused(true)
+    await Promise.resolve()
+  })
+  expect(api.fetchSession).not.toHaveBeenCalled()
+  focusManager.setFocused(undefined)
+})
+
+it('aborts an in-flight transcript fetch when invalidation replaces it', async () => {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const key = keys.sessions.detail('abort')
+  qc.setQueryData(key, { session: sessionFixture({ session_id: 'abort', messages: [] }) })
+  const aborted = vi.fn()
+  vi.mocked(api.fetchSession).mockImplementation((_sid, _params, signal) => {
+    signal?.addEventListener('abort', aborted)
+    return new Promise(() => undefined)
+  })
+  const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+  renderHook(() => useTranscript('abort'), { wrapper })
+  act(() => { void qc.invalidateQueries({ queryKey: key }) })
+  await waitFor(() => expect(api.fetchSession).toHaveBeenCalledTimes(1))
+  act(() => { void qc.invalidateQueries({ queryKey: key }) })
+  await waitFor(() => expect(api.fetchSession).toHaveBeenCalledTimes(2))
+  expect(aborted).toHaveBeenCalledTimes(1)
 })

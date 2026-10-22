@@ -3,6 +3,7 @@
  * `ACTIVE_RUNS`, `STREAM_SESSION_OWNERS`) and the per-session channel used by
  * `/api/session/stream` (`api/background_process.py::SessionChannel`).
  */
+import { isDeepStrictEqual } from 'node:util'
 import type { TurnOrigin } from './background-updates.js'
 
 /** A live frame; `redacted` records whether a tool frame was redacted when produced, so delivery can apply the current policy. */
@@ -257,8 +258,13 @@ export class SessionChannels {
     let delivered = 0
     for (const sub of set) {
       // These are refetch signals for server records: a stalled subscriber keeps the newest 64, never refusing the latest.
-      if (sub.queue.length >= 64) sub.queue.shift()
-      sub.queue.push([event, data])
+      const newest = sub.queue.at(-1)
+      if (event === 'session-updated' && newest?.[0] === event && isDeepStrictEqual(newest[1], data)) {
+        sub.queue[sub.queue.length - 1] = [event, data]
+      } else {
+        if (sub.queue.length >= 64) sub.queue.shift()
+        sub.queue.push([event, data])
+      }
       sub.wake?.()
       delivered += 1
     }

@@ -72,7 +72,7 @@ export function useTranscript(sessionId: string | null) {
       const sid = sessionId ?? ''
       const expectedStreamId = getStreamState().turns[sid]?.streamId
       try {
-        const result = await api.fetchSession(sid, { messages: true, msg_limit: TRANSCRIPT_WINDOW })
+        const result = await api.fetchSession(sid, { messages: true, msg_limit: TRANSCRIPT_WINDOW }, signal)
         if (!signal.aborted) reconcileSession(sid, result.session, expectedStreamId)
         return result
       } catch (error) {
@@ -82,6 +82,7 @@ export function useTranscript(sessionId: string | null) {
     },
     enabled: !!sessionId,
     staleTime: 5_000,
+    refetchOnWindowFocus: false,
     retry: (count, error) => !(error instanceof Error && 'status' in error && (error as { status: number }).status === 404) && count < 1,
   })
   const session: Session | null = query.data?.session ?? null
@@ -109,9 +110,17 @@ export function useTranscript(sessionId: string | null) {
     if (!sessionId) return
     let retired = false
     const scope = streamContext
-    const stream = openSessionStream(sessionId, { onEvent: ({ data }) => {
-      if (!retired && scope === getStreamContext() && data.session_id === sessionId) void qc.invalidateQueries({ queryKey: keys.sessions.detail(sessionId) })
-    } })
+    let initialized = false
+    const cached = qc.getQueryData<{ session: Session }>(keys.sessions.detail(sessionId))
+    const stream = openSessionStream(sessionId, { onEvent: ({ event, data }) => {
+      if (retired || scope !== getStreamContext() || data.session_id !== sessionId) return
+      if (event === 'initial') {
+        const reconnect = initialized
+        initialized = true
+        if (!reconnect) return
+      }
+      void qc.invalidateQueries({ queryKey: keys.sessions.detail(sessionId) })
+    } }, cached?.session.message_count)
     return () => { retired = true; stream.close() }
   }, [qc, sessionId, streamContext])
 
