@@ -71,7 +71,7 @@ it('shows a chosen speed and default model at once, sending the shown model with
   vi.mocked(fetchAuxiliaryModels).mockResolvedValue({ main: { model: 'gpt-6-astra', provider: 'openai-codex', service_tier: 'priority', supported_speed_tiers: [
     { id: 'standard', service_tier: 'default' }, { id: 'priority', service_tier: 'priority' },
   ] }, tasks: [] })
-  vi.mocked(fetchModels).mockResolvedValue({ groups: [{ provider: 'OpenAI Codex', provider_id: 'openai-codex', models: [{ id: '@openai-codex:gpt-6-astra', label: 'GPT-6 Astra', provider_id: 'openai-codex' }, { id: '@openai-codex:gpt-5.6-sol', label: 'GPT-5.6 Sol', provider_id: 'openai-codex' }] }] })
+  vi.mocked(fetchModels).mockResolvedValue({ groups: [{ provider: 'OpenAI Codex', provider_id: 'openai-codex', models: [{ id: '@openai-codex:gpt-6-astra', label: 'GPT-6 Astra', provider_id: 'openai-codex' }, { id: '@openai-codex:gpt-5.6-sol', label: 'GPT-5.6 Sol', provider_id: 'openai-codex', supported_speed_tiers: [{ id: 'standard', service_tier: 'default' }, { id: 'priority', service_tier: 'priority' }] }] }] })
   vi.mocked(setDefaultModel).mockReturnValue(new Promise(() => undefined))
   renderSection()
   const model = await screen.findByRole('combobox', { name: 'Default Model' })
@@ -98,4 +98,20 @@ it('rereads the auxiliary slots after the default model changes (TAL-1383)', asy
   await userEvent.click(await screen.findByRole('combobox', { name: 'Default Model' }))
   await userEvent.click(await screen.findByRole('option', { name: 'GPT-5.6 Sol' }))
   await waitFor(() => expect(vi.mocked(fetchAuxiliaryModels).mock.calls.length).toBeGreaterThan(before))
+})
+
+it('offers the chosen model\'s own speed tiers before the server answers (TAL-1383)', async () => {
+  vi.mocked(fetchAuxiliaryModels).mockResolvedValue({ main: { model: 'gpt-6-astra', provider: 'openai-codex', service_tier: 'ultrafast', supported_speed_tiers: [
+    { id: 'standard', service_tier: 'default' }, { id: 'ultrafast', service_tier: 'ultrafast' },
+  ] }, tasks: [] })
+  vi.mocked(fetchModels).mockResolvedValue({ groups: [{ provider: 'OpenAI Codex', provider_id: 'openai-codex', models: [
+    { id: '@openai-codex:gpt-6-astra', label: 'GPT-6 Astra', provider_id: 'openai-codex' },
+    { id: '@openai-codex:gpt-5.6-sol', label: 'GPT-5.6 Sol', provider_id: 'openai-codex', supported_speed_tiers: [{ id: 'standard', service_tier: 'default' }, { id: 'priority', service_tier: 'priority' }] },
+  ] }] })
+  vi.mocked(setDefaultModel).mockReturnValue(new Promise(() => undefined))
+  renderSection()
+  await userEvent.click(await screen.findByRole('combobox', { name: 'Default Model' }))
+  await userEvent.click(await screen.findByRole('option', { name: 'GPT-5.6 Sol' }))
+  await userEvent.click(screen.getByRole('combobox', { name: 'Speed' }))
+  expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(['Standard', 'Fast'])
 })

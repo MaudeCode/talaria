@@ -104,4 +104,17 @@ describe('OAuthSignIn', () => {
     await act(async () => { refuse(new Error('Cancel failed')); await Promise.resolve() })
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
   })
+
+  it('asks the flow itself after a cancel with an unknown outcome, keeping it closed when it was cancelled (TAL-1383)', async () => {
+    vi.mocked(api.onboardingOauthPoll).mockResolvedValue({ ok: true, status: 'pending', flow_id: 'flow-1' })
+    const { ApiError } = await import('../../contracts/common')
+    vi.mocked(api.onboardingOauthCancel).mockRejectedValueOnce(new ApiError({ kind: 'timeout', path: '/x', message: 'timed out' }))
+    render(<OAuthSignIn provider="openai-codex" label="ChatGPT" signedIn={false} onApproved={vi.fn()} />)
+    await startFlow()
+    vi.mocked(api.onboardingOauthPoll).mockResolvedValue({ ok: true, status: 'cancelled', flow_id: 'flow-1' })
+    await act(async () => { screen.getByRole('button', { name: 'Cancel' }).click(); await Promise.resolve() })
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+    expect(api.onboardingOauthPoll).toHaveBeenLastCalledWith('flow-1')
+    expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull()
+  })
 })

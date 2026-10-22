@@ -29,6 +29,8 @@ export function PreferencesSection() {
   const auxiliary = useAuxiliaryModelsQuery()
   const main = auxiliary.data?.main
   const mainModel = chosen?.model ?? main?.model
+  // A chosen model offers its own catalog speed tiers until the reread brings the server's main-model state.
+  const speedTiers = chosen ? catalogEntryById(models.data, chosen.model)?.supported_speed_tiers : main?.supported_speed_tiers
   const [botName, setBotName] = useState<string | null>(null)
   const [trustedHosts, setTrustedHosts] = useState<string | null>(null)
   // Link safety applies to every user of the server; only an owner may change it.
@@ -50,12 +52,12 @@ export function PreferencesSection() {
         </Select>
       </FieldRow>
       {auxiliary.isError && <ErrorState error={auxiliary.error} onRetry={() => { void auxiliary.refetch() }} />}
-      {!!mainModel && !!main?.supported_speed_tiers?.length && (
+      {!!mainModel && !!speedTiers?.length && (
         <FieldRow label={m.settings_model_speed()} hint={m.settings_model_speed_hint()} htmlFor="settingsModelSpeed" inline>
-          <Select id="settingsModelSpeed" value={chosen?.service_tier ?? main.service_tier} onValueChange={(service_tier) => {
-            setDefault.mutate({ model: mainModel, provider: chosen ? chosen.provider : main.provider ?? null, advanced: { service_tier } })
+          <Select id="settingsModelSpeed" value={chosen?.service_tier ?? (chosen ? speedTiers[0]?.service_tier : main?.service_tier)} onValueChange={(service_tier) => {
+            setDefault.mutate({ model: mainModel, provider: chosen ? chosen.provider : main?.provider ?? null, advanced: { service_tier } })
           }}>
-            {main.supported_speed_tiers.map((tier) => <option key={tier.id} value={tier.service_tier}>{tier.id === 'standard' ? m.settings_model_speed_standard() : tier.id === 'ultrafast' ? m.settings_model_speed_ultrafast() : m.settings_model_speed_fast()}</option>)}
+            {speedTiers.map((tier) => <option key={tier.id} value={tier.service_tier}>{tier.id === 'standard' ? m.settings_model_speed_standard() : tier.id === 'ultrafast' ? m.settings_model_speed_ultrafast() : m.settings_model_speed_fast()}</option>)}
           </Select>
         </FieldRow>
       )}

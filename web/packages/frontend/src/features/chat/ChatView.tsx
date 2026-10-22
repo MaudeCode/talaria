@@ -420,7 +420,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
           {clarify && <ClarifyCard key={clarify.pending.clarify_id} clarify={clarify} />}
           {sessionId && vaultPrompt && <VaultPromptCard key={vaultPrompt.clarifyId} sessionId={sessionId} clarifyId={vaultPrompt.clarifyId} vault={vaultPrompt.vault} />}
           {live?.connectCard && <ConnectCard key={live.connectCard.op_id} initial={live.connectCard} />}
-          {terminalOpen && sessionId && <TerminalPanel sessionId={sessionId} workspace={workspace} onClose={() => setTerminalOpen(false)} />}
+          {terminalOpen && sessionId && <TerminalPanel sessionId={sessionId} workspace={workspace} onClose={() => setTerminalOpen(false)} onReopen={() => setTerminalOpen(true)} />}
         </div>
         <Composer
           sessionId={sessionId}
