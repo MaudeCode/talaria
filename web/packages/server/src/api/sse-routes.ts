@@ -357,13 +357,19 @@ export async function handleSessionStream(ctx: RequestContext): Promise<void> {
   const controller = new AbortController()
   const abort = () => { controller.abort(); sub.wake?.() }
   ctx.res.once('close', abort)
-  let observation: Awaited<ReturnType<NonNullable<typeof ctx.deps.sessions.owner>['observe']>> = null
+  let releaseObservation: () => void = () => undefined
   let nativeEnded = false
+  const observationEnded = () => { nativeEnded = true; sub.wake?.() }
   try {
     sse.start()
     sse.event('initial', { session_id: sid })
-    observation = await ctx.deps.sessions.owner?.observe(sid, profile, controller.signal) ?? null
-    void observation?.ended.then(() => { nativeEnded = true; sub.wake?.() })
+    // Attachment can wait on a native RPC; the HTTP owner must keep draining and heartbeating meanwhile.
+    void ctx.deps.sessions.owner?.observe(sid, profile, controller.signal).then((acquired) => {
+      if (controller.signal.aborted) { acquired?.release(); return }
+      if (!acquired) return
+      releaseObservation = acquired.release
+      void acquired.ended.then(observationEnded, observationEnded)
+    }).catch(observationEnded)
     if (sse.isClosed) return
     const recover = ctx.deps.registry.attachableRunForSession(sid)
     if (recover) {
@@ -389,7 +395,7 @@ export async function handleSessionStream(ctx: RequestContext): Promise<void> {
   } finally {
     ctx.res.removeListener('close', abort)
     controller.abort()
-    observation?.release()
+    releaseObservation()
     ctx.deps.channels.unsubscribe(sid, sub)
     sse.end()
   }

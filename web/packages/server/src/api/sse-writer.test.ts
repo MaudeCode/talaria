@@ -1,7 +1,7 @@
 import { createServer, get, type IncomingMessage, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { SseWriter, StreamSlots } from './sse-routes.js'
+import { SseWriter, StreamSlots, SSE_HEARTBEAT_INTERVAL_MS } from './sse-routes.js'
 import type { RequestContext } from '../http/context.js'
 import { bootTestServer, parseSseChunk, type SseFrame, type TestServer } from '../test/harness.js'
 
@@ -15,7 +15,7 @@ const frameBytes = (i: number): number => Buffer.byteLength(`id: run:${String(i)
  * shares this process, so its response can arrive after a `resume()`: the call is remembered, and `opened` resolves once
  * the response has.
  */
-function read(url: string, paused = false): { done: Promise<{ text: string; error: string | null }>; opened: Promise<void>; resume: () => void; destroy: () => void } {
+function read(url: string, paused = false): { done: Promise<{ text: string; error: string | null }>; opened: Promise<void>; readonly text: string; resume: () => void; destroy: () => void } {
   let res: IncomingMessage | null = null
   let hold = paused
   let text = ''
@@ -35,7 +35,7 @@ function read(url: string, paused = false): { done: Promise<{ text: string; erro
       onOpen()
     })
   })
-  return { done, opened, resume: () => { hold = false; res?.resume() }, destroy: () => { req.destroy() } }
+  return { done, opened, get text() { return text }, resume: () => { hold = false; res?.resume() }, destroy: () => { req.destroy() } }
 }
 
 /** One `SseWriter` per request on a real HTTP server, so backpressure comes from a real socket. */
@@ -212,6 +212,45 @@ describe('event streams deliver past the old 4 MiB cut-off', () => {
     client.destroy()
     const got = await frames(client)
     expect(got.filter((f) => f.event === 'bg_task_complete').at(-1)?.data).toMatchObject({ n: 200 })
+  })
+
+  it('keeps session heartbeats flowing while the native owner attachment is pending', async () => {
+    let attach!: (value: Awaited<ReturnType<NonNullable<typeof s.deps.sessions.owner>['observe']>>) => void
+    const pending = new Promise<Awaited<ReturnType<NonNullable<typeof s.deps.sessions.owner>['observe']>>>((resolve) => { attach = resolve })
+    const observe = vi.spyOn(s.deps.sessions.owner!, 'observe').mockReturnValue(pending)
+    const pulses: (() => void)[] = []
+    const timeout = globalThis.setTimeout
+    const clock = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((callback: () => void, delay?: number) => {
+      const timer = timeout(callback, delay)
+      if (delay === SSE_HEARTBEAT_INTERVAL_MS) pulses.push(() => { clearTimeout(timer); callback() })
+      return timer
+    }))
+    const client = read(`${s.base}/api/session/stream?session_id=${sid}`)
+    try {
+      await client.opened
+      await vi.waitFor(() => { expect(observe).toHaveBeenCalledTimes(1) })
+      pulses.shift()?.()
+      await vi.waitFor(() => { expect(client.text).toContain(': keepalive') })
+      expect(s.deps.channels.subscriberCount(sid)).toBe(1)
+    } finally {
+      attach(null); client.destroy(); await client.done
+      clock.mockRestore(); observe.mockRestore()
+    }
+  })
+
+  it('releases an observation that arrives after its session reader disconnects', async () => {
+    let attach!: (value: Awaited<ReturnType<NonNullable<typeof s.deps.sessions.owner>['observe']>>) => void
+    const observe = vi.spyOn(s.deps.sessions.owner!, 'observe').mockReturnValue(new Promise((resolve) => { attach = resolve }))
+    const release = vi.fn()
+    const client = read(`${s.base}/api/session/stream?session_id=${sid}`)
+    try {
+      await client.opened
+      await vi.waitFor(() => { expect(observe).toHaveBeenCalledTimes(1) })
+      client.destroy(); await client.done
+      await vi.waitFor(() => { expect(observe.mock.calls[0]![2].aborted).toBe(true) })
+      attach({ release, ended: new Promise(() => undefined) })
+      await vi.waitFor(() => { expect(release).toHaveBeenCalledTimes(1); expect(s.deps.channels.subscriberCount(sid)).toBe(0) })
+    } finally { attach(null); client.destroy(); observe.mockRestore() }
   })
 
   it('releases the native observation and stream slot when a paused session reader disconnects', async () => {

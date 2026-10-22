@@ -204,7 +204,7 @@ export class GatewaySessions {
     const target = await this.target(sid, profile)
     if (!target || signal.aborted) return null
     const base = await this.deps.service.detail(sid, {})
-    const result = await this.call(target, { action: 'snapshot' })
+    const result = await this.call(target, { action: 'snapshot' }, signal)
     if (signal.aborted) return null
     if (!result.snapshot || result.state !== 'attached') return { release: () => undefined, ended: Promise.resolve(result) }
     const observation = this.transport(target, base, result.snapshot)
@@ -263,14 +263,14 @@ export class GatewaySessions {
     return result.snapshot.session_id
   }
 
-  private async call(target: Target, params: Omit<GatewaySessionParams, 'session_id' | 'profile_home'>): Promise<GatewaySessionResult> {
+  private async call(target: Target, params: Omit<GatewaySessionParams, 'session_id' | 'profile_home'>, signal?: AbortSignal): Promise<GatewaySessionResult> {
     const sidecar = this.deps.sidecar()
     if (!sidecar) return { state: 'unavailable', reason: 'sidecar_unavailable', snapshot: null, receipt: null }
     const before = this.modelChanges.get(target.key)
     const modelMutation = params.action === 'mutate' && params.operation === 'model'
     if (modelMutation) this.modelMutations.set(target.key, (this.modelMutations.get(target.key) ?? 0) + 1)
     try {
-      const result = await sidecar.call('gateway.session', { ...params, profile_home: target.home, session_id: target.sid }, { timeoutMs: params.action === 'mutate' ? 675_000 : 35_000 })
+      const result = await sidecar.call('gateway.session', { ...params, profile_home: target.home, session_id: target.sid }, { timeoutMs: params.action === 'mutate' ? 675_000 : 35_000, ...(signal ? { signal } : {}) })
       if (params.action === 'mutate' && params.operation === 'model' && result.snapshot) {
         const change = modelChange(result.receipt ?? {}, params.payload)
         // The stream can resolve a deferred pick before its HTTP ACK returns. Keep the later observation.

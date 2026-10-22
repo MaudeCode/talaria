@@ -160,6 +160,25 @@ describe('canonical owner attachment', () => {
     } finally { source.mockRestore() }
   })
 
+  it('cancels the initial owner snapshot when its viewer disconnects before attachment', async () => {
+    const controller = new AbortController()
+    const source = vi.spyOn(s.deps.sessions, 'stateDbSources').mockResolvedValue(new Map([[sid, { source: 'cli', canonical: true }]]))
+    const detail = vi.spyOn(s.deps.sessions, 'detail').mockResolvedValue({ session_id: sid, title: 'Native chat' })
+    let received: AbortSignal | undefined
+    let release!: (result: GatewaySessionResult) => void
+    const snapshotRead = new Promise<GatewaySessionResult>((resolve) => { release = resolve })
+    sidecar.respond('gateway.session', (_params, _emit, opts) => { received = opts.signal; return snapshotRead })
+    const viewing = s.deps.sessions.owner!.observe(sid, 'default', controller.signal)
+    try {
+      await vi.waitFor(() => { expect(sidecar.calls.some((call) => call.method === 'gateway.session')).toBe(true) })
+      controller.abort()
+      expect(received).toBe(controller.signal)
+      release(attached(snapshot()))
+      expect(await viewing).toBeNull()
+      expect(sidecar.calls.some((call) => call.method === 'gateway.session' && (call.params as { action: string }).action === 'watch')).toBe(false)
+    } finally { controller.abort(); release(attached(snapshot())); await viewing; source.mockRestore(); detail.mockRestore() }
+  })
+
   it('claims the HTTP stream slot and validates visibility before attaching a native viewer', async () => {
     sidecar.calls.length = 0
     expect((await s.get('/api/session/stream?session_id=bad%2Fsession')).status).toBe(404)
