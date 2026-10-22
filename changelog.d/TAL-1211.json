@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Large conversation lists update more smoothly in the Web sidebar.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
