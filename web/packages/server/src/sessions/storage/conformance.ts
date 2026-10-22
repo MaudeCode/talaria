@@ -27,7 +27,7 @@ export function runSessionBackendConformance(name: string, makeStorage: () => Se
       const revision = await write(rows)
       expect(await sessions.exists('session')).toBe(true)
       const document = await sessions.readDocument('session')
-      expect(document).toMatchObject({ doc: { session_id: 'session', title: 'Test' }, messageCount: 3, revision })
+      expect(document).toMatchObject({ doc: { session_id: 'session', title: 'Test' }, messages: rows, messageCount: 3, revision })
       expect(document?.doc).not.toHaveProperty('messages')
       for (const range of [{ start: 0, end: 0 }, { start: 1, end: 2 }, { start: 2, end: 9 }, { start: 9, end: 10 }, { start: 0, end: Infinity }]) {
         expect(await sessions.readMessages('session', range)).toEqual(rows.slice(range.start, range.end))

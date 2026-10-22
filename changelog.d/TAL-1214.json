@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Saved conversations load with less disk and processing work.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

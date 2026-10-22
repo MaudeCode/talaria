@@ -68,7 +68,7 @@ class JsonSessions implements SessionBackend {
           const count = doc.message_count
           const known = typeof count === 'number' && Number.isInteger(count) && count >= 0 ? count : null
           if (['session_id', 'title', 'created_at', 'updated_at'].every((key) => key in doc) && (known !== null || 'anchor_scene_index' in doc)) {
-            return { doc, messageCount: known, revision: signature, metadataOnly: true }
+            return { doc, messages: [], messageCount: known, revision: signature, metadataOnly: true }
           }
         }
       } catch { /* legacy document: use a full stable read */ }
@@ -82,9 +82,9 @@ class JsonSessions implements SessionBackend {
       const after = statSignature(path)
       if (before !== null && before === after) { revision = after; break }
     }
-    const messageCount = Array.isArray(doc.messages) ? doc.messages.length : 0
+    const messages = Array.isArray(doc.messages) ? doc.messages as Message[] : []
     delete doc.messages
-    return { doc, messageCount, revision, metadataOnly: false }
+    return { doc, messages, messageCount: messages.length, revision, metadataOnly: false }
   }
   async readMessages(sid: string, range: { start: number; end: number }): Promise<Message[]> {
     const path = this.path(sid)
