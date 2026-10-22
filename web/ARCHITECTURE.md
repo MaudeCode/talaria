@@ -165,7 +165,11 @@ in `sessions/storage/search-text.ts` define search semantics for every adapter.
 
 An adapter implements `StorageBackend`, passes `runSessionBackendConformance`, `runDocumentBackendConformance` and `runJournalBackendConformance`, and owns its recovery
 checks through `diagnose`/`repair`. Cross-backend recovery still reconciles the read-only Agent database.
-The JSON adapter keeps existing paths, bytes, permissions and atomic publication behavior. Auth table writes
+The JSON adapter keeps existing paths, bytes, permissions and atomic publication behavior. Its persisted-session
+ID cache checks the session directory revision on every read and returns an independent set. Owned writes and
+deletes invalidate it before mutation so concurrent external changes cannot be stamped over. External directory
+changes also invalidate it. Session listing reuses one index read
+when the index is healthy and retains its rebuild/full-scan recovery paths. Auth table writes
 stage and fsync asynchronously, then compare the expected revision and publish without an intervening await.
 Shutdown drains queued writes and closes journal writers before storage closes.
 

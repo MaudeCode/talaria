@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Chat lists avoid repeated disk scans when sessions have not changed.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
