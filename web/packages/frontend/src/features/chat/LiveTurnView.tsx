@@ -50,19 +50,29 @@ export function LiveTurnView({ turn, name, mode, userVisible, omitToolIds }: { t
  * takes it back into the composer, Cancel drops it, Send now delivers it at once. The buttons keep the composer's focus.
  */
 function PendingSteerMessage({ sessionId, steer }: { sessionId: string; steer: PendingSteerRow }) {
-  // One request at a time: a second click never sends twice or reports the first one's outcome as its own.
+  // Send now is executed by the server: its button is busy, and Edit and Cancel wait rather than race it.
   const [busy, setBusy] = useState(false)
+  // Edit and Cancel take the row away at once (the stream drops it once the server confirms); a refusal brings it back.
+  // The steer lives in stream state, not a query, so the row keeps this until the stream removes it.
+  const [gone, setGone] = useState(false)
   const keepFocus = (e: PointerEvent) => { e.preventDefault() }
   const run = async (request: () => Promise<void>) => {
     if (busy) return
     setBusy(true)
     try { await request() } catch (e) { showToast(e instanceof Error ? e.message : String(e), 4000, 'error') } finally { setBusy(false) }
   }
-  const withdraw = (reason: SteerWithdrawRequest['reason']) => run(async () => {
-    const r = await withdrawSteer({ session_id: sessionId, steer_id: steer.steerId, reason })
-    if (!r.withdrawn) { showToast(m.steer_already_taken(), 2500); return }
-    if (reason === 'edit' && r.text !== undefined) returnToComposer(sessionId, r.text)
-  })
+  const withdraw = async (reason: SteerWithdrawRequest['reason']) => {
+    setGone(true)
+    if (reason === 'edit') returnToComposer(sessionId, steer.text)
+    try {
+      const r = await withdrawSteer({ session_id: sessionId, steer_id: steer.steerId, reason })
+      // Already taken: the steer is being delivered, so the row stays gone and says why.
+      if (!r.withdrawn) showToast(m.steer_already_taken(), 2500)
+    } catch (e) {
+      setGone(false)
+      showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
+    }
+  }
   const sendNow = () => run(async () => {
     const reply = await sendSteerNow({ session_id: sessionId, steer_id: steer.steerId })
     // Older servers only send redirected; remove this fallback with that field.
@@ -75,17 +85,18 @@ function PendingSteerMessage({ sessionId, steer }: { sessionId: string; steer: P
       default: showToast(m.steer_send_now_failed(), 2500); break
     }
   })
-  const button = (label: string, icon: ReactNode, onClick: () => Promise<void>) => (
-    <button type="button" className="steer-action" aria-label={label} title={label} disabled={busy} onPointerDown={keepFocus} onClick={() => { void onClick() }}>{icon}</button>
+  const button = (label: string, icon: ReactNode, onClick: () => Promise<void>, waits = false) => (
+    <button type="button" className="steer-action" aria-label={label} title={label} disabled={busy} aria-busy={waits && busy || undefined} onPointerDown={keepFocus} onClick={() => { void onClick() }}>{icon}</button>
   )
   const { edit, cancel, send_now: sendNowAllowed } = steer.actions
   const actions = edit || cancel || sendNowAllowed ? (
     <span className="steer-actions">
-      {sendNowAllowed && button(m.steer_send_now(), <ArrowUp size={14} aria-hidden="true" />, sendNow)}
+      {sendNowAllowed && button(m.steer_send_now(), <ArrowUp size={14} aria-hidden="true" />, sendNow, true)}
       {edit && button(m.steer_edit(), <Pencil size={14} aria-hidden="true" />, () => withdraw('edit'))}
       {cancel && button(m.steer_cancel(), <X size={14} aria-hidden="true" />, () => withdraw('cancel'))}
     </span>
   ) : null
+  if (gone) return null
   return <SteerMessage text={steer.text} state={steer.state} actions={actions} />
 }
 

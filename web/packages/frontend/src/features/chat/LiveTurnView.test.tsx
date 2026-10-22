@@ -259,28 +259,35 @@ describe('live steering', () => {
     expect(view.queryAllByRole('button', { name: /steering message|Send now/ })).toHaveLength(0)
   })
 
-  it('Edit returns the text to the composer, Cancel and Send now ask the server, and a refusal says why', async () => {
+  it('Edit returns the text and drops the row at once; a refused withdraw brings the row back (TAL-1179)', async () => {
     const run = liveRun()
     run.emit(pending('s1'))
     const returned: string[] = []
     const stop = onReturnToComposer('s', (text) => { returned.push(text) })
-    vi.mocked(api.withdrawSteer).mockResolvedValueOnce({ withdrawn: true, text: 'Check b too' }).mockResolvedValueOnce({ withdrawn: false }).mockResolvedValueOnce({ withdrawn: true, text: 'Check b too' })
-    vi.mocked(api.sendSteerNow).mockResolvedValueOnce({ redirected: true } as never).mockResolvedValueOnce({ redirected: false } as never)
+    let refuse!: (error: unknown) => void
+    vi.mocked(api.withdrawSteer).mockReturnValueOnce(new Promise((_, reject) => { refuse = reject }) as never)
     const view = render(<View run={run} />)
     fireEvent.click(view.getByRole('button', { name: 'Edit steering message' }))
-    await waitFor(() => { expect(returned).toEqual(['Check b too']) })
+    expect(returned).toEqual(['Check b too'])
+    expect(view.queryByText('Check b too')).toBeNull()
     expect(api.withdrawSteer).toHaveBeenLastCalledWith({ session_id: 's', steer_id: 's1', reason: 'edit' })
-    fireEvent.click(view.getByRole('button', { name: 'Edit steering message' }))
-    await waitFor(() => { expect(showToast).toHaveBeenCalledWith('The agent already took this steering message.', 2500) })
-    expect(returned).toEqual(['Check b too'])
-    fireEvent.click(view.getByRole('button', { name: 'Cancel steering message' }))
-    await waitFor(() => { expect(api.withdrawSteer).toHaveBeenLastCalledWith({ session_id: 's', steer_id: 's1', reason: 'cancel' }) })
-    expect(returned).toEqual(['Check b too'])
-    fireEvent.click(view.getByRole('button', { name: 'Send now' }))
-    await waitFor(() => { expect(api.sendSteerNow).toHaveBeenCalledWith({ session_id: 's', steer_id: 's1' }) })
+    await act(async () => { refuse(new Error('Network down')); await Promise.resolve() })
+    expect(await view.findByText('Check b too')).toBeInTheDocument()
+    expect(showToast).toHaveBeenLastCalledWith('Network down', 4000, 'error')
+    stop()
+  })
+
+  it('Cancel drops the row at once, and Send now asks the server', async () => {
+    const run = liveRun()
+    run.emit(pending('s1'))
+    vi.mocked(api.withdrawSteer).mockReturnValueOnce(new Promise(() => undefined) as never)
+    vi.mocked(api.sendSteerNow).mockResolvedValueOnce({ redirected: false } as never)
+    const view = render(<View run={run} />)
     fireEvent.click(view.getByRole('button', { name: 'Send now' }))
     await waitFor(() => { expect(showToast).toHaveBeenCalledWith('Nothing is running to take it now; it stays pending.', 2500) })
-    stop()
+    fireEvent.click(view.getByRole('button', { name: 'Cancel steering message' }))
+    expect(view.queryByText('Check b too')).toBeNull()
+    expect(api.withdrawSteer).toHaveBeenLastCalledWith({ session_id: 's', steer_id: 's1', reason: 'cancel' })
   })
 
   it.each([
@@ -312,17 +319,15 @@ describe('live steering', () => {
     expect(showToast).toHaveBeenCalledWith("Couldn't send it now; it stays pending.", 2500)
   })
 
-  it('says so when the agent already took a steer being cancelled, and reports a failed request as an error', async () => {
+  it('says so when the agent already took a steer being cancelled, keeping the row gone', async () => {
     const run = liveRun()
     run.emit(pending('s1'))
     vi.mocked(showToast).mockClear()
-    vi.mocked(api.withdrawSteer).mockResolvedValueOnce({ withdrawn: false }).mockRejectedValueOnce(new Error('Network down'))
+    vi.mocked(api.withdrawSteer).mockResolvedValueOnce({ withdrawn: false })
     const view = render(<View run={run} />)
     fireEvent.click(view.getByRole('button', { name: 'Cancel steering message' }))
     await waitFor(() => { expect(showToast).toHaveBeenCalledWith('The agent already took this steering message.', 2500) })
-    await waitFor(() => { expect(view.getByRole('button', { name: 'Cancel steering message' })).toBeEnabled() })
-    fireEvent.click(view.getByRole('button', { name: 'Cancel steering message' }))
-    await waitFor(() => { expect(showToast).toHaveBeenLastCalledWith('Network down', 4000, 'error') })
+    expect(view.queryByText('Check b too')).toBeNull()
   })
 
   it('sends one request at a time from a pending steer\'s buttons', async () => {

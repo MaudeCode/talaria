@@ -123,7 +123,7 @@ it('updates row controls when the server changes read-only and branching capabil
   expect(screen.getByRole('button', { name: 'Branch from here' })).toBeInTheDocument()
 })
 
-type ComposerProps = { session: { enabled_toolsets?: string[] | null; owner_attachment?: { admissions: { admission_id: string }[] } } | null; yolo: boolean; reasoning: string | null
+interface ComposerProps { session: { enabled_toolsets?: string[] | null; owner_attachment?: { admissions: { admission_id: string }[] } } | null; yolo: boolean; reasoning: string | null
   onToolsetsChange: (t: string[] | null) => void; onToggleYolo: () => void; onReasoningChange: (level: string | null) => void
   onLocalCommand: (name: string, args: string) => Promise<boolean | 'refused'>; onOwnerAction: (request: object) => Promise<void> }
 const lastComposer = () => composer.mock.calls.at(-1)![0] as ComposerProps
