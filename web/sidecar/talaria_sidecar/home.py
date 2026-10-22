@@ -71,7 +71,12 @@ def _cached_scope(home: Path, kind: str, stamp: tuple | None, inputs, build):
         while len(_SCOPE_CACHE) > _SCOPE_CACHE_MAX:
             del _SCOPE_CACHE[next(iter(_SCOPE_CACHE))]
         cached = scopes.pop(kind, None)
-        if stamp is not None and cached is not None and cached[:2] == (stamp, inputs):
+        if (
+            stamp is not None
+            and cached is not None
+            and cached[:2] == (stamp, inputs)
+            and _scope_stamp(home) == stamp
+        ):
             scopes[kind] = cached
             return copy.deepcopy(cached[2])
         value = build()

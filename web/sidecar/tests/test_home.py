@@ -295,6 +295,37 @@ def test_scope_cache_preserves_dashboard_plugin_loading_refusal(tmp_path, monkey
     assert cached_scopes.reads.count(("secrets", home)) == 1
 
 
+@pytest.mark.parametrize("changed_file", [".env", "config.yaml"])
+def test_scope_cache_rechecks_a_file_replaced_after_entry_stamp(tmp_path, monkeypatch, cached_scopes, changed_file):
+    home = tmp_path / "work"
+    home.mkdir()
+    (home / ".env").write_text("KEY=first\n")
+    (home / "config.yaml").write_text('{"TERMINAL_ENV": "ssh"}')
+    with home_module.scoped_home(home):
+        assert cached_scopes.secrets.get() == {"KEY": "first"}
+        assert cached_scopes.active.get() == {"TERMINAL_ENV": "ssh"}
+
+    stamp = home_module._scope_stamp
+    replaced = False
+
+    def replace_after_stamp(path):
+        nonlocal replaced
+        captured = stamp(path)
+        if not replaced:
+            replaced = True
+            replacement = home / "replacement"
+            replacement.write_text("KEY=rotated\n" if changed_file == ".env" else '{"TERMINAL_ENV": "docker"}')
+            replacement.replace(home / changed_file)
+        return captured
+
+    monkeypatch.setattr(home_module, "_scope_stamp", replace_after_stamp)
+    with home_module.scoped_home(home):
+        assert cached_scopes.secrets.get() == {"KEY": "rotated" if changed_file == ".env" else "first"}
+        assert cached_scopes.active.get() == {"TERMINAL_ENV": "docker" if changed_file == "config.yaml" else "ssh"}
+    assert cached_scopes.secrets.get() is None
+    assert cached_scopes.active.get() is None
+
+
 def test_scope_cache_preserves_dynamic_secrets_and_private_bindings(tmp_path, cached_scopes, scope_calls):
     home = tmp_path / "work"
     home.mkdir()
