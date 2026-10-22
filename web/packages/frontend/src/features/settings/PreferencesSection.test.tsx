@@ -14,7 +14,7 @@ vi.mock('../../api/endpoints', () => ({
 }))
 vi.mock('../toast/toast', () => ({ showToast: vi.fn() }))
 import { PreferencesSection } from './PreferencesSection'
-import { saveSettings, fetchAuxiliaryModels, setDefaultModel } from '../../api/endpoints'
+import { saveSettings, fetchAuxiliaryModels, fetchModels, setDefaultModel } from '../../api/endpoints'
 import { BootstrapContext } from '../../app/bootstrap'
 import { DEFAULT_BOOTSTRAP } from '../../contracts/adapters/memory'
 
@@ -65,4 +65,25 @@ it('renders and saves only the server-provided speed tiers (TAL-788)', async () 
   expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(['Standard', 'Fast', 'Ultrafast'])
   await userEvent.click(screen.getByRole('option', { name: 'Ultrafast' }))
   expect(setDefaultModel).toHaveBeenCalledWith('gpt-6-astra', 'openai-codex', { service_tier: 'ultrafast' })
+})
+
+it('shows a chosen speed and default model at once, sending the shown model with the speed (TAL-1179)', async () => {
+  vi.mocked(fetchAuxiliaryModels).mockResolvedValue({ main: { model: 'gpt-6-astra', provider: 'openai-codex', service_tier: 'priority', supported_speed_tiers: [
+    { id: 'standard', service_tier: 'default' }, { id: 'priority', service_tier: 'priority' },
+  ] }, tasks: [] })
+  vi.mocked(fetchModels).mockResolvedValue({ groups: [{ provider: 'OpenAI Codex', provider_id: 'openai-codex', models: [{ id: '@openai-codex:gpt-6-astra', label: 'GPT-6 Astra', provider_id: 'openai-codex' }, { id: '@openai-codex:gpt-5.6-sol', label: 'GPT-5.6 Sol', provider_id: 'openai-codex' }] }] } as never)
+  vi.mocked(setDefaultModel).mockReturnValue(new Promise(() => undefined))
+  renderSection()
+  const model = await screen.findByRole('combobox', { name: 'Default Model' })
+  await userEvent.click(model)
+  await userEvent.click(await screen.findByRole('option', { name: 'GPT-5.6 Sol' }))
+  expect(setDefaultModel).toHaveBeenLastCalledWith('@openai-codex:gpt-5.6-sol', 'openai-codex', undefined)
+  expect(model).toHaveTextContent('GPT-5.6 Sol')
+  expect(model).not.toHaveAttribute('data-disabled')
+  const speed = screen.getByRole('combobox', { name: 'Speed' })
+  await userEvent.click(speed)
+  await userEvent.click(await screen.findByRole('option', { name: 'Standard' }))
+  expect(speed).toHaveTextContent('Standard')
+  expect(model).toHaveTextContent('GPT-5.6 Sol')
+  expect(setDefaultModel).toHaveBeenCalledTimes(1)
 })

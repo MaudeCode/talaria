@@ -271,7 +271,7 @@ it('reads the server revision before the next connector rule after an unknown ou
 
 it('deletes a skill at once, returning to the list without it, and restores it on refusal', async () => {
   let refuse!: (error: unknown) => void
-  vi.mocked(api.fetchSkillContent).mockResolvedValue({ name: 'alpha', content: '# alpha', editable: true, linked_files: {} } as never)
+  vi.mocked(api.fetchSkillContent).mockResolvedValue({ name: 'alpha', content: '# alpha', editable: true, linked_files: {} })
   vi.mocked(api.deleteSkill).mockReturnValue(new Promise((_, reject) => { refuse = reject }) as never)
   setup(cases[0]!)
   await userEvent.click(await screen.findByRole('button', { name: /^alpha/ }))
@@ -286,7 +286,7 @@ it('deletes a skill at once, returning to the list without it, and restores it o
 
 it('keeps a skill edit typed during a save, clearing only the confirmed draft', async () => {
   let answer!: (value: unknown) => void
-  vi.mocked(api.fetchSkillContent).mockResolvedValue({ name: 'alpha', content: '# alpha', editable: true, linked_files: {} } as never)
+  vi.mocked(api.fetchSkillContent).mockResolvedValue({ name: 'alpha', content: '# alpha', editable: true, linked_files: {} })
   vi.mocked(api.saveSkill).mockReturnValue(new Promise((resolve) => { answer = resolve }) as never)
   setup(cases[0]!)
   await userEvent.click(await screen.findByRole('button', { name: /^alpha/ }))
