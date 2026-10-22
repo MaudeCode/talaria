@@ -117,6 +117,11 @@ Relay close set (stop draining the live queue): `stream_end`, `cancel`,
 `apperror`, and legacy `error` (`RELAY_CLOSE_EVENTS`).
 `done` is **not** a relay-close event because `title` and `stream_end` follow it.
 
+Web caches a terminal frame's settled session directly, refreshing session lists
+and that session's other metadata without refetching transcript detail. Terminal
+frames without a session retain the detail-refresh fallback. Admitting a live
+turn refreshes only session lists and that session's status.
+
 ## Cursor and resume semantics
 
 `/api/sessions/{session_id}/events` resumes from `Last-Event-ID` (or the

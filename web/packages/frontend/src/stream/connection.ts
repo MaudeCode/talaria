@@ -56,9 +56,14 @@ export function configureStream(opts: { queryClient: QueryClient; onCompressed?:
   if (opts.onCompressed) hooks.onCompressed = opts.onCompressed
 }
 
-function invalidateSession(sessionId: string): void {
+function invalidateSession(sessionId: string, mode: 'all' | 'settled' | 'started' = 'all'): void {
   if (!queryClient) return
-  void invalidateSessionQueries(queryClient, sessionId)
+  if (mode === 'started') {
+    void queryClient.invalidateQueries({ queryKey: ['sessions', 'list'] })
+    void queryClient.invalidateQueries({ queryKey: keys.sessions.status(sessionId) })
+    return
+  }
+  void invalidateSessionQueries(queryClient, sessionId, { detail: mode !== 'settled' })
 }
 
 function applySideEffects(sessionId: string, event: ChatEvent): void {
@@ -83,12 +88,13 @@ function applySideEffects(sessionId: string, event: ChatEvent): void {
     case 'cancel': {
       // Every terminal frame carries the settled session; its scenes replace the live turn at once.
       const session = 'session' in event.data ? event.data.session : undefined
-      if (queryClient && session && typeof session === 'object' && 'session_id' in session && session.session_id === sessionId && 'messages' in session && Array.isArray(session.messages)) {
+      const settled = !!session && typeof session === 'object' && 'session_id' in session && session.session_id === sessionId && 'messages' in session && Array.isArray(session.messages)
+      if (queryClient && settled) {
         // A read started before settlement must not replace this authoritative snapshot when it answers later.
         void queryClient.cancelQueries({ queryKey: keys.sessions.detail(sessionId) })
         queryClient.setQueryData(keys.sessions.detail(sessionId), { session: session as Session })
-        void invalidateSessionQueries(queryClient)
-      } else invalidateSession(sessionId)
+      }
+      invalidateSession(sessionId, settled ? 'settled' : 'all')
       break
     }
     // TAL-803: the session's notice list changed; the cached session shows the new one until its next load.
@@ -252,6 +258,7 @@ export function startTurn(input: StartTurnInput): Promise<ChatStartResponse> {
       if (!current()) return res
       if (res.owner_attachment && res.session && res.stream_id) {
         client?.setQueryData(keys.sessions.detail(input.sessionId), { session: res.session })
+        invalidateSession(input.sessionId, 'started')
         await attachToStream(input.sessionId, res.stream_id, res.session)
         return res
       }
@@ -267,6 +274,7 @@ export function startTurn(input: StartTurnInput): Promise<ChatStartResponse> {
           // FirstSend must retire while TurnIntent still owns the row; otherwise its fallback revives it after settlement.
           if (first?.sessionId === input.sessionId && getFirstSend() === first) endFirstSend()
           client?.setQueryData(keys.sessions.detail(input.sessionId), result)
+          invalidateSession(input.sessionId, 'settled')
         }
       }
       return res
@@ -322,7 +330,7 @@ export function adoptTurn(sessionId: string, message: string, res: ChatStartResp
   owners.set(sessionId, owner)
   dispatch({ type: 'start', sessionId, streamId: res.stream_id, turnId: res.turn_id ?? null, userMessageId: res.user_message_id === undefined || res.user_message_id === null ? null : String(res.user_message_id), userText: message, userAttachments: attachments, now: Date.now(), serverStartedAt: res.pending_started_at })
   open(sessionId, res.stream_id, null, owner)
-  invalidateSession(sessionId)
+  invalidateSession(sessionId, 'started')
 }
 
 /** Re-attach to a run the server reports as active (hard refresh, tab restore, sidebar switch). */
