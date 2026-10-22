@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Large chat lists stay responsive when refreshing and searching.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

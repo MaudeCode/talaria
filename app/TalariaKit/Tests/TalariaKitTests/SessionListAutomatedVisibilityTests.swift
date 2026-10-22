@@ -1,6 +1,7 @@
 import XCTest
 import AVFoundation
 import ImageIO
+import Observation
 import SwiftData
 import UniformTypeIdentifiers
 @testable import TalariaKit
@@ -8,6 +9,95 @@ import UniformTypeIdentifiers
 
 @MainActor
 extension SessionListMutationTests {
+    func testSessionPresentationFiltersOncePerRowsChangeAcrossRepeatedReads() async throws {
+        let rows = (0..<2_000).map { index in
+            "{\"session_id\":\"session-\(index)\",\"title\":\"Session \(index)\",\"source_kind\":\"\(index.isMultiple(of: 2) ? "cron" : "webhook")\"}"
+        }.joined(separator: ",")
+        let viewModel = try makeViewModel { request in
+            apiTestJSONResponse("{\"sessions\":[\(rows)]}", for: request)
+        }
+        var visits = 0
+        viewModel.sessionFilterDidVisit = { visits += 1 }
+
+        for change in 1...2 {
+            let loaded = await viewModel.load()
+            XCTAssertTrue(loaded)
+            for _ in 0..<10 {
+                XCTAssertEqual(viewModel.visibleSessions(searchText: "", selectedProjectID: nil).count, 2_000)
+                let groups = viewModel.scheduledSessionGroups(searchText: "", selectedProjectID: nil)
+                XCTAssertEqual(groups.scheduled.count, 1_000)
+                XCTAssertEqual(groups.webhook.count, 1_000)
+                XCTAssertTrue(groups.ordinary.isEmpty)
+            }
+            XCTAssertEqual(visits, change * 2_000, "Repeated display reads must reuse one filter pass per rows change")
+        }
+    }
+
+    func testSessionPresentationCacheTracksQueryProjectAndVisibility() async throws {
+        let viewModel = try makeViewModel { request in
+            apiTestJSONResponse("""
+            {"sessions":[
+              {"session_id":"ordinary","title":"Needle","project_id":"a"},
+              {"session_id":"cron","title":"Needle job","project_id":"a","source_kind":"cron"},
+              {"session_id":"hook","title":"Other","project_id":"a","source_kind":"webhook"},
+              {"session_id":"other-project","title":"Needle elsewhere","project_id":"b"}
+            ]}
+            """, for: request)
+        }
+        await viewModel.load()
+        var visits = 0
+        viewModel.sessionFilterDidVisit = { visits += 1 }
+
+        XCTAssertEqual(viewModel.visibleSessions(searchText: "", selectedProjectID: nil).count, 4)
+        let searched = viewModel.scheduledSessionGroups(searchText: "needle", selectedProjectID: nil)
+        XCTAssertEqual(searched.ordinary.compactMap(\.sessionId), ["ordinary", "other-project"])
+        XCTAssertEqual(searched.scheduled.compactMap(\.sessionId), ["cron"])
+        XCTAssertTrue(searched.webhook.isEmpty)
+        XCTAssertEqual(viewModel.scheduledSessionGroups(searchText: "  NEEDLE  ", selectedProjectID: nil), searched)
+        XCTAssertEqual(visits, 8, "Equivalent normalized queries must reuse the stored result")
+
+        let project = viewModel.scheduledSessionGroups(searchText: "needle", selectedProjectID: "a")
+        XCTAssertEqual(project.ordinary.compactMap(\.sessionId), ["ordinary"])
+        XCTAssertEqual(project.scheduled.compactMap(\.sessionId), ["cron"])
+        let hidden = viewModel.scheduledSessionGroups(
+            searchText: "needle", selectedProjectID: "a",
+            automatedVisibility: AutomatedSessionVisibility(showsCron: false, showsCli: true)
+        )
+        XCTAssertEqual(hidden.ordinary.compactMap(\.sessionId), ["ordinary"])
+        XCTAssertTrue(hidden.scheduled.isEmpty)
+        XCTAssertEqual(hidden.totalScheduledCount, 0)
+        XCTAssertEqual(visits, 16)
+    }
+
+    func testSessionPresentationCacheHitsKeepObservingRowAndCountChanges() async throws {
+        var loadCount = 0
+        let viewModel = try makeViewModel { request in
+            loadCount += 1
+            return apiTestJSONResponse("""
+            {"sessions":[{"session_id":"cron","title":"Job \(loadCount)","source_kind":"cron"}],
+             "scheduled_session_count":\(loadCount),"scheduled_sessions_truncated":\(loadCount > 1),
+             "webhook_session_count":0,"webhook_sessions_truncated":false}
+            """, for: request)
+        }
+        await viewModel.load()
+        _ = viewModel.scheduledSessionGroups(searchText: "", selectedProjectID: nil)
+        let changed = expectation(description: "A cache hit keeps observing subsequent server changes")
+        let cached = withObservationTracking {
+            viewModel.scheduledSessionGroups(searchText: "", selectedProjectID: nil)
+        } onChange: {
+            changed.fulfill()
+        }
+        XCTAssertEqual(cached.totalScheduledCount, 1)
+        XCTAssertFalse(cached.scheduledCountIsPartial)
+
+        await viewModel.load()
+        await fulfillment(of: [changed], timeout: 1)
+        let refreshed = viewModel.scheduledSessionGroups(searchText: "", selectedProjectID: nil)
+        XCTAssertEqual(refreshed.scheduled.first?.title, "Job 2")
+        XCTAssertEqual(refreshed.totalScheduledCount, 2)
+        XCTAssertTrue(refreshed.scheduledCountIsPartial)
+    }
+
     /// The server classifies every row (`source_kind`, TAL-310); the app reads that kind and
     /// never scans source markers, so markers alone classify nothing here.
     func testSourceClassifiersReadTheServerKind() {

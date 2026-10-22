@@ -917,7 +917,8 @@ struct SessionListView: View {
     }
 
     private var content: some View {
-        SidebarList {
+        let groups = scheduledSessionGroups
+        return SidebarList {
             if viewModel.isViewingCachedData {
                 SessionListBanner(systemImage: "wifi.slash", title: "Offline - viewing cached version")
                     .padding(.top, 16)
@@ -945,7 +946,7 @@ struct SessionListView: View {
                 )
             }
 
-            if scheduledSessionGroups.showsDisclosure(isSearchActive: hasSearchQuery) {
+            if groups.showsDisclosure(isSearchActive: hasSearchQuery) {
                 GroupedSessionsDisclosure(
                     title: String(localized: "Scheduled sessions"),
                     assetImage: "LucideCalendarClock",
@@ -953,9 +954,9 @@ struct SessionListView: View {
                     expandAccessibilityLabel: String(localized: "Expand scheduled sessions"),
                     collapseAccessibilityLabel: String(localized: "Collapse scheduled sessions"),
                     viewModel: viewModel,
-                    sessions: scheduledSessionGroups.scheduled,
-                    totalCount: scheduledSessionGroups.totalScheduledCount,
-                    countIsPartial: scheduledSessionGroups.scheduledCountIsPartial,
+                    sessions: groups.scheduled,
+                    totalCount: groups.totalScheduledCount,
+                    countIsPartial: groups.scheduledCountIsPartial,
                     isSearchActive: hasSearchQuery,
                     searchText: searchText,
                     showsMessageCount: showsSessionMessageCount,
@@ -969,7 +970,7 @@ struct SessionListView: View {
                 )
             }
 
-            if scheduledSessionGroups.showsWebhookDisclosure(isSearchActive: hasSearchQuery) {
+            if groups.showsWebhookDisclosure(isSearchActive: hasSearchQuery) {
                 GroupedSessionsDisclosure(
                     title: String(localized: "Webhook sessions"),
                     assetImage: nil,
@@ -977,9 +978,9 @@ struct SessionListView: View {
                     expandAccessibilityLabel: String(localized: "Expand webhook sessions"),
                     collapseAccessibilityLabel: String(localized: "Collapse webhook sessions"),
                     viewModel: viewModel,
-                    sessions: scheduledSessionGroups.webhook,
-                    totalCount: scheduledSessionGroups.totalWebhookCount,
-                    countIsPartial: scheduledSessionGroups.webhookCountIsPartial,
+                    sessions: groups.webhook,
+                    totalCount: groups.totalWebhookCount,
+                    countIsPartial: groups.webhookCountIsPartial,
                     isSearchActive: hasSearchQuery,
                     searchText: searchText,
                     showsMessageCount: showsSessionMessageCount,
@@ -995,7 +996,7 @@ struct SessionListView: View {
 
             SessionListRowsSection(
                 viewModel: viewModel,
-                sessions: scheduledSessionGroups.ordinary,
+                sessions: groups.ordinary,
                 emptyTitle: emptySessionsTitle,
                 emptyDescription: emptySessionsDescription,
                 isSearchActive: hasSearchQuery,
@@ -1006,8 +1007,8 @@ struct SessionListView: View {
                     ? navigationState.selectedSessionID
                     : nil,
                 actions: sessionRowActions(),
-                suppressEmptyState: !scheduledSessionGroups.scheduled.isEmpty
-                    || !scheduledSessionGroups.webhook.isEmpty
+                suppressEmptyState: !groups.scheduled.isEmpty
+                    || !groups.webhook.isEmpty
             )
 
             if showsArchivedEntry {
@@ -1031,7 +1032,7 @@ struct SessionListView: View {
             if viewModel.isSelectingSessions {
                 SessionSelectionBar(
                     viewModel: viewModel,
-                    sessions: scheduledSessionGroups.ordinary,
+                    sessions: groups.ordinary,
                     archive: { Task { await performBulkAction(.archive) } },
                     delete: { isConfirmingBulkDelete = true }
                 )
