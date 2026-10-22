@@ -146,36 +146,27 @@ class JsonSessions implements SessionBackend {
     }
     document.messages ??= rows
     const payload = JSON.stringify(document)
-    const directoryRevision = statSignature(this.options.directory)
+    this.invalidatePersistedIds()
     mkdirSync(this.options.directory, { recursive: true })
     if (previousText !== null && Array.isArray(previous?.messages) && previous.messages.length > rows.length) {
       try { writeAtomic(`${path}.bak`, previousText) } catch { /* backup is best effort */ }
     }
     this.searchTexts.delete(sid)
     writeAtomic(path, payload)
-    this.updatePersistedIds(sid, true, directoryRevision)
     return statSignature(path)!
   }
   async delete(sid: string, opts: { tombstone: boolean }): Promise<boolean> {
     const path = this.path(sid)
-    const directoryRevision = statSignature(this.options.directory)
+    this.invalidatePersistedIds()
     this.searchTexts.delete(sid)
     try { rmSync(path, { force: true }) } catch { return false }
     if (existsSync(path)) return false
     try { rmSync(`${path}.bak`, { force: true }) } catch { /* best effort */ }
     if (opts.tombstone) this.addTombstone(sid)
-    this.updatePersistedIds(sid, false, directoryRevision)
     return true
   }
-  private updatePersistedIds(sid: string, present: boolean, previousRevision: string | null): void {
-    const cached = this.persistedIds
-    const revision = statSignature(this.options.directory)
-    // Do not stamp over external changes that preceded this mutation.
-    if (cached?.revision !== previousRevision || revision === null) { this.persistedIds = null; return }
-    if (present) cached.ids.add(sid)
-    else cached.ids.delete(sid)
-    cached.revision = revision
-  }
+  // A mutation's final directory revision cannot distinguish our changes from concurrent external ones.
+  private invalidatePersistedIds(): void { this.persistedIds = null }
   async ids(opts: { strict?: boolean } = {}): Promise<Set<string>> {
     this.check()
     try {
@@ -184,11 +175,11 @@ class JsonSessions implements SessionBackend {
       if (this.persistedIds?.revision === revision) return new Set(this.persistedIds.ids)
       const ids = new Set(readdirSync(directory).filter((n) => n.endsWith('.json') && !n.startsWith('_')).map((n) => n.slice(0, -5)))
       if (revision === statSignature(directory)) this.persistedIds = { revision, ids }
-      else this.persistedIds = null
+      else this.invalidatePersistedIds()
       return new Set(ids)
     }
     catch (error) {
-      this.persistedIds = null
+      this.invalidatePersistedIds()
       if (opts.strict && (error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
       return new Set()
     }

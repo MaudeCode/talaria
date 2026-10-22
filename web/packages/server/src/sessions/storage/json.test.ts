@@ -41,7 +41,8 @@ it('keeps persisted ids current across owned writes, deletes, external edits and
     expect(await storage.sessions.ids()).toEqual(new Set(['first']))
     await storage.sessions.delete('first', { tombstone: true })
     expect(await storage.sessions.ids()).toEqual(new Set())
-    expect(scans).toHaveBeenCalledTimes(1)
+    // Initial read plus revalidation after each owned mutation; unchanged reads reuse the set.
+    expect(scans).toHaveBeenCalledTimes(3)
 
     fs.writeFileSync(join(directory, 'external.json'), '{}')
     fs.utimesSync(directory, 2000000000, 2000000000)
@@ -69,6 +70,37 @@ it('drops cached persisted ids when the directory disappears and preserves stric
     vi.mocked(fs.readdirSync).mockImplementationOnce(() => { throw denied })
     await expect(storage.sessions.ids({ strict: true })).rejects.toBe(denied)
     expect(await storage.sessions.ids()).toEqual(new Set(['second']))
+  } finally { vi.restoreAllMocks(); await storage.close(); fs.rmSync(directory, { recursive: true, force: true }) }
+})
+
+it.each([['write', 'add'], ['write', 'remove'], ['delete', 'add'], ['delete', 'remove']] as const)('sees external changes interleaved with an owned %s (%s, TAL-1226)', async (operation, external) => {
+  const directory = fs.mkdtempSync(join(tmpdir(), 'talaria-json-ids-race-'))
+  const storage = new JsonStorage({ directory, now: () => Date.now() / 1000, stampingSince: () => 0 })
+  const change = { doc: { session_id: 'owned' }, messages: { kind: 'replace' as const, rows: [] } }
+  try {
+    const revision = await storage.sessions.write('owned', change, await storage.sessions.revision('owned'))
+    const externalPath = join(directory, 'external.json')
+    if (external === 'remove') fs.writeFileSync(externalPath, '{}')
+    else fs.rmSync(externalPath, { force: true })
+    expect(await storage.sessions.ids()).toEqual(new Set(external === 'remove' ? ['owned', 'external'] : ['owned']))
+    const mutate = (): void => {
+      if (external === 'add') fs.writeFileSync(externalPath, '{}')
+      else fs.unlinkSync(externalPath)
+      fs.utimesSync(directory, 2000000000, 2000000000)
+    }
+    if (operation === 'write') {
+      const rename = vi.mocked(fs.renameSync).getMockImplementation()!
+      vi.mocked(fs.renameSync).mockImplementationOnce((from, to) => { rename(from, to); mutate() })
+      await storage.sessions.write('owned', change, revision)
+    } else {
+      const remove = fs.rmSync
+      const spy = vi.spyOn(fs, 'rmSync').mockImplementationOnce((path, options) => { remove(path, options); mutate() })
+      await storage.sessions.delete('owned', { tombstone: false })
+      spy.mockRestore()
+    }
+    const expected = new Set([...(operation === 'write' ? ['owned'] : []), ...(external === 'add' ? ['external'] : [])])
+    expect.soft(await storage.sessions.ids()).toEqual(expected)
+    expect.soft(await storage.sessions.ids()).toEqual(expected)
   } finally { vi.restoreAllMocks(); await storage.close(); fs.rmSync(directory, { recursive: true, force: true }) }
 })
 
