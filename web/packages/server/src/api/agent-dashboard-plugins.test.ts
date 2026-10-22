@@ -1,9 +1,17 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
+import { mkdirSync } from 'node:fs'
 
 let s: TestServer | undefined
 afterEach(async () => { await s?.close(); s = undefined })
+
+const password = 'synthetic dashboard password'
+async function loginCookie(server: TestServer): Promise<string> {
+  const login = await server.get('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password }) })
+  expect(login.status).toBe(200)
+  return (login.headers.getSetCookie()[0] ?? '').split(';')[0] ?? ''
+}
 
 it('keeps Agent dashboards distinct from the legacy source and binds every request to its profile', async () => {
   const fake = new FakeSidecar()
@@ -95,9 +103,8 @@ it('loads password-authenticated dashboard assets without cookies while keeping 
   const fake = new FakeSidecar()
   fake.respond('plugins.dashboard_list', () => ({ supported: true, plugins: [{ name: 'board', label: 'Board', version: '', description: '', enabled: true, panel: 'dist/index.html', has_api: true }] }))
   fake.respond('plugins.dashboard_asset', ({ path }) => ({ status: 200, body: Buffer.from(path.endsWith('.js') ? 'window.dashboardLoaded = true' : '<script src="app.js"></script>').toString('base64'), content_type: path.endsWith('.js') ? 'application/javascript' : 'text/html' }))
-  s = await bootTestServer({ sidecar: fake, env: { HERMES_WEBUI_PASSWORD: 'synthetic dashboard password' } })
-  const login = await s.get('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: 'synthetic dashboard password' }) })
-  const cookie = (login.headers.getSetCookie()[0] ?? '').split(';')[0] ?? ''
+  s = await bootTestServer({ sidecar: fake, env: { HERMES_WEBUI_PASSWORD: password } })
+  const cookie = await loginCookie(s)
   const manifests = await (await s.get('/api/extensions/manifests', { headers: { cookie } })).json() as { manifests: { id: string; source: string; panel: string }[] }
   const row = manifests.manifests.find((m) => m.source === 'agent-plugin')!
   const url = new URL('/' + row.panel, s.base)
@@ -129,4 +136,50 @@ it('expires static grants and keeps their profile scope separate from API ids', 
   const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 3 * 3_600_000)
   try { expect(await plugins.agentAssetGrant(grant, 'dist/index.html')).toBeNull() }
   finally { clock.mockRestore() }
+})
+
+it.each([false, true])('revokes source and destination grants and a delayed response through a profile switch, password=%s', async (authenticated) => {
+  const fake = new FakeSidecar()
+  fake.respond('plugins.dashboard_list', () => ({ supported: true, plugins: [{ name: 'board', label: 'Board', version: '', description: '', enabled: true, panel: 'dist/index.html', has_api: true }] }))
+  fake.respond('plugins.dashboard_asset', () => ({ status: 200, body: Buffer.from('profile asset').toString('base64'), content_type: 'text/html' }))
+  s = await bootTestServer({ sidecar: fake, env: authenticated ? { HERMES_WEBUI_PASSWORD: password } : {} })
+  mkdirSync(s.deps.profileHome('beta'), { recursive: true })
+  const cookie = authenticated ? await loginCookie(s) : ''
+  const session = cookie.slice(cookie.indexOf('=') + 1)
+  const headers = (profile: string) => ({
+    cookie: [cookie, `hermes_profile=${authenticated ? s!.deps.auth.signProfileCookieValue(profile, session) : profile}`].filter(Boolean).join('; '),
+    origin: s!.base, 'x-csrf-token': s!.deps.auth.csrfTokenForSession(session) ?? '',
+  })
+  const manifest = async (profile: string) => {
+    const body = await (await s!.get('/api/extensions/manifests', { headers: headers(profile) })).json() as { manifests: { id: string; source: string; panel: string }[] }
+    return body.manifests.find((m) => m.source === 'agent-plugin')!
+  }
+  const source = await manifest('default')
+  const destination = await manifest('beta')
+  expect((await s.get('/' + source.panel)).status).toBe(200)
+  expect((await s.get('/' + destination.panel)).status).toBe(200)
+  let release!: (value: { status: number; body: string; content_type: string }) => void
+  let started!: () => void
+  let signal: AbortSignal | undefined
+  const ready = new Promise<void>((resolve) => { started = resolve })
+  fake.respond('plugins.dashboard_request', (_params, _emit, opts) => {
+    signal = opts.signal
+    started()
+    return new Promise((resolve) => { release = resolve })
+  })
+  const pending = s.get(`/api/extensions/${source.id}/sidecar/identity`, { headers: headers('default') })
+  await ready
+  try {
+    const switched = await s.get('/api/profile/switch', { method: 'POST', headers: { ...headers('default'), 'content-type': 'application/json' }, body: JSON.stringify({ name: 'beta' }) })
+    expect(switched.status).toBe(200)
+    expect(signal?.aborted).toBe(true)
+  } finally { release({ status: 200, body: Buffer.from('previous profile response').toString('base64'), content_type: 'text/plain' }) }
+  const refused = await pending
+  expect(refused.status).toBe(404)
+  expect(await refused.text()).not.toContain('previous profile response')
+  expect((await s.get('/' + source.panel)).status).toBe(404)
+  expect((await s.get('/' + destination.panel)).status).toBe(404)
+  const current = await manifest('beta')
+  expect(current.id).not.toBe(destination.id)
+  expect((await s.get('/' + current.panel)).status).toBe(200)
 })

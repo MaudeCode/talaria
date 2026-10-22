@@ -57,6 +57,7 @@ export class DashboardPlugins {
   constructor(private readonly deps: DashboardPluginDeps) {}
 
   private owner(scope: AgentDashboardScope) {
+    // One login generation spans profile homes, so switching revokes its frames in every profile.
     const key = createHmac('sha256', this.bindingKey).update(scope.owner).digest('hex')
     let state = this.owners.get(key)
     if (!state) {

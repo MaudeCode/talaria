@@ -254,6 +254,7 @@ export const settingsRouter = os.router({
       if (bound && name !== bound) throw new HttpError(403, 'Profile is bound to the current session')
       const result = await ctx.deps.profiles.switch(name)
       ctx.deps.catalog.invalidate()
+      // Revocation is owner-wide; the validated target also lets an escaped source home be left.
       ctx.deps.dashboardPlugins.invalidateOwner(dashboardScope(ctx, name))
       const sessionCookie = ctx.trusted.cookieValue ?? null
       if (!(sessionCookie && bound && name === bound)) ctx.queueCookie(await buildProfileCookie(ctx, name, sessionCookie))
