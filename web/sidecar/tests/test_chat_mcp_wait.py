@@ -143,7 +143,7 @@ def test_failed_mcp_refresh_only_evicts_the_original_cached_agent(monkeypatch, t
         assert chat._AGENT_CACHE["failed"] is updated
     else:
         assert "failed" not in chat._AGENT_CACHE
-    assert released == ([original] if change == "keep" else [])
+    assert [(entry[0], entry[2]) for entry in released] == [(failed, home)]
     assert chat._AGENT_CACHE["healthy"][0] is healthy
     assert chat._AGENT_CACHE["foreign"][0] is foreign
 
