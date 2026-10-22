@@ -320,7 +320,7 @@ export async function setMaxTokens(store: AgentConfig, home: string, value: unkn
 
 // ── reasoning ─────────────────────────────────────────────────────────
 
-export interface ReasoningStatus { show_reasoning: boolean; reasoning_effort: string; supported_efforts: string[]; supports_reasoning_effort: boolean; supports_thinking_toggle: boolean }
+export interface ReasoningStatus { show_reasoning: boolean; reasoning_effort: string; supported_efforts: string[]; supports_reasoning_effort: boolean; supports_thinking_toggle: boolean; supports_session_scope: boolean }
 
 export type EffortsResolver = (model: string, provider: string, baseUrl: string) => Promise<string[]>
 
@@ -379,6 +379,7 @@ export async function reasoningStatus(config: Config, resolve: EffortsResolver, 
     supported_efforts: supported,
     supports_reasoning_effort: supported.length > 0,
     supports_thinking_toggle: supported.length > 0,
+    supports_session_scope: true,
   }
 }
 

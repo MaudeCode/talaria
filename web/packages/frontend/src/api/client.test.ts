@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import { configureClient, get, post, request, resetClientForTests } from './client'
 import { createMemoryAdapter, makeSession } from '../contracts/adapters/memory'
-import { checkUpdatesNow, fetchSession, fetchUpdatesCheck, renameSession, startChat } from './endpoints'
+import { checkUpdatesNow, fetchSession, fetchUpdatesCheck, renameSession, setReasoningEffort, startChat } from './endpoints'
 import { isApiError } from '../contracts/common'
 import { resetAppRootForTests } from '../lib/appRoot'
 
@@ -42,6 +42,17 @@ describe('typed client against the in-memory adapter', () => {
     configureClient({ transport: adapter })
     await startChat({ session_id: 'abc', message: 'Set up the skill' })
     expect(JSON.parse(adapter.calls.at(-1)!.body as string)).toMatchObject({ session_id: 'abc', skill_secret: true, connect_card: true })
+  })
+
+  it('keeps chat reasoning identity for effort and reset while allowing explicit profile edits', async () => {
+    const adapter = createMemoryAdapter({ routes: { 'POST /api/reasoning': () => [200, { show_reasoning: false, reasoning_effort: 'low' }] } })
+    configureClient({ transport: adapter })
+    for (const effort of ['high', '']) {
+      await setReasoningEffort(effort, 'model', 'provider', 'current-chat')
+      expect(JSON.parse(adapter.calls.at(-1)!.body as string)).toEqual({ effort, model: 'model', provider: 'provider', session_id: 'current-chat' })
+    }
+    await setReasoningEffort('low')
+    expect(JSON.parse(adapter.calls.at(-1)!.body as string)).toEqual({ effort: 'low' })
   })
 
   it('reads update status with a passive GET and runs a manual check only via POST {force:true}', async () => {

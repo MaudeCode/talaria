@@ -170,3 +170,18 @@ retry includes that token and the original selection; a changed session, route,
 context measurement, or warning requires fresh confirmation. Successful updates
 retain the ordinary session envelope. Clients without this flow retain their old
 model and receive the actionable error. Global/default model setters are separate.
+
+Chat-originated `POST /api/reasoning` effort changes include `session_id`, including
+reset requests with `effort: ""`. The server checks the target's profile and canonical
+writability before writing config. Native and other read-only chats receive HTTP 409
+with `code: reasoning_unsupported`; missing chats receive 404. Neither refusal changes
+profile defaults. Explicit profile settings omit `session_id`. The independent
+`display: show|hide` preference still writes only the Web display setting.
+
+`GET /api/reasoning` advertises `supports_session_scope: true` only with this guard.
+Independently updated clients check that capability before chat effort/reset writes.
+An absent or false flag prevents the write and requires a server update. A failed
+read also prevents the write and propagates its error; clients never retry without
+context. Explicit profile settings remain
+available without the capability. The flag is additive and optional for old-server
+decoding.

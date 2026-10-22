@@ -84,6 +84,8 @@ describe('request-profile session visibility', () => {
 
   it('a body session_id outside the request profile answers 404 on every contract route', async () => {
     for (const [path, body] of [
+      ['/api/reasoning', { session_id: sid, effort: 'high' }],
+      ['/api/reasoning', { session_id: sid, effort: '' }],
       ['/api/session/rename', { session_id: sid, title: 'x' }],
       ['/api/terminal/start', { session_id: sid }],
       ['/api/session/worktree/remove', { session_id: sid }],

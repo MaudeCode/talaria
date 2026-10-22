@@ -139,11 +139,11 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   const reasoningLevels = reasoningStatus.data?.supported_efforts
   const reasoningSupported = reasoningStatus.data?.supports_reasoning_effort !== false || reasoningStatus.data?.supports_thinking_toggle === true
   const setReasoning = useCallback((level: string | null) => {
-    void api.setReasoningEffort(level ?? '', session?.model, session?.model_provider)
+    void api.setReasoningEffort(level ?? '', session?.model, session?.model_provider, sessionId ?? undefined)
       .then((status) => { qc.setQueryData(reasoningKey, status); showToast(`${m.composer_control_reasoning()}: ${status.reasoning_effort || m.reasoning_default()}`) })
       .catch((e: unknown) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error'))
   // eslint-disable-next-line react-hooks/exhaustive-deps -- reasoningKey is derived from session model/provider
-  }, [qc, session?.model, session?.model_provider])
+  }, [qc, sessionId, session?.model, session?.model_provider])
 
   const { updateSession, dialog: modelDialog, notice: modelNotice } = useSessionUpdate(sessionId, refresh, session?.owner_attachment)
 
