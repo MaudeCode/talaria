@@ -147,6 +147,7 @@ public enum Endpoint {
     case kanbanEvents(KanbanEventsRequest)
     case kanbanEventsStream(KanbanEventsStreamRequest)
     case sessionEvents
+    case sessionStream(sessionID: String)
     case kanbanCardDetail(KanbanCardDetailRequest)
     case kanbanWorkerLog(KanbanWorkerLogRequest)
     case kanbanAddComment(KanbanAddCommentRequest)
@@ -445,6 +446,8 @@ public enum Endpoint {
             return "/api/kanban/events/stream"
         case .sessionEvents:
             return "/api/sessions/events"
+        case .sessionStream:
+            return "/api/session/stream"
         case let .kanbanCardDetail(request):
             return "/api/kanban/tasks/\(request.cardID)"
         case let .kanbanWorkerLog(request):
@@ -494,6 +497,8 @@ public enum Endpoint {
 
     var queryItems: [URLQueryItem] {
         switch self {
+        case let .sessionStream(sessionID):
+            return [URLQueryItem(name: "session_id", value: sessionID)]
         case let .sessions(includeArchived, archivedLimit, visibility):
             // Opt-in (issue #17): the server's default response excludes archived
             // rows, so the main list request stays byte-identical when off.

@@ -444,6 +444,8 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         archivedSessionIDs = []
         backgroundDismissed.withLock { $0 = false }
         ownerSettledAdmissions.withLock { $0 = [] }
+        nativeNoticePhase.withLock { $0 = 0 }
+        nativeNoticeStreams.withLock { $0.removeAll() }
         sessionCreationFailureLock.withLock {
             didFailSessionCreation = false
             initialUploadAttempts = 0
@@ -478,6 +480,11 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         }
         if let made = request.value(forHTTPHeaderField: Self.generationHeader), made != String(Self.generation.withLock { $0 }) {
             client?.urlProtocol(self, didFailWithError: URLError(.cancelled))
+            return
+        }
+
+        if url.path == "/api/session/stream" {
+            startNativeNoticeStream(url: url)
             return
         }
 
@@ -548,6 +555,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     override func stopLoading() {
+        Self.nativeNoticeStreams.withLock { _ = $0.removeValue(forKey: ObjectIdentifier(self)) }
         lifecycleLock.withLock { stopped = true }
         Self.chatState.wakeWaiters()
     }

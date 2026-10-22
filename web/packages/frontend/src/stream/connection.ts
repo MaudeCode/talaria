@@ -32,6 +32,8 @@ interface Live {
 }
 
 let context = {}
+const contextListeners = new Set<() => void>()
+export const subscribeStreamContext = (listener: () => void): (() => void) => { contextListeners.add(listener); return () => { contextListeners.delete(listener) } }
 /** Changes whenever auth, profile or server context is discarded. */
 export const getStreamContext = (): object => context
 const starts = new Map<string, { owner: object; promise: Promise<ChatStartResponse> }>()
@@ -425,6 +427,7 @@ export function discardSession(sessionId: string, preserveIntent = false): void 
 
 export function teardownAll(): void {
   context = {}
+  for (const listener of contextListeners) listener()
   starts.clear()
   stops.clear()
   clearTurnIntents()

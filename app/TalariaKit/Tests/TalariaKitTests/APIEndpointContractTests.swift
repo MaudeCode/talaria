@@ -901,6 +901,24 @@ final class SharedContractTests: XCTestCase {
         XCTAssertNil(try decoder.decode(SessionDetail.self, from: Data(#"{"session_id":"s"}"#.utf8)).pendingSteers)
     }
 
+    func testSharedNativeIdleNoticesUseExistingSessionFields() throws {
+        let data: Data
+        do { data = try fixture("web-native-notices") }
+        catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+            throw XCTSkip("The retained Web fixture predates native idle notices")
+        }
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let detail = try decoder.decode(SessionDetail.self, from: JSONSerialization.data(withJSONObject: try XCTUnwrap(object["session"])))
+        XCTAssertEqual(detail.notices?.map(\.text), ["Project plugins were skipped", "Plugin finished"])
+        XCTAssertEqual(detail.notices?.map(\.level), [.warn, .info])
+        XCTAssertNil(detail.activeStreamId)
+        let invalidation = try XCTUnwrap(object["invalidation"] as? [String: Any])
+        let frame = SessionEventFrameDecoder.decode(eventType: "session-updated", data: String(decoding: try JSONSerialization.data(withJSONObject: try XCTUnwrap(invalidation["data"])), as: UTF8.self))
+        XCTAssertEqual(frame, .changed(.changed(reason: "session-updated", sessionID: detail.sessionId)))
+    }
+
     func testSharedWebSessionDecodesTheAgentsNotices() throws {
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
         // A release checks this App against every retained Web; one from before TAL-803 has no such example.

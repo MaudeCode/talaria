@@ -61,6 +61,19 @@ final class ForegroundReturnDetectorTests: XCTestCase {
 }
 
 final class SessionEventFrameDecoderTests: XCTestCase {
+    func testDecodesViewedSessionInvalidationsWithoutChangingGlobalInitial() {
+        for event in ["session-updated", "server_turn_started", "bg_task_complete", "process_complete"] {
+            XCTAssertEqual(SessionEventFrameDecoder.decode(eventType: event, data: #"{"session_id":"native-chat"}"#),
+                           .changed(.changed(reason: event, sessionID: "native-chat")))
+            XCTAssertEqual(SessionEventFrameDecoder.decode(eventType: event, data: "{}"), .ignored)
+        }
+        XCTAssertEqual(SessionEventFrameDecoder.decode(eventType: "initial", data: #"{"session_id":"native-chat"}"#), .keepalive)
+        XCTAssertEqual(SessionEventFrameDecoder.decode(eventType: "initial", data: "{}"), .ignored)
+        let url = Endpoint.sessionStream(sessionID: "native/chat +").url(relativeTo: URL(string: "https://example.test/prefix/")!)
+        XCTAssertEqual(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
+                       [URLQueryItem(name: "session_id", value: "native/chat +")])
+        XCTAssertTrue(url.path.hasSuffix("/api/session/stream"))
+    }
     func testDecodesASessionsChangedFrame() {
         let frame = SessionEventFrameDecoder.decode(
             eventType: "sessions_changed",

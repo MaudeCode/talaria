@@ -2,7 +2,7 @@
  * The only module that constructs `EventSource`. Frames are parsed and
  * validated with the chat SSE union before anything else sees them.
  */
-import { parseChatEvent, type ChatEvent, SessionListEventSchema, type SessionListEvent, CHAT_EVENT_NAMES } from '../contracts/sse'
+import { parseChatEvent, type ChatEvent, SessionListEventSchema, type SessionListEvent, CHAT_EVENT_NAMES, SESSION_STREAM_EVENT_NAMES, SessionStreamEventSchema, type SessionStreamEvent } from '../contracts/sse'
 import { resolveApiUrl } from './client'
 
 export interface SseHandle {
@@ -37,24 +37,35 @@ export function openChatStream(streamId: string, replay: { afterSeq: number; aft
   return { close: () => source.close(), readyState: () => source.readyState }
 }
 
-export function openSessionListStream(cb: { onEvent: (event: SessionListEvent) => void; onError?: (readyState: number) => void; onOpen?: () => void }): SseHandle {
-  const source = new EventSource(resolveApiUrl('api/sessions/events').href, { withCredentials: true })
-  for (const name of ['initial', 'sessions_changed', 'gateway_status', 'hello'] as const) {
+interface SessionFeedCallbacks<T> {
+  onEvent: (event: T) => void
+  onError?: (readyState: number) => void
+  onOpen?: () => void
+}
+
+function openSessionFeed<T>(path: string, names: readonly string[], parse: (value: unknown) => { success: boolean; data?: T }, cb: SessionFeedCallbacks<T>): SseHandle {
+  const source = new EventSource(resolveApiUrl(path).href, { withCredentials: true })
+  for (const name of names) {
     source.addEventListener(name, (ev: Event) => {
       const me = ev as MessageEvent<string>
-      let data: unknown = {}
-      try {
-        data = me.data ? JSON.parse(me.data) : {}
-      } catch {
-        return
-      }
-      const parsed = SessionListEventSchema.safeParse({ event: name, data })
-      if (parsed.success) cb.onEvent(parsed.data)
+      let data: unknown
+      try { data = me.data ? JSON.parse(me.data) as unknown : {} }
+      catch { return }
+      const parsed = parse({ event: name, data })
+      if (parsed.success && parsed.data) cb.onEvent(parsed.data)
     })
   }
   source.onopen = () => cb.onOpen?.()
   source.onerror = () => cb.onError?.(source.readyState)
   return { close: () => source.close(), readyState: () => source.readyState }
+}
+
+export function openSessionListStream(cb: SessionFeedCallbacks<SessionListEvent>): SseHandle {
+  return openSessionFeed('api/sessions/events', ['initial', 'sessions_changed', 'gateway_status', 'hello'], (value) => SessionListEventSchema.safeParse(value), cb)
+}
+
+export function openSessionStream(sessionId: string, cb: SessionFeedCallbacks<SessionStreamEvent>): SseHandle {
+  return openSessionFeed(`api/session/stream?${new URLSearchParams({ session_id: sessionId }).toString()}`, SESSION_STREAM_EVENT_NAMES, (value) => SessionStreamEventSchema.safeParse(value), cb)
 }
 
 export const SSE_CONNECTING = 0

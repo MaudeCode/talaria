@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "See native chat plugin notices and session launch warnings, including while the chat is idle.",
+      "highlight": false,
+      "components": ["web", "app"]
+    }
+  ]
+}

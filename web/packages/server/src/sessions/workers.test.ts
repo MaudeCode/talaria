@@ -42,6 +42,27 @@ describe('background completion drain', () => {
     expect(formatWakeupPrompt({ type: 'other' })).toBeNull()
   })
 
+  it('routes immediate and coalesced completions to the owning profile outside request scope', async () => {
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    const owner = await s.deps.sessionStore.get(sid)
+    owner.profile = 'work'
+    await s.deps.sessionStore.save(owner)
+    const root = s.deps.channels.subscribe(sid, 'default')
+    const work = s.deps.channels.subscribe(sid, 'work')
+    const drain = new CompletionDrain({ documents: new JsonDocuments(s.state), sidecar: () => sidecar,
+      baseHome: s.state, profileHome: (profile) => s.deps.profileHome(profile ?? 'default'), activeProfile: () => 'default',
+      store: s.deps.sessionStore, channels: s.deps.channels, registry: s.deps.registry,
+      startTurn: () => { throw new Error('A display-only completion must not admit a turn') }, now: () => 100, log: () => undefined })
+    try {
+      for (const process_id of ['profile-first', 'profile-coalesced']) {
+        expect(await drain.processOne({ process_id, type: 'completion', session_key: sid, consumed: false })).toBe(true)
+        expect((await nextSessionItem(work, 2000))?.[0]).toBe('bg_task_complete')
+        expect((await nextSessionItem(work, 200))?.[0]).toBe('process_complete')
+        expect(root.queue).toEqual([])
+      }
+    } finally { drain.stop(); s.deps.channels.unsubscribe(sid, root); s.deps.channels.unsubscribe(sid, work) }
+  })
+
   it('routes a completion to its session, emits bg_task_complete once, and starts a server-side wakeup turn', async () => {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     const events = [{ process_id: 'proc_a', session_id: 'proc_a', type: 'completion', command: 'sleep 1', exit_code: 0, output: 'done', session_key: sid, origin_ui_session_id: sid, consumed: false }]

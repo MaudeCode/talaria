@@ -2676,6 +2676,13 @@
       "cases": [
         ""
       ]
+    },
+    "tests/test_gateway_sessions.py::test_real_plugin_notice_producer_replays_without_turn_stamp": {
+      "layer": "compatibility",
+      "reason": "The installed Agent plugin post/edit API and SessionEvents replay produce unstamped idle notices. The selected Agent interpreter is required to import these real APIs; one disposable producer process proves the shared fixture without any daemon or provider.",
+      "cases": [
+        ""
+      ]
     }
   }
 }

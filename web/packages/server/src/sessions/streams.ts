@@ -220,18 +220,23 @@ export class StreamRegistry {
   }
 }
 
-export interface SessionChannelSubscriber { queue: [string, unknown][]; wake: (() => void) | null; closed: boolean }
+export interface SessionChannelSubscriber { queue: [string, unknown][]; wake: (() => void) | null; closed: boolean; channelKey: string }
 
 /** Long-lived per-session channel that survives across turns. */
 export class SessionChannels {
   private readonly channels = new Map<string, Set<SessionChannelSubscriber>>()
 
-  subscribe(sessionId: string): SessionChannelSubscriber {
-    const sub: SessionChannelSubscriber = { queue: [], wake: null, closed: false }
-    let set = this.channels.get(sessionId)
+  constructor(private readonly activeProfile: () => string = () => 'default', private readonly profileIdentity: (profile: string) => string = (profile) => profile) {}
+
+  private key(sessionId: string, profile = this.activeProfile()): string { return JSON.stringify([this.profileIdentity(profile), sessionId]) }
+
+  subscribe(sessionId: string, profile = this.activeProfile()): SessionChannelSubscriber {
+    const channelKey = this.key(sessionId, profile)
+    const sub: SessionChannelSubscriber = { queue: [], wake: null, closed: false, channelKey }
+    let set = this.channels.get(channelKey)
     if (!set) {
       set = new Set()
-      this.channels.set(sessionId, set)
+      this.channels.set(channelKey, set)
     }
     set.add(sub)
     return sub
@@ -239,14 +244,15 @@ export class SessionChannels {
 
   unsubscribe(sessionId: string, sub: SessionChannelSubscriber): void {
     sub.closed = true
-    const set = this.channels.get(sessionId)
+    const set = this.channels.get(sub.channelKey)
+    sub.wake?.()
     if (!set) return
     set.delete(sub)
-    if (!set.size) this.channels.delete(sessionId)
+    if (!set.size) this.channels.delete(sub.channelKey)
   }
 
-  emit(sessionId: string, event: string, data: unknown): number {
-    const set = this.channels.get(sessionId)
+  emit(sessionId: string, event: string, data: unknown, profile = this.activeProfile()): number {
+    const set = this.channels.get(this.key(sessionId, profile))
     if (!set) return 0
     let delivered = 0
     for (const sub of set) {
@@ -260,7 +266,7 @@ export class SessionChannels {
   }
 
   subscriberCount(sessionId: string): number {
-    return this.channels.get(sessionId)?.size ?? 0
+    return this.channels.get(this.key(sessionId))?.size ?? 0
   }
 }
 

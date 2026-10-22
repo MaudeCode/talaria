@@ -3,13 +3,14 @@
  * loading with msg_limit/msg_before), plus reattachment to a run the server
  * reports as active. Teardown on session change releases the transport only.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { SessionSchema, type Message, type Session } from '../../contracts'
-import { attachToStream, hasLiveConnection, reconcileSession, discardSession, getStreamContext, teardown } from '../../stream/connection'
+import { attachToStream, hasLiveConnection, reconcileSession, discardSession, getStreamContext, subscribeStreamContext, teardown } from '../../stream/connection'
 import { getStreamState, useLiveTurn } from '../../stream/store'
+import { openSessionStream } from '../../api/sse'
 import { writePersisted } from '../../lib/persisted'
 
 export const TRANSCRIPT_WINDOW = 120
@@ -48,6 +49,7 @@ export function messageKey(message: Message): string | undefined {
 
 export function useTranscript(sessionId: string | null) {
   const qc = useQueryClient()
+  const streamContext = useSyncExternalStore(subscribeStreamContext, getStreamContext, getStreamContext)
   const [olderState, setOlderState] = useState<{ sid: string | null; items: Message[] }>({ sid: sessionId, items: [] })
   const older = useMemo(() => (olderState.sid === sessionId ? olderState.items : []), [olderState, sessionId])
   const setOlder = useCallback((update: (prev: Message[]) => Message[]) => setOlderState((s) => ({ sid: sessionId, items: update(s.sid === sessionId ? s.items : []) })), [sessionId])
@@ -102,6 +104,16 @@ export function useTranscript(sessionId: string | null) {
     attachedStream.current = streamId
     void attachToStream(sessionId, streamId, session).catch(() => undefined)
   }, [sessionId, session, live])
+
+  useEffect(() => {
+    if (!sessionId) return
+    let retired = false
+    const scope = streamContext
+    const stream = openSessionStream(sessionId, { onEvent: ({ data }) => {
+      if (!retired && scope === getStreamContext() && data.session_id === sessionId) void qc.invalidateQueries({ queryKey: keys.sessions.detail(sessionId) })
+    } })
+    return () => { retired = true; stream.close() }
+  }, [qc, sessionId, streamContext])
 
   // Passive exit: leaving the session releases the EventSource, never cancels the backend run.
   useEffect(() => {

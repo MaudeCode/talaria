@@ -450,7 +450,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     }),
   })
   const uploads = new UploadInbox(attachmentRoot)
-  const channels = new SessionChannels()
+  const channels = new SessionChannels(activeProfile, profileHome)
   const pending = new PendingPrompts(events, now)
   // TAL-372: one durable record per piece of background work; a change refreshes every client showing the session.
   const backgroundStore = new BackgroundTaskStore(storage.documents, now, async (sid) => {
@@ -634,7 +634,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     Promise.resolve().then(() => agentConfig.read(profileHome(activeProfile()))).then((cfg) => dashboardStatus(cfg, env, lazyFetch)).then((status) => { dashboardRunning = status.running === true }).catch(() => { dashboardRunning = false })
   }
   const extensionsEnabled = (): boolean => { try { return deps.extensions.enabledSync() } catch { return false } }
-  sessions.owner = new GatewaySessions({ service: sessions, sidecar: () => sidecar, registry, journal, events,
+  sessions.owner = new GatewaySessions({ service: sessions, sidecar: () => sidecar, registry, journal, events, channels,
     profileHome, activeProfile, showReasoning: async (home) => showReasoning(await agentConfig.read(home)), redactEnabled: sessions.deps.redactEnabled, now, log })
   const deps: AppDeps = {
     config,

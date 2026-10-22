@@ -8,6 +8,33 @@ import TalariaKit
 /// check's (`app/docs/phone-checks.md`); here the composer's focus says whether it asked for the keyboard.
 @MainActor
 final class StreamHostedTests: XCTestCase {
+    func testIdleNativeNoticesRefreshThroughTheViewedSessionStream() async throws {
+        let window = try await hostFixtureChat([UITestFixtureURLProtocol.nativeNoticesArgument])
+        _ = try await requireElement(in: window, label: "Project plugins were skipped")
+        settle(0.5)
+        attachHostedScreenshot(window, name: "native-notices-before")
+        let attached = await awaitCondition { !UITestFixtureURLProtocol.nativeNoticeStreams.withLock { $0.isEmpty } }
+        XCTAssertTrue(attached)
+        UITestFixtureURLProtocol.advanceNativeNotices()
+        _ = try await requireElement(in: window, label: "Plugin finished")
+        settle(0.5)
+        let warningFrame = try await requireElement(in: window, label: "Project plugins were skipped").accessibilityFrame
+        let pluginFrame = try await requireElement(in: window, label: "Plugin finished").accessibilityFrame
+        XCTAssertFalse(warningFrame.intersects(pluginFrame), "Native notices overlap after settling")
+        attachHostedScreenshot(window, name: "native-notices-after")
+        XCTAssertNil(HostedAccessibility.element(in: window, label: "Stop response"))
+        UITestFixtureURLProtocol.advanceNativeNotices()
+        let cleared = await awaitNoElement(in: window) { $0.accessibilityLabel == "Plugin finished" }
+        XCTAssertTrue(cleared)
+        _ = try await requireElement(in: window, label: "Project plugins were skipped")
+        settle(0.5)
+        attachHostedScreenshot(window, name: "native-notices-cleared")
+        window.isHidden = true
+        window.rootViewController = nil
+        let released = await awaitCondition { UITestFixtureURLProtocol.nativeNoticeStreams.withLock { $0.isEmpty } }
+        XCTAssertTrue(released)
+    }
+
     func testLegacyWorkingStatusBeforePromptReading() async throws {
         for (size, name) in [(CGSize(width: 320, height: 844), "phone"), (HostedSize.padLandscape, "pad")] {
             let window = try await hostFixtureChat(["--ui-test-chat-controls"], size: size)

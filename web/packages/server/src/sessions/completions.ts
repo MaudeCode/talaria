@@ -106,7 +106,7 @@ export class CompletionDrain {
   private readonly retryAttempts = new Map<string, number>()
   private readonly retryTimers = new Map<string, NodeJS.Timeout>()
   private readonly lastEmitAt = new Map<string, number>()
-  private readonly pendingEmit = new Map<string, { payload: Dict; timer: NodeJS.Timeout }>()
+  private readonly pendingEmit = new Map<string, { payload: Dict; profile: string; timer: NodeJS.Timeout }>()
   /** The handshake of the sidecar whose process registry already recovered every profile's checkpoint. */
   private recoveredFor: unknown = null
   private recoveryWarnedFor: unknown = null
@@ -346,7 +346,7 @@ export class CompletionDrain {
     if (processId && deliveredPerProcess(evt)) seen.add(processId)
     this.pendingSessions.add(sid)
     await this.deps.background?.recordEvent(sid, evt, prompt)
-    if (backgroundEventKind(evt) !== 'progress') this.emitCoalesced(sid, this.buildPayload(evt, sid, prompt))
+    if (backgroundEventKind(evt) !== 'progress') this.emitCoalesced(sid, this.buildPayload(evt, sid, prompt), owner.profile ?? 'default')
     if (!prompt) return true
     if (evt.type === 'async_delegation') {
       if (!this.hasActiveTurn(sid)) await this.drainDeferred(sid)
@@ -362,7 +362,7 @@ export class CompletionDrain {
     return payload
   }
 
-  private emitNow(sid: string, payload: Dict): number {
+  private emitNow(sid: string, payload: Dict, profile: string): number {
     let emitted = 0
     for (const [streamId, channel] of this.deps.registry.streams) {
       if (this.deps.registry.activeRuns.get(streamId)?.session_id !== sid) continue
@@ -370,20 +370,20 @@ export class CompletionDrain {
       channel.put(['process_complete', { ...payload }, null])
       emitted += 2
     }
-    emitted += this.deps.channels.emit(sid, 'bg_task_complete', { ...payload })
-    emitted += this.deps.channels.emit(sid, 'process_complete', { ...payload })
+    emitted += this.deps.channels.emit(sid, 'bg_task_complete', { ...payload }, profile)
+    emitted += this.deps.channels.emit(sid, 'process_complete', { ...payload }, profile)
     return emitted
   }
 
   /** Python `_emit_bg_task_complete_events_coalesced`: first emit immediately, bursts flush the latest payload after 1 s of quiet. */
-  private emitCoalesced(sid: string, payload: Dict): void {
+  private emitCoalesced(sid: string, payload: Dict, profile: string): void {
     const now = this.deps.now()
     const last = this.lastEmitAt.get(sid)
     const pending = this.pendingEmit.get(sid)
     if (last === undefined || now - last >= EMIT_COALESCE_WINDOW_S) {
       if (pending) { clearTimeout(pending.timer); this.pendingEmit.delete(sid) }
       this.lastEmitAt.set(sid, now)
-      this.emitNow(sid, payload)
+      this.emitNow(sid, payload, profile)
       return
     }
     if (pending) clearTimeout(pending.timer)
@@ -392,10 +392,10 @@ export class CompletionDrain {
       this.pendingEmit.delete(sid)
       if (!entry) return
       this.lastEmitAt.set(sid, this.deps.now())
-      this.emitNow(sid, entry.payload)
+      this.emitNow(sid, entry.payload, entry.profile)
     }, EMIT_COALESCE_WINDOW_S * 1000)
     timer.unref()
-    this.pendingEmit.set(sid, { payload, timer })
+    this.pendingEmit.set(sid, { payload, profile, timer })
   }
 
   recordDeferred(sid: string, processId: string, prompt: string, event?: Dict): void {

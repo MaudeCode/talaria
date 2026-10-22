@@ -100,11 +100,11 @@ final class ChatHostedTests: XCTestCase {
             stream.stop()
             ChatViewModel.resetActiveStreamSnapshotsForTesting()
         }
-        var evaluations: [String: Int] = [:]
+        let evaluations = ChatBodyEvaluationRecorder()
         let window = try hostWindow(NavigationStack {
             ChatView(session: summary, server: UITestFixtureEnvironment.serverURL, onAPIError: { _ in },
                      initialDraft: "Keep this draft", loadsInitialMessages: false, viewModel: viewModel)
-        }.environment(\.chatBodyEvaluation) { evaluations[$0, default: 0] += 1 }
+        }.environment(\.chatBodyEvaluation, evaluations)
             .modelContainer(fixture.cache), size: size)
         let configured = await awaitCondition { viewModel.isSessionApprovalBypassEnabled }
         XCTAssertTrue(configured, "The hosted chat's startup must finish before measuring reveal work")
@@ -113,9 +113,11 @@ final class ChatHostedTests: XCTestCase {
         stream.emit(.token("Opening "))
         let opened = await awaitCondition { viewModel.messages.last?.content == "Opening " }
         XCTAssertTrue(opened)
-        settle(0.5)
-        attachHostedScreenshot(window, name: "stream-isolation-before-ticks-\(name)")
-        evaluations = [:]
+        // Let main-actor startup work finish before resetting the recorder.
+        try await Task.sleep(for: .milliseconds(500))
+        // Snapshot capture can enqueue layout updates. Keep its diagnostics after
+        // the measured reveal window so those updates aren't counted as reveal work.
+        evaluations.reset()
         var expected = "Opening "
         for tick in 1...20 {
             let token = "word\(tick) "
@@ -123,15 +125,16 @@ final class ChatHostedTests: XCTestCase {
             stream.emit(.token(token))
             let revealed = await awaitCondition { viewModel.messages.last?.content == expected }
             XCTAssertTrue(revealed, "Reveal tick \(tick) never reached the transcript")
-            settle(0.05)
+            try await Task.sleep(for: .milliseconds(50))
         }
-        let counts = XCTAttachment(string: "20 reveal ticks: \(evaluations)")
+        let measured = evaluations.counts
+        let counts = XCTAttachment(string: "20 reveal ticks: \(measured)")
         counts.name = "body-evaluations-\(name)"
         counts.lifetime = .keepAlways
         add(counts)
-        XCTAssertEqual(evaluations["messages", default: 0], 20, "Each reveal must evaluate the message list once")
-        XCTAssertLessThanOrEqual(evaluations["composer", default: 0], 1, "Reveal ticks rebuilt the composer")
-        XCTAssertEqual(evaluations["chat", default: 0], 0, "Reveal ticks rebuilt the whole chat")
+        XCTAssertEqual(measured["messages", default: 0], 20, "Each reveal must evaluate the message list once")
+        XCTAssertLessThanOrEqual(measured["composer", default: 0], 1, "Reveal ticks rebuilt the composer")
+        XCTAssertEqual(measured["chat", default: 0], 0, "Reveal ticks rebuilt the whole chat")
         let composer = await composerTextView(in: window)
         XCTAssertEqual(composer?.text, "Keep this draft")
         XCTAssertNotNil(HostedAccessibility.element(in: window, label: "Send"))

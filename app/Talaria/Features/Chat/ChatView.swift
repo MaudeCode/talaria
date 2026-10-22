@@ -6,12 +6,27 @@ import UniformTypeIdentifiers
 import TalariaKit
 
 #if DEBUG
+/// A non-observable reference keeps measuring a body from invalidating that body's
+/// environment. Like the message-menu registry, its identity survives environment updates.
+@MainActor
+final class ChatBodyEvaluationRecorder {
+    private(set) var counts: [String: Int] = [:]
+
+    func callAsFunction(_ body: String) {
+        counts[body, default: 0] += 1
+    }
+
+    func reset() {
+        counts.removeAll(keepingCapacity: true)
+    }
+}
+
 private struct ChatBodyEvaluationKey: EnvironmentKey {
-    static let defaultValue: ((String) -> Void)? = nil
+    static let defaultValue: ChatBodyEvaluationRecorder? = nil
 }
 
 extension EnvironmentValues {
-    var chatBodyEvaluation: ((String) -> Void)? {
+    var chatBodyEvaluation: ChatBodyEvaluationRecorder? {
         get { self[ChatBodyEvaluationKey.self] }
         set { self[ChatBodyEvaluationKey.self] = newValue }
     }
@@ -593,7 +608,7 @@ struct ChatView: View {
                 guard notification.object as? URL == server else { return }
                 Task { await loadMessages(appliesInitialFocus: false) }
             }
-            .modifier(ChatLiveSync(viewModel: viewModel, onAPIError: onAPIError))
+            .modifier(ChatLiveSync(viewModel: viewModel, server: server, sessionID: session.sessionId, onAPIError: onAPIError))
             .onChange(of: showsLiveActivityResponseExcerpts) {
                 viewModel.setShowsLiveActivityResponseExcerpts(showsLiveActivityResponseExcerpts)
             }
@@ -732,6 +747,8 @@ struct ChatView: View {
     var body: some View {
 #if DEBUG
         let _ = recordBodyEvaluation?("chat")
+        // Keep invalidation reasons in XCTest's console when this test-only probe is installed.
+        let _ = recordBodyEvaluation == nil ? () : Self._printChanges()
 #endif
         chatWithToolbar
             .environment(\.retryPendingAttachment) { id in Task { await viewModel.retryAttachment(id: id) } }
@@ -3290,12 +3307,24 @@ private struct ChatDraftSyncModifier: ViewModifier {
 /// server announces a change to this chat; a run the chat is already streaming is left alone.
 private struct ChatLiveSync: ViewModifier {
     let viewModel: ChatViewModel
+    let server: URL
+    let sessionID: String?
     let onAPIError: (Error) -> Void
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
 
     func body(content: Content) -> some View {
         content
+            .task(id: [scenePhase == .active ? "active" : "inactive", server.absoluteString, viewModel.selectedProfileName ?? "", sessionID ?? ""]) {
+                guard scenePhase == .active, let sessionID, !sessionID.isEmpty else { return }
+                await SessionEventsMonitor.run(
+                    url: Endpoint.sessionStream(sessionID: sessionID).url(relativeTo: server),
+                    client: SessionEventStreamClient()
+                ) { change in
+                    await viewModel.handleSessionsChange(change, modelContext: modelContext)
+                    reportLastError()
+                }
+            }
             .task(id: scenePhase == .active) {
                 guard scenePhase == .active else { return }
                 await viewModel.recoverWhenServerReturns(modelContext: modelContext, afterAttempt: reportLastError)
