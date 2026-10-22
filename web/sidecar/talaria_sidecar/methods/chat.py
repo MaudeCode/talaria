@@ -19,6 +19,7 @@ import inspect
 import json
 import logging
 import os
+import queue
 import re
 import threading
 import time
@@ -26,7 +27,7 @@ import uuid
 from collections import OrderedDict
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from types import SimpleNamespace
 
 from ..errors import InvalidParams, RpcError
@@ -89,9 +90,12 @@ _RUNS_LOCK = threading.Lock()
 # session id -> (agent, signature, profile home).
 _AGENT_CACHE: "OrderedDict[str, tuple[Any, str, Any]]" = OrderedDict()
 _AGENT_CACHE_LOCK = threading.Lock()
-# Running release thread -> the profile home it runs under.
-_RELEASES: dict[threading.Thread, Any] = {}
+# Running or queued release work -> the profile home it holds.
+_RELEASES: dict[threading.Thread | _ArchiveCallback, Any] = {}
 _RELEASES_LOCK = threading.Lock()
+_ARCHIVE_MAX_WORKERS = 4
+_ARCHIVE_QUEUE: queue.Queue[_ArchiveCallback | None] = queue.Queue(maxsize=256)
+_ARCHIVE_WORKERS: list[threading.Thread] = []
 # ``(agent, home)`` inside ``chat.commit_memory`` or ``chat.refine`` (guarded by ``_AGENT_CACHE_LOCK``): like a turn, each
 # defers the agent's release, and deleting ``home`` waits for it.
 _COMMITTING: list = []
@@ -935,6 +939,68 @@ def agent_scope(home: Path):
     with scoped_home(home):
         _register_profile_hooks(home)
         yield
+
+
+class _ArchiveCallback:
+    """Queued work shares the release threads' join/liveness contract without owning an OS thread."""
+    name = "session-archive"
+    failed = False
+
+    def __init__(self, callback: Callable[[], None]):
+        self.callback = callback
+        self.done = threading.Event()
+
+    def run(self) -> None:
+        try:
+            self.callback()
+        finally:
+            self.done.set()
+
+    def join(self, timeout=None) -> None:
+        self.done.wait(timeout)
+
+    def is_alive(self) -> bool:
+        return not self.done.is_set()
+
+
+def _archive_worker(pending) -> None:
+    while True:
+        work = pending.get()
+        try:
+            if work is None:
+                return
+            try:
+                work.run()
+            except BaseException:  # a plugin must not kill a shared worker
+                log.warning("Session archive notification worker failed")
+        finally:
+            pending.task_done()
+            del work
+
+
+def _schedule_archive(work: _ArchiveCallback, home: Path) -> None:
+    # Admission shares the profile-deletion/shutdown fence; queued work uses the existing release custody roster.
+    with _MCP_DISCOVERY_LOCK:
+        if _DRAINING.is_set() or os.path.realpath(home) in _MCP_CLOSING_HOMES:
+            log.warning("Session archive notification unavailable during profile or sidecar shutdown")
+            return
+        if len(_ARCHIVE_WORKERS) < _ARCHIVE_MAX_WORKERS:
+            thread = threading.Thread(target=_archive_worker, args=(_ARCHIVE_QUEUE,), name="session-archive-worker", daemon=True)
+            try:
+                thread.start()
+            except RuntimeError:
+                log.warning("Session archive notification worker could not start")
+                if not _ARCHIVE_WORKERS:
+                    return
+            else:
+                _ARCHIVE_WORKERS.append(thread)
+        with _RELEASES_LOCK:
+            _RELEASES[work] = home
+            try:
+                _ARCHIVE_QUEUE.put_nowait(work)
+            except queue.Full:
+                _RELEASES.pop(work, None)
+                log.warning("Session archive notification queue is full")
 
 
 def _notify_archive(home: Path, session_id: str, lineage: list[str] | None) -> None:
@@ -2493,14 +2559,15 @@ def register(registry) -> None:
                 with _RELEASES_LOCK:
                     _RELEASES.pop(worker, None)
 
+        if reason == "archive":
+            worker = _ArchiveCallback(finalize)
+            _schedule_archive(worker, home)
+            return {"messages": []}
         worker = threading.Thread(target=finalize, name="session-finalize", daemon=True)
         worker.failed = False  # type: ignore[attr-defined] - hook failures do not prevent profile deletion
         with _RELEASES_LOCK:
             _RELEASES[worker] = home
         worker.start()
-        # Bulk archive callers need only scheduling acknowledgement; the worker keeps profile custody until it exits.
-        if reason == "archive":
-            return {"messages": []}
         worker.join(_SESSION_FINALIZE_TIMEOUT)
         if worker.is_alive():
             log.warning("Session lifecycle callback exceeded deadline (%s)", reason)

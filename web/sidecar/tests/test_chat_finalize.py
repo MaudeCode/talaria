@@ -264,3 +264,96 @@ def test_archive_acknowledges_each_notification_while_callbacks_are_blocked(monk
     assert not caller.is_alive()
     assert sorted(entered) == ['archive-one', 'archive-two']
     assert not any(home == tmp_path for home in chat._RELEASES.values())
+
+
+def test_archive_callback_queue_bounds_threads_and_retains_queued_profile_custody(monkeypatch, tmp_path, caplog):
+    import contextlib
+    import queue
+    import threading
+    from talaria_sidecar.errors import RpcError
+    from talaria_sidecar.methods import Registry, chat
+
+    pending = queue.Queue(maxsize=2)
+    workers = []
+    monkeypatch.setattr(chat, '_ARCHIVE_QUEUE', pending, raising=False)
+    monkeypatch.setattr(chat, '_ARCHIVE_WORKERS', workers, raising=False)
+    monkeypatch.setattr(chat, '_ARCHIVE_MAX_WORKERS', 2, raising=False)
+    monkeypatch.setattr(chat, '_PROFILE_RELEASE_TIMEOUT', 0)
+    release, active = threading.Event(), threading.Event()
+    started, entered = [], []
+    original_start = threading.Thread.start
+    running_home, queued_home = tmp_path / 'running', tmp_path / 'queued'
+
+    def start(thread):
+        if thread.name.startswith('session-'):
+            started.append(thread)
+        return original_start(thread)
+
+    def notify(home, session_id, lineage):
+        entered.append(session_id)
+        if len(entered) == 2:
+            active.set()
+        assert release.wait(5), 'test did not release its callbacks'
+
+    monkeypatch.setattr(threading.Thread, 'start', start)
+    monkeypatch.setattr(chat, 'agent_scope', lambda home: contextlib.nullcontext(home))
+    monkeypatch.setattr(chat, '_notify_archive', notify)
+    registry = Registry(runtime=None)
+    chat.register(registry)
+
+    def archive(index, home):
+        return registry.methods['chat.finalize_session'](None, {
+            'session_id': f'archive-{index}', 'profile_home': str(home), 'reason': 'archive',
+        })
+
+    try:
+        for i in range(2):
+            assert archive(i, running_home) == {'messages': []}
+        assert active.wait(1), 'test callbacks did not start'
+        for i in range(2, 8):
+            assert archive(i, queued_home) == {'messages': []}
+        assert len(started) == 2, 'archive requests must share the bounded daemon workers'
+        assert all(thread.daemon for thread in started)
+        assert len([home for home in chat._RELEASES.values() if home == running_home]) == 2
+        assert len([home for home in chat._RELEASES.values() if home == queued_home]) == 2
+        with pytest.raises(RpcError, match='profile is still saving'):
+            with chat.release_profile_agents(queued_home):
+                pytest.fail('queued callback profile lost custody')
+        assert 'queue is full' in caplog.text
+        assert sorted(entered) == ['archive-0', 'archive-1']
+    finally:
+        release.set()
+        for work, home in list(chat._RELEASES.items()):
+            if home in (running_home, queued_home):
+                work.join(5)
+        for _ in workers:
+            pending.put(None)
+        for thread in started:
+            thread.join(5)
+    assert not any(home in (running_home, queued_home) for home in chat._RELEASES.values())
+    assert sorted(entered) == ['archive-0', 'archive-1', 'archive-2', 'archive-3']
+
+
+@pytest.mark.parametrize('fence', ['profile', 'shutdown'])
+def test_archive_queue_refuses_admission_after_its_owner_closes(monkeypatch, tmp_path, caplog, fence):
+    import queue
+    import threading
+    from talaria_sidecar.methods import Registry, chat
+
+    monkeypatch.setattr(chat, '_ARCHIVE_QUEUE', queue.Queue(maxsize=2))
+    workers = []
+    monkeypatch.setattr(chat, '_ARCHIVE_WORKERS', workers)
+    draining = threading.Event()
+    if fence == 'shutdown':
+        draining.set()
+    monkeypatch.setattr(chat, '_DRAINING', draining)
+    monkeypatch.setattr(chat, '_MCP_CLOSING_HOMES', {str(tmp_path.resolve())} if fence == 'profile' else set())
+    registry = Registry(runtime=None)
+    chat.register(registry)
+    assert registry.methods['chat.finalize_session'](None, {
+        'session_id': 'archive-closed', 'profile_home': str(tmp_path), 'reason': 'archive',
+    }) == {'messages': []}
+    assert workers == []
+    assert chat._ARCHIVE_QUEUE.empty()
+    assert not any(home == tmp_path for home in chat._RELEASES.values())
+    assert 'notification unavailable' in caplog.text

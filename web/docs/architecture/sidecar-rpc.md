@@ -482,7 +482,10 @@ to archived local save commits. Same-state requests, unarchive and cleanup do no
 The transition uses persisted before/after archive metadata; a refused save reports a conflict
 without notifying. Delivery is best effort, with no retry after a committed archive. Archive
 RPC replies acknowledge worker scheduling immediately, so bulk actions do not serialize slow
-plugin callbacks. The existing lifecycle worker retains profile custody until its callback exits.
+plugin callbacks. Archive work shares at most four daemon workers and a queue of 256 pending
+callbacks. Queued and running items use the existing release roster to retain profile custody
+until completion; profile deletion and shutdown fence new admission. A full queue drops the new
+best-effort notification with a payload-free warning, without undoing or retrying the archive.
 Archive callback diagnostics expose one payload-free warning instead of raw exceptions.
 
 ## Versioning
