@@ -192,7 +192,7 @@ describe('canonical owner attachment', () => {
   it('shares idle native observation between viewers and delivers keyed edits after a turn settles', async () => {
     let emit: ((frame: Omit<StreamFrame, 'seq'>) => void) | undefined
     let aborted = false
-    let snap = snapshot()
+    let snap = snapshot({ info: { config_warning: 'Launch warning' } })
     sidecar.respond('gateway.session', (params, send, opts) => {
       if (params.action !== 'watch') return { ...attached(snap), receipt: params.action === 'receipt' ? { ...admission('terminal'), outcome: 'completed' } : null }
       emit = send
@@ -218,7 +218,7 @@ describe('canonical owner attachment', () => {
       notice(6, 'Plugin finished')
       notice(6, 'Duplicate replay must not replace the edit')
       notice(7, 'Other session', { session_id: 'other-session' })
-      await vi.waitFor(async () => { expect((await detail()).notices).toEqual([expect.objectContaining({ text: 'Plugin finished', level: 'success' })]) })
+      await vi.waitFor(async () => { expect((await detail()).notices).toEqual([expect.objectContaining({ text: 'Launch warning' }), expect.objectContaining({ text: 'Plugin finished', level: 'success' })]) })
       expect((await detail()).is_streaming).toBe(false)
       snap = snapshot({ running: true, pending: [admission()], last_sequence: 6 })
       emit!({ event: 'snapshot', data: attached(snap) })
@@ -227,11 +227,15 @@ describe('canonical owner attachment', () => {
       const run = s.sse(`/api/chat/stream?stream_id=${stream}&replay=1&after_seq=0`, (frame) => frame.event === 'stream_end')
       snap = snapshot({ last_sequence: 7 })
       emit!({ event: 'event', data: { type: 'session.info', payload: { authority_epoch: 1, execution_generation: 1, running: false, pending: [] } } })
-      expect((await run).some((frame) => frame.event === 'done')).toBe(true)
+      const frames = await run
+      expect(frames.some((frame) => frame.event === 'done')).toBe(true)
+      const projections = frames.filter((frame) => frame.event === 'session_snapshot' || frame.event === 'done').map((frame) => (frame.data as { session: { notices: { text: string }[] } }).session.notices)
+      expect(projections.length).toBeGreaterThan(0)
+      for (const notices of projections) expect(notices.filter((notice) => notice.text === 'Launch warning')).toHaveLength(1)
       await vi.waitFor(() => { expect(s.deps.registry.activeRunStreamForSession(sid)).toBeNull() })
       expect(aborted).toBe(false)
       notice(8, 'Idle edit after completion')
-      await vi.waitFor(async () => { expect((await detail()).notices?.map((notice) => notice.text)).toEqual(['Idle edit after completion']) })
+      await vi.waitFor(async () => { expect((await detail()).notices?.map((notice) => notice.text)).toEqual(['Launch warning', 'Idle edit after completion']) })
       s.deps.channels.emit(sid, 'test-first', {})
       expect((await streams[0]!).some((frame) => frame.event === 'session-updated')).toBe(true)
       expect(aborted).toBe(false)
@@ -254,14 +258,17 @@ describe('canonical owner attachment', () => {
     const controller = new AbortController()
     const lease = await s.deps.sessions.owner!.observe(sid, 'default', controller.signal)
     const base = { session_id: sid, read_only_reason: CANONICAL_READ_ONLY_REASON, notices: [{ key: 'unrelated', text: 'Direct notice', level: 'info', expires_at: null }] }
+    const direct = vi.spyOn(s.deps.sessions.deps.runtime, 'sessionNotices').mockReturnValue([{ key: 'unrelated', text: 'Direct notice', level: 'info', expires_at: null }])
     const detail = () => s.deps.sessions.owner!.project(base)
     try {
       await vi.waitFor(() => { expect(emit).toBeDefined() })
       const event = (type: string, seq: number, epoch = snap.replay_epoch) => { emit({ event: 'event', data: { type, seq, session_id: sid, replay_epoch: epoch, payload: { key: 'plugin', text: 'Plugin notice' } } }) }
       event('notification.show', 5)
-      expect((await detail()).notices).toHaveLength(3)
+      const projected = await detail()
+      expect(projected.notices).toHaveLength(3)
       event('notification.clear', 6)
       expect((await detail()).notices).toHaveLength(2)
+      expect((await s.deps.sessions.owner!.project(projected)).notices).toHaveLength(2)
       event('notification.show', 7)
       emit({ event: 'snapshot', data: { ...attached(snap), replay_gap: true } })
       expect((await detail()).notices).toEqual([base.notices[0], expect.objectContaining({ text: 'Launch warning' })])
@@ -271,7 +278,7 @@ describe('canonical owner attachment', () => {
       expect((await detail()).notices).toEqual([base.notices[0], expect.objectContaining({ text: 'Replacement warning' })])
       event('notification.show', 1)
       expect((await detail()).notices).toHaveLength(3)
-    } finally { controller.abort(); lease?.release(); await lease?.ended }
+    } finally { controller.abort(); lease?.release(); await lease?.ended; direct.mockRestore() }
   })
 
   it('isolates idle transports and channels by profile/session and reattaches after disconnect', async () => {

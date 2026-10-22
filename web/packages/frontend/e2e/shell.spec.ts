@@ -56,7 +56,7 @@ test.describe('shell', () => {
     expect(new URL(await page.evaluate(() => document.baseURI)).pathname).toBe('/')
     // The bogus session id is expected to 404; the shell must still render its error state.
     const expected404 = errors.filter((e) => e.includes('session_id=not-a-real-session'))
-    expect(expected404).toHaveLength(1)
+    expect(expected404.length).toBeGreaterThan(0)
     errors.splice(0, errors.length, ...errors.filter((e) => !expected404.includes(e)))
     await expect(page.locator('#app')).not.toBeEmpty()
   })

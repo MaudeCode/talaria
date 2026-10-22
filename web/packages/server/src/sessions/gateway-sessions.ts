@@ -126,10 +126,12 @@ export class GatewaySessions {
     return state
   }
 
-  private nativeNotices(target: Target, snapshot: GatewaySnapshot, existing?: unknown) {
+  private nativeNotices(target: Target, snapshot: GatewaySnapshot) {
     const observed = this.observations.get(target.key)?.snapshot
     this.noticeState(target, observed && observed.authority_epoch >= snapshot.authority_epoch ? observed : snapshot)
-    const direct = SessionNoticeSchema.array().safeParse(existing)
+    // A detail row may already contain our projection. Read the direct layer itself so
+    // retained transport bases cannot duplicate warnings or resurrect cleared notices.
+    const direct = SessionNoticeSchema.array().safeParse(this.deps.service.deps.runtime.sessionNotices?.(target.sid) ?? [])
     return [...(direct.success ? direct.data : []), ...this.notices.list(target.key)]
   }
 
@@ -329,7 +331,7 @@ export class GatewaySessions {
     const snapshot = result.snapshot
     const fields: Row = { ...base, owner_attachment: this.attachment({ ...result, model_change: this.currentModelChange(target, snapshot) }), composer_state_key: ownerStateId(target.key), context_detail_key: this.contextDetailKey(target, snapshot), active_stream_id: stream, is_streaming: Boolean(stream) }
     if (snapshot) {
-      fields.notices = this.nativeNotices(target, snapshot, base.notices)
+      fields.notices = this.nativeNotices(target, snapshot)
       const observed = this.watches.get(target.key)?.snapshot
       const nativeRows = [...snapshot.messages]
       const active = stream ? runningAdmission(snapshot) : null
@@ -646,7 +648,7 @@ export class GatewaySessions {
             const data = (event.payload ?? {}) as Row
             const kind = str(event.type)
             if (kind === 'notification.show' || kind === 'notification.clear') {
-              await put('notices', { session_id: target.sid, notices: this.nativeNotices(target, observation.snapshot, base.notices) })
+              await put('notices', { session_id: target.sid, notices: this.nativeNotices(target, observation.snapshot) })
               return
             }
             if (kind === 'request.cancel') {
