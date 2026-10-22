@@ -5,7 +5,7 @@ test.use({ serviceWorkers: 'block' })
 const actions = { block: true, unblock: false, complete: true, archive: true, move_to: ['ready', 'done'] }
 const task = (id: string, status = 'todo') => ({ id, title: `Task ${id}`, status, priority: 0, claim_live: false, has_completion_evidence: false, available_actions: actions, requires_running_exit_confirmation: false, current_run_started_at: null })
 
-test('held Kanban writes show local intent while server columns, links and lanes remain authoritative', async ({ page }, testInfo) => {
+test('held Kanban writes move cards, links, lanes and boards at once', async ({ page }, testInfo) => {
   let status = 'todo', parent = false, lanes = false, current = 'default'
   const statusGate = Promise.withResolvers<undefined>(), linkGate = Promise.withResolvers<undefined>()
   const configGate = Promise.withResolvers<undefined>(), switchGate = Promise.withResolvers<undefined>()
@@ -34,40 +34,30 @@ test('held Kanban writes show local intent while server columns, links and lanes
   // Keep the stream response held while mutation reconciliation happens; its old cursor cannot replace intent.
   const streamGate = Promise.withResolvers<undefined>()
   await page.route('**/api/kanban/events/stream**', async (route) => { await streamGate.promise; await route.fulfill({ headers: { 'content-type': 'text/event-stream' }, body: 'event: hello\ndata: {"cursor":7}\n\n' }) })
-  const baseline = process.env.TALARIA_KANBAN_BASELINE === '1'
   try {
     await page.goto('/kanban')
     await page.locator('[data-task-id="A"]').click()
     const dialog = page.getByRole('dialog', { name: 'Task A' })
-    if (baseline) await dialog.getByRole('button', { name: 'Complete', exact: true }).click()
-    else {
-      await dialog.getByRole('combobox', { name: 'Column' }).click()
-      await page.getByRole('option', { name: 'done', exact: true }).click()
-    }
+    await dialog.getByRole('combobox', { name: 'Column' }).click()
+    await page.getByRole('option', { name: 'done', exact: true }).click()
     await expect.poll(() => writes.includes('status')).toBe(true)
-    if (!baseline) {
-      await expect(dialog.getByRole('combobox', { name: 'Column' })).toHaveText('done')
-      await expect(dialog.getByRole('status')).toHaveText('Pending: Done')
-      await expect(dialog.getByRole('button', { name: 'Complete' })).toBeDisabled()
-      await expect(page.locator('.kanban-column').first().locator('[data-task-id="A"]')).toHaveCount(1)
-    }
-    await page.screenshot({ path: testInfo.outputPath(`${baseline ? 'before' : 'after'}-status-${testInfo.project.name}.png`) })
+    await expect(dialog.getByRole('combobox', { name: 'Column' })).toHaveText('done')
+    await expect(dialog.getByRole('button', { name: 'Complete' })).toBeEnabled()
+    await expect(page.getByText(/^Pending/)).toHaveCount(0)
+    await expect(page.locator('.kanban-column').nth(1).locator('[data-task-id="A"]')).toHaveCount(1)
+    await page.screenshot({ path: testInfo.outputPath(`after-status-${testInfo.project.name}.png`) })
     statusGate.resolve(undefined)
-    if (baseline) return
-    await expect(dialog.getByRole('status')).toHaveCount(0)
     await dialog.getByRole('textbox', { name: 'Parent task ID' }).fill('P1')
     await dialog.getByRole('button', { name: 'Add dependency' }).click()
-    await expect(dialog.getByRole('status')).toHaveText('Pending: Add dependency: P1')
-    await expect(dialog.getByRole('button', { name: 'Add dependency' })).toBeDisabled()
-    await page.screenshot({ path: testInfo.outputPath(`after-link-${testInfo.project.name}.png`) })
+    await expect(dialog.getByRole('listitem')).toHaveText('P1')
+    await expect(dialog.getByRole('textbox', { name: 'Parent task ID' })).toHaveValue('')
     linkGate.resolve(undefined)
-    await expect(dialog.getByRole('status')).toHaveCount(0)
     await expect(dialog.getByRole('listitem')).toHaveText('P1')
     await page.keyboard.press('Escape')
     const toggle = page.getByRole('switch', { name: 'Lanes by profile' })
     await toggle.click()
     await expect(toggle).toBeChecked()
-    await expect(page.locator('.kanban-lane')).toHaveCount(0)
+    await expect(toggle).toBeEnabled()
     configGate.resolve(undefined)
     await expect(page.getByRole('region', { name: 'scout' })).toBeVisible()
     await page.getByRole('combobox', { name: 'Board' }).click()
@@ -75,10 +65,10 @@ test('held Kanban writes show local intent while server columns, links and lanes
     await expect(page.getByRole('combobox', { name: 'Board' })).toHaveText('Other')
     await expect(page.locator('[data-task-id="A"]')).toHaveCount(0)
     await expect(page.locator('[data-task-id="C"]')).toBeVisible()
-    await expect(page.getByRole('checkbox', { name: 'Select Task C' })).toBeDisabled()
+    await expect(page.getByRole('checkbox', { name: 'Select Task C' })).toBeEnabled()
     await page.screenshot({ path: testInfo.outputPath(`after-switch-${testInfo.project.name}.png`) })
     switchGate.resolve(undefined)
-    await expect(page.getByRole('checkbox', { name: 'Select Task C' })).toBeEnabled()
+    await expect(page.getByRole('combobox', { name: 'Board' })).toHaveText('Other')
   } finally {
     statusGate.resolve(undefined); linkGate.resolve(undefined); configGate.resolve(undefined); switchGate.resolve(undefined); streamGate.resolve(undefined)
   }
