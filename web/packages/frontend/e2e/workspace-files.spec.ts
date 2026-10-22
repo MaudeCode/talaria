@@ -52,12 +52,14 @@ test('the Files page creates, renames, moves and deletes workspace entries', asy
   await expect(page.getByRole('button', { name: 'Save' })).toBeDisabled()
   await page.getByRole('button', { name: 'Back' }).click()
 
-  // A name that already exists: the dialog stays open with the server's refusal.
+  // A name that already exists: the dialog closes on Create, then the server's refusal shows above the tree and the
+  // entry the page showed for it goes away (TAL-1384).
   await page.getByRole('button', { name: 'New File' }).click()
   await page.getByRole('textbox', { name: 'New file name (e.g. notes.md):' }).fill('notes.txt')
   await page.getByRole('button', { name: 'Create' }).click()
-  await expect(page.getByRole('dialog').getByRole('alert')).toHaveText('File already exists')
-  await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(page.getByRole('alert').filter({ hasText: 'File already exists' })).toBeVisible()
+  await expect(item('notes.txt')).toHaveCount(1)
 
   await actions('notes.txt', 'Rename')
   await page.getByRole('textbox', { name: 'New name:' }).fill('plan.txt')
