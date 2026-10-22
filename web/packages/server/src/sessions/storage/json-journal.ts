@@ -106,7 +106,6 @@ export class JsonJournal implements JournalBackend {
   }
   async findRunSummary(runId: string): Promise<RunSummary | null> { return this.findRunSummaryNow(runId) }
   async sessionJournalFingerprint(sessionId: string): Promise<string> { return this.sessionJournalFingerprintNow(sessionId) }
-  async readSessionRunEvents(sessionId: string, cursor: string | null | undefined): Promise<SessionJournalReplay> { return this.readSessionRunEventsNow(sessionId, cursor) }
   async staleInterruptedEvent(sessionId: string, runId: string, afterSeq: number | null = null, now?: number): Promise<JournalEvent | null> { return this.staleInterruptedEventNow(sessionId, runId, afterSeq, now) }
   async sessionIds(): Promise<string[]> {
     try { return readdirSync(this.root(), { withFileTypes: true }).filter((entry) => entry.isDirectory() && SAFE_ID_RE.test(entry.name)).map((entry) => entry.name).sort() } catch { return [] }
@@ -410,7 +409,7 @@ export class JsonJournal implements JournalBackend {
   }
 
   /** Python `read_session_run_events`: replay rows after an opaque cursor across a session's runs. */
-  readSessionRunEventsNow(sessionId: string, afterEventId: string | null | undefined): { status: string; events: JournalEvent[]; cursor_run_id: string | null; cursor_seq: number | null } {
+  async readSessionRunEvents(sessionId: string, afterEventId: string | null | undefined): Promise<SessionJournalReplay> {
     const sid = validateId(sessionId, 'session_id')
     const rawCursor = (afterEventId ?? '').trim()
     const parsedCursor = parseRunJournalEventId(rawCursor)
@@ -423,40 +422,50 @@ export class JsonJournal implements JournalBackend {
     if (!rawCursor) return { status: 'ok', events: [], cursor_run_id: null, cursor_seq: null }
     const sessionRoot = join(this.root(), sid)
     const runs: { createdAt: number; runId: string; events: JournalEvent[] }[] = []
+    const positions = new Map<string, { offset: number; seq: number; dev: bigint; ino: bigint; complete: boolean }>()
     let retainedRows = 0
     let retainedBytes = 0
+    const result = (status: string, events: JournalEvent[] = []): SessionJournalReplay => ({ status, events, cursor_run_id: cursorRunId, cursor_seq: cursorSeq })
+    const parse = (runId: string, raw: Buffer, afterSeq = 0): SessionJournalReplay => {
+      retainedBytes += raw.length
+      if (retainedBytes > SESSION_REPLAY_MAX_BYTES) return result('replay_limit_bytes')
+      const events: JournalEvent[] = []
+      let expected = afterSeq + 1
+      for (const line of raw.toString('utf8').split('\n')) {
+        if (!line.trim()) continue
+        let event: JournalEvent
+        try { event = JSON.parse(line) as JournalEvent } catch { return result('replay_malformed') }
+        if (event?.seq !== expected || event.event_id !== `${runId}:${String(expected)}` || event.run_id !== runId || event.session_id !== sid) return result('replay_noncontiguous')
+        expected += 1
+        retainedRows += 1
+        if (retainedRows > SESSION_REPLAY_MAX_ROWS) return result('replay_limit_rows')
+        events.push(event)
+      }
+      return result('ok', events)
+    }
     let names: string[] = []
-    try { names = readdirSync(sessionRoot).filter((n) => n.endsWith('.jsonl')).sort() } catch { names = [] }
+    try { names = (await readdir(sessionRoot)).filter((n) => n.endsWith('.jsonl')).sort() } catch { names = [] }
     for (const name of names) {
       const runId = name.slice(0, -'.jsonl'.length)
       try { validateId(runId, 'run_id') } catch { continue }
       const path = join(sessionRoot, name)
-      let text: string
-      try { text = readFileSync(path, 'utf8') } catch { continue }
-      retainedBytes += Buffer.byteLength(text)
-      if (retainedBytes > SESSION_REPLAY_MAX_BYTES) return { status: 'replay_limit_bytes', events: [], cursor_run_id: cursorRunId, cursor_seq: cursorSeq }
-      const events: JournalEvent[] = []
-      let expected = 1
-      for (const line of text.split('\n')) {
-        if (!line.trim()) continue
-        let event: JournalEvent
+      let raw: Buffer
+      let st: BigIntStats
+      try {
+        const handle = await open(path, 'r')
         try {
-          event = JSON.parse(line) as JournalEvent
-        } catch {
-          return { status: 'replay_malformed', events: [], cursor_run_id: cursorRunId, cursor_seq: cursorSeq }
-        }
-        const seq = event.seq
-        if (seq !== expected || event.event_id !== `${runId}:${String(seq)}` || event.run_id !== runId || event.session_id !== sid) {
-          return { status: 'replay_noncontiguous', events: [], cursor_run_id: cursorRunId, cursor_seq: cursorSeq }
-        }
-        expected += 1
-        retainedRows += 1
-        if (retainedRows > SESSION_REPLAY_MAX_ROWS) return { status: 'replay_limit_rows', events: [], cursor_run_id: cursorRunId, cursor_seq: cursorSeq }
-        events.push(event)
-      }
+          st = await handle.stat({ bigint: true })
+          if (Number(st.size) + retainedBytes > SESSION_REPLAY_MAX_BYTES) return result('replay_limit_bytes')
+          raw = await readFile(handle)
+        } finally { await handle.close() }
+      } catch { continue }
+      const parsed = parse(runId, raw)
+      if (parsed.status !== 'ok') return parsed
+      const events = parsed.events
+      positions.set(runId, { offset: raw.length, seq: events.at(-1)?.seq ?? 0, dev: st.dev, ino: st.ino, complete: !raw.length || raw.at(-1) === 10 })
       let createdAt = Number.POSITIVE_INFINITY
       for (const e of events) createdAt = Math.min(createdAt, e.created_at || 0)
-      if (!Number.isFinite(createdAt)) { try { createdAt = statSync(path).mtimeMs / 1000 } catch { createdAt = 0 } }
+      if (!Number.isFinite(createdAt)) createdAt = Number(st.mtimeMs) / 1000
       runs.push({ createdAt, runId, events })
     }
     runs.sort((a, b) => a.createdAt - b.createdAt || (a.runId < b.runId ? -1 : a.runId > b.runId ? 1 : 0))
@@ -473,7 +482,23 @@ export class JsonJournal implements JournalBackend {
     if (cursorSeq === null || cursorSeq > cursorEvents.length) return { status: 'cursor_event_missing', events: [], cursor_run_id: cursorRunId, cursor_seq: cursorSeq }
     const replay = cursorEvents.filter((e) => e.seq > (cursorSeq))
     for (const run of runs.slice(cursorIndex + 1)) replay.push(...run.events)
-    return { status: 'ok', events: replay, cursor_run_id: cursorRunId, cursor_seq: cursorSeq }
+    return { ...result('ok', replay), readActiveTail: async (runId) => {
+      const path = this.pathFor(sid, runId)
+      const previous = positions.get(runId)
+      try {
+        const handle = await open(path, 'r')
+        try {
+          const st = await handle.stat({ bigint: true })
+          const offset = previous?.offset ?? 0
+          if (previous && (previous.dev !== st.dev || previous.ino !== st.ino || st.size < BigInt(offset) || (!previous.complete && st.size > BigInt(offset)))) return result('replay_changed')
+          const size = Number(st.size) - offset
+          if (size + retainedBytes > SESSION_REPLAY_MAX_BYTES) return result('replay_limit_bytes')
+          const raw = Buffer.alloc(size)
+          if (size && (await handle.read(raw, 0, size, offset)).bytesRead !== size) return result('replay_changed')
+          return parse(runId, raw, previous?.seq ?? 0)
+        } finally { await handle.close() }
+      } catch { return result('replay_changed') }
+    } }
   }
 
   /** Python `stale_interrupted_event`: a synthetic terminal row for a journal whose worker died. */

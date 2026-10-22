@@ -7,6 +7,7 @@
  */
 import type { RequestContext } from '../http/context.js'
 import { parseRunJournalEventId, SSE_RELAY_CLOSE_EVENTS, type JournalEvent, type RunJournal } from '../sessions/journal.js'
+import type { SessionJournalReplay } from '../sessions/storage/backend.js'
 import { nextItem, nextSessionItem, type StreamSubscriber } from '../sessions/streams.js'
 import { nextPendingItem } from '../sessions/pending.js'
 import type { Session } from '../sessions/session.js'
@@ -561,15 +562,13 @@ export async function handleSessionJournalStream(ctx: RequestContext, sessionId:
   }
   let attached = attach()
   try {
-    let replayOk = false
-    let replayEvents: JournalEvent[] = []
+    let replay: SessionJournalReplay | null = null
     if (resumeEventId) {
-      const replay = (await ctx.deps.journal.readSessionRunEvents(sessionId, resumeEventId))
+      replay = (await ctx.deps.journal.readSessionRunEvents(sessionId, resumeEventId))
       if (replay.status !== 'ok') (await snapshot(attached.streamId))
-      else { replayOk = true; replayEvents = replay.events }
     }
     if (!attached.sub) {
-      if (replayOk) await emitReplay(replayEvents, attached.streamId, null)
+      if (replay?.status === 'ok') await emitReplay(replay.events, attached.streamId, null)
       for (;;) {
         if (!(await sse.ready())) return
         attached = attach()
@@ -583,12 +582,16 @@ export async function handleSessionJournalStream(ctx: RequestContext, sessionId:
     const sub = attached.sub
     const streamId = attached.streamId!
     let cutoff: number | null = null
-    if (replayOk) {
+    if (replay?.status === 'ok') {
       cutoff = sameRunSeq(attached.snapshot.last_event_id, streamId)
-      const reconciled = (await ctx.deps.journal.readSessionRunEvents(sessionId, resumeEventId))
-      if (reconciled.status === 'ok') await emitReplay(reconciled.events, streamId, cutoff)
+      const tail = await replay.readActiveTail?.(streamId)
+      if (tail?.status === 'ok') {
+        await emitReplay(replay.events, streamId, cutoff)
+        await emitReplay(tail.events, streamId, cutoff)
+      }
       else (await snapshot(streamId))
     }
+    replay = null
     for (;;) {
       if (!(await sse.ready())) return
       const item = await nextItem(sub, SSE_HEARTBEAT_INTERVAL_MS)
