@@ -5,6 +5,11 @@ import { normalizeAssistantDisplay } from './merge.js'
 
 const ROLE_LABELS: Record<string, [string, string]> = { user: ['You', 'role-user'], assistant: ['Assistant', 'role-assistant'], system: ['System', 'role-system'], tool: ['Tool', 'role-tool'] }
 
+/** Canonical ids and other unbroken metadata must fit a narrow exported page. */
+export function wrapExportHtml(html: string): string {
+  return html.replace('</head>', '<style>body{overflow-wrap:anywhere}</style></head>')
+}
+
 const CSS = `
 :root{--bg:#FEFCF7;--panel:#F3EEE3;--panel2:#FAF7F0;--border:#E0D8C8;
 --text:#1A1610;--muted:#5C5344;--accent:#B8860B;--user:#0288A8;--assistant:#3D8B40;
@@ -147,7 +152,7 @@ export function renderSessionHtml(session: Record<string, unknown>, theme = 'dar
   if (created || updated) meta.push(`<div>Created: <b>${escapeHtml(created)}</b> · Updated: <b>${escapeHtml(updated)}</b></div>`)
   meta.push(`<div>Messages: <b>${String(visible.length)}</b></div>`)
   const exported = fmtTs(Date.now() / 1000)
-  return `<!DOCTYPE html>
+  return wrapExportHtml(`<!DOCTYPE html>
 <html lang="en"${htmlClass}>
 <head>
 <meta charset="utf-8">
@@ -167,7 +172,7 @@ ${blocks.join('')}
 <footer class="doc-foot">Exported from Talaria Web on ${exported}</footer>
 </div>
 </body>
-</html>`
+</html>`)
 }
 
 /**

@@ -336,6 +336,88 @@ describe('canonical owner attachment', () => {
     for (const connection of connections.values()) expect(connection.signal.aborted).toBe(true)
   })
 
+  it.each(['json', 'markdown', 'html'] as const)('exports a canonical owner without a local session as %s', async (format) => {
+    const content = format === 'json' ? JSON.stringify({ messages: [{ role: 'user', content: 'Current owner transcript' }] })
+      : format === 'html' ? '<h1>Current owner transcript</h1>' : '# Current owner transcript'
+    sidecar.respond('gateway.session', () => ({ state: 'attached', reason: null, snapshot: null, receipt: null,
+      export: { format, filename: '../../unsafe\r\nname', content } }))
+    const res = await s.get(`/api/session/export?session_id=${sid}&format=${format}&redact=false`)
+    expect(res.status).toBe(200)
+    expect(await res.text()).toContain('Current owner transcript')
+    expect(res.headers.get('content-disposition')).not.toMatch(/[\r\n/]/)
+    expect(sidecar.calls.filter((call) => call.method === 'gateway.session')).toEqual([
+      { method: 'gateway.session', params: { profile_home: s.state, session_id: sid, action: 'export', format, redact: true } },
+    ])
+    expect(await s.deps.sessionStore.persistedIds()).toEqual(new Set())
+  })
+
+  it.each(['json', 'markdown', 'html'] as const)('applies the server redaction policy to owner %s exports', async (format) => {
+    const secret = 'sk-synthetic-export-private-key-123456789012345'
+    const raw = `OPENAI_API_KEY=${secret}`
+    const content = format === 'json' ? JSON.stringify({ messages: [{ role: 'user', content: raw }], api_key: secret })
+      : format === 'html' ? `<p>${raw}</p>` : raw
+    sidecar.respond('gateway.session', (params) => ({ state: 'attached', reason: null, snapshot: null, receipt: null,
+      export: { format, filename: 'owner', content: params.redact ? (format === 'html' ? content.replace(secret, '***') : content) : format === 'json' ? JSON.stringify({ title: 'policy disabled' }) : 'policy disabled' } }))
+    const res = await s.get(`/api/session/export?session_id=${sid}&format=${format}&redact=false`)
+    expect(res.status).toBe(200)
+    expect(await res.text()).not.toContain(secret)
+    await s.deps.settings.save({ api_redact_enabled: false })
+    const unredacted = await s.get(`/api/session/export?session_id=${sid}&format=${format}`)
+    expect(unredacted.status).toBe(200)
+    expect(await unredacted.text()).toContain('policy disabled')
+  })
+
+  it('preserves owner HTML already redacted before rendering', async () => {
+    const content = '<!DOCTYPE html><html><body><div class="layout"><div class="message">OPENAI_API_KEY=***</div></div></body></html>'
+    sidecar.respond('gateway.session', (params) => {
+      expect(params.redact).toBe(true)
+      return { state: 'attached', reason: null, snapshot: null, receipt: null, export: { format: 'html', filename: 'owner.html', content } }
+    })
+    const response = await s.get(`/api/session/export?session_id=${sid}&format=html`)
+    expect(response.status).toBe(200)
+    expect(await response.text()).toBe(content)
+  })
+
+  it.each(['unsupported', 'timeout', 'missing', 'format', 'oversize', 'malformed'] as const)('refuses an owner export on %s without a local fallback', async (failure) => {
+    const call = vi.spyOn(sidecar, 'call')
+    sidecar.respond('gateway.session', () => {
+      if (failure === 'timeout') throw new Error('timeout')
+      if (failure === 'unsupported') return { state: 'incompatible', reason: 'native_sessions_unavailable', snapshot: null, receipt: null }
+      return { state: 'attached', reason: null, snapshot: null, receipt: null,
+        ...(failure === 'missing' ? {} : { export: { format: failure === 'format' ? 'html' : 'json', filename: 'owner.json',
+          content: failure === 'oversize' ? '界'.repeat(1_500_000) : 'not JSON' } }) }
+    })
+    const res = await s.get(`/api/session/export?session_id=${sid}`)
+    expect(res.status).toBe(failure === 'oversize' ? 413 : 409)
+    expect(await res.text()).not.toContain('not JSON')
+    expect(call).toHaveBeenCalledWith('gateway.session', expect.objectContaining({ action: 'export' }), { timeoutMs: 35_000 })
+    expect(await s.deps.sessionStore.persistedIds()).toEqual(new Set())
+  })
+
+  it.each(['md', 'legacy-unknown'])('normalizes legacy format %s to one closed owner JSON request', async (format) => {
+    sidecar.respond('gateway.session', (params) => {
+      expect(params).toMatchObject({ action: 'export', format: 'json', redact: true })
+      return { state: 'attached', reason: null, snapshot: null, receipt: null,
+        export: { format: 'json', filename: 'owner.json', content: JSON.stringify({ messages: [], title: 'Current owner' }) } }
+    })
+    const res = await s.get(`/api/session/export?session_id=${sid}&format=${format}`)
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toBe('application/json; charset=utf-8')
+    expect(await res.json()).toMatchObject({ title: 'Current owner' })
+    expect(sidecar.calls.filter((call) => call.method === 'gateway.session')).toHaveLength(1)
+    expect(await s.deps.sessionStore.persistedIds()).toEqual(new Set())
+  })
+
+  it('authorizes the profile before contacting the export owner', async () => {
+    expect((await s.get(`/api/session/export?session_id=${sid}`, { headers: { cookie: 'hermes_profile=work' } })).status).toBe(404)
+    expect(sidecar.calls.filter((call) => call.method === 'gateway.session')).toEqual([])
+    const locked = await bootTestServer({ sidecar, env: { HERMES_WEBUI_PASSWORD: 'synthetic-export-password' } })
+    try {
+      expect((await locked.get(`/api/session/export?session_id=${sid}`)).status).toBe(401)
+      expect(sidecar.calls.filter((call) => call.method === 'gateway.session')).toEqual([])
+    } finally { await locked.close() }
+  })
+
   it('projects only owner controls and never groups the active turn under a steering row', async () => {
     const pending = [
       { ...admission(), admission_id: 'steering', steering: true, text: 'Correction' },

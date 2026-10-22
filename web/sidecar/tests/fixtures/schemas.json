@@ -7171,6 +7171,34 @@
         ],
         "additionalProperties": false
       },
+      "export": {
+        "type": "object",
+        "properties": {
+          "format": {
+            "type": "string",
+            "enum": [
+              "json",
+              "markdown",
+              "html"
+            ]
+          },
+          "filename": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "content": {
+            "type": "string",
+            "maxLength": 4194304
+          }
+        },
+        "required": [
+          "format",
+          "filename",
+          "content"
+        ],
+        "additionalProperties": false
+      },
       "restarting": {
         "description": "The owner is in a restart's after-turn wait: parked prompts stay answerable, new work is refused.",
         "type": "boolean"
@@ -7788,6 +7816,34 @@
           "truncated",
           "current_turn_output_tokens",
           "last_turn_output_tokens"
+        ],
+        "additionalProperties": false
+      },
+      "export": {
+        "type": "object",
+        "properties": {
+          "format": {
+            "type": "string",
+            "enum": [
+              "json",
+              "markdown",
+              "html"
+            ]
+          },
+          "filename": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "content": {
+            "type": "string",
+            "maxLength": 4194304
+          }
+        },
+        "required": [
+          "format",
+          "filename",
+          "content"
         ],
         "additionalProperties": false
       },

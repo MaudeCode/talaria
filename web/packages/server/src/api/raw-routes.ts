@@ -5,6 +5,7 @@
  */
 import { closeSync, createReadStream, existsSync, mkdirSync, readdirSync, statSync, realpathSync } from 'node:fs'
 import { Readable } from 'node:stream'
+import { OwnerExportFormatSchema } from '@maudecode/talaria-web-contracts'
 import { basename, join, relative } from 'node:path'
 import type { RequestContext } from '../http/context.js'
 import { HttpError } from './router.js'
@@ -338,6 +339,18 @@ async function handleFolderDownload(ctx: RequestContext): Promise<void> {
 async function handleSessionExport(ctx: RequestContext): Promise<void> {
   const sid = ctx.query.get('session_id') ?? ''
   if (!sid) throw new HttpError(400, 'session_id is required')
+  const format = OwnerExportFormatSchema.safeParse((ctx.query.get('format') ?? 'json').toLowerCase())
+  // Preserve the public route's historical JSON fallback; only closed formats cross the owner seam.
+  const fmt = format.success ? format.data : 'json'
+  const ownerExport = await ctx.deps.sessions.owner?.export(sid, fmt)
+  if (ownerExport) {
+    const contentType = { json: 'application/json', markdown: 'text/markdown', html: 'text/html' }[ownerExport.format]
+    const ext = ownerExport.format === 'markdown' ? 'md' : ownerExport.format
+    const name = `${sanitizeUploadName(`hermes-${sid}`)}.${ext}`
+    await ctx.send({ status: 200, headers: { 'Content-Type': `${contentType}; charset=utf-8`,
+      'Content-Disposition': contentDispositionValue('attachment', name), 'Cache-Control': 'no-store' }, body: Buffer.from(ownerExport.content, 'utf8') })
+    return
+  }
   let session: Session
   try {
     session = (await ctx.deps.sessionStore.get(sid))
@@ -347,7 +360,6 @@ async function handleSessionExport(ctx: RequestContext): Promise<void> {
   if (!ctx.deps.profilesMatch(session.profile, ctx.deps.activeProfile())) throw new HttpError(404, 'Session not found')
   // Python `public_session_projection(s.__dict__)`: the whole session document (tool_calls, context_messages, ...) redacted.
   const safe = ctx.deps.sessions.publicSessionDocument(session)
-  const fmt = (ctx.query.get('format') ?? 'json').toLowerCase()
   let payload: string
   let contentType: string
   let ext: string

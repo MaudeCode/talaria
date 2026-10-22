@@ -28,6 +28,25 @@ async def probe(home, peer, desc, *, require_gap=False):
             assert await asyncio.to_thread(peer.blocked.wait, 25), "native turn did not reach provider"
             def call(action, **params):
                 return sidecar.result("gateway.session", {"profile_home": str(home), "session_id": sid, "action": action, **params})
+            async def exports(expected):
+                if "def export_session(" not in (agent / "gateway/session_tui_ops.py").read_text():
+                    return  # Older supported owners have no read-only export verb.
+                before = (await asyncio.to_thread(call, "snapshot"))["snapshot"]
+                for fmt in ("json", "markdown", "html"):
+                    value = await asyncio.to_thread(call, "export", format=fmt, redact=True)
+                    assert value["state"] == "attached" and value["snapshot"] is None, value
+                    exported = value["export"]
+                    assert exported["format"] == fmt and bool(exported["content"]), value
+                    if expected:
+                        assert expected in exported["content"], exported
+                    else:
+                        assert "COMPRESSION_TAIL" not in exported["content"], exported
+                    if fmt == "json":
+                        assert isinstance(json.loads(exported["content"])["messages"], list)
+                assert not (home / "sessions" / "saved").exists()
+                after = (await asyncio.to_thread(call, "snapshot"))["snapshot"]
+                for key in ("messages", "revision", "execution_generation", "pending"):
+                    assert before[key] == after[key], (key, before, after)
             attached = await asyncio.to_thread(call, "snapshot")
             assert attached["state"] == "attached", attached
             assert attached["snapshot"]["running"] and attached["snapshot"]["session_id"] == sid, attached
@@ -97,10 +116,12 @@ async def probe(home, peer, desc, *, require_gap=False):
             assert compressed["snapshot"]["revision"] > final["snapshot"]["revision"], compressed
             assert summaries(compressed["snapshot"]) == summaries(final["snapshot"]) + 1, compressed
             assert [m.get("content") for m in compressed["snapshot"]["messages"][-2:]] == ["COMPRESSION_TAIL", "RECOVERY_ACK_COMPRESSION_TAIL"], compressed
+            await exports("RECOVERY_ACK_COMPRESSION_TAIL")
             reset = await asyncio.to_thread(call, "mutate", request_id="reset-stable", expected_revision=compressed["snapshot"]["revision"],
                 execution_generation=compressed["snapshot"]["execution_generation"], operation="reset", payload={})
             assert reset["state"] == "attached" and reset["snapshot"]["session_id"] == sid, reset
             assert reset["snapshot"]["messages"] == [], reset
+            await exports(None)
             retained = await asyncio.to_thread(call, "receipt", admission_id=first["receipt"]["admission_id"])
             assert retained["receipt"]["admission_id"] == first["receipt"]["admission_id"] and retained["receipt"]["status"] == "terminal"
             print(json.dumps({"same_owner": True, "deduplicated": True, "detached_running": True, "model_requests": len(peer.requests)}))

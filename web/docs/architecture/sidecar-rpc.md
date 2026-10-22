@@ -36,6 +36,19 @@ the sidecar being killed closes that pipe, so the supervisor stops the
 writer's process tree and reaps the writer before releasing the lock. A concurrent repair fails
 without starting another writer.
 
+RPC v53 adds the closed `gateway.session` action `export` with `json`, `markdown`
+or `html` and a server-selected `redact` policy. It calls the already-running
+profile owner's read-only `session.export` once, translating Markdown to native
+`md`. The owner selects its current physical transcript after reset/compression.
+No resume, subscription, local session, Agent-host file or gateway launch is
+created. The native request has a 25-second RPC deadline and a 30-second outer
+deadline; content is capped at 4 MiB UTF-8 at both sidecar and HTTP boundaries.
+The server supplies Talaria's redaction policy to the owner, which redacts before
+rendering. JSON and Markdown also receive Talaria's text redaction; rendered HTML
+stays intact. Talaria owns the download filename and MIME type.
+Older/unavailable owners refuse export with an actionable HTTP 409; size
+refusals return 413. Direct session exports retain their existing renderer.
+
 ## Pending steer delivery
 
 `chat.steer_now` reports `reason: not_running` only when its run or Agent is

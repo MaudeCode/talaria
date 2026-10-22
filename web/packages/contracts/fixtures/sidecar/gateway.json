@@ -163,6 +163,26 @@
           "target_provider": "custom"
         }
       }
+    },
+    {
+      "params": {
+        "profile_home": "<home>",
+        "session_id": "native-export",
+        "action": "export",
+        "format": "markdown",
+        "redact": true
+      },
+      "result": {
+        "state": "attached",
+        "reason": null,
+        "snapshot": null,
+        "receipt": null,
+        "export": {
+          "format": "markdown",
+          "filename": "hermes_session_native-export.md",
+          "content": "# Native export\n\nCurrent owner transcript\n"
+        }
+      }
     }
   ],
   "gateway.create": [
