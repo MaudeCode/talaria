@@ -41,6 +41,46 @@ const { showToast } = await import('../features/toast/toast')
 const SID = 'sess-1'
 const token = (text: string): ChatEvent => parseChatEvent('token', JSON.stringify({ text }))!
 
+describe('turn boundary cache invalidation (TAL-1210)', () => {
+  let qc: QueryClient
+  const cachedKeys = [keys.sessions.detail(SID), keys.sessions.detail('other'), keys.sessions.list({}), keys.sessions.status(SID), keys.sessions.status('other'), keys.sessions.usage(SID), keys.sessions.usage('other'), keys.background(SID)]
+  beforeEach(() => {
+    opened.length = 0
+    readyState = 1
+    resetStreamStoreForTests()
+    qc = new QueryClient()
+    configureStream({ queryClient: qc })
+    for (const key of cachedKeys) qc.setQueryData(key, {})
+  })
+  afterEach(() => { resetConnectionsForTests(); qc.clear() })
+
+  it.each(['done', 'apperror', 'error', 'cancel'] as const)('%s keeps the embedded session fresh and refreshes only its metadata and lists', async (event) => {
+    await attachToStream(SID, 'run-a')
+    const session = sessionFixture({ session_id: SID, messages: [{ role: 'assistant', id: 2, content: 'Settled reply' }] })
+    const write = vi.spyOn(qc, 'setQueryData')
+    opened[0]!.onEvent(parseChatEvent(event, JSON.stringify({ session, error: 'Synthetic error' }))!, 'run-a:1')
+    expect(write).toHaveBeenCalledExactlyOnceWith(keys.sessions.detail(SID), { session })
+    expect(qc.getQueryState(keys.sessions.detail(SID))?.isInvalidated).toBe(false)
+    expect(qc.getQueryState(keys.sessions.detail('other'))?.isInvalidated).toBe(false)
+    for (const key of [keys.sessions.list({}), keys.sessions.status(SID), keys.sessions.usage(SID), keys.background(SID)]) expect(qc.getQueryState(key)?.isInvalidated).toBe(true)
+    for (const key of [keys.sessions.status('other'), keys.sessions.usage('other')]) expect(qc.getQueryState(key)?.isInvalidated).toBe(false)
+  })
+
+  it('still refreshes detail when an older server omits the settled session', async () => {
+    await attachToStream(SID, 'run-a')
+    const write = vi.spyOn(qc, 'setQueryData')
+    opened[0]!.onEvent(parseChatEvent('done', '{}')!, 'run-a:1')
+    expect(write).not.toHaveBeenCalled()
+    expect(qc.getQueryState(keys.sessions.detail(SID))?.isInvalidated).toBe(true)
+  })
+
+  it('turn start refreshes only lists and the admitted session status', async () => {
+    vi.mocked(api.startChat).mockResolvedValueOnce({ stream_id: 'run-a' })
+    await startTurn({ sessionId: SID, message: 'Next turn', request: {} })
+    for (const key of cachedKeys) expect(qc.getQueryState(key)?.isInvalidated).toBe(key[1] === 'list' || (key[1] === 'status' && key[2] === SID))
+  })
+})
+
 describe('stream attach cursor (TAL-316)', () => {
   it('retains the complete live turn through A -> B -> A and resumes only unseen frames (TAL-1050)', async () => {
     await attachToStream(SID, 'run-a', { transcript_seq: { stream_id: 'run-a', seq: 0 } })
@@ -378,6 +418,7 @@ describe('pending admission and cancellation intent (TAL-1079)', () => {
     const detail = deferred<Awaited<ReturnType<typeof api.fetchSession>>>()
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     configureStream({ queryClient: qc })
+    qc.setQueryData(keys.sessions.list({}), { sessions: [] })
     const observer = new QueryObserver(qc, { queryKey: keys.sessions.detail(SID), queryFn: () => api.fetchSession(SID, { messages: true, msg_limit: 120 }), initialData: { session: sessionFixture({ session_id: SID, messages: [] }) }, staleTime: Infinity })
     const off = observer.subscribe(() => undefined)
     beginFirstSend('First occurrence')
@@ -397,6 +438,8 @@ describe('pending admission and cancellation intent (TAL-1079)', () => {
     expect(getTurnIntent(SID).send).toBeUndefined()
     expect(getFirstSend()).toBeNull()
     expect(qc.getQueryData<{ session: typeof session }>(keys.sessions.detail(SID))?.session.messages).toEqual(session.messages)
+    expect(qc.getQueryState(keys.sessions.detail(SID))?.isInvalidated).toBe(false)
+    expect(qc.getQueryState(keys.sessions.list({}))?.isInvalidated).toBe(true)
     expect(opened).toHaveLength(0)
     off()
     qc.clear()

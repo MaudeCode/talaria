@@ -517,7 +517,6 @@ export const Composer = memo(function Composer(props: ComposerProps) {
           await startTurn({ sessionId: target.session_id, message: value, request: turnRequest(target, bootstrap.profile?.name ?? 'default') })
           if (scope !== getStreamContext()) return
           endFirstSend()
-          void qc.invalidateQueries({ queryKey: keys.sessions.all })
         } catch (e) {
           if (scope !== getStreamContext()) return
           showToast(e instanceof Error ? e.message : String(e), 5000, 'error')
@@ -533,7 +532,6 @@ export const Composer = memo(function Composer(props: ComposerProps) {
         const target = session
         const attachments = files.flatMap((f) => (f.status === 'done' && f.upload ? [f.upload] : []))
         await startTurn({ sessionId: target.session_id, message: value, files, request: { ...turnRequest(target, bootstrap.profile?.name ?? 'default'), ...(attachments.length ? { attachments } : {}) } })
-        if (scope === getStreamContext()) void qc.invalidateQueries({ queryKey: keys.sessions.all })
       } catch (e) {
         if (scope !== getStreamContext()) return
         showToast(e instanceof Error ? e.message : String(e), 5000, 'error')
