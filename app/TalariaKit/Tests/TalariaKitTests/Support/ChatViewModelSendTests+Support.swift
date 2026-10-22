@@ -44,6 +44,22 @@ extension ChatViewModelSendTests {
     /// a server copy near the optimistic row's device timestamp, so a frozen epoch reads as an older turn.
     var serverNow: Int { Int(Date().timeIntervalSince1970) }
 
+    func makeReloadedToolProgressModel(stream: SpySSEStreamingClient) throws -> ChatViewModel {
+        try makeViewModel(streamClient: stream) { request in
+            switch request.url?.path {
+            case "/api/session":
+                return apiTestJSONResponse(#"{"session":{"session_id":"session-abc","title":"Reloaded tool progress","model":"fixture-model","model_provider":"custom","active_stream_id":"run-tools","messages":[{"role":"user","content":"Index files","message_id":"prompt"},{"role":"assistant","content":"","message_id":"reply","_anchor_activity_scene":{"version":"activity_scene_v1","terminal_state":"running","activity_rows":[{"row_id":"row","role":"tool","tool":{"id":"call-index","name":"mcp__index","done":false,"progress":{"percent":42,"message":"indexing"}}}]}}]}}"#, for: request)
+            case "/api/chat/stream/status": return apiTestJSONResponse(#"{"active":true}"#, for: request)
+            case "/api/models": return apiTestJSONResponse(#"{"groups":[],"models":[{"id":"fixture-model","label":"Fixture Model"}],"default_model":"fixture-model","active_provider":"custom"}"#, for: request)
+            case "/api/profiles": return apiTestJSONResponse(#"{"profiles":[],"single_profile_mode":true}"#, for: request)
+            case "/api/workspaces": return apiTestJSONResponse(#"{"workspaces":[]}"#, for: request)
+            case "/api/commands": return apiTestJSONResponse(#"{"commands":[]}"#, for: request)
+            case "/api/session/yolo": return apiTestJSONResponse(#"{"ok":true,"yolo_enabled":false}"#, for: request)
+            default: return apiTestJSONResponse("{}", for: request)
+            }
+        }
+    }
+
     func makeEphemeralUserDefaults() throws -> UserDefaults {
         let suiteName = "TalariaTests.\(UUID().uuidString)"
         let userDefaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))

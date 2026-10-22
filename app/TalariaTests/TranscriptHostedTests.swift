@@ -8,6 +8,26 @@ import XCTest
 /// says to VoiceOver, its button trait, and where it sits against its neighbours.
 @MainActor
 final class TranscriptHostedTests: XCTestCase {
+    func testRunningToolProgressAndCompletion() throws {
+        for (size, name) in [(CGSize(width: 320, height: 844), "phone"), (HostedSize.padLandscape, "pad")] {
+            for (state, fields, expected) in [
+                ("before", #""done":false"#, false),
+                ("running", #""done":false,"progress":{"percent":42,"message":"indexing"}"#, true),
+                ("completed", #""done":true,"progress":null"#, false)
+            ] {
+                let decoder = JSONDecoder()
+                decoder.keyDecodingStrategy = .convertFromSnakeCase
+                let message = try decoder.decode(ChatMessage.self, from: Data(#"{"role":"assistant","content":"","tool_calls":[{"id":"call-index","name":"mcp__index",\#(fields)}]}"#.utf8))
+                let group = try XCTUnwrap(ToolCallGroup.groups(messages: [message], messageOffset: nil).first)
+                let window = try hostWindow(ToolActivityGroupView(group: group).padding(), size: size)
+                let labels = HostedAccessibility.labels(in: window)
+                XCTAssertEqual(labels.contains { $0.contains("42% · indexing") }, expected, "Incorrect progress in \(state): \(labels)")
+                attachHostedScreenshot(window, name: "tool-progress-\(state)-\(name)")
+                window.isHidden = true
+            }
+        }
+    }
+
     func testAnimatedNavigationReachesNewlyMountedRichRows() async throws {
         let previousArguments = FixtureLaunchArguments.scenario
         FixtureLaunchArguments.scenario = [UITestFixtureEnvironment.launchArgument]

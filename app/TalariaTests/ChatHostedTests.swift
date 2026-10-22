@@ -78,7 +78,49 @@ final class ChatHostedTests: XCTestCase {
         attachHostedScreenshot(window, name: "stream-isolation-after-ticks-\(name)")
     }
 
+    func testOwnerModelConfirmationDisplaysTheServersMessage() async throws {
+        let fixture = try FixtureApp(for: self)
+        let stream = ScriptedSSEStreamingClient()
+        let summary = SessionSummary(sessionId: "session-abc", title: "Owner model confirmation", model: "old-model")
+        let viewModel = try makeScriptedChatViewModel(streamClient: stream, sessionSummary: summary) { request in
+            if request.url?.path == "/api/session" {
+                return apiTestJSONResponse(#"{"session":{"session_id":"session-abc","title":"Owner model confirmation","model":"old-model","read_only":true,"owner_attachment":{"state":"attached","can_submit":true,"can_interrupt":false,"can_attach":false,"revision":3,"execution_generation":1,"admissions":[],"model_change":{"state":"confirmation_required","confirm":"owner-token","model":"picked-model","provider":"custom","message":"Confirm the owner's model change"}},"messages":[]}}"#, for: request)
+            }
+            return apiTestJSONResponse("{}", for: request)
+        }
+        defer {
+            viewModel.suspendStreamForNavigation()
+            viewModel.cleanupPollingTasks()
+            MockURLProtocol.requestHandler = nil
+            stream.stop()
+        }
+        await viewModel.loadMessages()
+        XCTAssertEqual(viewModel.modelSwitchConfirmation?.message, "Confirm the owner's model change")
+        let window = try hostWindow(NavigationStack {
+            ChatView(session: summary,
+                server: URL(string: "https://example.test")!, onAPIError: { _ in },
+                loadsInitialMessages: false, viewModel: viewModel)
+        }.modelContainer(fixture.cache))
+        let presented = await presentedAlert(in: window)
+        let alert = try XCTUnwrap(presented)
+        XCTAssertEqual(alert.message, "Confirm the owner's model change")
+        attachHostedScreenshot(window, name: "owner-model-confirmation-message")
+        XCTAssertTrue(HostedAccessibility.tap("Cancel", in: alert))
+        let dismissed = await awaitCondition { window.rootViewController?.presentedViewController == nil }
+        XCTAssertTrue(dismissed)
+        XCTAssertNil(viewModel.modelSwitchConfirmation)
+        XCTAssertEqual(viewModel.selectedModelID, "old-model")
+    }
+
     func testModelGuardCancelRefreshAndConfirmUseServerWarnings() async throws {
+        try await checkModelGuardWarnings(refusalCount: 3)
+    }
+
+    func testModelGuardRepeatedRefusalsPresentEveryServerWarning() async throws {
+        try await checkModelGuardWarnings(refusalCount: 30)
+    }
+
+    private func checkModelGuardWarnings(refusalCount: Int) async throws {
         let fixture = try FixtureApp(for: self)
         let stream = ScriptedSSEStreamingClient()
         var updates = 0
@@ -90,14 +132,14 @@ final class ChatHostedTests: XCTestCase {
                 return apiTestJSONResponse(#"{"groups":[{"provider":"Test provider","provider_id":"custom","models":[{"id":"contributor","label":"Contributor"}]}]}"#, for: request)
             case "/api/session/update":
                 updates += 1
-                if updates == 4 {
-                    XCTAssertEqual(try apiTestJSONBody(from: request)["confirm_token"] as? String, "token-3")
+                if updates == refusalCount + 1 {
+                    XCTAssertEqual(try apiTestJSONBody(from: request)["confirm_token"] as? String, "token-\(refusalCount)")
                     return apiTestJSONResponse(#"{"session":{"session_id":"session-abc","model":"contributor","model_provider":"custom"}}"#, for: request)
                 }
-                let title = updates == 3 ? "Context changed" : "Data policy"
-                let message = updates == 3 ? "The next reply will reread the updated context." : "This model may use your conversation for training."
+                let title = updates >= 3 ? (updates == 3 ? "Context changed" : "Context changed \(updates)") : "Data policy"
+                let message = updates >= 3 ? "The next reply will reread the updated context." : "This model may use your conversation for training."
                 let body: [String: Any] = ["error": "Confirm model change", "type": "model_confirmation_required", "confirm_token": "token-\(updates)",
-                    "warnings": [["kind": updates == 3 ? "context_cache" : "data_policy", "title": title, "message": message, "model": "contributor", "provider": "custom"]]]
+                    "warnings": [["kind": updates >= 3 ? "context_cache" : "data_policy", "title": title, "message": message, "model": "contributor", "provider": "custom"]]]
                 return (HTTPURLResponse(url: request.url!, statusCode: 409, httpVersion: nil, headerFields: nil)!, try JSONSerialization.data(withJSONObject: body))
             default: return apiTestJSONResponse("{}", for: request)
             }
@@ -127,19 +169,24 @@ final class ChatHostedTests: XCTestCase {
         attachHostedScreenshot(window, name: "model-cancelled")
         _ = await viewModel.selectComposerModel(ModelCatalogOption(id: "contributor", displayName: "Contributor", providerID: "custom"))
         let secondAlert = await presentedAlert(in: window)
-        XCTAssertTrue(HostedAccessibility.tap("Change Model", in: try XCTUnwrap(secondAlert)))
-        let refreshed = await awaitCondition { viewModel.modelSwitchConfirmation?.warnings[0].kind == "context_cache" }
-        XCTAssertTrue(refreshed)
-        settle(0.5)
-        let refreshedAlert = await presentedAlert(in: window)
-        let third = try XCTUnwrap(refreshedAlert)
-        XCTAssertEqual(third.message, "Context changed\n\nThe next reply will reread the updated context.")
-        XCTAssertEqual(viewModel.selectedModelID, "old-model")
-        attachHostedScreenshot(window, name: "model-refreshed")
-        XCTAssertTrue(HostedAccessibility.tap("Change Model", in: third))
+        var currentAlert = try XCTUnwrap(secondAlert)
+        for update in 3...refusalCount {
+            XCTAssertTrue(HostedAccessibility.tap("Change Model", in: currentAlert))
+            let refreshed = await awaitCondition { viewModel.modelSwitchConfirmation?.confirmToken == "token-\(update)" }
+            XCTAssertTrue(refreshed, "The server's warning \(update) never reached the model")
+            settle(0.5)
+            let refreshedAlert = await presentedAlert(in: window)
+            let warning = try XCTUnwrap(refreshedAlert, "The server's warning \(update) never appeared")
+            let title = update == 3 ? "Context changed" : "Context changed \(update)"
+            XCTAssertEqual(warning.message, "\(title)\n\nThe next reply will reread the updated context.")
+            XCTAssertEqual(viewModel.selectedModelID, "old-model")
+            if update == 3 { attachHostedScreenshot(window, name: "model-refreshed") }
+            currentAlert = warning
+        }
+        XCTAssertTrue(HostedAccessibility.tap("Change Model", in: currentAlert))
         let applied = await awaitCondition { viewModel.selectedModelID == "contributor" }
         XCTAssertTrue(applied)
-        XCTAssertEqual(updates, 4)
+        XCTAssertEqual(updates, refusalCount + 1)
         settle(0.3)
         attachHostedScreenshot(window, name: "model-confirmed")
     }
