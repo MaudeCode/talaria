@@ -28,7 +28,7 @@ vi.mock('../../api/endpoints', async (original) => ({
   fetchClarifyPending: () => Promise.resolve({ pending: null }),
   fetchAgentHealth: () => Promise.resolve({ available: true }),
   branchSession: vi.fn(() => Promise.resolve({ session_id: 'branched' })),
-  setSessionToolsets: vi.fn(), setSessionYolo: vi.fn(), setReasoningEffort: vi.fn(), setPersonality: vi.fn(), ownerAction: vi.fn(),
+  clearSession: vi.fn(), undoSession: vi.fn(), setSessionToolsets: vi.fn(), setSessionYolo: vi.fn(), setReasoningEffort: vi.fn(), setPersonality: vi.fn(), ownerAction: vi.fn(),
 }))
 // Probe the real row bodies inside their existing React.memo boundary, without a production test prop.
 vi.mock('./MessageRow', async (original) => {
@@ -173,4 +173,27 @@ it('drops a discarded owner input from the composer at once (TAL-1384)', async (
   await waitFor(() => expect(lastComposer().session?.owner_attachment?.admissions).toHaveLength(2))
   void lastComposer().onOwnerAction({ session_id: 'owner-chat', action: 'discard', admission_id: 'a1', execution_generation: 1 })
   await waitFor(() => expect(lastComposer().session?.owner_attachment?.admissions.map((a) => a.admission_id)).toEqual(['a2']))
+})
+
+it('empties the transcript on /clear and drops the last exchange on /undo before the server answers (TAL-1384)', async () => {
+  vi.mocked(api.undoSession).mockReturnValue(new Promise(() => undefined) as never)
+  chat(false)
+  await screen.findByText('Persisted answer')
+  await waitFor(() => expect(lastComposer().session).not.toBeNull())
+  void lastComposer().onLocalCommand('undo', '')
+  await waitFor(() => expect(screen.queryByText('Persisted question')).toBeNull())
+  expect(screen.queryByText('Persisted answer')).toBeNull()
+})
+
+it('brings the transcript back when /clear is refused (TAL-1384)', async () => {
+  let refuse!: (error: unknown) => void
+  vi.mocked(api.clearSession).mockReturnValue(new Promise((_, reject) => { refuse = reject }) as never)
+  chat(false)
+  await screen.findByText('Persisted answer')
+  await waitFor(() => expect(lastComposer().session).not.toBeNull())
+  const result = lastComposer().onLocalCommand('clear', '')
+  await waitFor(() => expect(screen.queryByText('Persisted answer')).toBeNull())
+  await act(async () => { refuse(new ApiError({ kind: 'http', status: 409, path: '/x', message: 'Busy' })); await Promise.resolve() })
+  expect(await screen.findByText('Persisted answer')).toBeInTheDocument()
+  await expect(result).resolves.toBe('refused')
 })

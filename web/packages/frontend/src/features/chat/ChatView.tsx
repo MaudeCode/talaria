@@ -20,7 +20,7 @@ import { dispatch, useTurnIntent } from '../../stream/store'
 import { isTerminal, runStart, type LiveTurn } from '../../stream/reducer'
 import { useTranscript, type VisibleMessage } from './useTranscript'
 import { chosenFields, useSessionUpdate } from './useSessionUpdate'
-import { useEditMessage } from './useEditMessage'
+import { transcriptCut, useEditMessage } from './useEditMessage'
 import { Transcript } from './Transcript'
 import { TranscriptSkeleton } from './TranscriptSkeleton'
 import { Composer, turnRequest } from '../composer/Composer'
@@ -69,6 +69,10 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   const navigate = useNavigate()
   const settings = useSettingsQuery()
   const { query, session, rows, base, live, truncated, loadOlder, loadingOlder, olderError, refresh } = useTranscript(sessionId, sameTurnControls)
+  // Edit, /clear and /undo show their cut at once; the reread of the session confirms it.
+  const cutFrom = useResourceEffects<number>()[transcriptCut(sessionId ?? '')]?.value
+  const shownRows = useMemo(() => typeof cutFrom === 'number' ? rows.filter((row) => row.index < cutFrom) : rows, [rows, cutFrom])
+  const lastExchange = () => [...rows].reverse().find((row) => row.message.role === 'user')?.index
   const intent = useTurnIntent(sessionId)
   const { onEdit, dialog: editDialog, operation, runHistory } = useEditMessage(sessionId, refresh)
   const clarify = useClarify(sessionId, live)
@@ -290,11 +294,11 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     switch (name) {
       case 'stop': if (sessionId) await cancelTurn(sessionId); return true
       case 'new': removePersisted('hermes-webui-session'); await navigate({ to: '/', search: { action: 'new-chat' } }); return true
-      case 'clear': if (sessionId) return await runHistory(m.history_clearing(), async (current) => { const r = await api.clearSession(sessionId); if (current()) await refresh(r.session) }) ? true : 'refused'; return true
+      case 'clear': if (sessionId) return await runHistory(m.history_clearing(), async (current) => { const r = await api.clearSession(sessionId); if (current()) await refresh(r.session) }, 0) ? true : 'refused'; return true
       case 'terminal': setTerminalOpen((t) => !t); return true
       case 'title': if (sessionId && args) renameSession(args); return true
       case 'retry': if (sessionId) return await onRegenerate() ? true : 'refused'; return true
-      case 'undo': if (sessionId) return await runHistory(m.history_undoing(), async (current) => { const r = await api.undoSession(sessionId); if (!current()) return; if ('error' in r) { showToast(r.error, 4000, 'error'); return false } await refresh(undefined, true) }) ? true : 'refused'; return true
+      case 'undo': if (sessionId) return await runHistory(m.history_undoing(), async (current) => { const r = await api.undoSession(sessionId); if (!current()) return; if ('error' in r) throw new Error(r.error); await refresh(undefined, true) }, lastExchange()) ? true : 'refused'; return true
       case 'compress': if (sessionId) { void runCompression(sessionId) } return true
       case 'usage': if (sessionId) { const u = await api.fetchSessionUsage(sessionId); showToast(`${(u.input_tokens ?? 0).toLocaleString()} in · ${(u.output_tokens ?? 0).toLocaleString()} out${u.estimated_cost ? ` · $${u.estimated_cost.toFixed(4)}` : ''}`, 4000) } return true
       case 'yolo': onToggleYolo(); return true
@@ -453,7 +457,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
         {!query.isError && (
           <Transcript
             disclosureScope={JSON.stringify([bootstrap.profile?.name ?? 'default', sessionId])}
-            rows={rows}
+            rows={shownRows}
             live={live}
             subscribeToStream
             assistantName={assistantName}
