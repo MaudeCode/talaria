@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Renaming, pinning, moving, archiving or deleting a chat or project, moving Kanban cards, pausing or deleting a scheduled task, and flipping a switch or setting now show the result the moment you act, and undo themselves with an error if the server refuses.",
+      "highlight": true,
+      "components": ["web"]
+    }
+  ]
+}

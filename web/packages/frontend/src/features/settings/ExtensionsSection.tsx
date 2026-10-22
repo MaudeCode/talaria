@@ -14,8 +14,8 @@ import { ConfirmDialog } from '../../ui/Dialog'
 import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { useBootstrap } from '../../app/bootstrap'
-import { useResourceIntents, useResourceMutation, type ResourceIntent } from '../sessions/useResourceMutation'
-import { ResourceSwitch } from '../sessions/ResourcePending'
+import { useResourceEffects, useResourceMutation, type ResourceEffect } from '../sessions/useResourceMutation'
+import { ResourceSwitch } from '../sessions/ResourceSwitch'
 import { cn } from '../../ui/cn'
 
 const GUIDE = 'https://github.com/MaudeCode/talaria/blob/main/web/docs/architecture/extension-migration-guide.md'
@@ -28,10 +28,10 @@ export function ExtensionsSection() {
   const registry = useQuery({ queryKey: keys.extensions.registry, queryFn: api.fetchExtensionRegistry, staleTime: 5 * 60_000, retry: false })
   const [confirmUninstall, setConfirmUninstall] = useState<string | null>(null)
   const invalidate = () => { void qc.invalidateQueries({ queryKey: keys.extensions.manifests }); void qc.invalidateQueries({ queryKey: keys.extensions.status }) }
-  const intents = useResourceIntents<boolean>()
+  const effects = useResourceEffects<boolean>()
   const toggle = useResourceMutation({
     resource: ({ id }: { id: string; enabled: boolean }) => `extension:${id}`,
-    intent: ({ enabled }) => ({ value: enabled, label: m.save() }),
+    effect: ({ enabled }) => ({ value: enabled }),
     queryKey: keys.extensions.all,
     readKeys: () => [keys.extensions.manifests, keys.extensions.status],
     mutationFn: async ({ id, enabled }) => api.extensionAction('toggle', { id, enabled }),
@@ -56,7 +56,7 @@ export function ExtensionsSection() {
         <h2 className="mb-2 text-sm font-semibold text-text">{m.extensions_installed()}</h2>
         {list.length === 0 && <EmptyState>{m.extensions_none()}</EmptyState>}
         <ul className="flex flex-col gap-2">
-          {list.map((e) => <ExtensionRow key={e.id} ext={e} canManage={canManage} intent={intents[`extension:${e.id}`]} onToggle={(enabled) => toggle.mutate({ id: e.id, enabled })} onConsent={(consent) => act.mutate({ action: 'sidecar-proxy-consent', body: { id: e.id, consent } })} onUninstall={() => setConfirmUninstall(e.id)} />)}
+          {list.map((e) => <ExtensionRow key={e.id} ext={e} canManage={canManage} effect={effects[`extension:${e.id}`]} onToggle={(enabled) => toggle.mutate({ id: e.id, enabled })} onConsent={(consent) => act.mutate({ action: 'sidecar-proxy-consent', body: { id: e.id, consent } })} onUninstall={() => setConfirmUninstall(e.id)} />)}
         </ul>
       </section>
       <section>
@@ -78,7 +78,7 @@ export function ExtensionsSection() {
   )
 }
 
-function ExtensionRow({ ext, canManage, intent, onToggle, onConsent, onUninstall }: { ext: ExtensionManifest; intent: ResourceIntent<boolean> | undefined; canManage: boolean; onToggle: (enabled: boolean) => void; onConsent: (consent: boolean) => void; onUninstall: () => void }) {
+function ExtensionRow({ ext, canManage, effect, onToggle, onConsent, onUninstall }: { ext: ExtensionManifest; effect: ResourceEffect<boolean> | undefined; canManage: boolean; onToggle: (enabled: boolean) => void; onConsent: (consent: boolean) => void; onUninstall: () => void }) {
   const perms = Object.entries(ext.permissions ?? {}).filter(([, v]) => v).map(([k]) => k)
   return (
     <li className={cn('rounded-lg border border-border bg-surface p-3 text-sm', !ext.enabled && 'opacity-80')} data-extension-id={ext.id} data-source={ext.source}>
@@ -89,7 +89,7 @@ function ExtensionRow({ ext, canManage, intent, onToggle, onConsent, onUninstall
         </div>
         {ext.panel && ext.enabled && <Link to="/ext/$extensionId" params={{ extensionId: ext.id }} className="text-xs text-accent-text underline">{m.extensions_open()}</Link>}
         {canManage && ext.can_toggle && (
-          <ResourceSwitch intent={intent} checked={ext.enabled} onCheckedChange={(checked) => onToggle(checked)} aria-label={ext.name} stateLabel={(enabled) => enabled ? m.plugins_enabled() : m.plugins_disabled()} />
+          <ResourceSwitch effect={effect} checked={ext.enabled} onCheckedChange={(checked) => onToggle(checked)} aria-label={ext.name} stateLabel={(enabled) => enabled ? m.plugins_enabled() : m.plugins_disabled()} />
         )}
         {canManage && ext.source === 'gallery' && <Button variant="ghost" className="text-error" onClick={onUninstall}>{m.extensions_uninstall()}</Button>}
       </div>

@@ -15,8 +15,8 @@ field defined in `web/packages/contracts`; the generated
 render those fields. Client logic is limited to localized wording; number,
 date, and unit formatting; local-date bucketing; layout, theme, animation, and
 accessibility; device-local UI state (disclosure, scroll, focus, drafts);
-live-stream rendering before the server persists a value, converging on the
-server field once it arrives; offline display of cached server fields; and
+live-stream rendering and optimistic display of the user's own writes before
+the server persists a value, converging on the server field once it arrives; offline display of cached server fields; and
 platform integration (notifications, Live Activities, share sheets, input).
 Everything else, including anything uncertain, belongs on the server; when the
 server lacks the data, add it to the server or sidecar. A change that adds or
@@ -24,6 +24,18 @@ edits client logic outside that list moves it to the server and contract in the
 same change, or files a linked Kaneo ticket before merge and cites it in the
 PR; reviewers treat unticketed client derivation as blocking. An old-server
 fallback sits behind the contract field and is deleted once the field ships.
+
+Optimistic writes: every user-initiated write applies its result to the display
+immediately (the row disappears, the value changes, the item moves) and rolls
+back to the last confirmed value with the existing error if the server refuses.
+An unknown outcome (network loss, timeout, 5xx) reconciles with the server
+before keeping or rolling back, and a non-idempotent write is never replayed
+blind. Never show a "Pending: …" label, and never make a dialog, sheet, menu or
+control wait for the response before reflecting the choice. Only writes whose
+result the server must produce (generated content, job execution, uploads,
+auth/OAuth, installs and updates) keep a busy state, and only on the control
+that started them. A ticket that asks for immediate feedback says "optimistic
+update with rollback", never "pending presentation" or "intent overlay".
 
 Kaneo Talaria is the canonical tracker for all components. Add one or more scope
 labels: `app`, `web`, `relay`, `tooling`, `contracts`. Use `contracts` alongside

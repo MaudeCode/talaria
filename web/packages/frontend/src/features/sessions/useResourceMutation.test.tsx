@@ -1,10 +1,13 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { teardownAll } from '../../stream/connection'
 import { keys } from '../../api/queryKeys'
-import { useResourceIntents, useResourceMutation } from './useResourceMutation'
+import { useResourceEffects, useResourceMutation, withEffects } from './useResourceMutation'
+import { ApiError } from '../../contracts/common'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -18,15 +21,15 @@ function harness() {
   return { qc, wrapper }
 }
 
-describe('resource intent ownership', () => {
+describe('optimistic resource ownership', () => {
   it('keeps independent requests pending, fences stale list reads, and releases only the rejected intent', async () => {
     const a = deferred<{ ok: boolean }>(), b = deferred<{ ok: boolean }>(), old = deferred<string>()
     const { qc, wrapper } = harness()
     const read = vi.fn().mockResolvedValueOnce('baseline').mockImplementationOnce(() => old.promise).mockResolvedValue('fresh')
     const { result } = renderHook(() => {
       const list = useQuery({ queryKey: keys.sessions.list({}), queryFn: read })
-      const intents = useResourceIntents()
-      const write = useResourceMutation({ resource: (id: string) => `session:${id}`, intent: () => ({ label: 'Rename', title: 'Submitted' }), mutationFn: (id) => id === 'a' ? a.promise : b.promise })
+      const intents = useResourceEffects()
+      const write = useResourceMutation({ resource: (id: string) => `session:${id}`, effect: () => ({ fields: { title: 'Submitted' } }), mutationFn: (id) => id === 'a' ? a.promise : b.promise })
       return { list, intents, write }
     }, { wrapper })
     await waitFor(() => expect(result.current.list.data).toBe('baseline'))
@@ -35,7 +38,7 @@ describe('resource intent ownership', () => {
     await waitFor(() => expect(Object.keys(result.current.intents)).toHaveLength(2))
     await act(async () => { a.reject(new Error('refused')); await first })
     await waitFor(() => expect(result.current.intents['session:a']).toBeUndefined())
-    expect(result.current.intents['session:b']?.title).toBe('Submitted')
+    expect(result.current.intents['session:b']?.fields?.title).toBe('Submitted')
     await act(async () => { old.resolve('stale'); await stale })
     expect(result.current.list.data).toBe('fresh')
     await act(async () => { b.resolve({ ok: true }); await second })
@@ -51,8 +54,8 @@ describe('resource intent ownership', () => {
     const { result } = renderHook(() => ({
       list: useQuery({ queryKey: keys.sessions.list({}), queryFn: read }),
       projects: useQuery({ queryKey: keys.projects, queryFn: projects }),
-      intents: useResourceIntents(),
-      write: useResourceMutation({ resource: (id: string) => id, intent: () => ({ label: 'Save' }), mutationFn: (id) => id === 'session:a' ? a.promise : b.promise }),
+      intents: useResourceEffects(),
+      write: useResourceMutation({ resource: (id: string) => id, effect: () => ({ fields: { touched: true } }), mutationFn: (id) => id === 'session:a' ? a.promise : b.promise }),
     }), { wrapper })
     await waitFor(() => expect(result.current.list.data).toBe('baseline'))
     let first!: Promise<unknown>, second!: Promise<unknown>
@@ -74,9 +77,9 @@ describe('resource intent ownership', () => {
     const read = vi.fn().mockResolvedValueOnce(['keeper', 'deleted']).mockImplementationOnce(() => stale.promise).mockImplementationOnce(() => fresh.promise)
     const { result } = renderHook(() => ({
       list: useQuery({ queryKey: keys.sessions.list({}), queryFn: read }),
-      intents: useResourceIntents(),
-      change: useResourceMutation({ resource: () => 'session:keeper', intent: () => ({ label: 'Rename' }), mutationFn: () => a.promise }),
-      remove: useResourceMutation({ resource: () => 'session:deleted', intent: () => ({ label: 'Delete' }), mutationFn: () => b.promise, onSuccess: () => qc.setQueryData(keys.sessions.list({}), ['keeper']) }),
+      intents: useResourceEffects(),
+      change: useResourceMutation({ resource: () => 'session:keeper', effect: () => ({ fields: { touched: true } }), mutationFn: () => a.promise }),
+      remove: useResourceMutation({ resource: () => 'session:deleted', effect: () => ({ fields: { touched: true } }), mutationFn: () => b.promise, onSuccess: () => qc.setQueryData(keys.sessions.list({}), ['keeper']) }),
     }), { wrapper })
     await waitFor(() => expect(result.current.list.data).toEqual(['keeper', 'deleted']))
     let first!: Promise<unknown>, second!: Promise<unknown>
@@ -100,8 +103,8 @@ describe('resource intent ownership', () => {
     const accepted = vi.fn()
     let next = old
     const { result } = renderHook(() => ({
-      intents: useResourceIntents(),
-      write: useResourceMutation({ resource: () => 'session:same-id', intent: () => ({ label: 'Pin' }), mutationFn: () => next.promise, onSuccess: accepted }),
+      intents: useResourceEffects(),
+      write: useResourceMutation({ resource: () => 'session:same-id', effect: () => ({ fields: { touched: true } }), mutationFn: () => next.promise, onSuccess: accepted }),
     }), { wrapper })
     let first!: Promise<unknown>, second!: Promise<unknown>
     act(() => { first = result.current.write.mutateAsync() })
@@ -116,32 +119,140 @@ describe('resource intent ownership', () => {
     await waitFor(() => expect(result.current.intents).toEqual({}))
   })
 
-  it('keeps an uncertain create locked until a successful read, without issuing another create', async () => {
-    const { wrapper } = harness()
-    const write = vi.fn().mockRejectedValue(new Error('connection lost'))
+  it('keeps an uncertain create shown and exclusive until a later successful read, without issuing another create', async () => {
+    const { qc, wrapper } = harness()
+    const write = vi.fn().mockRejectedValue(new ApiError({ kind: 'network', path: '/projects', message: 'connection lost' }))
     const read = vi.fn().mockResolvedValueOnce('baseline').mockRejectedValue(new Error('offline'))
     const { result } = renderHook(() => ({
       projects: useQuery({ queryKey: keys.projects, queryFn: read }),
-      intents: useResourceIntents(),
-      create: useResourceMutation({ resource: () => 'project:new', intent: () => ({ title: 'New', label: 'Create' }), mutationFn: write }),
+      intents: useResourceEffects(),
+      create: useResourceMutation({ resource: () => 'project:new', exclusive: true, effect: () => ({ fields: { name: 'New' } }), mutationFn: write }),
     }), { wrapper })
     await waitFor(() => expect(result.current.projects.data).toBe('baseline'))
     await act(async () => { await result.current.create.mutateAsync().catch(() => undefined) })
-    await waitFor(() => expect(result.current.intents['project:new']?.recover).toBeDefined())
-    await act(async () => { await result.current.create.mutateAsync().catch(() => undefined) })
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(2))
+    expect(result.current.intents['project:new']?.fields?.name).toBe('New')
+    await expect(act(() => result.current.create.mutateAsync())).rejects.toThrow('Wait for the pending change to finish.')
     expect(write).toHaveBeenCalledOnce()
     read.mockResolvedValue('reconciled')
-    await act(async () => { await result.current.intents['project:new']?.recover?.() })
+    await act(async () => { await qc.refetchQueries({ queryKey: keys.projects }) })
     await waitFor(() => expect(result.current.intents).toEqual({}))
     expect(result.current.projects.data).toBe('reconciled')
   })
+
+  it('shows the effect at once, rolls a definite refusal back without a wait, and keeps it through an unknown outcome', async () => {
+    const { wrapper } = harness()
+    const refused = deferred<never>(), lost = deferred<never>(), reread = deferred<string>()
+    const read = vi.fn().mockResolvedValueOnce('baseline').mockImplementation(() => reread.promise)
+    const { result } = renderHook(() => ({
+      list: useQuery({ queryKey: keys.sessions.list({}), queryFn: read }),
+      intents: useResourceEffects(),
+      write: useResourceMutation({ resource: (id: string) => `session:${id}`, effect: () => ({ fields: { title: 'Shown' } }), mutationFn: (id: string) => id === 'a' ? refused.promise : lost.promise }),
+    }), { wrapper })
+    await waitFor(() => expect(result.current.list.data).toBe('baseline'))
+    let a!: Promise<unknown>, b!: Promise<unknown>
+    act(() => { a = result.current.write.mutateAsync('a').catch((e: unknown) => e); b = result.current.write.mutateAsync('b').catch((e: unknown) => e) })
+    await waitFor(() => expect(Object.keys(result.current.intents).sort()).toEqual(['session:a', 'session:b']))
+    // The refusal rolls back before any read answers: the reread stays held throughout.
+    await act(async () => { refused.reject(new ApiError({ kind: 'http', status: 409, path: '/x', message: 'refused' })); await a })
+    await waitFor(() => expect(result.current.intents['session:a']).toBeUndefined())
+    await act(async () => { lost.reject(new ApiError({ kind: 'http', status: 502, path: '/x', message: 'bad gateway' })); await Promise.resolve() })
+    // The refusal's background refresh and B's reconciliation both wait on the held reread.
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(3))
+    expect(result.current.intents['session:b']?.fields?.title).toBe('Shown')
+    await act(async () => { reread.resolve('fresh'); await b })
+    await waitFor(() => expect(result.current.intents).toEqual({}))
+  })
+
+  it('queues a repeated write behind its predecessor and shows only the newest value; an exclusive write refuses', async () => {
+    const { wrapper } = harness()
+    const first = deferred<{ ok: boolean }>()
+    const sent: string[] = []
+    const { result } = renderHook(() => ({
+      intents: useResourceEffects(),
+      rename: useResourceMutation({ resource: () => 'session:a', effect: (title: string) => ({ fields: { title } }), mutationFn: (title: string) => { sent.push(title); return title === 'one' ? first.promise : Promise.resolve({ ok: true }) } }),
+      remove: useResourceMutation({ resource: () => 'session:a', effect: () => ({ remove: true }), mutationFn: () => Promise.resolve({ ok: true }) }),
+    }), { wrapper })
+    let one!: Promise<unknown>, two!: Promise<unknown>
+    act(() => { one = result.current.rename.mutateAsync('one') })
+    await waitFor(() => expect(sent).toEqual(['one']))
+    act(() => { two = result.current.rename.mutateAsync('two') })
+    await waitFor(() => expect(result.current.intents['session:a']?.fields?.title).toBe('two'))
+    expect(sent).toEqual(['one'])
+    await expect(act(() => result.current.remove.mutateAsync())).rejects.toThrow('Wait for the pending change to finish.')
+    await act(async () => { first.resolve({ ok: true }); await Promise.all([one, two]) })
+    expect(sent).toEqual(['one', 'two'])
+    await waitFor(() => expect(result.current.intents).toEqual({}))
+  })
+
+  it('settles the rest of a multi-resource write after a later write replaces one of its resources', async () => {
+    const { wrapper } = harness()
+    const bulk = deferred<{ ok: boolean }>()
+    const { result } = renderHook(() => ({
+      intents: useResourceEffects(),
+      write: useResourceMutation({ resource: (ids: string[]) => ids, effect: () => ({ fields: { status: 'done' } }), mutationFn: (ids: string[]) => ids.length > 1 ? bulk.promise : Promise.resolve({ ok: true }) }),
+    }), { wrapper })
+    let many!: Promise<unknown>, one!: Promise<unknown>
+    act(() => { many = result.current.write.mutateAsync(['a', 'b']) })
+    await waitFor(() => expect(Object.keys(result.current.intents).sort()).toEqual(['a', 'b']))
+    act(() => { one = result.current.write.mutateAsync(['a']) })
+    await act(async () => { bulk.resolve({ ok: true }); await Promise.all([many, one]) })
+    await waitFor(() => expect(result.current.intents).toEqual({}))
+  })
+
+  it('after a failed reconciliation, waits for every displayed snapshot to read again before settling', async () => {
+    const { qc, wrapper } = harness()
+    const family = ['kanban', 'board', 'default']
+    const view = vi.fn().mockResolvedValueOnce('view').mockRejectedValue(new Error('offline'))
+    const stats = vi.fn().mockResolvedValueOnce('stats').mockRejectedValue(new Error('offline'))
+    const { result } = renderHook(() => ({
+      view: useQuery({ queryKey: [...family, 'view'], queryFn: view }),
+      stats: useQuery({ queryKey: [...family, 'stats'], queryFn: stats }),
+      intents: useResourceEffects(),
+      write: useResourceMutation({ resource: () => 'card', queryKey: family, effect: () => ({ fields: { status: 'done' } }), mutationFn: () => Promise.reject(new ApiError({ kind: 'timeout', path: '/x', message: 'timed out' })) }),
+    }), { wrapper })
+    await waitFor(() => expect(result.current.stats.data).toBe('stats'))
+    await act(async () => { await result.current.write.mutateAsync().catch(() => undefined) })
+    await waitFor(() => expect(view).toHaveBeenCalledTimes(2))
+    stats.mockResolvedValue('stats again')
+    await act(async () => { await qc.refetchQueries({ queryKey: [...family, 'stats'] }) })
+    expect(result.current.intents.card?.fields?.status).toBe('done')
+    view.mockResolvedValue('view again')
+    await act(async () => { await qc.refetchQueries({ queryKey: [...family, 'view'] }) })
+    await waitFor(() => expect(result.current.intents).toEqual({}))
+  })
+
+  it('keeps the fields of a replaced write that the replacing write does not set', async () => {
+    const { wrapper } = harness()
+    const { result } = renderHook(() => ({
+      intents: useResourceEffects(),
+      write: useResourceMutation({ resource: () => 'project:p', effect: (fields: Record<string, unknown>) => ({ fields }), mutationFn: () => new Promise<never>(() => undefined) }),
+    }), { wrapper })
+    act(() => { result.current.write.mutate({ name: 'Renamed' }) })
+    await waitFor(() => expect(result.current.intents['project:p']?.fields).toEqual({ name: 'Renamed' }))
+    act(() => { result.current.write.mutate({ color: '#f5c542' }) })
+    await waitFor(() => expect(result.current.intents['project:p']?.fields).toEqual({ name: 'Renamed', color: '#f5c542' }))
+  })
+
+  it('drops removed rows and patches fields for display', () => {
+    const rows = [{ id: 'a', title: 'A' }, { id: 'b', title: 'B' }, { id: 'c', title: 'C' }]
+    expect(withEffects(rows, (r) => r.id, { a: { remove: true }, b: { fields: { title: 'Renamed' } } })).toEqual([{ id: 'b', title: 'Renamed' }, { id: 'c', title: 'C' }])
+    expect(rows[1]?.title).toBe('B')
+  })
+
+  it('never ships a pending label', () => {
+    const messages = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../messages/en.json'), 'utf8')) as Record<string, unknown>
+    expect(messages).not.toHaveProperty('resource_change_pending')
+    expect(Object.values(messages).some((text) => typeof text === 'string' && text.startsWith('Pending: '))).toBe(false)
+  })
+
   it('leaves an unrelated in-flight history read intact during required snapshot reconciliation', async () => {
     const { wrapper } = harness()
     const history = deferred<string>()
     const { result } = renderHook(() => ({
       list: useQuery({ queryKey: keys.crons.list(false), queryFn: () => Promise.resolve('jobs') }),
       history: useQuery({ queryKey: keys.crons.history('digest'), queryFn: () => history.promise }),
-      change: useResourceMutation({ resource: () => 'cron:digest', queryKey: keys.crons.all, readKeys: () => [keys.crons.list(false)], intent: () => ({ label: 'Pause' }), mutationFn: () => Promise.resolve({ ok: true }) }),
+      change: useResourceMutation({ resource: () => 'cron:digest', queryKey: keys.crons.all, readKeys: () => [keys.crons.list(false)], effect: () => ({ fields: { touched: true } }), mutationFn: () => Promise.resolve({ ok: true }) }),
     }), { wrapper })
     await waitFor(() => expect(result.current.list.data).toBe('jobs'))
     await act(async () => { await result.current.change.mutateAsync() })
@@ -160,8 +271,8 @@ describe('resource intent ownership', () => {
     const { result } = renderHook(() => ({
       a: useQuery({ queryKey: [...family, 'a'], queryFn: readA }),
       b: useQuery({ queryKey: [...family, 'b'], queryFn: readB }),
-      intents: useResourceIntents(),
-      change: useResourceMutation({ resource: (id: string) => id, queryKey: family, readKeys: (id) => [[...family, id]], intent: () => ({ label: 'Save' }), mutationFn: (id) => id === 'a' ? a.promise : b.promise }),
+      intents: useResourceEffects(),
+      change: useResourceMutation({ resource: (id: string) => id, queryKey: family, readKeys: (id) => [[...family, id]], effect: () => ({ fields: { touched: true } }), mutationFn: (id) => id === 'a' ? a.promise : b.promise }),
     }), { wrapper })
     await waitFor(() => expect(result.current.b.data).toBe('old B'))
     let first!: Promise<unknown>, second!: Promise<unknown>

@@ -14,6 +14,7 @@ import { ExtensionsSection } from './ExtensionsSection'
 import { ConnectorsSection } from '../connectors/ConnectorsSection'
 import { teardownAll } from '../../stream/connection'
 import { showToast } from '../toast/toast'
+import { ApiError } from '../../contracts'
 
 vi.mock('../../api/endpoints', () => ({ fetchSkills: vi.fn(), fetchSkillsUsage: vi.fn(), toggleSkill: vi.fn(), fetchMcpServers: vi.fn(), fetchMcpTools: vi.fn(), toggleMcpServer: vi.fn(), fetchExtensionRegistry: vi.fn(), extensionAction: vi.fn(), fetchConnectors: vi.fn(), fetchConnectorTools: vi.fn(), setConnectorRule: vi.fn() }))
 vi.mock('../../shell/AppShell', () => ({ HubPage: ({ children, toolbar }: { children: ReactNode; toolbar?: ReactNode }) => <main>{toolbar}{children}</main> }))
@@ -52,25 +53,29 @@ function setup(c: typeof cases[number]) {
 }
 const control = (name: string) => screen.getByRole('switch', { name: new RegExp(`^${name}(?:[: ]|$)`) })
 
-it.each(cases)('$name reflects requested state while transport is held, suppresses duplicates and fences refreshes', async (c) => {
+const lost = () => new ApiError({ kind: 'network', path: '/x', message: 'Connection lost' })
+
+it.each(cases)('$name flips at once, stays usable, replaces a repeated flip and ignores stale refreshes', async (c) => {
   const write = deferred<never>()
   c.write().mockReturnValue(write.promise)
   const { qc } = setup(c)
   await screen.findByRole('switch', { name: /^alpha(?:[: ]|$)/ })
   fireEvent.click(control('alpha'))
   await waitFor(() => expect(control('alpha')).toBeChecked())
-  expect(control('alpha')).toHaveAttribute('aria-busy', 'true')
-  expect(control('alpha')).toHaveAttribute('aria-disabled', 'true')
+  expect(control('alpha')).not.toHaveAttribute('aria-busy')
+  expect(control('alpha')).not.toHaveAttribute('aria-disabled', 'true')
+  expect(screen.queryByText(/Pending/)).toBeNull()
+  // A second flip shows at once and waits behind the first request (last write wins).
   fireEvent.click(control('alpha'))
+  await waitFor(() => expect(control('alpha')).not.toBeChecked())
+  fireEvent.click(control('alpha'))
+  await waitFor(() => expect(control('alpha')).toBeChecked())
   act(() => qc.setQueryData(c.key, c.snapshot()))
   expect(control('alpha')).toBeChecked()
-  if (c.name === 'connector') {
-    expect(control('beta')).toHaveAttribute('aria-disabled', 'true')
-  } else {
-    expect(control('beta')).not.toHaveAttribute('aria-disabled', 'true')
-    fireEvent.click(control('beta'))
-    await waitFor(() => expect(control('beta')).toBeChecked())
-  }
+  expect(control('beta')).not.toHaveAttribute('aria-disabled', 'true')
+  fireEvent.click(control('beta'))
+  await waitFor(() => expect(control('beta')).toBeChecked())
+  // Connector rules share one revision, so the peer write waits for the held one.
   expect(c.write()).toHaveBeenCalledTimes(c.name === 'connector' ? 1 : 2)
 })
 
@@ -81,24 +86,26 @@ it.each(cases)('$name uses the authoritative normalized value after success', as
   await screen.findByRole('switch', { name: /^alpha(?:[: ]|$)/ })
   fireEvent.click(control('alpha'))
   await waitFor(() => expect(control('alpha')).toBeChecked())
-  await act(async () => { write.resolve({ ok: true, enabled: false } as never); await Promise.resolve() })
+  await act(async () => { write.resolve({ ok: true, enabled: false, revision: 'rev-2' } as never); await Promise.resolve() })
   await waitFor(() => expect(control('alpha')).not.toBeChecked())
-  expect(control('alpha')).not.toHaveAttribute('aria-disabled', 'true')
 })
 
-it.each(cases)('$name restores confirmed state and reports a refused write', async (c) => {
+it.each(cases)('$name rolls a refused write back at once and reports it', async (c) => {
   const write = deferred<never>()
   c.write().mockReturnValue(write.promise)
+  const read = deferred<never>()
   setup(c)
   await screen.findByRole('switch', { name: /^alpha(?:[: ]|$)/ })
+  c.read().mockReturnValue(read.promise)
   fireEvent.click(control('alpha'))
   await waitFor(() => expect(control('alpha')).toBeChecked())
   await act(async () => { write.resolve({ ok: false, error: 'Refused' } as never); await Promise.resolve() })
+  // No read answers: the rollback does not wait for one.
   await waitFor(() => expect(control('alpha')).not.toBeChecked())
   expect(showToast).toHaveBeenCalledWith(expect.any(String), expect.any(Number), 'error')
 })
 
-it.each(cases)('$name retains ownership across unmount, and fences a previous profile completion', async (c) => {
+it.each(cases)('$name keeps its value across unmount, and fences a previous profile completion', async (c) => {
   const old = deferred<never>(), fresh = deferred<never>()
   c.write().mockReturnValueOnce(old.promise).mockReturnValue(fresh.promise)
   const { qc, rerender, tree } = setup(c)
@@ -115,27 +122,28 @@ it.each(cases)('$name retains ownership across unmount, and fences a previous pr
   await waitFor(() => expect(c.write()).toHaveBeenCalledTimes(2))
   await act(async () => { old.resolve({ ok: true } as never); await Promise.resolve() })
   expect(control('alpha')).toBeChecked()
-  expect(control('alpha')).toHaveAttribute('aria-busy', 'true')
   expect(showToast).not.toHaveBeenCalled()
 })
 
-it.each(cases)('$name reconciles a transport failure and keeps read recovery separate from another write', async (c) => {
-  c.write().mockRejectedValue(new Error('Connection lost'))
+it.each(cases)('$name keeps an unknown outcome shown until a later read decides it, without resending', async (c) => {
+  c.write().mockRejectedValue(lost())
   const { qc } = setup(c)
   await screen.findByRole('switch', { name: /^alpha(?:[: ]|$)/ })
   c.read().mockRejectedValue(new Error('Offline'))
   fireEvent.click(control('alpha'))
-  const retry = await within(control('alpha').closest('li')!).findByRole('button', { name: 'Retry' })
+  await waitFor(() => expect(showToast).toHaveBeenCalled())
+  await waitFor(() => expect(c.read().mock.calls.length).toBeGreaterThan(1))
   expect(control('alpha')).toBeChecked()
-  expect(control('alpha')).toHaveAttribute('aria-disabled', 'true')
+  expect(control('alpha')).not.toHaveAttribute('aria-disabled', 'true')
   c.read().mockResolvedValue(c.snapshot())
-  fireEvent.click(retry)
+  // Every displayed snapshot the write covers reads again.
+  await act(async () => { await qc.refetchQueries() })
   await waitFor(() => expect(control('alpha')).not.toBeChecked())
   expect(c.write()).toHaveBeenCalledTimes(1)
   expect(qc.getQueryData(c.key)).toEqual(c.snapshot())
 })
 
-it.each(cases.filter((c) => c.name !== 'connector'))('$name keeps a peer intent when the first write reconciles', async (c) => {
+it.each(cases.filter((c) => c.name !== 'connector'))('$name keeps a peer value when the first write reconciles', async (c) => {
   const first = deferred<never>(), second = deferred<never>()
   c.write().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
   setup(c)
@@ -147,12 +155,11 @@ it.each(cases.filter((c) => c.name !== 'connector'))('$name keeps a peer intent 
   await act(async () => { first.resolve({ ok: true } as never); await Promise.resolve() })
   await waitFor(() => expect(control('alpha')).not.toBeChecked())
   expect(control('beta')).toBeChecked()
-  expect(control('beta')).toHaveAttribute('aria-busy', 'true')
   await act(async () => { second.resolve({ ok: true } as never); await Promise.resolve() })
   await waitFor(() => expect(control('beta')).not.toBeChecked())
 })
 
-it('serializes connector tool and app rules through conflict reconciliation and the fresh revision', async () => {
+it('serializes connector tool and app rules, sending the next rule on the reread revision after a conflict', async () => {
   const c = cases[3]!
   const write = deferred<never>()
   c.write().mockReturnValueOnce(write.promise).mockResolvedValue({ ok: true, revision: 'rev-3' } as never)
@@ -162,18 +169,19 @@ it('serializes connector tool and app rules through conflict reconciliation and 
   const tool = await screen.findByRole('switch', { name: 'Read available to Hermes' })
   fireEvent.click(tool)
   await waitFor(() => expect(tool).toBeChecked())
-  expect(tool).toHaveAttribute('aria-busy', 'true')
-  expect(control('alpha')).toHaveAttribute('aria-disabled', 'true')
+  expect(control('alpha')).not.toHaveAttribute('aria-disabled', 'true')
   expect(control('alpha')).not.toBeChecked()
-  const { ApiError } = await import('../../contracts')
   // Reject the held transport without a timer, then read the server's replacement revision.
   c.read().mockResolvedValue({ ...connectors(), policy_revision: 'rev-2' })
   await act(async () => { write.resolve(Promise.reject(new ApiError({ kind: 'http', status: 409, path: '/api/connectors/alpha/policy', code: 'policy_conflict', message: 'stale', retryable: false })) as never); await Promise.resolve() })
   await waitFor(() => expect(tool).not.toBeChecked())
   expect(showToast).toHaveBeenCalledWith(expect.stringMatching(/changed/i), 5000, 'error')
+  await waitFor(() => expect(qc.getQueryData(keys.connectors.page)).toMatchObject({ policy_revision: 'rev-2' }))
   fireEvent.click(control('beta'))
   await waitFor(() => expect(api.setConnectorRule).toHaveBeenLastCalledWith('beta', 'rev-2', { enabled: true }))
-  expect(qc.getQueryData(keys.connectors.page)).toMatchObject({ policy_revision: 'rev-2' })
+  // A rule sent before the page rereads uses the revision the last confirmed write returned.
+  fireEvent.click(control('alpha'))
+  await waitFor(() => expect(api.setConnectorRule).toHaveBeenLastCalledWith('alpha', 'rev-3', { enabled: true }))
 })
 
 it('keeps connector rules without a revision and server-locked tools disabled', async () => {
@@ -192,22 +200,22 @@ it('keeps connector rules without a revision and server-locked tools disabled', 
   expect(api.setConnectorRule).not.toHaveBeenCalled()
 })
 
-it('retains a pending connector tool and its recovery action after a failed tool refresh', async () => {
+it('keeps a connector tool shown through a failed tool refresh until a later read decides it', async () => {
   const { qc } = setup(cases[3]!)
   await screen.findByRole('switch', { name: /^alpha(?:[: ]|$)/ })
   fireEvent.click(screen.getAllByRole('button', { name: /Tools/ })[0]!)
   const tool = await screen.findByRole('switch', { name: 'Read available to Hermes' })
-  vi.mocked(api.setConnectorRule).mockRejectedValue(new Error('Connection lost'))
+  const cached = qc.getQueryData<Awaited<ReturnType<typeof api.fetchConnectorTools>>>(keys.connectors.tools('alpha'))!
+  vi.mocked(api.setConnectorRule).mockRejectedValue(lost())
   vi.mocked(api.fetchConnectorTools).mockRejectedValue(new Error('Offline'))
   fireEvent.click(tool)
-  const retry = await within(tool.parentElement!).findByRole('button', { name: 'Retry' })
-  expect(tool).toBeInTheDocument()
+  await waitFor(() => expect(showToast).toHaveBeenCalled())
+  await waitFor(() => expect(vi.mocked(api.fetchConnectorTools).mock.calls.length).toBeGreaterThan(1))
   expect(tool).toBeChecked()
-  expect(control('beta')).toHaveAttribute('aria-disabled', 'true')
-  vi.mocked(api.fetchConnectorTools).mockResolvedValue(qc.getQueryData<Awaited<ReturnType<typeof api.fetchConnectorTools>>>(keys.connectors.tools('alpha'))!)
-  fireEvent.click(retry)
-  await waitFor(() => expect(tool).not.toBeChecked())
   expect(control('beta')).not.toHaveAttribute('aria-disabled', 'true')
+  vi.mocked(api.fetchConnectorTools).mockResolvedValue(cached)
+  await act(async () => { await qc.refetchQueries({ queryKey: keys.connectors.all }) })
+  await waitFor(() => expect(tool).not.toBeChecked())
   expect(api.setConnectorRule).toHaveBeenCalledOnce()
 })
 
@@ -218,7 +226,7 @@ it('review regression: skill list reconciliation excludes failed cached details'
   await qc.query({ queryKey: keys.skills.content('removed'), queryFn: unrelated }).catch(() => undefined)
   vi.mocked(api.toggleSkill).mockResolvedValue({ ok: true, name: 'alpha', enabled: false })
   await userEvent.click(control('alpha'))
-  await waitFor(() => expect(control('alpha')).not.toHaveAttribute('aria-disabled', 'true'))
+  await waitFor(() => expect(vi.mocked(api.fetchSkills).mock.calls.length).toBeGreaterThan(1))
   expect(unrelated).toHaveBeenCalledOnce()
   expect(control('alpha')).not.toBeChecked()
 })
@@ -232,7 +240,7 @@ it.each(cases.filter((c) => c.name !== 'connector'))('review regression: $name a
   expect(control('alpha')).toHaveAccessibleName('alpha')
 })
 
-it('review regression: extension state text activates its switch and suppresses a pending duplicate', async () => {
+it('review regression: extension state text activates its switch and a second press replaces the first', async () => {
   vi.mocked(api.extensionAction).mockReturnValue(deferred<never>().promise)
   setup(cases[2]!)
   const toggle = await screen.findByRole('switch', { name: /^alpha/ })
@@ -241,5 +249,21 @@ it('review regression: extension state text activates its switch and suppresses 
   await waitFor(() => expect(api.extensionAction).toHaveBeenCalledWith('toggle', { id: 'alpha', enabled: true }))
   expect(toggle).toBeChecked()
   await userEvent.click(within(row).getByText('Enabled', { exact: true }))
+  expect(toggle).not.toBeChecked()
   expect(api.extensionAction).toHaveBeenCalledOnce()
+})
+
+it('reads the server revision before the next connector rule after an unknown outcome', async () => {
+  const c = cases[3]!
+  const first = deferred<never>()
+  c.write().mockReturnValueOnce(first.promise).mockResolvedValue({ ok: true, revision: 'rev-3' } as never)
+  setup(c)
+  await screen.findByRole('switch', { name: /^alpha(?:[: ]|$)/ })
+  fireEvent.click(control('alpha'))
+  fireEvent.click(control('beta'))
+  await waitFor(() => expect(control('beta')).toBeChecked())
+  // The first write may have landed: the server moved to rev-2 although its answer was lost.
+  c.read().mockResolvedValue({ ...connectors(), policy_revision: 'rev-2' })
+  await act(async () => { first.reject(new ApiError({ kind: 'network', path: '/x', message: 'Connection lost' })); await Promise.resolve() })
+  await waitFor(() => expect(api.setConnectorRule).toHaveBeenLastCalledWith('beta', 'rev-2', { enabled: true }))
 })

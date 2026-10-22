@@ -7,7 +7,7 @@ test.use({ serviceWorkers: 'block' })
 const shared = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../contracts/fixtures/connectors.json'), 'utf8')) as { page: ConnectorsPage }
 
 for (const kind of ['skill', 'mcp', 'extension', 'connector'] as const) {
-  test(`${kind} shows requested state while the write is held`, async ({ page }, testInfo) => {
+  test(`${kind} flips at once and stays usable while the write is held`, async ({ page }, testInfo) => {
     let release!: () => void
     let started!: () => void
     const held = new Promise<void>((done) => { release = done })
@@ -40,16 +40,15 @@ for (const kind of ['skill', 'mcp', 'extension', 'connector'] as const) {
     await writing
     try {
       await expect(toggle).toBeChecked({ timeout: 1000 })
-      await expect(toggle).toHaveAttribute('aria-busy', 'true')
-      const peer = page.getByRole('switch', { name: /^beta(?:[: ]|$)/ })
-      if (kind === 'connector') await expect(peer).toBeDisabled()
-      else await expect(peer).toBeEnabled()
+      await expect(toggle).not.toHaveAttribute('aria-busy', 'true')
+      await expect(toggle).toBeEnabled()
+      await expect(page.getByText(/^Pending/)).toHaveCount(0)
+      await expect(page.getByRole('switch', { name: /^beta(?:[: ]|$)/ })).toBeEnabled()
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     } finally {
-      await page.screenshot({ path: testInfo.outputPath(`${kind}-pending.png`), animations: 'disabled' })
+      await page.screenshot({ path: testInfo.outputPath(`${kind}-shown.png`), animations: 'disabled' })
       release()
     }
-    await expect(toggle).not.toHaveAttribute('aria-busy', 'true')
     await expect(toggle).toBeChecked()
   })
 }

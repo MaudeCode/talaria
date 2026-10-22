@@ -50,7 +50,8 @@ export function ConfirmDialog({ open, onOpenChange, title, description, confirmL
       type="button"
       className={cn('rounded-md px-3 py-1.5 text-sm font-medium', destructive ? 'bg-error text-white' : 'bg-accent text-accent-fg')}
       onClick={() => {
-        void Promise.resolve(confirm()).finally(() => onOpenChange(false))
+        // The confirmed change shows at once (optimistic writes); the dialog never waits for the server.
+        try { void Promise.resolve(confirm()).catch(() => undefined) } finally { onOpenChange(false) }
       }}
     >
       {label}
