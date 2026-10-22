@@ -657,3 +657,23 @@ result always includes this field; an older sidecar without it projects
 `restart_required`. A lost save response remains HTTP 503
 `plugin_settings_unconfirmed`, preserving secrets for readback rather than
 rolling back an operation that may already have persisted.
+
+### Context inspection
+
+`chat.context_detail` reads only a matching resident Agent in the requested profile,
+model, provider and workspace. It never creates an Agent or calls a model provider.
+`gateway.session` with `action: context_detail` uses the authenticated owner's
+`session.context_breakdown` and optional `session.stats`, fenced by the resumed
+session identity, revision, authority/replay epochs and execution generation.
+Both paths use the same bounded metadata projection. Category estimates remain
+independent of occupancy, with explicit provenance and unknown counters. File
+bodies, private paths, arbitrary labels and diagnostics never cross this boundary.
+
+`GET /api/session/context-detail` requires the displayed `context_detail_key`,
+applies session visibility, and rejects reads from a different rendered identity
+or a resident session that changes before the read returns. Workspace changes
+retire the cached resident Agent through the existing session-update boundary.
+Session views carry an opaque
+`context_detail_key` so clients discard details on context/owner replacement.
+Web mounts the query only inside the existing open ring popover or mobile context
+row, with no retained cache. Unsupported and pre-build reads are unavailable.

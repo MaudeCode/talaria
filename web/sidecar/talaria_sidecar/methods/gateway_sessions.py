@@ -16,7 +16,7 @@ import sqlite3
 from ..errors import InvalidParams
 from ..home import profile_home_param, scoped_home
 
-_ACTIONS = {"snapshot", "watch", "submit", "receipt", "cancel", "steer_queued", "replace_queued", "interrupt", "approval", "clarify",
+_ACTIONS = {"snapshot", "watch", "context_detail", "submit", "receipt", "cancel", "steer_queued", "replace_queued", "interrupt", "approval", "clarify",
             "clarify_lock", "discard", "mutate"}
 # A restart's after-turn wait keeps the owner reachable only to finish its parked turn (the owner's
 # RESTART_WAIT_WS_METHODS); new work waits for the next owner.
@@ -176,6 +176,21 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
             snap = await snapshot()
             action = params["action"]
             common = {"session_id": sid}
+            if action == "context_detail":
+                from ..context_detail import project, unavailable
+                # The authorized native read owns lookup and prompt interpretation. No local Agent is built.
+                try:
+                    payload = await client.rpc("session.context_breakdown", **common)
+                    usage = None
+                    with suppress(Exception):
+                        usage = await client.rpc("session.stats", **common)
+                    after = await snapshot()
+                    marks = ("session_id", "stored_session_id", "authority_epoch", "replay_epoch", "revision", "execution_generation", "running", "last_sequence")
+                    stable = all(snap.get(k) == after.get(k) for k in marks) and snap.get("info") == after.get("info")
+                    detail = project(payload, usage=usage, running=after.get("running") is True) if stable else unavailable("changed")
+                except Exception:  # unsupported owners and failed reads never authorize a fallback Agent
+                    detail = unavailable("unsupported")
+                return {"state": "attached", "reason": None, "snapshot": snap, "receipt": None, "context_detail": detail}
             if action == "submit":
                 # The caller retains this identity across lost ACKs. An ambiguous error never
                 # causes this adapter to generate a replacement or replay started work.

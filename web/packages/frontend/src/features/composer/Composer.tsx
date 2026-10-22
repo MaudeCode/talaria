@@ -608,6 +608,7 @@ export const Composer = memo(function Composer(props: ComposerProps) {
   const modelChoice = session?.model ? { model: session.model, optionId: session.model_option_id ?? null } : { model: pendingChoices?.model ?? null, optionId: pendingChoices?.model ?? null }
   const placeholder = clarify ? (clarify.step.choices.length ? m.clarify_composer_placeholder_choices() : m.clarify_composer_placeholder()) : busy && !nativeOwner ? (busyMode === 'queue' ? m.composer_placeholder_busy_queue() : busyMode === 'interrupt' ? m.composer_placeholder_busy_interrupt() : m.composer_placeholder_busy_steer()) : m.composer_placeholder()
   const context: ContextFigures = {
+    sessionId: sessionId ?? undefined, detailKey: session?.context_detail_key,
     percent: session?.context_usage_percent, used: session?.context_used_tokens, window: session?.context_window_tokens, thresholdPercent: session?.context_threshold_percent,
     input: session?.input_tokens, output: session?.output_tokens, cacheRead: session?.cache_read_tokens, cacheWrite: session?.cache_write_tokens, cacheHitPercent: session?.cache_hit_percent, cost: session?.estimated_cost,
     // The same manual compression `/compress` runs, offered only when the server says it would start.
@@ -762,7 +763,7 @@ export const Composer = memo(function Composer(props: ComposerProps) {
             {stage === 'burger' && !session?.read_only && !hide('hide_composer_reasoning') && reasoningSupported && <ReasoningChip row value={reasoning} levels={reasoningLevels} onChange={onReasoningChange} />}
             {/* The chat header carries the terminal toggle above phone width. */}
             {stage === 'burger' && phone && <button type="button" className={cn('icon-btn', terminalOpen && 'active')} id="btnTerminal" title={m.composer_terminal_toggle()} aria-label={m.composer_terminal_toggle()} aria-pressed={terminalOpen} onClick={() => { setConfigOpen(false); onToggleTerminal() }}><TerminalSquare size={16} aria-hidden="true" /><span className="composer-mobile-config-value">{m.composer_terminal_toggle()}</span></button>}
-            {stage === 'burger' && !hide('hide_composer_context') && <ContextRow {...context} />}
+            {configOpen && stage === 'burger' && !hide('hide_composer_context') && <ContextRow {...context} />}
           </div>
         </div>
       </div>
