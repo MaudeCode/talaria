@@ -64,6 +64,11 @@ hand-written endpoint schemas.
 | Sidecar | `sidecar/client.ts`, `discover.ts`, `fake.ts` | newline-delimited JSON-RPC 2.0 over stdio with streamed frames and cancellation; restart with backoff; Agent discovery; the Vitest fake |
 | CLI | `cli/launcher.ts`, `ctl.ts`, `dotenv.ts`, `supervise.ts`, `bin/*` | `talaria-web` bootstrap, `ctl`, `.env` precedence, the serve supervisor, `talaria-web-mcp` |
 
+JSON responses use compact serialization by default. Raw handlers can request
+pretty output explicitly. Raw and oRPC JSON responses share asynchronous gzip
+compression at level 6 when the serialized body exceeds 1 KiB and the client
+accepts gzip, leaving the event loop available for live-stream heartbeats.
+
 Media byte responses keep the anchored descriptor and hard-link checks on every
 request. Buffered reads yield through asynchronous descriptor IO. A range reads
 only its selected span unless an uncached conditional request needs a content
@@ -165,9 +170,20 @@ in `sessions/storage/search-text.ts` define search semantics for every adapter.
 
 An adapter implements `StorageBackend`, passes `runSessionBackendConformance`, `runDocumentBackendConformance` and `runJournalBackendConformance`, and owns its recovery
 checks through `diagnose`/`repair`. Cross-backend recovery still reconciles the read-only Agent database.
-The JSON adapter keeps existing paths, bytes, permissions and atomic publication behavior. Auth table writes
+The JSON adapter keeps existing paths, bytes, permissions and atomic publication behavior. Its persisted-session
+ID cache checks the session directory revision on every read and returns an independent set. Owned writes and
+deletes invalidate it before mutation so concurrent external changes cannot be stamped over. External directory
+changes also invalidate it. Session listing reuses one index read
+when the index is healthy and retains its rebuild/full-scan recovery paths. Auth table writes
 stage and fsync asynchronously, then compare the expected revision and publish without an intervening await.
 Shutdown drains queued writes and closes journal writers before storage closes.
+
+JSON documents retain at most 256 recently used byte/revision/parse snapshots per backend. Reads check
+device, inode, size and nanosecond modification/change timestamps, sharing the config cache's fingerprint
+helper. Unchanged files need one stat; returned objects are cloned. Successful writes seed their published
+bytes without rereading, using a descriptor held across publication so a competing replacement cannot lend
+its identity to old bytes. In-place edits during publication invalidate the seeded snapshot. Auth publication
+seeds before yielding, and deletion or shutdown releases snapshots.
 
 `documents` owns drafts, shares, held wakeups, projects, settings, auth keys/tables, passkeys/challenges,
 notifications, deletion records, extension state, background receipts, workspace registries and last-workspace

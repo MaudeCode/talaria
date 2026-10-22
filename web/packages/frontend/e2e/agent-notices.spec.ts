@@ -26,7 +26,7 @@ test('shows the session\'s Agent notices and follows the server\'s live list', a
   await page.route('**/api/chat/stream/status?**', (route) => route.fulfill({ json: { active: true, stream_id: 'notice-run', replay_available: false } }))
   const streams: ServerResponse[] = []
   let seq = 0
-  const send = (event: string, data: { session_id: string; notices: typeof notices }) => {
+  const send = (event: 'notices', data: { session_id: string; notices: typeof notices }) => {
     notices = data.notices
     seq += 1
     for (const r of streams) if (!r.destroyed && !r.writableEnded) r.write(`id: notice-run:${String(seq)}\nevent: ${event}\ndata: ${JSON.stringify(data)}\n\n`)

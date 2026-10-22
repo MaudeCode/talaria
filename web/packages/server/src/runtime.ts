@@ -748,7 +748,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     }),
     kanban: new KanbanService({ sidecar: () => sidecar, config: agentConfig }),
     extensions: new ExtensionService({ documents: storage.documents, env, stateDir: config.stateDir, isAuthEnabled: () => auth.isAuthEnabled(), fetch: lazyFetch, log }),
-    dashboardPlugins: new DashboardPlugins({ env, hermesHome: config.hermesHome, settings }),
+    dashboardPlugins: new DashboardPlugins({ env, hermesHome: config.hermesHome, settings, sidecar: () => sidecar }),
     terminals,
     commitMessage: async (session, systemPrompt, userPrompt) => {
       if (!sidecar) throw new GitWorkspaceError('Commit message generation needs the Agent sidecar, which is not running', 'aux_unavailable')

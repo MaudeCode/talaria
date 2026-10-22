@@ -81989,6 +81989,12 @@
                         "properties": {
                           "can_toggle": {
                             "type": "boolean"
+                          },
+                          "agent_host": {
+                            "type": "boolean"
+                          },
+                          "display_id": {
+                            "type": "string"
                           }
                         },
                         "required": [
@@ -83406,9 +83412,32 @@
         }
       }
     },
+    "/agent-dashboard-plugins/{grant}/{path}": {
+      "get": {
+        "summary": "Expiring profile/owner-bound Agent dashboard asset grants, usable without cookies. Static only; explicit Web panel opt-in; sandbox CSP, no-store, contained static types only. Disabled/unknown ids are indistinguishable.",
+        "tags": [
+          "automation"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Asset bytes.",
+            "content": {
+              "application/octet-stream": {}
+            }
+          },
+          "404": {
+            "description": "Not found.",
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      }
+    },
     "/api/extensions/{id}/sidecar/{path}": {
       "post": {
-        "summary": "Consented loopback sidecar proxy (any method); headers stripped, 10 s, 512 KiB.",
+        "summary": "Consented extension proxy (any method); loopback bytes or an Agent-host buffered {status, headers, body} envelope. Profile/owner-bound Agent ids; stripped credentials, 10 s, 512 KiB; streams/WebSockets unsupported.",
         "tags": [
           "automation"
         ],

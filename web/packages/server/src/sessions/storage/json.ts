@@ -9,6 +9,7 @@ import { RevisionConflict, type MessageMatch, type SessionBackend, type SessionC
 import { readJsonMessagePrefix, readMetadataJsonPrefixWithSignature, statSignature, statSignatureAsync, writeAtomic } from './json-files.js'
 import { sessionSearchMatches, sessionSearchMessageText } from './search-text.js'
 import { diagnoseJson, repairJson, restoreJsonBackup } from './json-recovery.js'
+import { signatureOf } from '../../fs/stat.js'
 
 export interface JsonStorageOptions { directory: string; stateDir?: string; profileHome?: (profile: string) => string; env?: Record<string, string | undefined>; now: () => number; stampingSince: () => number | Promise<number> }
 
@@ -39,6 +40,7 @@ const SEARCH_TEXT_CACHE_DEPTH_MAX = 20
 class JsonSessions implements SessionBackend {
   closed = false
   private parsedIndex: { revision: string; entries: SessionIndexEntry[] } | null = null
+  private persistedIds: { revision: string; ids: Set<string> } | null = null
   /** TAL-1212: each session's leading-message search text, valid while its file keeps the recorded revision. */
   private readonly searchTexts = new Map<string, { revision: string; depth: number; texts: string[] }>()
   constructor(private readonly options: JsonStorageOptions) {}
@@ -144,6 +146,7 @@ class JsonSessions implements SessionBackend {
     }
     document.messages ??= rows
     const payload = JSON.stringify(document)
+    this.invalidatePersistedIds()
     mkdirSync(this.options.directory, { recursive: true })
     if (previousText !== null && Array.isArray(previous?.messages) && previous.messages.length > rows.length) {
       try { writeAtomic(`${path}.bak`, previousText) } catch { /* backup is best effort */ }
@@ -154,6 +157,7 @@ class JsonSessions implements SessionBackend {
   }
   async delete(sid: string, opts: { tombstone: boolean }): Promise<boolean> {
     const path = this.path(sid)
+    this.invalidatePersistedIds()
     this.searchTexts.delete(sid)
     try { rmSync(path, { force: true }) } catch { return false }
     if (existsSync(path)) return false
@@ -161,10 +165,21 @@ class JsonSessions implements SessionBackend {
     if (opts.tombstone) this.addTombstone(sid)
     return true
   }
+  // A mutation's final directory revision cannot distinguish our changes from concurrent external ones.
+  private invalidatePersistedIds(): void { this.persistedIds = null }
   async ids(opts: { strict?: boolean } = {}): Promise<Set<string>> {
     this.check()
-    try { return new Set(readdirSync(this.options.directory).filter((n) => n.endsWith('.json') && !n.startsWith('_')).map((n) => n.slice(0, -5))) }
+    try {
+      const directory = this.options.directory
+      const revision = signatureOf(directory, statSync(directory, { bigint: true }))
+      if (this.persistedIds?.revision === revision) return new Set(this.persistedIds.ids)
+      const ids = new Set(readdirSync(directory).filter((n) => n.endsWith('.json') && !n.startsWith('_')).map((n) => n.slice(0, -5)))
+      if (revision === statSignature(directory)) this.persistedIds = { revision, ids }
+      else this.invalidatePersistedIds()
+      return new Set(ids)
+    }
     catch (error) {
+      this.invalidatePersistedIds()
       if (opts.strict && (error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
       return new Set()
     }

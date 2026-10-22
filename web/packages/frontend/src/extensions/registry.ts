@@ -11,10 +11,10 @@ import { get } from '../api/client'
 import { subscribe as subscribeStream, getStreamState } from '../stream/store'
 import type { LiveTurn } from '../stream/reducer'
 
-export const fetchExtensionManifests = () => get('api/extensions/manifests', ExtensionManifestsSchema, { retries: 1 })
+export const fetchExtensionManifests = (signal?: AbortSignal) => get('api/extensions/manifests', ExtensionManifestsSchema, { retries: 1, ...(signal ? { signal } : {}) })
 
 export function useExtensionManifests(enabled = true) {
-  return useQuery({ queryKey: keys.extensions.manifests, queryFn: fetchExtensionManifests, staleTime: 30_000, enabled })
+  return useQuery({ queryKey: keys.extensions.manifests, queryFn: ({ signal }) => fetchExtensionManifests(signal), staleTime: 30_000, enabled })
 }
 
 // ── Declarative skins ────────────────────────────────────────────────────────

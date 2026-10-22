@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { Archive, ArchiveRestore, Filter, GitBranch, Plus, Search, Upload, X } from 'lucide-react'
@@ -116,10 +116,55 @@ export function groupSessionRows(rows: SessionRow[], now = Date.now()): { id: Gr
   const byGroup = new Map<GroupId, SessionRow[]>()
   for (const r of rows) {
     const g = groupLabel(r, now)
-    byGroup.set(g, [...(byGroup.get(g) ?? []), r])
+    const grouped = byGroup.get(g)
+    if (grouped) grouped.push(r)
+    else byGroup.set(g, [r])
   }
   return GROUP_ORDER.flatMap((id) => { const grouped = byGroup.get(id); return grouped ? [{ id, rows: grouped }] : [] })
 }
+
+/** The existing sidebar row, memoized so unchanged server rows retain their rendered subtree. */
+const SessionListItem = memo(function SessionListItem({ row, active, proj, preview, timeLabel, onArchive }: {
+  row: SessionRow
+  active: boolean
+  proj: Awaited<ReturnType<typeof api.fetchProjects>>['projects'][number] | undefined
+  preview: string | undefined
+  timeLabel: string
+  onArchive: (id: string, archived: boolean) => void
+}) {
+  useLocale()
+  const displayTitle = row.title || m.untitled()
+  return (
+    <Link
+      to="/session/$sessionId"
+      params={{ sessionId: row.session_id }}
+      onClick={closeMobileSidebar}
+      role="listitem"
+      data-sid={row.session_id}
+      data-source={row.is_cli_session ? (row.source_label ?? 'CLI') : undefined}
+      aria-current={active ? 'page' : undefined}
+      className={cn('session-item', active && 'active', row.is_streaming && 'streaming', row.is_cli_session && 'cli-session', row.attention && 'needs-attention', row.archived && 'archived')}
+    >
+      <div className="session-text">
+        <div className="session-title-row">
+          <span className="session-title" title={displayTitle}>{displayTitle}</span>
+          {row.worktree_branch && <span className="session-worktree-badge" role="img" aria-label={`${m.session_worktree_badge()}: ${row.worktree_branch}`} title={`${m.session_worktree_badge()}: ${row.worktree_branch}`}><GitBranch size={12} aria-hidden="true" /></span>}
+          {proj && <span className="session-project-dot" style={{ background: proj.color ?? 'var(--blue)' }} title={proj.name} />}
+          <span className="session-time">{timeLabel}</span>
+        </div>
+        {preview && <div className="session-search-preview truncate text-[11px] text-muted" title={m.session_search_content_matches()}>{preview}</div>}
+      </div>
+      {/* The rail shows status by color; this says it in words (TAL-365). */}
+      {row.is_streaming ? <span className="sr-only">{m.status_streaming()}</span> : row.attention && <span className="sr-only">{attentionLabel(row.attention.kind)}</span>}
+      <div className="session-actions">
+        <button type="button" className="session-archive-toggle" title={row.archived ? m.session_restore() : m.session_batch_archive()} aria-label={row.archived ? m.session_restore() : m.session_batch_archive()} onClick={(e) => { e.preventDefault(); e.stopPropagation(); onArchive(row.session_id, !row.archived) }}>
+          {row.archived ? <ArchiveRestore size={14} aria-hidden="true" /> : <Archive size={14} aria-hidden="true" />}
+        </button>
+        <SessionContextMenu row={row} active={active} />
+      </div>
+    </Link>
+  )
+})
 
 export function useProjectsQuery() {
   return useQuery({ queryKey: keys.projects, queryFn: () => api.fetchProjects(), staleTime: 60_000 })
@@ -154,7 +199,8 @@ export function SessionListPanel() {
   const storage = data?.agent_storage
   const storageNotice = storage?.state === 'corrupt' ? m.agent_storage_corrupt() : storage?.state === 'unavailable' ? m.agent_storage_unavailable() : storage?.state === 'outdated' ? m.agent_storage_outdated() : null
   const hasUnprojected = useMemo(() => rows.some((r) => !r.project_id), [rows])
-  const projectList = withEffects(projects.data?.projects ?? [], (p) => `project:${p.project_id}`, effects)
+  const projectList = useMemo(() => withEffects(projects.data?.projects ?? [], (p) => `project:${p.project_id}`, effects), [projects.data, effects])
+  const projectsById = useMemo(() => new Map(projectList.map((p) => [p.project_id, p])), [projectList])
   const newName = effects['project:new']?.fields?.name
   // The provisional chip gives way as soon as the server's list carries the created project.
   const newProject = typeof newName === 'string' && !projectList.some((p) => p.name === newName) ? newName : null
@@ -177,6 +223,8 @@ export function SessionListPanel() {
     mutationFn: ({ id, archived }) => api.archiveSession(id, archived),
     onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error'),
   })
+  const mutateArchive = archive.mutate
+  const onArchive = useCallback((id: string, archived: boolean) => mutateArchive({ id, archived }), [mutateArchive])
   const createProject = useResourceMutation({
     resource: () => 'project:new',
     effect: (name: string) => ({ fields: { name } }),
@@ -286,42 +334,7 @@ export function SessionListPanel() {
                 <span>{g.label}</span>
               </div>
               <div className="session-date-body" style={isCollapsed ? { display: 'none' } : undefined}>
-                {g.rows.map((row) => {
-                  const active = row.session_id === activeId
-                  const displayTitle = row.title || m.untitled()
-                  const proj = row.project_id ? projectList.find((p) => p.project_id === row.project_id) : undefined
-                  return (
-                    <Link
-                      key={row.session_id}
-                      to="/session/$sessionId"
-                      params={{ sessionId: row.session_id }}
-                      onClick={closeMobileSidebar}
-                      role="listitem"
-                      data-sid={row.session_id}
-                      data-source={row.is_cli_session ? (row.source_label ?? 'CLI') : undefined}
-                      aria-current={active ? 'page' : undefined}
-                      className={cn('session-item', active && 'active', row.is_streaming && 'streaming', row.is_cli_session && 'cli-session', row.attention && 'needs-attention', row.archived && 'archived')}
-                    >
-                      <div className="session-text">
-                        <div className="session-title-row">
-                          <span className="session-title" title={displayTitle}>{displayTitle}</span>
-                          {row.worktree_branch && <span className="session-worktree-badge" role="img" aria-label={`${m.session_worktree_badge()}: ${row.worktree_branch}`} title={`${m.session_worktree_badge()}: ${row.worktree_branch}`}><GitBranch size={12} aria-hidden="true" /></span>}
-                          {proj && <span className="session-project-dot" style={{ background: proj.color ?? 'var(--blue)' }} title={proj.name} />}
-                          <span className="session-time">{relativeTime(row.sort_ts)}</span>
-                        </div>
-                        {previews.get(row.session_id) && <div className="session-search-preview truncate text-[11px] text-muted" title={m.session_search_content_matches()}>{previews.get(row.session_id)}</div>}
-                      </div>
-                      {/* The rail shows status by color; this says it in words (TAL-365). */}
-                      {row.is_streaming ? <span className="sr-only">{m.status_streaming()}</span> : row.attention && <span className="sr-only">{attentionLabel(row.attention.kind)}</span>}
-                      <div className="session-actions">
-                        <button type="button" className="session-archive-toggle" title={row.archived ? m.session_restore() : m.session_batch_archive()} aria-label={row.archived ? m.session_restore() : m.session_batch_archive()} onClick={(e) => { e.preventDefault(); e.stopPropagation(); archive.mutate({ id: row.session_id, archived: !row.archived }) }}>
-                          {row.archived ? <ArchiveRestore size={14} aria-hidden="true" /> : <Archive size={14} aria-hidden="true" />}
-                        </button>
-                        <SessionContextMenu row={row} active={active} />
-                      </div>
-                    </Link>
-                  )
-                })}
+                {g.rows.map((row) => <SessionListItem key={row.session_id} row={row} active={row.session_id === activeId} proj={row.project_id ? projectsById.get(row.project_id) : undefined} preview={previews.get(row.session_id)} timeLabel={relativeTime(row.sort_ts)} onArchive={onArchive} />)}
               </div>
             </div>
           )

@@ -3,7 +3,7 @@ import type { RequestContext } from '../http/context.js'
 import { HttpError } from './router.js'
 import { activeProfileName } from '../auth/gate.js'
 import { claimOrReject, SSE_HEARTBEAT_INTERVAL_MS } from './sse-routes.js'
-import { DashboardPlugins, type PluginFile } from '../tools/dashboard-plugins.js'
+import { DashboardPlugins, dashboardScope, isAgentDashboardId, type PluginFile } from '../tools/dashboard-plugins.js'
 import { isServerOwned } from '../spa.js'
 import { ExtensionError, EXTENSION_PANEL_SANDBOX_CSP, EXTENSION_ROUTE_PREFIX, normalizeProxyPath, validId } from '../tools/extensions.js'
 import { kanbanFailure } from '../tools/kanban.js'
@@ -149,6 +149,19 @@ async function sendPanelFile(ctx: RequestContext, file: { body: Buffer; contentT
   await ctx.send({ status: 200, headers: { ...security, ...headers }, body: file.body, security: false })
 }
 
+/** One cancellation/error boundary for Agent-owned files and native API requests. */
+async function runAgentDashboard(ctx: RequestContext, call: (signal: AbortSignal) => Promise<void>): Promise<void> {
+  const abort = new AbortController()
+  const close = (): void => { abort.abort() }
+  ctx.res.once('close', close)
+  if (ctx.res.destroyed) abort.abort()
+  try { await call(abort.signal) }
+  catch (error) {
+    if (error instanceof ExtensionError) await ctx.json({ error: error.message }, { status: error.status })
+    else throw error
+  } finally { ctx.res.off('close', close) }
+}
+
 /**
  * Python dashboard-plugin routes: `/plugins/plugin.css`, `/dashboard-plugins/<name>/index.html` (panel),
  * `/dashboard-plugins/<name>/<rel>` (built assets), and each plugin's tab page. Returns false when `path` is none
@@ -158,6 +171,16 @@ export async function handleDashboardPlugin(ctx: RequestContext): Promise<boolea
   const plugins = ctx.deps.dashboardPlugins
   const path = ctx.path
   let file: PluginFile | null
+  if (path.startsWith('/agent-dashboard-plugins/')) {
+    const [grant = '', ...rest] = path.slice('/agent-dashboard-plugins/'.length).split('/')
+    await runAgentDashboard(ctx, async (signal) => {
+      const caller = ctx.authCookie() || ctx.requestProfile !== null ? dashboardScope(ctx) : undefined
+      file = await plugins.agentAssetGrant(grant, rest.join('/'), signal, caller)
+      if (file) await sendPanelFile(ctx, file, true)
+      else await ctx.json({ error: 'not found' }, { status: 404 })
+    })
+    return true
+  }
   if (path.startsWith('/plugins/')) {
     const css = plugins.sharedAsset(path.slice('/plugins/'.length))
     if (css) (await sendPanelFile(ctx, css, false))
@@ -213,7 +236,19 @@ export async function handleExtensionSidecarProxy(ctx: RequestContext, extension
   if (rawProxyPath !== proxyPath && normalizeProxyPath(rawProxyPath) === null) { (await ctx.json({ error: 'Invalid sidecar proxy path' }, { status: 400 })); return }
   let body: Buffer | null = null
   if (ctx.method !== 'GET' && ctx.method !== 'HEAD') {
-    try { body = await ctx.readRawBody(20 * 1024 * 1024) } catch (error) { (await ctx.json({ error: str((error as Error).message) }, { status: /too large/i.test(str((error as Error).message)) ? 413 : 400 })); return }
+    try { body = await ctx.readRawBody(isAgentDashboardId(rawId) ? PROXY_MAX_RESPONSE : 20 * 1024 * 1024) } catch (error) { (await ctx.json({ error: str((error as Error).message) }, { status: /too large/i.test(str((error as Error).message)) ? 413 : 400 })); return }
+  }
+  if (isAgentDashboardId(rawId)) {
+    const normalized = normalizeProxyPath(rawProxyPath)
+    if (normalized === null) { await ctx.json({ error: 'not found' }, { status: 404 }); return }
+    await runAgentDashboard(ctx, async (signal) => {
+      const headers: Record<string, string> = {}
+      for (const name of ['accept', 'content-type']) { const value = ctx.header(name); if (value) headers[name] = value }
+      const websocket = (ctx.header('upgrade') ?? '').toLowerCase() === 'websocket'
+      const result = await ctx.deps.dashboardPlugins.agentRequest(dashboardScope(ctx), rawId, { path: normalized, method: ctx.method, query: ctx.search.slice(1), headers, body: body?.toString('base64') ?? '', websocket }, signal)
+      await ctx.json(result, { status: websocket ? result.status : 200 })
+    })
+    return
   }
   let target: { origin: string; upstream_url: string }
   try {

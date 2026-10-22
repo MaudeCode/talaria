@@ -184,12 +184,14 @@ export async function allSessions(store: SessionStore, opts: AllSessionsOptions 
     }
     return rows.sort(compareSessionRows)
   }
-  const indexExists = (await (async () => { try { return Boolean((await store.readIndexEntries())) } catch { return false } })())
-  if (!indexExists) {
-    try { (await store.writeIndex()) } catch { /* fall through to the scan */ }
-  }
   try {
-    let index = (await store.readIndexEntries()).flatMap((row) => {
+    let entries: Row[]
+    try { entries = await store.readIndexEntries() }
+    catch {
+      try { await store.writeIndex() } catch { /* retry the index before falling back to the scan */ }
+      entries = await store.readIndexEntries()
+    }
+    let index = entries.flatMap((row) => {
       const clean = sanitizeSessionRow(row, store, 'index')
       if (clean) sanitizedRows.add(clean)
       return clean ? [clean] : []
@@ -767,9 +769,15 @@ export async function buildSessionListPayload(store: SessionStore, params: ListP
     otherProfileCount = params.isolatedProfileMode ? 0 : merged.length - scoped.length
   }
   const identity = params.gatewayIdentity ?? new Map<string, GatewayIdentity>()
+  const indexedParents = new Map((await store.readIndexEntries().catch(() => [])).flatMap((row) => {
+    // Older indexes omit the flag; only an explicit boolean can replace the document read.
+    return typeof row?.session_id === 'string' && typeof row.pre_compression_snapshot === 'boolean' ? [[row.session_id, row] as const] : []
+  }))
   const snapshots = new Set<string>()
   for (const parent of new Set(scoped.map((row) => str(row.parent_session_id)))) {
-    if (/^[a-z0-9_]+$/.test(parent) && (await store.loadMetadataOnly(parent))?.pre_compression_snapshot) snapshots.add(parent)
+    if (!/^[a-z0-9_]+$/.test(parent)) continue
+    const row = indexedParents.get(parent) ?? await store.loadMetadataOnly(parent)
+    if (row?.pre_compression_snapshot) snapshots.add(parent)
   }
   const isPreCompressionSnapshotId = (sid: string): boolean => snapshots.has(sid)
   const dedupeOpts = { showPrevious: params.showPreviousMessagingSessions, identity, isPreCompressionSnapshotId }

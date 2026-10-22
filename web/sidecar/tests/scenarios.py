@@ -38,6 +38,9 @@ SCENARIOS: list[tuple[str, dict]] = [
     ("commands.expand_prompt", {"profile_home": "{home}", "command": "/etc/hosts looks wrong", "workspace": "{home}", "enabled_toolsets": None}),
     ("commands.expand_prompt", {"profile_home": "{home}", "command": "/plan add a dark mode", "workspace": "{home}", "enabled_toolsets": None}),
     ("plugins.list", {"profile_home": "{home}"}),
+    ("plugins.dashboard_list", {"profile_home": "{home}"}),
+    ("plugins.dashboard_asset", {"profile_home": "{home}", "name": "not-installed", "path": "dist/index.html"}),
+    ("plugins.dashboard_request", {"profile_home": "{home}", "name": "not-installed", "path": "/", "method": "GET", "query": "", "headers": {}, "body": "", "authenticated": True, "websocket": False}),
     ("plugins.providers", {"profile_home": "{home}"}),
     ("plugins.isolation", {"base_home": "{home}"}),
     # profiles
@@ -171,3 +174,6 @@ DYNAMIC: list[tuple[str, str]] = [
 UNEXERCISED = {"plugins.catalog", "plugins.install", "plugins.update", "models.selection_warnings", "runtime.agent_mutation", "runtime.sync_dependencies", "runtime.handshake", "runtime.shutdown", "goals.restore", "commands.exec",
                "providers.resolve_runtime", "oauth.start", "oauth.poll", "oauth.cancel", "oauth.submit_redirect", "plugins.oauth_logout", "aux.complete", "stt.transcribe", "stt.stream", "stt.stream_audio", "gateway.control", "gateway.restart", "mcp.reload", "cron.run",
                "worktree.create", "worktree.retain", "chat.start", "chat.interrupt", "chat.steer", "chat.steer_withdraw", "chat.steer_now", "chat.evict_agent", "chat.commit_memory", "chat.refine", "chat.compress", "chat.compress_finalize", "approval.respond", "approval.pending", "approval.set_yolo", "clarify.respond", "config.set"}
+
+# Enabling a plugin is covered with synthetic profile fixtures by test_dashboard_plugins.py and test_dashboard_host_compat.py.
+UNEXERCISED.add("plugins.dashboard_toggle")
