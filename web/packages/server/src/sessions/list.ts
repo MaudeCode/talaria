@@ -163,8 +163,10 @@ export interface AllSessionsOptions { sidebarMetadataOnly?: boolean }
 /** Python `all_sessions` without the state.db lineage overlay. */
 export async function allSessions(store: SessionStore, opts: AllSessionsOptions = {}): Promise<Row[]> {
   const activeStreamIds = store.deps.activeStreamIds()
+  // Only reuse this read's validated objects; replacements still need validation.
+  const sanitizedRows = new WeakSet<Row>()
   const finish = (result: Row[]): Row[] => {
-    result = result.flatMap((row) => { const clean = sanitizeSessionRow(row, store); return clean ? [clean] : [] })
+    result = result.flatMap((row) => { const clean = sanitizedRows.has(row) ? row : sanitizeSessionRow(row, store); return clean ? [clean] : [] })
     result = preferFullerSnapshots(result)
     const candidates = result
     const visible = candidates.filter((r) => !hideFromDefaultSidebar(r))
@@ -189,6 +191,7 @@ export async function allSessions(store: SessionStore, opts: AllSessionsOptions 
   try {
     let index = (await store.readIndexEntries()).flatMap((row) => {
       const clean = sanitizeSessionRow(row, store, 'index')
+      if (clean) sanitizedRows.add(clean)
       return clean ? [clean] : []
     })
     const inMemory = new Set(store.sessions.keys())
