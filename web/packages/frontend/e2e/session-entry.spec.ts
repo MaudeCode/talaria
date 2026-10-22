@@ -12,7 +12,7 @@ const transcript = (sid: string, turns: number, from = 0) => Array.from({ length
 ]).flat()
 
 const distance = (page: Page) => page.locator('#messages').evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight)
-const withoutContainment = 'html.without-containment .msg-row{content-visibility:visible!important;contain:none!important}html.without-containment .messages-inner{display:flex!important;flex-direction:column}html.without-containment .messages-inner > .msg-row[data-role="user"]{margin-inline-start:0}'
+const withoutContainment = 'html.without-containment .msg-row{content-visibility:visible!important;contain:none!important}html.without-containment .messages-inner{display:flex!important;flex-direction:column}html.without-containment .messages-inner > .msg-row[data-role="user"]{width:auto;margin-inline-start:0}'
 
 /** Retain native entries as well as their count so batching cannot hide task duration. */
 interface LongTaskProbe { longTasks: PerformanceEntry[]; observer: PerformanceObserver }
@@ -26,13 +26,20 @@ test('off-screen rows stay searchable and reveal their measured content', async 
   await expect(page.locator('[data-message-key]')).toHaveCount(600)
   await expect.poll(() => distance(page)).toBeLessThan(2)
   await page.addStyleTag({ content: withoutContainment })
+  await page.evaluate(async () => { await document.fonts.ready })
+  const userHitAreas: { x: number; width: number }[] = []
   for (const baseline of [true, false]) {
     await page.evaluate((disabled) => document.documentElement.classList.toggle('without-containment', disabled), baseline)
     await expect.poll(() => distance(page)).toBeLessThan(2)
+    const hitArea = await page.locator('[data-message-key="599"]').boundingBox()
+    if (!hitArea) throw new Error('Missing visible user row')
+    userHitAreas.push(hitArea)
     const path = testInfo.outputPath(`${baseline ? 'before' : 'after'}-${testInfo.project.name}.png`)
     await page.screenshot({ path })
     await testInfo.attach(baseline ? 'Before' : 'After', { path, contentType: 'image/png' })
   }
+  expect(Math.abs(userHitAreas[1]!.width - userHitAreas[0]!.width), 'user row keeps its original hover width').toBeLessThan(1)
+  expect(Math.abs(userHitAreas[1]!.x - userHitAreas[0]!.x), 'user row keeps its original alignment').toBeLessThan(1)
   const first = page.locator('[data-message-key="1"] .msg-body')
   await expect.poll(() => first.evaluate((el) => el.checkVisibility({ contentVisibilityAuto: true }))).toBe(false)
   // Browser text search still selects skipped content; keyed navigation reveals and measures it.
