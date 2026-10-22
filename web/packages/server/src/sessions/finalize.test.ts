@@ -105,4 +105,62 @@ describe('session finalize (TAL-937)', () => {
     expect(await server.deps.sessions[reason](session.session_id)).toMatchObject({ ok: true })
     expect(sidecar.calls.filter((c) => c.method === task)).toHaveLength(1)
   })
+
+  it('notifies once after the archive commit across concurrent requests, and preserves transcript and runtime state', async () => {
+    const { sidecar, server, session } = await setup()
+    session.pinned = true
+    session.state_db_lineage = [session.session_id, 'continued']
+    session.pending_user_message = 'kept pending'
+    await server.deps.sessionStore.save(session)
+    sidecar.respond(task, async (params) => {
+      expect(params).toEqual({ session_id: session.session_id, profile_home: server.state, reason: 'archive', lineage: [session.session_id, 'continued'] })
+      expect((await server.deps.sessionStore.load(session.session_id))).toMatchObject({ archived: true, pinned: false, pending_user_message: 'kept pending' })
+      return { messages: ['discard archive messages'] }
+    })
+    await Promise.all([server.deps.sessions.archive(session.session_id, true), server.deps.sessions.archive(session.session_id, true)])
+    await server.deps.sessions.archive(session.session_id, false)
+    expect(sidecar.calls.filter((c) => c.method === task)).toHaveLength(1)
+    expect(session.messages.map((m) => m.content)).toEqual(['old conversation', 'old answer'])
+    expect(session.pending_user_message).toBe('kept pending')
+    expect(sidecar.calls.filter((c) => c.method === 'chat.evict_agent')).toEqual([])
+  })
+
+  it('a failed archive save emits nothing and a successful retry still notifies', async () => {
+    const { sidecar, server, session } = await setup()
+    session.pinned = true
+    await server.deps.sessionStore.save(session)
+    const save = vi.spyOn(server.deps.sessionStore, 'save').mockRejectedValueOnce(new Error('synthetic store failure'))
+    onTestFinished(() => { save.mockRestore() })
+    await expect(server.deps.sessions.archive(session.session_id, true)).rejects.toThrow('synthetic store failure')
+    expect(session).toMatchObject({ archived: false, pinned: true })
+    expect((await server.deps.sessionStore.load(session.session_id))).toMatchObject({ archived: false, pinned: true })
+    expect(sidecar.calls.filter((c) => c.method === task)).toEqual([])
+    await server.deps.sessions.archive(session.session_id, true)
+    expect(sidecar.calls.filter((c) => c.method === task)).toHaveLength(1)
+  })
+
+  it('a callback failure retains the committed archive and logs no callback payload', async () => {
+    const { sidecar, server, session } = await setup()
+    sidecar.respond(task, () => { throw new Error('private-synthetic-credential'.repeat(1000)) })
+    expect(await server.deps.sessions.archive(session.session_id, true)).toMatchObject({ ok: true })
+    expect((await server.deps.sessionStore.load(session.session_id))?.archived).toBe(true)
+    await server.deps.sessions.archive(session.session_id, true)
+    expect(sidecar.calls.filter((c) => c.method === task)).toHaveLength(1)
+    expect(server.logs.filter((line) => line.includes('session lifecycle'))).toEqual(['[webui] session lifecycle (archive) failed'])
+    expect(server.logs.join('')).not.toContain('private-synthetic-credential')
+  })
+
+  it('wrong-profile archive and automatic cleanup never notify', async () => {
+    const { sidecar, server, session } = await setup()
+    session.profile = 'foreign'
+    await server.deps.sessionStore.save(session)
+    const response = await server.get('/api/session/archive', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session_id: session.session_id, archived: true }) })
+    expect(response.status).toBe(404)
+    expect(session.archived).toBe(false)
+    const empty = await server.deps.sessionStore.newSession({ workspace: join(server.state, 'workspace') })
+    await server.deps.sessionStore.save(empty)
+    expect(await server.deps.sessions.cleanup(true)).toMatchObject({ ok: true, cleaned: 1 })
+    expect(sidecar.calls.filter((c) => c.method === task)).toEqual([])
+  })
+
 })

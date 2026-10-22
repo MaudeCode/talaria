@@ -27,6 +27,7 @@ from collections import OrderedDict
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
+from types import SimpleNamespace
 
 from ..errors import InvalidParams, RpcError
 from ..home import profile_home_param, scoped_home, session_workspace
@@ -934,6 +935,36 @@ def agent_scope(home: Path):
     with scoped_home(home):
         _register_profile_hooks(home)
         yield
+
+
+def _notify_archive(home: Path, session_id: str, lineage: list[str] | None) -> None:
+    import hermes_state_common
+
+    emit = getattr(hermes_state_common, "emit_session_deleted", None)
+    if emit is None:
+        return
+    # Upstream hook warnings can include arbitrary callback exceptions. Keep one payload-free diagnostic.
+    thread_id, warned = threading.get_ident(), False
+
+    def bounded_diagnostic(record):
+        nonlocal warned
+        if record.thread != thread_id:
+            return True
+        warned = warned or record.levelno >= logging.WARNING
+        return False
+
+    handlers = list(logging.getLogger().handlers)
+    for handler in handlers:
+        handler.addFilter(bounded_diagnostic)
+    try:
+        # The emitter only needs db_path for profile identity. Opening SessionDB would migrate an owner's store.
+        emit(SimpleNamespace(db_path=home / "state.db"), [session_id, *(lineage or [])],
+             reason="archive", primary=session_id, sessions_dir=home / "sessions")
+    finally:
+        for handler in handlers:
+            handler.removeFilter(bounded_diagnostic)
+        if warned:
+            log.warning("Session archive notification reported a callback failure")
 
 
 def _profile_fallback_chain() -> list[dict] | None:
@@ -2431,8 +2462,12 @@ def register(registry) -> None:
     def finalize_(ctx: CallContext, params: dict) -> dict:
         session_id = str(params.get("session_id") or "").strip()
         reason = params.get("reason")
-        if not session_id or reason not in ("clear", "delete"):
-            raise InvalidParams("session_id and reason (clear/delete) are required")
+        if not session_id or reason not in ("clear", "delete", "archive"):
+            raise InvalidParams("session_id and reason (clear/delete/archive) are required")
+        lineage = params.get("lineage")
+        if lineage is not None and (not isinstance(lineage, list) or len(lineage) > 10_000
+                                    or any(not isinstance(sid, str) or not sid for sid in lineage)):
+            raise InvalidParams("lineage must contain session ids")
         home = profile_home_param(params)
         messages: list[str] = []
 
@@ -2440,6 +2475,9 @@ def register(registry) -> None:
             try:
                 # Scope inside the worker: a timed-out plugin keeps its own profile until it finishes.
                 with agent_scope(home):
+                    if reason == "archive":
+                        _notify_archive(home, session_id, lineage)
+                        return
                     from hermes_cli import lifecycle
 
                     callback = getattr(lifecycle, "finalize_session", None)
@@ -2450,7 +2488,7 @@ def register(registry) -> None:
                     if extract is not None:
                         messages.extend(extract(results))
             except Exception:  # noqa: BLE001 - hooks must never block the boundary
-                log.warning("Session finalize failed for %s (%s)", session_id, reason, exc_info=True)
+                log.warning("Session lifecycle callback failed (%s)", reason)
             finally:
                 with _RELEASES_LOCK:
                     _RELEASES.pop(worker, None)
@@ -2462,7 +2500,7 @@ def register(registry) -> None:
         worker.start()
         worker.join(_SESSION_FINALIZE_TIMEOUT)
         if worker.is_alive():
-            log.warning("Session finalize exceeded %ss for %s (%s)", _SESSION_FINALIZE_TIMEOUT, session_id, reason)
+            log.warning("Session lifecycle callback exceeded deadline (%s)", reason)
             return {"messages": []}
         return {"messages": messages}
 
