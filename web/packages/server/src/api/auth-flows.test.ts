@@ -576,32 +576,39 @@ describe('auth gate fails closed on unknown or unreadable auth state', () => {
 })
 
 describe('OIDC operator config availability', () => {
-  it('SSO reads operator config through the real transport while Agent imports are unavailable', async () => {
+  it.each(['unavailable', 'starting'] as const)('SSO reads operator config through the real transport while Agent imports are %s', async (phase) => {
     const sidecar = new SidecarClient({
       python: process.execPath, agentDir: '', sidecarDir: process.cwd(), hermesHome: '', log: () => undefined,
       command: [process.execPath, '-e', `
+        const state = process.argv[2];
         const fs = require('fs');
         const fixture = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'))['runtime.handshake'][0].result;
         require('readline').createInterface({input: process.stdin}).on('line', line => {
           const req = JSON.parse(line);
           let result;
-          if (req.method === 'runtime.handshake') result = {...fixture, compatible: false, import_error: 'synthetic missing dependency'};
+          if (req.method === 'runtime.handshake') {
+            if (state === 'starting') return;
+            result = {...fixture, compatible: false, import_error: 'synthetic missing dependency'};
+          } else if (req.method === 'runtime.status') result = {...fixture, compatible: false};
           else if (req.method === 'config.get') result = {path: req.params.config_path, exists: true, config: JSON.parse(fs.readFileSync(req.params.config_path, 'utf8'))};
           else if (req.method === 'config.set') { fs.writeFileSync(req.params.config_path, JSON.stringify(req.params.config)); result = {ok: true, path: req.params.config_path}; }
           else return;
           process.stdout.write(JSON.stringify({jsonrpc: '2.0', id: req.id, result}) + '\\n');
-        });`, resolve(import.meta.dirname, '../../../contracts/fixtures/sidecar/runtime.json')],
+        });`, resolve(import.meta.dirname, '../../../contracts/fixtures/sidecar/runtime.json'), phase],
     })
-    await sidecar.start()
+    // Hold startup until teardown, so every auth assertion runs before Agent readiness.
+    const starting = sidecar.start().catch(() => undefined)
+    if (phase !== 'starting') await starting
     const s = await bootTestServer({ sidecar, deps: (deps) => {
-      writeFileSync(join(deps.config.hermesHome, 'config.yaml'), JSON.stringify({ webui_oidc: {
+      writeFileSync(join(deps.config.hermesHome, 'config.yaml'), JSON.stringify({ webui_passkey_enabled: true, webui_oidc: {
         issuer: ISSUER, client_id: 'web-client', allow_claim: 'groups', allow_values: ['admins'], trusted_private_hosts: ['idp.example'],
         owner_claim: 'groups', owner_values: ['owners'],
       } }))
     } })
     try {
       s.deps.fetch = fakeIdp(() => Date.now() / 1000).fetch
-      expect(sidecar.status).toBe('incompatible')
+      expect(sidecar.status).toBe(phase === 'starting' ? 'starting' : 'incompatible')
+      expect(await json(await s.get('/api/auth/status'))).toMatchObject({ auth_enabled: true, oidc_enabled: true, passkey_feature_flag: true })
       expect((await s.get('/api/sessions')).status).toBe(401)
       const start = await s.get('/api/auth/oidc/start')
       expect(start.status).toBe(302)
@@ -611,8 +618,11 @@ describe('OIDC operator config availability', () => {
       const cookie = cookieOf(callback, s.deps.auth.cookieName())
       expect(cookie).toBeTruthy()
       expect(await json(await s.get('/api/auth/status', { headers: { cookie: `${s.deps.auth.cookieName()}=${cookie ?? ''}` } }))).toMatchObject({ logged_in: true, can_manage_server: false })
-      expect((await sidecar.call('config.set', { profile_home: s.state, config_path: join(s.state, 'recovery.yaml'), config: {} })).ok).toBe(true)
-    } finally { await s.close(); await sidecar.close() }
+      if (phase === 'starting') {
+        expect(sidecar.status).toBe('starting')
+        await expect(sidecar.call('config.set', { profile_home: s.state, config_path: join(s.state, 'recovery.yaml'), config: {} })).rejects.toMatchObject({ condition: 'sidecar_unavailable' })
+      } else expect((await sidecar.call('config.set', { profile_home: s.state, config_path: join(s.state, 'recovery.yaml'), config: {} })).ok).toBe(true)
+    } finally { await s.close(); await sidecar.close(); await starting }
   })
 
   it('an unreadable operator config withholds SSO while the gate stays closed, and offers it once the config resolves', async () => {

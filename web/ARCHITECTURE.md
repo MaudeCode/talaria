@@ -242,8 +242,10 @@ the pytest suite and the Vitest fake. `sidecar/scripts/replay_sidecar.py` replay
 one approval so browser e2e and the iOS contract runner need no Agent.
 
 The worker starts the sidecar handshake concurrently with server initialization and opens HTTP before
-waiting for that handshake. Public pages and authentication remain available during Agent imports;
-chat admission answers `503 sidecar_unavailable` while the sidecar is starting or reconnecting, without
+waiting for that handshake. Public pages and authentication remain available during Agent imports.
+Config reads validate the live RPC version through import-free `runtime.status` before reading
+operator authentication settings. This does not promote Agent readiness or permit config writes during startup.
+Chat admission answers `503 sidecar_unavailable` while the sidecar is starting or reconnecting, without
 queuing a runtime check behind the handshake. Handshake metadata is read lazily from the sidecar.
 Source-checkout dirty fingerprints compare actual Web content without refreshing the Git index,
 excluding timestamp-only rewrites and unrelated monorepo components from the startup scan.
