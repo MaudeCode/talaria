@@ -14,24 +14,24 @@ import { cn } from '../../ui/cn'
  * is outside a text field. Cleared by the terminal event or a successful respond.
  */
 export function ApprovalCard({ sessionId, pending, onResolved }: { sessionId: string; pending: ApprovalPending; onResolved: () => void }) {
-  const [busy, setBusy] = useState(false)
+  // The card leaves as soon as the user answers; a refused answer brings it back with the error.
+  const [answered, setAnswered] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   const [dismissed, setDismissed] = useState(false)
   const respond = async (choice: 'once' | 'session' | 'always' | 'deny', yolo = false) => {
-    if (busy) return
-    setBusy(true)
+    if (answered) return
+    setAnswered(true)
     try {
       const res = await api.respondApproval({ session_id: sessionId, choice, ...(pending.approval_id ? { approval_id: pending.approval_id } : {}), ...(pending.run_id ? { run_id: pending.run_id } : {}), ...(pending.mirror_token ? { mirror_token: pending.mirror_token } : {}), ...(yolo ? { yolo: true } : {}) })
-      if (res.error) showToast(res.error, 4000, 'error')
+      if (res.error) { setAnswered(false); showToast(res.error, 4000, 'error') }
       else onResolved()
     } catch (e) {
+      setAnswered(false)
       showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
-    } finally {
-      setBusy(false)
     }
   }
   useEffect(() => {
-    if (dismissed) return
+    if (dismissed || answered) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Enter' || e.metaKey || e.ctrlKey || e.shiftKey) return
       const t = e.target as HTMLElement | null
@@ -42,8 +42,8 @@ export function ApprovalCard({ sessionId, pending, onResolved }: { sessionId: st
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, pending.approval_id, dismissed])
-  if (dismissed) return null
+  }, [sessionId, pending.approval_id, dismissed, answered])
+  if (dismissed || answered) return null
   const command = pending.command ?? pending.action ?? ''
   return (
     <div className={cn('visible', collapsed && 'collapsed', "approval-card mx-auto mb-2 w-full max-w-[var(--msg-max)] rounded-xl border border-warning bg-surface shadow-md")} role="alertdialog" aria-labelledby="approvalHeading" aria-describedby="approvalDesc" id="approvalCard">
@@ -60,9 +60,9 @@ export function ApprovalCard({ sessionId, pending, onResolved }: { sessionId: st
           {(pending.description ?? pending.question ?? pending.reason) && <div className="approval-desc mt-1 text-[13px] text-muted" id="approvalDesc">{pending.description ?? pending.question ?? pending.reason}</div>}
           {command && <pre className="approval-cmd mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-md bg-code-bg p-2 font-mono text-[12.5px] text-pre-text">{command}</pre>}
           <div className="approval-btns mt-3 flex flex-wrap items-center gap-2">
-            <button type="button" disabled={busy} onClick={() => { void respond('once') }} className="approval-btn once inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-fg" title={m.approval_btn_once_title()}>{m.approval_btn_once()} <kbd className="rounded border border-current/30 px-1 text-[10px]">↵</kbd></button>
-            <button type="button" disabled={busy} onClick={() => { void respond('deny') }} className="approval-btn deny inline-flex items-center rounded-md border border-border bg-surface px-3 py-1.5 text-sm font-medium text-text hover:bg-hover">{m.approval_btn_deny()}</button>
-            {(pending.can_enable_yolo !== false || (pending.allowed_choices?.includes('session') ?? true) || (pending.allowed_choices?.includes('always') ?? true)) && <Menu label={m.approval_more()} side="top" trigger={<button type="button" disabled={busy} className="approval-btn more inline-flex items-center rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-text hover:bg-hover">{m.approval_more()}</button>}>
+            <button type="button" onClick={() => { void respond('once') }} className="approval-btn once inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-fg" title={m.approval_btn_once_title()}>{m.approval_btn_once()} <kbd className="rounded border border-current/30 px-1 text-[10px]">↵</kbd></button>
+            <button type="button" onClick={() => { void respond('deny') }} className="approval-btn deny inline-flex items-center rounded-md border border-border bg-surface px-3 py-1.5 text-sm font-medium text-text hover:bg-hover">{m.approval_btn_deny()}</button>
+            {(pending.can_enable_yolo !== false || (pending.allowed_choices?.includes('session') ?? true) || (pending.allowed_choices?.includes('always') ?? true)) && <Menu label={m.approval_more()} side="top" trigger={<button type="button" className="approval-btn more inline-flex items-center rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-text hover:bg-hover">{m.approval_more()}</button>}>
               {(pending.allowed_choices?.includes('session') ?? true) && <MenuItem onClick={() => { void respond('session') }}>{m.approval_btn_session()}</MenuItem>}
               {(pending.allowed_choices?.includes('always') ?? true) && <MenuItem onClick={() => { void respond('always') }}>{m.approval_btn_always()}</MenuItem>}
               {pending.can_enable_yolo !== false && <MenuItem onClick={() => { void respond('once', true) }}>{m.approval_skip_all()}</MenuItem>}

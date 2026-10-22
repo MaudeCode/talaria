@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ClarifyPending } from '../../contracts'
@@ -99,5 +99,18 @@ describe('password-manager prompts (TAL-887)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Skip' }))
     expect(api.respondClarify).toHaveBeenCalledWith({ session_id: 's1', clarify_id: 'contract-vault-code', decline: true })
     expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('leaves on Skip at once and comes back empty when the relay fails (TAL-1384)', async () => {
+    let refuse!: (error: unknown) => void
+    vi.mocked(api.respondClarify).mockReturnValueOnce(new Promise((_, reject) => { refuse = reject }) as never)
+    renderHead(fixture.code.pending)
+    expect(await screen.findByRole('dialog', { name: 'Code for login.example.com' })).toBeTruthy()
+    await userEvent.type(screen.getByLabelText('Code'), '4815')
+    await userEvent.click(screen.getByRole('button', { name: 'Skip' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    await act(async () => { refuse(new Error('relay failed')); await Promise.resolve() })
+    expect(await screen.findByRole('dialog', { name: 'Code for login.example.com' })).toBeTruthy()
+    expect(screen.getByLabelText('Code')).toHaveValue('')
   })
 })

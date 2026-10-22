@@ -66,15 +66,16 @@ export function useClarify(sessionId: string | null, live: LiveTurn | null): Cla
   const current: Progress = progress?.id === id ? progress : { id, index: 0, answers: {}, text: '', selected: [] }
   const step = steps[current.index]
 
+  // The card leaves on the last answer; a failed relay brings it back with the answers kept for a retry.
   const submit = async (answers: Record<string, Answer>) => {
     if (!sessionId) return
     setBusy(true)
+    setResolved(id)
     try {
       await api.respondClarify({ session_id: sessionId, clarify_id: id, answers })
-      setResolved(id)
     } catch (e) {
       // 409: the prompt already expired or was answered elsewhere; anything else keeps the answers for a retry.
-      if (isApiError(e) && e.status === 409) setResolved(id)
+      if (!(isApiError(e) && e.status === 409)) setResolved((current) => current === id ? null : current)
       showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
     } finally {
       setBusy(false)

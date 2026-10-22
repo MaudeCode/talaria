@@ -51,11 +51,12 @@ export function VaultPromptCard({ sessionId, clarifyId, vault }: { sessionId: st
     setBusy(true)
     const answers = values
     setValues({})
+    // The card leaves on the answer; a failed relay brings it back (empty: secrets are never kept for a retry).
+    setDone(true)
     try {
       await api.respondClarify({ session_id: sessionId, clarify_id: clarifyId, ...(decline ? { decline: true } : { answers }) })
-      setDone(true)
     } catch (e) {
-      if (isApiError(e) && e.status === 409) setDone(true)
+      if (!(isApiError(e) && e.status === 409)) setDone(false)
       showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
     } finally {
       setBusy(false)

@@ -131,6 +131,16 @@ describe('clarification through the composer (TAL-362)', () => {
     expect(api.steerChat).not.toHaveBeenCalled()
   })
 
+  it('hides the question as soon as the last answer is sent (TAL-1384)', async () => {
+    vi.mocked(api.respondClarify).mockReturnValueOnce(new Promise(() => undefined) as never)
+    head = single
+    renderChat()
+    await screen.findByRole('dialog')
+    await userEvent.type(screen.getByRole('textbox'), 'prod{Enter}')
+    expect(api.respondClarify).toHaveBeenCalledWith({ session_id: 's1', clarify_id: 'single-1', answers: { q0: 'prod' } })
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
   it('replaces the temporary answer when a new queue head arrives and clears when the server drops the prompt', async () => {
     renderChat()
     await push(single)

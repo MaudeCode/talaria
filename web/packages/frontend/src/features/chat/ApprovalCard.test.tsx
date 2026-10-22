@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 vi.mock('../../api/endpoints', () => ({ respondApproval: vi.fn(() => Promise.resolve({ ok: true })) }))
@@ -26,11 +26,23 @@ describe('ApprovalCard', () => {
 
   it('answers "allow once" on Enter when focus is outside a text field, and denies on Deny', async () => {
     const onResolved = vi.fn()
-    render(<ApprovalCard sessionId="s1" pending={{ approval_id: 'a2', command: 'ls' }} onResolved={onResolved} />)
+    const first = render(<ApprovalCard sessionId="s1" pending={{ approval_id: 'a2', command: 'ls' }} onResolved={onResolved} />)
     await userEvent.keyboard('{Enter}')
     await waitFor(() => expect(api.respondApproval).toHaveBeenCalledWith(expect.objectContaining({ choice: 'once', approval_id: 'a2' })))
+    first.unmount()
+    render(<ApprovalCard sessionId="s1" pending={{ approval_id: 'a4', command: 'ls' }} onResolved={onResolved} />)
     await userEvent.click(screen.getByRole('button', { name: /deny/i }))
-    await waitFor(() => expect(api.respondApproval).toHaveBeenCalledWith(expect.objectContaining({ choice: 'deny', approval_id: 'a2' })))
+    await waitFor(() => expect(api.respondApproval).toHaveBeenCalledWith(expect.objectContaining({ choice: 'deny', approval_id: 'a4' })))
+  })
+
+  it('leaves as soon as it is answered and comes back when the answer is refused (TAL-1384)', async () => {
+    let refuse!: (error: unknown) => void
+    vi.mocked(api.respondApproval).mockReturnValueOnce(new Promise((_, reject) => { refuse = reject }) as never)
+    render(<ApprovalCard sessionId="s1" pending={{ approval_id: 'a5', command: 'rm -rf build' }} onResolved={() => undefined} />)
+    await userEvent.click(screen.getByRole('button', { name: /deny/i }))
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+    await act(async () => { refuse(new Error('Approval expired')); await Promise.resolve() })
+    expect(await screen.findByRole('alertdialog')).toBeInTheDocument()
   })
 
   it('does not treat Enter inside a text field as an approval', async () => {
