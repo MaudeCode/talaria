@@ -1,6 +1,13 @@
 {
   "schemaVersion": 1,
   "families": {
+    "tests/test_gateway_sessions.py::test_real_cron_refusal_matches_public_consumer_fixture": {
+      "layer": "compatibility",
+      "reason": "Real installed Agent cron refusal producer, admission ledger and completion publisher must match the shared public consumer fixture and never invoke the scheduled job. Requires the Agent interpreter; only job execution is a tripwire.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_plugin_settings_mcp.py::test_plugin_save_reconciles_live_mcp_inputs": {
       "layer": "compatibility",
       "reason": "Real Agent portable-package settings and native reconnect API must replace a live stdio child launch environment while preserving profile borrowers; fakes cannot prove supported-Agent connection ownership.",

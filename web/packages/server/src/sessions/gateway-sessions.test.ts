@@ -12,6 +12,7 @@ import { GatewaySessions } from './gateway-sessions.js'
 
 const fixture = JSON.parse(readFileSync(new URL('../test/fixtures/canonical-ownership.json', import.meta.url), 'utf8')) as { sessions: Record<string, string>; diagnostic: Record<'safe' | 'ignore_config' | 'fresh', string>; schema: string[]; inserts: string[] }
 const ownerEvents = JSON.parse(readFileSync(new URL('../test/fixtures/gateway-owner-events.json', import.meta.url), 'utf8')) as { events: Record<string, unknown>[] }
+const cronRefusal = JSON.parse(readFileSync(new URL('../../../../../contracts/fixtures/native-cron-refusal.json', import.meta.url), 'utf8')) as { completion: Record<string, unknown>; event: { event: string; data: Record<string, unknown> } }
 const sid = fixture.sessions.cli!
 const snapshot = (extra: Partial<GatewaySnapshot> = {}): GatewaySnapshot => ({ session_id: sid, stored_session_id: sid,
   messages: [{ role: 'user', content: 'native question' }, { role: 'assistant', content: 'owner answer' }], message_count: 2,
@@ -181,6 +182,8 @@ describe('canonical owner attachment', () => {
         snap = { ...snap, ...extra }
         if (notify) emit!({ event: 'snapshot', data: { ...attached(snap), replay_gap: replayGap } })
       },
+      replaySnapshot: () => { emit!({ event: 'snapshot', data: { ...attached(snap), replaying: true } }) },
+      replayComplete: (terminalOutcome: string) => { outcome = terminalOutcome; emit!({ event: 'replay_complete', data: {} }) },
       finish: (generation = snap.execution_generation, terminalOutcome = 'completed') => {
         outcome = terminalOutcome
         snap = { ...snap, execution_generation: generation, running: false, pending: [] }
@@ -188,6 +191,95 @@ describe('canonical owner attachment', () => {
       },
     }
   }
+
+  it('replays a cron refusal that settled before the submit acknowledgement', async () => {
+    const snap = snapshot()
+    sidecar.respond('gateway.session', (params, send, opts) => {
+      if (params.action === 'watch') {
+        send({ event: 'snapshot', data: { ...attached(snap), replaying: true } })
+        send({ event: 'event', data: { type: 'message.complete', payload: cronRefusal.completion, session_id: sid, authority_epoch: 1, replay_epoch: 'owner-epoch', execution_generation: 1 } })
+        send({ event: 'replay_complete', data: {} })
+        return new Promise((resolve) => { opts.signal!.addEventListener('abort', () => { resolve(attached(snap)) }, { once: true }) })
+      }
+      return { ...attached(snap), receipt: ['submit', 'receipt'].includes(params.action) ? { ...admission('terminal'), outcome: 'failed' } : null }
+    })
+    const response = await post('/api/chat/start', { session_id: sid, submission_id: 'fast-refusal', message: 'ordinary input' })
+    const body = await response.json() as { stream_id?: string }
+    expect(body.stream_id).toBeTruthy()
+    const frames = await s.sse(`/api/chat/stream?stream_id=${body.stream_id}&replay=1`, (f) => f.event === 'apperror')
+    expect(frames.find((f) => f.event === 'apperror')?.data).toMatchObject(cronRefusal.event.data)
+  })
+
+  it('preserves the real cron refusal through public SSE and journal replay exactly once', async () => {
+    const watch = await observeOwner(snapshot({ running: true, pending: [admission()] }))
+    watch.event('message.complete', cronRefusal.completion)
+    watch.event('message.complete', cronRefusal.completion)
+    watch.finish(1, 'failed')
+    watch.finish(1, 'failed')
+    const frames = await watch.read
+    const errors = frames.filter((f) => f.event === 'apperror')
+    expect(errors).toHaveLength(1)
+    expect(errors[0]?.data).toMatchObject(cronRefusal.event.data)
+    expect(ChatEventSchema.safeParse(errors[0]).success).toBe(true)
+    const replay = await s.sse(`/api/chat/stream?stream_id=${watch.stream}&replay=1`, (f) => f.event === 'apperror')
+    expect(replay.find((f) => f.event === 'apperror')?.data).toEqual(errors[0]?.data)
+    expect(sidecar.calls.some((c) => c.method === 'chat.start' || c.method === 'cron.run')).toBe(false)
+  })
+
+  it('waits for retained owner events before settling an idle reconnect snapshot', async () => {
+    const watch = await observeOwner(snapshot({ running: true, pending: [admission()] }))
+    watch.snapshot({ running: false, pending: [] }, false, false)
+    // The owner became idle between attachment and the watch's initial snapshot.
+    // The sidecar marks that snapshot until its retained events have drained.
+    watch.replaySnapshot()
+    watch.event('message.complete', cronRefusal.completion)
+    watch.replayComplete('failed')
+    expect((await watch.read).find((f) => f.event === 'apperror')?.data).toMatchObject(cronRefusal.event.data)
+  })
+
+  it.each(['generation', 'authority', 'replay', 'gap'] as const)('discards a cron descriptor on %s replacement', async (replacement) => {
+    const watch = await observeOwner(snapshot({ running: true, pending: [admission()] }))
+    watch.event('message.complete', cronRefusal.completion)
+    watch.snapshot(replacement === 'generation' ? { execution_generation: 2 } : replacement === 'authority' ? { authority_epoch: 2 } : replacement === 'replay' ? { replay_epoch: 'next' } : {}, replacement === 'gap')
+    watch.finish(replacement === 'generation' ? 2 : 1, 'failed')
+    expect((await watch.read).find((f) => f.event === 'apperror')?.data).toMatchObject({ type: 'owner_turn_failed', message: 'The owning Agent could not complete this turn' })
+  })
+
+  it.each([{ session_id: 'another' }, { authority_epoch: 99 }, { replay_epoch: 'stale' }, { execution_generation: 99 }])('ignores a stale cron completion %j', async (stamps) => {
+    const watch = await observeOwner(snapshot({ running: true, pending: [admission()] }))
+    watch.event('message.complete', cronRefusal.completion, 1, stamps)
+    watch.finish(1, 'failed')
+    expect((await watch.read).find((f) => f.event === 'apperror')?.data).toMatchObject({ type: 'owner_turn_failed' })
+  })
+
+  it.each([
+    {},
+    { ...cronRefusal.completion, error_surface: { layer: 'gateway', code: 'provider_failure', retryable: false }, text: 'private diagnostic' },
+    { ...cronRefusal.completion, error_surface: { layer: 'gateway', code: 'cron_session_read_only', retryable: true } },
+    { ...cronRefusal.completion, error_surface: { layer: 'gateway', code: 'cron_session_read_only' } },
+    { ...cronRefusal.completion, error_surface: { code: 'cron_session_read_only', retryable: false } },
+    { ...cronRefusal.completion, text: '' },
+    { ...cronRefusal.completion, admission_id: 'another-input' },
+    { ...cronRefusal.completion, error_surface: { layer: 'provider', code: 'cron_session_read_only', retryable: false }, text: 'private diagnostic' },
+  ])('keeps an old or unrelated owner failure generic %j', async (payload) => {
+    const watch = await observeOwner(snapshot({ running: true, pending: [admission()] }))
+    watch.event('message.complete', payload)
+    watch.finish(1, 'failed')
+    const error = (await watch.read).find((f) => f.event === 'apperror')?.data
+    expect(error).toMatchObject({ type: 'owner_turn_failed', message: 'The owning Agent could not complete this turn' })
+    expect(error).not.toHaveProperty('retryable')
+  })
+
+  it('redacts cron refusal text and never forwards private descriptor fields', async () => {
+    const watch = await observeOwner(snapshot({ running: true, pending: [admission()] }))
+    const secret = 'sk-abcdefghijklmnopqrstuvwxyz123456'
+    watch.event('message.complete', { ...cronRefusal.completion, text: `${String(cronRefusal.completion.text)} ${secret}`, error_surface: { layer: 'gateway', code: 'cron_session_read_only', retryable: false, provider: 'private-provider', details: secret } })
+    watch.finish(1, 'failed')
+    const serialized = JSON.stringify(await watch.read)
+    expect(serialized).toContain('Start a new chat to send it.')
+    expect(serialized).not.toContain(secret)
+    expect(serialized).not.toContain('private-provider')
+  })
 
   it('carries native MCP progress on one tool row through completion', async () => {
     const watch = await observeOwner(snapshot({ running: true, pending: [admission()] }))

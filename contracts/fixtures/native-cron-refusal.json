@@ -1,0 +1,25 @@
+{
+  "producer_revision": "4d04303818b61bf3aa09278af48356315515965b",
+  "completion": {
+    "text": "⚠️ This chat belongs to a scheduled job and only runs that job, so your message was not run. Start a new chat to send it.",
+    "content": "⚠️ This chat belongs to a scheduled job and only runs that job, so your message was not run. Start a new chat to send it.",
+    "admission_id": "native-input",
+    "outcome": "failed",
+    "status": "error",
+    "error_surface": {
+      "layer": "gateway",
+      "code": "cron_session_read_only",
+      "retryable": false
+    }
+  },
+  "event": {
+    "event": "apperror",
+    "data": {
+      "type": "cron_session_read_only",
+      "code": "cron_session_read_only",
+      "message": "⚠️ This chat belongs to a scheduled job and only runs that job, so your message was not run. Start a new chat to send it.",
+      "retryable": false,
+      "terminal_state": "error"
+    }
+  }
+}

@@ -185,3 +185,15 @@ read also prevents the write and propagates its error; clients never retry witho
 context. Explicit profile settings remain
 available without the capability. The flag is additive and optional for old-server
 decoding.
+
+Native scheduled-chat refusals use the existing terminal `apperror` fields. Only
+the recognized owner descriptor `cron_session_read_only` maps to `type` and
+`code`, redacted owner `message`, and `retryable: false`. Other owner failures
+retain the generic error. The sidecar brackets its initial retained-event replay
+with a `replaying` snapshot flag and `replay_complete`; the server settles an idle
+attachment only after that replay drains. This stream change bumps the internal
+sidecar RPC protocol to 50, so mismatched server/sidecar pairs fail the handshake.
+Descriptors are scoped to the session,
+authority, replay epoch, execution generation and admission, and are discarded on
+replacement or replay gaps. Web hides Retry when the server sends `retryable:
+false`; absent fields retain older-server behavior.

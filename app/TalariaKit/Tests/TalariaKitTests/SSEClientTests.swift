@@ -4,6 +4,17 @@ import XCTest
 
 @MainActor
 final class SSEClientTests: XCTestCase {
+    func testScheduledChatRefusalUsesTheExistingTerminalErrorWithoutResend() throws {
+        let data = try sharedContractFixture("native-cron-refusal")
+        let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let event = try XCTUnwrap(fixture["event"] as? [String: Any])
+        let payload = try XCTUnwrap(event["data"] as? [String: Any])
+        let message = try XCTUnwrap(payload["message"] as? String)
+        XCTAssertEqual(payload["retryable"] as? Bool, false)
+        let text = String(decoding: try JSONSerialization.data(withJSONObject: payload), as: UTF8.self)
+        XCTAssertEqual(SSEEventDecoder.decode(eventType: "apperror", data: text), .error(message, terminalState: "error"))
+    }
+
     func testWarningIsDeliveredAsANonterminalEvent() {
         let event = SSEEventDecoder.decode(
             eventType: "warning",

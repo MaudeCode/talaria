@@ -289,3 +289,27 @@ def test_watch_forwards_native_progress_and_deduplicates_replay_overlap(native_o
     ctx.emit = emit
     native_owner_stub.run(ctx, {"session_id": "chat", "action": "watch"})
     assert [data for kind, data in emitted if kind == "event"] == [retained, current]
+
+
+@requires_agent
+def test_real_cron_refusal_matches_public_consumer_fixture(tmp_path):
+    if "CRON_SESSION_READ_ONLY_SURFACE" not in (AGENT_DIR / "gateway/session_cron.py").read_text():
+        pytest.skip("this supported Agent predates typed scheduled-chat refusals")
+    env = isolated_env(tmp_path / "hermes", HERMES_WEBUI_AGENT_DIR=str(AGENT_DIR))
+    result = subprocess.run([AGENT_PYTHON, str(Path(__file__).parent / "fixtures/gateway_cron_refusal.py")],
+                            env=env, capture_output=True, text=True, timeout=60, check=False)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_watch_brackets_retained_terminal_events_before_idle_settlement(native_owner_stub):
+    import json
+    from types import SimpleNamespace
+    fixture = json.loads((Path(__file__).resolve().parents[3] / "contracts/fixtures/native-cron-refusal.json").read_text())
+    event = {"session_id": "chat", "type": "message.complete", "seq": 4, "replay_epoch": "epoch",
+             "authority_epoch": 1, "execution_generation": 1, "payload": fixture["completion"]}
+    native_owner_stub.replay = [event]
+    emitted = []
+    ctx = SimpleNamespace(cancelled=True, emit=lambda kind, data: emitted.append((kind, data)))
+    native_owner_stub.run(ctx, {"session_id": "chat", "action": "watch"})
+    assert emitted[0][0] == "snapshot" and emitted[0][1]["replaying"] is True
+    assert emitted[1:] == [("event", event), ("replay_complete", {})]
