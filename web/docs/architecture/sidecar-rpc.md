@@ -668,6 +668,21 @@ result always includes this field; an older sidecar without it projects
 `plugin_settings_unconfirmed`, preserving secrets for readback rather than
 rolling back an operation that may already have persisted.
 
+
+### Stopping background work
+
+RPC v52 adds `process.stop`. It receives the profile home, owning session id and process/delegation id.
+It rechecks ownership before killing a process with `consume_output: false` or
+requesting cooperative interruption of a delegation's active subagents. Split units
+select only their task indexes within the call's shared subagent roster. Child
+ownership matches the unit's captured execution parent, so compression rotations
+do not lose control of work still owned by the original Web session. It returns
+`stopped`, `not_running` or `not_found`; failed kills/interruptions remain errors.
+A stop request never fabricates a terminal receipt. The Agent's existing completion
+path settles the row. The HTTP server publishes `can_stop` only for confirmed running
+owned work, and both Background work and Agents reuse the same Stop/Dismiss action.
+Native owner controls are outside this direct-sidecar API.
+
 ### Context inspection
 
 `chat.context_detail` reads only a matching resident Agent in the requested profile,

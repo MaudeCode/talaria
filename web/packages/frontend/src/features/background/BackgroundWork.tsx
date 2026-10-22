@@ -3,7 +3,7 @@
  * running work, and a finished `/background` result until someone dismisses it. Every client reads the same records.
  */
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Check, CircleHelp, Clock, LoaderCircle, X } from 'lucide-react'
 import type { BackgroundLink, BackgroundTask, BackgroundReviewState } from '@maudecode/talaria-web-contracts'
 import * as api from '../../api/endpoints'
@@ -62,11 +62,27 @@ export function StatusIcon({ status }: { status: BackgroundTask['status'] | Back
   return <AlertTriangle size={13} className="shrink-0 text-warning" aria-hidden="true" />
 }
 
+/** One action slot for a background row in the composer and Agents page. */
+export function BackgroundTaskAction({ sessionId, task }: { sessionId: string; task: BackgroundTask }) {
+  const qc = useQueryClient()
+  const stopping = Boolean(task.can_stop)
+  const stop = useMutation({
+    mutationFn: () => api.stopBackgroundTask(sessionId, task.task_id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.background(sessionId) }),
+  })
+  // Dismiss removes a result from view; Stop waits for the Agent's completion.
+  const dismiss = useResourceMutation({ resource: () => backgroundResource(sessionId, task.task_id), queryKey: keys.background(sessionId), effect: () => ({ remove: true }), mutationFn: () => api.dismissBackgroundTask(sessionId, task.task_id), onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error') })
+  const action = stopping ? stop : dismiss
+  if (!stopping && !task.dismissible) return null
+  return <>
+    <button type="button" className="composer-notice-action" disabled={action.isPending} onClick={() => action.mutate()}>{stopping ? m.bg_stop() : m.notice_dismiss()}</button>
+    {action.isError && <span role="alert" className="text-warning">{action.error.message}</span>}
+  </>
+}
+
 function TaskRow({ sessionId, task }: { sessionId: string; task: BackgroundTask }) {
   const [open, setOpen] = useState(false)
   const result = useQuery({ queryKey: keys.backgroundResult(sessionId, task.task_id), queryFn: () => api.fetchBackgroundResult(sessionId, task.task_id), enabled: open && task.result_available })
-  // Dismissing removes the result from view; it never cancels the work or erases its history.
-  const dismiss = useResourceMutation({ resource: () => backgroundResource(sessionId, task.task_id), queryKey: keys.background(sessionId), effect: () => ({ remove: true }), mutationFn: () => api.dismissBackgroundTask(sessionId, task.task_id), onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error') })
   return (
     <li className="bg-work-task flex min-w-0 flex-col gap-1" data-task-id={task.task_id} data-status={task.status}>
       <div className="flex min-w-0 items-center gap-1.5">
@@ -74,7 +90,7 @@ function TaskRow({ sessionId, task }: { sessionId: string; task: BackgroundTask 
         <span className="min-w-0 flex-1 truncate" title={task.title}><span className="text-muted">{kindLabel(task.kind)}</span> {task.title}</span>
         <span className="shrink-0 text-[11px] text-muted">{task.agents && task.agents.total > 1 ? agentsSummary(task.agents) : statusLabel(task.status)}</span>
         {task.result_available && <button type="button" className="composer-notice-action" aria-expanded={open} onClick={() => setOpen((o) => !o)}>{open ? m.bg_hide_result() : m.bg_show_result()}</button>}
-        {task.dismissible && <button type="button" className="composer-notice-action" onClick={() => dismiss.mutate()}>{m.notice_dismiss()}</button>}
+        <BackgroundTaskAction sessionId={sessionId} task={task} />
       </div>
       {open && (
         <div className="bg-work-result max-h-72 overflow-auto rounded-md bg-surface-subtle px-2 py-1 text-[13px]">

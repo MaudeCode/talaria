@@ -192,3 +192,20 @@ describe('background task records (TAL-372)', () => {
     } finally { vi.useRealTimers() }
   })
 })
+
+it('can_stop requires confirmed session-owned running Agent work (TAL-1172)', async () => {
+  const store = new BackgroundTaskStore(testSessionDocuments(tempDir()), () => 200)
+  await store.update('s', [{ task_id: 'bg1', kind: 'background_command', status: 'running', stream_id: 'stream' }])
+  const process = (id: string, owner: string, exited = false) => ({ process_id: id, session_key: owner, command: 'test', started_at: 1, exited, exited_at: exited ? 10 : null, exit_code: null, completion_reason: '', watched: false })
+  const delegation = (id: string, owner: string, live: string | null) => ({ delegation_id: id, origin_ui_session_id: owner, state: 'running', dispatched_at: 1, completed_at: null, updated_at: 1, goals: ['review'], child_statuses: [], has_result: false, live_status: live })
+  const sidecar = { call: () => Promise.resolve({ processes: [process('p1', 's'), process('done', 's', true), process('foreign', 'other')], delegations: [delegation('d1', 's', 'stalling'), delegation('lost', 's', null), delegation('foreign-d', 'other', 'running')] }) } as unknown as SidecarLike
+  const activity = new BackgroundActivity({ store, sidecar: () => sidecar, profileHome: () => '/test-profile', liveStream: () => true, now: () => 200, log: () => undefined })
+  const tasks = (await activity.snapshot('s', 'work')).tasks
+  expect(tasks.filter((t) => t.can_stop).map((t) => t.task_id).sort()).toEqual(['d1', 'p1'])
+  expect(tasks.map((t) => t.task_id)).not.toContain('foreign')
+  expect(tasks.map((t) => t.task_id)).not.toContain('foreign-d')
+  expect(tasks.find((t) => t.task_id === 'done')).toMatchObject({ can_stop: false })
+  expect(tasks.find((t) => t.task_id === 'lost')).toMatchObject({ status: 'unknown', can_stop: false })
+  expect(tasks.find((t) => t.task_id === 'bg1')).toMatchObject({ status: 'running', can_stop: false })
+  expect((await activity.snapshot('s', 'work', { canStop: false })).tasks.every((t) => t.can_stop === false)).toBe(true)
+})

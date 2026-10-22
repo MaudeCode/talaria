@@ -8,6 +8,7 @@ vi.mock('../../api/endpoints', () => ({
   fetchBackgroundTasks: vi.fn(),
   fetchBackgroundResult: vi.fn(),
   dismissBackgroundTask: vi.fn(),
+  stopBackgroundTask: vi.fn(),
 }))
 import * as api from '../../api/endpoints'
 import { BackgroundWorkCard, useBackgroundTasks } from './BackgroundWork'
@@ -80,6 +81,32 @@ describe('Delegation row (TAL-372)', () => {
     rerender(<ToolCard call={{ ...call, background: { task_ids: ['a-1'], status: 'unknown', agents: { total: 1, completed: 0, failed: 0, running: 1 } } }} />)
     expect(screen.getByText('Status unknown · 0 of 1 done')).toBeInTheDocument()
   })
+})
+
+
+describe('Stop background work (TAL-1172)', () => {
+  it('uses only can_stop and waits for the server completion before changing status', async () => {
+    vi.mocked(api.fetchBackgroundTasks).mockResolvedValue({ session_id: 'sess-1', agent_available: true, tasks: [
+      task({ task_id: 'owned', kind: 'process', can_stop: true }),
+      task({ task_id: 'unknown', kind: 'process', can_stop: false }),
+    ] })
+    vi.mocked(api.stopBackgroundTask).mockResolvedValue({ outcome: 'stopped' })
+    renderCard()
+    const stop = await screen.findByRole('button', { name: 'Stop' })
+    expect(screen.getAllByRole('button', { name: 'Stop' })).toHaveLength(1)
+    await userEvent.click(stop)
+    expect(api.stopBackgroundTask).toHaveBeenCalledWith('sess-1', 'owned')
+    expect(document.querySelector('[data-task-id="owned"]')).toHaveAttribute('data-status', 'running')
+  })
+})
+
+it('shows Stop failures without inventing a terminal state', async () => {
+  vi.mocked(api.fetchBackgroundTasks).mockResolvedValue({ session_id: 'sess-1', agent_available: true, tasks: [task({ kind: 'delegation', can_stop: true })] })
+  vi.mocked(api.stopBackgroundTask).mockRejectedValue(new Error('Could not interrupt subagent'))
+  renderCard()
+  await userEvent.click(await screen.findByRole('button', { name: 'Stop' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('Could not interrupt subagent')
+  expect(document.querySelector('[data-task-id="t"]')).toHaveAttribute('data-status', 'running')
 })
 
 describe('Background dismiss (TAL-1179)', () => {

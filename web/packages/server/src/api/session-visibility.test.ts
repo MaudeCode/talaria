@@ -118,6 +118,7 @@ describe('request-profile session visibility', () => {
     expect((await s.get(`/api/background/tasks?session_id=${sid}`, { headers: work.headers })).status).toBe(404)
     expect((await s.get(`/api/background/result?session_id=${sid}&task_id=t1`, { headers: work.headers })).status).toBe(404)
     expect((await post(s, work, '/api/background/dismiss', { session_id: sid, task_id: 't1' })).status).toBe(404)
+    expect((await post(s, work, '/api/background/stop', { session_id: sid, task_id: 't1' })).status).toBe(404)
     expect((await s.get(`/api/background/tasks?session_id=${sid}`, { headers: root.headers })).status).toBe(200)
   })
 

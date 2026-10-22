@@ -58450,6 +58450,9 @@
                           "dismissible": {
                             "type": "boolean"
                           },
+                          "can_stop": {
+                            "type": "boolean"
+                          },
                           "active": {
                             "type": "boolean"
                           }
@@ -58537,6 +58540,63 @@
                   "required": [
                     "task_id",
                     "text"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/background/stop": {
+      "post": {
+        "operationId": "background.stop",
+        "tags": [
+          "chat"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "session_id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
+                  },
+                  "task_id": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "session_id",
+                  "task_id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "outcome": {
+                      "enum": [
+                        "stopped",
+                        "not_running",
+                        "not_found"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "outcome"
                   ]
                 }
               }
@@ -58713,6 +58773,9 @@
                           "type": "boolean"
                         },
                         "dismissible": {
+                          "type": "boolean"
+                        },
+                        "can_stop": {
                           "type": "boolean"
                         },
                         "active": {

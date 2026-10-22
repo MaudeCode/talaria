@@ -417,7 +417,7 @@ export const chatRouter = os.router({
     })),
     tasks: os.background.tasks.handler(({ input, context: { ctx } }) => run(async () => {
       const s = (await visibleSession(ctx, input.session_id))
-      const snapshot = await ctx.deps.background.snapshot(s.session_id, s.profile)
+      const snapshot = await ctx.deps.background.snapshot(s.session_id, s.profile, { canStop: !(await ctx.deps.sessions.isReadOnly(s)) })
       return { session_id: s.session_id, ...snapshot, tasks: input.kind ? snapshot.tasks.filter((t) => t.kind === input.kind) : snapshot.tasks }
     })),
     result: os.background.result.handler(({ input, context: { ctx } }) => run(async () => {
@@ -425,6 +425,14 @@ export const chatRouter = os.router({
       const text = await ctx.deps.background.result(s.session_id, s.profile, input.task_id)
       if (text === null) throw new HttpError(404, 'No result for this background task')
       return { task_id: input.task_id, text }
+    })),
+    stop: os.background.stop.handler(({ input, context: { ctx } }) => run(async () => {
+      const s = await visibleSession(ctx, input.session_id)
+      await ctx.deps.sessions.assertWritable(s)
+      try { return await ctx.deps.background.stop(s.session_id, s.profile, input.task_id) } catch (error) {
+        if (!(error instanceof SidecarError)) throw error
+        throw new HttpError(error.condition === 'sidecar_unavailable' ? 503 : 502, error.message)
+      }
     })),
     dismiss: os.background.dismiss.handler(({ input, context: { ctx } }) => run(async () => {
       const s = (await visibleSession(ctx, input.session_id))

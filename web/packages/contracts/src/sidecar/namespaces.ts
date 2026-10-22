@@ -496,6 +496,7 @@ export const PROCESS_METHODS = {
   /** Hands back a claim the busy target never admitted, without spending one of the Agent's delivery attempts. */
   'process.defer_delivery': { params: ProfileHomeParams.extend({ event: Loose, claim_id: z.string() }), result: Ok },
   'process.format_notification': { params: z.object({ event: Loose }), result: z.object({ text: z.string() }) },
+  'process.stop': { params: ProfileHomeParams.extend({ session_id: z.string().min(1), process_id: z.string().min(1) }), result: z.object({ outcome: z.enum(['stopped', 'not_running', 'not_found']) }) },
   'process.list': { params: ProfileHomeParams, result: z.object({ sessions: z.array(Loose) }) },
   /** TAL-372: the Agent's view of these WebUI sessions' background work: ledger delegations (with live status) and notified processes. */
   'process.background_list': {

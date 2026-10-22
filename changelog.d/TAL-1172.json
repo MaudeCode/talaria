@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Stop running subagents and background processes from Background work.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

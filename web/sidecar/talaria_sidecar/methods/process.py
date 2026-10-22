@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import logging
 import queue
+import re
 import sqlite3
 import threading
 import time
@@ -449,7 +450,7 @@ def _live_delegations() -> dict[str, dict]:
         items = list_async_delegations()
     except Exception:  # noqa: BLE001 - an Agent without the live registry reports from the ledger alone
         return {}
-    return {str(i.get("delegation_id")): {"status": str(i.get("status") or "")} for i in items if isinstance(i, dict) and i.get("delegation_id")}
+    return {str(i.get("delegation_id")): i for i in items if isinstance(i, dict) and i.get("delegation_id")}
 
 
 def _owned_processes(session_ids: set[str]) -> list[dict]:
@@ -631,6 +632,60 @@ def recover(base_home: Path) -> int:
     return 1 + len(named)
 
 
+def stop(home: Path, session_id: str, process_id: str) -> str:
+    """Request cancellation only for work this profile/session owns; let Agent completions settle its row."""
+    registry = _registry()
+    proc = registry.get(process_id) if registry is not None else None
+    if proc is not None:
+        if str(getattr(proc, "session_key", "") or "") != session_id:
+            return "not_found"
+        if proc.exited:
+            return "not_running"
+        # Keep the completion visible to the parent, just like other autonomous exits.
+        result = registry.kill_process(process_id, consume_output=False)
+        if result.get("status") == "error" or result.get("error"):
+            raise RpcError(str(result.get("error") or "Process could not be stopped"))
+        if result.get("status") == "killed":
+            return "stopped"
+        if result.get("completion_reason") == "already_exited" or result.get("status") == "already_exited":
+            return "not_running"
+        raise RpcError("Process stop was not confirmed")
+
+    row = next((r for r in _ledger_rows(home, [session_id]) if r["delegation_id"] == process_id), None)
+    if row is None:
+        return "not_found"
+    if row["state"] not in {"running", "stalling", "finalizing"}:
+        return "not_running"
+    from tools.delegate_tool_registry import interrupt_subagent, list_active_subagents
+
+    live = _live_delegations().get(process_id)
+    if not live or live.get("origin_ui_session_id") != session_id:
+        return "not_running"
+    indexes = live.get("task_indexes")
+    # Independent-completion units are <call-id>-<unit-number>; slot_key is the first unit, not the call.
+    split = re.fullmatch(r"(.+)-[1-9][0-9]*", process_id) if indexes is not None else None
+    if indexes is not None and split is None:
+        raise RpcError("Delegation unit identity could not be confirmed")
+    call_id = split[1] if split else process_id
+    # The dispatch parent is the Agent execution id; compression can rotate it away from the stable Web id.
+    owner_id = live.get("parent_session_id") or session_id
+
+    def belongs(child: dict) -> bool:
+        if child.get("delegation_id") != call_id or child.get("owner_agent_session_id") != owner_id:
+            return False
+        # Split units share a call id; Agent subagent ids encode their original task index.
+        index = re.fullmatch(r"sa-(\d+)-[a-zA-Z0-9]+", str(child.get("subagent_id") or ""))
+        return indexes is None or (index is not None and int(index[1]) in indexes)
+
+    children = [r for r in list_active_subagents() if belongs(r)]
+    if not children:
+        return "not_running"
+    interrupted = [interrupt_subagent(r["subagent_id"]) for r in children]
+    if not all(interrupted):
+        raise RpcError("Some subagents could not be interrupted; refresh and retry")
+    return "stopped"
+
+
 def register(registry_) -> None:
     @registry_.method("process.drain")
     def drain_(ctx: CallContext, params: dict) -> dict:
@@ -729,6 +784,14 @@ def register(registry_) -> None:
             raise InvalidParams("session_id and delegation_id are required")
         with scoped_home(profile_home_param(params)) as home:
             return {"text": delegation_result(home, sid, did)}
+
+    @registry_.method("process.stop")
+    def stop_(ctx: CallContext, params: dict) -> dict:
+        sid, pid = params.get("session_id"), params.get("process_id")
+        if not isinstance(sid, str) or not sid.strip() or not isinstance(pid, str) or not pid.strip():
+            raise InvalidParams("session_id and process_id are required")
+        with scoped_home(profile_home_param(params)) as home:
+            return {"outcome": stop(home, sid, pid)}
 
     @registry_.method("process.list")
     def list_(ctx: CallContext, params: dict) -> dict:

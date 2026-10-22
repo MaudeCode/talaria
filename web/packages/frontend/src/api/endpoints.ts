@@ -148,6 +148,7 @@ export const goalCommand = (session_id: SessionId, args: string) => orpc().goal(
 export const startBackground = (session_id: SessionId, prompt: string) => orpc().background.start({ session_id, prompt })
 export const fetchBackgroundTasks = (session_id: SessionId, kind?: 'delegation' | 'process' | 'background_command') => orpc().background.tasks({ session_id, ...(kind ? { kind } : {}) })
 export const fetchBackgroundResult = (session_id: SessionId, task_id: string) => orpc().background.result({ session_id, task_id })
+export const stopBackgroundTask = (session_id: SessionId, task_id: string) => orpc().background.stop({ session_id, task_id })
 export const dismissBackgroundTask = (session_id: SessionId, task_id: string) => orpc().background.dismiss({ session_id, task_id })
 // TAL-518: `/btw` answers in a hidden copy of the chat; the reply streams on the returned `stream_id`.
 export const askBtw = (session_id: SessionId, question: string) => orpc().btw({ session_id, question })
