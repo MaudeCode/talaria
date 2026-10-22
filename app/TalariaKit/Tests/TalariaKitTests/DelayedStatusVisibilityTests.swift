@@ -81,4 +81,42 @@ final class DelayedStatusVisibilityTests: XCTestCase {
         XCTAssertTrue(status.isVisible)
         XCTAssertNil(status.nextDeadline)
     }
+
+    func testLeavingASessionClearsBothPendingAndVisibleSyncPresentation() {
+        for resetAt in [0.2, 0.5] {
+            var status = DelayedStatusVisibility()
+            status.update(isActive: true, now: at(0))
+            status.update(isActive: true, now: at(resetAt))
+            status.reset()
+            XCTAssertFalse(status.isVisible)
+            XCTAssertNil(status.nextDeadline)
+            status.update(isActive: true, now: at(1))
+            XCTAssertFalse(status.isVisible, "Another session starts its own delay.")
+            XCTAssertEqual(status.nextDeadline, at(1.4))
+        }
+    }
+
+    func testSupersedingWorkClearsTheHoldAndStartsAnyLaterSyncWithAFreshDelay() {
+        var status = DelayedStatusVisibility()
+        status.update(isActive: true, now: at(0))
+        status.update(isActive: true, now: at(0.4))
+        XCTAssertTrue(status.isVisible)
+        status.update(isActive: false, now: at(0.5), resetGeneration: 1)
+        XCTAssertFalse(status.isVisible)
+        XCTAssertNil(status.nextDeadline)
+        status.update(isActive: false, now: at(0.6), resetGeneration: 1)
+        XCTAssertFalse(status.isVisible, "Fast work must not restore the previous held pill.")
+        status.update(isActive: true, now: at(1), resetGeneration: 1)
+        XCTAssertFalse(status.isVisible)
+        XCTAssertEqual(status.nextDeadline, at(1.4))
+    }
+
+    func testSupersedingWorkRestartsTheDelayEvenWhenActivityStaysTrue() {
+        var status = DelayedStatusVisibility()
+        status.update(isActive: true, now: at(0))
+        status.update(isActive: true, now: at(0.2), resetGeneration: 1)
+        status.update(isActive: true, now: at(0.4), resetGeneration: 1)
+        XCTAssertFalse(status.isVisible)
+        XCTAssertEqual(status.nextDeadline, at(0.2).addingTimeInterval(0.4))
+    }
 }

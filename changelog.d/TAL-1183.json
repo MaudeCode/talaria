@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Sending a message keeps response progress visible while the chat updates in the background.",
+      "highlight": false
+    }
+  ]
+}

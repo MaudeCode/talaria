@@ -4,8 +4,8 @@ import TalariaKit
 extension View {
     /// Mirrors `isActive` into `isVisible` through `DelayedStatusVisibility`, so a loading indicator
     /// shows only after the work has run for 400 ms and then stays at least 400 ms (TAL-436).
-    func delayedStatus(_ isActive: Bool, isVisible: Binding<Bool>) -> some View {
-        modifier(DelayedStatusModifier(isActive: isActive, isVisible: isVisible))
+    func delayedStatus(_ isActive: Bool, isVisible: Binding<Bool>, resetGeneration: Int = 0) -> some View {
+        modifier(DelayedStatusModifier(isActive: isActive, resetGeneration: resetGeneration, isVisible: isVisible))
     }
 
     /// Keeps a server-backed screen current while it is on screen (TAL-434, TAL-435). It runs
@@ -26,12 +26,14 @@ extension View {
 
 private struct DelayedStatusModifier: ViewModifier {
     let isActive: Bool
+    let resetGeneration: Int
     @Binding var isVisible: Bool
     @State private var status = DelayedStatusVisibility()
 
     func body(content: Content) -> some View {
         content
-            .task(id: isActive) {
+            .task(id: [isActive ? 1 : 0, resetGeneration]) {
+                guard !Task.isCancelled else { return }
                 update()
                 while let deadline = status.nextDeadline {
                     try? await Task.sleep(for: .seconds(max(0, deadline.timeIntervalSinceNow)))
@@ -39,10 +41,14 @@ private struct DelayedStatusModifier: ViewModifier {
                     update()
                 }
             }
+            .onDisappear {
+                status.reset()
+                isVisible = false
+            }
     }
 
     private func update() {
-        status.update(isActive: isActive, now: Date())
+        status.update(isActive: isActive, now: Date(), resetGeneration: resetGeneration)
         if isVisible != status.isVisible {
             isVisible = status.isVisible
         }

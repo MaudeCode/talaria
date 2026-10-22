@@ -553,7 +553,8 @@ struct ChatView: View {
         .task(id: didCompleteInitialAppearance) {
             await handleInitialAppearanceTask()
         }
-        .delayedStatus(viewModel.isSyncingTranscript, isVisible: $showsSyncingPill)
+        .delayedStatus(viewModel.isSyncingTranscript, isVisible: $showsSyncingPill,
+                       resetGeneration: viewModel.transcriptSyncPresentationGeneration)
         .onChange(of: scenePhase) {
                 handleScenePhaseChange(scenePhase)
             }
@@ -1846,14 +1847,16 @@ struct ChatView: View {
     private func loadMessages(
         appliesInitialFocus: Bool = true,
         isUserRefresh: Bool = false,
-        joinsLoadInFlight: Bool = false
+        joinsLoadInFlight: Bool = false,
+        isRoutineReconciliation: Bool = false
     ) async {
         // A new chat has nothing to load until its session exists (TAL-636).
         guard viewModel.hasSession else { return }
         if joinsLoadInFlight {
             await viewModel.refreshSession(modelContext: modelContext, isUserRefresh: isUserRefresh)
         } else {
-            await viewModel.loadMessages(modelContext: modelContext, isUserRefresh: isUserRefresh)
+            await viewModel.loadMessages(modelContext: modelContext, isUserRefresh: isUserRefresh,
+                                         isRoutineReconciliation: isRoutineReconciliation)
         }
         // The chat closed meanwhile; its cleanup already suspended the stream and polling.
         guard !Task.isCancelled else { return }
@@ -2884,7 +2887,7 @@ struct ChatView: View {
             defer { endResponseCompletionBackgroundTask() }
 
             if viewModel.responseCompletionNeedsTranscriptRefresh {
-                await loadMessages()
+                await loadMessages(isRoutineReconciliation: true)
             }
 
             await ResponseCompletionNotificationService.scheduleResponseCompletedIfAllowed(
