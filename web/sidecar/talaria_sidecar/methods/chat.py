@@ -96,8 +96,8 @@ _RELEASES_LOCK = threading.Lock()
 _ARCHIVE_MAX_WORKERS = 4
 _ARCHIVE_QUEUE: queue.Queue[_ArchiveCallback | None] = queue.Queue(maxsize=256)
 _ARCHIVE_WORKERS: list[threading.Thread] = []
-# ``(agent, home)`` inside ``chat.commit_memory`` or ``chat.refine`` (guarded by ``_AGENT_CACHE_LOCK``): like a turn, each
-# defers the agent's release, and deleting ``home`` waits for it.
+# Non-turn ``(agent, home)`` holders for memory commits, refine, context reads and MCP refresh (under
+# ``_AGENT_CACHE_LOCK``): each defers the agent's release, and deleting ``home`` waits for it.
 _COMMITTING: list = []
 # Set (under ``_RUNS_LOCK``) when shutdown drains: no turn is admitted after the drain's snapshot of ``_RUNS``.
 _DRAINING = threading.Event()
@@ -1409,16 +1409,24 @@ def refresh_profile_agents_mcp_tools(home) -> None:
 
     target = os.path.realpath(home)
     with _AGENT_CACHE_LOCK:
-        failed = []
-        for session_id, entry in list(_AGENT_CACHE.items()):
-            if os.path.realpath(entry[2]) != target:
-                continue
+        entries = [(sid, entry) for sid, entry in _AGENT_CACHE.items() if os.path.realpath(entry[2]) == target]
+        _COMMITTING.extend((entry[0], entry[2]) for _sid, entry in entries)
+    try:
+        for session_id, (agent, _signature, _home) in entries:
             try:
-                refresh_agent_mcp_tools(entry[0], quiet_mode=True, content_aware=True)
+                refresh_agent_mcp_tools(agent, quiet_mode=True, content_aware=True)
             except Exception:  # noqa: BLE001
-                log.warning("Failed to refresh MCP tools for session %s; evicting its agent", session_id, exc_info=True)
-                failed.append(_AGENT_CACHE.pop(session_id))
-        _release_agents_locked(failed)
+                log.warning("Failed to refresh MCP tools for session %s", session_id, exc_info=True)
+                with _AGENT_CACHE_LOCK:
+                    cached = _AGENT_CACHE.get(session_id)
+                    # A turn may have replaced or evicted this agent while its refresh ran.
+                    if cached is not None and cached[0] is agent:
+                        _AGENT_CACHE.pop(session_id)
+    finally:
+        with _AGENT_CACHE_LOCK:
+            for _sid, (agent, _signature, owner) in entries:
+                _COMMITTING.remove((agent, owner))
+                _release_if_dropped_locked(agent, owner)
 
 
 @contextlib.contextmanager
@@ -1437,7 +1445,7 @@ def release_profile_agents(home):
             started = _release_agents_locked(entries)
         started += _cancel_background_reviews([(entry[0], entry[2]) for entry in entries], "profile deleted")
         deadline = time.monotonic() + _PROFILE_RELEASE_TIMEOUT
-        # A commit or refine under the home holds its agent past the cache; the agent's release starts when it lets go.
+        # Non-turn holders keep their agent past the cache; its release starts when the last holder lets go.
         while (holding := _holding_home(target)) and time.monotonic() < deadline:
             time.sleep(0.05)
         # The threads started here count even once they left ``_RELEASES``: a fast failure must still block the delete.

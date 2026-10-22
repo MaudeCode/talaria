@@ -67,6 +67,87 @@ def start(home, stream, session="s1"):
     return ctx, result, returned, worker
 
 
+def test_cached_chat_starts_while_another_agents_mcp_refresh_is_blocked(monkeypatch, tmp_path):
+    _patch(monkeypatch)
+    monkeypatch.setattr(chat, "_discover_mcp_tools", lambda run: None)
+    home = tmp_path / "profile"
+    assert chat.start(Ctx(), {**_params("warm"), "profile_home": str(home)})["status"] == "completed"
+    cached = FakeAgent.instances[0]
+    slow = object()
+    chat._AGENT_CACHE["slow"] = (slow, "sig", home)
+    entered, release = threading.Event(), threading.Event()
+
+    def refresh(agent, **kwargs):
+        if agent is slow:
+            entered.set()
+            assert release.wait(5)
+
+    monkeypatch.setitem(sys.modules, "tools.mcp_tool_agent", types.SimpleNamespace(refresh_agent_mcp_tools=refresh))
+    reload_worker = threading.Thread(target=chat.refresh_profile_agents_mcp_tools, args=(home,))
+    reload_worker.start()
+    turn = None
+    try:
+        assert entered.wait(1)
+        turn = start(home, "during-reload")
+        assert turn[2].wait(1), "chat.start cache lookup blocked behind another agent's MCP refresh"
+        assert turn[1]["status"] == "completed"
+        assert FakeAgent.instances == [cached], "the concurrent turn must reuse its cached agent"
+        assert not release.is_set()
+    finally:
+        release.set()
+        reload_worker.join(5)
+        if turn is not None:
+            turn[3].join(5)
+    assert not reload_worker.is_alive()
+
+
+@pytest.mark.parametrize("change", ["keep", "replace", "remove"])
+def test_failed_mcp_refresh_only_evicts_the_original_cached_agent(monkeypatch, tmp_path, change):
+    home = tmp_path / "profile"
+    failed, healthy, foreign, replacement = object(), object(), object(), object()
+    original = (failed, "old", home)
+    updated = (replacement, "new", home)
+    chat._AGENT_CACHE.update({
+        "failed": original,
+        "healthy": (healthy, "sig", home),
+        "foreign": (foreign, "sig", tmp_path / "other"),
+    })
+    entered, release = threading.Event(), threading.Event()
+    refreshed, released = [], []
+
+    def refresh(agent, **kwargs):
+        assert kwargs == {"quiet_mode": True, "content_aware": True}
+        refreshed.append(agent)
+        if agent is failed:
+            entered.set()
+            assert release.wait(5)
+            raise RuntimeError("refresh failed")
+
+    monkeypatch.setitem(sys.modules, "tools.mcp_tool_agent", types.SimpleNamespace(refresh_agent_mcp_tools=refresh))
+    monkeypatch.setattr(chat, "_release_agents_locked", lambda entries: released.extend(entries))
+    worker = threading.Thread(target=chat.refresh_profile_agents_mcp_tools, args=(home,))
+    worker.start()
+    try:
+        assert entered.wait(1)
+        with chat._AGENT_CACHE_LOCK:
+            if change == "replace":
+                chat._AGENT_CACHE["failed"] = updated
+            elif change == "remove":
+                chat._AGENT_CACHE.pop("failed")
+    finally:
+        release.set()
+        worker.join(5)
+    assert not worker.is_alive()
+    assert refreshed == [failed, healthy], "a failed refresh must not skip the next agent or cross profiles"
+    if change == "replace":
+        assert chat._AGENT_CACHE["failed"] is updated
+    else:
+        assert "failed" not in chat._AGENT_CACHE
+    assert [(entry[0], entry[2]) for entry in released] == [(failed, home)]
+    assert chat._AGENT_CACHE["healthy"][0] is healthy
+    assert chat._AGENT_CACHE["foreign"][0] is foreign
+
+
 def test_repeat_discovery_starts_turn_with_pending_notice_within_three_seconds(discovery):
     home, release, entered, calls = discovery
     # A completed catalog discovery warms this profile before its first chat.

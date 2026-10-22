@@ -9,6 +9,7 @@ import sys
 import threading
 import time
 import types
+from unittest.mock import Mock
 
 import pytest
 
@@ -117,6 +118,86 @@ def test_evict_agent_and_runtime_env_release_their_agents(monkeypatch) -> None:
     assert chat.start(Ctx(), _params("st-env", "env"))["status"] == "completed"
     assert chat.evict_all_agents() == 1
     assert _ended("env") == _released("env")
+
+
+@pytest.mark.parametrize("fail_refresh", [False, True])
+def test_mcp_refresh_retains_the_whole_snapshot_across_eviction(monkeypatch, tmp_path, fail_refresh) -> None:
+    _setup(monkeypatch)
+    agents = [MemoryAgent(session_id=sid) for sid in ("refresh-first", "refresh-next")]
+    for agent in agents:
+        chat._AGENT_CACHE[agent.kwargs["session_id"]] = (agent, "sig", tmp_path)
+    entered, release = threading.Event(), threading.Event()
+    attempted, refreshed = [], []
+    original_release = chat._release_agent
+
+    def release_agent(agent, home):
+        attempted.append(agent)
+        return original_release(agent, home)
+
+    def refresh(agent, **kwargs):
+        refreshed.append(agent)
+        if agent is agents[0]:
+            entered.set()
+            assert release.wait(5)
+            if fail_refresh:
+                raise RuntimeError("refresh failed")
+
+    monkeypatch.setattr(chat, "_release_agent", release_agent)
+    monkeypatch.setitem(sys.modules, "tools.mcp_tool_agent", types.SimpleNamespace(refresh_agent_mcp_tools=refresh))
+    worker = threading.Thread(target=chat.refresh_profile_agents_mcp_tools, args=(tmp_path,))
+    worker.start()
+    try:
+        assert entered.wait(1)
+        assert chat.evict_all_agents() == 2
+        assert attempted == [], "eviction released an agent still held by the MCP refresh snapshot"
+    finally:
+        release.set()
+        worker.join(5)
+        for agent in agents:
+            assert len(_ended(agent.kwargs["session_id"])) == 2
+    assert not worker.is_alive()
+    assert refreshed == agents
+    assert attempted == agents
+    assert not chat._holding_home(str(tmp_path.resolve()))
+
+
+def test_profile_deletion_refuses_while_a_cached_agent_is_refreshing(monkeypatch, tmp_path) -> None:
+    _setup(monkeypatch)
+    agent = MemoryAgent(session_id="refresh-delete")
+    chat._AGENT_CACHE["refresh-delete"] = (agent, "sig", tmp_path)
+    entered, release = threading.Event(), threading.Event()
+    released, deleted = [], []
+
+    def refresh(agent, **kwargs):
+        entered.set()
+        assert release.wait(5)
+
+    def release_agent(agent, home):
+        released.append(agent)
+        return Mock(name="release", failed=False, is_alive=lambda: False, join=lambda timeout: None)
+
+    monkeypatch.setitem(sys.modules, "tools.mcp_tool_agent", types.SimpleNamespace(refresh_agent_mcp_tools=refresh))
+    monkeypatch.setattr(chat, "_release_agent", release_agent)
+    monkeypatch.setattr(chat, "_cancel_background_reviews", lambda *args: [])
+    monkeypatch.setattr(chat, "_PROFILE_RELEASE_TIMEOUT", 0)
+    monkeypatch.setattr(chat, "release_home", lambda home: None)
+    worker = threading.Thread(target=chat.refresh_profile_agents_mcp_tools, args=(tmp_path,))
+    worker.start()
+    try:
+        assert entered.wait(1)
+        with pytest.raises(RpcError, match="still"):
+            with chat.release_profile_agents(tmp_path):
+                deleted.append(tmp_path)
+        assert deleted == []
+        assert released == []
+    finally:
+        release.set()
+        worker.join(5)
+    assert not worker.is_alive()
+    assert released == [agent]
+    with chat.release_profile_agents(tmp_path):
+        deleted.append(tmp_path)
+    assert deleted == [tmp_path]
 
 
 def test_an_agent_dropped_during_its_turn_is_released_when_the_turn_ends(monkeypatch) -> None:
