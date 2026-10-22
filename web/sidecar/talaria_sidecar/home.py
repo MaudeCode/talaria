@@ -24,6 +24,7 @@ its launch-process ``TERMINAL_*`` under those files.
 from __future__ import annotations
 
 import contextlib
+import copy
 import importlib
 import json
 import logging
@@ -42,6 +43,64 @@ _RECOVERED_HOMES: set[str] = set()
 _RECOVERY_WARNED: set[str] = set()
 _LAUNCH_ENV_LOCK = threading.Lock()
 _LAUNCH_ENV: dict[str, str] | None = None
+_SCOPE_CACHE_LOCK = threading.Lock()
+_SCOPE_CACHE: dict[str, dict] = {}
+_SCOPE_CACHE_MAX = 64
+
+
+def _scope_stamp(home: Path) -> tuple | None:
+    stamps = []
+    for name in (".env", "config.yaml"):
+        try:
+            st = (home / name).stat()
+        except FileNotFoundError:
+            stamps.append(None)
+        except OSError:
+            return None  # Uncertain identity must never reuse credentials or terminal authority.
+        else:
+            stamps.append((st.st_dev, st.st_ino, st.st_mtime_ns, st.st_ctime_ns, st.st_size, st.st_mode))
+    return tuple(stamps)
+
+
+def _cached_scope(home: Path, kind: str, stamp: tuple | None, inputs, build):
+    """One snapshot of each kind per home; bindings receive copies, never the memo itself."""
+    key = str(home.absolute())
+    with _SCOPE_CACHE_LOCK:
+        scopes = _SCOPE_CACHE.pop(key, {})
+        _SCOPE_CACHE[key] = scopes
+        while len(_SCOPE_CACHE) > _SCOPE_CACHE_MAX:
+            del _SCOPE_CACHE[next(iter(_SCOPE_CACHE))]
+        cached = scopes.pop(kind, None)
+        if stamp is not None and cached is not None and cached[:2] == (stamp, inputs):
+            scopes[kind] = cached
+            return copy.deepcopy(cached[2])
+        value = build()
+        # A writer racing the build cannot lend its file identity to stale bytes.
+        if stamp is not None and _scope_stamp(home) == stamp:
+            scopes[kind] = (stamp, copy.deepcopy(inputs), copy.deepcopy(value))
+        return value
+
+
+def _secret_scope_inputs(home: Path, named: bool):
+    """File stamps alone cannot detect vault refreshes, managed policy, or launch-env edits."""
+    try:
+        from hermes_cli.env_loader import get_secret_source_values
+        from hermes_cli.managed_scope import load_managed_env
+        from gateway.config_loader import bridged_allow_all_users
+
+        launch = None
+        if not named:
+            try:
+                from tui_gateway.launch_profile_policy import _launch_env
+            except ImportError:
+                from agent.secret_scope import is_multiplex_active
+
+                launch = _frozen_launch_env() if is_multiplex_active() else dict(os.environ)
+            else:
+                launch = _launch_env()
+        return (get_secret_source_values(home), load_managed_env(), bridged_allow_all_users(), launch)
+    except Exception:  # Older/partial Agents keep the original uncached builder and its policy.
+        return None
 
 
 def _process_home() -> Path:
@@ -118,7 +177,7 @@ def _launch_secret_scope(home: Path) -> dict[str, str]:
 
 
 @contextlib.contextmanager
-def _secret_scope(home: Path, *, load_plugins: bool = True):
+def _secret_scope(home: Path, stamp: tuple | None = None, *, load_plugins: bool = True):
     """Install ``home``'s credential scope for the call; named profiles run under multiplex semantics."""
     named = _is_named_profile(home)
     try:
@@ -149,9 +208,9 @@ def _secret_scope(home: Path, *, load_plugins: bool = True):
             except Exception:  # noqa: BLE001 - a broken plugin must not block the call, as in the Agent's own discovery
                 log.debug("Plugin discovery failed for %s", home, exc_info=True)
             hydrate_profile_secret_sources(home)
-        secrets = build_profile_secret_scope(home)
-    else:
-        secrets = launch_secret_scope(home)
+    build = lambda: build_profile_secret_scope(home) if named else launch_secret_scope(home)
+    inputs = _secret_scope_inputs(home, named)
+    secrets = build() if inputs is None else _cached_scope(home, "secrets", stamp, inputs, build)
     scope_token = set_secret_scope(secrets)
     try:
         yield
@@ -160,7 +219,7 @@ def _secret_scope(home: Path, *, load_plugins: bool = True):
 
 
 @contextlib.contextmanager
-def _terminal_scope(home: Path):
+def _terminal_scope(home: Path, stamp: tuple | None = None):
     """Install ``home``'s terminal policy for the call; a policy file that cannot be read refuses terminal execution."""
     named = _is_named_profile(home)
     try:
@@ -173,9 +232,8 @@ def _terminal_scope(home: Path):
             )
         yield
         return
-    if named:
-        token = install_profile_terminal_scope(home)
-    else:
+    launch = None
+    if not named:
         try:
             from agent.secret_scope import is_multiplex_active
         except ImportError:  # An Agent without multiplexing cannot layer the launch env, so the launch profile keeps the process env
@@ -187,7 +245,19 @@ def _terminal_scope(home: Path):
             launch_terminal_env = _launch_terminal_env
         # Like the launch secret scope: the live process env until multiplexing freezes it.
         launch = launch_terminal_env() if is_multiplex_active() else {k: v for k, v in os.environ.items() if k.startswith("TERMINAL_")}
-        token = install_profile_terminal_scope(home, env_overlay=launch)
+    try:
+        from tools.terminal_scope import build_profile_terminal_scope, set_terminal_scope, TerminalPolicyRefusal, TerminalPolicyUnavailable
+    except ImportError:  # Keep the installed Agent's original behavior when its builder API is absent.
+        token = install_profile_terminal_scope(home, env_overlay=launch) if not named else install_profile_terminal_scope(home)
+    else:
+        try:
+            policy = _cached_scope(
+                home, "terminal", stamp, (launch, str(Path.home())),
+                lambda: build_profile_terminal_scope(home, env_overlay=launch),
+            )
+        except (OSError, TerminalPolicyUnavailable) as exc:
+            policy = TerminalPolicyRefusal(str(exc))
+        token = set_terminal_scope(policy)
     try:
         yield
     finally:
@@ -238,6 +308,7 @@ def _recover_processes(home: Path) -> None:
 def scoped_home(home: Path, *, load_plugins: bool = True):
     """Run the body with Hermes Agent resolving ``get_hermes_home()`` to ``home``."""
     home = Path(home).expanduser()
+    stamp = _scope_stamp(home)
     try:
         from hermes_constants import reset_hermes_home_override, set_hermes_home_override
     except Exception:  # noqa: BLE001 - older Agent without context-local homes
@@ -245,7 +316,7 @@ def scoped_home(home: Path, *, load_plugins: bool = True):
     if set_hermes_home_override is not None:
         token = set_hermes_home_override(home)
         try:
-            with _secret_scope(home, load_plugins=load_plugins), _terminal_scope(home):
+            with _secret_scope(home, stamp, load_plugins=load_plugins), _terminal_scope(home, stamp):
                 _recover_processes(home)
                 yield home
         finally:
@@ -255,7 +326,7 @@ def scoped_home(home: Path, *, load_plugins: bool = True):
         previous = os.environ.get("HERMES_HOME")
         os.environ["HERMES_HOME"] = str(home)
         try:
-            with _secret_scope(home, load_plugins=load_plugins), _terminal_scope(home):
+            with _secret_scope(home, stamp, load_plugins=load_plugins), _terminal_scope(home, stamp):
                 _recover_processes(home)
                 yield home
         finally:

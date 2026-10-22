@@ -9,6 +9,7 @@ import subprocess
 import sys
 import threading
 import types
+from contextvars import ContextVar
 from pathlib import Path
 
 import pytest
@@ -186,6 +187,233 @@ def test_named_profile_fails_closed_without_a_terminal_scope(tmp_path, monkeypat
     # The root profile still runs (its terminal policy is the process's own).
     with home_module.scoped_home(root):
         assert os.environ["HERMES_HOME"] == str(root)
+
+
+@pytest.fixture
+def cached_scopes(tmp_path, monkeypatch, scope_calls):
+    """Agent boundaries with real disposable files and context-local scope bindings."""
+    monkeypatch.setattr(home_module, "_PROCESS_HOME", tmp_path / "launch")
+    monkeypatch.setattr(home_module, "_recover_processes", lambda home: None)
+    if hasattr(home_module, "_SCOPE_CACHE"):
+        monkeypatch.setattr(home_module, "_SCOPE_CACHE", {})
+    terminal = sys.modules["tools.terminal_scope"]
+    active = ContextVar("test-terminal", default=None)
+    active_secrets = ContextVar("test-secrets", default=None)
+    reads = []
+    external, managed = {}, {}
+    sources = sys.modules["hermes_cli.env_loader"]
+    sources.get_secret_source_values = lambda home: dict(external)
+    managed_module = types.ModuleType("hermes_cli.managed_scope")
+    managed_module.load_managed_env = lambda: dict(managed)
+    gateway = types.ModuleType("gateway.config_loader")
+    gateway.bridged_allow_all_users = lambda: None
+    monkeypatch.setitem(sys.modules, "hermes_cli.managed_scope", managed_module)
+    monkeypatch.setitem(sys.modules, "gateway.config_loader", gateway)
+    secrets = sys.modules["agent.secret_scope"]
+    build_secrets = secrets.build_profile_secret_scope
+
+    def build_secret_scope(home):
+        reads.append(("secrets", Path(home)))
+        return {**build_secrets(home), **external, **managed}
+
+    secrets.build_profile_secret_scope = build_secret_scope
+    secrets._is_global_env = lambda key: key.startswith("TERMINAL_")
+    record_secrets = secrets.set_secret_scope
+
+    def set_secrets(mapping):
+        record_secrets(mapping)
+        return active_secrets.set(mapping)
+
+    secrets.set_secret_scope = set_secrets
+    secrets.reset_secret_scope = active_secrets.reset
+
+    class Unavailable(Exception):
+        pass
+
+    class Refusal(dict):
+        def __init__(self, reason):
+            self.reason = reason
+
+    def build_terminal_scope(home, *, env_overlay=None):
+        path = Path(home) / "config.yaml"
+        reads.append(("config", Path(home)))
+        try:
+            config = json.loads(path.read_text()) if path.exists() else {}
+        except (OSError, ValueError) as exc:
+            raise Unavailable(str(exc)) from exc
+        return {**(env_overlay or {}), **config}
+
+    def install(home, *, env_overlay=None):
+        try:
+            scope = build_terminal_scope(home, env_overlay=env_overlay)
+        except Unavailable as exc:
+            scope = Refusal(str(exc))
+        return active.set(scope)
+
+    terminal.build_profile_terminal_scope = build_terminal_scope
+    terminal.set_terminal_scope = active.set
+    terminal.reset_terminal_scope = active.reset
+    terminal.install_profile_terminal_scope = install
+    terminal.TerminalPolicyUnavailable = Unavailable
+    terminal.TerminalPolicyRefusal = Refusal
+    return types.SimpleNamespace(reads=reads, active=active, secrets=active_secrets, external=external, managed=managed)
+
+
+def test_scoped_home_reuses_file_scopes_and_reloads_edits(tmp_path, cached_scopes, scope_calls):
+    home = tmp_path / "work"
+    home.mkdir()
+    config = home / "config.yaml"
+    config.write_text('{"TERMINAL_ENV": "ssh"}')
+    (home / ".env").write_text("KEY=first\n")
+    for _ in range(2):
+        with home_module.scoped_home(home):
+            assert cached_scopes.active.get() == {"TERMINAL_ENV": "ssh"}
+            assert ("scope", {"KEY": "first"}) in scope_calls
+    assert cached_scopes.reads.count(("config", home)) == 1
+    assert cached_scopes.reads.count(("secrets", home)) == 1
+    config.write_text('{"TERMINAL_ENV": "docker"}')
+    (home / ".env").write_text("KEY=second\n")
+    with home_module.scoped_home(home):
+        assert cached_scopes.active.get() == {"TERMINAL_ENV": "docker"}
+        assert ("scope", {"KEY": "second"}) in scope_calls
+    assert cached_scopes.reads.count(("config", home)) == 2
+    assert cached_scopes.reads.count(("secrets", home)) == 2
+    assert cached_scopes.active.get() is None
+
+
+def test_scope_cache_preserves_dynamic_secrets_and_private_bindings(tmp_path, cached_scopes, scope_calls):
+    home = tmp_path / "work"
+    home.mkdir()
+    (home / "config.yaml").write_text('{"TERMINAL_ENV": "ssh"}')
+    (home / ".env").write_text("KEY=file\n")
+    for source in (cached_scopes.external, cached_scopes.managed):
+        source["KEY"] = "rotated"
+        with home_module.scoped_home(home):
+            assert ("scope", {"KEY": "rotated"}) in scope_calls
+            cached_scopes.active.get()["TERMINAL_ENV"] = "mutated"
+            cached_scopes.secrets.get()["KEY"] = "mutated"
+        source.clear()
+        scope_calls.clear()
+        with home_module.scoped_home(home):
+            assert ("scope", {"KEY": "file"}) in scope_calls
+            assert cached_scopes.active.get() == {"TERMINAL_ENV": "ssh"}
+    assert cached_scopes.reads.count(("config", home)) == 1
+
+
+def test_scope_cache_rebuilds_after_same_size_replacement_and_missing_file_creation(tmp_path, cached_scopes):
+    home = tmp_path / "work"
+    home.mkdir()
+    with home_module.scoped_home(home):
+        assert cached_scopes.secrets.get() == {}
+    env = home / ".env"
+    env.write_text("KEY=first\n")
+    with home_module.scoped_home(home):
+        assert cached_scopes.secrets.get() == {"KEY": "first"}
+    stamp = env.stat()
+    replacement = home / "replacement"
+    replacement.write_text("KEY=other\n")
+    os.utime(replacement, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+    replacement.replace(env)
+    with home_module.scoped_home(home):
+        assert cached_scopes.secrets.get() == {"KEY": "other"}
+
+
+def test_concurrent_scope_entries_share_one_build(tmp_path, monkeypatch, cached_scopes):
+    home = tmp_path / "work"
+    home.mkdir()
+    (home / "config.yaml").write_text('{"TERMINAL_ENV": "ssh"}')
+    constants = types.ModuleType("hermes_constants")
+    active_home = ContextVar("test-home", default=None)
+    constants.set_hermes_home_override = active_home.set
+    constants.reset_hermes_home_override = active_home.reset
+    monkeypatch.setitem(sys.modules, "hermes_constants", constants)
+    barrier = threading.Barrier(4, timeout=10)
+    errors = []
+
+    def enter():
+        barrier.wait()
+        with home_module.scoped_home(home):
+            assert cached_scopes.active.get() == {"TERMINAL_ENV": "ssh"}
+            barrier.wait()
+        assert cached_scopes.active.get() is None
+        assert cached_scopes.secrets.get() is None
+
+    threads = [threading.Thread(target=lambda: _record(errors, enter)) for _ in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(15)
+    assert not any(thread.is_alive() for thread in threads)
+    assert errors == []
+    assert cached_scopes.reads.count(("config", home)) == 1
+    assert cached_scopes.reads.count(("secrets", home)) == 1
+
+
+def test_scope_cache_separates_homes_and_retries_invalid_policy(tmp_path, cached_scopes, scope_calls):
+    homes = [tmp_path / name for name in ("alpha", "beta")]
+    for home in homes:
+        home.mkdir()
+        (home / "config.yaml").write_text(json.dumps({"TERMINAL_ENV": home.name}))
+        (home / ".env").write_text(f"KEY={home.name}\n")
+    for home in homes * 2:
+        with home_module.scoped_home(home):
+            assert cached_scopes.active.get() == {"TERMINAL_ENV": home.name}
+            assert ("scope", {"KEY": home.name}) in scope_calls
+    home = homes[0]
+    (home / "config.yaml").write_text("invalid yaml [")
+    for _ in range(2):
+        with home_module.scoped_home(home):
+            assert isinstance(cached_scopes.active.get(), sys.modules["tools.terminal_scope"].TerminalPolicyRefusal)
+    assert cached_scopes.reads.count(("config", home)) == 3
+    (home / "config.yaml").unlink()
+    (home / ".env").unlink()
+    with home_module.scoped_home(home):
+        assert cached_scopes.active.get() == {}
+        assert scope_calls[-1] == ("scope", {})
+
+
+def test_scope_cache_tracks_launch_environment_edits(tmp_path, monkeypatch, cached_scopes, scope_calls):
+    home = tmp_path / "launch"
+    home.mkdir()
+    launch = {"TERMINAL_ENV": "ssh", "KEY": "launch"}
+    policy = sys.modules["tui_gateway.launch_profile_policy"]
+    policy._launch_env = lambda: dict(launch)
+    policy.launch_terminal_env = lambda: {k: v for k, v in launch.items() if k.startswith("TERMINAL_")}
+    policy.launch_secret_scope = lambda home: {"KEY": launch["KEY"]}
+    sys.modules["agent.secret_scope"].is_multiplex_active = lambda: True
+    for value in ("ssh", "docker"):
+        launch.update(TERMINAL_ENV=value, KEY=value)
+        with home_module.scoped_home(home):
+            assert cached_scopes.active.get() == {"TERMINAL_ENV": value}
+            assert ("scope", {"KEY": value}) in scope_calls
+
+
+def test_scope_cache_drops_uncertain_stamps_and_evicts_old_homes(tmp_path, monkeypatch, cached_scopes):
+    monkeypatch.setattr(home_module, "_SCOPE_CACHE_MAX", 2)
+    home = tmp_path / "alpha"
+    home.mkdir()
+    config = home / "config.yaml"
+    config.write_text('{"TERMINAL_ENV": "ssh"}')
+    with home_module.scoped_home(home):
+        pass
+    stat = Path.stat
+
+    def denied(path, *args, **kwargs):
+        if path == config:
+            raise PermissionError("transient denial")
+        return stat(path, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "stat", denied)
+        with home_module.scoped_home(home):
+            assert isinstance(cached_scopes.active.get(), sys.modules["tools.terminal_scope"].TerminalPolicyRefusal)
+    with home_module.scoped_home(home):
+        assert cached_scopes.active.get() == {"TERMINAL_ENV": "ssh"}
+    for name in ("beta", "gamma"):
+        with home_module.scoped_home(tmp_path / name):
+            pass
+    assert len(home_module._SCOPE_CACHE) == 2
+    assert str(home.absolute()) not in home_module._SCOPE_CACHE
 
 
 @requires_agent

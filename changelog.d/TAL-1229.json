@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Reduce repeated profile configuration reads during background activity.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
