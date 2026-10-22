@@ -317,8 +317,20 @@ export class SidecarClient implements SidecarLike {
     this.restartTimer.unref()
   }
 
-  /** Agent operations require readiness; config access needs only a valid, live RPC handshake. */
+  /** Agent operations require readiness; config reads need only a validated live RPC protocol. */
   call<M extends SidecarMethodName>(method: M, params: SidecarParams<M>, opts: CallOptions = {}): Promise<SidecarResult<M>> {
+    if (method === 'config.get' && this.status === 'starting') {
+      const child = this.child
+      // runtime.status does not import the Agent, so operator auth config need not wait for its handshake.
+      return this.rawCall('runtime.status', {}, opts).then((runtime) => {
+        if (runtime.rpc_version !== SIDECAR_RPC_VERSION) throw new SidecarError('sidecar RPC version mismatch', { condition: 'sidecar_rpc_version_mismatch' })
+        const live = this.status === 'starting' || ((this.status === 'ready' || this.status === 'incompatible') && this.describe?.rpc_version === SIDECAR_RPC_VERSION)
+        if (this.child !== child || this.closed || !live) {
+          throw new SidecarError('sidecar config probe was superseded', { condition: 'sidecar_unavailable' })
+        }
+        return this.rawCall(method, params, opts)
+      })
+    }
     const configAccess = (method === 'config.get' || method === 'config.set') && this.status === 'incompatible' && this.describe?.rpc_version === SIDECAR_RPC_VERSION
     const { condition } = chatReadiness(this)
     if (condition !== null && !configAccess && !method.startsWith('runtime.') && method !== 'rpc.methods') {
