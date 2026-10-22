@@ -11,6 +11,9 @@ extension ChatViewModelSendTests {
         let log = OwnerRequestLog()
         let normal = try Self.ownerAttachmentJSON("normal")
         let viewModel = try ownerViewModel(log, session: { Self.ownerSessionObject(attachment: normal) }) { path, request in
+            if path == "/api/reasoning", request.httpMethod == "GET" {
+                return apiTestJSONResponse(#"{"supports_session_scope":true}"#, for: request)
+            }
             guard path == "/api/reasoning", request.httpMethod == "POST" else { return nil }
             let body = try? apiTestJSONBody(from: request)
             XCTAssertEqual(body?["session_id"] as? String, "session-abc")

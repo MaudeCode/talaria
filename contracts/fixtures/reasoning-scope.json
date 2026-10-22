@@ -12,6 +12,10 @@
   "profile": {
     "effort": "low"
   },
+  "status": {
+    "reasoning_effort": "medium",
+    "supports_session_scope": true
+  },
   "refusal": {
     "error": "Reasoning changes are unavailable for this conversation",
     "code": "reasoning_unsupported"

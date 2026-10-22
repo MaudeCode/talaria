@@ -77,7 +77,15 @@ extension APIClient {
 
     /// Chat changes carry their session; nil is reserved for explicit profile settings.
     public func saveReasoningEffort(_ effort: String, sessionID: String?) async throws -> ReasoningStatusResponse {
-        try await send(
+        if sessionID != nil {
+            let status = try await reasoning()
+            guard status.supportsSessionScope == true else {
+                throw NSError(domain: "Talaria.Reasoning", code: 1, userInfo: [
+                    NSLocalizedDescriptionKey: String(localized: "Update the server to change reasoning safely for a conversation.")
+                ])
+            }
+        }
+        return try await send(
             endpoint: .reasoning(),
             method: "POST",
             body: ReasoningEffortRequest(effort: effort, sessionId: sessionID)

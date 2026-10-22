@@ -800,7 +800,8 @@ extension ChatViewModelSendTests {
                   "show_reasoning": true,
                   "reasoning_effort": "high",
                   "supported_efforts": ["low", "medium", "high"],
-                  "supports_reasoning_effort": true
+                  "supports_reasoning_effort": true,
+                  "supports_session_scope": true
                 }
                 """, for: request)
             default:
@@ -820,9 +821,10 @@ extension ChatViewModelSendTests {
 
         // The gating query is scoped to the newly selected model, never stale
         // session state (upstream #3750 class of bug).
-        XCTAssertEqual(reasoningQueries.count, 1)
-        XCTAssertEqual(reasoningQueries[0]["model"], limitedModel)
-        XCTAssertEqual(reasoningQueries[0]["provider"], "openai")
+        XCTAssertEqual(reasoningQueries.count, 2)
+        XCTAssertNil(reasoningQueries[0]["model"], "The write first checks server scope support")
+        XCTAssertEqual(reasoningQueries[1]["model"], limitedModel)
+        XCTAssertEqual(reasoningQueries[1]["provider"], "openai")
         XCTAssertEqual(viewModel.supportedReasoningEfforts, ["low", "medium", "high"])
         XCTAssertEqual(viewModel.supportsReasoningEffort, true)
         XCTAssertTrue(viewModel.showsReasoningEffortControl)

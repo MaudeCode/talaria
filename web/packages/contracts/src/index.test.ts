@@ -24,13 +24,14 @@ describe('contracts package', () => {
     }
   })
   it('preserves chat identity and profile intent at the shared reasoning boundary', () => {
-    const fixture = shared('fixtures/reasoning-scope.json') as { effort: unknown; reset: unknown; profile: unknown; refusal: unknown }
+    const fixture = shared('fixtures/reasoning-scope.json') as { effort: unknown; reset: unknown; profile: unknown; refusal: unknown; status: unknown }
     const input = settingsContract.reasoning.set['~orpc'].inputSchema!
     for (const request of [fixture.effort, fixture.reset, fixture.profile]) expect(input.parse(request)).toEqual(request)
     expect(input.safeParse({ effort: 'high', session_id: '' }).success).toBe(false)
     expect(input.safeParse({ effort: '', session_id: '   ' }).success).toBe(false)
     expect(input.safeParse({ effort: 'high', session_id: null }).success).toBe(false)
     expect(ReasoningUnsupportedSchema.parse(fixture.refusal)).toEqual(fixture.refusal)
+    expect(settingsContract.reasoning.get['~orpc'].outputSchema!.parse(fixture.status)).toEqual(fixture.status)
   })
   it('shares live MCP progress between SSE and the running tool view', () => {
     const fixture = shared('fixtures/tool-progress.json') as { running: unknown; completed: unknown; tool: unknown }

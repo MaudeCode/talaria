@@ -177,3 +177,11 @@ writability before writing config. Native and other read-only chats receive HTTP
 with `code: reasoning_unsupported`; missing chats receive 404. Neither refusal changes
 profile defaults. Explicit profile settings omit `session_id`. The independent
 `display: show|hide` preference still writes only the Web display setting.
+
+`GET /api/reasoning` advertises `supports_session_scope: true` only with this guard.
+Independently updated clients check that capability before chat effort/reset writes.
+An absent or false flag prevents the write and requires a server update. A failed
+read also prevents the write and propagates its error; clients never retry without
+context. Explicit profile settings remain
+available without the capability. The flag is additive and optional for old-server
+decoding.
