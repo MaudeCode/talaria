@@ -9,6 +9,7 @@ import { RevisionConflict, type MessageMatch, type SessionBackend, type SessionC
 import { readJsonMessagePrefix, readMetadataJsonPrefixWithSignature, statSignature, statSignatureAsync, writeAtomic } from './json-files.js'
 import { sessionSearchMatches, sessionSearchMessageText } from './search-text.js'
 import { diagnoseJson, repairJson, restoreJsonBackup } from './json-recovery.js'
+import { signatureOf } from '../../fs/stat.js'
 
 export interface JsonStorageOptions { directory: string; stateDir?: string; profileHome?: (profile: string) => string; env?: Record<string, string | undefined>; now: () => number; stampingSince: () => number | Promise<number> }
 
@@ -39,6 +40,7 @@ const SEARCH_TEXT_CACHE_DEPTH_MAX = 20
 class JsonSessions implements SessionBackend {
   closed = false
   private parsedIndex: { revision: string; entries: SessionIndexEntry[] } | null = null
+  private persistedIds: { revision: string; ids: Set<string> } | null = null
   /** TAL-1212: each session's leading-message search text, valid while its file keeps the recorded revision. */
   private readonly searchTexts = new Map<string, { revision: string; depth: number; texts: string[] }>()
   constructor(private readonly options: JsonStorageOptions) {}
@@ -144,27 +146,49 @@ class JsonSessions implements SessionBackend {
     }
     document.messages ??= rows
     const payload = JSON.stringify(document)
+    const directoryRevision = statSignature(this.options.directory)
     mkdirSync(this.options.directory, { recursive: true })
     if (previousText !== null && Array.isArray(previous?.messages) && previous.messages.length > rows.length) {
       try { writeAtomic(`${path}.bak`, previousText) } catch { /* backup is best effort */ }
     }
     this.searchTexts.delete(sid)
     writeAtomic(path, payload)
+    this.updatePersistedIds(sid, true, directoryRevision)
     return statSignature(path)!
   }
   async delete(sid: string, opts: { tombstone: boolean }): Promise<boolean> {
     const path = this.path(sid)
+    const directoryRevision = statSignature(this.options.directory)
     this.searchTexts.delete(sid)
     try { rmSync(path, { force: true }) } catch { return false }
     if (existsSync(path)) return false
     try { rmSync(`${path}.bak`, { force: true }) } catch { /* best effort */ }
     if (opts.tombstone) this.addTombstone(sid)
+    this.updatePersistedIds(sid, false, directoryRevision)
     return true
+  }
+  private updatePersistedIds(sid: string, present: boolean, previousRevision: string | null): void {
+    const cached = this.persistedIds
+    const revision = statSignature(this.options.directory)
+    // Do not stamp over external changes that preceded this mutation.
+    if (cached?.revision !== previousRevision || revision === null) { this.persistedIds = null; return }
+    if (present) cached.ids.add(sid)
+    else cached.ids.delete(sid)
+    cached.revision = revision
   }
   async ids(opts: { strict?: boolean } = {}): Promise<Set<string>> {
     this.check()
-    try { return new Set(readdirSync(this.options.directory).filter((n) => n.endsWith('.json') && !n.startsWith('_')).map((n) => n.slice(0, -5))) }
+    try {
+      const directory = this.options.directory
+      const revision = signatureOf(directory, statSync(directory, { bigint: true }))
+      if (this.persistedIds?.revision === revision) return new Set(this.persistedIds.ids)
+      const ids = new Set(readdirSync(directory).filter((n) => n.endsWith('.json') && !n.startsWith('_')).map((n) => n.slice(0, -5)))
+      if (revision === statSignature(directory)) this.persistedIds = { revision, ids }
+      else this.persistedIds = null
+      return new Set(ids)
+    }
     catch (error) {
+      this.persistedIds = null
       if (opts.strict && (error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
       return new Set()
     }

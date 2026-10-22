@@ -9,7 +9,7 @@ import { runSessionBackendConformance } from './conformance.js'
 
 vi.mock('node:fs', async (original) => {
   const real = await original<typeof fs>()
-  return { ...real, renameSync: vi.fn(real.renameSync), readFileSync: vi.fn(real.readFileSync) }
+  return { ...real, renameSync: vi.fn(real.renameSync), readFileSync: vi.fn(real.readFileSync), readdirSync: vi.fn(real.readdirSync) }
 })
 vi.mock('node:fs/promises', async (original) => {
   const real = await original<typeof fsp>()
@@ -23,6 +23,53 @@ runSessionBackendConformance('JSON', () => {
     failNextWrite: () => { vi.mocked(fs.renameSync).mockImplementationOnce(() => { throw new Error('injected publication failure') }) },
     cleanup: () => { fs.rmSync(directory, { recursive: true, force: true }) },
   }
+})
+
+it('keeps persisted ids current across owned writes, deletes, external edits and caller mutations (TAL-1226)', async () => {
+  const directory = fs.mkdtempSync(join(tmpdir(), 'talaria-json-ids-'))
+  const storage = new JsonStorage({ directory, now: () => Date.now() / 1000, stampingSince: () => 0 })
+  const write = (sid: string) => storage.sessions.write(sid, { doc: { session_id: sid }, messages: { kind: 'replace', rows: [] } }, null)
+  const scans = vi.mocked(fs.readdirSync)
+  try {
+    scans.mockClear()
+    expect(await storage.sessions.ids()).toEqual(new Set())
+    await write('first')
+    expect(await storage.sessions.ids()).toEqual(new Set(['first']))
+    const returned = await storage.sessions.ids()
+    returned.clear()
+    returned.add('invented')
+    expect(await storage.sessions.ids()).toEqual(new Set(['first']))
+    await storage.sessions.delete('first', { tombstone: true })
+    expect(await storage.sessions.ids()).toEqual(new Set())
+    expect(scans).toHaveBeenCalledTimes(1)
+
+    fs.writeFileSync(join(directory, 'external.json'), '{}')
+    fs.utimesSync(directory, 2000000000, 2000000000)
+    // An owned write must not mask an external entry created since the last read.
+    await write('second')
+    expect(await storage.sessions.ids()).toEqual(new Set(['external', 'second']))
+    fs.unlinkSync(join(directory, 'external.json'))
+    fs.utimesSync(directory, 2100000000, 2100000000)
+    await storage.sessions.delete('second', { tombstone: false })
+    expect(await storage.sessions.ids()).toEqual(new Set())
+  } finally { vi.restoreAllMocks(); await storage.close(); fs.rmSync(directory, { recursive: true, force: true }) }
+})
+
+it('drops cached persisted ids when the directory disappears and preserves strict read errors (TAL-1226)', async () => {
+  const directory = fs.mkdtempSync(join(tmpdir(), 'talaria-json-ids-errors-'))
+  const storage = new JsonStorage({ directory, now: () => Date.now() / 1000, stampingSince: () => 0 })
+  try {
+    fs.writeFileSync(join(directory, 'first.json'), '{}')
+    expect(await storage.sessions.ids()).toEqual(new Set(['first']))
+    fs.rmSync(directory, { recursive: true })
+    expect(await storage.sessions.ids({ strict: true })).toEqual(new Set())
+    fs.mkdirSync(directory)
+    fs.writeFileSync(join(directory, 'second.json'), '{}')
+    const denied = Object.assign(new Error('synthetic denied directory'), { code: 'EACCES' })
+    vi.mocked(fs.readdirSync).mockImplementationOnce(() => { throw denied })
+    await expect(storage.sessions.ids({ strict: true })).rejects.toBe(denied)
+    expect(await storage.sessions.ids()).toEqual(new Set(['second']))
+  } finally { vi.restoreAllMocks(); await storage.close(); fs.rmSync(directory, { recursive: true, force: true }) }
 })
 
 it('content search parses at most depth messages per file and a repeated search reads no files (TAL-1212)', async () => {

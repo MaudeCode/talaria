@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, readdirSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { allSessions, dedupeCliSidebarSessions, sessionListResponse, type ListPayload, type Row, type RuntimeOverlay } from './list.js'
@@ -7,6 +7,38 @@ import { bootTestServer } from '../test/harness.js'
 import { sessionDirectory, sessionIndexPath, sessionPath } from '../test/storage.js'
 
 const fixture = JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as { session_list: { stored: Row[]; live_stream_ids: string[]; sessions: Row[] } }
+
+vi.mock('node:fs', async (original) => {
+  const real = await original<typeof import('node:fs')>()
+  return { ...real, readdirSync: vi.fn(real.readdirSync) }
+})
+
+describe('session-list storage reads (TAL-1226)', () => {
+  it('reads the index once per request and scans the directory once across consecutive requests', async () => {
+    const server = await bootTestServer()
+    try {
+      const store = server.deps.sessionStore
+      const rows = ['first', 'second'].map((sid, i) => ({ session_id: sid, title: sid, message_count: 2, last_message_at: 100 + i, updated_at: 100 + i, profile: 'default' }))
+      const directory = sessionDirectory(store)
+      mkdirSync(directory, { recursive: true })
+      for (const row of rows) writeFileSync(sessionPath(store, row.session_id), JSON.stringify({ ...row, messages: [] }))
+      writeFileSync(sessionIndexPath(store), JSON.stringify(rows))
+      const readIndex = vi.spyOn(store, 'readIndexEntries')
+      const reads = vi.mocked(readdirSync)
+      reads.mockClear()
+      for (let request = 1; request <= 2; request++) {
+        expect(await allSessions(store)).toMatchObject([...rows].reverse())
+        expect.soft(readIndex).toHaveBeenCalledTimes(request)
+        expect.soft(reads.mock.calls.filter(([path]) => path === directory)).toHaveLength(1)
+      }
+      unlinkSync(sessionPath(store, 'first'))
+      const changed = new Date('2030-01-01T00:00:00Z')
+      utimesSync(directory, changed, changed)
+      expect((await allSessions(store)).map((row) => row.session_id)).toEqual(['second'])
+      expect(reads.mock.calls.filter(([path]) => path === directory)).toHaveLength(2)
+    } finally { vi.restoreAllMocks(); await server.close() }
+  })
+})
 
 function listed(stored: Row[], liveStreamIds: string[]): Row[] {
   const payload = { sessions: stored, sidebar_reference_sessions: [], archived_limit: null } as unknown as ListPayload
