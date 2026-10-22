@@ -245,6 +245,16 @@ describe('raw byte routes', () => {
     expect(md).not.toContain('private plan')
   })
 
+  it.each(['md', 'legacy-unknown'])('preserves the direct JSON fallback for format %s', async (format) => {
+    const session = await s.deps.sessionStore.get(sid)
+    session.title = 'Legacy export content'
+    await s.deps.sessionStore.save(session)
+    const res = await s.get(`/api/session/export?session_id=${sid}&format=${format}`)
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toBe('application/json; charset=utf-8')
+    expect(await res.json()).toMatchObject({ session_id: sid, title: 'Legacy export content' })
+  })
+
   it('accepts multipart uploads into the session inbox and rolls them back by receipt', async () => {
     const boundary = 'xyz'
     const body = [`--${boundary}`, 'Content-Disposition: form-data; name="session_id"', '', sid, `--${boundary}`, 'Content-Disposition: form-data; name="file"; filename="../evil name.txt"', 'Content-Type: text/plain', '', 'payload', `--${boundary}--`, ''].join('\r\n')

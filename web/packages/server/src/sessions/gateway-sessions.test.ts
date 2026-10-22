@@ -394,9 +394,22 @@ describe('canonical owner attachment', () => {
     expect(await s.deps.sessionStore.persistedIds()).toEqual(new Set())
   })
 
-  it('authorizes the profile and format before contacting the export owner', async () => {
+  it.each(['md', 'legacy-unknown'])('normalizes legacy format %s to one closed owner JSON request', async (format) => {
+    sidecar.respond('gateway.session', (params) => {
+      expect(params).toMatchObject({ action: 'export', format: 'json', redact: true })
+      return { state: 'attached', reason: null, snapshot: null, receipt: null,
+        export: { format: 'json', filename: 'owner.json', content: JSON.stringify({ messages: [], title: 'Current owner' }) } }
+    })
+    const res = await s.get(`/api/session/export?session_id=${sid}&format=${format}`)
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toBe('application/json; charset=utf-8')
+    expect(await res.json()).toMatchObject({ title: 'Current owner' })
+    expect(sidecar.calls.filter((call) => call.method === 'gateway.session')).toHaveLength(1)
+    expect(await s.deps.sessionStore.persistedIds()).toEqual(new Set())
+  })
+
+  it('authorizes the profile before contacting the export owner', async () => {
     expect((await s.get(`/api/session/export?session_id=${sid}`, { headers: { cookie: 'hermes_profile=work' } })).status).toBe(404)
-    expect((await s.get(`/api/session/export?session_id=${sid}&format=pdf`)).status).toBe(400)
     expect(sidecar.calls.filter((call) => call.method === 'gateway.session')).toEqual([])
     const locked = await bootTestServer({ sidecar, env: { HERMES_WEBUI_PASSWORD: 'synthetic-export-password' } })
     try {

@@ -83241,7 +83241,7 @@
             "name": "format",
             "in": "query",
             "required": false,
-            "description": "`json` (default), `markdown`, or `html`.",
+            "description": "`json` (default), `markdown`, or `html`. Other values retain the legacy JSON fallback.",
             "schema": {
               "type": "string"
             }
@@ -83270,7 +83270,7 @@
             "description": "Attachment named `hermes-<session_id>.<ext>`."
           },
           "400": {
-            "description": "Invalid export format.",
+            "description": "Session ID is required.",
             "content": {
               "application/json": {}
             }

@@ -339,10 +339,10 @@ async function handleFolderDownload(ctx: RequestContext): Promise<void> {
 async function handleSessionExport(ctx: RequestContext): Promise<void> {
   const sid = ctx.query.get('session_id') ?? ''
   if (!sid) throw new HttpError(400, 'session_id is required')
-  const fmt = (ctx.query.get('format') ?? 'json').toLowerCase()
-  const format = OwnerExportFormatSchema.safeParse(fmt)
-  if (!format.success) throw new HttpError(400, 'format must be json, markdown, or html')
-  const ownerExport = await ctx.deps.sessions.owner?.export(sid, format.data)
+  const format = OwnerExportFormatSchema.safeParse((ctx.query.get('format') ?? 'json').toLowerCase())
+  // Preserve the public route's historical JSON fallback; only closed formats cross the owner seam.
+  const fmt = format.success ? format.data : 'json'
+  const ownerExport = await ctx.deps.sessions.owner?.export(sid, fmt)
   if (ownerExport) {
     const contentType = { json: 'application/json', markdown: 'text/markdown', html: 'text/html' }[ownerExport.format]
     const ext = ownerExport.format === 'markdown' ? 'md' : ownerExport.format
