@@ -241,6 +241,11 @@ the contract package and a recorded fixture under `packages/contracts/fixtures/s
 the pytest suite and the Vitest fake. `sidecar/scripts/replay_sidecar.py` replays those fixtures and stages
 one approval so browser e2e and the iOS contract runner need no Agent.
 
+The worker starts the sidecar handshake concurrently with server initialization and opens HTTP before
+waiting for that handshake. Public pages and authentication remain available during Agent imports;
+chat admission answers `503 sidecar_unavailable` while the sidecar is starting or reconnecting, without
+queuing a runtime check behind the handshake. Handshake metadata is read lazily from the sidecar.
+
 After automatic compression, `chat.start` returns capped model context separately from the full visible
 transcript. The cap preserves paired skill loads' reload markers and failure verdicts even after the raw-output
 budget is exhausted. Skill bodies still spend that budget; inline slash-skill user messages remain intact.
