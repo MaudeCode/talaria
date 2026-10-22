@@ -1,6 +1,6 @@
 import type { OwnerActionRequest } from '@maudecode/talaria-web-contracts'
 import { useResourceEffects, useResourceMutation, withEffect } from '../sessions/useResourceMutation'
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { m } from '../../paraglide/messages.js'
@@ -31,7 +31,7 @@ import { ConnectCard } from '../connectors/ConnectCard'
 import { useClarify } from './useClarify'
 import { VaultPromptCard, useVaultPrompt } from './VaultPromptCard'
 import { useMarkViewed } from './useMarkViewed'
-import { TerminalPanel } from '../terminal/TerminalPanel'
+import { TerminalPanelFrame } from '../terminal/TerminalPanelFrame'
 import { ChatSidePanel } from './ChatSidePanel'
 import { setSidePanelOpen, toggleSidePanel, useShellState } from '../../shell/useShellState'
 import { useRuntimeNotices } from '../notices/useRuntimeNotices'
@@ -45,6 +45,8 @@ import type { ExecutionMode } from '@maudecode/talaria-web-contracts'
 import { WorktreeRemoveDialog } from '../sessions/WorktreeRemoveDialog'
 import { beginDock, playDock, requestScroll } from './sendMotion'
 import { bindFirstSend, ownsFirstSend, useFirstSend } from './firstSend'
+
+const TerminalPanel = lazy(() => import('../terminal/TerminalPanel').then((module) => ({ default: module.TerminalPanel })))
 
 export function ChatView({ sessionId }: { sessionId: string | null }) {
   const bootstrap = useBootstrap()
@@ -420,7 +422,11 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
           {clarify && <ClarifyCard key={clarify.pending.clarify_id} clarify={clarify} />}
           {sessionId && vaultPrompt && <VaultPromptCard key={vaultPrompt.clarifyId} sessionId={sessionId} clarifyId={vaultPrompt.clarifyId} vault={vaultPrompt.vault} />}
           {live?.connectCard && <ConnectCard key={live.connectCard.op_id} initial={live.connectCard} />}
-          {terminalOpen && sessionId && <TerminalPanel sessionId={sessionId} workspace={workspace} onClose={() => setTerminalOpen(false)} onReopen={() => setTerminalOpen(true)} />}
+          {terminalOpen && sessionId && <Suspense fallback={
+            <TerminalPanelFrame workspace={workspace} status="loading" onClose={() => setTerminalOpen(false)}>
+              <div className="composer-terminal-surface px-2 py-1" style={{ height: 260 }} />
+            </TerminalPanelFrame>
+          }><TerminalPanel sessionId={sessionId} workspace={workspace} onClose={() => setTerminalOpen(false)} onReopen={() => setTerminalOpen(true)} /></Suspense>}
         </div>
         <Composer
           sessionId={sessionId}

@@ -3,6 +3,19 @@ import { resolve } from 'node:path'
 import { expect, it } from 'vitest'
 import { clientDir, layoutFiles, readLayout } from './check-bundle-size.mjs'
 
+it('chat route static dependency graphs exclude xterm runtime and stylesheet', () => {
+  const manifest = JSON.parse(readFileSync(resolve(clientDir, '.vite/manifest.json'), 'utf8'))
+  const routes = Object.keys(manifest).filter((key) => /^src\/routes\/_app(?:\.index|\.session\.\$sessionId)?\.tsx\?/.test(key))
+  expect(routes).toHaveLength(3)
+  for (const route of routes) {
+    for (const file of layoutFiles(manifest, route)) {
+      const source = readFileSync(resolve(clientDir, file), 'utf8')
+      // Package names disappear when bundled; these runtime/CSS signatures survive minification.
+      expect(/Terminal requires a parent element|\.xterm-screen/.exec(source), `${route}: ${file}`).toBeNull()
+    }
+  }
+})
+
 it('the app layout static dependency graph excludes Mermaid and KaTeX runtimes and styles', () => {
   const { files } = readLayout()
   expect(files.length).toBeGreaterThan(0)

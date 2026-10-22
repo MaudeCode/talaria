@@ -7,8 +7,7 @@ export const clientDir = resolve(import.meta.dirname, '../dist/client')
 export const layoutBudgetBytes = Math.ceil(1_497_999 * 1.1)
 
 /** Follow static imports only: deferred routes and renderer plugins are not layout costs. */
-export function layoutFiles(manifest) {
-  const layout = Object.keys(manifest).find((key) => /^src\/routes\/_app\.tsx\?/.test(key))
+export function layoutFiles(manifest, layout = Object.keys(manifest).find((key) => /^src\/routes\/_app\.tsx\?/.test(key))) {
   if (!layout) throw new Error('bundle check: _app route entry missing from client manifest')
   const seen = new Set()
   const files = new Set()

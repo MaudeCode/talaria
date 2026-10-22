@@ -140,6 +140,9 @@ Markdown renderer, Mermaid runtime, and KaTeX runtime and stylesheet out of that
 graph. Dynamic imports are excluded from the layout budget. The Markdown browser
 test holds plugin requests to verify readable fallback code, then releases them
 and checks diagram and formula rendering on desktop and mobile.
+The chat route graphs also exclude xterm's runtime and stylesheet. Terminal browser
+tests hold those assets to exercise the closeable loading chrome, then verify
+terminal input, resize requests, and closing on desktop and mobile.
 
 `packages/frontend/src/**/*.test.ts(x)` run in jsdom against the in-memory contract server; `e2e/*.spec.ts`
 run Playwright against the built assets and the Node server started by `e2e/server.ts`
