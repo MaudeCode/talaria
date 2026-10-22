@@ -1,0 +1,1 @@
+{"entries":[{"category":"Fixed","summary":"Repeated settings and workspace reads avoid reloading unchanged files.","highlight":false,"components":["web"]}]}

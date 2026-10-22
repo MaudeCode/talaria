@@ -9,7 +9,7 @@ function tmpName(path: string): string {
   return `${path}.tmp.${process.pid}.${++tmpCounter}`
 }
 
-export function writeAtomic(path: string, text: string | Uint8Array, mode?: number): void {
+export function writeAtomic(path: string, text: string | Uint8Array, mode?: number, commit?: (staged: string, target: string) => void): void {
   const tmp = tmpName(path)
   const fd = openSync(tmp, 'w', mode)
   try {
@@ -17,7 +17,8 @@ export function writeAtomic(path: string, text: string | Uint8Array, mode?: numb
     fsyncSync(fd)
     closeSync(fd)
     if (mode !== undefined) chmodSync(tmp, mode)
-    renameSync(tmp, path)
+    if (commit) commit(tmp, path)
+    else renameSync(tmp, path)
   } catch (error) {
     try { closeSync(fd) } catch { /* closed */ }
     try { unlinkSync(tmp) } catch { /* gone */ }

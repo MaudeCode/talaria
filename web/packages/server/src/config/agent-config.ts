@@ -6,13 +6,13 @@
  * Policy helpers (model section, reasoning, max_tokens, auxiliary slots,
  * personalities) port Python `api/config.py`.
  */
-import { statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve as resolvePath } from 'node:path'
 import type { SidecarResult } from '@maudecode/talaria-web-contracts'
 import type { SidecarLike } from '../sidecar/client.js'
 import { LOCAL_RUNTIME_PROVIDER, PORTAL_PROVIDERS, PROVIDER_ALIASES, PROVIDER_DISPLAY, PROVIDER_MODELS, VALID_REASONING_EFFORTS, AUXILIARY_TASK_CATALOG, RETIRED_AUX_TASK_SLOTS } from '../providers/tables.js'
 import { str } from '../util.js'
+import { fileStatKey } from '../fs/stat.js'
 
 export type SpeedTier = SidecarResult<'models.speed_tiers'>['tiers'][number][number]
 /** One auxiliary slot as the Agent lists it (TAL-800); the static catalog's rows carry no effort or inheritance. */
@@ -43,9 +43,8 @@ export class AgentConfig {
   /** Fingerprint of the config file; `missing` only when it does not exist. Any other stat failure (EACCES, EIO, ...) is unreadable, never empty. */
   private statKey(profileHome: string, opts: ConfigFileOptions = {}): string {
     try {
-      const st = statSync(this.path(profileHome, opts), { bigint: true })
       // ctime moves on chmod/chown, so a permission change re-reads through the sidecar instead of serving the old parse.
-      return `${String(st.mtimeNs)}:${String(st.ctimeNs)}:${String(st.size)}:${String(st.ino)}`
+      return fileStatKey(this.path(profileHome, opts))
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code
       if (code === 'ENOENT' || code === 'ENOTDIR') return 'missing'

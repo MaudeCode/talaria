@@ -164,6 +164,13 @@ The JSON adapter keeps existing paths, bytes, permissions and atomic publication
 stage and fsync asynchronously, then compare the expected revision and publish without an intervening await.
 Shutdown drains queued writes and closes journal writers before storage closes.
 
+JSON documents retain at most 256 recently used byte/revision/parse snapshots per backend. Reads check
+device, inode, size and nanosecond modification/change timestamps, sharing the config cache's fingerprint
+helper. Unchanged files need one stat; returned objects are cloned. Successful writes seed their published
+bytes without rereading, using a descriptor held across publication so a competing replacement cannot lend
+its identity to old bytes. In-place edits during publication invalidate the seeded snapshot. Auth publication
+seeds before yielding, and deletion or shutdown releases snapshots.
+
 `documents` owns drafts, shares, held wakeups, projects, settings, auth keys/tables, passkeys/challenges,
 notifications, deletion records, extension state, background receipts, workspace registries and last-workspace
 pointers, relay configuration/generated keys/profile identities/ledgers/outboxes, quota scope identity, and the
