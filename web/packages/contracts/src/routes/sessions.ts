@@ -7,6 +7,9 @@ import { AgentRuntimeMetadataSchema, SessionIdSchema, SessionRowSchema, SessionE
 
 /** Session, project, share, and draft routes. Response rows are loose: the sidecar carries operator-defined extras. */
 
+/** Visible rows in an initial transcript query and a terminal chat snapshot. */
+export const TRANSCRIPT_WINDOW = 120
+
 const Json = z.unknown()
 
 export const OkSchema = z.object({ ok: z.literal(true) }).catchall(Json)

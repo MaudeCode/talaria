@@ -29,6 +29,23 @@ intervening events keep their order.
 The global sidebar feed remains independent. Reconnection refreshes detail even
 when no change was retained while the client was absent.
 
+Web installs a terminal chat frame's complete session directly into its query
+cache, cancelling older detail reads. Terminal snapshots and initial transcript
+queries share `TRANSCRIPT_WINDOW` in the contracts package, currently 120 visible
+rows. Terminal settlement refreshes list and search queries without fetching
+detail again; a following title frame patches the cached title. For five seconds
+after a complete terminal snapshot, a named sidebar echo refreshes that session's
+other queries while retaining its transcript. Other sessions stay cached.
+When `session_done` arrives before the terminal frame, a client following that
+run leaves detail to the live transport; a lost terminal frame still uses the
+existing stream-end/status reconciliation. A window whose offset advances
+retires the loaded prefix and in-flight history pages so absolute row indices
+remain correct; history can be loaded again from the new boundary.
+Explicit mutations still refresh the affected session. On the viewed-session
+feed, the identical `process_complete` immediately following `bg_task_complete`
+is its legacy alias and causes no second detail fetch. Reconnects, owner updates,
+and standalone legacy completions retain their detail refresh.
+
 For canonical native chats, authorized viewers and an active run share one
 attach-only native subscription, keyed by profile home and session. The last
 viewer releases its lease without interrupting a run; the last lease closes the

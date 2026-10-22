@@ -2,16 +2,40 @@ import { describe, expect, it, vi } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer } from '../test/harness.js'
 import { classifyProviderError } from './turn.js'
+import { TRANSCRIPT_WINDOW, type SidecarParams, type SidecarResultInput } from '@maudecode/talaria-web-contracts'
+
+function completed(params: SidecarParams<'chat.start'>): SidecarResultInput<'chat.start'> {
+  return {
+    status: 'completed', messages: [...params.conversation_history, { role: 'user', content: params.user_message }, { role: 'assistant', content: 'answer' }], final_response: 'answer', error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '',
+    usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: 0 }, context: { context_length: 200000 }, model: 'test-model', provider: 'test', compressed: false,
+    agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [],
+  }
+}
+
+it('sends the complete 120-row transcript window in done', async () => {
+  const sidecar = new FakeSidecar()
+  sidecar.respond('chat.start', completed)
+  const server = await bootTestServer({ sidecar })
+  try {
+    const session = await server.deps.sessionStore.newSession()
+    session.messages = Array.from({ length: 130 }, (_, i) => ({ role: i % 2 ? 'assistant' : 'user', content: `Message ${i}` }))
+    await server.deps.sessionStore.save(session)
+    const start = await server.get('/api/chat/start', { method: 'POST', body: JSON.stringify({ session_id: session.session_id, message: 'hello' }), headers: { 'content-type': 'application/json' } })
+    const { stream_id: streamId } = await start.json() as { stream_id: string }
+    const frames = await server.sse(`/api/chat/stream?stream_id=${streamId}&after_seq=0`, (f) => f.event === 'done')
+    const done = frames.find((f) => f.event === 'done')!.data as { session: { messages: unknown[]; _messages_offset: number; message_count: number } }
+    expect(TRANSCRIPT_WINDOW).toBe(120)
+    expect(done.session.messages).toHaveLength(120)
+    expect(done.session._messages_offset).toBe(12)
+    expect(done.session.message_count).toBe(132)
+  } finally { await server.close() }
+})
 
 it('sends done once the session document is written, without waiting for the index flush', async () => {
   const sidecar = new FakeSidecar()
   let releaseTurn!: () => void
   const turnGate = new Promise<void>((resolve) => { releaseTurn = resolve })
-  sidecar.respond('chat.start', async (params) => (await turnGate, {
-    status: 'completed', messages: [...params.conversation_history, { role: 'user', content: params.user_message }, { role: 'assistant', content: 'answer' }], final_response: 'answer', error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '',
-    usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: 0 }, context: { context_length: 200000 }, model: 'test-model', provider: 'test', compressed: false,
-    agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [],
-  }))
+  sidecar.respond('chat.start', async (params) => { await turnGate; return completed(params) })
   const server = await bootTestServer({ sidecar })
   let releaseIndex!: () => void
   const indexGate = new Promise<void>((resolve) => { releaseIndex = resolve })

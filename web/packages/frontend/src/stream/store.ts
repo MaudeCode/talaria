@@ -65,6 +65,12 @@ export function getStreamState(): StreamState {
   return state
 }
 
+/** Sidebar echoes can follow a terminal frame; reuse the reducer's bounded, context-owned arrival timestamp. */
+export function hasRecentTerminalSession(sessionId: string): boolean {
+  const turn = state.turns[sessionId]
+  return !!turn?.doneSession && turn.doneSession.session_id === sessionId && Array.isArray(turn.doneSession.messages) && turn.doneAt !== null && Date.now() - turn.doneAt < 5_000
+}
+
 export function subscribe(listener: () => void): () => void {
   listeners.add(listener)
   return () => listeners.delete(listener)
