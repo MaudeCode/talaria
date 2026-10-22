@@ -62691,6 +62691,9 @@
                     },
                     "supports_thinking_toggle": {
                       "type": "boolean"
+                    },
+                    "supports_session_scope": {
+                      "type": "boolean"
                     }
                   },
                   "additionalProperties": {}
@@ -62702,7 +62705,7 @@
       },
       "post": {
         "operationId": "reasoning.set",
-        "summary": "Body is `{display: show|hide}` or `{effort, model?, provider?, base_url?}`.",
+        "summary": "Body is `{display: show|hide}` or `{effort, session_id?, model?, provider?, base_url?}`. Chat effort changes carry session_id; read-only/native targets return 409 reasoning_unsupported without changing profile defaults. Omit session_id only for explicit profile settings.",
         "tags": [
           "settings"
         ],
@@ -62715,6 +62718,10 @@
                 "properties": {
                   "display": {},
                   "effort": {},
+                  "session_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
                   "model": {
                     "anyOf": [
                       {
@@ -62781,6 +62788,9 @@
                       "type": "boolean"
                     },
                     "supports_thinking_toggle": {
+                      "type": "boolean"
+                    },
+                    "supports_session_scope": {
                       "type": "boolean"
                     }
                   },

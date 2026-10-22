@@ -161,8 +161,9 @@ fences. File uploads and direct-worker-only controls are unavailable on this con
 turn using a whole clarification batch remains read-only because the owner cannot replay that pending
 request to a new viewer; continue it in its native client. Secure setup and sudo passwords are not
 tunneled through Web. Dedicated profile owners use native private-control tickets rather than the
-retired HTTP gateway URL/key settings. A v1 profile served by a shared multiplexer remains read-only
-because that runtime does not preserve the verified native launch policy through execution.
+retired HTTP gateway URL/key settings. Profiles served by a shared multiplexer can use canonical
+sessions when the owner's exact boot revision has passed Talaria's profile-isolation contract.
+Unverified owners remain read-only. Diagnostic fresh chats still require a dedicated owner.
 
 To use an external OpenAI-compatible endpoint as a model, add it in **Settings → Providers**.
 
@@ -196,6 +197,17 @@ verdict requires confirmation for that profile, installation, revision and scan 
 expired confirmation requires a fresh review; a dangerous verdict blocks the update. New dependency consent
 continues in `hermes plugins update` in a terminal. Older Agents without cached update support
 show no update controls.
+
+Automatic read-aloud claims each watched reply once across tabs on the same browser origin and app mount,
+account, profile, and session. The browser retains the last 1024 automatic attempts, including interrupted
+attempts. If coordination storage is unavailable, automatic playback stays quiet; **Read aloud** remains
+available. Opening saved history does not start automatic playback.
+
+Deliberately archiving a stored Talaria chat notifies its profile plugins through the Agent's
+`on_session_delete` hook with `reason=archive`, after the local archive commits. Repeated archive
+requests, unarchive and automatic cleanup send no event. This notification preserves the chat,
+approvals and Agent database; plugin failures do not undo the archive. Older Agents without the
+emitter retain the existing archive behavior.
 
 ### Remote access
 

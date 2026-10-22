@@ -1,6 +1,13 @@
 {
   "schemaVersion": 1,
   "families": {
+    "tests/test_gateway_sessions.py::test_real_cron_refusal_matches_public_consumer_fixture": {
+      "layer": "compatibility",
+      "reason": "Real installed Agent cron refusal producer, admission ledger and completion publisher must match the shared public consumer fixture and never invoke the scheduled job. An older refusal must match its attested revision and explicit outcome. Requires the Agent interpreter; only job execution is a tripwire.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_plugin_settings_mcp.py::test_plugin_save_reconciles_live_mcp_inputs": {
       "layer": "compatibility",
       "reason": "Real Agent portable-package settings and native reconnect API must replace a live stdio child launch environment while preserving profile borrowers; fakes cannot prove supported-Agent connection ownership.",
@@ -502,6 +509,11 @@
       "cases": [
         ""
       ]
+    },
+    "tests/test_chat_finalize.py::test_archive_notifies_profile_plugins_without_finalizing_or_writing_state": {
+      "layer": "compatibility",
+      "reason": "Real supported-Agent emitter and plugin discovery must deliver the owning profile archive event without finalization or a SessionDB open; boundary fakes cannot prove native lifecycle dispatch.",
+      "cases": ["[record]", "[raises]"]
     },
     "tests/test_chat_finalize.py::test_finalize_runs_profile_plugin_without_starting_a_turn": {
       "layer": "compatibility",
@@ -1144,7 +1156,7 @@
     },
     "tests/test_gateway_sessions.py::test_real_native_owner_shared_admission_and_detach": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: native admission, detach and display negotiation. The detail case proves actual reasoning callback installation, child lifecycle forwarding and turn-end usage on the owner WebSocket with a loopback model. [restart] delivers a real SIGUSR1 so the owner's own after-turn restart wait admits Web, then exits once the parked approval is answered.",
+      "reason": "Supported-Agent API compatibility: native admission, detach and display negotiation. [profiles] uses two loopback peers and a real multiplexer to prove refusal on unverified boot revisions, or secondary policy, model, workspace, credential and transcript isolation during a concurrent primary LOCAL turn and after owner replacement. Fakes cannot establish the shared runner's actual execution policy. The detail case proves actual reasoning callback installation, child lifecycle forwarding and turn-end usage on the owner WebSocket with a loopback model. [restart] delivers a real SIGUSR1 so the owner's own after-turn restart wait admits Web, then exits once the parked approval is answered.",
       "cases": [
         "[shared]",
         "[batch]",

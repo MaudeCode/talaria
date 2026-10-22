@@ -2549,7 +2549,6 @@
 	"background_review_failed": "The worker or parent review failed.",
 	"background_review_unknown": "The worker or parent review outcome is unknown.",
 	"background_review_parent": "Parent review: {state}",
-	"resource_change_pending": "Pending: {action}",
 	"resource_change_busy": "Wait for the pending change to finish.",
 	"catalog_last_confirmed": "Last-confirmed data",
 	"catalog_unavailable": "Temporarily unavailable",

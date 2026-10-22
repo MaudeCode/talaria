@@ -1,6 +1,5 @@
 import type { OwnerActionRequest } from '@maudecode/talaria-web-contracts'
-import { useResourceIntents, useResourceMutation } from '../sessions/useResourceMutation'
-import { ResourcePending } from '../sessions/ResourcePending'
+import { useResourceEffects, useResourceMutation, withEffect } from '../sessions/useResourceMutation'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -51,7 +50,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   const bootstrap = useBootstrap()
   const locale = useLocale()
   const qc = useQueryClient()
-  const { mutateAsync: renameSession } = useResourceMutation({ resource: () => `session:${sessionId}`, intent: (title: string) => ({ title, label: m.rename() }), mutationFn: (title) => { if (!sessionId) throw new Error(m.error_generic()); return api.renameSession(sessionId, title) } })
+  const { mutate: renameSession } = useResourceMutation({ resource: () => `session:${sessionId}`, effect: (title: string) => ({ fields: { title } }), mutationFn: (title) => { if (!sessionId) throw new Error(m.error_generic()); return api.renameSession(sessionId, title) }, onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error') })
 
   const navigate = useNavigate()
   const settings = useSettingsQuery()
@@ -140,11 +139,11 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   const reasoningLevels = reasoningStatus.data?.supported_efforts
   const reasoningSupported = reasoningStatus.data?.supports_reasoning_effort !== false || reasoningStatus.data?.supports_thinking_toggle === true
   const setReasoning = useCallback((level: string | null) => {
-    void api.setReasoningEffort(level ?? '', session?.model, session?.model_provider)
+    void api.setReasoningEffort(level ?? '', session?.model, session?.model_provider, sessionId ?? undefined)
       .then((status) => { qc.setQueryData(reasoningKey, status); showToast(`${m.composer_control_reasoning()}: ${status.reasoning_effort || m.reasoning_default()}`) })
       .catch((e: unknown) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error'))
   // eslint-disable-next-line react-hooks/exhaustive-deps -- reasoningKey is derived from session model/provider
-  }, [qc, session?.model, session?.model_provider])
+  }, [qc, sessionId, session?.model, session?.model_provider])
 
   const { updateSession, dialog: modelDialog, notice: modelNotice } = useSessionUpdate(sessionId, refresh, session?.owner_attachment)
 
@@ -239,7 +238,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
       case 'new': removePersisted('hermes-webui-session'); await navigate({ to: '/', search: { action: 'new-chat' } }); return true
       case 'clear': if (sessionId) return await runHistory(m.history_clearing(), async (current) => { const r = await api.clearSession(sessionId); if (current()) await refresh(r.session) }) ? true : 'refused'; return true
       case 'terminal': setTerminalOpen((t) => !t); return true
-      case 'title': if (sessionId && args) { await renameSession(args) } return true
+      case 'title': if (sessionId && args) renameSession(args); return true
       case 'retry': if (sessionId) return await onRegenerate() ? true : 'refused'; return true
       case 'undo': if (sessionId) return await runHistory(m.history_undoing(), async (current) => { const r = await api.undoSession(sessionId); if (!current()) return; if ('error' in r) { showToast(r.error, 4000, 'error'); return false } await refresh(undefined, true) }) ? true : 'refused'; return true
       case 'compress': if (sessionId) { void runCompression(sessionId) } return true
@@ -289,10 +288,11 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
 
   const mode = (settings.data?.chat_activity_display_mode as ActivityMode | undefined) ?? 'compact_worklog'
   const assistantName = session?.assistant_name ?? bootstrap.assistant_name
-  const resourceIntent = useResourceIntents()[`session:${sessionId}`]
+  const sessionEffect = useResourceEffects()[`session:${sessionId}`]
+  const shownSession = session && withEffect(session, sessionEffect)
   // Until the transcript arrives the header shows the title the sidebar already has for this session.
   const listedTitle = sessionId ? qc.getQueryData<SessionsList>(keys.sessions.list({}))?.sessions.find((r) => r.session_id === sessionId)?.title : undefined
-  const title = resourceIntent?.title ?? session?.title ?? listedTitle ?? ''
+  const title = shownSession?.title ?? listedTitle ?? ''
   // TAL-639: an existing chat names only its own workspace, none until its record loads, so the Files page and
   // terminal never mount on the default and remount; the default stands in only for the unsaved chat.
   const workspace = sessionId ? session?.workspace : settings.data?.default_workspace
@@ -372,7 +372,6 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
         <div className="chat-header flex items-center gap-3 min-h-[52px] px-5 py-1.5 border-b border-border shrink-0 max-[641px]:hidden">
           <div className="chat-header-text min-w-0 flex-1 flex flex-col gap-px">
             <h1 className="chat-header-title m-0 text-[13.5px] font-[550] text-text whitespace-nowrap overflow-hidden text-ellipsis tracking-[-.01em]" id="topbarTitle">{session || listedTitle ? (title || m.untitled()) : bootstrap.bot_name}</h1>
-            <ResourcePending intent={resourceIntent} />
             {session && meta && <div className="chat-header-meta hidden text-[11px] text-muted whitespace-nowrap overflow-hidden text-ellipsis font-mono" id="topbarMeta">{meta}</div>}
           </div>
           {/* T3 Code keeps the terminal toggle in the thread header; phones reach it from the composer's overflow menu. */}
@@ -421,7 +420,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
           {clarify && <ClarifyCard key={clarify.pending.clarify_id} clarify={clarify} />}
           {sessionId && vaultPrompt && <VaultPromptCard key={vaultPrompt.clarifyId} sessionId={sessionId} clarifyId={vaultPrompt.clarifyId} vault={vaultPrompt.vault} />}
           {live?.connectCard && <ConnectCard key={live.connectCard.op_id} initial={live.connectCard} />}
-          {terminalOpen && sessionId && <TerminalPanel sessionId={sessionId} workspace={workspace} onClose={() => setTerminalOpen(false)} />}
+          {terminalOpen && sessionId && <TerminalPanel sessionId={sessionId} workspace={workspace} onClose={() => setTerminalOpen(false)} onReopen={() => setTerminalOpen(true)} />}
         </div>
         <Composer
           sessionId={sessionId}
@@ -438,7 +437,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
           onWorkspaceChange={onWorkspaceChange}
           // The server refuses worktrees for a profile without local I/O (a remote terminal backend), so none is offered.
           onNewWorktreeChat={bootstrap.features.terminal_remote_backend ? undefined : onNewWorktreeChat}
-          onRemoveWorktree={sessionId && session?.worktree_branch ? onRemoveWorktree : undefined}
+          onRemoveWorktree={sessionId && shownSession?.worktree_branch ? onRemoveWorktree : undefined}
           onToolsetsChange={onToolsetsChange}
           onExecutionModeChange={onExecutionModeChange}
           onReasoningChange={setReasoning}

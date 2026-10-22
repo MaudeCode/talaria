@@ -31,7 +31,12 @@
 .msg-row,.msg-row *{transition-property:none !important;transition-duration:0s !important;transition-delay:0s !important}
 .scroll-to-bottom-btn{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(var(--composer-h,0px) + 12px);height:32px;min-width:32px;max-width:min(260px,calc(100% - 40px));border-radius:999px;border:1px solid var(--border2);background:var(--scroll-btn-bg);color:var(--muted);font-size:12px;font-weight:600;gap:5px;padding:0 12px;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:var(--scroll-btn-shadow);z-index:10;transition:color .12s,border-color .12s,background .12s}
 .scroll-to-bottom-btn:hover{color:var(--text);border-color:var(--border);background:var(--hover-bg)}
+/* Keep mounted history searchable; the opt-in virtualizer owns its own row measurements. */
 .msg-row{padding:10px 0}
+.messages-inner > .msg-row{content-visibility:auto;contain-intrinsic-size:auto 300px}
+.messages-inner > .msg-row[data-role="user"]{width:fit-content;margin-inline-start:auto}
+/* Keep live and latest persisted replies measured across streaming and settlement. */
+.msg-row:is(.live-turn,[data-latest="1"]){content-visibility:visible;contain:content}
 .msg-row+.msg-row{border-top:none}
 .msg-role{font-size:12px;font-weight:500;letter-spacing:.01em;margin-bottom:8px;display:flex;align-items:center;gap:8px}
 .msg-role.user{color:var(--msg-role-user-fg)}

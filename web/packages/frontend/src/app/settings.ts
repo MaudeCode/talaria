@@ -2,22 +2,16 @@ import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tansta
 import { keys } from '../api/queryKeys'
 import * as api from '../api/endpoints'
 import { getStreamContext } from '../stream/connection'
+import { isDefiniteRefusal } from '../contracts/common'
+import { settleOnNextRead } from '../features/sessions/useResourceMutation'
 import { m } from '../paraglide/messages.js'
 import type { Settings } from '../contracts'
 
-// Only ordinary presentation preferences may show unconfirmed local intent.
-const immediate = new Set(`bot_name send_key sidebar_density pinned_sessions_limit hidden_tabs
-  workspace_panel_open workspace_todos_tab session_jump_buttons session_endless_scroll show_titlebar_profile
-  project_quick_create_buttons show_token_usage show_tps show_quota_chip show_conversation_outline
-  terminal_auto_expand_on_output new_chat_on_workspace_switch notifications_enabled sound_enabled
-  show_cli_sessions show_claude_code_sessions show_cron_sessions show_webhook_sessions show_kanban_sessions
-  show_previous_messaging_sessions chat_activity_display_mode transparent_stream_event_timestamps
-  worklog_details_expanded_default auto_scroll_follow render_user_markdown large_text_paste_as_attachment
-  fade_text_effect virtualize_transcript default_message_mode show_busy_placeholder_hint
-  structured_code_default_view structured_code_auto_tree_lines max_tokens auto_title_refresh_every`.split(/\s+/))
+// Every setting shows the user's value at once; `_`-prefixed credential commands (passwords) are write-only.
+const shown = (key: string) => !key.startsWith('_')
 const intentKey = ['settings-intents'] as const
 interface Intent { context: object; fields: Record<string, unknown> }
-// ResourceIntent's single-resource lock cannot express overlapping per-field settings writes.
+// The resource owner's single-resource lock cannot express overlapping per-field settings writes.
 const owners = new WeakMap<QueryClient, ReturnType<typeof makeOwner>>()
 
 function makeOwner(qc: QueryClient) {
@@ -66,9 +60,10 @@ export function useSaveSettings() {
       state.active.set(sequence, { keys: fields, done })
       for (const key of fields) {
         state.writes.add(key)
-        if (immediate.has(key)) state.fields.set(key, { sequence, value: patch[key] })
+        if (shown(key)) state.fields.set(key, { sequence, value: patch[key] })
       }
       publish()
+      let unknown = false
       try {
         await qc.cancelQueries({ queryKey: keys.settings })
         await Promise.all(predecessors)
@@ -88,12 +83,27 @@ export function useSaveSettings() {
           return confirmed
         })
         return data
+      } catch (error) {
+        unknown = !isDefiniteRefusal(error)
+        throw error
       } finally {
-        for (const key of fields) if (state.fields.get(key)?.sequence === sequence) state.fields.delete(key)
+        const settle = () => {
+          for (const key of fields) if (state.fields.get(key)?.sequence === sequence) state.fields.delete(key)
+          publish()
+        }
+        // A refusal rolls back at once; an unknown outcome keeps the shown value until a successful read decides it.
+        if (!unknown) settle()
         state.active.delete(sequence)
         release()
-        publish()
-        if (current() && state.active.size === 0) {
+        if (unknown && current()) {
+          try {
+            await qc.cancelQueries({ queryKey: keys.settings })
+            await qc.query({ queryKey: keys.settings, queryFn: api.fetchSettings, staleTime: 0 })
+            settle()
+          } catch {
+            settleOnNextRead(qc, () => current() && [...fields].some((key) => state.fields.get(key)?.sequence === sequence), settle, keys.settings)
+          }
+        } else if (current() && state.active.size === 0) {
           await qc.cancelQueries({ queryKey: keys.settings })
           if (current()) await qc.invalidateQueries({ queryKey: keys.settings })
         }

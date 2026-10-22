@@ -6,12 +6,15 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { SessionsListSchema, type SessionRow } from '../../contracts'
+import { ApiError } from '../../contracts/common'
 
 vi.mock('../../api/endpoints', () => ({ fetchSessions: vi.fn(), searchSessions: vi.fn(), fetchProjects: vi.fn(), archiveSession: vi.fn(), createProject: vi.fn(), importSession: vi.fn() }))
 vi.mock('../../api/sse', () => ({ openSessionListStream: () => ({ close: () => undefined, readyState: () => 1 }) }))
 vi.mock('./useNewChat', () => ({ useNewChat: () => vi.fn() }))
 vi.mock('./SessionContextMenu', () => ({ SessionContextMenu: () => null }))
 const navigate = vi.hoisted(() => vi.fn())
+const toast = vi.hoisted(() => vi.fn())
+vi.mock('../toast/toast', () => ({ showToast: toast }))
 vi.mock('@tanstack/react-router', () => ({
   useParams: () => ({}),
   useNavigate: () => navigate,
@@ -115,7 +118,7 @@ describe('session list date groups (TAL-306)', () => {
   })
 
   it('buckets by the server sort_ts, not a client-picked timestamp', () => {
-    const at = Date.now()
+    const at = new Date(2026, 9, 22, 12).getTime()
     const day = 86_400
     const recent = { ...rows.find((r) => r.session_id === 'tal306-newest')!, sort_ts: at / 1000 - 60, last_message_at: at / 1000 - 30 * day, updated_at: at / 1000 - 30 * day }
     expect(groupSessionRows([recent], at).map((g) => g.id)).toEqual(['today'])
@@ -123,25 +126,42 @@ describe('session list date groups (TAL-306)', () => {
 })
 
 
-describe('pending session and project presentation (TAL-1082)', () => {
-  it('marks an archive while its write and reconciliation are unresolved', async () => {
+describe('optimistic session and project writes (TAL-1179)', () => {
+  it('drops an archived row at once, before the write answers', async () => {
     let answer!: (value: unknown) => void
-    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [alpha] } as never)
+    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [alpha, other] } as never)
     vi.mocked(api.archiveSession).mockReturnValue(new Promise((resolve) => { answer = resolve }) as never)
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(<QueryClientProvider client={qc}><SessionListPanel /></QueryClientProvider>)
     await screen.findByText('Alpha zebra')
-    await userEvent.click(screen.getByRole('button', { name: 'Archive' }))
+    await userEvent.click(screen.getAllByRole('button', { name: 'Archive' })[0]!)
     await waitFor(() => expect(api.archiveSession).toHaveBeenCalledWith('alpha', true))
-    expect(screen.getByText('Pending: Archive')).toBeInTheDocument()
+    expect(shown()).toEqual(['other'])
+    expect(screen.queryByText(/Pending/)).toBeNull()
+    // The overlay never enters the cached server snapshot.
     expect(qc.getQueryData<{ sessions: SessionRow[] }>(['sessions', 'list', {}])?.sessions[0]?.archived).not.toBe(true)
-    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [] } as never)
+    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [other] } as never)
     answer({ ok: true })
-    await waitFor(() => expect(shown()).toEqual([]))
-    expect(screen.queryByText('Pending: Archive')).toBeNull()
+    await waitFor(() => expect(vi.mocked(api.fetchSessions).mock.calls.length).toBeGreaterThan(1))
+    expect(shown()).toEqual(['other'])
   })
 
-  it('shows a provisional project before creation returns its identity', async () => {
+  it('restores only the refused row and shows the error', async () => {
+    let refuse!: (error: unknown) => void
+    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [alpha, other] } as never)
+    vi.mocked(api.archiveSession).mockImplementation((id) => id === 'alpha' ? new Promise((_, reject) => { refuse = reject }) as never : new Promise(() => undefined) as never)
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SessionListPanel /></QueryClientProvider>)
+    await screen.findByText('Alpha zebra')
+    const [first, second] = screen.getAllByRole('button', { name: 'Archive' })
+    await userEvent.click(first!)
+    await userEvent.click(second!)
+    expect(shown()).toEqual([])
+    refuse(new ApiError({ kind: 'http', status: 409, path: '/x', message: 'Session is busy' }))
+    await waitFor(() => expect(shown()).toEqual(['alpha']))
+    expect(toast).toHaveBeenCalledWith('Session is busy', 4000, 'error')
+  })
+
+  it('shows a new project chip at once and adopts the server project', async () => {
     let answer!: (value: unknown) => void
     vi.spyOn(window, 'prompt').mockReturnValueOnce('New project')
     vi.mocked(api.createProject).mockReturnValue(new Promise((resolve) => { answer = resolve }) as never)
@@ -149,11 +169,21 @@ describe('pending session and project presentation (TAL-1082)', () => {
     await screen.findByText('Alpha zebra')
     await userEvent.click(screen.getByRole('button', { name: 'New project' }))
     await waitFor(() => expect(api.createProject).toHaveBeenCalledWith('New project'))
-    expect(screen.getByText('New project')).toBeInTheDocument()
-    expect(screen.getByText('Pending: Create')).toBeInTheDocument()
+    expect(screen.getByText('New project', { selector: '.project-chip span' })).toBeInTheDocument()
+    expect(screen.queryByText(/Pending/)).toBeNull()
     vi.mocked(api.fetchProjects).mockResolvedValue({ projects: [{ project_id: 'new-server-id', name: 'Canonical project' }] } as never)
     answer({ project: { project_id: 'new-server-id', name: 'Canonical project' } })
-    await screen.findByText('Canonical project')
-    await waitFor(() => expect(screen.queryByText('Pending: Create')).toBeNull())
+    await screen.findByRole('button', { name: 'Canonical project' })
+    expect(screen.queryByText('New project', { selector: '.project-chip span' })).toBeNull()
+  })
+
+  it('removes the provisional project chip when creation is refused', async () => {
+    vi.spyOn(window, 'prompt').mockReturnValueOnce('Taken')
+    vi.mocked(api.createProject).mockRejectedValue(new ApiError({ kind: 'http', status: 400, path: '/x', message: 'Name taken' }))
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SessionListPanel /></QueryClientProvider>)
+    await screen.findByText('Alpha zebra')
+    await userEvent.click(screen.getByRole('button', { name: 'New project' }))
+    await waitFor(() => expect(toast).toHaveBeenCalledWith('Name taken', 4000, 'error'))
+    expect(screen.queryByText('Taken')).toBeNull()
   })
 })

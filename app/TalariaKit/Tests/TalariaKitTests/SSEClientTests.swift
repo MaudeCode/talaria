@@ -4,6 +4,17 @@ import XCTest
 
 @MainActor
 final class SSEClientTests: XCTestCase {
+    func testScheduledChatRefusalUsesTheExistingTerminalErrorWithoutResend() throws {
+        let data = try sharedContractFixture("native-cron-refusal")
+        let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let event = try XCTUnwrap(fixture["event"] as? [String: Any])
+        let payload = try XCTUnwrap(event["data"] as? [String: Any])
+        let message = try XCTUnwrap(payload["message"] as? String)
+        XCTAssertEqual(payload["retryable"] as? Bool, false)
+        let text = String(decoding: try JSONSerialization.data(withJSONObject: payload), as: UTF8.self)
+        XCTAssertEqual(SSEEventDecoder.decode(eventType: "apperror", data: text), .error(message, terminalState: "error"))
+    }
+
     func testWarningIsDeliveredAsANonterminalEvent() {
         let event = SSEEventDecoder.decode(
             eventType: "warning",
@@ -759,6 +770,14 @@ final class SSEClientTests: XCTestCase {
         XCTAssertEqual(SSEEventDecoder.decode(eventType: "notices", data: #"{"session_id":"s","notices":[]}"#), .notices(SessionNoticesEvent(sessionId: "s", notices: [])))
         // A frame without the list says nothing about the notices.
         XCTAssertEqual(SSEEventDecoder.decode(eventType: "notices", data: #"{"session_id":"s"}"#), .ignored)
+    }
+
+    func testSharedToolProgressIsNotDiscarded() throws {
+        let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: sharedContractFixture("tool-progress")) as? [String: [String: Any]])
+        let frame = try XCTUnwrap(fixture["running"])
+        let data = try JSONSerialization.data(withJSONObject: XCTUnwrap(frame["data"]))
+        let event = SSEEventDecoder.decode(eventType: "tool_progress", data: String(decoding: data, as: UTF8.self))
+        XCTAssertNotEqual(event, .ignored, "The App discarded the server's live MCP tool progress")
     }
 
     func testPromptReadingRunStatusIsNotDiscarded() throws {

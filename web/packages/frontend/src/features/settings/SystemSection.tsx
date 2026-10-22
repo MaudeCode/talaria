@@ -5,6 +5,7 @@ import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { useBootstrap } from '../../app/bootstrap'
+import { useSaveSettings } from '../../app/queries'
 import { Button } from '../../ui/Button'
 import { cn } from '../../ui/cn'
 import { Switch, FieldRow, TextInput, HelpTip } from '../../ui/Field'
@@ -20,6 +21,7 @@ import type { z } from 'zod'
 import type { UpdateApplySchema, UpdateTargetSchema, UpdateVersionSchema } from '../../contracts'
 import { useUpdateProgress } from '../notifications/UpdateNotificationCenter'
 import { McpSection } from './McpSection'
+import { useResourceEffects, useResourceMutation, withEffects } from '../sessions/useResourceMutation'
 import { markServerStopped } from '../notices/useRuntimeNotices'
 
 export function SystemSection() {
@@ -35,7 +37,9 @@ export function SystemSection() {
   const [currentPw, setCurrentPw] = useState('')
   const [confirmShutdown, setConfirmShutdown] = useState(false)
   const fail = (e: unknown) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
-  const setPassword = useMutation({ mutationFn: (body: Record<string, unknown>) => api.saveSettings(body), onSuccess: async () => { showToast(m.system_password_updated()); setPw(''); setCurrentPw(''); await loadBootstrap(); void qc.invalidateQueries() }, onError: fail })
+  // Credentials go through the settings owner too; their `_` keys are never shown before the server answers.
+  const saveSettings = useSaveSettings()
+  const setPassword = useMutation({ mutationFn: (body: Record<string, unknown>) => saveSettings.mutateAsync(body), onSuccess: async () => { showToast(m.system_password_updated()); setPw(''); setCurrentPw(''); await loadBootstrap(); void qc.invalidateQueries() }, onError: fail })
   const restart = useMutation({ mutationFn: api.restartAgent, onSuccess: () => { showToast(m.saved()); void qc.invalidateQueries({ queryKey: keys.health.agent }) }, onError: fail })
   const shutdown = useMutation({ mutationFn: api.shutdownServer, onSuccess: () => markServerStopped(qc), onError: fail })
   // The chosen channel is held locally until its save settles; the cache only catches up on success,
@@ -99,7 +103,8 @@ export function SystemSection() {
     onSuccess: () => { showToast(m.system_passkey_registered()); void qc.invalidateQueries({ queryKey: ['auth', 'passkeys'] }); void loadBootstrap() },
     onError: fail,
   })
-  const deletePasskey = useMutation({ mutationFn: (id: string) => api.passkeyDelete(id), onSuccess: () => { void qc.invalidateQueries({ queryKey: ['auth', 'passkeys'] }) }, onError: fail })
+  const effects = useResourceEffects()
+  const deletePasskey = useResourceMutation({ resource: (id: string) => `passkey:${id}`, effect: () => ({ remove: true }), queryKey: ['auth', 'passkeys'], mutationFn: (id) => api.passkeyDelete(id), onError: fail })
   if (settings.isPending) return <LoadingState />
   if (settings.isError) return <ErrorState error={settings.error} onRetry={() => { void settings.refetch() }} />
   const canManage = bootstrap.auth.can_manage_server
@@ -188,7 +193,7 @@ export function SystemSection() {
         <div>
           <h3 className="mb-1.5 text-sm font-medium text-text">{m.system_passkeys()}</h3>
           <ul className="text-sm">
-            {(passkeys.data?.credentials ?? []).map((k) => (
+            {withEffects(passkeys.data?.credentials ?? [], (k) => `passkey:${k.id}`, effects).map((k) => (
               <li key={k.id} className="flex items-center justify-between gap-2 py-1"><span>{k.label || k.id}</span><Button variant="ghost" className="text-error" onClick={() => deletePasskey.mutate(k.id)}>{m.delete()}</Button></li>
             ))}
           </ul>

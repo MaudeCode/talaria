@@ -7,6 +7,35 @@ import XCTest
 extension ChatViewModelSendTests {
     private static let queuedAttachment = #"{"state":"attached","reason":null,"can_submit":true,"can_interrupt":true,"can_attach":false,"revision":3,"execution_generation":2,"admissions":[{"admission_id":"queued-1","sequence":4,"status":"queued","outcome":null,"authority_epoch":1,"execution_generation":2,"text":"Then summarize","actions":["cancel","pause"]}]}"#
 
+    func testNativeReasoningPickerAndSlashCarrySessionScopeWithoutGlobalFallback() async throws {
+        let log = OwnerRequestLog()
+        let normal = try Self.ownerAttachmentJSON("normal")
+        let viewModel = try ownerViewModel(log, session: { Self.ownerSessionObject(attachment: normal) }) { path, request in
+            if path == "/api/reasoning", request.httpMethod == "GET" {
+                return apiTestJSONResponse(#"{"supports_session_scope":true}"#, for: request)
+            }
+            guard path == "/api/reasoning", request.httpMethod == "POST" else { return nil }
+            let body = try? apiTestJSONBody(from: request)
+            XCTAssertEqual(body?["session_id"] as? String, "session-abc")
+            if body?["session_id"] != nil {
+                return apiTestJSONResponse(#"{"error":"Reasoning changes are unavailable for this conversation","code":"reasoning_unsupported"}"#, statusCode: 409, for: request)
+            }
+            return apiTestJSONResponse(#"{"reasoning_effort":"high"}"#, for: request)
+        }
+        await viewModel.loadMessages()
+        XCTAssertTrue(viewModel.ownerAttachment?.isAttached == true)
+        let initialEffort = viewModel.selectedReasoningEffort
+        let changed = await viewModel.selectReasoningEffort("high")
+        XCTAssertFalse(changed)
+        XCTAssertEqual(viewModel.selectedReasoningEffort, initialEffort)
+        XCTAssertTrue(viewModel.composerConfigurationErrorMessage?.contains("unavailable for this conversation") == true)
+        _ = await viewModel.executeSlashCommand(try XCTUnwrap(SlashCommandCatalog.command(named: "reasoning")), args: "xhigh")
+        XCTAssertEqual(viewModel.selectedReasoningEffort, initialEffort)
+        XCTAssertTrue(viewModel.composerConfigurationErrorMessage?.contains("unavailable for this conversation") == true)
+        XCTAssertEqual(log.bodies["/api/reasoning"]?.count, 2, "One scoped request per action, without a profile retry")
+        XCTAssertNil(log.bodies["/api/chat/owner-action"])
+    }
+
     func testSharedOwnerFixturesDecodeTheServersCapabilities() throws {
         let decoder = APIClient.responseDecoder()
         func attachment(_ key: String) throws -> OwnerAttachment {
@@ -16,6 +45,9 @@ extension ChatViewModelSendTests {
         XCTAssertTrue(normal.isAttached)
         XCTAssertEqual([normal.canSubmit, normal.canInterrupt, normal.canAttach], [true, false, false])
         XCTAssertTrue(normal.admissions.isEmpty)
+        XCTAssertEqual(normal.revision, 2)
+        XCTAssertEqual(normal.executionGeneration, 1)
+        XCTAssertEqual(try JSONDecoder().decode(OwnerAttachment.self, from: JSONEncoder().encode(normal)), normal)
 
         let unknown = try attachment("unknown")
         XCTAssertFalse(unknown.canSubmit, "An input with an unknown outcome blocks new input")
@@ -28,6 +60,161 @@ extension ChatViewModelSendTests {
 
         let queued = try decoder.decode(OwnerAttachment.self, from: Data(Self.queuedAttachment.utf8))
         XCTAssertEqual(queued.admissions.first?.actions, [.cancel], "An action this build does not know is not offered")
+    }
+
+    func testOwnerPickersSendFencedMutationsAndApplyTheReturnedSession() async throws {
+        let log = OwnerRequestLog()
+        let normal = try Self.ownerAttachmentJSON("normal")
+        let viewModel = try ownerViewModel(log, session: { Self.ownerSessionObject(attachment: normal) }) { path, request in
+            guard path == "/api/chat/owner-action" else { return nil }
+            XCTAssertEqual(request.httpMethod, "POST")
+            let body = try! apiTestJSONBody(from: request)
+            let workspace = body["operation"] as? String == "workspace" ? "/server/workspace" : "/server/original"
+            return apiTestJSONResponse(#"{"ok":true,"session":{"session_id":"session-abc","read_only":true,"owner_attachment":\#(normal),"model":"server-model","model_provider":"server-provider","workspace":"\#(workspace)","workspace_name":"Server workspace"}}"#, for: request)
+        }
+        await viewModel.loadMessages()
+        let modelChanged = await viewModel.selectComposerModel(ModelCatalogOption(id: "picked-model", displayName: "Picked", providerID: "picked-provider"))
+        XCTAssertTrue(modelChanged)
+        XCTAssertEqual(viewModel.selectedModelID, "server-model")
+        XCTAssertEqual(viewModel.selectedModelProviderID, "server-provider")
+        let workspaceChanged = await viewModel.selectWorkspacePath("/picked/workspace")
+        XCTAssertTrue(workspaceChanged)
+        XCTAssertEqual(viewModel.selectedWorkspacePath, "/server/workspace")
+        XCTAssertEqual(viewModel.selectedWorkspaceName, "Server workspace")
+        let bodies = log.bodies["/api/chat/owner-action"] ?? []
+        XCTAssertEqual(bodies.count, 2, "Both pickers must go through the owner")
+        guard bodies.count == 2 else { return }
+        for body in bodies {
+            XCTAssertEqual(body["session_id"] as? String, "session-abc")
+            XCTAssertEqual(body["action"] as? String, "mutate")
+            XCTAssertEqual(body["expected_revision"] as? Int, 2)
+            XCTAssertEqual(body["execution_generation"] as? Int, 1)
+            XCTAssertNotNil(UUID(uuidString: body["request_id"] as? String ?? ""))
+        }
+        XCTAssertNotEqual(bodies[0]["request_id"] as? String, bodies[1]["request_id"] as? String)
+        XCTAssertEqual(bodies[0]["operation"] as? String, "model")
+        XCTAssertEqual(bodies[0]["payload"] as? [String: String], ["model": "picked-model", "provider": "picked-provider"])
+        XCTAssertEqual(bodies[1]["operation"] as? String, "workspace")
+        XCTAssertEqual(bodies[1]["payload"] as? [String: String], ["cwd": "/picked/workspace"])
+        XCTAssertNil(log.bodies["/api/session/update"], "Owner chats never use Talaria's direct writer")
+    }
+
+    func testOwnerPickersDuringARunLeaveTheDecisionToTheOwner() async throws {
+        let log = OwnerRequestLog()
+        let normal = try Self.ownerAttachmentJSON("normal")
+        let model = try ownerViewModel(log, session: { Self.ownerSessionObject(attachment: normal, activeStreamID: "owner-stream") }) { path, request in
+            guard path == "/api/chat/owner-action" else { return nil }
+            return apiTestJSONResponse(#"{"session":{"session_id":"session-abc","owner_attachment":\#(normal),"model":"server-model","workspace":"/server/workspace","active_stream_id":"owner-stream","is_streaming":true}}"#, for: request)
+        }
+        await model.loadMessages()
+        XCTAssertEqual(model.activeStreamID, "owner-stream")
+        let pickedModel = await model.selectComposerModel(ModelCatalogOption(id: "picked", displayName: "Picked", providerID: nil))
+        let pickedWorkspace = await model.selectWorkspacePath("/picked/workspace")
+        XCTAssertTrue(pickedModel)
+        XCTAssertTrue(pickedWorkspace)
+        XCTAssertEqual(log.bodies["/api/chat/owner-action"]?.count, 2)
+        XCTAssertTrue((log.bodies["/api/chat/owner-action"]?.first?["payload"] as? [String: Any])?["provider"] is NSNull)
+        XCTAssertNil(log.bodies["/api/session/update"])
+    }
+
+    func testOwnerPickerStaleRevisionRefusalReloadsAndShowsItsError() async throws {
+        let log = OwnerRequestLog()
+        let normal = try Self.ownerAttachmentJSON("normal")
+        let stopped = try Self.ownerAttachmentJSON("served")
+        let viewModel = try ownerViewModel(log, session: { Self.ownerSessionObject(attachment: log.sessionReads <= 1 ? normal : stopped) }) { path, request in
+            guard path == "/api/chat/owner-action" else { return nil }
+            return (HTTPURLResponse(url: request.url!, statusCode: 409, httpVersion: nil, headerFields: nil)!, Data(#"{"error":"stale revision"}"#.utf8))
+        }
+        await viewModel.loadMessages()
+        let changed = await viewModel.selectWorkspacePath("/picked/workspace")
+        XCTAssertFalse(changed)
+        XCTAssertEqual(log.sessionReads, 2)
+        XCTAssertEqual(viewModel.ownerAttachment?.state, "incompatible")
+        XCTAssertTrue(viewModel.composerConfigurationErrorMessage?.contains("stale revision") == true)
+        XCTAssertNil(log.bodies["/api/session/update"])
+    }
+
+    func testOwnerPickersRequireAnAttachedOwnerAndBothFences() async throws {
+        for attachment in [try Self.ownerAttachmentJSON("served"), #"{"state":"attached","can_submit":true,"revision":2}"#] {
+            let log = OwnerRequestLog()
+            let model = try ownerViewModel(log, session: { Self.ownerSessionObject(attachment: attachment) })
+            await model.loadMessages()
+            let changed = await model.selectWorkspacePath("/picked/workspace")
+            XCTAssertFalse(changed)
+            XCTAssertNil(log.bodies["/api/chat/owner-action"])
+            XCTAssertNil(log.bodies["/api/session/update"])
+        }
+    }
+
+    func testOwnerMutationRequiresTheMatchingAuthoritativeSession() async throws {
+        let normal = try Self.ownerAttachmentJSON("normal")
+        for body in ["{}", #"{"session":{"session_id":"session-abc"}}"#, #"{"session":{"session_id":"other","model":"foreign","workspace":"/foreign"}}"#] {
+            let model = try ownerViewModel(OwnerRequestLog(), session: { Self.ownerSessionObject(attachment: normal) }) { path, request in
+                path == "/api/chat/owner-action" ? apiTestJSONResponse(body, for: request) : nil
+            }
+            await model.loadMessages()
+            let changed = await model.selectWorkspacePath("/picked/workspace")
+            XCTAssertFalse(changed)
+            XCTAssertNotEqual(model.selectedWorkspacePath, "/foreign")
+            XCTAssertNotEqual(model.selectedModelID, "foreign")
+        }
+    }
+
+    func testOwnerModelConfirmationUsesTheOwnersTokenAndRefreshedFences() async throws {
+        let log = OwnerRequestLog()
+        let normal = try Self.ownerAttachmentJSON("normal")
+        var held = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(normal.utf8)) as? [String: Any])
+        held["revision"] = 3
+        held["model_change"] = ["state": "confirmation_required", "confirm": "owner-token", "model": "picked", "provider": "custom", "message": "Confirm the owner model change"]
+        let heldJSON = String(decoding: try JSONSerialization.data(withJSONObject: held), as: UTF8.self)
+        let model = try ownerViewModel(log, session: { Self.ownerSessionObject(attachment: normal) }) { path, request in
+            guard path == "/api/chat/owner-action" else { return nil }
+            let body = try! apiTestJSONBody(from: request)
+            let confirmed = (body["payload"] as? [String: String])?["confirm"] == "owner-token"
+            let attachment = confirmed ? normal : heldJSON
+            let applied = confirmed ? "picked" : "original"
+            return apiTestJSONResponse(#"{"session":{"session_id":"session-abc","owner_attachment":\#(attachment),"model":"\#(applied)","model_provider":"custom"}}"#, for: request)
+        }
+        await model.loadMessages()
+        let changed = await model.selectComposerModel(ModelCatalogOption(id: "picked", displayName: "Picked", providerID: "custom"))
+        XCTAssertFalse(changed)
+        XCTAssertEqual(model.selectedModelID, "original")
+        XCTAssertEqual(model.modelSwitchConfirmation?.message, "Confirm the owner model change")
+        let confirmed = await model.confirmModelSwitch(try XCTUnwrap(model.modelSwitchConfirmation))
+        XCTAssertTrue(confirmed)
+        XCTAssertEqual(model.selectedModelID, "picked")
+        let bodies = try XCTUnwrap(log.bodies["/api/chat/owner-action"])
+        XCTAssertEqual(bodies.count, 2)
+        XCTAssertEqual(bodies.last?["expected_revision"] as? Int, 3)
+        XCTAssertEqual((bodies.last?["payload"] as? [String: String])?["confirm"], "owner-token")
+        XCTAssertNil(log.bodies["/api/session/update"])
+    }
+
+    func testOwnerModelDecisionsConvergeFromSnapshotsWithoutRepeatingCancelledConfirmation() async throws {
+        let stream = SpySSEStreamingClient()
+        let normal = try Self.ownerAttachmentJSON("normal")
+        let model = try ownerViewModel(OwnerRequestLog(), streamClient: stream, session: { Self.ownerSessionObject(attachment: normal, activeStreamID: "owner-stream") })
+        await model.loadMessages()
+        await model.reconnectStreamIfNeeded()
+        func snapshot(_ change: [String: Any]?) throws {
+            var attachment = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(normal.utf8)) as? [String: Any])
+            attachment["model_change"] = change
+            let json = String(decoding: try JSONSerialization.data(withJSONObject: attachment), as: UTF8.self)
+            stream.emit(SSEEventDecoder.decode(eventType: "session_snapshot", data: #"{"session":\#(Self.ownerSessionObject(attachment: json, activeStreamID: "owner-stream"))}"#))
+        }
+        try snapshot(["state": "deferred"])
+        XCTAssertNotNil(model.ownerModelChangeMessage)
+        let confirmation: [String: Any] = ["state": "confirmation_required", "confirm": "later-token", "model": "picked", "message": "Review the later decision"]
+        try snapshot(confirmation)
+        XCTAssertNil(model.ownerModelChangeMessage)
+        XCTAssertEqual(model.modelSwitchConfirmation?.message, "Review the later decision")
+        model.cancelModelSwitch()
+        try snapshot(confirmation)
+        XCTAssertNil(model.modelSwitchConfirmation, "A repeated snapshot cannot reopen a cancelled prompt")
+        try snapshot(["state": "refused", "message": "The owner refused this model"])
+        XCTAssertEqual(model.ownerModelChangeMessage, "The owner refused this model")
+        try snapshot(["state": "applied"])
+        XCTAssertNil(model.ownerModelChangeMessage)
     }
 
     func testReadOnlyOwnerStatesKeepTheComposerReadOnlyWithTheServersReason() async throws {

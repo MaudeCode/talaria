@@ -28,6 +28,22 @@ describe('PendingWritesPanel (TAL-819)', () => {
     expect(api.reviewPendingWrites).toHaveBeenLastCalledWith('reject', 'skills', [{ id: item.id, revision: 'rev1' }])
   })
 
+  it('removes an answered write at once and brings it back when the server keeps it (TAL-1179)', async () => {
+    const other = { ...item, id: 'efgh5678', summary: "update 'other-skill'" }
+    let answer!: (value: Awaited<ReturnType<typeof api.reviewPendingWrites>>) => void
+    vi.mocked(api.fetchPendingWrites).mockResolvedValue({ kind: 'skills', visible: true, enabled: true, items: [item, other] })
+    vi.mocked(api.reviewPendingWrites).mockReturnValueOnce(new Promise((resolve) => { answer = resolve })).mockReturnValue(new Promise(() => undefined))
+    view()
+    await userEvent.click((await screen.findAllByRole('button', { name: 'Approve' }))[0]!)
+    expect(screen.queryByText("create 'demo-skill'")).toBeNull()
+    // Another write stays answerable while the first is held.
+    await userEvent.click(screen.getByRole('button', { name: 'Reject' }))
+    expect(api.reviewPendingWrites).toHaveBeenLastCalledWith('reject', 'skills', [{ id: other.id, revision: 'rev1' }])
+    expect(screen.queryByText("update 'other-skill'")).toBeNull()
+    answer({ results: [{ id: item.id, done: false, message: 'Approve failed: stale' }] })
+    expect(await screen.findByText("create 'demo-skill'")).toBeInTheDocument()
+  })
+
   it('offers only Reject for a write the server marks unapprovable', async () => {
     vi.mocked(api.fetchPendingWrites).mockResolvedValue({ kind: 'skills', visible: true, enabled: true, items: [{ ...item, approvable: false, revision: '', diff: '(approve would fail: stale)' }] })
     view()

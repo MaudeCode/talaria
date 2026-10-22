@@ -140,7 +140,7 @@ export function useRuntimeNotices({ live, onRetry, compressingSince, agentNotice
     if (warning) list.push({ kind: 'provider_failure', tone: 'warning', title: warning === 'owner_replay_gap' ? m.owner_replay_gap() : warning, dismissible: true })
     if (error) {
       const runtimeTitle = chatConditionText(error.condition ?? error.type, error.agent_runtime_reason)
-      list.push({ kind: 'thread_error', tone: 'error', title: runtimeTitle ?? m.live_error(), detail: runtimeTitle ? undefined : error.message, action: onRetry ? { label: m.retry(), run: onRetry } : undefined, dismissible: true })
+      list.push({ kind: 'thread_error', tone: 'error', title: runtimeTitle ?? m.live_error(), detail: runtimeTitle ? undefined : error.message, action: onRetry && error.retryable !== false ? { label: m.retry(), run: onRetry } : undefined, dismissible: true })
     }
     for (const n of agentNotices) list.push({ id: `runtime:agent_notice:${n.key}`, kind: 'agent_notice', tone: NOTICE_TONE[n.level], title: n.text, dismissible: true })
     if (compressionSince !== null) list.push({ kind: 'compressing', tone: 'info', title: m.live_compressing(), status: <RunElapsed since={compressionSince} />, dismissible: false, oneLine: true })

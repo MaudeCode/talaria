@@ -704,7 +704,8 @@ export const CHAT_METHODS = {
   },
   /** TAL-255: second phase of `chat.compress`; `finalized: false` when the token is unknown or already expired. */
   'chat.compress_finalize': { params: z.object({ commit_token: z.string().min(1), committed: z.boolean() }), result: z.object({ finalized: z.boolean() }) },
-  'chat.finalize_session': { params: ProfileHomeParams.extend({ session_id: z.string().min(1), reason: z.enum(['clear', 'delete']) }), result: z.object({ messages: z.array(z.string()) }) },
+  /** Archive only emits on_session_delete for the committed local transition; it never closes the Agent session. */
+  'chat.finalize_session': { params: ProfileHomeParams.extend({ session_id: z.string().min(1), reason: z.enum(['clear', 'delete', 'archive']), lineage: z.array(z.string().min(1)).max(10_000).optional() }), result: z.object({ messages: z.array(z.string()) }) },
   'chat.evict_agent': { params: z.object({ session_id: z.string().min(1), clear_session: z.boolean().optional() }), result: z.object({ evicted: z.boolean() }) },
   'chat.commit_memory': { params: ProfileHomeParams.extend({ session_id: z.string().min(1) }), result: z.object({ committed: z.boolean() }) },
   /**
@@ -740,7 +741,9 @@ const GatewayActionStream = z.discriminatedUnion('event', [z.object({ event: z.l
 export const GATEWAY_ACTIONS = ['start', 'stop', 'restart'] as const
 export const GATEWAY_METHODS = {
   'gateway.session': { params: GatewaySessionParamsSchema, result: GatewaySessionResultSchema, stream: z.discriminatedUnion('event', [
-    z.object({ event: z.enum(['snapshot', 'event']), data: Loose }),
+    z.object({ event: z.literal('snapshot'), data: GatewaySessionResultSchema.extend({ replaying: z.boolean().optional() }) }),
+    z.object({ event: z.literal('event'), data: Loose }),
+    z.object({ event: z.literal('replay_complete'), data: z.object({}) }),
     z.object({ event: z.literal('clarify_batch'), data: GatewayClarifyBatchSchema }),
     z.object({ event: z.literal('restarting'), data: z.object({ restarting: z.literal(true) }) }),
   ]) },

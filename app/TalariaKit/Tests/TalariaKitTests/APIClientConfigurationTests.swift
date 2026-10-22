@@ -343,6 +343,7 @@ final class APIClientConfigurationTests: APIClientTestCase {
             let data = try XCTUnwrap(apiTestBodyData(from: request))
             let body = try JSONSerialization.jsonObject(with: data) as? [String: Any]
             XCTAssertEqual(body?["effort"] as? String, "xhigh")
+            XCTAssertNil(body?["session_id"], "Explicit profile settings remain unscoped")
 
             return apiTestJSONResponse("""
             {
@@ -352,10 +353,65 @@ final class APIClientConfigurationTests: APIClientTestCase {
             """, for: request)
         }
 
-        let response = try await client.saveReasoningEffort("xhigh")
+        let response = try await client.saveReasoningEffort("xhigh", sessionID: nil)
 
         XCTAssertEqual(response.ok, true)
         XCTAssertEqual(response.effectiveEffort, "xhigh")
+    }
+
+    func testChatReasoningRefusesServersWithoutScopeSupportBeforeAnyWrite() async throws {
+        for response in [#"{"reasoning_effort":"medium"}"#, #"{"supports_session_scope":false}"#] {
+            for effort in ["high", ""] {
+                var writes = 0
+                let client = makeClient { request in
+                    if request.httpMethod == "GET" { return apiTestJSONResponse(response, for: request) }
+                    writes += 1
+                    return apiTestJSONResponse(#"{"reasoning_effort":"high"}"#, for: request)
+                }
+                do {
+                    _ = try await client.saveReasoningEffort(effort, sessionID: "native-reasoning")
+                    XCTFail("A server without session scope must never receive a chat effort write")
+                } catch {
+                    XCTAssertTrue(error.localizedDescription.contains("Update the server"))
+                }
+                XCTAssertEqual(writes, 0, "Old servers ignore session_id and write profile defaults")
+            }
+        }
+    }
+
+    func testChatReasoningUsesSharedScopeCapabilityForEffortAndReset() async throws {
+        let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: sharedContractFixture("reasoning-scope")) as? [String: Any])
+        let status = String(decoding: try JSONSerialization.data(withJSONObject: XCTUnwrap(fixture["status"])), as: UTF8.self)
+        for effort in ["high", ""] {
+            var methods: [String] = []
+            let client = makeClient { request in
+                XCTAssertEqual(request.url?.path, "/api/reasoning")
+                methods.append(request.httpMethod ?? "")
+                if request.httpMethod == "GET" { return apiTestJSONResponse(status, for: request) }
+                let body = try apiTestJSONBody(from: request)
+                XCTAssertEqual(body["session_id"] as? String, "scoped-chat")
+                XCTAssertEqual(body["effort"] as? String, effort)
+                return apiTestJSONResponse(#"{"reasoning_effort":"medium"}"#, for: request)
+            }
+            _ = try await client.saveReasoningEffort(effort, sessionID: "scoped-chat")
+            XCTAssertEqual(methods, ["GET", "POST"])
+        }
+    }
+
+    func testChatReasoningDoesNotWriteWhenScopeCapabilityReadFails() async throws {
+        var writes = 0
+        let client = makeClient { request in
+            if request.httpMethod == "GET" { return apiTestJSONResponse("{}", statusCode: 503, for: request) }
+            writes += 1
+            return apiTestJSONResponse(#"{"reasoning_effort":"high"}"#, for: request)
+        }
+        do {
+            _ = try await client.saveReasoningEffort("high", sessionID: "scoped-chat")
+            XCTFail("A failed capability read must prevent the write")
+        } catch {
+            guard case APIError.http(statusCode: 503, _) = error else { return XCTFail("Unexpected error: \(error)") }
+        }
+        XCTAssertEqual(writes, 0)
     }
 
     func testSaveReasoningDisplayBuildsExpectedBodyAndDecodesResponse() async throws {

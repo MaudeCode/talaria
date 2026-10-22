@@ -30,15 +30,20 @@ const LEAVE_MS = 220
  */
 function fitChips(el: HTMLDivElement) {
   const fit = () => {
+    const chips = [...el.children] as HTMLElement[]
+    // A lone ticking chip and a set leaving together always use separate capsules; neither needs a layout read.
+    const staying = chips.filter((chip) => !chip.classList.contains('is-leaving')).length
+    if (staying <= 1) {
+      el.classList.remove('is-grouped')
+      el.classList.add('is-stacked')
+      return
+    }
     // Unclassed, the chips sit unshrunk in one row inside the pill's border, so their widths add up to what it needs.
     // Layout widths, not the entrance animation's scaled-down boxes; the room is the track less that border.
     el.classList.remove('is-grouped', 'is-stacked')
-    const chips = [...el.children] as HTMLElement[]
     const width = chips.reduce((sum, chip) => sum + chip.offsetWidth, 0)
     const room = (el.parentElement?.clientWidth ?? 0) - (el.offsetWidth - el.clientWidth)
-    // A leaving chip keeps its place but not the pill, so a set that fades out together fades as separate capsules.
-    const staying = chips.filter((chip) => !chip.classList.contains('is-leaving')).length
-    el.classList.add(staying > 1 && width <= room ? 'is-grouped' : 'is-stacked')
+    el.classList.add(width <= room ? 'is-grouped' : 'is-stacked')
   }
   // Ticking text (elapsed, tok/s) refits at most once a frame, before it paints. A resize of the track (the window or
   // the chat-width cap) refits a frame later: done inside the observer, the row's new height would come back to it.

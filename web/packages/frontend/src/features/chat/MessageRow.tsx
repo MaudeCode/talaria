@@ -197,13 +197,13 @@ export const DeliveryRow = memo(function DeliveryRow({ row }: { row: VisibleMess
 })
 
 /** `continuation`: the live turn that continues this running scene (TAL-374). */
-export const AssistantMessageRow = memo(function AssistantMessageRow({ row, name, mode, actions, tts, isLast, sessionId, scope, continuation }: { row: VisibleMessage; name: string; mode: ActivityMode; actions: RowActions; tts: boolean; isLast: boolean; sessionId?: string | undefined; scope?: string | undefined; continuation?: LiveTurn | undefined }) {
+export const AssistantMessageRow = memo(function AssistantMessageRow({ row, name, mode, actions, tts, isLast, retainHeight = isLast, sessionId, scope, continuation }: { row: VisibleMessage; name: string; mode: ActivityMode; actions: RowActions; tts: boolean; isLast: boolean; retainHeight?: boolean; sessionId?: string | undefined; scope?: string | undefined; continuation?: LiveTurn | undefined }) {
   const activity = continuation ? continuedActivity(persistedActivity(row), continuation) : persistedActivity(row)
   const content = activityText(activity)
   const run = row.message as { _turnDuration?: number | null; _usedModel?: string | null }
   const meta = [typeof run._turnDuration === 'number' && run._turnDuration >= 0.5 ? `${run._turnDuration < 10 ? run._turnDuration.toFixed(1) : Math.round(run._turnDuration)}s` : null, run._usedModel || null].filter(Boolean).join(' · ')
   return (
-    <div className="msg-row assistant-turn" data-role="assistant" data-msg-idx={row.index} data-message-key={row.key} data-latest={isLast ? '1' : undefined}>
+    <div className="msg-row assistant-turn" data-role="assistant" data-msg-idx={row.index} data-message-key={row.key} data-latest={retainHeight ? '1' : undefined}>
       <div className="msg-role assistant"><span className="msg-role-name">{name}</span>{row.message.badge && <span className="msg-badge">{row.message.badge}</span>}</div>
       <div className="assistant-turn-blocks">
         <TurnActivityView activity={activity} mode={mode} sessionId={sessionId} scope={scope} />

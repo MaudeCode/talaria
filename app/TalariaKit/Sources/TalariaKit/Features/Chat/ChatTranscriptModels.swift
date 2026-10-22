@@ -137,6 +137,7 @@ public struct AssistantTurnLayout: Equatable {
         merged.preview = live.preview ?? call.preview
         merged.resultView = live.resultView ?? call.resultView
         merged.editDiff = live.editDiff ?? call.editDiff
+        merged.progress = live.progress
         return merged
     }
 }
@@ -433,6 +434,15 @@ public struct AssistantActivityTimeline: Equatable {
         return false
     }
 
+    mutating func clearToolProgress() {
+        for rowIndex in rows.indices {
+            guard case .tools(var calls) = rows[rowIndex].content,
+                  calls.contains(where: { $0.progress != nil }) else { continue }
+            for index in calls.indices { calls[index].progress = nil }
+            rows[rowIndex].content = .tools(calls)
+        }
+    }
+
     static func persisted(
         message: ChatMessage,
         reasoningGroups: [ReasoningGroup],
@@ -701,6 +711,7 @@ public struct AssistantActivityTimeline: Equatable {
             args: Self.object(object["args"]),
             kind: ToolDisplayKind(serverValue: Self.string(object["kind"])),
             target: Self.string(object["target"]),
+            progress: ToolProgress(object["progress"]),
             resultView: ToolResultView(object["result_view"]),
             editDiff: ToolEditDiff(object["edit_diff"]),
             duration: Self.number(object["duration"]),
@@ -750,6 +761,7 @@ public struct AssistantActivityTimeline: Equatable {
             args: args,
             kind: ToolDisplayKind(serverValue: Self.string(object["kind"])),
             target: Self.string(object["target"]),
+            progress: ToolProgress(object["progress"]),
             resultView: ToolResultView(object["result_view"]),
             editDiff: ToolEditDiff(object["edit_diff"]),
             duration: Self.number(object["duration"]),
@@ -925,6 +937,7 @@ public struct DeepTruncateConfirmation: Equatable, Identifiable {
 public struct ModelSwitchConfirmation: Equatable, Identifiable {
     public let id = UUID()
     public let warnings: [ModelConfirmationRequired.Warning]
+    public var message: String? = nil
     let sessionID: String
     let workspace: String?
     let model: String

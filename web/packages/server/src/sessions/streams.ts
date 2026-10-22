@@ -58,8 +58,11 @@ export class StreamChannel {
   }
 
   put(item: StreamItem): void {
-    const data = item[1] as { id?: string } | null
-    if (item[0] === 'tool_progress' && data?.id) this.toolProgress.set(data.id, item)
+    const data = item[1] as { id?: string; progress?: unknown } | null
+    if (item[0] === 'tool_progress' && data?.id) {
+      if (data.progress === null) this.toolProgress.delete(data.id)
+      else this.toolProgress.set(data.id, item)
+    }
     else if (item[0] === 'tool_complete' && data?.id) this.toolProgress.delete(data.id)
     else if (['done', 'cancel', 'apperror', 'error', 'stream_end'].includes(item[0])) this.toolProgress.clear()
     if (item[2]) this.lastEventId = item[2]

@@ -3,7 +3,7 @@ import type { StartupTiming } from '../startup-timing.js'
 import { createHash, randomUUID } from 'node:crypto'
 import { GatewayClarifyBatchSchema, GatewaySessionResultSchema, type ClarifyAnswers, type ClarifyStep, type ExecutionModes, type GatewayClarifyBatch, type GatewayCreateParams, type GatewaySessionParams, type GatewaySessionResult, type GatewaySnapshot, type OwnerAttachment, type ModelChange } from '@maudecode/talaria-web-contracts'
 import type { SidecarLike } from '../sidecar/client.js'
-import { redactNestedMessageContainers, publicToolFrame } from '../redact.js'
+import { redactNestedMessageContainers, publicToolFrame, redactString } from '../redact.js'
 import { str } from '../util.js'
 import { PendingPrompts } from './pending.js'
 import { clarifyReply } from './pending.js'
@@ -16,6 +16,7 @@ import { messageWindowForDisplay, messagesForLimitedPayload } from './window.js'
 import { pendingUserRow } from './merge.js'
 import { ReasoningTitleTracker, reasoningEventPayload } from './reasoning-titles.js'
 import { CANONICAL_READ_ONLY_REASON, WEB_DIAGNOSTIC_REQUEST_PREFIX } from './state-db.js'
+import { toolProgress } from './tool-display.js'
 
 type Row = Record<string, unknown>
 interface Target { sid: string; profile: string; home: string; key: string }
@@ -45,6 +46,7 @@ function retryText(admission: GatewaySnapshot['pending'][number]): string | null
 
 /** Steering belongs to the current turn; it must never replace that turn's transcript anchor. */
 const runningAdmission = (snapshot: GatewaySnapshot) => snapshot.pending.find((p) => p.status === 'started' && !p.steering)
+const sameExecution = (a: GatewaySnapshot, b: GatewaySnapshot): boolean => a.authority_epoch === b.authority_epoch && a.replay_epoch === b.replay_epoch && a.execution_generation === b.execution_generation
 
 /** Native counters and the owner's compact turn-end usage share one existing Web usage shape. */
 function ownerUsage(data: Row): Row {
@@ -193,6 +195,7 @@ export class GatewaySessions {
     const snapshot = result.snapshot
     const fields: Row = { ...base, owner_attachment: this.attachment({ ...result, model_change: this.currentModelChange(target, snapshot) }), composer_state_key: ownerStateId(target.key), active_stream_id: stream, is_streaming: Boolean(stream) }
     if (snapshot) {
+      const observed = this.watches.get(target.key)?.snapshot
       const nativeRows = [...snapshot.messages]
       const active = stream ? runningAdmission(snapshot) : null
       let start = active ? nativeRows.findIndex((m) => m.role === 'user' && m.message_id === active.admission_id) : -1
@@ -211,6 +214,8 @@ export class GatewaySessions {
         model_provider: provider, model_option_id: this.deps.service.deps.modelOptionFor?.(model, provider) ?? null,
         workspace: str(snapshot.info.cwd) || base.workspace, active_stream_id: stream, is_streaming: Boolean(stream), agent_running: snapshot.running,
         transcript_seq: stream ? { stream_id: stream, seq: 0 } : null,
+        tool_calls: withMessages && before === null && stream && snapshot.running && observed && sameExecution(snapshot, observed)
+          ? this.deps.service.deps.runtime.liveToolProgress?.(stream) ?? [] : [],
       })
       fields.workspace_name = (await this.deps.service.workspaceNames([fields]))(fields)
     }
@@ -255,7 +260,10 @@ export class GatewaySessions {
     }
     if (!result.receipt || !('admission_id' in result.receipt)) throw new HttpFailure(409, 'The owner did not confirm this admission. Reconcile it before resending.', { owner_attachment: this.attachment(result), outcome_unknown: result.state === 'unavailable' })
     const snapshot = result.snapshot
-    const watch = snapshot && (snapshot.running || snapshot.pending.some((p) => p.status === 'queued' || p.status === 'started')) ? this.watches.get(target.key) ?? this.watch(target, base, snapshot) : null
+    // A fast refusal can settle before submit returns; its retained completion still belongs to this input.
+    const refused = result.receipt.status === 'terminal' && result.receipt.outcome === 'failed'
+    const watch = snapshot && (refused || snapshot.running || snapshot.pending.some((p) => p.status === 'queued' || p.status === 'started'))
+      ? this.watches.get(target.key) ?? this.watch(target, base, snapshot, refused ? str(result.receipt.admission_id) : undefined) : null
     this.deps.events.publish('owner_admission', { profile: target.profile, sessionId: sid })
     return { session_id: sid, ...(watch ? { stream_id: watch.stream, turn_id: watch.stream } : {}), owner_attachment: this.attachment(result), admission_id: result.receipt.admission_id, session: await this.view(base, result, watch?.stream ?? null, target) }
   }
@@ -365,7 +373,7 @@ export class GatewaySessions {
     return true
   }
 
-  private watch(target: Target, base: Row, snapshot: GatewaySnapshot): Watch {
+  private watch(target: Target, base: Row, snapshot: GatewaySnapshot, admissionId?: string): Watch {
     const watch: Watch = { stream: `${ownerStreamPrefix(target.home)}${randomUUID()}`, controller: new AbortController(), snapshot, batch: null, restarting: false }
     this.watches.set(target.key, watch)
     const registry = this.deps.registry
@@ -375,7 +383,7 @@ export class GatewaySessions {
     let terminal = false
     let streamError: unknown = null
     let closeWriter: RunJournalWriter | null = null
-    let activeAdmission = runningAdmission(snapshot)?.admission_id ?? snapshot.pending.find((p) => !p.steering)?.admission_id
+    let activeAdmission = admissionId ?? runningAdmission(snapshot)?.admission_id ?? snapshot.pending.find((p) => !p.steering)?.admission_id
     const enqueue = (work: () => Promise<void>) => {
       chain = chain.then(async () => { if (!terminal && !streamError) await work() })
         .catch((error: unknown) => { streamError = error; watch.controller.abort() })
@@ -387,31 +395,45 @@ export class GatewaySessions {
       const writer = await this.deps.journal.writer(journalSession, watch.stream)
       closeWriter = writer
       const showReasoning = await this.deps.showReasoning(target.home).catch(() => false)
+      let completion: { admission: string; message: string; type: 'cron_session_read_only'; code: 'cron_session_read_only'; retryable: false } | null = null
+      let replaying = false
       let usage: Row = {}
       let reasoning = ''
       let titles = new ReasoningTitleTracker()
-      const resetProjection = () => { reasoning = ''; usage = {}; titles = new ReasoningTitleTracker() }
+      const calls = registry.liveToolCalls.get(watch.stream)!
       const put = async (event: string, data: Row) => {
         const safe = event === 'tool' || event === 'tool_complete' ? publicToolFrame(data, this.deps.redactEnabled()) : redactNestedMessageContainers(data, this.deps.redactEnabled()) as Row
+        // Progress is ephemeral, just like direct turns; a reload gets the channel's latest value after journal replay.
+        if (event === 'tool_progress') { channel.put([event, safe, null, this.deps.redactEnabled()]); return }
         const record = await writer.appendSseEvent(event, safe)
         channel.put([event, safe, record.event_id])
       }
+      const clearTools = async () => {
+        for (const call of calls) if (call.progress) await put('tool_progress', { id: call.tid, progress: null })
+        calls.length = 0
+      }
+      const resetProjection = async () => { await clearTools(); reasoning = ''; usage = {}; completion = null; titles = new ReasoningTitleTracker() }
       const meter = async (data: Row) => {
         usage = { ...usage, ...ownerUsage(data) }
         if (['input_tokens', 'output_tokens', 'cache_read_tokens', 'cache_write_tokens'].every((key) => typeof usage[key] === 'number')) await put('metering', { session_id: target.sid, usage: { ...usage, estimated_cost: usage.estimated_cost ?? null }, tps: usage.tps ?? null, tps_available: usage.tps !== undefined, estimated: false })
       }
       const finish = async () => {
         // A model pick resolves at the owner's next claim boundary, after the turn becomes idle.
-        if (terminal || this.modelMutations.has(target.key) || this.currentModelChange(target, watch.snapshot)?.state === 'deferred') return
+        if (terminal || replaying || this.modelMutations.has(target.key) || this.currentModelChange(target, watch.snapshot)?.state === 'deferred') return
         terminal = true
+        await clearTools()
         const current = await this.call(target, { action: 'snapshot' })
         const rawReceipt = activeAdmission ? (await this.call(target, { action: 'receipt', admission_id: activeAdmission })).receipt : null
         const receipt = rawReceipt && 'admission_id' in rawReceipt ? rawReceipt : null
         const cancelled = receipt?.outcome === 'interrupted' || receipt?.outcome === 'cancelled'
         const failed = current.state !== 'attached' || receipt?.status !== 'terminal' || receipt.outcome !== 'completed' && !cancelled
+        const refusal = current.state === 'attached' && current.snapshot && sameExecution(current.snapshot, watch.snapshot)
+          && receipt?.status === 'terminal' && receipt.outcome === 'failed' && completion && completion.admission === activeAdmission
+          && receipt.authority_epoch === watch.snapshot.authority_epoch && receipt.execution_generation === watch.snapshot.execution_generation
+          ? { message: completion.message, type: completion.type, code: completion.code, retryable: completion.retryable } : null
         await put(cancelled ? 'cancel' : failed ? 'apperror' : 'done', { session_id: target.sid,
           terminal_state: cancelled ? 'cancelled' : failed ? 'error' : 'completed',
-          ...(failed ? { message: 'The owning Agent could not complete this turn', type: current.reason ?? 'owner_turn_failed' } : {}),
+          ...(failed ? refusal ?? { message: 'The owning Agent could not complete this turn', type: current.reason ?? 'owner_turn_failed' } : {}),
           ...(Object.keys(usage).length ? { usage } : {}),
           session: { ...await this.view(base, current, null, target), ...usage } })
         await put('stream_end', { session_id: target.sid })
@@ -441,6 +463,11 @@ export class GatewaySessions {
         signal: watch.controller.signal, timeoutMs: 0,
         onStream: (frame) => {
           enqueue(async () => {
+            if (frame.event === 'replay_complete') {
+              replaying = false
+              if (!watch.snapshot.running && !watch.snapshot.pending.some((p) => p.status === 'queued' || p.status === 'started')) await finish()
+              return
+            }
             if (frame.event === 'restarting') {
               // The owner entered a restart's after-turn wait after this watch attached: clients stop sending.
               watch.restarting = true
@@ -455,8 +482,9 @@ export class GatewaySessions {
             }
             if (frame.event === 'snapshot') {
               const result = GatewaySessionResultSchema.parse(frame.data)
+              replaying = (frame.data as Row).replaying === true
               if (!result.snapshot) return
-              if (result.replay_gap || result.snapshot.execution_generation > watch.snapshot.execution_generation) resetProjection()
+              if (result.replay_gap || !sameExecution(result.snapshot, watch.snapshot)) await resetProjection()
               await put('session_snapshot', { session: await this.view(base, result, watch.stream, target), replay_gap: result.replay_gap === true })
               await prompts(result.snapshot)
               if (!result.snapshot.running && !result.snapshot.pending.some((p) => p.status === 'queued' || p.status === 'started')) await finish()
@@ -490,7 +518,7 @@ export class GatewaySessions {
               if (data.authority_epoch !== watch.snapshot.authority_epoch) return
               if (Number(data.execution_generation) < watch.snapshot.execution_generation) return
               const firstClaim = !ran && data.running === true
-              if (Number(data.execution_generation) > watch.snapshot.execution_generation) resetProjection()
+              if (Number(data.execution_generation) > watch.snapshot.execution_generation) await resetProjection()
               watch.snapshot = { ...watch.snapshot, ...data }
               const claimed = runningAdmission(watch.snapshot)
               if (firstClaim && claimed) activeAdmission = claimed.admission_id
@@ -518,9 +546,35 @@ export class GatewaySessions {
                 ...(complete ? { is_error: data.status !== 'completed', duration: data.duration_seconds } : {}) })
             }
             else if (kind === 'session.usage') await meter(data)
-            else if (kind === 'message.complete' && data.usage && typeof data.usage === 'object') await meter(data.usage as Row)
-            else if (kind === 'tool.start') await put('tool', { ...data, id: data.tool_id || data.tool_call_id, name: data.name || data.tool_name })
-            else if (kind === 'tool.complete') await put('tool_complete', { ...data, id: data.tool_id || data.tool_call_id, name: data.name || data.tool_name })
+            else if (kind === 'message.complete') {
+              if (event.session_id !== target.sid || event.replay_epoch !== undefined && event.replay_epoch !== watch.snapshot.replay_epoch) return
+              // Only this owner-defined refusal is public; never forward provider diagnostics or private descriptor fields.
+              const surface = data.error_surface as Row | undefined
+              if (activeAdmission && data.admission_id === activeAdmission && data.outcome === 'failed' && data.status === 'error'
+                  && surface?.layer === 'gateway' && surface.code === 'cron_session_read_only' && surface.retryable === false
+                  && typeof data.text === 'string' && data.text.trim()) {
+                completion = { admission: activeAdmission, message: data.text, type: 'cron_session_read_only', code: 'cron_session_read_only', retryable: false }
+              }
+              if (data.usage && typeof data.usage === 'object') await meter(data.usage as Row)
+            }
+            else if (kind === 'tool.start' || kind === 'tool.progress' || kind === 'tool.complete') {
+              if (event.session_id !== target.sid || event.replay_epoch !== undefined && event.replay_epoch !== watch.snapshot.replay_epoch) return
+              const id = str(data.tool_id) || str(data.tool_call_id)
+              const call = calls.findLast((call) => call.tid === id)
+              if (kind === 'tool.start') {
+                if (id && call) return
+                calls.push({ tid: id, name: data.name || data.tool_name, args: data.args ?? {}, done: false })
+                await put('tool', { ...data, id, name: data.name || data.tool_name })
+              } else if (kind === 'tool.progress') {
+                if (!id || !call || call.done || !watch.snapshot.running) return
+                call.progress = toolProgress({ ...data, message: typeof data.message === 'string' ? redactString(data.message, this.deps.redactEnabled()) : null })
+                await put('tool_progress', { id, progress: call.progress })
+              } else {
+                if (call?.done) return
+                if (call) Object.assign(call, { done: true, progress: null })
+                await put('tool_complete', { ...data, id, name: data.name || data.tool_name, progress: null })
+              }
+            }
             else if (kind === 'approval.request' || kind === 'clarify.request') await prompts({ ...watch.snapshot, prompts: [...watch.snapshot.prompts.filter((p) => p.prompt_id !== data.prompt_id), { ...data, kind: kind.split('.')[0] }] })
             else if (kind === 'approval.settled' || kind === 'clarify.settled') {
               await prompts({ ...watch.snapshot, prompts: watch.snapshot.prompts.filter((p) => p.prompt_id !== data.prompt_id) })

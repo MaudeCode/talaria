@@ -8,10 +8,16 @@ import { requestScroll } from './sendMotion'
 import * as turnActivity from './turnActivity'
 
 let intersect: IntersectionObserverCallback
+let resized: ResizeObserverCallback
 const observe = vi.fn()
 beforeEach(() => {
   window.matchMedia = vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia
-  vi.stubGlobal('ResizeObserver', class { observe = vi.fn(); disconnect = vi.fn(); unobserve = vi.fn() })
+  resized = () => undefined
+  vi.stubGlobal('ResizeObserver', class {
+    constructor(private callback: ResizeObserverCallback) {}
+    observe = vi.fn((element: Element) => { if (element.id === 'msgInner') resized = this.callback })
+    disconnect = vi.fn(); unobserve = vi.fn()
+  })
   resetStreamStoreForTests()
   vi.stubGlobal('IntersectionObserver', class {
     constructor(callback: IntersectionObserverCallback, options: IntersectionObserverInit) { intersect = callback; observe(options) }
@@ -31,24 +37,43 @@ const props = (): TranscriptProps => ({
   showJumpButtons: false, virtualizeLongTranscripts: false,
 })
 
-it('keeps the row filter and user scans cached across ten streamed tokens', () => {
+it('owns virtualizer scroll listeners only while the virtualized window is active', () => {
+  const added = vi.spyOn(HTMLElement.prototype, 'addEventListener')
+  const removed = vi.spyOn(HTMLElement.prototype, 'removeEventListener')
+  const input = { ...props(), truncated: false, rows: projectMessages(Array.from({ length: 240 }, (_, i) => ({ id: i + 1, role: 'user' as const, content: `Row ${i + 1}` }))) }
+  const view = render(<Transcript {...input} />)
+  const pane = view.container.querySelector<HTMLElement>('#messages')!
+  const scrollListeners = () => added.mock.calls.filter(([event, , options], i) => added.mock.contexts[i] === pane && event === 'scroll' && typeof options === 'object' && options.passive)
+  expect(scrollListeners()).toHaveLength(0)
+  view.rerender(<Transcript {...input} virtualizeLongTranscripts />)
+  expect(scrollListeners()).toHaveLength(1)
+  const listener = scrollListeners()[0]![1]
+  view.rerender(<Transcript {...input} />)
+  expect(removed.mock.calls.some(([event, callback], i) => removed.mock.contexts[i] === pane && event === 'scroll' && callback === listener)).toBe(true)
+})
+
+it('keeps row filtering and element creation cached across ten streamed tokens', () => {
   const input = { ...props(), truncated: false, rows: projectMessages([
     { id: 1, role: 'user', content: 'Question', _turn_id: 'turn' },
     { id: 2, role: 'assistant', content: 'Persisted reply', _turn_id: 'turn' },
     { id: 3, role: 'assistant', content: 'Earlier reply', _turn_id: 'old' },
   ]) }
+  const elementInputs = vi.fn()
+  Object.defineProperty(input.rows[0]!.message, '_background_update', { configurable: true, get: elementInputs })
   const grouped = turnActivity.groupAssistantTurns(input.rows)
   vi.spyOn(turnActivity, 'groupAssistantTurns').mockReturnValue(grouped)
   const filter = vi.spyOn(grouped, 'filter')
   dispatch({ type: 'start', sessionId: 'history', streamId: 'run', turnId: 'turn', userMessageId: '1', userText: 'Question', now: 0 })
   const view = render(<Transcript {...input} live={getStreamState().turns.history!} />)
   const scans = vi.spyOn(filter.mock.results[0]!.value as typeof grouped, 'some')
+  elementInputs.mockClear()
   for (let token = 1; token <= 10; token++) {
     dispatch({ type: 'event', sessionId: 'history', streamId: 'run', event: { event: 'token', data: { text: 'word ' } }, lastEventId: `run:${token}`, now: token })
     view.rerender(<Transcript {...input} live={getStreamState().turns.history!} />)
   }
   expect(filter).toHaveBeenCalledTimes(1)
   expect(scans).not.toHaveBeenCalled()
+  expect(elementInputs).not.toHaveBeenCalled()
   expect(view.container.querySelector('[data-message-key="2"]')).toBeNull()
   expect(view.container.querySelector('[data-message-key="3"]')).toBeInTheDocument()
   expect(view.container.querySelector('[data-live-user]')).toBeNull()
@@ -164,8 +189,18 @@ it('captures a reader anchor when streaming starts with auto-follow off (TAL-120
   expect(pane.scrollTop).toBe(1700)
 })
 
-it.each([false, true])('preserves an upward reader scroll before its scroll event when content arrives: autoFollow=%s', async (autoFollow) => {
-  const view = render(<Transcript {...props()} autoFollow={autoFollow} />)
+it.each([
+  { autoFollow: false, scrollTop: 300 },
+  { autoFollow: true, scrollTop: 300 },
+  { autoFollow: true, scrollTop: 2000 },
+  { autoFollow: false, scrollTop: 2000 },
+])('honors the reader position before queued scroll events: autoFollow=$autoFollow, scrollTop=$scrollTop', async ({ autoFollow, scrollTop }) => {
+  // At the tail with follow disabled, a running turn must still preserve a reader anchor.
+  const flush = animationFrames()
+  const notFollowing = !autoFollow && scrollTop === 2000
+  const streaming = scrollTop === 2000
+  const input = props()
+  const view = render(<Transcript {...input} autoFollow={autoFollow} />)
   const pane = view.container.querySelector<HTMLElement>('#messages')
   const inner = view.container.querySelector<HTMLElement>('#msgInner')
   if (!pane || !inner) throw new Error('Missing transcript')
@@ -175,11 +210,62 @@ it.each([false, true])('preserves an upward reader scroll before its scroll even
   })
   act(() => requestScroll('end'))
   expect(pane.scrollTop).toBe(2000)
-  fireEvent.wheel(pane, { deltaY: -1 })
-  pane.scrollTop = 300
+  if (streaming) {
+    dispatch({ type: 'start', sessionId: 'history', streamId: 'run', turnId: null, userMessageId: null, userText: '', now: 0 })
+    view.rerender(<Transcript {...input} autoFollow={autoFollow} live={getStreamState().turns.history!} />)
+  }
+  const history = view.container.querySelector<HTMLElement>('[data-message-key="121"]')!
+  const measured = vi.spyOn(history, 'getBoundingClientRect')
+  if (scrollTop < 2000) fireEvent.wheel(pane, { deltaY: -1 })
+  pane.scrollTop = scrollTop
+  const positionRead = vi.spyOn(pane, 'scrollTop', 'get')
   // DOM insertion can precede the queued browser scroll event, as a deferred renderer reveals.
   await act(async () => { inner.append(document.createTextNode('Deferred content')); await Promise.resolve() })
-  expect(pane.scrollTop).toBe(300)
+  if (scrollTop === 2000 && autoFollow) expect(positionRead).not.toHaveBeenCalled()
+  expect(pane.scrollTop).toBe(scrollTop)
+  flush()
+  if (scrollTop === 2000 && autoFollow) expect(measured).not.toHaveBeenCalled()
+  if (notFollowing) expect(measured).toHaveBeenCalled()
+})
+
+it.each([false, true])('settles lazy entry growth before the resize observer runs: autoFollow=%s', async (autoFollow) => {
+  const view = render(<Transcript {...props()} truncated={false} autoFollow={autoFollow} />)
+  const pane = view.container.querySelector<HTMLElement>('#messages')!, inner = view.container.querySelector<HTMLElement>('#msgInner')!
+  let height = 2600
+  Object.defineProperty(pane, 'scrollHeight', { configurable: true, get: () => height })
+  vi.spyOn(pane, 'scrollTo').mockImplementation((options: ScrollToOptions | number) => { pane.scrollTop = Math.min(typeof options === 'number' ? options : options.top ?? 0, height - 600) })
+  act(() => requestScroll('end'))
+  expect(pane.scrollTop).toBe(2000)
+  height = 3200
+  await act(async () => { inner.append(document.createTextNode('Lazy Markdown revealed')); await Promise.resolve() })
+  expect(pane.scrollTop).toBe(2600)
+})
+
+it.each([
+  { name: 'fully visible first row', top: 20, height: 100, reads: 1 },
+  { name: 'partly visible first row', top: -40, height: 100, reads: 2 },
+  { name: 'one tall intersecting row', top: -40, height: 800, reads: 2 },
+])('captures the reader anchor without measuring later rows: $name', ({ top: firstTop, height, reads }) => {
+  const flush = animationFrames()
+  const input = { ...props(), truncated: false, rows: projectMessages(Array.from({ length: 10 }, (_, i) => ({ id: i + 1, role: 'user' as const, content: `Row ${i + 1}` }))) }
+  const view = render(<Transcript {...input} />), pane = view.container.querySelector<HTMLElement>('#messages')!
+  Object.defineProperty(pane, 'scrollHeight', { configurable: true, value: 2600 })
+  vi.spyOn(pane, 'scrollTo').mockImplementation(() => { pane.scrollTop = 2000 })
+  pane.getBoundingClientRect = () => ({ top: 0, bottom: 600 } as DOMRect)
+  let shift = 0
+  const measured = [...pane.querySelectorAll<HTMLElement>('[data-message-key]')].map((row, index) => vi.spyOn(row, 'getBoundingClientRect').mockImplementation(() => {
+    const top = index * height + firstTop + shift
+    return { top, bottom: top + height } as DOMRect
+  }))
+  act(() => requestScroll('end'))
+  fireEvent.wheel(pane, { deltaY: -1 }); pane.scrollTop = 500; fireEvent.scroll(pane)
+  flush()
+  for (let index = 0; index < reads; index++) expect(measured[index]).toHaveBeenCalledTimes(1)
+  for (const later of measured.slice(reads)) expect(later).not.toHaveBeenCalled()
+  // The saved fully visible row still compensates for a late layout change above it.
+  shift = 120
+  act(() => resized([], {} as ResizeObserver))
+  expect(pane.scrollTop).toBe(620)
 })
 
 it('prefetches from a sentinel one viewport before the top, with no load button', () => {
@@ -235,6 +321,45 @@ it('keeps the prepend anchor when a duplicate observer callback is rejected', ()
   rect.mockRestore()
 })
 
+it('reader input cancels prepend and stale reader anchors at the top', () => {
+  let mutated: MutationCallback = () => undefined
+  vi.stubGlobal('MutationObserver', class {
+    constructor(private callback: MutationCallback) {}
+    observe = (element: Element) => { if (element.id === 'msgInner') mutated = this.callback }
+    disconnect = vi.fn()
+  })
+  vi.stubGlobal('CSS', { escape: (key: string) => key })
+  const flush = animationFrames()
+  let oldTop = 100, olderHeight = 60
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    const pane = document.getElementById('messages')!
+    const top = this.dataset.messageKey === '121' ? oldTop - pane.scrollTop : this.dataset.messageKey === '1' ? 20 - pane.scrollTop : 0
+    const height = this.id === 'messages' ? 600 : this.dataset.messageKey === '1' ? olderHeight : 100
+    return { top, bottom: top + height, left: 0, right: 400, width: 400, height, x: 0, y: top, toJSON: () => ({}) }
+  })
+  let capture: (() => void) | undefined
+  const input = { ...props(), onLoadOlder: vi.fn((_retry?: boolean, beforePrepend?: () => void) => { capture = beforePrepend }) }
+  const view = render(<Transcript {...input} />), pane = view.container.querySelector<HTMLElement>('#messages')!
+  Object.defineProperties(pane, { scrollHeight: { configurable: true, value: 2600 }, clientHeight: { configurable: true, value: 600 } })
+  vi.spyOn(pane, 'scrollTo').mockImplementation((options: ScrollToOptions | number) => { pane.scrollTop = Math.min(typeof options === 'number' ? options : options.top ?? 0, 2000) })
+  act(() => requestScroll('end'))
+  pane.scrollTop = 20
+  fireEvent.scroll(pane)
+  flush()
+  act(() => intersect([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver))
+  act(() => capture?.())
+  oldTop = 80
+  view.rerender(<Transcript {...input} loadedFrom={0} truncated={false} rows={projectMessages([{ id: 1, role: 'user', content: 'Older content' }, { id: 121, role: 'user', content: 'Current window' }])} />)
+  expect(pane.scrollTop).toBe(0)
+  // The reader stays at the start while newly revealed content acquires its full height.
+  fireEvent.wheel(pane, { deltaY: -1 })
+  pane.scrollTop = 0
+  oldTop = 380; olderHeight = 360
+  act(() => { resized([], {} as ResizeObserver); mutated([], {} as MutationObserver) })
+  flush()
+  expect(pane.scrollTop).toBe(0)
+})
+
 it('a terminal snapshot that beats admission replaces the pending row by server identity, including identical text', () => {
   dispatch({ type: 'start', sessionId: 's1', streamId: 'new', turnId: 'turn-new', userMessageId: '3', userText: 'Same', now: 1 })
   dispatch({ type: 'event', sessionId: 's1', streamId: 'new', event: { event: 'done', data: { session: sessionFixture({ session_id: 's1' }) } }, lastEventId: 'new:2', now: 2 })
@@ -259,12 +384,6 @@ it('a terminal snapshot that beats admission replaces the pending row by server 
 
 it('preserves the visible row offset when terminal excerpts shrink an earlier reply (TAL-1114)', () => {
   const flush = animationFrames()
-  let resized: ResizeObserverCallback = () => undefined
-  globalThis.ResizeObserver = class {
-    constructor(private callback: ResizeObserverCallback) {}
-    observe = (element: Element) => { if (element.id === 'msgInner') resized = this.callback }
-    disconnect = vi.fn(); unobserve = vi.fn()
-  }
   const props: TranscriptProps = {
     rows: [{ index: 0, key: 'a', message: { role: 'assistant', message_id: 'a', content: 'A'.repeat(6000), _turn_id: 'A' } },
       { index: 1, key: 'anchor', message: { role: 'user', message_id: 'anchor', content: 'Visible anchor', _turn_id: 'B' } }],

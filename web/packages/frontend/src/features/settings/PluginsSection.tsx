@@ -11,6 +11,7 @@ import { Select } from '../../ui/Select'
 import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { OAuthSignIn } from '../onboarding/OAuthSignIn'
+import { useResourceEffects, useResourceMutation } from '../sessions/useResourceMutation'
 
 export function PluginsSection() {
   const qc = useQueryClient()
@@ -38,10 +39,15 @@ export function PluginsSection() {
     update.mutate({ key, accept, ...(token ? { token } : {}) })
   }
   const plugins = useQuery({ queryKey: keys.plugins, queryFn: api.fetchPlugins, staleTime: 30_000 })
+  const effects = useResourceEffects<Record<string, unknown>>()
   const [open, setOpen] = useState<string | null>(null)
   if (plugins.isPending) return <LoadingState />
   if (plugins.isError) return <ErrorState error={plugins.error} onRetry={() => { void plugins.refetch() }} />
-  const list = plugins.data.plugins
+  // Saved non-secret values show at once until the reread; secrets never show.
+  const list = plugins.data.plugins.map((p) => {
+    const saved = effects[`plugin:${p.key}`]?.value
+    return saved && p.settings ? { ...p, settings: p.settings.map((f) => f.key in saved ? { ...f, value: saved[f.key] } : f) } : p
+  })
   const editable = !plugins.data.read_only
   return (
     <div className="flex flex-col gap-2" data-section="plugins">
@@ -132,26 +138,28 @@ function PastedRedirect({ flowId }: { flowId: string }) {
 const text = (value: unknown): string => typeof value === 'string' ? value : typeof value === 'number' || typeof value === 'boolean' ? String(value) : value == null ? '' : JSON.stringify(value, null, 2)
 
 /** The plugin manifest's settings as the server reported them; only fields the user edits are sent, and the server checks and stores them. */
+/** Closes on Save: the plugin shows its saved values at once while the server applies them. */
 function PluginSettingsForm({ pluginKey, fields, onSaved }: { pluginKey: string; fields: PluginSettingView[]; onSaved: () => void }) {
-  const qc = useQueryClient()
   const [drafts, setDrafts] = useState<Record<string, string | boolean>>({})
   const set = (key: string, value: string | boolean) => setDrafts((cur) => ({ ...cur, [key]: value }))
-  const save = useMutation({
-    mutationFn: () => {
-      const values: Record<string, unknown> = {}
-      const secrets: Record<string, string> = {}
-      for (const f of fields) if (f.key in drafts) { if (f.type === 'secret') secrets[f.key] = text(drafts[f.key]); else values[f.key] = drafts[f.key] }
-      return api.savePluginSettings(pluginKey, values, secrets)
-    },
+  const save = useResourceMutation({
+    resource: () => `plugin:${pluginKey}`, queryKey: keys.plugins,
+    effect: ({ values }: { values: Record<string, unknown>; secrets: Record<string, string> }) => ({ value: values }),
+    mutationFn: ({ values, secrets }) => api.savePluginSettings(pluginKey, values, secrets),
     onSuccess: (result) => {
       showToast(result.runtime_application === 'applied' ? m.saved() : result.runtime_application === 'restart_required' ? m.plugins_settings_restart_required() : m.plugins_settings_runtime_unknown(), result.runtime_application === 'applied' ? 3000 : 10000)
-      void qc.invalidateQueries({ queryKey: keys.plugins })
-      onSaved()
     },
     onError: (e) => showToast(e instanceof Error ? e.message : String(e), 5000, 'error'),
   })
+  const submit = () => {
+    const values: Record<string, unknown> = {}
+    const secrets: Record<string, string> = {}
+    for (const f of fields) if (f.key in drafts) { if (f.type === 'secret') secrets[f.key] = text(drafts[f.key]); else values[f.key] = drafts[f.key] }
+    save.mutate({ values, secrets })
+    onSaved()
+  }
   return (
-    <form className="mt-2 border-t border-border-subtle" onSubmit={(e) => { e.preventDefault(); save.mutate() }}>
+    <form className="mt-2 border-t border-border-subtle" onSubmit={(e) => { e.preventDefault(); submit() }}>
       {fields.map((f) => {
         const id = `plugin-setting-${pluginKey}-${f.key}`
         const draft = drafts[f.key]
@@ -165,7 +173,7 @@ function PluginSettingsForm({ pluginKey, fields, onSaved }: { pluginKey: string;
           </FieldRow>
         )
       })}
-      <div className="flex justify-end pt-1"><Button type="submit" variant="primary" disabled={save.isPending || Object.keys(drafts).length === 0}>{m.save()}</Button></div>
+      <div className="flex justify-end pt-1"><Button type="submit" variant="primary" disabled={Object.keys(drafts).length === 0}>{m.save()}</Button></div>
     </form>
   )
 }

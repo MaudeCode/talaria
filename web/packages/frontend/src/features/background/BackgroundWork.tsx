@@ -10,14 +10,21 @@ import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { Markdown } from '../chat/render/Markdown'
 import { m } from '../../paraglide/messages.js'
+import { showToast } from '../toast/toast'
+import { useResourceEffects, useResourceMutation, withEffects } from '../sessions/useResourceMutation'
 
 /** Running work changes on the Agent's side; a quiet refresh keeps the card current between server notices. */
 const LIVE_REFRESH_MS = 15_000
 
+const backgroundResource = (sessionId: string, taskId: string) => `background:${sessionId}:${taskId}`
+
+/** The session's background work as the user sees it: a dismissed result leaves at once. */
 export function useBackgroundTasks(sessionId: string | null | undefined) {
+  const effects = useResourceEffects()
   return useQuery({
     queryKey: keys.background(sessionId ?? ''),
     queryFn: () => api.fetchBackgroundTasks(sessionId ?? ''),
+    select: (data) => ({ ...data, tasks: withEffects(data.tasks, (task) => backgroundResource(sessionId ?? '', task.task_id), effects) }),
     enabled: Boolean(sessionId),
     refetchInterval: (query) => (query.state.data?.tasks.some((t) => t.active) ? LIVE_REFRESH_MS : false),
   })
@@ -59,13 +66,13 @@ export function StatusIcon({ status }: { status: BackgroundTask['status'] | Back
 export function BackgroundTaskAction({ sessionId, task }: { sessionId: string; task: BackgroundTask }) {
   const qc = useQueryClient()
   const stopping = Boolean(task.can_stop)
-  const action = useMutation({
-    mutationFn: async () => {
-      if (stopping) await api.stopBackgroundTask(sessionId, task.task_id)
-      else await api.dismissBackgroundTask(sessionId, task.task_id)
-    },
+  const stop = useMutation({
+    mutationFn: () => api.stopBackgroundTask(sessionId, task.task_id),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.background(sessionId) }),
   })
+  // Dismiss removes a result from view; Stop waits for the Agent's completion.
+  const dismiss = useResourceMutation({ resource: () => backgroundResource(sessionId, task.task_id), queryKey: keys.background(sessionId), effect: () => ({ remove: true }), mutationFn: () => api.dismissBackgroundTask(sessionId, task.task_id), onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error') })
+  const action = stopping ? stop : dismiss
   if (!stopping && !task.dismissible) return null
   return <>
     <button type="button" className="composer-notice-action" disabled={action.isPending} onClick={() => action.mutate()}>{stopping ? m.bg_stop() : m.notice_dismiss()}</button>

@@ -35,6 +35,9 @@ describe('sidecar method fixtures (recorded from the pinned Agent)', () => {
   it('declares every gateway.session watch frame the sidecar emits (TAL-1271)', () => {
     const stream = GATEWAY_METHODS['gateway.session'].stream
     expect(stream.parse({ event: 'clarify_batch', data: { request_id: 'srq-1', questions: [{ qid: 'q0', question: 'Pick a color', choices: ['green'], multi_select: false }] } }).event).toBe('clarify_batch')
+    const initial = { state: 'attached', reason: null, snapshot: null, receipt: null, replaying: true }
+    expect(stream.parse({ event: 'snapshot', data: initial }).data).toEqual(initial)
+    expect(stream.parse({ event: 'replay_complete', data: {} }).event).toBe('replay_complete')
     expect(stream.parse({ event: 'restarting', data: { restarting: true } }).event).toBe('restarting')
     expect(stream.safeParse({ event: 'clarify_batch', data: { request_id: 'srq-1', questions: [] } }).success).toBe(false)
   })

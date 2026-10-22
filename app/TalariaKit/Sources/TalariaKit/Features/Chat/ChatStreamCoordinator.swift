@@ -69,6 +69,8 @@ public protocol ChatStreamCoordinatorDelegate: AnyObject {
     @discardableResult
     func streamCoordinatorAppendToolCall(_ payload: ToolStreamEvent) -> Bool
     @discardableResult
+    func streamCoordinatorUpdateToolProgress(_ payload: ToolStreamEvent) -> Bool
+    @discardableResult
     func streamCoordinatorCompleteToolCall(_ payload: ToolStreamEvent) -> Bool
     @discardableResult
     func streamCoordinatorUpdateTitle(_ payload: TitleStreamEvent) -> Bool
@@ -689,7 +691,7 @@ public final class ChatStreamCoordinator {
 
     private func isCoveredByReplayCursor(_ event: SSEEvent) -> Bool {
         switch event {
-        case .token, .interimAssistant, .reasoning, .toolStarted, .toolCompleted, .steerConsumed, .runStatus:
+        case .token, .interimAssistant, .reasoning, .toolStarted, .toolProgress, .toolCompleted, .steerConsumed, .runStatus:
             guard let replayCursor, let activeStreamID,
                   streamClient.lastEventID != previousFrameEventID,
                   let seq = Self.runJournalReplayAfterSeq(from: streamClient.lastEventID, streamID: activeStreamID)
@@ -769,6 +771,10 @@ public final class ChatStreamCoordinator {
         case .toolStarted(let payload):
             liveActivityManager?.update(.toolStarted(kind: payload.kind, name: payload.name))
             if delegate?.streamCoordinatorAppendToolCall(payload) == true {
+                markProgress()
+            }
+        case .toolProgress(let payload):
+            if delegate?.streamCoordinatorUpdateToolProgress(payload) == true {
                 markProgress()
             }
         case .toolCompleted(let payload):

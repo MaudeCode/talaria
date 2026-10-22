@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
+import { isDefiniteRefusal } from '../../contracts/common'
 import { Button } from '../../ui/Button'
 
 type Flow = Awaited<ReturnType<typeof api.onboardingOauthStart>>
@@ -78,11 +79,20 @@ export function OAuthSignIn({ provider, label, signedIn, onApproved, idPrefix = 
     }
   }
 
+  // The sign-in panel closes on Cancel; a refused cancel brings the pending flow back with the error.
   async function cancel() {
-    if (!pendingId) return
+    if (!pendingId || !flow) return
+    const pending = flow
+    setFlow({ ...pending, status: 'cancelled' })
     try {
-      setFlow({ ...flow, ...(await api.onboardingOauthCancel(pendingId)) })
+      const cancelled = await api.onboardingOauthCancel(pendingId)
+      if (mounted.current) setFlow((current) => current?.flow_id === pending.flow_id ? { ...current, ...cancelled } : current)
     } catch (e) {
+      if (!mounted.current) return
+      // A refused cancel left the flow pending. An unknown outcome may have cancelled it, so the flow's own state decides.
+      const settled = isDefiniteRefusal(e) ? pending : await api.onboardingOauthPoll(pendingId).then((polled) => ({ ...pending, ...polled }), () => null)
+      if (!mounted.current) return
+      if (settled) setFlow((current) => current?.flow_id === pending.flow_id ? settled : current)
       setFailure(message(e))
     }
   }

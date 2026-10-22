@@ -9,6 +9,20 @@
       "result": {
         "messages": []
       }
+    },
+    {
+      "params": {
+        "profile_home": "<home>",
+        "session_id": "archive-test",
+        "reason": "archive",
+        "lineage": [
+          "archive-test",
+          "archive-tip"
+        ]
+      },
+      "result": {
+        "messages": []
+      }
     }
   ]
 }

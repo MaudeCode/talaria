@@ -12,6 +12,7 @@ vi.mock('../../api/endpoints', () => ({
 }))
 import * as api from '../../api/endpoints'
 import { BackgroundWorkCard, useBackgroundTasks } from './BackgroundWork'
+import { ApiError } from '../../contracts/common'
 import { ToolCard, type ToolCardData } from '../chat/blocks/ToolCard'
 
 const task = (overrides: Partial<BackgroundTask>): BackgroundTask => ({
@@ -106,4 +107,17 @@ it('shows Stop failures without inventing a terminal state', async () => {
   await userEvent.click(await screen.findByRole('button', { name: 'Stop' }))
   expect(await screen.findByRole('alert')).toHaveTextContent('Could not interrupt subagent')
   expect(document.querySelector('[data-task-id="t"]')).toHaveAttribute('data-status', 'running')
+})
+
+describe('Background dismiss (TAL-1179)', () => {
+  it('removes a dismissed result at once and brings it back when refused', async () => {
+    let refuse!: (error: unknown) => void
+    vi.mocked(api.fetchBackgroundTasks).mockResolvedValue({ session_id: 'sess-1', agent_available: true, tasks: [task({ task_id: 'done', status: 'completed', title: 'Finished work', active: false, dismissible: true })] })
+    vi.mocked(api.dismissBackgroundTask).mockReturnValue(new Promise((_, reject) => { refuse = reject }) as never)
+    renderCard()
+    await userEvent.click(await screen.findByRole('button', { name: 'Dismiss' }))
+    expect(screen.queryByText('Finished work')).toBeNull()
+    refuse(new ApiError({ kind: 'http', status: 409, path: '/x', message: 'Busy' }))
+    expect(await screen.findByText('Finished work')).toBeInTheDocument()
+  })
 })

@@ -129,6 +129,16 @@ describe('process heartbeats (TAL-790)', () => {
 })
 
 describe('ephemeral MCP progress snapshots', () => {
+  it('broadcasts a cleared progress value without retaining it for the next attach', () => {
+    const channel = new StreamChannel()
+    const [live] = channel.subscribeWithSnapshot()
+    channel.put(['tool_progress', { id: 'a', progress: { percent: 42, message: 'obsolete' } }, null])
+    channel.put(['tool_progress', { id: 'a', progress: null }, null])
+    expect(live.queue.at(-1)?.[1]).toEqual({ id: 'a', progress: null })
+    const [reloaded] = channel.subscribeWithSnapshot()
+    expect(reloaded.queue).toEqual([])
+  })
+
   it('keeps only the latest update and drops it on completion and every terminal event', () => {
     for (const event of ['tool_complete', 'done', 'cancel', 'apperror', 'error', 'stream_end']) {
       const channel = new StreamChannel()

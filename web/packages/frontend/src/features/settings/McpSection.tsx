@@ -7,8 +7,8 @@ import { cn } from '../../ui/cn'
 import { Badge } from '../../ui/Badge'
 import { HelpTip, TextInput } from '../../ui/Field'
 import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
-import { useResourceIntents, useResourceMutation } from '../sessions/useResourceMutation'
-import { ResourceSwitch } from '../sessions/ResourcePending'
+import { useResourceEffects, useResourceMutation } from '../sessions/useResourceMutation'
+import { ResourceSwitch } from '../sessions/ResourceSwitch'
 import { showToast } from '../toast/toast'
 
 const STATUS: Record<string, { label: () => string; tone: string }> = {
@@ -29,7 +29,7 @@ function StatusBadge({ status }: { status: string | undefined }) {
 
 /** MCP servers from config.yaml with server-computed status and health, the enable toggle, and server-side tool search. */
 export function McpSection({ heading }: { heading: string }) {
-  const intents = useResourceIntents<boolean>()
+  const effects = useResourceEffects<boolean>()
   const [query, setQuery] = useState('')
   const [q, setQ] = useState('')
   useEffect(() => { const t = setTimeout(() => setQ(query), 250); return () => clearTimeout(t) }, [query])
@@ -38,7 +38,7 @@ export function McpSection({ heading }: { heading: string }) {
   const tools = useQuery({ queryKey: [...keys.mcp.tools, q], queryFn: () => api.fetchMcpTools(q), staleTime: 30_000, placeholderData: keepPreviousData })
   const toggle = useResourceMutation({
     resource: ({ name }: { name: string; enabled: boolean }) => `mcp:${name}`,
-    intent: ({ enabled }) => ({ value: enabled, label: m.save() }),
+    effect: ({ enabled }) => ({ value: enabled }),
     queryKey: keys.mcp.all,
     mutationFn: ({ name, enabled }: { name: string; enabled: boolean }) => api.toggleMcpServer(name, enabled),
     onSuccess: (r) => showToast(r.enabled ? m.mcp_enabled_toast({ name: r.name }) : m.mcp_disabled_toast({ name: r.name })),
@@ -65,7 +65,7 @@ export function McpSection({ heading }: { heading: string }) {
                     {typeof s.tool_count === 'number' && <div className="text-[11px] text-muted">{m.mcp_tool_count({ a0: String(s.tool_count) })}</div>}
                   </div>
                   {servers.data.toggle_supported && s.can_toggle === true && (
-                    <ResourceSwitch intent={intents[`mcp:${s.name}`]} checked={s.enabled !== false} onCheckedChange={(enabled) => toggle.mutate({ name: s.name, enabled })} aria-label={s.name} />
+                    <ResourceSwitch effect={effects[`mcp:${s.name}`]} checked={s.enabled !== false} onCheckedChange={(enabled) => toggle.mutate({ name: s.name, enabled })} aria-label={s.name} />
                   )}
                 </li>
               )

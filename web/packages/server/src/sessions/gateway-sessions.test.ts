@@ -12,6 +12,7 @@ import { GatewaySessions } from './gateway-sessions.js'
 
 const fixture = JSON.parse(readFileSync(new URL('../test/fixtures/canonical-ownership.json', import.meta.url), 'utf8')) as { sessions: Record<string, string>; diagnostic: Record<'safe' | 'ignore_config' | 'fresh', string>; schema: string[]; inserts: string[] }
 const ownerEvents = JSON.parse(readFileSync(new URL('../test/fixtures/gateway-owner-events.json', import.meta.url), 'utf8')) as { events: Record<string, unknown>[] }
+const cronRefusal = JSON.parse(readFileSync(new URL('../../../../../contracts/fixtures/native-cron-refusal.json', import.meta.url), 'utf8')) as { completion: Record<string, unknown>; event: { event: string; data: Record<string, unknown> } }
 const sid = fixture.sessions.cli!
 const snapshot = (extra: Partial<GatewaySnapshot> = {}): GatewaySnapshot => ({ session_id: sid, stored_session_id: sid,
   messages: [{ role: 'user', content: 'native question' }, { role: 'assistant', content: 'owner answer' }], message_count: 2,
@@ -102,6 +103,23 @@ describe('canonical owner attachment', () => {
   afterEach(async () => { db.close(); await s.close() })
   const post = (path: string, body: unknown) => s.get(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
 
+  it.each(['high', ''])('refuses native reasoning effort %j without touching profile bytes or dispatching a control', async (effort) => {
+    const path = join(s.state, 'config.yaml')
+    const bytes = '# synthetic profile\nagent:\n  reasoning_effort: low\n'
+    writeFileSync(path, bytes)
+    sidecar.respond('config.get', () => ({ path, exists: true, config: { agent: { reasoning_effort: 'low' } } }))
+    sidecar.respond('config.set', (params) => { writeFileSync(path, JSON.stringify(params.config)); return { ok: true, path } })
+    for (const state of ['attached', 'unavailable'] as const) {
+      sidecar.respond('gateway.session', () => state === 'attached' ? attached(snapshot()) : { state, reason: 'owner_unavailable', snapshot: null, receipt: null })
+      const start = sidecar.calls.length
+      const response = await post('/api/reasoning', { session_id: sid, effort })
+      expect.soft(response.status).toBe(409)
+      expect.soft(await response.json()).toMatchObject({ code: 'reasoning_unsupported' })
+      expect.soft(readFileSync(path, 'utf8')).toBe(bytes)
+      expect.soft(sidecar.calls.slice(start).filter((c) => c.method === 'config.set' || c.method === 'gateway.session')).toEqual([])
+    }
+  })
+
   it('projects only owner controls and never groups the active turn under a steering row', async () => {
     const pending = [
       { ...admission(), admission_id: 'steering', steering: true, text: 'Correction' },
@@ -139,29 +157,250 @@ describe('canonical owner attachment', () => {
   })
 
   /** Own one synthetic owner connection and exercise its actual journalled SSE projection. */
-  const observeOwner = async (initial: GatewaySnapshot) => {
+  const observeOwner = async (initial: GatewaySnapshot, profile = 'default') => {
     let snap = initial
+    let outcome = 'completed'
     let emit: ((frame: Omit<StreamFrame, 'seq'>) => void) | undefined
+    const original = sidecar.responderFor('gateway.session')
+    const headers = { cookie: `hermes_profile=${profile}` }
     sidecar.respond('gateway.session', (params, send, opts) => {
-      if (params.action !== 'watch') return { ...attached(snap), receipt: params.action === 'receipt' ? { ...admission('terminal'), outcome: 'completed' } : null }
+      if (params.session_id !== initial.session_id || params.profile_home !== s.deps.profileHome(profile)) return original!(params, send, opts)
+      if (params.action !== 'watch') return { ...attached(snap), receipt: params.action === 'receipt' ? { ...admission('terminal'), outcome } : null }
       emit = send
       send({ event: 'snapshot', data: attached(snap) })
       return new Promise((resolve) => { opts.signal!.addEventListener('abort', () => { resolve(attached(snap)) }, { once: true }) })
     })
-    const row = SessionEnvelopeSchema.parse(await (await s.get(`/api/session?session_id=${sid}`)).json())
+    const row = SessionEnvelopeSchema.parse(await (await s.get(`/api/session?session_id=${initial.session_id}`, { headers })).json())
     const stream = row.session.active_stream_id!
-    const read = s.sse(`/api/chat/stream?stream_id=${stream}&replay=1&after_seq=0`, (frame) => frame.event === 'stream_end' || frame.event === 'apperror')
+    const read = s.sse(`/api/chat/stream?stream_id=${stream}&replay=1&after_seq=0`, (frame) => frame.event === 'stream_end' || frame.event === 'apperror', { headers })
     await vi.waitFor(() => { expect(s.deps.registry.peek(stream)?.subscriberCount).toBe(1) })
     return { stream, read, get attached() { return Boolean(emit) },
-      event: (type: string, payload: Record<string, unknown>, generation = initial.execution_generation) => {
-        emit!({ event: 'event', data: { type, payload, authority_epoch: 1, execution_generation: generation, session_id: sid } })
+      event: (type: string, payload: Record<string, unknown>, generation = snap.execution_generation, stamps: Record<string, unknown> = {}) => {
+        emit!({ event: 'event', data: { type, payload, authority_epoch: snap.authority_epoch, replay_epoch: snap.replay_epoch, execution_generation: generation, session_id: snap.session_id, ...stamps } })
       },
-      finish: (generation = initial.execution_generation) => {
-        snap = snapshot({ execution_generation: generation })
-        emit!({ event: 'event', data: { type: 'session.info', payload: { authority_epoch: 1, execution_generation: generation, running: false, pending: [] } } })
+      snapshot: (extra: Partial<GatewaySnapshot>, replayGap = false, notify = true) => {
+        snap = { ...snap, ...extra }
+        if (notify) emit!({ event: 'snapshot', data: { ...attached(snap), replay_gap: replayGap } })
+      },
+      replaySnapshot: () => { emit!({ event: 'snapshot', data: { ...attached(snap), replaying: true } }) },
+      replayComplete: (terminalOutcome: string) => { outcome = terminalOutcome; emit!({ event: 'replay_complete', data: {} }) },
+      finish: (generation = snap.execution_generation, terminalOutcome = 'completed') => {
+        outcome = terminalOutcome
+        snap = { ...snap, execution_generation: generation, running: false, pending: [] }
+        emit!({ event: 'event', data: { type: 'session.info', payload: { authority_epoch: snap.authority_epoch, execution_generation: generation, running: false, pending: [] } } })
       },
     }
   }
+
+  it('replays a cron refusal that settled before the submit acknowledgement', async () => {
+    const snap = snapshot()
+    sidecar.respond('gateway.session', (params, send, opts) => {
+      if (params.action === 'watch') {
+        send({ event: 'snapshot', data: { ...attached(snap), replaying: true } })
+        send({ event: 'event', data: { type: 'message.complete', payload: cronRefusal.completion, session_id: sid, authority_epoch: 1, replay_epoch: 'owner-epoch', execution_generation: 1 } })
+        send({ event: 'replay_complete', data: {} })
+        return new Promise((resolve) => { opts.signal!.addEventListener('abort', () => { resolve(attached(snap)) }, { once: true }) })
+      }
+      return { ...attached(snap), receipt: ['submit', 'receipt'].includes(params.action) ? { ...admission('terminal'), outcome: 'failed' } : null }
+    })
+    const response = await post('/api/chat/start', { session_id: sid, submission_id: 'fast-refusal', message: 'ordinary input' })
+    const body = await response.json() as { stream_id?: string }
+    expect(body.stream_id).toBeTruthy()
+    const frames = await s.sse(`/api/chat/stream?stream_id=${body.stream_id}&replay=1`, (f) => f.event === 'apperror')
+    expect(frames.find((f) => f.event === 'apperror')?.data).toMatchObject(cronRefusal.event.data)
+  })
+
+  it('preserves the real cron refusal through public SSE and journal replay exactly once', async () => {
+    const watch = await observeOwner(snapshot({ running: true, pending: [admission()] }))
+    watch.event('message.complete', cronRefusal.completion)
+    watch.event('message.complete', cronRefusal.completion)
+    watch.finish(1, 'failed')
+    watch.finish(1, 'failed')
+    const frames = await watch.read
+    const errors = frames.filter((f) => f.event === 'apperror')
+    expect(errors).toHaveLength(1)
+    expect(errors[0]?.data).toMatchObject(cronRefusal.event.data)
+    expect(ChatEventSchema.safeParse(errors[0]).success).toBe(true)
+    const replay = await s.sse(`/api/chat/stream?stream_id=${watch.stream}&replay=1`, (f) => f.event === 'apperror')
+    expect(replay.find((f) => f.event === 'apperror')?.data).toEqual(errors[0]?.data)
+    expect(sidecar.calls.some((c) => c.method === 'chat.start' || c.method === 'cron.run')).toBe(false)
+  })
+
+  it('waits for retained owner events before settling an idle reconnect snapshot', async () => {
+    const watch = await observeOwner(snapshot({ running: true, pending: [admission()] }))
+    watch.snapshot({ running: false, pending: [] }, false, false)
+    // The owner became idle between attachment and the watch's initial snapshot.
+    // The sidecar marks that snapshot until its retained events have drained.
+    watch.replaySnapshot()
+    watch.event('message.complete', cronRefusal.completion)
+    watch.replayComplete('failed')
+    expect((await watch.read).find((f) => f.event === 'apperror')?.data).toMatchObject(cronRefusal.event.data)
+  })
+
+  it.each(['generation', 'authority', 'replay', 'gap'] as const)('discards a cron descriptor on %s replacement', async (replacement) => {
+    const watch = await observeOwner(snapshot({ running: true, pending: [admission()] }))
+    watch.event('message.complete', cronRefusal.completion)
+    watch.snapshot(replacement === 'generation' ? { execution_generation: 2 } : replacement === 'authority' ? { authority_epoch: 2 } : replacement === 'replay' ? { replay_epoch: 'next' } : {}, replacement === 'gap')
+    watch.finish(replacement === 'generation' ? 2 : 1, 'failed')
+    expect((await watch.read).find((f) => f.event === 'apperror')?.data).toMatchObject({ type: 'owner_turn_failed', message: 'The owning Agent could not complete this turn' })
+  })
+
+  it.each([{ session_id: 'another' }, { authority_epoch: 99 }, { replay_epoch: 'stale' }, { execution_generation: 99 }])('ignores a stale cron completion %j', async (stamps) => {
+    const watch = await observeOwner(snapshot({ running: true, pending: [admission()] }))
+    watch.event('message.complete', cronRefusal.completion, 1, stamps)
+    watch.finish(1, 'failed')
+    expect((await watch.read).find((f) => f.event === 'apperror')?.data).toMatchObject({ type: 'owner_turn_failed' })
+  })
+
+  it.each([
+    {},
+    { ...cronRefusal.completion, error_surface: { layer: 'gateway', code: 'provider_failure', retryable: false }, text: 'private diagnostic' },
+    { ...cronRefusal.completion, error_surface: { layer: 'gateway', code: 'cron_session_read_only', retryable: true } },
+    { ...cronRefusal.completion, error_surface: { layer: 'gateway', code: 'cron_session_read_only' } },
+    { ...cronRefusal.completion, error_surface: { code: 'cron_session_read_only', retryable: false } },
+    { ...cronRefusal.completion, text: '' },
+    { ...cronRefusal.completion, admission_id: 'another-input' },
+    { ...cronRefusal.completion, error_surface: { layer: 'provider', code: 'cron_session_read_only', retryable: false }, text: 'private diagnostic' },
+  ])('keeps an old or unrelated owner failure generic %j', async (payload) => {
+    const watch = await observeOwner(snapshot({ running: true, pending: [admission()] }))
+    watch.event('message.complete', payload)
+    watch.finish(1, 'failed')
+    const error = (await watch.read).find((f) => f.event === 'apperror')?.data
+    expect(error).toMatchObject({ type: 'owner_turn_failed', message: 'The owning Agent could not complete this turn' })
+    expect(error).not.toHaveProperty('retryable')
+  })
+
+  it('redacts cron refusal text and never forwards private descriptor fields', async () => {
+    const watch = await observeOwner(snapshot({ running: true, pending: [admission()] }))
+    const secret = 'sk-abcdefghijklmnopqrstuvwxyz123456'
+    watch.event('message.complete', { ...cronRefusal.completion, text: `${String(cronRefusal.completion.text)} ${secret}`, error_surface: { layer: 'gateway', code: 'cron_session_read_only', retryable: false, provider: 'private-provider', details: secret } })
+    watch.finish(1, 'failed')
+    const serialized = JSON.stringify(await watch.read)
+    expect(serialized).toContain('Start a new chat to send it.')
+    expect(serialized).not.toContain(secret)
+    expect(serialized).not.toContain('private-provider')
+  })
+
+  it('carries native MCP progress on one tool row through completion', async () => {
+    const watch = await observeOwner(snapshot({ running: true, pending: [admission()] }))
+    watch.event('tool.start', { tool_id: 'index-a', name: 'mcp__index', args: {} })
+    watch.event('tool.progress', { tool_id: 'index-a', progress: 10, total: 50, message: 'starting' })
+    watch.event('tool.progress', { tool_id: 'index-a', progress: 21, total: 50, message: 'indexing files' })
+    watch.event('tool.complete', { tool_id: 'index-a', name: 'mcp__index', preview: 'done' })
+    watch.event('tool.progress', { tool_id: 'index-a', percent: 80, message: 'late' })
+    watch.finish()
+    const frames = await watch.read
+    expect(frames.filter((frame) => frame.event === 'tool')).toHaveLength(1)
+    const progress = frames.filter((frame) => frame.event === 'tool_progress')
+    expect(progress.map((frame) => frame.data)).toEqual([
+      { id: 'index-a', progress: { percent: 20, message: 'starting' } },
+      { id: 'index-a', progress: { percent: 42, message: 'indexing files' } },
+    ])
+    for (const frame of progress) expect(ChatEventSchema.safeParse(frame).success).toBe(true)
+    expect(frames.find((frame) => frame.event === 'tool_complete')?.data).toMatchObject({ id: 'index-a', progress: null })
+  })
+
+  it('reloads only the latest active native progress, redacted before bounding and never journaled', async () => {
+    const watch = await observeOwner(snapshot({ running: true, pending: [admission()] }))
+    try {
+      for (const id of ['a', 'b']) watch.event('tool.start', { tool_id: id, name: 'mcp__index', args: {} })
+      watch.event('tool.progress', { tool_id: 'a', percent: 10, message: 'old progress' })
+      watch.event('tool.progress', { tool_id: 'b', progress: 21, total: 50, message: 'indexing files' })
+      const secret = 'sk-synthetic-native-progress-123456789012345'
+      watch.event('tool.progress', { tool_id: 'a', percent: 200, message: `OPENAI_API_KEY=${secret} ${'x'.repeat(1200)}` })
+      await vi.waitFor(() => { expect(s.deps.sessions.deps.runtime.liveToolProgress?.(watch.stream)).toHaveLength(2) })
+      const detail = SessionEnvelopeSchema.parse(await (await s.get(`/api/session?session_id=${sid}`)).json()).session
+      expect(detail.tool_calls).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: 'a', progress: { percent: 100, message: expect.any(String) as unknown } }),
+        expect.objectContaining({ id: 'b', progress: { percent: 42, message: 'indexing files' } }),
+      ]))
+      expect(JSON.stringify(detail.tool_calls)).not.toContain(secret)
+      const replay = await s.sse(`/api/chat/stream?stream_id=${watch.stream}&replay=1`, (f) => f.event === 'tool_progress' && (f.data as { id: string }).id === 'b')
+      expect(replay.filter((f) => f.event === 'tool_progress')).toHaveLength(2)
+      expect(JSON.stringify(replay)).not.toContain('old progress')
+      const journal = await s.deps.journal.readRunEvents(detail.composer_state_key!, watch.stream)
+      expect(JSON.stringify(journal)).not.toMatch(/indexing files|tool_progress|old progress/)
+      watch.event('tool.complete', { tool_id: 'a', name: 'mcp__index' })
+      await vi.waitFor(() => { expect(s.deps.sessions.deps.runtime.liveToolProgress?.(watch.stream).map((call) => call.id)).toEqual(['b']) })
+    } finally { watch.finish(); await watch.read }
+  })
+
+  it.each(['generation', 'authority', 'replay', 'gap'] as const)('clears native progress on %s replacement and rejects stale identities', async (replacement) => {
+    const watch = await observeOwner(snapshot({ running: true, pending: [admission()] }))
+    try {
+      watch.event('tool.start', { tool_id: 'reused', name: 'mcp__index' })
+      watch.event('tool.progress', { tool_id: 'reused', percent: 42, message: 'obsolete' })
+      await vi.waitFor(() => { expect(s.deps.sessions.deps.runtime.liveToolProgress?.(watch.stream)).toHaveLength(1) })
+      const changed = replacement === 'generation' ? { execution_generation: 2 } : replacement === 'authority' ? { authority_epoch: 2 } : replacement === 'replay' ? { replay_epoch: 'replacement' } : {}
+      if (replacement !== 'gap') {
+        // HTTP can discover a successor before the watch receives its replacement snapshot.
+        watch.snapshot(changed, false, false)
+        const detail = SessionEnvelopeSchema.parse(await (await s.get(`/api/session?session_id=${sid}`)).json()).session
+        expect(detail.tool_calls).toEqual([])
+      }
+      watch.snapshot(changed, replacement === 'gap')
+      watch.event('tool.progress', { tool_id: 'reused', percent: 99, message: 'no new start' })
+      await vi.waitFor(() => { expect(s.deps.sessions.deps.runtime.liveToolProgress?.(watch.stream)).toEqual([]) })
+      watch.event('tool.start', { tool_id: 'reused', name: 'mcp__index' })
+      watch.event('tool.progress', { tool_id: 'reused', percent: 50, message: 'current' })
+      for (const stamps of [{ session_id: 'another-session' }, { authority_epoch: 99 }, { replay_epoch: 'stale' }, { execution_generation: 99 }]) {
+        watch.event('tool.progress', { tool_id: 'reused', percent: 99, message: 'stale' }, undefined, stamps)
+      }
+      await vi.waitFor(() => { expect(s.deps.sessions.deps.runtime.liveToolProgress?.(watch.stream)[0]?.progress).toEqual({ percent: 50, message: 'current' }) })
+    } finally { watch.finish(); }
+    const frames = await watch.read
+    expect(frames.filter((f) => f.event === 'tool_progress').map((f) => (f.data as { progress: unknown }).progress)).toEqual([
+      { percent: 42, message: 'obsolete' }, null, { percent: 50, message: 'current' }, null,
+    ])
+  })
+
+  it('ignores duplicate native starts/completions and old-owner omission', async () => {
+    const watch = await observeOwner(snapshot({ running: true, pending: [admission()] }))
+    for (let i = 0; i < 2; i++) watch.event('tool.start', { tool_id: 'a', name: 'mcp__index' })
+    for (let i = 0; i < 2; i++) watch.event('tool.complete', { tool_id: 'a', name: 'mcp__index' })
+    watch.event('tool.start', { tool_id: 'a', name: 'mcp__index' })
+    watch.event('tool.progress', { tool_id: 'a', percent: 50, message: 'late duplicate' })
+    watch.finish()
+    const frames = await watch.read
+    expect(frames.filter((f) => f.event === 'tool')).toHaveLength(1)
+    expect(frames.filter((f) => f.event === 'tool_complete')).toHaveLength(1)
+    expect(frames.filter((f) => f.event === 'tool_progress')).toEqual([])
+  })
+
+  it('clears unfinished native progress on interruption and releases the running projection', async () => {
+    const watch = await observeOwner(snapshot({ running: true, pending: [admission()] }))
+    watch.event('tool.start', { tool_id: 'a', name: 'mcp__index' })
+    watch.event('tool.progress', { tool_id: 'a', percent: 42, message: 'unfinished' })
+    watch.finish(undefined, 'interrupted')
+    const frames = await watch.read
+    expect(frames.find((f) => f.event === 'cancel')?.data).toMatchObject({ terminal_state: 'cancelled', session: { tool_calls: [] } })
+    expect(frames.findLast((f) => f.event === 'tool_progress')?.data).toEqual({ id: 'a', progress: null })
+    await vi.waitFor(() => { expect(s.deps.registry.liveToolCalls.has(watch.stream)).toBe(false) })
+  })
+
+  it('isolates native progress for concurrent calls in separate sessions and profile homes', async () => {
+    const otherHome = join(s.state, 'profiles', 'work')
+    mkdirSync(otherHome, { recursive: true })
+    const other = new DatabaseSync(join(otherHome, 'state.db'))
+    other.exec(fixture.schema.join('\n'))
+    for (const sql of fixture.inserts) other.exec(sql)
+    const watches: Awaited<ReturnType<typeof observeOwner>>[] = []
+    try {
+      for (const [session, profile] of [[sid, 'default'], [fixture.sessions.tui!, 'default'], [sid, 'work']] as const) {
+        const watch = await observeOwner(snapshot({ session_id: session, stored_session_id: session, running: true, pending: [admission()] }), profile)
+        watches.push(watch)
+        watch.event('tool.start', { tool_id: 'same-id', name: 'mcp__index' })
+        watch.event('tool.progress', { tool_id: 'same-id', percent: watches.length * 10, message: `${profile}/${session}` })
+      }
+      for (const [index, watch] of watches.entries()) await vi.waitFor(() => {
+        expect(s.deps.sessions.deps.runtime.liveToolProgress?.(watch.stream)[0]?.progress).toMatchObject({ percent: (index + 1) * 10 })
+      })
+    } finally {
+      for (const watch of watches) watch.finish()
+      await Promise.all(watches.map((watch) => watch.read))
+      other.close()
+    }
+  })
 
   it.each([false, true])('accepts a voice stop without an admission or replacing an owner watch, running=%s', async (running) => {
     const snap = snapshot({ running, pending: running ? [admission()] : [] })

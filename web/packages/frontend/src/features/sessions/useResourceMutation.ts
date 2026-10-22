@@ -1,20 +1,26 @@
+import { useMemo } from 'react'
 import { matchQuery, useMutation, useQuery, useQueryClient, type QueryKey, type QueryClient, type Query } from '@tanstack/react-query'
 import { getStreamContext } from '../../stream/connection'
 import { keys } from '../../api/queryKeys'
 import * as api from '../../api/endpoints'
+import { isDefiniteRefusal } from '../../contracts/common'
 import { m } from '../../paraglide/messages.js'
 
-/** Local presentation only. Never merge these fields into cached server snapshots. */
-export interface ResourceIntent<T = unknown> {
+/**
+ * The display result of a user's own write, shown before the server confirms it (root rule: optimistic writes).
+ * Never merge these fields into cached server snapshots; the display helpers below overlay them.
+ */
+export interface ResourceEffect<T = unknown> {
+  /** The row is gone from every list and detail. */
+  remove?: boolean
+  /** The requested value of a single-value resource (a switch, a selection, a status). */
   value?: T
-  label: string
-  title?: string
-  color?: string
-  recover?: () => Promise<void>
+  /** Row fields as the write sets them (title, name, color, pinned, project_id, status, …). */
+  fields?: Record<string, unknown>
 }
-interface OwnedIntent extends ResourceIntent { context: object }
-const intentKey = ['resource-intents'] as const
-const empty: Record<string, OwnedIntent> = {}
+interface OwnedEffect extends ResourceEffect { context: object; exclusive: boolean; settled: Promise<unknown> }
+const effectKey = ['resource-effects'] as const
+const empty: Record<string, OwnedEffect> = {}
 /** Extend the existing key selection with an exact snapshot match when descendants are unrelated. */
 type ResourceRead = QueryKey | { queryKey: QueryKey; exact: boolean }
 interface Reconciliation {
@@ -25,9 +31,32 @@ interface Reconciliation {
 }
 const reconciliations = new WeakMap<QueryClient, Map<string, Reconciliation>>()
 
-export function useResourceIntents<T = unknown>(): Record<string, ResourceIntent<T>> {
-  const { data } = useQuery({ queryKey: intentKey, queryFn: () => empty, initialData: empty, enabled: false, gcTime: Infinity, structuralSharing: false })
-  return Object.fromEntries(Object.entries(data).filter(([, intent]) => intent.context === getStreamContext())) as Record<string, ResourceIntent<T>>
+export function useResourceEffects<T = unknown>(): Record<string, ResourceEffect<T>> {
+  const { data } = useQuery({ queryKey: effectKey, queryFn: () => empty, initialData: empty, enabled: false, gcTime: Infinity, structuralSharing: false })
+  const context = getStreamContext()
+  return useMemo(() => Object.fromEntries(Object.entries(data).filter(([, effect]) => effect.context === context)) as Record<string, ResourceEffect<T>>, [data, context])
+}
+
+/** One row as the user's pending writes show it: `null` when removed, fields patched. */
+export function withEffect<R extends object>(row: R, effect: ResourceEffect | undefined): R | null {
+  if (!effect) return row
+  if (effect.remove) return null
+  return effect.fields ? { ...row, ...effect.fields } : row
+}
+
+/** A resource id for one create; the server assigns the real identity. */
+let created = 0
+export const newResource = (kind: string) => `${kind}:new:${++created}`
+
+/** Server rows plus the rows pending creates of `kind` (see `newResource`) show before the server returns them. */
+export function withCreated<R extends object>(rows: readonly R[], kind: string, effects: Record<string, ResourceEffect>): R[] {
+  const prefix = `${kind}:new:`
+  return [...rows, ...Object.entries(effects).flatMap(([id, effect]) => id.startsWith(prefix) && effect.fields ? [effect.fields as R] : [])]
+}
+
+/** Server rows as the user's pending writes show them: removed ids dropped, fields patched. */
+export function withEffects<R extends object>(rows: readonly R[], resource: (row: R) => string, effects: Record<string, ResourceEffect>): R[] {
+  return rows.flatMap((row) => withEffect(row, effects[resource(row)]) ?? [])
 }
 
 /** Cancellation and refetch must cover the same required snapshots. */
@@ -35,8 +64,12 @@ function resourceReadFilter(readKeys?: ResourceRead[]) {
   return readKeys ? { predicate: (query: Query) => readKeys.some((key) => matchQuery('queryKey' in key ? key : { queryKey: key }, query)) } : {}
 }
 
+function readQueryKeys(queryKey?: QueryKey) {
+  return queryKey ? [queryKey] : [keys.sessions.all, keys.projects]
+}
+
 function cancelResourceReads(qc: QueryClient, queryKey?: QueryKey, readKeys?: ResourceRead[]) {
-  return Promise.all((queryKey ? [queryKey] : [keys.sessions.all, keys.projects]).map((queryKey) => qc.cancelQueries({ queryKey, ...resourceReadFilter(readKeys) })))
+  return Promise.all(readQueryKeys(queryKey).map((queryKey) => qc.cancelQueries({ queryKey, ...resourceReadFilter(readKeys) })))
 }
 
 async function reconcile(qc: QueryClient, current: () => boolean, resource: string, queryKey?: QueryKey, readKeys?: ResourceRead[]) {
@@ -98,10 +131,38 @@ async function reconcileSnapshot(qc: QueryClient, current: () => boolean, resour
   ])
 }
 
-/** One owner per resource across sidebar, menus and detail. Independent resources can proceed. */
+/**
+ * After a failed reconciliation the effect stays until every displayed snapshot it covers has read successfully since;
+ * with none displayed, the next successful read of any of them settles it.
+ */
+export function settleOnNextRead(qc: QueryClient, current: () => boolean, clear: () => void, queryKey?: QueryKey, readKeys?: ResourceRead[]) {
+  const filter = resourceReadFilter(readKeys)
+  const covered = (query: Query) => readQueryKeys(queryKey).some((key) => matchQuery({ queryKey: key }, query)) && (!filter.predicate || filter.predicate(query))
+  const waiting = new Set(qc.getQueryCache().findAll({ type: 'active', predicate: covered }).map((query) => query.queryHash))
+  const unsubscribe = qc.getQueryCache().subscribe((event) => {
+    if (!current()) { unsubscribe(); return }
+    const query = event.query as Query
+    if (!covered(query)) return
+    if (event.type === 'removed') waiting.delete(query.queryHash)
+    else if (event.type === 'updated' && event.action.type === 'success') {
+      if (!waiting.size) { unsubscribe(); clear(); return }
+      waiting.delete(query.queryHash)
+    } else return
+    if (!waiting.size) { unsubscribe(); clear() }
+  })
+}
+
+/**
+ * One optimistic owner per resource across sidebar, menus and detail; independent resources proceed concurrently.
+ * The effect shows at once. Success keeps it until a fresh read confirms the server value, a definite refusal rolls
+ * it back at once, and an unknown outcome keeps it while a fresh read decides. A repeated write to the same resource
+ * replaces the shown result and runs after its predecessor (last write wins); an `exclusive` write (create, delete)
+ * is never queued behind or replayed over another, and refuses with `resource_change_busy` instead.
+ */
 export function useResourceMutation<V, R, T = unknown>(options: {
   resource: (variables: V) => string | string[]
-  intent: (variables: V) => ResourceIntent<T>
+  effect: (variables: V) => ResourceEffect<T>
+  exclusive?: boolean
   queryKey?: QueryKey
   readKeys?: (variables: V) => ResourceRead[]
   mutationFn: (variables: V) => Promise<R>
@@ -111,47 +172,69 @@ export function useResourceMutation<V, R, T = unknown>(options: {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (variables: V) => {
-      qc.setQueryDefaults(intentKey, { structuralSharing: false })
+      qc.setQueryDefaults(effectKey, { structuralSharing: false })
       const resources = options.resource(variables)
       const ids = typeof resources === 'string' ? [resources] : resources
       const id = ids[0]
       if (id === undefined) throw new Error(m.error_generic())
       const context = getStreamContext()
-      const intents = () => qc.getQueryData<Record<string, OwnedIntent>>(intentKey) ?? empty
-      if (ids.some((id) => intents()[id]?.context === context)) throw new Error(m.resource_change_busy())
-      const intent: OwnedIntent = { ...options.intent(variables), context }
-      const current = () => getStreamContext() === context && ids.every((id) => intents()[id] === intent)
+      const effects = () => qc.getQueryData<Record<string, OwnedEffect>>(effectKey) ?? empty
+      const shown = options.effect(variables)
+      const exclusive = !!options.exclusive || !!shown.remove
+      const predecessors = ids.map((id) => effects()[id]).filter((effect): effect is OwnedEffect => effect?.context === context)
+      if (predecessors.some((effect) => effect.exclusive) || exclusive && predecessors.length) {
+        const busy = new Error(m.resource_change_busy())
+        options.onError?.(busy)
+        throw busy
+      }
+      let release!: () => void
+      const settled = new Promise((resolve) => { release = () => resolve(undefined) })
+      // A replacing write keeps the fields of the write it replaces that it does not set itself (rename, then recolor).
+      const mine: Record<string, OwnedEffect> = Object.fromEntries(ids.map((id) => {
+        const before = effects()[id]?.context === context ? effects()[id]?.fields : undefined
+        const fields = before && shown.fields ? { ...before, ...shown.fields } : shown.fields ?? before
+        return [id, { ...shown, ...(fields ? { fields } : {}), context, exclusive, settled }]
+      }))
+      // A later write may replace this one on some of its resources; this write still owns the rest.
+      const owned = () => getStreamContext() === context ? ids.filter((id) => effects()[id] === mine[id]) : []
+      const current = () => owned().length > 0
       const clear = () => {
-        if (!current()) return
-        qc.setQueryData(intentKey, (old: Record<string, OwnedIntent> = empty) => {
-          return Object.fromEntries(Object.entries(old).filter(([key]) => !ids.includes(key)))
+        const mine = owned()
+        if (!mine.length) return
+        qc.setQueryData(effectKey, (old: Record<string, OwnedEffect> = empty) => {
+          return Object.fromEntries(Object.entries(old).filter(([key]) => !mine.includes(key)))
         })
       }
-      qc.setQueryData(intentKey, { ...intents(), ...Object.fromEntries(ids.map((id) => [id, intent])) })
+      qc.setQueryData(effectKey, { ...effects(), ...mine })
+      let outcome: 'confirmed' | 'refused' | 'unknown' = 'unknown'
       try {
+        // A replaced write still reaches the server first, so the newest request lands last.
+        await Promise.all(predecessors.map((effect) => effect.settled))
+        if (!current()) throw new Error(m.resource_change_busy())
         const result = await options.mutationFn(variables)
         if (!current()) return result
         if (result && typeof result === 'object') {
           if ('error' in result && typeof result.error === 'string' && result.error) throw new Error(result.error)
           if ('ok' in result && result.ok === false) throw new Error(m.error_generic())
         }
-        // Success callbacks consume the confirmed write, while the overlay remains until fresh reads finish.
+        outcome = 'confirmed'
         options.onSuccess?.(result, variables)
         return result
       } catch (error) {
+        if (outcome === 'unknown' && isDefiniteRefusal(error)) outcome = 'refused'
         if (current()) options.onError?.(error)
         throw error
       } finally {
-        if (current()) {
-          const recover = async () => { await reconcile(qc, current, id, options.queryKey, options.readKeys?.(variables)); clear() }
-          try { await recover() } catch {
-            // An unknown outcome cannot be retried as another create/delete. Retry reads only.
-            if (current()) {
-              const uncertain = { ...intent, recover }
-              // Keep ownership by token even when the display acquires its retry action.
-              Object.assign(intent, uncertain)
-              qc.setQueryData(intentKey, { ...intents() })
-            }
+        release()
+        if (outcome === 'refused') {
+          clear()
+          // The refusal may mean this snapshot is out of date (a task changed since it was read); refresh it behind the rollback.
+          void reconcileSnapshot(qc, () => getStreamContext() === context, id, options.queryKey, options.readKeys?.(variables)).catch(() => undefined)
+        } else if (current()) {
+          // The shown result stays until a read taken after the write confirms or replaces it.
+          try { await reconcile(qc, current, id, options.queryKey, options.readKeys?.(variables)); clear() } catch {
+            // An unknown outcome is never retried as another write; the next successful read settles it.
+            settleOnNextRead(qc, current, clear, options.queryKey, options.readKeys?.(variables))
           }
         }
       }

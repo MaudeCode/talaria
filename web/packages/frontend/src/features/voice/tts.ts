@@ -8,12 +8,19 @@
 import { readPersisted } from '../../lib/persisted'
 import { ttsEngine } from '../../extensions/registry'
 import { prepareSpeech } from '../../api/endpoints'
+import { claimAutoRead } from './autoReadClaim'
 
 export const TTS_PREF = { engine: 'hermes-tts-engine', voice: 'hermes-tts-voice', rate: 'hermes-tts-rate', pitch: 'hermes-tts-pitch' } as const
 
 let current: HTMLAudioElement | null = null
 /** Bumped by every stop, so a reply still being prepared never starts after a later stop or speak. */
 let generation = 0
+
+/** A Stop or manual read while storage is pending also cancels this automatic attempt. */
+export async function claimAutomaticSpeech(identity: string): Promise<boolean> {
+  const turn = generation
+  return await claimAutoRead(identity) && turn === generation
+}
 
 export function stopSpeaking(): void {
   generation += 1

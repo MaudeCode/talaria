@@ -105,6 +105,15 @@ public final class ChatViewModel {
     /// An edit or regenerate the server held for confirmation (TAL-929); `confirmDeepTruncate` resends it.
     public private(set) var deepTruncateConfirmation: DeepTruncateConfirmation?
     public private(set) var modelSwitchConfirmation: ModelSwitchConfirmation?
+    @ObservationIgnored private var offeredOwnerModelConfirmation: ModelSwitchConfirmation?
+
+    public var ownerModelChangeMessage: String? {
+        switch ownerAttachment?.modelChange?.state {
+        case "deferred": String(localized: "The model will change after the current response finishes.")
+        case "refused": ownerAttachment?.modelChange?.message
+        default: nil
+        }
+    }
     /// The last loaded detail's `confirms_deep_truncate`: a detail without it is an older server's, which cuts at once.
     private var serverConfirmsDeepTruncate = false
     private(set) var cacheErrorMessage: String?
@@ -246,6 +255,7 @@ public final class ChatViewModel {
     private func applyReadOnlyState(from session: SessionDetail?, noticesChangesAtFetch: Int? = nil) {
         if let session {
             ownerAttachment = session.ownerAttachment
+            presentOwnerModelConfirmation()
             executionMode = session.executionMode
         }
         if let readOnly = session?.readOnly { isSessionReadOnly = readOnly }
@@ -1019,6 +1029,10 @@ public final class ChatViewModel {
         await pendingActionCoordinator.refreshApprovalBypassState()
     }
 
+    private var isModelOrWorkspaceSelectionBlockedByStream: Bool {
+        activeStreamID != nil && ownerAttachment?.isAttached != true
+    }
+
     @discardableResult
     public func selectComposerModel(
         _ option: ModelCatalogOption,
@@ -1036,7 +1050,7 @@ public final class ChatViewModel {
             return false
         }
 
-        guard activeStreamID == nil else {
+        guard !isModelOrWorkspaceSelectionBlockedByStream else {
             composerConfigurationErrorMessage = String(localized: "Wait for the current response to finish before changing models.")
             return false
         }
@@ -1063,6 +1077,11 @@ public final class ChatViewModel {
 
     /// Both the picker and /model retain their old choice until the server returns the final session.
     private func switchSessionModel(id: String, workspace: String?, model: String, provider: String?, confirmToken: String? = nil) async -> Bool {
+        if ownerAttachment != nil {
+            var payload: [String: JSONValue] = ["model": .string(model), "provider": provider.map(JSONValue.string) ?? .null]
+            if let confirmToken { payload["confirm"] = .string(confirmToken) }
+            return await mutateOwnerConfiguration(operation: "model", payload: payload)
+        }
         guard !isUpdatingComposerConfiguration,
               canRunConfigurationSlashCommand(String(localized: "change models")) else { return false }
         let ownership = sendOwnershipGeneration
@@ -1223,7 +1242,7 @@ public final class ChatViewModel {
             return false
         }
 
-        guard activeStreamID == nil else {
+        guard !isModelOrWorkspaceSelectionBlockedByStream else {
             composerConfigurationErrorMessage = String(localized: "Wait for the current response to finish before changing workspace.")
             return false
         }
@@ -1231,6 +1250,10 @@ public final class ChatViewModel {
         guard let sessionID else {
             composerConfigurationErrorMessage = String(localized: "The server did not provide a session ID.")
             return false
+        }
+
+        if ownerAttachment != nil {
+            return await mutateOwnerConfiguration(operation: "workspace", payload: ["cwd": .string(workspace)])
         }
 
         let previousWorkspace = currentWorkspace
@@ -1260,6 +1283,62 @@ public final class ChatViewModel {
             composerConfigurationErrorMessage = error.localizedDescription
             return false
         }
+    }
+
+    /// Both owner pickers share admission fences, lifecycle ownership and refusal reconciliation.
+    private func mutateOwnerConfiguration(operation: String, payload: [String: JSONValue]) async -> Bool {
+        guard !isUpdatingComposerConfiguration, !isViewingCachedData,
+              let id = sessionID, let owner = ownerAttachment, owner.isAttached,
+              let revision = owner.revision, let generation = owner.executionGeneration else { return false }
+        let ownership = sendOwnershipGeneration
+        isUpdatingComposerConfiguration = true
+        modelSwitchConfirmation = nil
+        composerConfigurationErrorMessage = nil
+        lastError = nil
+        if operation == "model" { offeredOwnerModelConfirmation = nil }
+        defer { isUpdatingComposerConfiguration = false }
+        do {
+            let response = try await client.ownerAction(sessionID: id, operation: operation, payload: payload,
+                                                        expectedRevision: revision, executionGeneration: generation)
+            guard ownership == sendOwnershipGeneration, sessionID == id, !Task.isCancelled else { return false }
+            guard let session = response.session, session.sessionId == id, session.ownerAttachment != nil,
+                  operation != "model" || Self.nonEmpty(session.model) != nil,
+                  operation != "workspace" || Self.nonEmpty(session.workspace) != nil else {
+                throw APIError.decoding(underlying: DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "Owner update omitted its authoritative session")))
+            }
+            applyReadOnlyState(from: session)
+            if let model = session.model {
+                currentModel = model
+                currentModelOptionID = session.modelOptionID
+                currentModelProvider = session.modelProvider
+            }
+            applyServerWorkspace(session.workspace, name: session.workspaceName)
+            if operation == "model", let change = session.ownerAttachment?.modelChange {
+                return change.state == "applied"
+            }
+            return true
+        } catch {
+            guard ownership == sendOwnershipGeneration, sessionID == id, !Task.isCancelled else { return false }
+            await reconcileOwnerRefusal(error, modelContext: runStatusCacheContext)
+            guard ownership == sendOwnershipGeneration, sessionID == id, !Task.isCancelled else { return false }
+            lastError = error
+            composerConfigurationErrorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    private func presentOwnerModelConfirmation() {
+        guard let id = sessionID, let change = ownerAttachment?.modelChange, change.state == "confirmation_required",
+              let token = change.confirm, let model = change.model else {
+            if let offered = offeredOwnerModelConfirmation, modelSwitchConfirmation == offered { modelSwitchConfirmation = nil }
+            offeredOwnerModelConfirmation = nil
+            return
+        }
+        guard offeredOwnerModelConfirmation?.sessionID != id || offeredOwnerModelConfirmation?.confirmToken != token else { return }
+        let confirmation = ModelSwitchConfirmation(warnings: [], message: change.message,
+            sessionID: id, workspace: nil, model: model, provider: change.provider, confirmToken: token)
+        offeredOwnerModelConfirmation = confirmation
+        modelSwitchConfirmation = confirmation
     }
 
     public func switchProfile(
@@ -1370,7 +1449,7 @@ public final class ChatViewModel {
         defer { isUpdatingComposerConfiguration = false }
 
         do {
-            let response = try await client.saveReasoningEffort(selectedEffort)
+            let response = try await client.saveReasoningEffort(selectedEffort, sessionID: sessionID)
             selectedReasoningEffort = response.effectiveEffort ?? selectedEffort
             return true
         } catch {
@@ -3828,7 +3907,7 @@ public final class ChatViewModel {
             if Self.reasoningDisplayArgs.contains(reasoning) {
                 _ = try await client.saveReasoningDisplay(reasoning)
             } else if Self.reasoningEffortArgs.contains(reasoning) {
-                let response = try await client.saveReasoningEffort(reasoning)
+                let response = try await client.saveReasoningEffort(reasoning, sessionID: sessionID)
                 selectedReasoningEffort = response.effectiveEffort ?? reasoning
             } else {
                 return .unsupported(friendlyMessage: String(localized: "Unknown reasoning level: \(reasoning)."))
@@ -5440,7 +5519,7 @@ public final class ChatViewModel {
             activeBtwAnswer = "Error: \(message)"
             updateActiveBtwMessage(isLoading: false)
             finishBtwStream()
-        case .heartbeat, .ignored, .reasoning, .toolStarted, .toolCompleted, .title, .metering, .steerConsumed, .steerPending, .steerWithdrawn, .notices,
+        case .heartbeat, .ignored, .reasoning, .toolStarted, .toolProgress, .toolCompleted, .title, .metering, .steerConsumed, .steerPending, .steerWithdrawn, .notices,
              .runStatus, .compressing, .compressed:
             break
         }
@@ -5816,11 +5895,55 @@ public final class ChatViewModel {
                 preview: payload.preview,
                 args: payload.args,
                 kind: payload.kind,
-                target: payload.target
+                target: payload.target,
+                progress: payload.progress
             )
         )
         scheduleStreamingScrollTrigger()
         return true
+    }
+
+    @discardableResult
+    private func updateToolProgress(_ payload: ToolStreamEvent) -> Bool {
+        guard let stableID = payload.stableID else { return false }
+        if let index = liveToolCallCompletionIndex(for: payload) {
+            return liveAssistantActivity.updateTool(at: index) { call in
+                var call = call
+                call.progress = payload.progress
+                return call
+            }
+        }
+        // A reload can attach after the start frame. Continue the server's existing scene row in place.
+        guard !liveToolCalls.contains(where: { $0.id == stableID }),
+              let message = messages.last(where: { $0.activityScene?.terminalState == "running" }),
+              var call = AssistantActivityTimeline.authoritativeScene(message: message)?.toolCalls
+                .first(where: { $0.id == stableID && !$0.isCompleted })
+        else { return false }
+        call.progress = payload.progress
+        liveAssistantActivity.appendTool(call)
+        return true
+    }
+
+    private func clearLiveToolProgress() {
+        // A reloaded scene may end before another tool frame arrives. Keep the server snapshot intact and
+        // supply cleared tool overlays through the same archive the transcript reads after the stream ends.
+        for (index, message) in messages.enumerated() where message.activityScene?.terminalState == "running" {
+            guard let scene = AssistantActivityTimeline.authoritativeScene(message: message),
+                  scene.toolCalls.contains(where: { $0.progress != nil }) else { continue }
+            let anchor = TranscriptTurnClassifier.anchorID(for: message, at: index, messageOffset: messagesOffset)
+            var archive = AssistantActivityTimeline(rows: archivedAssistantActivity[anchor] ?? [])
+            let existingIDs = Set(archive.toolCalls.map(\.id))
+            for call in scene.toolCalls where call.progress != nil && !existingIDs.contains(call.id) {
+                archive.appendTool(call)
+            }
+            archivedAssistantActivity[anchor] = archive.rows
+        }
+        liveAssistantActivity.clearToolProgress()
+        for anchor in Array(archivedAssistantActivity.keys) {
+            var archive = AssistantActivityTimeline(rows: archivedAssistantActivity[anchor] ?? [])
+            archive.clearToolProgress()
+            archivedAssistantActivity[anchor] = archive.rows
+        }
     }
 
     @discardableResult
@@ -6490,12 +6613,14 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
     }
 
     public func streamCoordinatorDidCompleteCurrentResponse(needsTranscriptRefresh: Bool, outcome: ResponseCompletionOutcome) {
+        clearLiveToolProgress()
         responseCompletionNeedsTranscriptRefresh = needsTranscriptRefresh
         responseCompletionOutcome = outcome
         responseCompletionHapticTrigger += 1
     }
 
     public func streamCoordinatorDidFinishStream() {
+        clearLiveToolProgress()
         flushPendingStreamingContent()
         responseCompletionNeedsTranscriptRefresh = false
     }
@@ -6542,6 +6667,11 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
     @discardableResult
     public func streamCoordinatorAppendToolCall(_ payload: ToolStreamEvent) -> Bool {
         appendToolCall(payload)
+    }
+
+    @discardableResult
+    public func streamCoordinatorUpdateToolProgress(_ payload: ToolStreamEvent) -> Bool {
+        updateToolProgress(payload)
     }
 
     @discardableResult

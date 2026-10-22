@@ -4,10 +4,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 import { teardownAll } from '../../stream/connection'
+import { ApiError } from '../../contracts/common'
 
 vi.mock('../../shell/AppShell', () => ({ HubPage: ({ title, actions, toolbar, children }: { title: string; actions: ReactNode; toolbar: ReactNode; children: ReactNode }) => <main><h1>{title}</h1>{actions}{toolbar}{children}</main> }))
+const toast = vi.hoisted(() => vi.fn())
+vi.mock('../toast/toast', () => ({ showToast: toast }))
 vi.mock('../../api/sse', () => ({ SSE_CLOSED: 2, openKanbanEventStream: vi.fn(() => ({ close: vi.fn(), readyState: () => 1 })) }))
-vi.mock('../../api/endpoints', () => ({ fetchKanbanBoards: vi.fn(), fetchKanbanBoard: vi.fn(), fetchKanbanStats: vi.fn(), fetchKanbanTask: vi.fn(), fetchKanbanTaskLog: vi.fn(), kanbanTaskAction: vi.fn(), linkKanbanTasks: vi.fn(), unlinkKanbanTasks: vi.fn(), bulkKanbanStatus: vi.fn(), switchKanbanBoard: vi.fn(), updateKanbanConfig: vi.fn() }))
+vi.mock('../../api/endpoints', () => ({ fetchKanbanBoards: vi.fn(), fetchKanbanBoard: vi.fn(), fetchKanbanStats: vi.fn(), fetchKanbanTask: vi.fn(), fetchKanbanTaskLog: vi.fn(), kanbanTaskAction: vi.fn(), linkKanbanTasks: vi.fn(), unlinkKanbanTasks: vi.fn(), bulkKanbanStatus: vi.fn(), switchKanbanBoard: vi.fn(), updateKanbanConfig: vi.fn(), createKanbanTask: vi.fn(), archiveKanbanBoard: vi.fn() }))
 import * as api from '../../api/endpoints'
 import { openKanbanEventStream } from '../../api/sse'
 import { KanbanPage } from './KanbanPage'
@@ -18,7 +21,9 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 const task = (id = 'A', status = 'todo') => ({ id, title: `Task ${id}`, status, priority: 0, claim_live: false, has_completion_evidence: false, current_run_started_at: null, available_actions: { block: true, unblock: false, complete: true, archive: true, move_to: ['ready', 'done'] }, requires_running_exit_confirmation: status === 'running' })
-const snapshot = (tasks = [task(), task('B')], lanes = false) => ({ columns: [{ name: 'todo', label: 'To do', tasks }], bulk_move_targets: ['done'], create_statuses: ['todo'], lane_by_profile: lanes, latest_event_id: 7, read_only: false, ...(lanes ? { lanes: [{ assignee: 'scout', count: tasks.length, columns: [{ name: 'todo', label: 'To do', tasks }] }] } : {}) })
+const STATUSES = ['todo', 'ready', 'running', 'blocked', 'done']
+const byStatus = (tasks: ReturnType<typeof task>[]) => STATUSES.map((name) => ({ name, label: name, tasks: tasks.filter((t) => t.status === name) }))
+const snapshot = (tasks = [task(), task('B')], lanes = false) => ({ columns: byStatus(tasks), bulk_move_targets: ['done'], create_statuses: ['todo'], lane_by_profile: lanes, latest_event_id: 7, read_only: false, ...(lanes ? { lanes: [{ assignee: 'scout', count: tasks.length, columns: byStatus(tasks) }] } : {}) })
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   return { qc, ...render(<QueryClientProvider client={qc}><KanbanPage /></QueryClientProvider>) }
@@ -41,27 +46,66 @@ beforeEach(() => {
   vi.mocked(api.fetchKanbanTask).mockResolvedValue({ task: task(), links: { parents: [], children: [] }, link_tasks: [], last_card_action: null })
 })
 
-describe('Kanban pending presentation', () => {
-  it('shows a held status intent on the card and dialog without changing server columns or actions', async () => {
+const refusal = (message: string) => new ApiError({ kind: 'http', status: 409, path: '/x', message })
+/** The task ids each column shows, in order. */
+const columnIds = (status: string) => [...document.querySelectorAll('section.kanban-column')[STATUSES.indexOf(status)]!.querySelectorAll('[data-task-id]')].map((el) => el.getAttribute('data-task-id'))
+
+describe('Kanban writes show their result while the server is held (TAL-1179)', () => {
+  it('moves the card to the top of its target column at once, keeps controls usable, and leaves the server cache alone', async () => {
     const write = deferred<Awaited<ReturnType<typeof api.kanbanTaskAction>>>()
     vi.mocked(api.kanbanTaskAction).mockReturnValue(write.promise)
+    vi.mocked(api.fetchKanbanBoard).mockResolvedValue(snapshot([task(), task('B'), task('C', 'done')]))
     const { qc } = renderPage()
     const dialog = await openTask()
     await choose('Column', 'done')
     expect(dialog.getByRole('combobox', { name: 'Column' })).toHaveTextContent('done')
-    expect(dialog.getByRole('status')).toHaveTextContent(/Pending.*Done/i)
-    expect(dialog.getByRole('button', { name: 'Complete' })).toBeDisabled()
-    expect(qc.getQueryData(['kanban', 'board', 'default', 'view', { include_archived: false, assignee: '', tenant: '', only_mine: false, search: '' }])).toMatchObject(snapshot())
-    await userEvent.click(dialog.getByRole('button', { name: 'Complete' }))
-    expect(api.kanbanTaskAction).toHaveBeenCalledTimes(1)
+    expect(columnIds('todo')).toEqual(['B'])
+    expect(columnIds('done')).toEqual(['A', 'C'])
+    expect(dialog.getByRole('button', { name: 'Complete' })).toBeEnabled()
+    expect(screen.queryByText(/Pending/)).toBeNull()
+    expect(qc.getQueryData(['kanban', 'board', 'default', 'view', { include_archived: false, assignee: '', tenant: '', only_mine: false, search: '' }])).toMatchObject(snapshot([task(), task('B'), task('C', 'done')]))
+    vi.mocked(api.fetchKanbanBoard).mockResolvedValue(snapshot([task('B'), task('C', 'done'), task('A', 'done')]))
     await act(async () => { write.resolve({ task: task('A', 'done'), read_only: false }); await Promise.resolve() })
-    await waitFor(() => expect(dialog.queryByRole('status')).not.toBeInTheDocument())
-    expect(dialog.getByRole('combobox', { name: 'Column' })).toHaveTextContent('todo')
-    await choose('Column', 'done')
-    await waitFor(() => expect(api.kanbanTaskAction).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(columnIds('done')).toEqual(['C', 'A']))
   })
 
-  it.each(['cycle refused', 'permission denied', 'stale task'])('shows held dependency intent and reconciles %s without discarding a newer draft', async (reason) => {
+  it('rolls a refused move back to the confirmed column with the error', async () => {
+    vi.mocked(api.kanbanTaskAction).mockRejectedValue(refusal('Task changed'))
+    renderPage()
+    const dialog = await openTask()
+    await choose('Column', 'done')
+    await waitFor(() => expect(toast).toHaveBeenCalledWith('Task changed', 4000, 'error'))
+    expect(columnIds('todo')).toEqual(['A', 'B'])
+    expect(dialog.getByRole('combobox', { name: 'Column' })).toHaveTextContent('todo')
+  })
+
+  it('blocks and unblocks at once', async () => {
+    vi.mocked(api.kanbanTaskAction).mockReturnValue(new Promise(() => undefined))
+    vi.mocked(api.fetchKanbanBoard).mockResolvedValue(snapshot([task(), { ...task('B', 'blocked'), available_actions: { block: false, unblock: true, complete: true, archive: true, move_to: ['ready'] } }]))
+    renderPage()
+    const dialog = await openTask()
+    await userEvent.click(dialog.getByRole('button', { name: 'Block' }))
+    expect(columnIds('blocked')).toEqual(['A', 'B'])
+    await userEvent.keyboard('{Escape}')
+    const other = await openTask('B')
+    await userEvent.click(other.getByRole('button', { name: 'Unblock' }))
+    expect(columnIds('ready')).toEqual(['B'])
+  })
+
+  it('keeps Dispatch busy on its own button only', async () => {
+    const write = deferred<Awaited<ReturnType<typeof api.kanbanTaskAction>>>()
+    vi.mocked(api.kanbanTaskAction).mockReturnValue(write.promise)
+    renderPage()
+    const dialog = await openTask()
+    await userEvent.click(dialog.getByRole('button', { name: 'Dispatch to agent' }))
+    expect(dialog.getByRole('button', { name: 'Dispatch to agent' })).toBeDisabled()
+    expect(dialog.getByRole('button', { name: 'Complete' })).toBeEnabled()
+    expect(dialog.queryByRole('status')).toBeNull()
+    await act(async () => { write.resolve({ task: task(), read_only: false }); await Promise.resolve() })
+    await waitFor(() => expect(dialog.getByRole('button', { name: 'Dispatch to agent' })).toBeEnabled())
+  })
+
+  it.each(['cycle refused', 'permission denied', 'stale task'])('shows an added dependency at once and removes it when %s', async (reason) => {
     const write = deferred<Awaited<ReturnType<typeof api.linkKanbanTasks>>>()
     vi.mocked(api.linkKanbanTasks).mockReturnValue(write.promise)
     renderPage()
@@ -69,16 +113,32 @@ describe('Kanban pending presentation', () => {
     const input = dialog.getByRole('textbox', { name: 'Parent task ID' })
     await userEvent.type(input, 'P1')
     await userEvent.click(dialog.getByRole('button', { name: 'Add dependency' }))
-    expect(dialog.getByRole('status')).toHaveTextContent(/P1/)
-    await userEvent.clear(input)
+    expect(dialog.getByRole('listitem')).toHaveTextContent('P1')
+    expect(input).toHaveValue('')
     await userEvent.type(input, 'P2')
-    await act(async () => { write.reject(new Error(reason)); await Promise.resolve() })
-    await waitFor(() => expect(dialog.queryByRole('status')).not.toBeInTheDocument())
+    await act(async () => { write.reject(refusal(reason)); await Promise.resolve() })
+    await waitFor(() => expect(dialog.queryByRole('listitem')).not.toBeInTheDocument())
+    expect(toast).toHaveBeenCalledWith(reason, 4000, 'error')
     expect(input).toHaveValue('P2')
-    expect(dialog.getByRole('button', { name: 'Add dependency' })).toBeEnabled()
   })
 
-  it('shows each bulk intent and reconciles independently refused items', async () => {
+  it('drops an unlinked dependency at once and keeps it gone through a stale detail read', async () => {
+    const write = deferred<Awaited<ReturnType<typeof api.unlinkKanbanTasks>>>()
+    vi.mocked(api.unlinkKanbanTasks).mockReturnValue(write.promise)
+    vi.mocked(api.fetchKanbanTask).mockResolvedValue({ task: task(), links: { parents: ['P1'], children: [] }, link_tasks: [{ id: 'P1', title: 'Parent', status: 'done' }], last_card_action: null })
+    const { qc } = renderPage()
+    const dialog = await openTask()
+    await userEvent.click(await dialog.findByRole('button', { name: 'Remove dependency Parent (P1)' }))
+    expect(dialog.queryByRole('listitem')).not.toBeInTheDocument()
+    await act(async () => { await qc.invalidateQueries({ queryKey: ['kanban'] }) })
+    expect(dialog.queryByRole('listitem')).not.toBeInTheDocument()
+    vi.mocked(api.fetchKanbanTask).mockResolvedValue({ task: task(), links: { parents: [], children: [] }, link_tasks: [], last_card_action: null })
+    await act(async () => { write.resolve({ ok: true }); await Promise.resolve() })
+    await waitFor(() => expect(api.fetchKanbanTask).toHaveBeenCalledTimes(3))
+    expect(dialog.queryByRole('listitem')).not.toBeInTheDocument()
+  })
+
+  it('moves every bulk card at once and lets the server reread settle refused items', async () => {
     const write = deferred<Awaited<ReturnType<typeof api.bulkKanbanStatus>>>()
     vi.mocked(api.bulkKanbanStatus).mockReturnValue(write.promise)
     renderPage()
@@ -86,15 +146,15 @@ describe('Kanban pending presentation', () => {
     await userEvent.click(screen.getByRole('checkbox', { name: 'Select Task B' }))
     await choose('Status', 'done')
     await userEvent.click(screen.getByRole('button', { name: 'Apply' }))
-    expect(screen.getAllByRole('status').filter((el) => el.textContent?.includes('Done'))).toHaveLength(2)
+    expect(columnIds('done')).toEqual(['A', 'B'])
+    expect(columnIds('todo')).toEqual([])
     vi.mocked(api.fetchKanbanBoard).mockResolvedValue(snapshot([task('A', 'done'), task('B')]))
     await act(async () => { write.resolve({ results: [{ id: 'A', ok: true }, { id: 'B', ok: false, error: 'permission denied' }], read_only: false }); await Promise.resolve() })
-    await waitFor(() => expect(screen.queryAllByRole('status').filter((el) => el.textContent?.includes('Pending'))).toHaveLength(0))
-    const dialog = await openTask('B')
-    expect(dialog.getByRole('combobox', { name: 'Column' })).toHaveTextContent('todo')
+    await waitFor(() => expect(columnIds('todo')).toEqual(['B']))
+    expect(columnIds('done')).toEqual(['A'])
   })
 
-  it('selects the destination immediately, never showing previous-board cards as writable', async () => {
+  it('shows the destination board at once and lets its cards be used before the switch confirms', async () => {
     const write = deferred<Awaited<ReturnType<typeof api.switchKanbanBoard>>>()
     const read = deferred<Awaited<ReturnType<typeof api.fetchKanbanBoard>>>()
     vi.mocked(api.switchKanbanBoard).mockReturnValue(write.promise)
@@ -104,79 +164,84 @@ describe('Kanban pending presentation', () => {
     await choose('Board', 'Other')
     expect(screen.getByRole('combobox', { name: 'Board' })).toHaveTextContent('Other')
     expect(screen.queryByRole('button', { name: /^Task A\b/ })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'New task' })).toBeDisabled()
     await act(async () => { read.resolve(snapshot([task('C')])); await Promise.resolve() })
     await screen.findByRole('button', { name: /^Task C\b/ })
-    expect(screen.getByRole('checkbox', { name: 'Select Task C' })).toBeDisabled()
-    vi.mocked(api.fetchKanbanBoards).mockResolvedValue({ current: 'other', boards: [{ slug: 'default', removable: false }, { slug: 'other', name: 'Other', removable: true }] })
-    await act(async () => { write.resolve({ current: 'other', read_only: false }); await Promise.resolve() })
-    await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Select Task C' })).toBeEnabled())
+    expect(screen.getByRole('checkbox', { name: 'Select Task C' })).toBeEnabled()
+    expect(screen.getByRole('combobox', { name: 'Board' })).toBeEnabled()
   })
 
-  it('reflects a held lane preference without deriving server lanes, then renders returned lanes', async () => {
+  it('keeps the lanes switch busy until the server brings lanes, and turns them off at once', async () => {
     const write = deferred<Awaited<ReturnType<typeof api.updateKanbanConfig>>>()
-    vi.mocked(api.updateKanbanConfig).mockReturnValue(write.promise)
+    vi.mocked(api.updateKanbanConfig).mockReturnValueOnce(write.promise).mockReturnValue(new Promise(() => undefined))
     renderPage()
     const toggle = await screen.findByRole('switch', { name: /Lanes by profile/ })
     await userEvent.click(toggle)
-    expect(toggle).toBeChecked()
-    expect(screen.queryByRole('region', { name: 'scout' })).not.toBeInTheDocument()
+    // Lanes are grouped by the server, so the switch waits for them rather than claiming a layout it cannot show.
+    expect(toggle).not.toBeChecked()
+    expect(toggle).toHaveAttribute('aria-busy', 'true')
     vi.mocked(api.fetchKanbanBoard).mockResolvedValue(snapshot(undefined, true))
     await act(async () => { write.resolve({}); await Promise.resolve() })
     await screen.findByRole('region', { name: 'scout' })
-    expect(toggle).toBeChecked()
+    await waitFor(() => expect(toggle).toBeChecked())
+    expect(toggle).not.toHaveAttribute('aria-busy')
+    await userEvent.click(toggle)
+    expect(toggle).not.toBeChecked()
+    expect(screen.queryByRole('region', { name: 'scout' })).toBeNull()
+    expect(columnIds('todo')).toEqual(['A', 'B'])
   })
 
-  it('does not submit or show intent when leaving Running is cancelled', async () => {
+  it('changes nothing when leaving Running is cancelled, and moves at once after Continue', async () => {
+    vi.mocked(api.kanbanTaskAction).mockReturnValue(new Promise(() => undefined))
     vi.mocked(api.fetchKanbanBoard).mockResolvedValue(snapshot([task('A', 'running')]))
     renderPage()
     const dialog = await openTask()
     await userEvent.click(dialog.getByRole('button', { name: 'Complete' }))
     await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cancel' }))
     expect(api.kanbanTaskAction).not.toHaveBeenCalled()
-    expect(dialog.queryByRole('status')).not.toBeInTheDocument()
     expect(dialog.getByRole('combobox', { name: 'Column' })).toHaveTextContent('running')
+    await userEvent.click(dialog.getByRole('button', { name: 'Complete' }))
+    await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Continue' }))
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    expect(api.kanbanTaskAction).toHaveBeenCalledWith('default', 'A', 'patch', { status: 'done', confirm_running_exit: true })
+    expect(dialog.getByRole('combobox', { name: 'Column' })).toHaveTextContent('done')
   })
 
-  it('keeps uncertain writes locked until a read-only retry reconciles them', async () => {
-    const write = deferred<Awaited<ReturnType<typeof api.kanbanTaskAction>>>()
-    vi.mocked(api.kanbanTaskAction).mockReturnValue(write.promise)
-    renderPage()
+  it('keeps an unknown-outcome move shown until a later read decides it, without resending', async () => {
+    vi.mocked(api.kanbanTaskAction).mockRejectedValue(new ApiError({ kind: 'network', path: '/x', message: 'connection lost' }))
+    const { qc } = renderPage()
     const dialog = await openTask()
-    await choose('Column', 'done')
     vi.mocked(api.fetchKanbanBoard).mockRejectedValue(new Error('offline'))
-    await act(async () => { write.reject(new Error('connection lost')); await Promise.resolve() })
-    await waitFor(() => expect(dialog.getByRole('button', { name: 'Retry' })).toBeVisible())
-    expect(dialog.getByRole('button', { name: 'Complete' })).toBeDisabled()
-    vi.mocked(api.fetchKanbanBoard).mockResolvedValue(snapshot([task('A', 'done')]))
-    await userEvent.click(dialog.getByRole('button', { name: 'Retry' }))
-    await waitFor(() => expect(dialog.queryByRole('status')).not.toBeInTheDocument())
+    await choose('Column', 'done')
+    await waitFor(() => expect(toast).toHaveBeenCalledWith('connection lost', 4000, 'error'))
+    expect(dialog.getByRole('combobox', { name: 'Column' })).toHaveTextContent('done')
+    vi.mocked(api.fetchKanbanBoard).mockResolvedValue(snapshot())
+    await act(async () => { await qc.invalidateQueries({ queryKey: ['kanban'] }) })
+    await waitFor(() => expect(dialog.getByRole('combobox', { name: 'Column' })).toHaveTextContent('todo'))
     expect(api.kanbanTaskAction).toHaveBeenCalledTimes(1)
   })
 
-  it('fences an old-profile completion from a replacement board and intent', async () => {
+  it('fences an old-profile completion from a replacement board and its write', async () => {
     const old = deferred<Awaited<ReturnType<typeof api.kanbanTaskAction>>>()
     const next = deferred<Awaited<ReturnType<typeof api.kanbanTaskAction>>>()
     vi.mocked(api.kanbanTaskAction).mockReturnValueOnce(old.promise).mockReturnValueOnce(next.promise)
     const { qc, rerender } = renderPage()
-    await userEvent.click(await screen.findByRole('checkbox', { name: 'Select Task B' }))
     await openTask()
     await choose('Column', 'done')
     act(() => { teardownAll(); qc.clear() })
     // The profile owner rerenders the shell after replacing its connection context and cache.
     rerender(<QueryClientProvider client={qc}><KanbanPage /></QueryClientProvider>)
     await screen.findByRole('dialog')
-    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Column' })).toBeEnabled())
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Column' })).toHaveTextContent('todo'))
     await choose('Column', 'ready')
     await act(async () => { old.resolve({ task: task('A', 'done'), read_only: false }); await Promise.resolve() })
     const dialog = within(screen.getByRole('dialog'))
-    expect(dialog.getByRole('status')).toHaveTextContent('Pending: Ready')
     expect(dialog.getByRole('combobox', { name: 'Column' })).toHaveTextContent('ready')
+    vi.mocked(api.fetchKanbanBoard).mockResolvedValue(snapshot([task('A', 'ready'), task('B')]))
     await act(async () => { next.resolve({ task: task('A', 'ready'), read_only: false }); await Promise.resolve() })
-    await waitFor(() => expect(dialog.queryByRole('status')).not.toBeInTheDocument())
+    await waitFor(() => expect(columnIds('ready')).toEqual(['A']))
   })
 
-  it('keeps a newer status intent over stale board/detail refreshes and preserves the live cursor', async () => {
+  it('keeps a held move over stale board/detail refreshes and preserves the live cursor', async () => {
     const write = deferred<Awaited<ReturnType<typeof api.kanbanTaskAction>>>()
     vi.mocked(api.kanbanTaskAction).mockReturnValue(write.promise)
     const { qc } = renderPage()
@@ -184,28 +249,12 @@ describe('Kanban pending presentation', () => {
     await choose('Column', 'done')
     await act(async () => { await qc.invalidateQueries({ queryKey: ['kanban'] }) })
     expect(dialog.getByRole('combobox', { name: 'Column' })).toHaveTextContent('done')
-    expect(dialog.getByRole('status')).toHaveTextContent(/Pending.*Done/i)
+    expect(columnIds('done')).toEqual(['A'])
     expect(openKanbanEventStream).toHaveBeenCalledWith('default', 7, expect.any(Function))
-    vi.mocked(api.fetchKanbanBoard).mockResolvedValue(snapshot([task('A', 'done')]))
+    vi.mocked(api.fetchKanbanBoard).mockResolvedValue(snapshot([task('A', 'done'), task('B')]))
     await act(async () => { write.resolve({ task: task('A', 'done'), read_only: false }); await Promise.resolve() })
-    await waitFor(() => expect(dialog.queryByRole('status')).not.toBeInTheDocument())
-    expect(dialog.getByRole('combobox', { name: 'Column' })).toHaveTextContent('done')
-  })
-
-  it('shows an unlink immediately and keeps the server link until a covering read completes', async () => {
-    const write = deferred<Awaited<ReturnType<typeof api.unlinkKanbanTasks>>>()
-    vi.mocked(api.unlinkKanbanTasks).mockReturnValue(write.promise)
-    vi.mocked(api.fetchKanbanTask).mockResolvedValue({ task: task(), links: { parents: ['P1'], children: [] }, link_tasks: [{ id: 'P1', title: 'Parent', status: 'done' }], last_card_action: null })
-    renderPage()
-    const dialog = await openTask()
-    await userEvent.click(await dialog.findByRole('button', { name: 'Remove dependency Parent (P1)' }))
-    expect(dialog.getByRole('status')).toHaveTextContent(/Remove dependency.*P1/)
-    expect(dialog.getByRole('listitem')).toHaveTextContent('Parent')
-    expect(dialog.getByRole('button', { name: 'Remove dependency Parent (P1)' })).toBeDisabled()
-    vi.mocked(api.fetchKanbanTask).mockResolvedValue({ task: task(), links: { parents: [], children: [] }, link_tasks: [], last_card_action: null })
-    await act(async () => { write.resolve({ ok: true }); await Promise.resolve() })
-    await waitFor(() => expect(dialog.queryByRole('listitem')).not.toBeInTheDocument())
-    expect(dialog.queryByRole('status')).not.toBeInTheDocument()
+    await waitFor(() => expect(api.fetchKanbanBoard).toHaveBeenCalledTimes(3))
+    expect(columnIds('done')).toEqual(['A'])
   })
 
   it('keeps source-board bulk completion away from destination selection', async () => {
@@ -227,21 +276,6 @@ describe('Kanban pending presentation', () => {
     expect(screen.getByRole('checkbox', { name: 'Select Task A' })).not.toBeChecked()
   })
 
-  it('preserves a newly typed identical dependency draft when the older request succeeds', async () => {
-    const write = deferred<Awaited<ReturnType<typeof api.linkKanbanTasks>>>()
-    vi.mocked(api.linkKanbanTasks).mockReturnValue(write.promise)
-    renderPage()
-    const dialog = await openTask()
-    const input = dialog.getByRole('textbox', { name: 'Parent task ID' })
-    await userEvent.type(input, 'P1')
-    await userEvent.click(dialog.getByRole('button', { name: 'Add dependency' }))
-    await userEvent.clear(input)
-    await userEvent.type(input, 'P1')
-    await act(async () => { write.resolve({ ok: true }); await Promise.resolve() })
-    await waitFor(() => expect(dialog.queryByRole('status')).not.toBeInTheDocument())
-    expect(input).toHaveValue('P1')
-  })
-
   it('preserves selection edits made while a bulk request is unresolved', async () => {
     const write = deferred<Awaited<ReturnType<typeof api.bulkKanbanStatus>>>()
     vi.mocked(api.bulkKanbanStatus).mockReturnValue(write.promise)
@@ -257,25 +291,7 @@ describe('Kanban pending presentation', () => {
     expect(screen.getByRole('checkbox', { name: 'Select Task A' })).not.toBeChecked()
   })
 
-  it('does not reopen Running confirmation when a covering read removes the pending-only status', async () => {
-    const running = task('A', 'running')
-    running.available_actions.move_to = ['ready']
-    vi.mocked(api.fetchKanbanBoard).mockResolvedValue(snapshot([running]))
-    const write = deferred<Awaited<ReturnType<typeof api.kanbanTaskAction>>>()
-    vi.mocked(api.kanbanTaskAction).mockReturnValue(write.promise)
-    renderPage()
-    const dialog = await openTask()
-    await userEvent.click(dialog.getByRole('button', { name: 'Complete' }))
-    await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Continue' }))
-    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
-    expect(dialog.getByRole('status')).toHaveTextContent('Pending: Done')
-    await act(async () => { write.resolve({ task: task('A', 'done'), read_only: false }); await Promise.resolve() })
-    await waitFor(() => expect(dialog.queryByRole('status')).not.toBeInTheDocument())
-    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
-    expect(api.kanbanTaskAction).toHaveBeenCalledTimes(1)
-  })
-
-  it('recovers a refused switch to a deleted board without stranding subsequent card or view writes', async () => {
+  it('returns to the confirmed board when a switch is refused, leaving later card and view writes usable', async () => {
     const switching = deferred<Awaited<ReturnType<typeof api.switchKanbanBoard>>>()
     vi.mocked(api.switchKanbanBoard).mockReturnValue(switching.promise)
     vi.mocked(api.fetchKanbanBoard).mockImplementation((slug) => slug === 'other' ? Promise.reject(new Error('board deleted')) : Promise.resolve(snapshot()))
@@ -284,11 +300,8 @@ describe('Kanban pending presentation', () => {
     await choose('Board', 'Other')
     expect(screen.getByRole('combobox', { name: 'Board' })).toHaveTextContent('Other')
     vi.mocked(api.fetchKanbanBoards).mockResolvedValue({ current: 'default', boards: [{ slug: 'default', name: 'Default', removable: false }] })
-    await act(async () => { switching.reject(new Error('board deleted')); await Promise.resolve() })
-    await waitFor(() => {
-      expect(screen.getByRole('combobox', { name: 'Board' })).toHaveTextContent('Default')
-      expect(screen.getByRole('combobox', { name: 'Board' })).toBeEnabled()
-    })
+    await act(async () => { switching.reject(refusal('board deleted')); await Promise.resolve() })
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Board' })).toHaveTextContent('Default'))
     expect(screen.getByRole('button', { name: 'New task' })).toBeEnabled()
 
     // A previously closed, deleted task is unrelated to the next card's reconciliation.
@@ -297,9 +310,8 @@ describe('Kanban pending presentation', () => {
     vi.mocked(api.kanbanTaskAction).mockReturnValue(write.promise)
     const dialog = await openTask()
     await choose('Column', 'done')
-    vi.mocked(api.fetchKanbanBoard).mockImplementation((slug) => slug === 'other' ? Promise.reject(new Error('board deleted')) : Promise.resolve(snapshot([task('A', 'done')])))
+    vi.mocked(api.fetchKanbanBoard).mockImplementation((slug) => slug === 'other' ? Promise.reject(new Error('board deleted')) : Promise.resolve(snapshot([task('A', 'done'), task('B')])))
     await act(async () => { write.resolve({ task: task('A', 'done'), read_only: false }); await Promise.resolve() })
-    await waitFor(() => expect(dialog.queryByRole('status')).not.toBeInTheDocument())
     expect(dialog.getByRole('combobox', { name: 'Column' })).toHaveTextContent('done')
     await userEvent.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
@@ -310,8 +322,63 @@ describe('Kanban pending presentation', () => {
     vi.mocked(api.fetchKanbanBoard).mockImplementation((slug) => slug === 'other' ? Promise.reject(new Error('board deleted')) : Promise.resolve(snapshot([task('A', 'done')], true)))
     await act(async () => { view.resolve({}); await Promise.resolve() })
     await screen.findByRole('region', { name: 'scout' })
-    await waitFor(() => expect(screen.queryAllByRole('status').filter((el) => el.textContent?.includes('Pending'))).toHaveLength(0))
     expect(screen.getByRole('switch', { name: /Lanes by profile/ })).toBeEnabled()
   })
 
+  it('adds a comment to the log at once and keeps a refused one with Retry', async () => {
+    const first = deferred<Awaited<ReturnType<typeof api.kanbanTaskAction>>>()
+    vi.mocked(api.kanbanTaskAction).mockReturnValueOnce(first.promise).mockResolvedValueOnce({ task: task(), read_only: false })
+    renderPage()
+    const dialog = await openTask()
+    await userEvent.type(dialog.getByRole('textbox', { name: 'Add comment' }), 'Looks good{Enter}')
+    expect(dialog.getByText('Looks good')).toBeInTheDocument()
+    expect(dialog.getByRole('textbox', { name: 'Add comment' })).toHaveValue('')
+    await act(async () => { first.reject(refusal('Comment refused')); await Promise.resolve() })
+    await waitFor(() => expect(toast).toHaveBeenCalledWith('Comment refused', 4000, 'error'))
+    expect(dialog.getByText('Looks good')).toBeInTheDocument()
+    vi.mocked(api.fetchKanbanTaskLog).mockResolvedValue({ log: [{ text: 'Looks good', ts: 1 }] })
+    await userEvent.click(dialog.getByRole('button', { name: 'Retry' }))
+    await waitFor(() => expect(api.kanbanTaskAction).toHaveBeenLastCalledWith('default', 'A', 'comments', { body: 'Looks good', text: 'Looks good' }))
+    await waitFor(() => expect(dialog.queryByRole('button', { name: 'Retry' })).toBeNull())
+    await waitFor(() => expect(dialog.getAllByText('Looks good')).toHaveLength(1))
+  })
+
+  it('closes New task on Create and shows the card at once; a refusal removes it with the error', async () => {
+    let refuse!: (error: unknown) => void
+    vi.mocked(api.createKanbanTask).mockReturnValue(new Promise((_, reject) => { refuse = reject }) as never)
+    renderPage()
+    await userEvent.click(await screen.findByRole('button', { name: 'New task' }))
+    await userEvent.type(screen.getByRole('textbox', { name: 'Title' }), 'Fresh task{Enter}')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(columnIds('todo')).toHaveLength(3)
+    expect(screen.getByRole('button', { name: /^Fresh task/ })).toBeDisabled()
+    await act(async () => { refuse(refusal('Board is full')); await Promise.resolve() })
+    await waitFor(() => expect(columnIds('todo')).toEqual(['A', 'B']))
+    expect(toast).toHaveBeenCalledWith('Board is full', 4000, 'error')
+  })
+
+  it('archives the current board at once, showing the board that cannot be removed', async () => {
+    vi.mocked(api.archiveKanbanBoard).mockReturnValue(new Promise(() => undefined))
+    vi.mocked(api.fetchKanbanBoards).mockResolvedValue({ current: 'other', boards: [{ slug: 'default', name: 'Default', removable: false }, { slug: 'other', name: 'Other', removable: true }], read_only: false })
+    renderPage()
+    await screen.findByRole('button', { name: /^Task A\b/ })
+    await userEvent.click(screen.getByRole('button', { name: 'Archive board' }))
+    await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Archive' }))
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+    expect(api.archiveKanbanBoard).toHaveBeenCalledWith('other')
+    expect(screen.getByRole('combobox', { name: 'Board' })).toHaveTextContent('Default')
+    await userEvent.click(screen.getByRole('combobox', { name: 'Board' }))
+    expect(screen.queryByRole('option', { name: 'Other' })).toBeNull()
+  })
+
+  it('shows a new task once when the board is laid out in lanes (TAL-1383)', async () => {
+    vi.mocked(api.createKanbanTask).mockReturnValue(new Promise(() => undefined) as never)
+    const lanes = snapshot(undefined, true)
+    vi.mocked(api.fetchKanbanBoard).mockResolvedValue({ ...lanes, lanes: [{ assignee: 'scout', count: 2, columns: byStatus([task(), task('B')]) }, { assignee: null, count: 0, columns: byStatus([]) }] })
+    renderPage()
+    await screen.findByRole('region', { name: 'scout' })
+    await userEvent.click(screen.getByRole('button', { name: 'New task' }))
+    await userEvent.type(screen.getByRole('textbox', { name: 'Title' }), 'Fresh task{Enter}')
+    expect(screen.getAllByRole('button', { name: /^Fresh task/ })).toHaveLength(1)
+  })
 })

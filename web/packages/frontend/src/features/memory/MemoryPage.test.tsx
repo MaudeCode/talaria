@@ -37,7 +37,7 @@ describe('Memory page (TAL-784)', () => {
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
-  it('starts the next edit from the revision the save produced', async () => {
+  it('keeps the editor editable during a save and starts later edits from the revision it produced', async () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
     render(<QueryClientProvider client={qc}><MemoryPage /></QueryClientProvider>)
     await userEvent.type(await screen.findByRole('textbox', { name: 'Memory' }), '!')
@@ -45,12 +45,13 @@ describe('Memory page (TAL-784)', () => {
     vi.mocked(api.fetchMemory).mockReturnValue(new Promise((resolve) => { refetched = () => resolve(memory('Entry A!', 'r2')) }))
     vi.mocked(api.writeMemory).mockResolvedValue({ ok: true, section: 'memory', path: '/h/memories/MEMORY.md' })
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
-    // Until the refetch brings the new revision, the editor takes no edit that would carry the old one.
+    // The editor stays editable while the save runs; an edit typed meanwhile moves onto the revision the save produced.
     await waitFor(() => expect(api.fetchMemory).toHaveBeenCalledTimes(2))
-    expect(screen.getByRole('textbox', { name: 'Memory' })).toHaveAttribute('readonly')
-    refetched()
-    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Memory' })).not.toHaveAttribute('readonly'))
+    expect(screen.getByRole('textbox', { name: 'Memory' })).not.toHaveAttribute('readonly')
     await userEvent.type(screen.getByRole('textbox', { name: 'Memory' }), '?')
+    refetched()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled())
+    expect(screen.getByRole('textbox', { name: 'Memory' })).toHaveValue('Entry A!?')
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(api.writeMemory).toHaveBeenLastCalledWith({ section: 'memory', content: 'Entry A!?', revision: 'r2' }))
   })
