@@ -1249,7 +1249,14 @@ describe('chat turns through the sidecar', () => {
     expect(eventNames(replay)).toContain('done')
     expect(await json(await s.get(`/api/clarify/pending?session_id=${sid}`))).toEqual({ pending: null, pending_count: 0 })
     // No answer survives anywhere the server keeps or serves the session.
-    const exports = await Promise.all(['json', 'md', 'html'].map(async (format) => (await s.get(`/api/session/export?session_id=${sid}&format=${format}`)).text()))
+    const exports = await Promise.all(([
+      ['json', 'application/json'], ['markdown', 'text/markdown'], ['html', 'text/html'],
+    ] as const).map(async ([format, contentType]) => {
+      const response = await s.get(`/api/session/export?session_id=${sid}&format=${format}`)
+      expect(response.status, format).toBe(200)
+      expect(response.headers.get('content-type'), format).toBe(`${contentType}; charset=utf-8`)
+      return response.text()
+    }))
     const disk = readdirSync(s.state, { recursive: true, withFileTypes: true }).filter((entry) => entry.isFile()).map((entry) => readFileSync(join(entry.parentPath, entry.name), 'utf8')).join('\n')
     const kept = [disk, JSON.stringify(replay), JSON.stringify((await s.deps.sessionStore.get(sid))), JSON.stringify(await json(await s.get(`/api/session?session_id=${sid}`))), ...exports, s.logs.join('\n')].join('\n')
     expect(exports.every((text) => text.includes('Signed in.'))).toBe(true)
