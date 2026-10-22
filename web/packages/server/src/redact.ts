@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { channel } from 'node:diagnostics_channel'
 import { str } from './util.js'
 import { diffHunks } from './text/diff.js'
@@ -1868,16 +1869,20 @@ const CACHE_MAX_TEXT_LEN = 16384
 export function redactText(text: unknown, enabled: boolean): unknown {
   if (typeof text !== 'string' || !text) return text
   if (!enabled) return text
-  if (!mightContainSensitiveText(text)) return text
-  if (text.length > CACHE_MAX_TEXT_LEN) return redactSensitive(text)
-  const hit = cache.get(text)
-  if (hit !== undefined) return hit
-  const out = redactSensitive(text)
+  // Separate key domains and hash UTF-16 code units so lone surrogates keep their identity.
+  const key = text.length > CACHE_MAX_TEXT_LEN ? `sha1:${createHash('sha1').update(text, 'utf16le').digest('hex')}` : `text:${text}`
+  const hit = cache.get(key)
+  if (hit !== undefined) {
+    cache.delete(key)
+    cache.set(key, hit)
+    return hit
+  }
+  const out = mightContainSensitiveText(text) ? redactSensitive(text) : text
   if (cache.size >= CACHE_MAX) {
     const oldest = cache.keys().next()
     if (!oldest.done) cache.delete(oldest.value)
   }
-  cache.set(text, out)
+  cache.set(key, out)
   return out
 }
 
