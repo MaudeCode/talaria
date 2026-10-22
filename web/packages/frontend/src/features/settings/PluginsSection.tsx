@@ -1,6 +1,6 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useRef, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { PluginOAuthClientView, PluginSettingView, PluginUpdateResult } from '@maudecode/talaria-web-contracts'
+import type { PluginInstallResult, PluginOAuthClientView, PluginSettingView, PluginUpdateResult } from '@maudecode/talaria-web-contracts'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
@@ -12,6 +12,7 @@ import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { OAuthSignIn } from '../onboarding/OAuthSignIn'
 import { useResourceEffects, useResourceMutation } from '../sessions/useResourceMutation'
+import { getStreamContext } from '../../stream/connection'
 
 export function PluginsSection() {
   const qc = useQueryClient()
@@ -41,6 +42,7 @@ export function PluginsSection() {
   const plugins = useQuery({ queryKey: keys.plugins, queryFn: api.fetchPlugins, staleTime: 30_000 })
   const effects = useResourceEffects<Record<string, unknown>>()
   const [open, setOpen] = useState<string | null>(null)
+  const [browsing, setBrowsing] = useState(false)
   if (plugins.isPending) return <LoadingState />
   if (plugins.isError) return <ErrorState error={plugins.error} onRetry={() => { void plugins.refetch() }} />
   // Saved non-secret values show at once until the reread; secrets never show.
@@ -51,27 +53,24 @@ export function PluginsSection() {
   const editable = !plugins.data.read_only
   return (
     <div className="flex flex-col gap-2" data-section="plugins">
+      <div className="flex justify-end"><Button variant="ghost" className="min-h-11" aria-expanded={browsing} onClick={() => setBrowsing(!browsing)}>{m.plugins_catalog()}</Button></div>
+      {browsing && <PluginCatalogList />}
       {plugins.data.read_only && <div className="text-xs text-warning">{m.plugins_read_only()}</div>}
       {plugins.data.plugin_isolation_advisory && <div className="text-xs text-warning" data-advisory="plugin-isolation">{m.plugins_isolation_advisory()}</div>}
       {list.length === 0 && <EmptyState>{m.plugins_empty()}</EmptyState>}
       <ul className="flex flex-col divide-y divide-border-subtle">
         {list.map((p) => (
-          <li key={p.key} className="py-2">
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="min-w-0 flex-1 basis-40">
-                <div className="text-sm font-medium text-text">{p.name ?? p.key}{p.version ? <span className="ml-1 text-[11px] text-muted">v{p.version}</span> : null}</div>
-                <div className="truncate text-[11px] text-muted">{p.kind ? `${p.kind} · ` : ''}{p.description ?? ''}</div>
-              </div>
+          <PluginRow key={p.key} title={<>{p.name ?? p.key}{p.version ? <span className="ml-1 text-[11px] text-muted">v{p.version}</span> : null}</>} description={`${p.kind ? `${p.kind} · ` : ''}${p.description ?? ''}`} actions={<>
               {p.update?.available && <span className="text-[11px] text-warning">{m.plugins_update_available()}</span>}
               {editable && p.update?.available && <Button variant="ghost" className="min-h-11 min-w-11 px-2 py-1 text-xs" disabled={update.isPending} aria-busy={update.isPending && update.variables.key === p.key} onClick={() => requestUpdate(p.key)}>{m.plugins_update()}</Button>}
               {p.is_active_provider && <span className="rounded-full bg-accent-bg px-2 py-0.5 text-[10px] uppercase tracking-wider text-accent-text">{m.providers_active()}</span>}
               <span className={p.enabled !== false ? 'text-[11px] text-success' : 'text-[11px] text-muted'}>{p.enabled !== false ? m.plugins_enabled() : m.plugins_disabled()}{p.activation ? ` · ${p.activation}` : ''}</span>
               {editable && p.settings?.length ? <Button variant="ghost" className="px-2 py-1 text-xs" aria-expanded={open === p.key} onClick={() => setOpen(open === p.key ? null : p.key)}>{m.settings_title()}</Button> : null}
-            </div>
+            </>}>
             {p.oauth_clients?.length ? <ul className="mt-2 flex flex-col gap-2">{p.oauth_clients.map((c) => <PluginOAuthClientRow key={c.id} pluginKey={p.key} client={c} editable={editable} />)}</ul> : null}
             {scan?.key === p.key && scan.status === 'blocked' && <div role="alert" className="mt-2 whitespace-pre-line text-xs text-error [overflow-wrap:anywhere]">{scan.findings}</div>}
             {editable && open === p.key && p.settings ? <PluginSettingsForm pluginKey={p.key} fields={p.settings} onSaved={() => setOpen(null)} /> : null}
-          </li>
+          </PluginRow>
         ))}
       </ul>
       <ConfirmDialog open={scan?.status === 'needs_consent'} onOpenChange={(isOpen) => { if (!isOpen) setScan((current) => current === scan && current?.status === 'needs_consent' ? null : current) }}
@@ -79,6 +78,81 @@ export function PluginsSection() {
         onConfirm={() => { if (scan?.status === 'needs_consent') requestUpdate(scan.key, true, scan.consent_token) }} />
     </div>
   )
+}
+
+/** Installed and catalog entries share the existing Plugins row and disclosure layout. */
+function PluginRow({ title, description, actions, children }: { title: ReactNode; description: string; actions: ReactNode; children?: ReactNode }) {
+  return <li className="py-2"><div className="flex flex-wrap items-center gap-3">
+    <div className="min-w-0 flex-1 basis-40"><div className="text-sm font-medium text-text">{title}</div><div className="text-[11px] text-muted [overflow-wrap:anywhere]">{description}</div></div>
+    {actions}
+  </div>{children}</li>
+}
+
+function PluginCatalogList() {
+  const qc = useQueryClient()
+  const [search, setSearch] = useState('')
+  const [query, setQuery] = useState('')
+  const [offset, setOffset] = useState(0)
+  const [details, setDetails] = useState<string | null>(null)
+  const [result, setResult] = useState<{ context: object; value: PluginInstallResult } | null>(null)
+  const active = useRef(false)
+  const catalog = useQuery({ queryKey: [...keys.pluginCatalog, query, offset], queryFn: () => api.fetchPluginCatalog(query, offset), retry: false })
+  const refresh = async () => { await Promise.all([qc.invalidateQueries({ queryKey: keys.plugins }), qc.invalidateQueries({ queryKey: keys.pluginCatalog })]) }
+  const install = useMutation({
+    mutationFn: async ({ name, token, context }: { name: string; token?: string; context: object }) => {
+      if (context !== getStreamContext()) throw new Error(m.plugins_catalog_changed())
+      return api.installPlugin(name, token)
+    },
+    retry: false,
+    onSuccess: (value, variables) => {
+      if (variables.context !== getStreamContext()) return
+      setResult({ context: variables.context, value })
+      if (value.status === 'installed') { showToast(m.plugins_catalog_installed()); void refresh() }
+    },
+    onError: (error, variables) => {
+      if (variables.context !== getStreamContext()) return
+      showToast(error instanceof Error ? error.message : String(error), 10000, 'error')
+      // Read back even after a lost acknowledgement. Never replay the non-idempotent install.
+      void refresh()
+    },
+    onSettled: () => { active.current = false },
+  })
+  const request = (name: string, token?: string) => {
+    if (active.current) return
+    active.current = true
+    setResult(null)
+    install.mutate({ name, ...(token ? { token } : {}), context: getStreamContext() })
+  }
+  const current = result?.context === getStreamContext() ? result.value : null
+  return <section aria-label={m.plugins_catalog()} className="border-b border-border-subtle pb-4">
+    <form className="flex gap-2" onSubmit={(event) => { event.preventDefault(); setQuery(search); setOffset(0) }}>
+      <TextInput aria-label={m.plugins_catalog_search()} value={search} maxLength={200} onChange={(event) => setSearch(event.target.value)} />
+      <Button type="submit" className="min-h-11">{m.search()}</Button>
+    </form>
+    {catalog.isPending ? <LoadingState /> : catalog.isError ? <ErrorState error={catalog.error} onRetry={() => { void catalog.refetch() }} /> : <>
+      {!catalog.data.supported && <p className="py-2 text-xs text-muted">{m.plugins_catalog_unsupported()}</p>}
+      {catalog.data.supported && catalog.data.total === 0 && <EmptyState>{m.plugins_empty()}</EmptyState>}
+      <ul className="flex flex-col divide-y divide-border-subtle">{catalog.data.entries.map((entry) => <PluginRow key={entry.name} title={entry.title} description={entry.description} actions={<>
+        <span className="text-[11px] text-muted">{entry.tier} · {entry.category}</span>
+        {entry.installed_key && <span className="text-xs text-muted">{m.plugins_catalog_on_disk()}</span>}
+        <Button variant="ghost" className="min-h-11" aria-expanded={details === entry.name} onClick={() => setDetails(details === entry.name ? null : entry.name)}>{m.plugins_catalog_details()}</Button>
+        {entry.can_install && <Button variant="ghost" className="min-h-11" aria-busy={install.isPending && install.variables.name === entry.name} disabled={install.isPending && install.variables.name === entry.name} onClick={() => request(entry.name)}>{m.plugins_catalog_install()}</Button>}
+      </>}>
+        {details === entry.name && <div className="mt-2 space-y-1 text-xs text-muted [overflow-wrap:anywhere]">
+          <p>{entry.repo}</p><p>{entry.sha}</p>{entry.installed_sha && <p>{entry.installed_sha}</p>}
+          {entry.requirements.map((requirement) => <p key={requirement}>{requirement}</p>)}
+          <p>{m.plugins_catalog_desktop()}</p>{entry.refusal && <p role="alert" className="text-warning">{entry.refusal}</p>}
+        </div>}
+        {current?.name === entry.name && current.status === 'blocked' && <p role="alert" className="mt-2 whitespace-pre-line text-xs text-error [overflow-wrap:anywhere]">{current.findings}</p>}
+      </PluginRow>)}</ul>
+      <div className="flex justify-end gap-2">
+        {offset > 0 && <Button variant="ghost" className="min-h-11" onClick={() => setOffset(0)}>{m.plugins_catalog_first()}</Button>}
+        {catalog.data.next_offset !== null && <Button variant="ghost" className="min-h-11" onClick={() => setOffset(catalog.data.next_offset ?? 0)}>{m.plugins_catalog_next()}</Button>}
+      </div>
+    </>}
+    <ConfirmDialog open={current?.status === 'needs_consent'} onOpenChange={(open) => { if (!open) setResult(null) }} title={m.plugins_catalog_install()} description={current?.status === 'needs_consent' ? current.findings : undefined} confirmLabel={m.plugins_catalog_install()} cancelLabel={m.cancel()}
+      onConfirm={() => { if (current?.status === 'needs_consent') request(current.name, current.consent_token) }} />
+  </section>
 }
 
 const OAUTH_STATE: Record<PluginOAuthClientView['state'], { label: () => string; tone: string }> = {

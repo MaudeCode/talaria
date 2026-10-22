@@ -1,7 +1,7 @@
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
 import { SkillsSchema, SkillContentSchema, SkillsUsageSchema, MemorySchema, PromptSchema, PromptsSchema, CommandsSchema, LogsSchema, InsightsSchema, AgentHealthSchema, SystemHealthSchema, McpServerSchema, McpServersSchema, McpToolsSchema, ConnectorsPageSchema, ConnectorToolsViewSchema, ConnectorOperationViewSchema, PluginsSchema, UpdatesCheckSchema, UpdatesSummarySchema, UpdateApplySchema, UpdateNotificationsSchema, UpdateNotificationSchema, TabIdSchema, FrontendBuildIdSchema, NotesSourcesSchema, NotesSearchSchema, NoteItemSchema, WikiStatusSchema, WikiBrowseSchema, WikiPageSchema, DashboardStatusSchema, DashboardConfigSchema, GatewayStatusSchema, GatewayActionSchema, ProjectOsDashboardSchema, TranscribeCapabilitySchema, SpeechPrepareSchema, PluginSettingViewSchema, OnboardingOAuthSchema } from '../views.js'
-import { PluginRuntimeApplicationSchema, PluginUpdateResultSchema, ToolsetsCatalogSchema, CommandBundleInvocationSchema, CommandBundleSchema, PendingWriteSchema, PendingWriteRefSchema } from '../sidecar/namespaces.js'
+import { PluginCatalogQuerySchema, PluginCatalogSchema, PluginInstallInputSchema, PluginInstallResultSchema, PluginRuntimeApplicationSchema, PluginUpdateResultSchema, ToolsetsCatalogSchema, CommandBundleInvocationSchema, CommandBundleSchema, PendingWriteSchema, PendingWriteRefSchema } from '../sidecar/namespaces.js'
 
 /** Skills, memory, prompts, commands, notes, insights, logs, health, MCP, plugins, updates, and diagnostics. */
 
@@ -129,6 +129,9 @@ export const toolsContract = {
     respond: oc.route({ method: 'POST', path: '/api/connectors/operations/{op_id}', tags, summary: '`skip`, `retry` or `approve` (with `env`) one `target`, as its `actions` allow, or `continue` the card without the rest.' }).input(z.object({ op_id: z.string().min(1), action: z.enum(['skip', 'retry', 'approve', 'continue']), target: z.string().optional(), env: z.record(z.string(), z.string()).optional() })).output(ConnectorOperationViewSchema),
   },
   plugins: oc.route({ method: 'GET', path: '/api/plugins', tags }).output(PluginsSchema),
+  pluginCatalog: oc.route({ method: 'GET', path: '/api/plugins/catalog', tags }).input(PluginCatalogQuerySchema).output(PluginCatalogSchema),
+  pluginInstall: oc.route({ method: 'POST', path: '/api/plugins/install', tags, summary: 'Operator only: preview or confirm a reviewed catalog pin. Confirmation is single use and binds the profile, catalog entry and staged tree. Native scan and admission apply; no replacement, dependency approval, enabling or Desktop UI grant.' })
+    .input(PluginInstallInputSchema).output(PluginInstallResultSchema),
   pluginUpdate: oc.route({ method: 'POST', path: '/api/plugins/update', tags, summary: 'Operator only: update a profile-installed Git plugin through the Agent scan transaction. Caution requires accept_caution plus the single-use consent_token bound to the profile, installation and scanned revision; changed or expired consent returns 409. Dangerous always blocks.' })
     .input(z.object({ key: z.string().trim().min(1), accept_caution: z.boolean().default(false), consent_token: z.string().min(1).max(128).optional() }))
     .output(PluginUpdateResultSchema),

@@ -198,6 +198,16 @@ expired confirmation requires a fresh review; a dangerous verdict blocks the upd
 continues in `hermes plugins update` in a terminal. Older Agents without cached update support
 show no update controls.
 
+**Catalog** in Plugins settings browses the Agent's bounded, cached reviewed catalog by name,
+description, tier or category. Details show the source, reviewed pin, requirements and installed
+identity. **Install disabled** previews the exact staged tree, then asks the server owner to confirm.
+Confirmation expires or becomes invalid when the profile, entry, pin or tree changes. The native
+Agent scan and package admission still apply. Installation never replaces an existing plugin,
+enables it, approves dependencies, grants host capabilities or permits a sidecar proxy. Native
+Desktop contributions are unverified and do not run in Talaria. A lost acknowledgment refreshes
+the installed identity without replaying the install. Agents without this native boundary show an
+update requirement.
+
 Automatic read-aloud claims each watched reply once across tabs on the same browser origin and app mount,
 account, profile, and session. The browser retains the last 1024 automatic attempts, including interrupted
 attempts. If coordination storage is unavailable, automatic playback stays quiet; **Read aloud** remains

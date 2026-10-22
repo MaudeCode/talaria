@@ -8,6 +8,11 @@
         ""
       ]
     },
+    "tests/test_plugin_catalog.py::test_native_catalog_install": {
+      "layer": "compatibility",
+      "reason": "Real Agent catalog resolution, immutable local Git clone, scan, PM publication and dependency-consent APIs cannot be proven by boundary fakes. All homes and sources are disposable; no dependency is downloaded.",
+      "cases": [""]
+    },
     "tests/test_plugin_settings_mcp.py::test_plugin_save_reconciles_live_mcp_inputs": {
       "layer": "compatibility",
       "reason": "Real Agent portable-package settings and native reconnect API must replace a live stdio child launch environment while preserving profile borrowers; fakes cannot prove supported-Agent connection ownership.",
