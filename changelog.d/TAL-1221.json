@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Large responses use less bandwidth and keep live chat streams responsive while compressing.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

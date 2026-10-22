@@ -17,15 +17,23 @@ const credits = { key: 'credits.usage_band', level: 'info', text: "You've used 9
 /** TAL-803: the session's Agent notices sit in the composer's status tab; the server's `notices` event replaces them live. */
 test('shows the session\'s Agent notices and follows the server\'s live list', async ({ page }, testInfo) => {
   const sid = 'agent-notices'
+  let notices = [memory]
+  let releaseInitial!: () => void
+  const initial = new Promise<void>((resolve) => { releaseInitial = resolve })
+  // A late session-feed initial frame refetches detail after the live notice clear.
+  await page.route('**/api/session/stream?**', async (route) => {
+    await initial
+    await route.fulfill({ headers: { 'content-type': 'text/event-stream' }, body: `event: initial\ndata: ${JSON.stringify({ session_id: sid })}\n\n` })
+  })
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: {
     session_id: sid, title: 'Plan the week', active_stream_id: 'notice-run', is_streaming: true, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true,
     transcript_seq: null, messages: [{ role: 'user', id: 1, content: 'Plan the week', _turn_id: 'notice-run' }],
-    notices: [memory],
+    notices,
   } } }))
   await page.route('**/api/chat/stream/status?**', (route) => route.fulfill({ json: { active: true, stream_id: 'notice-run', replay_available: false } }))
   const streams: ServerResponse[] = []
   let seq = 0
-  const send = (event: string, data: unknown) => { seq += 1; for (const r of streams) r.write(`id: notice-run:${String(seq)}\nevent: ${event}\ndata: ${JSON.stringify(data)}\n\n`) }
+  const send = (event: 'notices', data: { session_id: string; notices: typeof notices }) => { notices = data.notices; seq += 1; for (const r of streams) r.write(`id: notice-run:${String(seq)}\nevent: ${event}\ndata: ${JSON.stringify(data)}\n\n`) }
   const server = createServer((_request, response) => {
     response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Access-Control-Allow-Origin': process.env.HERMES_E2E_BASE_URL!, 'Access-Control-Allow-Credentials': 'true' })
     response.write(`id: notice-run:${String(++seq)}\nevent: token\ndata: ${JSON.stringify({ text: 'Looking at your calendar.' })}\n\n`)
@@ -43,6 +51,10 @@ test('shows the session\'s Agent notices and follows the server\'s live list', a
     await expect.poll(() => streams.length).toBeGreaterThan(0)
     send('notices', { session_id: sid, notices: [] })
     await expect(tab(memory.text)).toHaveCount(0)
+    const refreshed = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/session')
+    releaseInitial()
+    await refreshed
+    await expect(tab(memory.text)).toHaveCount(0)
     if (process.env.TAL1227_SHOTS) await page.screenshot({ path: `${process.env.TAL1227_SHOTS}/before-${testInfo.project.name}.png` })
     send('notices', { session_id: sid, notices: [pending] })
     await expect(tab(pending.text)).toBeVisible()
@@ -54,6 +66,7 @@ test('shows the session\'s Agent notices and follows the server\'s live list', a
     send('notices', { session_id: sid, notices: [] })
     await expect(tab(credits.text)).toHaveCount(0)
   } finally {
+    releaseInitial()
     for (const response of streams) response.end()
     await new Promise<void>((resolve) => server.close(() => { resolve() }))
   }

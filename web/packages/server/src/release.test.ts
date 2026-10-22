@@ -1,8 +1,9 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { compatibleAgent, developmentInfo, loadReleaseInfo, supportedAgents, validateReleaseInfo } from './release.js'
+import { compatibleAgent, detectWebuiVersion, developmentInfo, loadReleaseInfo, supportedAgents, validateReleaseInfo } from './release.js'
 import { WEB_ROOT } from './test/harness.js'
 import { readFileSync } from 'node:fs'
 
@@ -10,6 +11,40 @@ const dirs: string[] = []
 afterEach(() => { for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true }) })
 
 describe('release info', () => {
+  it('versions changed Web content without scanning unrelated components or marking timestamp-only rewrites dirty', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'talaria-version-'))
+    dirs.push(dir)
+    const web = join(dir, 'web')
+    mkdirSync(web)
+    mkdirSync(join(dir, 'app'))
+    const file = join(web, 'index.js')
+    writeFileSync(file, 'original\n')
+    writeFileSync(join(dir, 'app', 'unrelated.swift'), 'original\n')
+    const git = (...args: string[]) => execFileSync('git', ['-C', dir, ...args], { env: { PATH: process.env.PATH, HOME: dir, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' }, stdio: 'pipe' })
+    git('init', '-q')
+    git('add', '.')
+    git('-c', 'user.name=Synthetic', '-c', 'user.email=synthetic@example.test', '-c', 'commit.gpgsign=false', 'commit', '-qm', 'fixture')
+    git('tag', 'web-v9.8.7')
+    const dev = developmentInfo(WEB_ROOT)
+    const indexPath = join(dir, '.git', 'index')
+    const index = readFileSync(indexPath)
+    // Build generators can rewrite identical bytes, leaving the index's stat cache stale.
+    utimesSync(file, 2_000_000_000, 2_000_000_000)
+    utimesSync(join(dir, 'app', 'unrelated.swift'), 2_000_000_000, 2_000_000_000)
+    expect(detectWebuiVersion(dev, web)).toBe('web-v9.8.7')
+    expect(readFileSync(indexPath)).toEqual(index)
+    writeFileSync(join(dir, 'app', 'unrelated.swift'), 'unrelated change\n')
+    expect(detectWebuiVersion(dev, web)).toBe('web-v9.8.7')
+    writeFileSync(file, 'changed\n')
+    const changed = detectWebuiVersion(dev, web)
+    expect(changed).toMatch(/^web-v9\.8\.7-dirty-[a-f0-9]{8}$/)
+    writeFileSync(join(dir, 'app', 'unrelated.swift'), 'another unrelated change\n')
+    expect(detectWebuiVersion(dev, web)).toBe(changed)
+    writeFileSync(file, 'changed again\n')
+    expect(detectWebuiVersion(dev, web)).not.toBe(changed)
+    expect(readFileSync(indexPath)).toEqual(index)
+  })
+
   it('packages the same contract versions the monorepo publishes (contracts/versions.json)', () => {
     const shared = JSON.parse(readFileSync(join(WEB_ROOT, '..', 'contracts', 'versions.json'), 'utf8')) as Record<string, Record<string, number>>
     const packaged = JSON.parse(readFileSync(join(WEB_ROOT, 'contract_versions.json'), 'utf8')) as Record<string, Record<string, number>>

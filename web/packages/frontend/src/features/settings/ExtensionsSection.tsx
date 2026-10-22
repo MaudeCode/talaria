@@ -65,11 +65,10 @@ export function ExtensionsSection() {
   const canManage = bootstrap.auth.can_manage_server
   return (
     <div className="flex flex-col gap-5" data-section="extensions">
-      {!bootstrap.features.extensions && <p className="text-xs text-muted">{m.extensions_disabled_hint()}</p>}
       <section>
         <h2 className="mb-2 text-sm font-semibold text-text">{m.extensions_installed()}</h2>
         {list.length === 0 && <EmptyState>{m.extensions_none()}</EmptyState>}
-        <ul className="flex flex-col gap-2">
+        <ul className="flex flex-col divide-y divide-border-subtle">
           {list.map((e) => <ExtensionRow key={e.id} ext={e} canManage={canManage} effect={effects[`extension:${e.id}`]} consentEffect={effects[`extension-consent:${e.id}`]} onToggle={(enabled) => toggle.mutate({ id: e.id, enabled })} onConsent={(value) => consent.mutate({ id: e.id, consent: value })} onUninstall={() => setConfirmUninstall(e.id)} />)}
         </ul>
       </section>
@@ -95,11 +94,11 @@ export function ExtensionsSection() {
 function ExtensionRow({ ext, canManage, effect, consentEffect, onToggle, onConsent, onUninstall }: { ext: ExtensionManifest; effect: ResourceEffect<boolean> | undefined; consentEffect: ResourceEffect<boolean> | undefined; canManage: boolean; onToggle: (enabled: boolean) => void; onConsent: (consent: boolean) => void; onUninstall: () => void }) {
   const perms = Object.entries(ext.permissions ?? {}).filter(([, v]) => v).map(([k]) => k)
   return (
-    <li className={cn('rounded-lg border border-border bg-surface p-3 text-sm', !ext.enabled && 'opacity-80')} data-extension-id={ext.id} data-source={ext.source}>
+    <li className={cn('py-3 text-sm', !ext.enabled && 'opacity-80')} data-extension-id={ext.id} data-source={ext.source}>
       <div className="flex flex-wrap items-center gap-2">
         <div className="min-w-0 flex-1">
-          <div className="font-medium text-text">{ext.name}{ext.version ? <span className="ml-1 text-[11px] text-muted">v{ext.version}</span> : null} <span className="ml-1 rounded-full border border-border px-1.5 text-[10px] uppercase tracking-wider text-muted">{ext.source}</span></div>
-          <div className="text-[11px] text-muted">{ext.id}{ext.description ? ` · ${ext.description}` : ''}</div>
+          <div className="font-medium text-text">{ext.name}{ext.version ? <span className="ml-1 text-[11px] text-muted">v{ext.version}</span> : null} <span className="ml-1 whitespace-nowrap rounded-full border border-border px-1.5 text-[10px] uppercase tracking-wider text-muted">{ext.agent_host ? m.tab_agent() : ext.source}</span></div>
+          <div className="text-[11px] text-muted">{ext.display_id ?? ext.id}{ext.description ? ` · ${ext.description}` : ''}</div>
         </div>
         {ext.panel && ext.enabled && <Link to="/ext/$extensionId" params={{ extensionId: ext.id }} className="text-xs text-accent-text underline">{m.extensions_open()}</Link>}
         {canManage && ext.can_toggle && (
@@ -123,7 +122,7 @@ function ExtensionRow({ ext, canManage, effect, consentEffect, onToggle, onConse
           {m.extensions_legacy_notice()} <a href={GUIDE} target="_blank" rel="noopener noreferrer" className="underline">{m.extensions_migration_guide()}</a>
         </div>
       )}
-      {ext.warnings.length > 0 && <ul className="mt-1 text-[11px] text-warning">{ext.warnings.map((w) => <li key={w}>{w}</li>)}</ul>}
+      {ext.warnings.length > 0 && <ul className="mt-1 text-[11px] text-warning">{ext.warnings.map((w) => <li key={w}>{w === 'web_extension_migration_required' ? m.extensions_web_migration_required() : w}</li>)}</ul>}
     </li>
   )
 }

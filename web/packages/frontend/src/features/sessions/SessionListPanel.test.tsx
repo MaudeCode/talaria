@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
@@ -11,7 +11,8 @@ import { ApiError } from '../../contracts/common'
 vi.mock('../../api/endpoints', () => ({ fetchSessions: vi.fn(), searchSessions: vi.fn(), fetchProjects: vi.fn(), archiveSession: vi.fn(), createProject: vi.fn(), importSession: vi.fn() }))
 vi.mock('../../api/sse', () => ({ openSessionListStream: () => ({ close: () => undefined, readyState: () => 1 }) }))
 vi.mock('./useNewChat', () => ({ useNewChat: () => vi.fn() }))
-vi.mock('./SessionContextMenu', () => ({ SessionContextMenu: () => null }))
+const rowRender = vi.hoisted(() => vi.fn())
+vi.mock('./SessionContextMenu', () => ({ SessionContextMenu: ({ row }: { row: SessionRow }) => { rowRender(row.session_id); return null } }))
 const navigate = vi.hoisted(() => vi.fn())
 const toast = vi.hoisted(() => vi.fn())
 vi.mock('../toast/toast', () => ({ showToast: toast }))
@@ -46,7 +47,7 @@ describe('SessionListPanel search (TAL-308)', () => {
     render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SessionListPanel /></QueryClientProvider>)
     await userEvent.click(await screen.findByRole('button', { name: 'Proj' }))
     await userEvent.type(screen.getByRole('searchbox'), 'zebra')
-    await waitFor(() => { expect(api.searchSessions).toHaveBeenLastCalledWith('zebra', { project_id: 'p1', sidebar_source: 'webui', include_archived: false }) })
+    await waitFor(() => { expect(api.searchSessions).toHaveBeenLastCalledWith('zebra', { project_id: 'p1', sidebar_source: 'webui', include_archived: false }, 5, expect.any(AbortSignal)) })
     // While the request is in flight, the local title filter answers.
     expect(shown()).toEqual(['alpha'])
     answer({ sessions: [{ ...delta, match_type: 'content', match_preview: 'a zebra here' }, { ...alpha, match_type: 'title' }], sidebar_filtered: true, all_profiles: false, active_profile: 'default' })
@@ -106,6 +107,22 @@ describe('session list date groups (TAL-306)', () => {
   const fixture = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../../contracts/fixtures/web-session.json'), 'utf8')) as { session_list: { sessions: unknown[] } }
   const rows = SessionsListSchema.shape.sessions.parse(fixture.session_list.sessions)
 
+  it('allocates one group array for 5,000 rows instead of replacing it for every row (TAL-1211)', () => {
+    const at = new Date(2026, 9, 22, 12).getTime()
+    const many = Array.from({ length: 5_000 }, (_, i) => row(`large-${String(i)}`, 'Large list', { sort_ts: at / 1000 }))
+    const allocations = new Set<SessionRow[]>()
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- Called with the original Map receiver below.
+    const set = Map.prototype.set
+    const builder = vi.spyOn(Map.prototype, 'set').mockImplementation(function (this: Map<unknown, unknown>, key, value) {
+      if (key === 'today' && Array.isArray(value) && value[0] === many[0]) allocations.add(value)
+      return set.call(this, key, value)
+    })
+    let groups: ReturnType<typeof groupSessionRows>
+    try { groups = groupSessionRows(many, at) } finally { builder.mockRestore() }
+    expect(groups).toEqual([{ id: 'today', rows: many }])
+    expect(allocations.size).toBe(1)
+  })
+
   it('keeps the server order inside every group', () => {
     const at = (rows.find((r) => r.session_id === 'tal306-created-only')!.sort_ts + 60) * 1000
     const groups = groupSessionRows(rows, at)
@@ -122,6 +139,30 @@ describe('session list date groups (TAL-306)', () => {
     const day = 86_400
     const recent = { ...rows.find((r) => r.session_id === 'tal306-newest')!, sort_ts: at / 1000 - 60, last_message_at: at / 1000 - 30 * day, updated_at: at / 1000 - 30 * day }
     expect(groupSessionRows([recent], at).map((g) => g.id)).toEqual(['today'])
+  })
+})
+
+describe('session row renders (TAL-1211)', () => {
+  it('renders only the changed row after a refetch changes one title', async () => {
+    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [alpha, delta, other] } as never)
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={qc}><SessionListPanel /></QueryClientProvider>)
+    await screen.findByText('Alpha zebra')
+    await screen.findByRole('button', { name: 'Proj' })
+    rowRender.mockClear()
+    // A fresh wire response has fresh objects; Query's structural sharing preserves unchanged rows.
+    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [{ ...alpha, title: 'Alpha renamed' }, { ...delta }, { ...other }] } as never)
+    await act(() => qc.refetchQueries({ queryKey: ['sessions', 'list'] }))
+    await screen.findByText('Alpha renamed')
+    expect(rowRender.mock.calls.map(([id]) => id)).toEqual(['alpha'])
+
+    rowRender.mockClear()
+    vi.mocked(api.fetchProjects).mockResolvedValue({ projects: [{ project_id: 'p1', name: 'Renamed project', color: '#50c878' }] } as never)
+    await act(() => qc.refetchQueries({ queryKey: ['projects'] }))
+    await screen.findByRole('button', { name: 'Renamed project' })
+    expect(rowRender.mock.calls.map(([id]) => id)).toEqual(['alpha', 'delta'])
+    expect(document.querySelector('[data-sid="alpha"] .session-project-dot')).toHaveAttribute('title', 'Renamed project')
+    expect(document.querySelector('[data-sid="alpha"] .session-project-dot')).toHaveStyle({ background: '#50c878' })
   })
 })
 

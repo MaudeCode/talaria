@@ -7,6 +7,7 @@ import type { QueryClient } from '@tanstack/react-query'
 import * as api from '../api/endpoints'
 import { openChatStream, SSE_CLOSED, type SseHandle } from '../api/sse'
 import { keys } from '../api/queryKeys'
+import { invalidateSessionQueries } from '../api/sessionQueries'
 import type { ChatEvent } from '../contracts/sse'
 import type { ChatStartRequest, ChatStartResponse, Session, Attachment } from '../contracts'
 import { forgetOwnSteer, resetComposerReturns, returnStoppedSteer } from '../features/composer/composerReturn'
@@ -62,12 +63,7 @@ function invalidateSession(sessionId: string, mode: 'all' | 'settled' | 'started
     void queryClient.invalidateQueries({ queryKey: keys.sessions.status(sessionId) })
     return
   }
-  if (mode === 'settled') {
-    void queryClient.invalidateQueries({ queryKey: keys.sessions.all, predicate: ({ queryKey: [, kind, id] }) => kind !== 'detail' && (kind === 'list' || kind === 'search' || id === sessionId) })
-    return
-  }
-  void queryClient.invalidateQueries({ queryKey: keys.sessions.detail(sessionId) })
-  void queryClient.invalidateQueries({ queryKey: keys.sessions.all })
+  void invalidateSessionQueries(queryClient, sessionId, { detail: mode !== 'settled' })
 }
 
 function applySideEffects(sessionId: string, event: ChatEvent): void {
@@ -92,8 +88,10 @@ function applySideEffects(sessionId: string, event: ChatEvent): void {
     case 'cancel': {
       // Every terminal frame carries the settled session; its scenes replace the live turn at once.
       const session = 'session' in event.data ? event.data.session : undefined
-      const settled = !!session && typeof session === 'object' && 'session_id' in session
+      const settled = !!session && typeof session === 'object' && 'session_id' in session && session.session_id === sessionId && 'messages' in session && Array.isArray(session.messages)
       if (queryClient && settled) {
+        // A read started before settlement must not replace this authoritative snapshot when it answers later.
+        void queryClient.cancelQueries({ queryKey: keys.sessions.detail(sessionId) })
         queryClient.setQueryData(keys.sessions.detail(sessionId), { session: session as Session })
       }
       invalidateSession(sessionId, settled ? 'settled' : 'all')
@@ -107,9 +105,14 @@ function applySideEffects(sessionId: string, event: ChatEvent): void {
     case 'session_goal':
       queryClient?.setQueryData<{ session: Session }>(keys.sessions.detail(sessionId), (old) => (old ? { ...old, session: { ...old.session, goal: event.data.goal } } : old))
       break
-    case 'title':
-      if (event.data.title && queryClient) void queryClient.invalidateQueries({ queryKey: keys.sessions.all })
+    case 'title': {
+      const title = event.data.title
+      if (title && queryClient) {
+        queryClient.setQueryData<{ session: Session }>(keys.sessions.detail(sessionId), (old) => old ? { ...old, session: { ...old.session, title } } : old)
+        void invalidateSessionQueries(queryClient, sessionId, { detail: false })
+      }
       break
+    }
     case 'bg_task_complete':
       // TAL-372: the finished work is a server record; the background card and the chat show it, never a toast.
       if (queryClient) void queryClient.invalidateQueries({ queryKey: keys.background(sessionId) })

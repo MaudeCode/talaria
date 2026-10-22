@@ -129,3 +129,48 @@ from the plugins directory (`HERMES_WEBUI_PLUGINS_DIR`, default
    panel.
 5. Watch the browser console in the host page: protocol violations are logged
    with the extension id.
+
+## Agent profile dashboards
+
+Agent dashboards are a separate `agent-plugin` source in the same Extensions
+list and sandboxed panel host. Discovery, enablement and native HTTP belong to
+the selected profile's Agent; legacy `HERMES_WEBUI_PLUGINS_DIR` entries retain
+their existing server-level settings. Reading a dashboard never enables it or
+changes `plugins.isolation`. Native APIs always execute in that profile's Agent
+plugin host, including when its other plugins use in-process isolation.
+
+A dashboard manifest must opt into the existing Web protocol with a `panel`
+HTML path beneath `dist/` or `static/`, for example `"panel": "dist/index.html"`.
+That document loads the Web extension SDK and completes its normal handshake.
+A native Desktop SDK bundle without this opt-in is listed with
+`web_extension_migration_required`, without Open or enable controls. Desktop
+SDK globals are not emulated. Relative assets resolve beside the panel, and
+only known static file types are served, without dotfiles or symlinks.
+
+The existing enable switch persists the Agent's per-profile plugin admission.
+It grants executable plugin access, not just a cosmetic panel preference.
+Use `Hermes.connect()` and `api.call('sidecar.fetch', { path: 'identity' })`
+for the native dashboard API. The result is `{ status, headers, body }`, with a
+text body and only its content type. Requests carry request-local admission
+over private IPC, never Talaria or gateway credentials. Profile/login-bound
+opaque ids prevent an old frame from calling a different profile's plugin.
+Sandboxed subresources have no cookies. Their expiring signed asset grant names
+only the statically served plugin and its already-authorized profile; it carries
+no login token and grants no API authority. Forged/expired grants are refused.
+Switching profiles revokes pending calls, old ids and asset grants; closing a panel aborts
+its outstanding browser calls.
+
+Agent-host HTTP is buffered, limited to 512 KiB and a native request timeout of
+10 seconds. Event streams and WebSockets return unsupported/501; they are not
+retried. Cancellation and profile changes abandon late results. The Agent host
+has no operation to cancel its running handler, so it may finish independently.
+Agents without request-local hosted admission do not expose this source.
+
+The sidecar gives the unchanged native loader a private snapshot of the verified
+API source, preserving its original module location for relative resources and
+tracebacks. The private module restores the original module metadata and compiles
+only the snapshotted bytes; it does not reopen the original source. Repeated calls
+reuse the same source version and cached native app;
+an edited source gets its own version. Snapshots survive request timeouts and are
+removed when the sidecar shuts down. The process caps this cache at 512 source
+versions and 64 MiB of generated source, refusing further loads when full.

@@ -37,14 +37,15 @@ async function serve(args: string[]): Promise<number> {
   const config = loadConfig({ webRoot })
   if (process.env[WORKER_ENV] !== '1') return supervise({ command: [...serveCommand, ...args], env: process.env, log, packageRoot: webRoot, stateDir: config.stateDir })
   const sidecar = launchSidecar({ env: config.env, hermesHome: config.hermesHome, webRoot, home: config.homeDir, log })
-  if (sidecar) {
-    try {
-      const describe = await sidecar.start()
+  // Handle rejection immediately: dependency initialization and listening must not wait for Agent imports.
+  const starting = sidecar?.start().then(
+    (describe) => {
       log(`[sidecar] ready: agent ${describe.agent_version ?? describe.agent_revision ?? 'unknown'} (${describe.compatible ? 'compatible' : 'incompatible'})`)
-    } catch (error) {
+    },
+    (error: unknown) => {
       log(`[sidecar] failed to start: ${(error as Error).message}; chat is unavailable until it recovers`)
-    }
-  }
+    },
+  )
   const deps = await createDeps({ webRoot, sidecar })
   // Every exit path (SIGINT/SIGTERM shutdown, `/api/shutdown`, self-update restart) reaps embedded terminals first.
   process.on('exit', () => { deps.updates.stopAutoApply(); deps.terminals.closeAll({ immediate: true }) })
@@ -57,6 +58,7 @@ async function serve(args: string[]): Promise<number> {
   const app = createApp(deps)
   const running = await startServer(app, deps.config)
   if (process.connected) process.send?.('ready')
+  await starting
   await deps.relay.start()
   deps.completions.start()
   deps.hygiene.start()

@@ -18,7 +18,7 @@ import type { StateDbRead, StateDbSettlementRead } from './state-db.js'
 import { HttpFailure, markSessionTitleGenerated } from './service.js'
 import type { SessionEventBus } from './events.js'
 import { StreamRegistry, SessionChannels, type StreamChannel } from './streams.js'
-import { ChatUsageSchema, ConnectorOperationSnapshotSchema, type ProviderPhase, type RateLimitWait, type RunStatus, type ClarifyAnswers, type PendingSteer, type SessionGoal, type SessionNotice, type SidecarResult, type SteerWithdrawn, type SteerWithdrawRequest, type SteerSendNowResponse } from '@maudecode/talaria-web-contracts'
+import { TRANSCRIPT_WINDOW, ChatUsageSchema, ConnectorOperationSnapshotSchema, type ProviderPhase, type RateLimitWait, type RunStatus, type ClarifyAnswers, type PendingSteer, type SessionGoal, type SessionNotice, type SidecarResult, type SteerWithdrawn, type SteerWithdrawRequest, type SteerSendNowResponse } from '@maudecode/talaria-web-contracts'
 import { toolProgress } from './tool-display.js'
 import { catalogNames, connectorOperation } from '../tools/connectors.js'
 import { PendingPrompts, clarifyReply, isVaultPrompt, vaultReply } from './pending.js'
@@ -51,7 +51,6 @@ import { displayName } from '../providers/catalog.js'
 
 export const CHAT_LOCK_WAIT_SECONDS = 2
 const IMAGE_MODE_TIMEOUT_MS = 15_000
-const TERMINAL_SSE_VISIBLE_MESSAGE_LIMIT = 80
 /** TAL-397: streamed text reports the live meter at most this often (seconds); a counter change reports at once. */
 const METERING_INTERVAL_S = 1
 /** The Agent's content frames, which end a rate-limit wait (TAL-821) and a compression span (TAL-1006). A terminal frame ends the run, its wait, and its span. */
@@ -1324,7 +1323,7 @@ export class TurnRunner {
     payload.goal = this.sessionGoal(s.session_id)
     const service = this.deps.service()
     const scened = (await service.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes((await service.backgroundUpdates(s, withMarkerKinds(withTurnIds(withAttachmentObjects(s.messages)), s))), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, clipToolResults: true })))
-    const [window, offset] = messageWindowForDisplay(scened, TERMINAL_SSE_VISIBLE_MESSAGE_LIMIT, null)
+    const [window, offset] = messageWindowForDisplay(scened, TRANSCRIPT_WINDOW, null)
     const limited = messagesForLimitedPayload(withBodyExcerpts(withDisplayMedia(window, (await service.mediaProjector(s))), s.active_stream_id, newestSettledReply(scened, s.active_stream_id), offset))
     payload.messages = limited
     payload.message_count = s.messages.length

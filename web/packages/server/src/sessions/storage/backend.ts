@@ -6,6 +6,8 @@ export type SessionDocument = Record<string, unknown>
 export type SessionIndexEntry = Record<string, unknown>
 export interface StoredSession {
   doc: SessionDocument
+  /** Parsed rows from a full read; empty for metadata-only reads. */
+  messages: Message[]
   messageCount: number | null
   revision: string | null
   /** Older documents without a reliable count need a full load. */
@@ -86,7 +88,14 @@ export interface JournalWriter {
   appendSseEvent(event: string, payload: unknown, meta?: JournalEventMeta): Promise<JournalEvent>
   close(): Promise<void>
 }
-export interface SessionJournalReplay { status: string; events: JournalEvent[]; cursor_run_id: string | null; cursor_seq: number | null }
+export interface SessionJournalReplay {
+  status: string
+  events: JournalEvent[]
+  cursor_run_id: string | null
+  cursor_seq: number | null
+  /** Request-local continuation, sharing the full replay's byte/row budget and file offsets. */
+  readActiveTail?: (runId: string) => Promise<SessionJournalReplay>
+}
 export interface JournalBackend {
   open(sid: string, streamId: string, opts: { durability: 'eager' | 'terminal-only' }): Promise<JournalWriter>
   read(sid: string, streamId: string, fromSeq: number): AsyncIterable<JournalEvent>

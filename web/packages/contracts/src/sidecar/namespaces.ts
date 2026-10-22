@@ -106,6 +106,14 @@ export const PluginInstallResultSchema = z.discriminatedUnion('status', [
 export type PluginInstallResult = z.infer<typeof PluginInstallResultSchema>
 export type PluginCatalog = z.infer<typeof PluginCatalogSchema>
 export const PluginProviderSchema = z.object({ name: z.string(), display_name: z.string(), auth_type: z.string(), setup: z.enum(['ready', 'missing_cli', 'needs_setup', 'not_loaded', 'unavailable']) })
+/** Profile-owned Agent dashboards use Web protocol panels; native Desktop bundles need migration. */
+export const AgentDashboardPluginSchema = z.object({
+  name: z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/), label: z.string().max(80), version: z.string().max(40), description: z.string().max(300),
+  enabled: z.boolean(), panel: z.string().nullable(), has_api: z.boolean(),
+})
+export const AgentDashboardResponseSchema = z.object({ status: z.number().int().min(200).max(599), body: z.string(), content_type: z.string() })
+const DashboardNameParams = ProfileHomeParams.extend({ name: z.string() })
+
 /** A skill bundle: `/<name>` loads its `skill_count` skills in one message (TAL-265). */
 export const CommandBundleSchema = z.object({ name: z.string(), description: z.string(), skill_count: z.number().int(), source: z.literal('bundle') })
 /** `message` is the user message that loads the bundle's skills; members not installed or disabled are in `missing_skills` or left out. */
@@ -126,6 +134,11 @@ export const COMMANDS_METHODS = {
   'commands.bundles': { params: ProfileHomeParams, result: z.object({ bundles: z.array(CommandBundleSchema) }) },
   'commands.bundle_resolve': { params: ProfileHomeParams.extend({ command: z.string().min(1) }), result: CommandBundleInvocationSchema },
   'commands.moa_preset': { params: ProfileHomeParams.extend({ preset: z.string().nullable().optional() }), result: z.object({ moa: Loose }) },
+  'plugins.dashboard_list': { params: ProfileHomeParams, result: z.object({ supported: z.boolean(), plugins: z.array(AgentDashboardPluginSchema) }) },
+  'plugins.dashboard_toggle': { params: DashboardNameParams.extend({ enabled: z.boolean() }), result: z.object({ ok: z.literal(true) }) },
+  'plugins.dashboard_asset': { params: DashboardNameParams.extend({ path: z.string() }), result: AgentDashboardResponseSchema },
+  /** Buffered HTTP only. Cancellation abandons the result; the Agent has no handler-cancel operation. */
+  'plugins.dashboard_request': { params: DashboardNameParams.extend({ path: z.string(), method: z.string(), query: z.string(), headers: z.record(z.string(), z.string()), body: z.string(), authenticated: z.boolean(), websocket: z.boolean() }), result: AgentDashboardResponseSchema },
   'plugins.providers': { params: ProfileHomeParams, result: z.object({ providers: z.array(PluginProviderSchema) }) },
   'plugins.list': { params: ProfileHomeParams.extend({ selected_providers: z.record(z.string(), z.string()).optional() }), result: z.object({ plugins: z.array(z.object({ name: z.string(), key: z.string(), version: z.string(), description: z.string(), enabled: z.boolean(), kind: z.string(), activation: z.string(), hooks: z.array(z.string()), is_active_provider: z.boolean().optional(), update_available: z.boolean().optional(), latest_revision: z.string().optional() })), supported_hooks: z.array(z.string()) }) },
   'plugins.catalog': { params: ProfileHomeParams.extend(PluginCatalogQuerySchema.shape), result: PluginCatalogSchema },

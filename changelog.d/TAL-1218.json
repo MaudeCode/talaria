@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Reduced repeated validation when loading the chat list.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

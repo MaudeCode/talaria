@@ -25,7 +25,7 @@ export function writeFully(fd: number, data: string | Uint8Array, write: (fd: nu
   }
 }
 
-export function atomicWriteText(path: string, text: string, opts: { mode?: number } = {}): void {
+export function atomicWriteText(path: string, text: string, opts: { mode?: number; commit?: (staged: string, target: string) => void } = {}): void {
   let writePath = path
   try {
     if (lstatSync(path).isSymbolicLink()) writePath = realpathSync(path)
@@ -45,7 +45,8 @@ export function atomicWriteText(path: string, text: string, opts: { mode?: numbe
     fsyncSync(fd)
     closeSync(fd)
     if (mode !== undefined) chmodSync(tmp, mode)
-    renameSync(tmp, writePath)
+    if (opts.commit) opts.commit(tmp, writePath)
+    else renameSync(tmp, writePath)
   } catch (error) {
     try { closeSync(fd) } catch { /* already closed */ }
     try { unlinkSync(tmp) } catch { /* nothing to clean */ }

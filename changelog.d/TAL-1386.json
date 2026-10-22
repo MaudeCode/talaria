@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Web chats avoid redundant reloads when reopening a cached conversation or returning to the tab, while reconnects still refresh missed changes.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

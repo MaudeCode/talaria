@@ -1,6 +1,6 @@
 import type { OwnerActionRequest } from '@maudecode/talaria-web-contracts'
 import { useResourceEffects, useResourceMutation, withEffect } from '../sessions/useResourceMutation'
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { m } from '../../paraglide/messages.js'
@@ -11,6 +11,7 @@ import { PanelRight, TerminalSquare } from 'lucide-react'
 
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
+import { invalidateSessionQueries } from '../../api/sessionQueries'
 import { useBootstrap } from '../../app/bootstrap'
 import { useSettingsQuery, useWorkspacesQuery } from '../../app/queries'
 import type { Session, SessionsList } from '../../contracts'
@@ -31,7 +32,7 @@ import { ConnectCard } from '../connectors/ConnectCard'
 import { useClarify } from './useClarify'
 import { VaultPromptCard, useVaultPrompt } from './VaultPromptCard'
 import { useMarkViewed } from './useMarkViewed'
-import { TerminalPanel } from '../terminal/TerminalPanel'
+import { TerminalPanelFrame } from '../terminal/TerminalPanelFrame'
 import { ChatSidePanel } from './ChatSidePanel'
 import { setSidePanelOpen, toggleSidePanel, useShellState } from '../../shell/useShellState'
 import { useRuntimeNotices } from '../notices/useRuntimeNotices'
@@ -45,6 +46,8 @@ import type { ExecutionMode } from '@maudecode/talaria-web-contracts'
 import { WorktreeRemoveDialog } from '../sessions/WorktreeRemoveDialog'
 import { beginDock, playDock, requestScroll } from './sendMotion'
 import { bindFirstSend, ownsFirstSend, useFirstSend } from './firstSend'
+
+const TerminalPanel = lazy(() => import('../terminal/TerminalPanel').then((module) => ({ default: module.TerminalPanel })))
 
 export function ChatView({ sessionId }: { sessionId: string | null }) {
   const bootstrap = useBootstrap()
@@ -123,7 +126,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     try {
       const created = await createSessionNow({ ...pending, ...(workspace ? { workspace } : {}), profile: bootstrap.profile?.name ?? 'default', worktree: true })
       qc.setQueryData(keys.sessions.detail(created.session_id), { session: created })
-      void qc.invalidateQueries({ queryKey: keys.sessions.all })
+      void invalidateSessionQueries(qc, created.session_id)
       showToast(m.workspace_worktree_created())
       await navigate({ to: '/session/$sessionId', params: { sessionId: created.session_id } })
     } catch (e) {
@@ -211,7 +214,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
         if (st.status === 'idle') throw new Error(m.compress_failed_label())
         const next = st.session?.session_id ?? st.session_id ?? sid
         showToast(m.compress_complete_label())
-        void qc.invalidateQueries({ queryKey: keys.sessions.all })
+        void invalidateSessionQueries(qc, next)
         if (next !== sid) await navigate({ to: '/session/$sessionId', params: { sessionId: next } })
         else await refresh()
         return
@@ -244,7 +247,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
       case 'compress': if (sessionId) { void runCompression(sessionId) } return true
       case 'usage': if (sessionId) { const u = await api.fetchSessionUsage(sessionId); showToast(`${(u.input_tokens ?? 0).toLocaleString()} in · ${(u.output_tokens ?? 0).toLocaleString()} out${u.estimated_cost ? ` · $${u.estimated_cost.toFixed(4)}` : ''}`, 4000) } return true
       case 'yolo': onToggleYolo(); return true
-      case 'branch': if (sessionId) { const r = await api.branchSession(sessionId); void qc.invalidateQueries({ queryKey: keys.sessions.all }); await navigate({ to: '/session/$sessionId', params: { sessionId: r.session_id } }) } return true
+      case 'branch': if (sessionId) { const r = await api.branchSession(sessionId); void invalidateSessionQueries(qc, r.session_id); await navigate({ to: '/session/$sessionId', params: { sessionId: r.session_id } }) } return true
       case 'reasoning': {
         const arg = args.trim().toLowerCase()
         if (!arg) { showToast(`${m.composer_control_reasoning()}: ${reasoning ?? m.reasoning_default()}`, 4000); return true }
@@ -277,7 +280,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   const onBranch = useCallback(async (row: VisibleMessage) => {
     if (!sessionId) return
     const r = await api.branchSession(sessionId, row.index + 1)
-    void qc.invalidateQueries({ queryKey: keys.sessions.all })
+    void invalidateSessionQueries(qc, r.session_id)
     await navigate({ to: '/session/$sessionId', params: { sessionId: r.session_id } })
   }, [sessionId, navigate, qc])
 
@@ -420,7 +423,11 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
           {clarify && <ClarifyCard key={clarify.pending.clarify_id} clarify={clarify} />}
           {sessionId && vaultPrompt && <VaultPromptCard key={vaultPrompt.clarifyId} sessionId={sessionId} clarifyId={vaultPrompt.clarifyId} vault={vaultPrompt.vault} />}
           {live?.connectCard && <ConnectCard key={live.connectCard.op_id} initial={live.connectCard} />}
-          {terminalOpen && sessionId && <TerminalPanel sessionId={sessionId} workspace={workspace} onClose={() => setTerminalOpen(false)} onReopen={() => setTerminalOpen(true)} />}
+          {terminalOpen && sessionId && <Suspense fallback={
+            <TerminalPanelFrame workspace={workspace} status="loading" onClose={() => setTerminalOpen(false)}>
+              <div className="composer-terminal-surface px-2 py-1" style={{ height: 260 }} />
+            </TerminalPanelFrame>
+          }><TerminalPanel sessionId={sessionId} workspace={workspace} onClose={() => setTerminalOpen(false)} onReopen={() => setTerminalOpen(true)} /></Suspense>}
         </div>
         <Composer
           sessionId={sessionId}

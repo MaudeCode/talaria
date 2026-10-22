@@ -10,6 +10,7 @@ import { z } from 'zod'
 import { Button } from '../../ui/Button'
 import { showToast } from '../toast/toast'
 import { isDefiniteRefusal } from '../../contracts/common'
+import { TerminalPanelFrame } from './TerminalPanelFrame'
 
 const StartSchema = z.looseObject({ ok: z.boolean().optional(), running: z.boolean().optional(), error: z.string().optional(), message: z.string().optional() })
 const OkSchema = z.looseObject({ ok: z.boolean().optional(), closed: z.boolean().optional(), error: z.string().optional() })
@@ -108,18 +109,12 @@ export function TerminalPanel({ sessionId, workspace, onClose, onReopen = () => 
     window.addEventListener('pointerup', up)
   }
   return (
-    <div className="composer-terminal-panel mx-auto mb-2 w-full max-w-[var(--msg-max)] rounded-xl border border-border bg-surface" id="composerTerminalPanel" data-status={status}>
-      <div className="composer-terminal-resize-handle h-1.5 cursor-row-resize rounded-t-xl hover:bg-accent-bg-strong" role="separator" aria-orientation="horizontal" aria-label="Resize terminal" tabIndex={0} onPointerDown={startResize} />
-      <div className="composer-terminal-header flex items-center justify-between gap-2 border-b border-border px-3 py-1.5 text-xs">
-        <div className="composer-terminal-title flex items-center gap-2 text-text"><span>{m.terminal_title()}</span><span className="text-muted">·</span><span className="truncate font-mono text-muted" id="terminalWorkspaceLabel">{workspace ?? ''}</span>{status === 'error' && <span className="text-error">{m.terminal_unavailable()}</span>}</div>
-        <div className="composer-terminal-actions flex items-center gap-1">
-          <Button variant="ghost" onClick={() => term.current?.clear()}>{m.terminal_clear()}</Button>
-          <Button variant="ghost" onClick={() => { const sel = term.current?.getSelection() ?? ''; void navigator.clipboard.writeText(sel).then(() => showToast(m.copied())) }}>{m.terminal_copy_output()}</Button>
-          <Button variant="ghost" onClick={() => { void restart() }}>{m.terminal_restart()}</Button>
-          <Button variant="ghost" onClick={close}>{m.terminal_close()}</Button>
-        </div>
-      </div>
+    <TerminalPanelFrame workspace={workspace} status={status} onClose={close} onResize={startResize} actions={<>
+      <Button variant="ghost" onClick={() => term.current?.clear()}>{m.terminal_clear()}</Button>
+      <Button variant="ghost" onClick={() => { const sel = term.current?.getSelection() ?? ''; void navigator.clipboard.writeText(sel).then(() => showToast(m.copied())) }}>{m.terminal_copy_output()}</Button>
+      <Button variant="ghost" onClick={() => { void restart() }}>{m.terminal_restart()}</Button>
+    </>}>
       <div ref={host} className="composer-terminal-surface px-2 py-1" style={{ height }} aria-label="Workspace terminal" role="application" />
-    </div>
+    </TerminalPanelFrame>
   )
 }

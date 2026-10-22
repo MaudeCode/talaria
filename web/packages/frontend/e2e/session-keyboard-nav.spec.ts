@@ -46,3 +46,33 @@ test('J and K move between sessions and are ignored while typing', async ({ page
   await expect(page.locator('#msg')).toHaveValue('jk')
   await expect(page).toHaveURL(/\/session\/jk-second$/)
 })
+
+test('a contained long sidebar reveals offscreen rows and preserves focus and menus (TAL-1211)', async ({ page }, testInfo) => {
+  const rows = Array.from({ length: 200 }, (_, i) => row(`long-${String(i)}`, 60 + i))
+  await page.route(/\/api\/sessions(\?|$)/, (route) => route.fulfill({ json: { sessions: rows } }))
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'long-0', title: 'Long sidebar', messages: [] } } }))
+  await page.goto('/session/long-0')
+  await settle(page)
+  const hamburger = page.locator('#btnHamburger')
+  if (await hamburger.isVisible()) await hamburger.click()
+  const first = page.locator('.session-item[data-sid="long-0"]')
+  const last = page.locator('.session-item[data-sid="long-199"]')
+  await expect(first).toBeVisible()
+  await expect(first).toHaveCSS('content-visibility', 'auto')
+  await expect(first).toHaveCSS('contain-intrinsic-size', 'auto 56px')
+  await last.scrollIntoViewIfNeeded()
+  await expect(last.locator('.session-title')).toBeInViewport()
+  await last.focus()
+  await expect(last).toBeFocused()
+  // Touch rows already hide the action buttons; desktop keyboard focus exposes the menu.
+  if (testInfo.project.name !== 'mobile') {
+    await last.locator('.session-actions-trigger').focus()
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('menu')).toBeVisible()
+    await page.keyboard.press('Escape')
+  }
+  await first.focus()
+  await expect(first).toBeFocused()
+  await expect(first.locator('.session-title')).toBeInViewport()
+  if (process.env.TAL1211_SHOTS) await page.screenshot({ path: `${process.env.TAL1211_SHOTS}/long-${testInfo.project.name}.png` })
+})

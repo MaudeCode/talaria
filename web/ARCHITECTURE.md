@@ -64,6 +64,11 @@ hand-written endpoint schemas.
 | Sidecar | `sidecar/client.ts`, `discover.ts`, `fake.ts` | newline-delimited JSON-RPC 2.0 over stdio with streamed frames and cancellation; restart with backoff; Agent discovery; the Vitest fake |
 | CLI | `cli/launcher.ts`, `ctl.ts`, `dotenv.ts`, `supervise.ts`, `bin/*` | `talaria-web` bootstrap, `ctl`, `.env` precedence, the serve supervisor, `talaria-web-mcp` |
 
+JSON responses use compact serialization by default. Raw handlers can request
+pretty output explicitly. Raw and oRPC JSON responses share asynchronous gzip
+compression at level 6 when the serialized body exceeds 1 KiB and the client
+accepts gzip, leaving the event loop available for live-stream heartbeats.
+
 Media byte responses keep the anchored descriptor and hard-link checks on every
 request. Buffered reads yield through asynchronous descriptor IO. A range reads
 only its selected span unless an uncached conditional request needs a content
@@ -152,15 +157,28 @@ Web runtime persistence is selected by `TALARIA_STORAGE`, defaulting to `json`. 
 `SessionStore` owns resident sessions, mutation locks, write serialization and index projection. Only its
 backend adapter accesses session files. Reads carry opaque revisions; stale writes raise
 `RevisionConflict`, reload the cache and preserve the committed document. Message changes are typed
-as unchanged, append, splice or replace. Content search sends one batch of unmatched candidates through
+as unchanged, append, splice or replace. Full document reads return their parsed messages so a full cache miss
+reads and parses the file once. The store keeps those rows separate from the mutable session and
+computes their diff fingerprints on the first save. Content search sends one batch of unmatched candidates through
 the backend, with cached full transcripts handled by the store. Shared extraction and matching functions
 in `sessions/storage/search-text.ts` define search semantics for every adapter.
 
 An adapter implements `StorageBackend`, passes `runSessionBackendConformance`, `runDocumentBackendConformance` and `runJournalBackendConformance`, and owns its recovery
 checks through `diagnose`/`repair`. Cross-backend recovery still reconciles the read-only Agent database.
-The JSON adapter keeps existing paths, bytes, permissions and atomic publication behavior. Auth table writes
+The JSON adapter keeps existing paths, bytes, permissions and atomic publication behavior. Its persisted-session
+ID cache checks the session directory revision on every read and returns an independent set. Owned writes and
+deletes invalidate it before mutation so concurrent external changes cannot be stamped over. External directory
+changes also invalidate it. Session listing reuses one index read
+when the index is healthy and retains its rebuild/full-scan recovery paths. Auth table writes
 stage and fsync asynchronously, then compare the expected revision and publish without an intervening await.
 Shutdown drains queued writes and closes journal writers before storage closes.
+
+JSON documents retain at most 256 recently used byte/revision/parse snapshots per backend. Reads check
+device, inode, size and nanosecond modification/change timestamps, sharing the config cache's fingerprint
+helper. Unchanged files need one stat; returned objects are cloned. Successful writes seed their published
+bytes without rereading, using a descriptor held across publication so a competing replacement cannot lend
+its identity to old bytes. In-place edits during publication invalidate the seeded snapshot. Auth publication
+seeds before yielding, and deletion or shutdown releases snapshots.
 
 `documents` owns drafts, shares, held wakeups, projects, settings, auth keys/tables, passkeys/challenges,
 notifications, deletion records, extension state, background receipts, workspace registries and last-workspace
@@ -180,6 +198,11 @@ arrival timestamps remain authoritative for event times, tool durations and mete
 The JSON journal keeps at most 1,000 recently used run-to-session resolutions per backend instance.
 Each lookup rechecks the resolved journal or pruned summary and reads its current contents; missing paths
 fall back to discovery and misses are never cached. Session deletion and backend close release cached owners.
+Per-session SSE reconnects read each journal asynchronously once. The replay result owns a request-local
+continuation that reads only the active run's appended bytes before handing off to the live queue.
+The continuation shares the replay's byte/row limits and checks file identity and contiguous sequence;
+an unsafe tail or a newly created non-active journal falls back to a session snapshot.
+No journal offsets persist across requests.
 
 Concurrency: one event loop, no locks. Per-session serialization, stream slots, the coalesced index
 writer, and the update lock are promise-based; `docs/lock-ownership.md` lists the ordering rules that
@@ -217,6 +240,15 @@ steer), `approval`, `goals`, `profiles`, `cron`, `kanban`, `skills`, `commands`,
 the contract package and a recorded fixture under `packages/contracts/fixtures/sidecar/` used by both
 the pytest suite and the Vitest fake. `sidecar/scripts/replay_sidecar.py` replays those fixtures and stages
 one approval so browser e2e and the iOS contract runner need no Agent.
+
+The worker starts the sidecar handshake concurrently with server initialization and opens HTTP before
+waiting for that handshake. Public pages and authentication remain available during Agent imports.
+Config reads validate the live RPC version through import-free `runtime.status` before reading
+operator authentication settings. This does not promote Agent readiness or permit config writes during startup.
+Chat admission answers `503 sidecar_unavailable` while the sidecar is starting or reconnecting, without
+queuing a runtime check behind the handshake. Handshake metadata is read lazily from the sidecar.
+Source-checkout dirty fingerprints compare actual Web content without refreshing the Git index,
+excluding timestamp-only rewrites and unrelated monorepo components from the startup scan.
 
 After automatic compression, `chat.start` returns capped model context separately from the full visible
 transcript. The cap preserves paired skill loads' reload markers and failure verdicts even after the raw-output

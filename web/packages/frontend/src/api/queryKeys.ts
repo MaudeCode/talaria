@@ -1,4 +1,4 @@
-/** Query key families. Invalidate by prefix: `queryClient.invalidateQueries({ queryKey: keys.sessions.all })`. */
+/** Query key families. Session refreshes use `invalidateSessionQueries` to preserve unrelated transcripts. */
 export const keys = {
   toolsets: (sessionId: string | undefined, value: string[] | null) => ['toolsets', sessionId, value] as const,
   executionModes: ['execution-modes'] as const,

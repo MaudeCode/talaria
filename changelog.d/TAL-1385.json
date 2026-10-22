@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Finished replies stay in place without repeatedly reloading the conversation.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

@@ -64,8 +64,10 @@ export function openSessionListStream(cb: SessionFeedCallbacks<SessionListEvent>
   return openSessionFeed('api/sessions/events', ['initial', 'sessions_changed', 'gateway_status', 'hello'], (value) => SessionListEventSchema.safeParse(value), cb)
 }
 
-export function openSessionStream(sessionId: string, cb: SessionFeedCallbacks<SessionStreamEvent>): SseHandle {
-  return openSessionFeed(`api/session/stream?${new URLSearchParams({ session_id: sessionId }).toString()}`, SESSION_STREAM_EVENT_NAMES, (value) => SessionStreamEventSchema.safeParse(value), cb)
+export function openSessionStream(sessionId: string, cb: SessionFeedCallbacks<SessionStreamEvent>, knownCount?: number): SseHandle {
+  const params = new URLSearchParams({ session_id: sessionId })
+  if (knownCount !== undefined) params.set('known_count', String(knownCount))
+  return openSessionFeed(`api/session/stream?${params.toString()}`, SESSION_STREAM_EVENT_NAMES, (value) => SessionStreamEventSchema.safeParse(value), cb)
 }
 
 export const SSE_CONNECTING = 0
