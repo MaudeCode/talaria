@@ -267,7 +267,6 @@ it('reads the server revision before the next connector rule after an unknown ou
   await act(async () => { first.reject(new ApiError({ kind: 'network', path: '/x', message: 'Connection lost' })); await Promise.resolve() })
   await waitFor(() => expect(api.setConnectorRule).toHaveBeenLastCalledWith('beta', 'rev-2', { enabled: true }))
 })
-||||||| parent of eb4ab8a8f (TAL-1179: delete skills, answer staged writes and keep editors editable while saving)
 
 it('deletes a skill at once, returning to the list without it, and restores it on refusal', async () => {
   let refuse!: (error: unknown) => void
