@@ -128,10 +128,18 @@ redirects both `sys.stdout` and fd 1 to stderr, so Agent code that prints
 - Error: `{"jsonrpc":"2.0","id":<int>,"error":{"code":<int>,"message":"...","data":{...}}}`
 - Stream frame (sidecar to server, for long-running calls):
   `{"jsonrpc":"2.0","method":"stream","params":{"id":<request id>,"seq":<int>,"event":"<name>","data":{...}}}`
+
 - Server-originated notification (no id): `{"jsonrpc":"2.0","method":"<ns>.<name>","params":{...}}`
 - Cancellation is a separate request: `rpc.cancel` with `{"id":<request id>}`.
   The cancelled call still completes with a result whose `status` is
   `"cancelled"`, so the server never waits on a dangling id.
+
+`chat.start` emits its first token immediately, then coalesces consecutive token
+deltas within 16 ms before taking usage/steer snapshots and writing a frame.
+The next token after that interval, any non-token event, or turn exit flushes
+the buffered text in order. There is no timer: a quiet tail waits for the next
+event or turn exit. Each turn owns its buffer; success, cancellation and errors
+flush it before the RPC response. Token frame shapes and final text are unchanged.
 
 One line per message; every line is a complete JSON document with no embedded
 newlines. Binary payloads (audio for STT, images) are base64 fields.

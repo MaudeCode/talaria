@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import io
 import json
 import sys
 import threading
@@ -13,6 +14,7 @@ import pytest
 
 from talaria_sidecar.methods import chat
 from talaria_sidecar.errors import RpcError
+from talaria_sidecar.rpc import CallContext, RpcServer
 
 
 class FakeAgent:
@@ -590,6 +592,86 @@ def test_usage_changes_and_the_full_todo_result_reach_the_server(monkeypatch, to
     complete = dict(ctx.frames)["tool_complete"]
     assert complete["todo_result"] == todo
     assert len(complete["raw_result"]["todos"]) == 4000
+
+
+def test_fast_tokens_are_batched_before_pipe_writes_and_snapshots(monkeypatch) -> None:
+    _patch(monkeypatch)
+    clock = [0.0]
+    monkeypatch.setattr(chat, "time", types.SimpleNamespace(monotonic=lambda: clock[0]))
+    snapshots = []
+    usage = chat._usage
+    monkeypatch.setattr(chat, "_usage", lambda agent: (snapshots.append(clock[0]), usage(agent))[1])
+    stdout = io.BytesIO()
+    ctx = CallContext(RpcServer({}, stdout=stdout), 1, "chat.start")
+    tokens = [f"{i}🙂" for i in range(100)]
+
+    class BurstAgent(FakeAgent):
+        def run_conversation(self, **kwargs):
+            for i, token in enumerate(tokens):
+                clock[0] = i * 0.00005
+                self.kwargs["stream_delta_callback"](token)
+            return super().run_conversation(**kwargs)
+
+    monkeypatch.setattr(chat, "_agent_class", lambda: BurstAgent)
+    assert chat.start(ctx, _params("st-burst"))["status"] == "completed"
+    frames = [json.loads(line)["params"] for line in stdout.getvalue().splitlines()]
+    text_frames = [frame for frame in frames if frame["event"] == "token"]
+    assert len(text_frames) <= 2
+    assert "".join(frame["data"]["text"] for frame in text_frames) == "".join(tokens)
+    assert len(snapshots) <= 4  # Initial/final usage plus at most two emitted batches.
+    assert [frame["seq"] for frame in frames] == list(range(1, len(frames) + 1))
+
+
+def test_token_batches_flush_at_deadline_and_before_tool_frames(monkeypatch) -> None:
+    _patch(monkeypatch)
+    clock = [0.0]
+    monkeypatch.setattr(chat, "time", types.SimpleNamespace(monotonic=lambda: clock[0]))
+    ctx = Ctx()
+
+    class StreamingAgent(FakeAgent):
+        def run_conversation(self, **kwargs):
+            token = self.kwargs["stream_delta_callback"]
+            token("a")
+            token("b")
+            clock[0] = 0.016
+            token("c")
+            assert [data["text"] for event, data in ctx.frames if event == "token"] == ["a", "bc"]
+            token("d")
+            self.kwargs["tool_start_callback"]("t1", "terminal", {})
+            assert [event for event, _ in ctx.frames if event in ("token", "tool")] == ["token", "token", "token", "tool"]
+            token("e")
+            token("f")
+            return super().run_conversation(**kwargs)
+
+    monkeypatch.setattr(chat, "_agent_class", lambda: StreamingAgent)
+    assert chat.start(ctx, _params("st-deadline"))["status"] == "completed"
+    assert [data["text"] for event, data in ctx.frames if event == "token"] == ["a", "bc", "d", "ef"]
+
+
+@pytest.mark.parametrize("exit_kind", ["completed", "cancelled", "error"])
+def test_pending_tokens_flush_before_the_rpc_terminal_response(monkeypatch, exit_kind) -> None:
+    _patch(monkeypatch)
+    monkeypatch.setattr(chat, "time", types.SimpleNamespace(monotonic=lambda: 0.0))
+
+    class ExitingAgent(FakeAgent):
+        def run_conversation(self, **kwargs):
+            self.kwargs["stream_delta_callback"]("first")
+            self.kwargs["stream_delta_callback"]("last")
+            if exit_kind == "error":
+                raise RpcError("synthetic failure")
+            if exit_kind == "cancelled":
+                ctx.cancel_event.set()
+            return super().run_conversation(**kwargs)
+
+    monkeypatch.setattr(chat, "_agent_class", lambda: ExitingAgent)
+    stdout = io.BytesIO()
+    server = RpcServer({"chat.start": chat.start}, stdout=stdout)
+    ctx = CallContext(server, 1, "chat.start")
+    server._dispatch({"id": 1, "method": "chat.start", "params": _params("st-exit")}, ctx)
+    frames = [json.loads(line) for line in stdout.getvalue().splitlines()]
+    assert frames[-1].get("id") == 1
+    assert "".join(frame["params"]["data"]["text"] for frame in frames[:-1] if frame["params"]["event"] == "token") == "firstlast"
+    assert frames[-1]["result"]["status"] == exit_kind
 
 
 def test_a_profile_toolset_change_builds_a_fresh_agent(monkeypatch) -> None:

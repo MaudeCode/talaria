@@ -1680,8 +1680,11 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
     steer_state = {"last": None}
     usage_state = {"last": None}
     pending_mcp = False
+    token_parts: list[str] = []
+    last_token_flush: float | None = None
+    emit_lock = threading.Lock()
 
-    def emit(event, data=None):
+    def emit_frame(event, data=None):
         """Predecessor ``_webui_steer_events_before``: before content frames, report the Agent's pending steer text
         whenever it changed so the server can mark consumed steers live rather than only after ``done``. TAL-397: the
         Agent's session counters ride the same boundary, so the server meters cost and tokens while the turn runs."""
@@ -1695,6 +1698,26 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
                 usage_state["last"] = usage
                 raw_emit("usage", usage)
         raw_emit(event, data)
+
+    def flush_tokens():
+        nonlocal last_token_flush
+        if token_parts:
+            text = "".join(token_parts)
+            token_parts.clear()
+            last_token_flush = time.monotonic()
+            emit_frame("token", {"text": text})
+
+    def emit(event, data=None):
+        # Batch before snapshots/serialization; the lock keeps tool-worker and watcher frames in order.
+        with emit_lock:
+            if event == "token":
+                token_parts.append(data["text"])
+                if last_token_flush is None or time.monotonic() - last_token_flush >= 0.016:
+                    flush_tokens()
+            else:
+                flush_tokens()
+                emit_frame(event, data)
+
     timing = getattr(ctx, "timing", None)
     try:
         if timing:
@@ -2193,6 +2216,8 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             "live_tool_calls": live_tool_calls,
         }
     finally:
+        with emit_lock:
+            flush_tokens()
         with run.lock:
             if pending_mcp:
                 emit("notice_clear", {"key": _MCP_PENDING_KEY})
