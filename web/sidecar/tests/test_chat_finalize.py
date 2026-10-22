@@ -159,6 +159,10 @@ def test_archive_notification_is_optional_and_diagnostics_have_no_callback_paylo
         'lineage': ['archive-root', 'archive-tip'],
     })
     assert result == {'messages': []}
+    for worker, home in list(chat._RELEASES.items()):
+        if home == tmp_path:
+            worker.join(5)
+    assert not any(home == tmp_path for home in chat._RELEASES.values())
     assert len(called) == (0 if surface == 'missing_emitter' else 1)
     if called:
         assert called[0] == (tmp_path / 'state.db', ['archive-root', 'archive-root', 'archive-tip'], {
@@ -205,6 +209,11 @@ def register(ctx):
         assert not (profile / 'archived.json').exists()
         assert (profile / 'state.db').read_bytes() == b'untouched owner database'
         return
+    deadline = time.monotonic() + 15
+    while not (profile / 'archived.json').exists() and time.monotonic() < deadline:
+        time.sleep(.01)
+    # Close drains the already-delivered callback and its diagnostics before inspecting the result.
+    handshaken.close()
     assert json.loads((profile / 'archived.json').read_text()) == {
         'session_id': 'archive-root', 'reason': 'archive', 'profile': 'archiving',
         'deleted_ids': ['archive-root', 'archive-tip'], 'sessions_dir': str(profile / 'sessions'),
@@ -213,3 +222,45 @@ def register(ctx):
     assert not (profile / 'finalized').exists()
     assert not (hermes_home / 'archived.json').exists()
     assert 'private-synthetic-credential' not in '\n'.join(handshaken.stderr_lines)
+
+
+def test_archive_acknowledges_each_notification_while_callbacks_are_blocked(monkeypatch, tmp_path):
+    import contextlib
+    import threading
+    from talaria_sidecar.methods import Registry, chat
+
+    release, acknowledged = threading.Event(), threading.Event()
+    entered = []
+    replies = []
+
+    def notify(home, session_id, lineage):
+        entered.append(session_id)
+        assert release.wait(5), 'test did not release its callbacks'
+
+    monkeypatch.setattr(chat, 'agent_scope', lambda home: contextlib.nullcontext(home))
+    monkeypatch.setattr(chat, '_notify_archive', notify)
+    registry = Registry(runtime=None)
+    chat.register(registry)
+
+    def archive_batch():
+        for sid in ('archive-one', 'archive-two'):
+            replies.append(registry.methods['chat.finalize_session'](None, {
+                'session_id': sid, 'profile_home': str(tmp_path), 'reason': 'archive',
+            }))
+        acknowledged.set()
+
+    caller = threading.Thread(target=archive_batch)
+    caller.start()
+    try:
+        assert acknowledged.wait(1), 'archive batch did not acknowledge while callbacks remain blocked'
+        assert replies == [{'messages': []}, {'messages': []}]
+        assert len([worker for worker, home in chat._RELEASES.items() if home == tmp_path]) == 2
+    finally:
+        release.set()
+        caller.join(5)
+        for worker, home in list(chat._RELEASES.items()):
+            if home == tmp_path:
+                worker.join(5)
+    assert not caller.is_alive()
+    assert sorted(entered) == ['archive-one', 'archive-two']
+    assert not any(home == tmp_path for home in chat._RELEASES.values())

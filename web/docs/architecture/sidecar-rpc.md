@@ -479,8 +479,10 @@ clears approvals. Agents without the emitter do nothing.
 
 The server dispatches once under the shared archive mutation lock, after an unarchived
 to archived local save commits. Same-state requests, unarchive and cleanup do not dispatch.
-Delivery is best effort, with no retry after a committed archive. The existing lifecycle
-worker bounds caller wait and retains profile custody until a timed-out callback exits.
+The transition uses persisted before/after archive metadata; a refused save reports a conflict
+without notifying. Delivery is best effort, with no retry after a committed archive. Archive
+RPC replies acknowledge worker scheduling immediately, so bulk actions do not serialize slow
+plugin callbacks. The existing lifecycle worker retains profile custody until its callback exits.
 Archive callback diagnostics expose one payload-free warning instead of raw exceptions.
 
 ## Versioning

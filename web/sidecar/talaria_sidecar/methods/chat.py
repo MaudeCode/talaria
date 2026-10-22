@@ -2498,6 +2498,9 @@ def register(registry) -> None:
         with _RELEASES_LOCK:
             _RELEASES[worker] = home
         worker.start()
+        # Bulk archive callers need only scheduling acknowledgement; the worker keeps profile custody until it exits.
+        if reason == "archive":
+            return {"messages": []}
         worker.join(_SESSION_FINALIZE_TIMEOUT)
         if worker.is_alive():
             log.warning("Session lifecycle callback exceeded deadline (%s)", reason)

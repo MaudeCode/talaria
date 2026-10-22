@@ -52,8 +52,9 @@ def register(ctx):
   await server.deps.sessions.archive(session.session_id, true)
   await server.deps.sessions.archive(session.session_id, false)
   const eventFile = join(profile, 'events.jsonl')
-  const events = existsSync(eventFile) ? readFileSync(eventFile, 'utf8').trim().split('\n').map((line) => JSON.parse(line) as unknown) : []
-  expect(events).toEqual([{
+  await expect.poll(() => {
+    try { return readFileSync(eventFile, 'utf8').trim().split('\n').map((line) => JSON.parse(line) as unknown) } catch { return [] }
+  }, { timeout: 15_000 }).toEqual([{
     session_id: session.session_id, reason: 'archive', profile: 'archiving', telemetry_schema_version: 'hermes.observer.v1',
     deleted_ids: [session.session_id, 'archive-tip'].sort(), sessions_dir: join(profile, 'sessions'),
   }])

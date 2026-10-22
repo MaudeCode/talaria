@@ -163,4 +163,29 @@ describe('session finalize (TAL-937)', () => {
     expect(sidecar.calls.filter((c) => c.method === task)).toEqual([])
   })
 
+  it('a refused archive overwrite emits nothing and a complete retry still notifies', async () => {
+    const { sidecar, server, session } = await setup()
+    const messages = session.messages
+    session.messages = []
+    session.pending_user_message = 'pending turn'
+    let failure: unknown
+    try { await server.deps.sessions.archive(session.session_id, true) } catch (error) { failure = error }
+    expect(sidecar.calls.filter((c) => c.method === task)).toEqual([])
+    expect(failure).toMatchObject({ status: 409 })
+    expect(session.archived).toBe(false)
+    expect((await server.deps.sessionStore.load(session.session_id))?.archived).toBe(false)
+    session.messages = messages
+    await server.deps.sessions.archive(session.session_id, true)
+    expect((await server.deps.sessionStore.load(session.session_id))?.archived).toBe(true)
+    expect(sidecar.calls.filter((c) => c.method === task)).toHaveLength(1)
+  })
+
+  it('uses the persisted archive transition when cached metadata disagrees', async () => {
+    const { sidecar, server, session } = await setup()
+    await server.deps.sessions.archive(session.session_id, true)
+    session.archived = false
+    await server.deps.sessions.archive(session.session_id, true)
+    expect(sidecar.calls.filter((c) => c.method === task)).toHaveLength(1)
+  })
+
 })

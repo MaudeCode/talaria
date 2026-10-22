@@ -1662,13 +1662,18 @@ export class SessionService {
     await this.withMutationLock(sid, async () => {
       s = await this.store.ensureFull(sid, await this.store.get(sid))
       const previous = { archived: s.archived, pinned: s.pinned }
+      const wasArchived = (await this.store.loadMetadataOnly(sid))?.archived ?? false
       s.archived = archived
       if (archived) s.pinned = false
-      try { await this.store.save(s, { touchUpdatedAt: false }) } catch (error) {
+      try {
+        await this.store.save(s, { touchUpdatedAt: false })
+        const saved = await this.store.loadMetadataOnly(sid)
+        if (saved?.archived !== archived || saved.pinned !== s.pinned) throw new HttpFailure(409, 'Archive was not saved; reload the chat and retry')
+      } catch (error) {
         Object.assign(s, previous)
         throw error
       }
-      if (archived && !previous.archived) await this.finalizeSession(sid, s.profile, 'archive', stateDbReadLineage(s) ?? undefined)
+      if (archived && !wasArchived) await this.finalizeSession(sid, s.profile, 'archive', stateDbReadLineage(s) ?? undefined)
     }, { allowReadOnly: true })
     const sidecar = this.deps.sidecar?.()
     if (!archived && sidecar) await this.retainWorktrees((method, params, opts) => sidecar.call(method, params, opts), s).catch(() => undefined)
