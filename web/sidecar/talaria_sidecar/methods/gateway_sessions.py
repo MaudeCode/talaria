@@ -214,14 +214,14 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                 with suppress(GatewayRPCError, TimeoutError):
                     await client.rpc("config.set", **common, key="show_reasoning",
                                      value="1" if params["show_reasoning"] else "0", _timeout=10)
-            ctx.emit("snapshot", result)
+            ctx.emit("snapshot", {**result, "replaying": True})
             epoch, sequence = snap["replay_epoch"], snap["last_sequence"]
             # Rebuild the active turn's display from retained events, even when its initial
             # tokens predate this viewer. A gap replaces the subscription, never invents replay.
             replay = await client.rpc("session.events.since", **common, replay_epoch=epoch, last_sequence=0)
             if replay.get("snapshot_required"):
                 snap = await snapshot()
-                ctx.emit("snapshot", {**result, "snapshot": snap, "replay_gap": True})
+                ctx.emit("snapshot", {**result, "snapshot": snap, "replay_gap": True, "replaying": True})
                 epoch, sequence = snap["replay_epoch"], snap["last_sequence"]
             else:
                 for event in replay["events"]:
@@ -230,6 +230,7 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                             or event.get("type") == "session.info" and event.get("payload", {}).get("execution_generation") == snap["execution_generation"]):
                         ctx.emit("event", event)
                 sequence = replay["last_sequence"]
+            ctx.emit("replay_complete", {})
             checked = asyncio.get_running_loop().time()
             while not ctx.cancelled:
                 try:

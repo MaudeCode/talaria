@@ -1,3 +1,4 @@
+import cronRefusal from '../../../../../../contracts/fixtures/native-cron-refusal.json'
 import { createElement, Fragment, type ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { act, render, renderHook, screen, waitFor } from '@testing-library/react'
@@ -81,6 +82,22 @@ describe('useRuntimeNotices agent_unavailable', () => {
     const shown = render(createElement(Fragment, null, result.current.notices.find((n) => n.id === 'runtime:thread_error')!.content))
     expect(shown.container.textContent).toBe('Agent update recovery is incomplete')
     expect(state.turns.s!.error).toMatchObject({ agent_runtime_reason: 'recovery_incomplete', retryable: true, restart_scheduled: false })
+  })
+
+  it.each([false, true, undefined])('honors retryable=%s on replayed terminal errors', (retryable) => {
+    vi.mocked(api.fetchAgentHealth).mockResolvedValue({ alive: true, chat: { available: true, condition: null } })
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const wrapper = ({ children }: { children: ReactNode }) => createElement(QueryClientProvider, { client: qc }, children)
+    let state = streamReducer(initialStreamState, { type: 'start', sessionId: 's', streamId: 'r', turnId: null, userMessageId: null, userText: 'hi', now: 1 })
+    const event = parseChatEvent('apperror', JSON.stringify({ ...cronRefusal.event.data, retryable }))!
+    state = streamReducer(state, { type: 'event', sessionId: 's', streamId: 'r', event, lastEventId: 'r:1', now: 2 })
+    const onRetry = vi.fn()
+    const { result } = renderHook(() => useRuntimeNotices({ live: state.turns.s!, onRetry, compressingSince: null }), { wrapper })
+    const notice = result.current.notices.find((n) => n.id === 'runtime:thread_error')!
+    const shown = render(createElement(Fragment, null, notice.content))
+    expect(shown.container.textContent).toContain(cronRefusal.event.data.message)
+    expect(Boolean(notice.action)).toBe(retryable !== false)
+    expect(onRetry).not.toHaveBeenCalled()
   })
 
   it('keeps the gateway warning for an older server that sends no chat readiness', async () => {

@@ -260,7 +260,10 @@ export class GatewaySessions {
     }
     if (!result.receipt || !('admission_id' in result.receipt)) throw new HttpFailure(409, 'The owner did not confirm this admission. Reconcile it before resending.', { owner_attachment: this.attachment(result), outcome_unknown: result.state === 'unavailable' })
     const snapshot = result.snapshot
-    const watch = snapshot && (snapshot.running || snapshot.pending.some((p) => p.status === 'queued' || p.status === 'started')) ? this.watches.get(target.key) ?? this.watch(target, base, snapshot) : null
+    // A fast refusal can settle before submit returns; its retained completion still belongs to this input.
+    const refused = result.receipt.status === 'terminal' && result.receipt.outcome === 'failed'
+    const watch = snapshot && (refused || snapshot.running || snapshot.pending.some((p) => p.status === 'queued' || p.status === 'started'))
+      ? this.watches.get(target.key) ?? this.watch(target, base, snapshot, refused ? str(result.receipt.admission_id) : undefined) : null
     this.deps.events.publish('owner_admission', { profile: target.profile, sessionId: sid })
     return { session_id: sid, ...(watch ? { stream_id: watch.stream, turn_id: watch.stream } : {}), owner_attachment: this.attachment(result), admission_id: result.receipt.admission_id, session: await this.view(base, result, watch?.stream ?? null, target) }
   }
@@ -370,7 +373,7 @@ export class GatewaySessions {
     return true
   }
 
-  private watch(target: Target, base: Row, snapshot: GatewaySnapshot): Watch {
+  private watch(target: Target, base: Row, snapshot: GatewaySnapshot, admissionId?: string): Watch {
     const watch: Watch = { stream: `${ownerStreamPrefix(target.home)}${randomUUID()}`, controller: new AbortController(), snapshot, batch: null, restarting: false }
     this.watches.set(target.key, watch)
     const registry = this.deps.registry
@@ -380,7 +383,7 @@ export class GatewaySessions {
     let terminal = false
     let streamError: unknown = null
     let closeWriter: RunJournalWriter | null = null
-    let activeAdmission = runningAdmission(snapshot)?.admission_id ?? snapshot.pending.find((p) => !p.steering)?.admission_id
+    let activeAdmission = admissionId ?? runningAdmission(snapshot)?.admission_id ?? snapshot.pending.find((p) => !p.steering)?.admission_id
     const enqueue = (work: () => Promise<void>) => {
       chain = chain.then(async () => { if (!terminal && !streamError) await work() })
         .catch((error: unknown) => { streamError = error; watch.controller.abort() })
@@ -392,6 +395,8 @@ export class GatewaySessions {
       const writer = await this.deps.journal.writer(journalSession, watch.stream)
       closeWriter = writer
       const showReasoning = await this.deps.showReasoning(target.home).catch(() => false)
+      let completion: { admission: string; message: string; type: 'cron_session_read_only'; code: 'cron_session_read_only'; retryable: false } | null = null
+      let replaying = false
       let usage: Row = {}
       let reasoning = ''
       let titles = new ReasoningTitleTracker()
@@ -407,14 +412,14 @@ export class GatewaySessions {
         for (const call of calls) if (call.progress) await put('tool_progress', { id: call.tid, progress: null })
         calls.length = 0
       }
-      const resetProjection = async () => { await clearTools(); reasoning = ''; usage = {}; titles = new ReasoningTitleTracker() }
+      const resetProjection = async () => { await clearTools(); reasoning = ''; usage = {}; completion = null; titles = new ReasoningTitleTracker() }
       const meter = async (data: Row) => {
         usage = { ...usage, ...ownerUsage(data) }
         if (['input_tokens', 'output_tokens', 'cache_read_tokens', 'cache_write_tokens'].every((key) => typeof usage[key] === 'number')) await put('metering', { session_id: target.sid, usage: { ...usage, estimated_cost: usage.estimated_cost ?? null }, tps: usage.tps ?? null, tps_available: usage.tps !== undefined, estimated: false })
       }
       const finish = async () => {
         // A model pick resolves at the owner's next claim boundary, after the turn becomes idle.
-        if (terminal || this.modelMutations.has(target.key) || this.currentModelChange(target, watch.snapshot)?.state === 'deferred') return
+        if (terminal || replaying || this.modelMutations.has(target.key) || this.currentModelChange(target, watch.snapshot)?.state === 'deferred') return
         terminal = true
         await clearTools()
         const current = await this.call(target, { action: 'snapshot' })
@@ -422,9 +427,13 @@ export class GatewaySessions {
         const receipt = rawReceipt && 'admission_id' in rawReceipt ? rawReceipt : null
         const cancelled = receipt?.outcome === 'interrupted' || receipt?.outcome === 'cancelled'
         const failed = current.state !== 'attached' || receipt?.status !== 'terminal' || receipt.outcome !== 'completed' && !cancelled
+        const refusal = current.state === 'attached' && current.snapshot && sameExecution(current.snapshot, watch.snapshot)
+          && receipt?.status === 'terminal' && receipt.outcome === 'failed' && completion && completion.admission === activeAdmission
+          && receipt.authority_epoch === watch.snapshot.authority_epoch && receipt.execution_generation === watch.snapshot.execution_generation
+          ? { message: completion.message, type: completion.type, code: completion.code, retryable: completion.retryable } : null
         await put(cancelled ? 'cancel' : failed ? 'apperror' : 'done', { session_id: target.sid,
           terminal_state: cancelled ? 'cancelled' : failed ? 'error' : 'completed',
-          ...(failed ? { message: 'The owning Agent could not complete this turn', type: current.reason ?? 'owner_turn_failed' } : {}),
+          ...(failed ? refusal ?? { message: 'The owning Agent could not complete this turn', type: current.reason ?? 'owner_turn_failed' } : {}),
           ...(Object.keys(usage).length ? { usage } : {}),
           session: { ...await this.view(base, current, null, target), ...usage } })
         await put('stream_end', { session_id: target.sid })
@@ -454,6 +463,11 @@ export class GatewaySessions {
         signal: watch.controller.signal, timeoutMs: 0,
         onStream: (frame) => {
           enqueue(async () => {
+            if (frame.event === 'replay_complete') {
+              replaying = false
+              if (!watch.snapshot.running && !watch.snapshot.pending.some((p) => p.status === 'queued' || p.status === 'started')) await finish()
+              return
+            }
             if (frame.event === 'restarting') {
               // The owner entered a restart's after-turn wait after this watch attached: clients stop sending.
               watch.restarting = true
@@ -468,6 +482,7 @@ export class GatewaySessions {
             }
             if (frame.event === 'snapshot') {
               const result = GatewaySessionResultSchema.parse(frame.data)
+              replaying = (frame.data as Row).replaying === true
               if (!result.snapshot) return
               if (result.replay_gap || !sameExecution(result.snapshot, watch.snapshot)) await resetProjection()
               await put('session_snapshot', { session: await this.view(base, result, watch.stream, target), replay_gap: result.replay_gap === true })
@@ -531,7 +546,17 @@ export class GatewaySessions {
                 ...(complete ? { is_error: data.status !== 'completed', duration: data.duration_seconds } : {}) })
             }
             else if (kind === 'session.usage') await meter(data)
-            else if (kind === 'message.complete' && data.usage && typeof data.usage === 'object') await meter(data.usage as Row)
+            else if (kind === 'message.complete') {
+              if (event.session_id !== target.sid || event.replay_epoch !== undefined && event.replay_epoch !== watch.snapshot.replay_epoch) return
+              // Only this owner-defined refusal is public; never forward provider diagnostics or private descriptor fields.
+              const surface = data.error_surface as Row | undefined
+              if (activeAdmission && data.admission_id === activeAdmission && data.outcome === 'failed' && data.status === 'error'
+                  && surface?.layer === 'gateway' && surface.code === 'cron_session_read_only' && surface.retryable === false
+                  && typeof data.text === 'string' && data.text.trim()) {
+                completion = { admission: activeAdmission, message: data.text, type: 'cron_session_read_only', code: 'cron_session_read_only', retryable: false }
+              }
+              if (data.usage && typeof data.usage === 'object') await meter(data.usage as Row)
+            }
             else if (kind === 'tool.start' || kind === 'tool.progress' || kind === 'tool.complete') {
               if (event.session_id !== target.sid || event.replay_epoch !== undefined && event.replay_epoch !== watch.snapshot.replay_epoch) return
               const id = str(data.tool_id) || str(data.tool_call_id)

@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Scheduled chats explain why a message was refused and direct you to start a new chat without offering a retry.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

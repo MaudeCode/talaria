@@ -12,6 +12,10 @@ import { CronBlueprintsSchema, CronBlueprintFillSchema, AgentHealthSchema, Error
 const shared = (path: string): unknown => JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../contracts', path), 'utf8'))
 
 describe('contracts package', () => {
+  it('preserves the scheduled-chat refusal and nonretryable recovery instruction', () => {
+    const fixture = shared('fixtures/native-cron-refusal.json') as { event: unknown }
+    expect(ChatEventSchema.parse(fixture.event)).toEqual(fixture.event)
+  })
   it('accepts the shared closed voice-stop receipt and existing suppressed response', () => {
     const fixture = shared('fixtures/gateway-owner.json') as { voice_stop_receipt: unknown; voice_stop_response: unknown }
     const result = { state: 'attached', reason: null, snapshot: null, receipt: fixture.voice_stop_receipt }
