@@ -36,6 +36,11 @@ rows. Terminal settlement refreshes list and search queries without fetching
 detail again; a following title frame patches the cached title. For five seconds
 after a complete terminal snapshot, a named sidebar echo refreshes that session's
 other queries while retaining its transcript. Other sessions stay cached.
+When `session_done` arrives before the terminal frame, a client following that
+run leaves detail to the live transport; a lost terminal frame still uses the
+existing stream-end/status reconciliation. A window whose offset advances
+retires the loaded prefix and in-flight history pages so absolute row indices
+remain correct; history can be loaded again from the new boundary.
 Explicit mutations still refresh the affected session. On the viewed-session
 feed, the identical `process_complete` immediately following `bg_task_complete`
 is its legacy alias and causes no second detail fetch. Reconnects, owner updates,

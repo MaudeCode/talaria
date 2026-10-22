@@ -25,10 +25,10 @@ const api = await import('../../api/endpoints')
 const { useTranscript } = await import('./useTranscript')
 const { liveText } = await import('../../stream/reducer')
 const { resetStreamStoreForTests } = await import('../../stream/store')
-const { resetConnectionsForTests, configureStream, attachToStream } = await import('../../stream/connection')
+const { resetConnectionsForTests, configureStream, attachToStream, teardown } = await import('../../stream/connection')
 const { useSessionListStream } = await import('../sessions/SessionListPanel')
 
-it('keeps the terminal window without a detail fetch after done and sidebar session_done', async () => {
+it.each(['before', 'after'] as const)('keeps the terminal window without a detail fetch when the sidebar arrives %s done', async (order) => {
   const feeds = await import('../../api/sse')
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const session = sessionFixture({ session_id: 'terminal', messages: [] })
@@ -48,10 +48,12 @@ it('keeps the terminal window without a detail fetch after done and sidebar sess
   let reading!: Promise<void>
   act(() => { reading = qc.refetchQueries({ queryKey: keys.sessions.detail('terminal') }) })
   vi.mocked(api.fetchSession).mockClear()
+  const sidebar = () => vi.mocked(feeds.openSessionListStream).mock.calls[0]![0].onEvent({ event: 'sessions_changed', data: { reason: 'session_done', session_id: 'terminal' } })
   await act(async () => {
     streams[0]!.event(parseChatEvent('token', JSON.stringify({ text: 'Final answer' }))!, 'terminal-run:1')
+    if (order === 'before') sidebar()
     streams[0]!.event(parseChatEvent('done', JSON.stringify({ session: settled }))!, 'terminal-run:2')
-    vi.mocked(feeds.openSessionListStream).mock.calls[0]![0].onEvent({ event: 'sessions_changed', data: { reason: 'session_done', session_id: 'terminal' } })
+    if (order === 'after') sidebar()
     streams[0]!.event(parseChatEvent('title', JSON.stringify({ title: 'Settled title' }))!, 'terminal-run:3')
     staleRead.resolve({ session })
     await reading
@@ -66,6 +68,10 @@ it('keeps the terminal window without a detail fetch after done and sidebar sess
     await act(() => Promise.resolve(vi.mocked(feeds.openSessionListStream).mock.calls[0]![0].onEvent({ event: 'sessions_changed', data: { reason: 'session_done', session_id: 'terminal' } })))
     expect(api.fetchSession).toHaveBeenCalledTimes(1)
   } finally { now.mockRestore() }
+  await act(async () => { await attachToStream('terminal', 'next-run'); teardown('terminal') })
+  vi.mocked(api.fetchSession).mockClear()
+  await act(() => Promise.resolve(sidebar()))
+  expect(api.fetchSession).toHaveBeenCalledTimes(1)
 })
 
 beforeEach(() => { vi.resetAllMocks(); streams.length = 0; resetStreamStoreForTests() })
@@ -76,7 +82,7 @@ function historyHook(loadOnMount = false) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   qc.setQueryData(keys.sessions.detail('history'), { session })
   const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>
-  return renderHook(({ sid }) => {
+  const hook = renderHook(({ sid }) => {
     const transcript = useTranscript(sid)
     const { loadOlder } = transcript
     const started = useRef(false)
@@ -85,7 +91,32 @@ function historyHook(loadOnMount = false) {
     }, [loadOlder])
     return transcript
   }, { initialProps: { sid: 'history' }, wrapper })
+  return { ...hook, qc }
 }
+
+it('a terminal snapshot retires loaded and in-flight pages before admitting contiguous history', async () => {
+  const page = (offset: number) => Array.from({ length: 120 }, (_, i) => ({ id: offset + i, role: 'user', content: `Message ${offset + i}` }))
+  const stale = deferred<Awaited<ReturnType<typeof api.fetchSession>>>()
+  vi.mocked(api.fetchSession).mockResolvedValueOnce({ session: sessionFixture({ session_id: 'history', messages: page(120) }) }).mockReturnValueOnce(stale.promise)
+  vi.mocked(api.fetchStreamStatus).mockResolvedValue({ active: true, replay_available: true, stream_id: 'history-run', blocking_stream_id: null })
+  const { result, qc } = historyHook()
+  configureStream({ queryClient: qc })
+  await act(async () => { await attachToStream('history', 'history-run'); await result.current.loadOlder() })
+  expect(result.current.rows[0]?.index).toBe(120)
+  let loading!: Promise<void>
+  act(() => { loading = result.current.loadOlder() })
+  const settled = sessionFixture({ session_id: 'history', messages: page(242), _messages_offset: 242, _messages_truncated: true })
+  act(() => { streams[0]!.event(parseChatEvent('done', JSON.stringify({ session: settled }))!, 'history-run:1') })
+  await waitFor(() => expect(result.current.rows[0]?.index).toBe(242))
+  expect(result.current.rows).toHaveLength(120)
+  expect(result.current.loadingOlder).toBe(false)
+  await act(async () => { stale.resolve({ session: sessionFixture({ session_id: 'history', messages: page(0) }) }); await loading })
+  expect(result.current.rows[0]?.message.content).toBe('Message 242')
+  vi.mocked(api.fetchSession).mockResolvedValueOnce({ session: sessionFixture({ session_id: 'history', messages: page(122) }) })
+  await act(async () => { await result.current.loadOlder() })
+  expect(api.fetchSession).toHaveBeenLastCalledWith('history', { messages: true, msg_limit: 120, msg_before: 242, resolve_model: false })
+  expect(result.current.rows.map((row) => row.index)).toEqual(Array.from({ length: 240 }, (_, i) => i + 122))
+})
 
 it('keeps a cached entry page requested during layout when mount effects run', async () => {
   const page = deferred<Awaited<ReturnType<typeof api.fetchSession>>>()

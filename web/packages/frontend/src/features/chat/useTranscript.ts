@@ -52,12 +52,15 @@ export function messageKey(message: Message): string | undefined {
 export function useTranscript(sessionId: string | null) {
   const qc = useQueryClient()
   const streamContext = useSyncExternalStore(subscribeStreamContext, getStreamContext, getStreamContext)
-  const [olderState, setOlderState] = useState<{ sid: string | null; items: Message[] }>({ sid: sessionId, items: [] })
-  const older = useMemo(() => (olderState.sid === sessionId ? olderState.items : []), [olderState, sessionId])
-  const setOlder = useCallback((update: (prev: Message[]) => Message[]) => setOlderState((s) => ({ sid: sessionId, items: update(s.sid === sessionId ? s.items : []) })), [sessionId])
-  const [pageState, setPageState] = useState({ sid: sessionId, loading: false, error: false })
-  if (pageState.sid !== sessionId) setPageState({ sid: sessionId, loading: false, error: false })
-  const pageScope = useMemo(() => ({ sessionId }), [sessionId])
+  // useQuery below subscribes to this window; a moved boundary retires its prefix and pending pages together.
+  const windowOffset = qc.getQueryData<{ session: Session }>(keys.sessions.detail(sessionId ?? ''))?.session._messages_offset ?? 0
+  const pageScope = useMemo(() => ({ sessionId, windowOffset, streamContext }), [sessionId, windowOffset, streamContext])
+  const [olderState, setOlderState] = useState<{ scope: typeof pageScope; items: Message[] }>({ scope: pageScope, items: [] })
+  if (olderState.scope !== pageScope) setOlderState({ scope: pageScope, items: [] })
+  const older = useMemo(() => (olderState.scope === pageScope ? olderState.items : []), [olderState, pageScope])
+  const setOlder = useCallback((update: (prev: Message[]) => Message[]) => setOlderState((s) => ({ scope: pageScope, items: update(s.scope === pageScope ? s.items : []) })), [pageScope])
+  const [pageState, setPageState] = useState({ scope: pageScope, loading: false, error: false })
+  if (pageState.scope !== pageScope) setPageState({ scope: pageScope, loading: false, error: false })
   const retiredPages = useRef(new WeakSet<object>())
   const paging = useRef<{ scope: typeof pageScope; loading: boolean; error: boolean; before?: number }>({ scope: pageScope, loading: false, error: false })
   useEffect(() => {
@@ -65,8 +68,8 @@ export function useTranscript(sessionId: string | null) {
     retired.delete(pageScope)
     return () => { retired.add(pageScope) }
   }, [pageScope])
-  const loadingOlder = pageState.sid === sessionId && pageState.loading
-  const olderError = pageState.sid === sessionId && pageState.error
+  const loadingOlder = pageState.scope === pageScope && pageState.loading
+  const olderError = pageState.scope === pageScope && pageState.error
   const attachedStream = useRef<string | null>(null)
   const query = useQuery({
     queryKey: keys.sessions.detail(sessionId ?? ''),
@@ -156,9 +159,9 @@ export function useTranscript(sessionId: string | null) {
     request.before = before
     request.loading = true
     request.error = false
-    setPageState({ sid: sessionId, loading: true, error: false })
+    setPageState({ scope: pageScope, loading: true, error: false })
     const scope = getStreamContext()
-    const current = () => !retiredPages.current.has(pageScope) && paging.current === request && scope === getStreamContext()
+    const current = () => !retiredPages.current.has(pageScope) && paging.current === request && scope === getStreamContext() && (qc.getQueryData<{ session: Session }>(keys.sessions.detail(sessionId))?.session._messages_offset ?? 0) === windowOffset
     try {
       const res = await api.fetchSession(sessionId, { messages: true, msg_limit: TRANSCRIPT_WINDOW, msg_before: before, resolve_model: false })
       if (!current()) return
@@ -170,15 +173,15 @@ export function useTranscript(sessionId: string | null) {
       if (current()) request.error = true
     } finally {
       request.loading = false
-      if (current()) setPageState({ sid: sessionId, loading: false, error: request.error })
+      if (current()) setPageState({ scope: pageScope, loading: false, error: request.error })
     }
-  }, [sessionId, session, truncated, older.length, setOlder, pageScope])
+  }, [sessionId, session, truncated, older.length, setOlder, pageScope, qc, windowOffset])
 
   const refresh = useCallback(async (accepted?: unknown, historyCut = false) => {
     if (accepted !== undefined || historyCut) {
       // Retire both the response and its admission/error state when history is replaced.
       paging.current = { scope: pageScope, loading: false, error: false }
-      setPageState({ sid: sessionId, loading: false, error: false })
+      setPageState({ scope: pageScope, loading: false, error: false })
     }
     const scope = getStreamContext()
     const parsed = SessionSchema.safeParse(accepted)
