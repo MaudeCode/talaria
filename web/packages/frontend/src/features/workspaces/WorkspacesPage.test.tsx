@@ -6,8 +6,8 @@ import { ApiError } from '../../contracts/common'
 
 vi.mock(import('../../api/endpoints'), async (importOriginal) => ({
   ...(await importOriginal()),
-  fetchWorkspaces: vi.fn(() => Promise.resolve({ workspaces: [], last: null })),
-  removeWorkspace: vi.fn(), renameWorkspace: vi.fn(), reorderWorkspaces: vi.fn(), addWorkspace: vi.fn(), suggestWorkspaces: vi.fn(() => Promise.resolve({ suggestions: [] })),
+  fetchWorkspaces: vi.fn(),
+  removeWorkspace: vi.fn(), renameWorkspace: vi.fn(), reorderWorkspaces: vi.fn(), addWorkspace: vi.fn(), suggestWorkspaces: vi.fn(),
 }))
 const toast = vi.hoisted(() => vi.fn())
 vi.mock('../toast/toast', () => ({ showToast: toast }))
@@ -24,7 +24,7 @@ function renderPage() {
 const row = (name: string) => screen.getByText(name, { selector: '.truncate' }).closest('li')!
 
 describe('WorkspacesPage', () => {
-  beforeEach(() => { toast.mockReset() })
+  beforeEach(() => { toast.mockReset(); vi.mocked(api.fetchWorkspaces).mockResolvedValue({ workspaces: [], last: null }) })
 
   it('keeps the page explanation behind the title help button', async () => {
     renderPage()
@@ -38,7 +38,8 @@ describe('WorkspacesPage', () => {
 describe('space writes show their result while the server is held (TAL-1179)', () => {
   beforeEach(() => {
     toast.mockReset()
-    vi.mocked(api.fetchWorkspaces).mockResolvedValue(spaces as never)
+    vi.mocked(api.fetchWorkspaces).mockResolvedValue(spaces)
+    vi.mocked(api.suggestWorkspaces).mockResolvedValue({ suggestions: [], prefix: '' })
   })
 
   it('moves a space at once and keeps moving from the shown order', async () => {
