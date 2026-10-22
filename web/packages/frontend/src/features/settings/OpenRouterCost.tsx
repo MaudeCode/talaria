@@ -25,7 +25,8 @@ export function OpenRouterCost() {
   const snapshots = h.snapshots ?? []
   const saveBudget = (value: number | null) => {
     save.mutate({ provider_cost_budget: value }, {
-      onSuccess: () => { setDraft(null); void qc.invalidateQueries({ queryKey: keys.providerCostHistory }) },
+      // The typed budget stays shown until the cost history rereads with it.
+      onSuccess: () => { void qc.invalidateQueries({ queryKey: keys.providerCostHistory }).then(() => setDraft(null)) },
       onError: () => showToast(m.provider_cost_budget_save_failed(), 4000, 'error'),
     })
   }
@@ -61,8 +62,8 @@ export function OpenRouterCost() {
         <label htmlFor="provider-cost-budget" className="text-xs text-muted">{m.provider_cost_budget_label()}</label>
         <span className="text-xs text-muted" aria-hidden="true">$</span>
         <div className="w-28"><TextInput id="provider-cost-budget" type="number" min="0.01" step="0.01" inputMode="decimal" value={value} placeholder={m.provider_cost_budget_placeholder()} onChange={(e) => setDraft(e.target.value)} /></div>
-        <Button type="submit" disabled={save.isPending}>{m.provider_cost_budget_set()}</Button>
-        {budget !== null && <Button variant="ghost" disabled={save.isPending} onClick={() => saveBudget(null)}>{m.provider_cost_budget_clear()}</Button>}
+        <Button type="submit">{m.provider_cost_budget_set()}</Button>
+        {budget !== null && <Button variant="ghost" onClick={() => { setDraft(''); saveBudget(null) }}>{m.provider_cost_budget_clear()}</Button>}
       </form>
       {budget !== null && level && h.budget_percent !== null && h.budget_percent !== undefined && (
         <div className="flex items-center gap-2" data-budget-level={level}>

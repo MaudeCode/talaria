@@ -76,4 +76,16 @@ describe('OpenRouter cost card', () => {
     await waitFor(() => expect(api.fetchOpenRouterCostHistory).toHaveBeenCalled())
     expect(document.querySelector('[data-provider-cost]')).toBeNull()
   })
+
+  it('keeps the typed budget and its button usable while the save is held (TAL-1384)', async () => {
+    vi.mocked(api.fetchOpenRouterCostHistory).mockResolvedValue(fixture)
+    vi.mocked(api.saveSettings).mockReturnValue(new Promise(() => undefined))
+    renderCost()
+    const input = await screen.findByLabelText('Monthly budget')
+    await userEvent.clear(input)
+    await userEvent.type(input, '42{Enter}')
+    await waitFor(() => expect(api.saveSettings).toHaveBeenCalledWith({ provider_cost_budget: 42 }))
+    expect(input).toHaveValue(42)
+    expect(screen.getByRole('button', { name: 'Set' })).toBeEnabled()
+  })
 })

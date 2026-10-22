@@ -47,7 +47,7 @@ export function QuotaThresholdsForm() {
           </label>
         ))}
       </div>
-      <div><Button type="submit" disabled={save.isPending}>{m.providers_quota_thresholds_save()}</Button></div>
+      <div><Button type="submit">{m.providers_quota_thresholds_save()}</Button></div>
     </form>
   )
 }
