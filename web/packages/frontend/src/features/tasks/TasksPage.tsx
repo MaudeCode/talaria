@@ -22,10 +22,10 @@ import { ConfirmDialog } from '../../ui/Dialog'
 import { EmptyState, ErrorState, LoadingState, formatBytes, formatDate } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { cn } from '../../ui/cn'
-import { contextFromList, cronDiagnostics, cronState, jobId, lastRunAt, nextRunAt, runningIds, usageStrip, type CronState } from './cronJob'
+import { contextFromList, cronDiagnostics, cronResource, cronState, jobId, lastRunAt, nextRunAt, runningIds, usageStrip, type CronState } from './cronJob'
 import { Markdown } from '../chat/render/Markdown'
 import { JobForm, type EditorMode } from './JobForm'
-import { useResourceEffects, useResourceMutation, withEffects, type ResourceEffect } from '../sessions/useResourceMutation'
+import { useResourceEffects, useResourceMutation, withCreated, withEffects, type ResourceEffect } from '../sessions/useResourceMutation'
 import { getStreamContext } from '../../stream/connection'
 
 type CronAction = Parameters<typeof api.cronAction>[0]
@@ -39,8 +39,6 @@ function cronEffect(action: CronWrite): ResourceEffect {
 }
 interface Editor { mode: EditorMode; job: CronJob | null }
 
-// Server/profile replacement is fenced by the shared connection context.
-const cronResource = (job: CronJob) => JSON.stringify(['cron', job.owner_profile ?? job.profile ?? '', jobId(job)])
 
 export function statusLabel(state: CronState): { label: string; tone: string } {
   switch (state) {
@@ -107,7 +105,7 @@ export function useTasksWorkbench(selectedId: string | null, onSelect: (id: stri
     onSuccess: (_res, vars) => { if (vars.context === getStreamContext()) { showToast(m.cron_job_triggered()); void invalidate() } },
     onError: (e, vars) => { if (vars.context === getStreamContext()) showToast(e instanceof Error ? e.message : String(e), 4000, 'error') },
   })
-  const jobs = useMemo(() => withEffects(crons.data?.jobs ?? [], cronResource, effects), [crons.data, effects])
+  const jobs = useMemo(() => withCreated(withEffects(crons.data?.jobs ?? [], cronResource, effects), 'cron', effects), [crons.data, effects])
   const unwritable = crons.data?.unwritable_stores ?? []
   const running = useMemo(() => runningIds(status.data), [status.data])
   // A run that just finished has written its output file and updated last_run/last_status:
@@ -160,7 +158,8 @@ export function useTasksWorkbench(selectedId: string | null, onSelect: (id: stri
         job={editor.job}
         jobs={jobs}
         onCancel={() => setEditor(null)}
-        onSaved={(id) => { setEditor(null); void invalidate(); if (id) onSelect(id) }}
+        onSubmitted={(id) => { setEditor(null); if (id) onSelect(id) }}
+        onCreated={(id) => { if (id && context === getStreamContext()) onSelect(id) }}
       />
     )
   } else if (crons.isPending) {

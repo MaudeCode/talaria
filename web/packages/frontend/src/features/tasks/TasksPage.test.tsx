@@ -317,6 +317,45 @@ describe('TasksPage', () => {
     })
   })
 
+  it('closes the editor on save and shows the edited job at once; a refusal restores it with the error', async () => {
+    const held = deferred<Awaited<ReturnType<typeof api.cronAction>>>()
+    vi.mocked(api.cronAction).mockImplementation(() => held.promise)
+    const detail = await openJob('Digest')
+    await userEvent.click(detail.getByRole('button', { name: /^edit/i }))
+    const form = await screen.findByRole('form', { name: /edit job/i })
+    const name = within(form).getByLabelText(/^name$/i)
+    await userEvent.clear(name)
+    await userEvent.type(name, 'Digest v2')
+    await userEvent.click(within(form).getByRole('button', { name: /^save$/i }))
+    expect(screen.queryByRole('form', { name: /edit job/i })).toBeNull()
+    const sidebar = within(screen.getByTestId('sidebar'))
+    expect(sidebar.getByRole('button', { name: /Digest v2/ })).toBeInTheDocument()
+    act(() => { held.resolve({ ok: false, error: 'Schedule refused' }) })
+    await waitFor(() => expect(sidebar.queryByRole('button', { name: /Digest v2/ })).toBeNull())
+    expect(sidebar.getByRole('button', { name: /^Digest/ })).toBeInTheDocument()
+    expect(showToast).toHaveBeenCalledWith('Schedule refused', 4000, 'error')
+  })
+
+  it('shows a created job at once and opens the server job once it answers', async () => {
+    const held = deferred<Awaited<ReturnType<typeof api.cronAction>>>()
+    vi.mocked(api.cronAction).mockImplementation(() => held.promise)
+    renderPage([full])
+    await userEvent.click(await within(screen.getByTestId('sidebar')).findByRole('button', { name: /new job/i }))
+    const form = await screen.findByRole('form', { name: /new job/i })
+    await userEvent.type(within(form).getByLabelText(/^name$/i), 'Weekly report')
+    await userEvent.type(within(form).getByLabelText(/^schedule$/i), '0 8 * * 1')
+    await userEvent.type(within(form).getByLabelText(/^prompt$/i), 'Write the report')
+    await userEvent.click(within(form).getByRole('button', { name: /^save$/i }))
+    expect(screen.queryByRole('form', { name: /new job/i })).toBeNull()
+    const sidebar = within(screen.getByTestId('sidebar'))
+    expect(sidebar.getByRole('button', { name: /Weekly report/ })).toBeInTheDocument()
+    const created: CronJob = { ...feed, id: 'week0000week', name: 'Weekly report', schedule_display: '0 8 * * 1' }
+    vi.mocked(api.fetchCrons).mockResolvedValue(cronList([full, created]))
+    await act(async () => { held.resolve({ ok: true, job: created }); await held.promise })
+    await waitFor(() => expect(screen.getByTestId('cron-detail')).toBeInTheDocument())
+    expect(sidebar.getAllByRole('button', { name: /Weekly report/ })).toHaveLength(1)
+  })
+
   it('ticks the server-paired entry for each stored pair and saves a picked colon-bearing id with its own provider (TAL-301)', async () => {
     const entry = (id: string, label: string, provider_id: string, bare_id: string) => ({ id, label, provider_id, bare_id })
     vi.mocked(api.fetchModels).mockResolvedValue({

@@ -8,6 +8,9 @@ export function jobId(job: CronJob): string {
   return job.id ?? job.job_id ?? ''
 }
 
+/** One write owner per job; server/profile replacement is fenced by the shared connection context. */
+export const cronResource = (job: CronJob) => JSON.stringify(['cron', job.owner_profile ?? job.profile ?? '', jobId(job)])
+
 /** Legacy `next_run` / `last_run` (epoch or ISO) fall back for the `*_at` timestamps of newer agents. */
 export function nextRunAt(job: CronJob): string | number | null {
   return job.next_run_at ?? (typeof job.next_run === 'number' || typeof job.next_run === 'string' ? job.next_run : null)

@@ -44,6 +44,16 @@ export function withEffect<R extends object>(row: R, effect: ResourceEffect | un
   return effect.fields ? { ...row, ...effect.fields } : row
 }
 
+/** A resource id for one create; the server assigns the real identity. */
+let created = 0
+export const newResource = (kind: string) => `${kind}:new:${++created}`
+
+/** Server rows plus the rows pending creates of `kind` (see `newResource`) show before the server returns them. */
+export function withCreated<R extends object>(rows: readonly R[], kind: string, effects: Record<string, ResourceEffect>): R[] {
+  const prefix = `${kind}:new:`
+  return [...rows, ...Object.entries(effects).flatMap(([id, effect]) => id.startsWith(prefix) && effect.fields ? [effect.fields as R] : [])]
+}
+
 /** Server rows as the user's pending writes show them: removed ids dropped, fields patched. */
 export function withEffects<R extends object>(rows: readonly R[], resource: (row: R) => string, effects: Record<string, ResourceEffect>): R[] {
   return rows.flatMap((row) => withEffect(row, effects[resource(row)]) ?? [])

@@ -10,7 +10,7 @@ vi.mock('../../shell/AppShell', () => ({ HubPage: ({ title, actions, toolbar, ch
 const toast = vi.hoisted(() => vi.fn())
 vi.mock('../toast/toast', () => ({ showToast: toast }))
 vi.mock('../../api/sse', () => ({ SSE_CLOSED: 2, openKanbanEventStream: vi.fn(() => ({ close: vi.fn(), readyState: () => 1 })) }))
-vi.mock('../../api/endpoints', () => ({ fetchKanbanBoards: vi.fn(), fetchKanbanBoard: vi.fn(), fetchKanbanStats: vi.fn(), fetchKanbanTask: vi.fn(), fetchKanbanTaskLog: vi.fn(), kanbanTaskAction: vi.fn(), linkKanbanTasks: vi.fn(), unlinkKanbanTasks: vi.fn(), bulkKanbanStatus: vi.fn(), switchKanbanBoard: vi.fn(), updateKanbanConfig: vi.fn() }))
+vi.mock('../../api/endpoints', () => ({ fetchKanbanBoards: vi.fn(), fetchKanbanBoard: vi.fn(), fetchKanbanStats: vi.fn(), fetchKanbanTask: vi.fn(), fetchKanbanTaskLog: vi.fn(), kanbanTaskAction: vi.fn(), linkKanbanTasks: vi.fn(), unlinkKanbanTasks: vi.fn(), bulkKanbanStatus: vi.fn(), switchKanbanBoard: vi.fn(), updateKanbanConfig: vi.fn(), createKanbanTask: vi.fn(), archiveKanbanBoard: vi.fn() }))
 import * as api from '../../api/endpoints'
 import { openKanbanEventStream } from '../../api/sse'
 import { KanbanPage } from './KanbanPage'
@@ -323,5 +323,51 @@ describe('Kanban writes show their result while the server is held (TAL-1179)', 
     await act(async () => { view.resolve({}); await Promise.resolve() })
     await screen.findByRole('region', { name: 'scout' })
     expect(screen.getByRole('switch', { name: /Lanes by profile/ })).toBeEnabled()
+  })
+
+  it('adds a comment to the log at once and keeps a refused one with Retry', async () => {
+    const first = deferred<Awaited<ReturnType<typeof api.kanbanTaskAction>>>()
+    vi.mocked(api.kanbanTaskAction).mockReturnValueOnce(first.promise).mockResolvedValueOnce({ task: task(), read_only: false })
+    renderPage()
+    const dialog = await openTask()
+    await userEvent.type(dialog.getByRole('textbox', { name: 'Add comment' }), 'Looks good{Enter}')
+    expect(dialog.getByText('Looks good')).toBeInTheDocument()
+    expect(dialog.getByRole('textbox', { name: 'Add comment' })).toHaveValue('')
+    await act(async () => { first.reject(refusal('Comment refused')); await Promise.resolve() })
+    await waitFor(() => expect(toast).toHaveBeenCalledWith('Comment refused', 4000, 'error'))
+    expect(dialog.getByText('Looks good')).toBeInTheDocument()
+    vi.mocked(api.fetchKanbanTaskLog).mockResolvedValue({ log: [{ text: 'Looks good', ts: 1 }] })
+    await userEvent.click(dialog.getByRole('button', { name: 'Retry' }))
+    await waitFor(() => expect(api.kanbanTaskAction).toHaveBeenLastCalledWith('default', 'A', 'comments', { body: 'Looks good', text: 'Looks good' }))
+    await waitFor(() => expect(dialog.queryByRole('button', { name: 'Retry' })).toBeNull())
+    await waitFor(() => expect(dialog.getAllByText('Looks good')).toHaveLength(1))
+  })
+
+  it('closes New task on Create and shows the card at once; a refusal removes it with the error', async () => {
+    let refuse!: (error: unknown) => void
+    vi.mocked(api.createKanbanTask).mockReturnValue(new Promise((_, reject) => { refuse = reject }) as never)
+    renderPage()
+    await userEvent.click(await screen.findByRole('button', { name: 'New task' }))
+    await userEvent.type(screen.getByRole('textbox', { name: 'Title' }), 'Fresh task{Enter}')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(columnIds('todo')).toHaveLength(3)
+    expect(screen.getByRole('button', { name: /^Fresh task/ })).toBeDisabled()
+    await act(async () => { refuse(refusal('Board is full')); await Promise.resolve() })
+    await waitFor(() => expect(columnIds('todo')).toEqual(['A', 'B']))
+    expect(toast).toHaveBeenCalledWith('Board is full', 4000, 'error')
+  })
+
+  it('archives the current board at once, showing the board that cannot be removed', async () => {
+    vi.mocked(api.archiveKanbanBoard).mockReturnValue(new Promise(() => undefined))
+    vi.mocked(api.fetchKanbanBoards).mockResolvedValue({ current: 'other', boards: [{ slug: 'default', name: 'Default', removable: false }, { slug: 'other', name: 'Other', removable: true }], read_only: false })
+    renderPage()
+    await screen.findByRole('button', { name: /^Task A\b/ })
+    await userEvent.click(screen.getByRole('button', { name: 'Archive board' }))
+    await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Archive' }))
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+    expect(api.archiveKanbanBoard).toHaveBeenCalledWith('other')
+    expect(screen.getByRole('combobox', { name: 'Board' })).toHaveTextContent('Default')
+    await userEvent.click(screen.getByRole('combobox', { name: 'Board' }))
+    expect(screen.queryByRole('option', { name: 'Other' })).toBeNull()
   })
 })

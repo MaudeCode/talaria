@@ -16,7 +16,8 @@ import { ErrorState, LoadingState } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { cn } from '../../ui/cn'
 import { useModelsQuery, useProfilesQuery } from '../../app/queries'
-import { contextFromList, jobId } from './cronJob'
+import { contextFromList, cronResource, jobId } from './cronJob'
+import { newResource, useResourceMutation } from '../sessions/useResourceMutation'
 import { catalogEntryById, catalogGroupLabel } from '../../lib/modelEntry'
 
 export type EditorMode = 'create' | 'edit' | 'duplicate'
@@ -30,7 +31,26 @@ interface FormValues {
   model: string; model_provider: string | null; toast_notifications: boolean; skills: string; monitor: string; continuity: boolean; context_from: string[]; reasoning_effort: string
 }
 
-export function JobForm({ mode, job, jobs, onCancel, onSaved }: { mode: EditorMode; job: CronJob | null; jobs: CronJob[]; onCancel: () => void; onSaved: (id?: string) => void }) {
+interface JobWrite { resource: string; body: Record<string, unknown>; shown: Record<string, unknown> }
+const cronReads = () => [keys.crons.list(false), keys.crons.list(true), keys.crons.status]
+const showError = (e: unknown) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
+
+/** `onSubmitted` closes the editor on submit; `onCreated` names the job the server created. */
+export function JobForm({ mode, job, jobs, onCancel, onSubmitted, onCreated }: { mode: EditorMode; job: CronJob | null; jobs: CronJob[]; onCancel: () => void; onSubmitted: (id?: string) => void; onCreated: (id?: string) => void }) {
+  // The list shows the submitted job at once and adopts the server's normalized schedule and next run on its reread.
+  const update = useResourceMutation({
+    resource: ({ resource }: JobWrite) => resource, queryKey: keys.crons.all, readKeys: cronReads,
+    effect: ({ shown }) => ({ fields: shown }),
+    mutationFn: ({ body }) => api.cronAction('update', body),
+    onSuccess: () => showToast(m.cron_job_updated()), onError: showError,
+  })
+  const create = useResourceMutation({
+    resource: ({ resource }: JobWrite) => resource, queryKey: keys.crons.all, readKeys: cronReads, exclusive: true,
+    effect: ({ resource, shown }) => ({ fields: { ...shown, id: resource, derived_state: 'active', resumable: false } }),
+    mutationFn: ({ body }) => api.cronAction('create', body),
+    onSuccess: (res) => { showToast(m.cron_job_created()); onCreated(res.job ? jobId(res.job) : res.job_id) },
+    onError: showError,
+  })
   const blueprints = useQuery({ queryKey: keys.crons.blueprints, queryFn: api.fetchCronBlueprints, enabled: mode === 'create', staleTime: 60_000 })
   const [choosingBlueprint, setChoosingBlueprint] = useState(false)
   const [blueprint, setBlueprint] = useState<CronBlueprint | null>(null)
@@ -70,7 +90,7 @@ export function JobForm({ mode, job, jobs, onCancel, onSaved }: { mode: EditorMo
       context_from: job ? contextFromList(job) : [],
       reasoning_effort: job?.reasoning_effort ?? '',
     } satisfies FormValues,
-    onSubmit: async ({ value }) => {
+    onSubmit: ({ value }) => {
       setError(null)
       const v = { ...value, name: value.name.trim(), schedule: value.schedule.trim(), prompt: value.prompt.trim(), script: value.script.trim(), monitor: value.monitor.trim(), repeat: value.repeat.trim() }
       if (!v.schedule) { setError(m.cron_schedule_required_example()); return }
@@ -85,40 +105,36 @@ export function JobForm({ mode, job, jobs, onCancel, onSaved }: { mode: EditorMo
       const untouched = v.model === initialModel
       const model = (untouched ? job?.model : v.model) || null
       const provider = model ? (untouched ? job?.provider ?? null : v.model_provider) : null
-      try {
-        let res
-        if (isEdit && job) {
-          // Every field is sent so the agent's documented clearing semantics stay
-          // reachable ('' clears script/monitor, [] clears context_from, false
-          // turns continuity off, null clears the model pin). `repeat` and
-          // `skills` are create-only in the store.
-          const body: Record<string, unknown> = {
-            job_id: sourceId, name: v.name, schedule: v.schedule, deliver: v.deliver || 'local', profile: v.profile, toast_notifications: v.toast_notifications,
-            script: v.script, no_agent: v.no_agent, monitor: v.monitor, continuity: v.continuity, context_from: v.context_from,
-            reasoning_effort: v.reasoning_effort, model, provider,
-          }
-          if (!v.no_agent) body.prompt = v.prompt
-          res = await api.cronAction('update', body)
-        } else {
-          // Omitted when unset so agent-side defaults still apply.
-          const body: Record<string, unknown> = { schedule: v.schedule, prompt: v.prompt, deliver: v.deliver || 'local', profile: v.profile, toast_notifications: v.toast_notifications }
-          if (v.name) body.name = v.name
-          if (skillList.length) body.skills = skillList
-          if (v.script) body.script = v.script
-          if (v.no_agent) body.no_agent = true
-          if (v.monitor) body.monitor = v.monitor
-          if (v.continuity) body.continuity = true
-          if (v.context_from.length) body.context_from = v.context_from
-          if (v.reasoning_effort) body.reasoning_effort = v.reasoning_effort
-          if (v.repeat) body.repeat = Number(v.repeat)
-          if (model) { body.model = model; body.provider = provider }
-          res = await api.cronAction('create', body)
+      // Shown in the list until the server's reread replaces it.
+      const shown = { name: v.name, schedule_input: v.schedule, schedule_display: v.schedule, prompt: v.prompt, script: v.script, no_agent: v.no_agent, monitor: v.monitor, continuity: v.continuity, deliver: v.deliver || 'local', profile: v.profile, toast_notifications: v.toast_notifications, reasoning_effort: v.reasoning_effort || null }
+      if (isEdit && job) {
+        // Every field is sent so the agent's documented clearing semantics stay
+        // reachable ('' clears script/monitor, [] clears context_from, false
+        // turns continuity off, null clears the model pin). `repeat` and
+        // `skills` are create-only in the store.
+        const body: Record<string, unknown> = {
+          job_id: sourceId, name: v.name, schedule: v.schedule, deliver: v.deliver || 'local', profile: v.profile, toast_notifications: v.toast_notifications,
+          script: v.script, no_agent: v.no_agent, monitor: v.monitor, continuity: v.continuity, context_from: v.context_from,
+          reasoning_effort: v.reasoning_effort, model, provider,
         }
-        if (res.error) { setError(res.error); return }
-        showToast(isEdit ? m.cron_job_updated() : m.cron_job_created())
-        onSaved(res.job ? jobId(res.job) : res.job_id)
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e))
+        if (!v.no_agent) body.prompt = v.prompt
+        update.mutate({ resource: cronResource(job), body, shown })
+        onSubmitted(sourceId)
+      } else {
+        // Omitted when unset so agent-side defaults still apply.
+        const body: Record<string, unknown> = { schedule: v.schedule, prompt: v.prompt, deliver: v.deliver || 'local', profile: v.profile, toast_notifications: v.toast_notifications }
+        if (v.name) body.name = v.name
+        if (skillList.length) body.skills = skillList
+        if (v.script) body.script = v.script
+        if (v.no_agent) body.no_agent = true
+        if (v.monitor) body.monitor = v.monitor
+        if (v.continuity) body.continuity = true
+        if (v.context_from.length) body.context_from = v.context_from
+        if (v.reasoning_effort) body.reasoning_effort = v.reasoning_effort
+        if (v.repeat) body.repeat = Number(v.repeat)
+        if (model) { body.model = model; body.provider = provider }
+        create.mutate({ resource: newResource('cron'), body, shown })
+        onSubmitted()
       }
     },
   })
