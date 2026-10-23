@@ -26,9 +26,21 @@ final class SessionListHostedTests: XCTestCase {
             ProcessInfo.processInfo.environment["SIMULATOR_MODEL_IDENTIFIER"] == "iPhone19,4",
             "Requires the iPhone Duo simulator's native vertical toolbar"
         )
-        let fixture = try FixtureApp(for: self)
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        defer { scene.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait)) }
+        let panel = scene.screen.nativeBounds.size
+        let viewport = scene.coordinateSpace.bounds.size
+        let cover = [HostedSize.duoOuter.width, HostedSize.duoOuter.height].sorted()
+        try XCTSkipUnless(
+            [panel.width, panel.height].sorted() == cover.map { $0 * scene.screen.nativeScale } &&
+                [viewport.width, viewport.height].sorted() == cover,
+            "Requires the active iPhone Duo outer display; close and verify the Duo posture before running"
+        )
+        let fixture = try FixtureApp(for: self)
+        addTeardownBlock { @MainActor in
+            scene.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait))
+            let restored = await self.awaitCondition { scene.interfaceOrientation == .portrait }
+            XCTAssertTrue(restored, "Portrait must be restored before the next hosted test starts")
+        }
         for orientation: UIInterfaceOrientationMask in [.portrait, .landscapeRight] {
             scene.requestGeometryUpdate(.iOS(interfaceOrientations: orientation))
             let rotated = await awaitCondition {
