@@ -7178,6 +7178,9 @@
                 "minimum": -9007199254740991,
                 "maximum": 9007199254740991
               },
+              "reactions_supported": {
+                "type": "boolean"
+              },
               "pending": {
                 "type": "array",
                 "items": {
@@ -7919,6 +7922,9 @@
                 "type": "integer",
                 "minimum": -9007199254740991,
                 "maximum": 9007199254740991
+              },
+              "reactions_supported": {
+                "type": "boolean"
               },
               "pending": {
                 "type": "array",

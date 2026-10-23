@@ -289,6 +289,30 @@ other boards. Profile switching clears the existing Query cache and closes the
 previous detail selection. The shared fixture is
 `contracts/fixtures/kanban-inspection.json` at the repository root.
 
+## Canonical message reactions
+
+Canonical message reactions use the closed `react` owner action on
+`POST /api/chat/owner-action`. The request has only `session_id`, a positive
+`row_id`, and one allowed `emoji` or null for removal. The authenticated owner
+writes as `user`; sending the same emoji toggles it off. The sidecar checks the
+owner's boot revision and current snapshot row before forwarding the write.
+The owner resolves the current physical lineage and authorizes the mutation.
+An uncertain native error or lost acknowledgement triggers readback and never a second toggle.
+
+Each canonical message's optional `reaction_view` supplies counts, the user's
+selection, permitted actions and each action's optimistic display result. Web
+renders these fields with rollback on refusal. Old owners have no permitted
+reaction actions, and direct chats have no reaction writer. The existing shared
+viewer watch reads reaction metadata on its observation tick because the native
+owner emits no reaction event. Reaction-only snapshots invalidate display data;
+they cannot start or settle a turn. Detaching the last viewer releases this
+readback with its existing subscription. This extends sidecar RPC version 57.
+
+Loaded Web history reconciles reactions through bounded transcript windows in the
+same Query invalidation family as the tail. Server window offsets delimit the
+loaded interval; readback retains its rows and scroll position across the window cap.
+
+
 ## Memory compaction
 
 `POST /api/memory/compaction/preview` accepts `section` (`memory` or `user`) and the

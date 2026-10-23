@@ -7,6 +7,17 @@ script="$(cd "$(dirname "$0")" && pwd)/memory-sampler"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 mkdir "$work/bin"
+# Keep elapsed-time assertions independent of probes crossing a wall-clock second.
+export MEMORY_SAMPLER_TEST_SOURCE="$script"
+cat > "$work/bin/sampler" <<'EOF'
+#!/usr/bin/env bash
+unset SECONDS # Disable Bash's automatic updates.
+SECONDS=0
+sleep() { SECONDS=$((SECONDS + $1)); }
+source "$MEMORY_SAMPLER_TEST_SOURCE" "$@"
+EOF
+script="$work/bin/sampler"
+chmod +x "$script"
 # Each fake prints the fixture for the current sample, "$work/n".
 for tool in top sysctl memory_pressure vm_stat footprint; do
   # shellcheck disable=SC2016 # The fake expands $(cat n) when it runs.
@@ -72,6 +83,7 @@ echo 5 > "$work/n"
 [ "$("$script" settle 600)" = "SimRenderServer settled after 0 s: 300 MB, lifetime peak 3072 MB" ]
 fixture 5 0.00M 2860M+ 3221225472
 [ "$(MEMORY_SETTLE_POLL_SECONDS=0 "$script" settle 0)" = "SimRenderServer had not settled after 0 s: 2860 MB, lifetime peak 3072 MB" ]
+[ "$(MEMORY_SETTLE_POLL_SECONDS=10 "$script" settle 20)" = "SimRenderServer had not settled after 20 s: 2860 MB, lifetime peak 3072 MB" ]
 fixture 5 0.00M 300M 734003200
 [ "$(MEMORY_SETTLE_POLL_SECONDS=0 "$script" settle 0)" = "SimRenderServer had not settled after 0 s: 300 MB, lifetime peak 700 MB" ]
 printf 'PID    COMMAND          MEM\n1  launchd  12M\n' > "$work/top.5"

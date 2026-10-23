@@ -179,7 +179,9 @@ def native_owner_stub(tmp_path, monkeypatch):
             if owner.export_failure:
                 raise RuntimeError(owner.export_failure)
             return owner.export
-        if method in {"session.mutate", "prompt.steer_queued", "prompt.replace_queued"}:
+        if method == "message.react" and getattr(owner, "reaction_failure", None):
+            raise RuntimeError(owner.reaction_failure)
+        if method in {"session.mutate", "prompt.steer_queued", "prompt.replace_queued", "message.react"}:
             owner.payload = params.get("payload")
             return owner.receipt
         if method == "session.context_breakdown":
@@ -667,3 +669,72 @@ def test_captured_command_rejects_invalid_owner_result(native_owner_stub, value)
                                           "authority_epoch": 1, "replay_epoch": "epoch"})
     assert result["reason"] == "owner_shell_invalid"
     assert "shell" not in result
+
+
+@pytest.mark.parametrize("sha", ["4d04303818b61bf3aa09278af48356315515965b", "bf0203a794a07aac3ff764972ab9087baa4e4f4e"])
+def test_reaction_snapshot_strips_private_metadata(native_owner_stub, sha):
+    owner = native_owner_stub
+    owner.endpoint.code_sha = sha
+    owner.snapshot_extra = {"messages": [{"role": "assistant", "row_id": 42, "content": "answer",
+        "display_metadata": {"private_principal": "secret", "reactions": [{"author": "user", "emoji": "👍", "seen": True}]}}]}
+    result = owner.run(None, {"session_id": "native", "action": "snapshot"})
+    assert result["snapshot"]["messages"][0].get("reactions") == [{"author": "user", "emoji": "👍"}]
+    assert "display_metadata" not in result["snapshot"]["messages"][0]
+    assert result["snapshot"]["reactions_supported"] is True
+
+
+def test_another_viewers_reaction_refreshes_the_existing_watch(native_owner_stub, monkeypatch):
+    from types import SimpleNamespace
+    from talaria_sidecar.methods import gateway_sessions as adapter
+    owner = native_owner_stub
+    owner.endpoint.code_sha = "4d04303818b61bf3aa09278af48356315515965b"
+    owner.snapshot_extra = {"messages": [{"role": "assistant", "row_id": 42, "content": "answer", "display_metadata": {}}]}
+    frames = []
+    ctx = SimpleNamespace(cancelled=False, emit=lambda kind, data: frames.append((kind, data)))
+    def tick(home):
+        owner.snapshot_extra["messages"][0]["display_metadata"] = {"reactions": [{"author": "agent", "emoji": "🎉"}]}
+        ctx.cancelled = True
+        return False
+    monkeypatch.setattr(adapter, "_restart_wait", tick)
+    owner.run(ctx, {"session_id": "native", "action": "watch"})
+    snapshots = [data["snapshot"] for kind, data in frames if kind == "snapshot"]
+    assert len(snapshots) == 2
+    assert snapshots[-1]["messages"][0]["reactions"] == [{"author": "agent", "emoji": "🎉"}]
+    assert owner.calls[-1][0] == "session.detach"
+
+
+@pytest.mark.parametrize("emoji", ["👍", "❤️", None])
+def test_reactions_write_only_through_the_owner_as_user(native_owner_stub, tmp_path, emoji):
+    owner = native_owner_stub
+    owner.endpoint.code_sha = "4d04303818b61bf3aa09278af48356315515965b"
+    owner.snapshot_extra = {"messages": [{"role": "assistant", "row_id": 42}]}
+    result = owner.session(None, {"profile_home": str(tmp_path), "session_id": "native", "action": "react", "row_id": 42, "emoji": emoji})
+    assert result["state"] == "attached"
+    assert ("message.react", {"session_id": "native", "row_id": 42, "emoji": emoji, "author": "user"}) in owner.calls
+    assert not (tmp_path / "state.db").exists()
+
+
+@pytest.mark.parametrize("extra", [{"author": "agent"}, {"row_id": True}, {"emoji": {}}, {"emoji": "text"}, {"row_id": -1}])
+def test_reactions_reject_untrusted_fields_before_connecting(native_owner_stub, tmp_path, extra):
+    from talaria_sidecar.errors import InvalidParams
+    with pytest.raises(InvalidParams):
+        native_owner_stub.session(None, {"profile_home": str(tmp_path), "session_id": "native", "action": "react", "row_id": 42, "emoji": "👍", **extra})
+    assert native_owner_stub.calls == []
+
+
+def test_reaction_vocabulary_matches_the_public_contract():
+    from talaria_sidecar.methods.gateway_sessions import _REACTION_EMOJIS
+    fixture = json.loads((Path(__file__).resolve().parents[3] / "contracts/fixtures/web-reactions.json").read_text())
+    assert _REACTION_EMOJIS == {a["emoji"] for a in fixture["message"]["reaction_view"]["actions"] if a["emoji"]}
+
+
+@pytest.mark.parametrize("reason,state", [("permission_denied", "refused"), ("not_found", "refused"),
+                                         ("request_failed", "unavailable"), ("storage_failed", "unavailable")])
+def test_reaction_rpc_failures_preserve_unknown_outcomes(native_owner_stub, reason, state):
+    owner = native_owner_stub
+    owner.endpoint.code_sha = "4d04303818b61bf3aa09278af48356315515965b"
+    owner.snapshot_extra = {"messages": [{"role": "assistant", "row_id": 42}]}
+    owner.reaction_failure = reason
+    result = owner.run(None, {"session_id": "native", "action": "react", "row_id": 42, "emoji": "👍"})
+    assert result["state"] == state
+    assert len([call for call in owner.calls if call[0] == "message.react"]) == 1

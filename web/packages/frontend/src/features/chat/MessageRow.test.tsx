@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { AssistantMessageRow, BackgroundUpdateRow, NoticeRow, UserMessageRow } from './MessageRow'
 import { Transcript } from './Transcript'
 import { readFileSync } from 'node:fs'
@@ -253,5 +253,41 @@ describe('server media references (TAL-186)', () => {
     expect(screen.getByLabelText('narration.mp3').getAttribute('src')).toBe(new URL('./api/media?path=%2Ftalaria-contract%2Fout%2Fnarration.mp3&session_id=contract-media-session', document.baseURI).href)
     fireEvent.click(screen.getByRole('button', { name: 'Copy' }))
     expect(writeText).toHaveBeenCalledWith(row.message.content)
+  })
+})
+
+
+describe('canonical message reactions', () => {
+  it('preserves each canonical reaction view when assistant messages share one turn', () => {
+    const fixture = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../..', 'contracts/fixtures/web-reactions.json'), 'utf8')) as { message: Message }
+    const earlier = { index: 1, key: 'earlier', message: { ...fixture.message, content: 'First canonical part', _turn_id: 'same-turn', reaction_view: { ...fixture.message.reaction_view!, row_id: 41 } } }
+    const later = { index: 2, key: 'later', message: { ...fixture.message, content: 'Final canonical part', _turn_id: 'same-turn' } }
+    const grouped = groupAssistantTurns([earlier, later])
+    const onReact = vi.fn()
+    render(<AssistantMessageRow row={grouped[0]!} name="Assistant" mode="compact_worklog" actions={{ onReact }} tts={false} isLast />)
+    expect(screen.getAllByRole('button', { name: 'Remove 👍 reaction, 1' })).toHaveLength(2)
+    const first = screen.getByRole('group', { name: 'Reactions for message 2' })
+    const last = screen.getByRole('group', { name: 'Reactions for message 3' })
+    fireEvent.click(within(first).getByRole('button', { name: 'Remove 👍 reaction, 1' }))
+    expect(onReact).toHaveBeenLastCalledWith(earlier, earlier.message.reaction_view.actions[0])
+    fireEvent.click(within(last).getByRole('button', { name: 'Remove 👍 reaction, 1' }))
+    expect(onReact).toHaveBeenLastCalledWith(later, later.message.reaction_view!.actions[0])
+  })
+
+  it.each(['user', 'assistant'])('renders server counts and permitted actions on a %s row', async (role) => {
+    const fixture = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../..', 'contracts/fixtures/web-reactions.json'), 'utf8')) as { message: Message }
+    const row = { index: 0, key: 'reaction-row', message: { ...fixture.message, role } }
+    const onReact = vi.fn()
+    const actions = { onReact }
+    if (role === 'user') render(<UserMessageRow row={row} renderMarkdown={false} sessionId="native" actions={actions} />)
+    else render(<AssistantMessageRow row={row} name="Assistant" mode="compact_worklog" actions={actions} tts={false} isLast />)
+    expect(screen.getByRole('button', { name: 'Remove 👍 reaction, 1' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'React with 🎉, 1' })).toHaveAttribute('aria-pressed', 'false')
+    fireEvent.click(screen.getByRole('button', { name: 'Remove 👍 reaction, 1' }))
+    expect(onReact).toHaveBeenCalledWith(row, fixture.message.reaction_view!.actions[0])
+    fireEvent.click(screen.getByRole('button', { name: 'React to message' }))
+    expect(await screen.findByRole('menuitem', { name: 'React with ❤️' })).toBeVisible()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'React with ❤️' }))
+    expect(onReact).toHaveBeenLastCalledWith(row, fixture.message.reaction_view!.actions[2])
   })
 })

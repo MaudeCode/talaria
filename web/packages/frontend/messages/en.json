@@ -2706,5 +2706,10 @@
 	"session_reference_remove": "Remove {title}",
 	"session_reference_search": "Search conversation titles",
 	"session_reference_empty": "No available conversations",
-	"session_reference_count": "{selected} of {max} selected"
+	"session_reference_count": "{selected} of {max} selected",
+	"message_reactions": "React to message",
+	"reaction_add": "React with {emoji}",
+	"reaction_remove": "Remove {emoji} reaction",
+	"reaction_clear": "Remove reaction",
+	"message_reaction_group": "Reactions for message {number}"
 }

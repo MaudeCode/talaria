@@ -1,4 +1,4 @@
-import { CHECKPOINT_DIFF_MAX_BYTES, unavailableContextDetail, type CheckpointDiff, type SessionActivityPhase, type ContextDetail } from '@maudecode/talaria-web-contracts'
+import { CHECKPOINT_DIFF_MAX_BYTES, ReactionEmojiSchema, unavailableContextDetail, type ReactionState, type MessageReactionView, type CheckpointDiff, type SessionActivityPhase, type ContextDetail } from '@maudecode/talaria-web-contracts'
 import { checkpointDiffFiles } from '../workspace/rollback.js'
 /** One native-owner seam. Talaria observes its history and never settles it into a local Session. */
 import type { QueueAdmissionFence } from './admission.js'
@@ -161,6 +161,8 @@ export class GatewaySessions {
           if (frame.event === 'snapshot') {
             const result = GatewaySessionResultSchema.parse(frame.data)
             if (result.snapshot?.session_id !== target.sid) return
+            // Reaction readback invalidates display data only. Queued native turn events still own settlement.
+            if ((frame.data as Row).reaction_only === true) { this.changed(target); return }
             const completed = observation.completion?.data as Row | undefined
             if (result.replay_gap || completed && (completed.authority_epoch !== result.snapshot.authority_epoch || completed.replay_epoch !== result.snapshot.replay_epoch)) observation.completion = null
             observation.snapshot = result.snapshot
@@ -428,13 +430,36 @@ export class GatewaySessions {
     return snapshot ? ownerStateId(JSON.stringify([target.key, snapshot.authority_epoch, snapshot.replay_epoch, snapshot.revision, snapshot.execution_generation, snapshot.info, snapshot.last_sequence])) : null
   }
 
+  private reactionView(row: Row, allowed: boolean): MessageReactionView | undefined {
+    if (!Number.isSafeInteger(row.row_id) || Number(row.row_id) <= 0 || !['user', 'assistant'].includes(str(row.role))) return undefined
+    const authors = new Map<string, typeof ReactionEmojiSchema.options[number]>()
+    for (const raw of Array.isArray(row.reactions) ? row.reactions : []) {
+      const reaction = raw as Row
+      const emoji = ReactionEmojiSchema.safeParse(reaction?.emoji)
+      if (emoji.success && (reaction.author === 'user' || reaction.author === 'agent')) authors.set(reaction.author, emoji.data)
+    }
+    const state = (selected: ReactionState['selected']): ReactionState => {
+      const values = [authors.get('agent'), selected].filter((emoji) => emoji !== undefined && emoji !== null)
+      return { selected, items: ReactionEmojiSchema.options.flatMap((emoji) => {
+        const count = values.filter((value) => value === emoji).length
+        return count ? [{ emoji, count, mine: selected === emoji }] : []
+      }) }
+    }
+    const selected = authors.get('user') ?? null
+    return { row_id: Number(row.row_id), state: state(selected), actions: allowed
+      ? [...ReactionEmojiSchema.options, ...(selected ? [null] : [])].map((emoji) => ({ emoji, result: state(emoji === selected ? null : emoji) })) : [] }
+  }
+
   private async view(base: Row, result: GatewaySessionResult, stream: string | null, target: Target, limit: number | null = 120, before: number | null = null, withMessages = true): Promise<Row> {
     const snapshot = result.snapshot
     const fields: Row = { ...base, owner_attachment: this.attachment({ ...result, model_change: this.currentModelChange(target, snapshot) }), composer_state_key: ownerStateId(target.key), context_detail_key: this.contextDetailKey(target, snapshot), active_stream_id: stream, is_streaming: Boolean(stream) }
     if (snapshot) {
       fields.notices = this.nativeNotices(target, snapshot)
       const observed = this.watches.get(target.key)?.snapshot
-      const nativeRows = [...snapshot.messages]
+      const canReact = snapshot.reactions_supported === true && this.attachment(result).can_submit
+      const nativeRows: Row[] = snapshot.messages.map(({ reactions, ...row }) => ({ ...row,
+        reaction_view: this.reactionView({ ...row, reactions }, canReact),
+      }))
       const active = stream ? runningAdmission(snapshot) : null
       let start = active ? nativeRows.findIndex((m) => m.role === 'user' && m.message_id === active.admission_id) : -1
       if (active && stream && start < 0) {
@@ -514,8 +539,20 @@ export class GatewaySessions {
       try { await this.deps.service.deps.workspaces.resolveTrusted(str(params.payload?.cwd), target.profile) }
       catch { throw new HttpFailure(400, 'The workspace must be trusted before selecting it') }
     }
-    const result = await this.call(target, params)
+    if (params.action === 'react') {
+      const current = await this.call(target, { action: 'snapshot' })
+      const row = current.snapshot?.messages.find((row) => row.row_id === params.row_id)
+      if (!row || current.snapshot?.reactions_supported !== true || !this.attachment(current).can_submit
+          || !['user', 'assistant'].includes(str(row.role))) throw new HttpFailure(409, 'Reactions are unavailable for this message')
+    }
+    let result = await this.call(target, params)
+    if (params.action === 'react' && result.state === 'unavailable') {
+      // A toggle has no idempotency key. Read the owner after a lost ACK; never replay the write.
+      result = await this.call(target, { action: 'snapshot' })
+      if (result.state !== 'attached' || !result.snapshot) throw new HttpFailure(503, 'Could not confirm the reaction. Reconnect to read its current value.', { outcome_unknown: true })
+    }
     if (result.state !== 'attached' || !result.snapshot) throw new HttpFailure(409, 'The owning Agent refused the action', { owner_attachment: this.attachment(result) })
+    if (params.action === 'react') this.changed(target)
     this.deps.events.publish('owner_changed', { profile: target.profile, sessionId: sid })
     return result
   }

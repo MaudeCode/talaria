@@ -69,7 +69,7 @@ def supported_releases(root):
             or not isinstance(record.get("releases"), list):
         raise ValueError("invalid Agent support record")
     contracts = record.get("nativeContracts", {})
-    if (not isinstance(contracts, dict) or set(contracts) - {"served-local-policy-v1", "captured-command-v1"}
+    if (not isinstance(contracts, dict) or set(contracts) - {"served-local-policy-v1", "captured-command-v1", "message-reactions-v1"}
             or any(not isinstance(revisions, list) or not revisions
                    or any(not isinstance(sha, str) or not re.fullmatch(FORMATS["sourceRevision"], sha) for sha in revisions)
                    or len(set(revisions)) != len(revisions) for revisions in contracts.values())):

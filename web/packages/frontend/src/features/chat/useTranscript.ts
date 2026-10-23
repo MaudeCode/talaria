@@ -92,6 +92,28 @@ export function useTranscript(sessionId: string | null, equalLive?: (previous: L
     retry: (count, error) => !(error instanceof Error && 'status' in error && (error as { status: number }).status === 404) && count < 1,
   })
   const session: Session | null = query.data?.session ?? null
+  // The owner can change metadata on any loaded row. Keep older pages in the same Query invalidation
+  // family as the tail, so reaction reconciliation covers every displayed snapshot without dropping scroll history.
+  const olderOwner = useQuery({
+    queryKey: [...keys.sessions.detail(sessionId ?? ''), 'owner-history', windowOffset, older.length],
+    queryFn: async ({ signal }) => {
+      const start = Math.max(0, windowOffset - older.length)
+      let before = windowOffset
+      const chunks: Message[][] = []
+      while (before > start) {
+        const page = await api.fetchSession(sessionId ?? '', { messages: true, msg_limit: TRANSCRIPT_WINDOW, msg_before: before, resolve_model: false }, signal)
+        const offset = page.session._messages_offset
+        if (offset === undefined || offset >= before || !page.session.messages?.length) throw new Error('Owner history window changed')
+        chunks.unshift(page.session.messages.slice(Math.max(0, start - offset), before - offset))
+        before = offset
+      }
+      const refreshed = chunks.flat()
+      if (refreshed.length !== older.length) throw new Error('Owner history window changed')
+      return refreshed
+    },
+    enabled: !!sessionId && !!session?.owner_attachment && older.length > 0,
+    retry: false, refetchOnWindowFocus: false,
+  })
   const live = useLiveTurn(sessionId, equalLive)
 
   // Remember the last visible session (validated id) for the next boot.
@@ -130,7 +152,14 @@ export function useTranscript(sessionId: string | null, equalLive?: (previous: L
       const twin = event === 'process_complete' && completion === backgroundCompletion
       // The server emits the same completion under the current and legacy names, in that order.
       backgroundCompletion = event === 'bg_task_complete' ? completion : null
-      if (!twin) void qc.invalidateQueries({ queryKey: keys.sessions.detail(sessionId) })
+      if (!twin) {
+        const filter = { queryKey: keys.sessions.detail(sessionId) }
+        // Query invalidation alone reuses an in-flight first read when no data is cached.
+        // Retire that pre-event snapshot before reading current owner metadata, including reactions.
+        void qc.cancelQueries(filter).then(() => {
+          if (!retired && scope === getStreamContext()) return qc.invalidateQueries(filter)
+        })
+      }
     } }, cached?.session.message_count)
     return () => { retired = true; stream.close() }
   }, [qc, sessionId, streamContext])
@@ -143,8 +172,8 @@ export function useTranscript(sessionId: string | null, equalLive?: (previous: L
 
   const messages = useMemo(() => {
     const current = session?.messages ?? []
-    return older.length ? [...older, ...current] : current
-  }, [session, older])
+    return older.length ? [...(olderOwner.data ?? older), ...current] : current
+  }, [session, older, olderOwner.data])
 
   const base = Math.max(0, (session?._messages_offset ?? 0) - older.length)
   const rows = useMemo(() => projectMessages(messages, base), [messages, base])

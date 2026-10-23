@@ -82,7 +82,9 @@ jobs:
       - name: Validate the support record and list its releases
         id: list
         working-directory: .
-        run: echo "tags=$(python3 scripts/check-agent-compatibility.py --list)" >> "$GITHUB_OUTPUT"
+        run: |
+          tags=$(python3 scripts/check-agent-compatibility.py --list)
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
 
   # Every supported release runs native compatibility. The shared runner selects once-only work on the active pin.
   sidecar:

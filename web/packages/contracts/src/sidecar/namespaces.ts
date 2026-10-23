@@ -791,7 +791,7 @@ const GatewayActionStream = z.discriminatedUnion('event', [z.object({ event: z.l
 export const GATEWAY_ACTIONS = ['start', 'stop', 'restart'] as const
 export const GATEWAY_METHODS = {
   'gateway.session': { params: GatewaySessionParamsSchema, result: GatewaySessionResultSchema, stream: z.discriminatedUnion('event', [
-    z.object({ event: z.literal('snapshot'), data: GatewaySessionResultSchema.extend({ replaying: z.boolean().optional() }) }),
+    z.object({ event: z.literal('snapshot'), data: GatewaySessionResultSchema.extend({ replaying: z.boolean().optional(), reaction_only: z.boolean().optional() }) }),
     z.object({ event: z.literal('event'), data: Loose }),
     z.object({ event: z.literal('replay_complete'), data: z.object({}) }),
     z.object({ event: z.literal('clarify_batch'), data: GatewayClarifyBatchSchema }),

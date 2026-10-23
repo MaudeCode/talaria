@@ -103,6 +103,36 @@ async def probe(home, peer, desc, *, require_gap=False):
                     break
                 assert time.monotonic() < deadline, final
                 await asyncio.sleep(.05)
+            reactions = final["snapshot"].get("reactions_supported") is True and not require_gap
+            if reactions:
+                reaction_row = final["snapshot"]["messages"][-1]["row_id"]
+                async def react(emoji, expected):
+                    value = await asyncio.to_thread(call, "react", row_id=reaction_row, emoji=emoji)
+                    assert value["state"] == "attached", value
+                    row = next(r for r in value["snapshot"]["messages"] if r["row_id"] == reaction_row)
+                    assert row["reactions"] == expected, row
+                await react("👍", [{"author": "user", "emoji": "👍"}])
+                await react("👍", [])
+                await react("❤️", [{"author": "user", "emoji": "❤️"}])
+                await react(None, [])
+                foreign = (await rpc(native, "session.create", request_id="reaction-foreign", source="cli", toolsets=[]))["result"]["session_id"]
+                refused = await rpc(native, "message.react", session_id=foreign, row_id=reaction_row, emoji="👍", author="user")
+                assert "error" in refused, refused
+                reaction_watch = viewer.request("gateway.session", {"profile_home": str(home), "session_id": sid, "action": "watch"})
+                frame = await asyncio.to_thread(viewer.next_message, 20)
+                assert frame["params"]["event"] == "snapshot", frame
+                changed = await rpc(native, "message.react", session_id=sid, row_id=reaction_row, emoji="🎉", author="agent")
+                assert "result" in changed, changed
+                while True:
+                    frame = await asyncio.to_thread(viewer.next_message, 20)
+                    data = frame.get("params", {}).get("data", {})
+                    if frame.get("params", {}).get("event") == "snapshot" and any(r.get("reactions") == [{"author": "agent", "emoji": "🎉"}] for r in data["snapshot"]["messages"]):
+                        break
+                viewer.request("rpc.cancel", {"id": reaction_watch})
+                while (await asyncio.to_thread(viewer.next_message, 20)).get("id") != reaction_watch:
+                    pass
+                restored = await asyncio.to_thread(call, "snapshot")
+                assert any(r.get("reactions") == [{"author": "agent", "emoji": "🎉"}] for r in restored["snapshot"]["messages"]), restored
             # Stale revisions and generations reach the owner and are refused without a local writer.
             stale = await asyncio.to_thread(call, "mutate", request_id="stale", expected_revision=0,
                                             execution_generation=0, operation="workspace", payload={"cwd": str(home)})
@@ -117,10 +147,25 @@ async def probe(home, peer, desc, *, require_gap=False):
             assert summaries(compressed["snapshot"]) == summaries(final["snapshot"]) + 1, compressed
             assert [m.get("content") for m in compressed["snapshot"]["messages"][-2:]] == ["COMPRESSION_TAIL", "RECOVERY_ACK_COMPRESSION_TAIL"], compressed
             await exports("RECOVERY_ACK_COMPRESSION_TAIL")
+            if reactions:
+                # Resolve the physical compression tip through the logical owner, never the old stored id.
+                current_row = compressed["snapshot"]["messages"][-1]
+                if reaction_row not in {r.get("row_id") for r in compressed["snapshot"]["messages"]}:
+                    retired = await asyncio.to_thread(call, "react", row_id=reaction_row, emoji="👍")
+                    assert retired["state"] == "refused", retired
+                reaction_row = current_row["row_id"]
+                value = await asyncio.to_thread(call, "react", row_id=reaction_row, emoji="👍")
+                assert value["state"] == "attached", value
+                expected = [r for r in current_row["reactions"] if r["author"] != "user"] + [{"author": "user", "emoji": "👍"}]
+                assert next(r for r in value["snapshot"]["messages"] if r["row_id"] == reaction_row)["reactions"] == expected
+
             reset = await asyncio.to_thread(call, "mutate", request_id="reset-stable", expected_revision=compressed["snapshot"]["revision"],
                 execution_generation=compressed["snapshot"]["execution_generation"], operation="reset", payload={})
             assert reset["state"] == "attached" and reset["snapshot"]["session_id"] == sid, reset
             assert reset["snapshot"]["messages"] == [], reset
+            if reactions:
+                retired = await asyncio.to_thread(call, "react", row_id=reaction_row, emoji="👍")
+                assert retired["state"] == "refused", retired
             await exports(None)
             retained = await asyncio.to_thread(call, "receipt", admission_id=first["receipt"]["admission_id"])
             assert retained["receipt"]["admission_id"] == first["receipt"]["admission_id"] and retained["receipt"]["status"] == "terminal"

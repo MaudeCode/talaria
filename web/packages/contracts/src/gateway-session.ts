@@ -11,6 +11,18 @@ export const OwnerExportFormatSchema = z.enum(['json', 'markdown', 'html'])
 export const OwnerExportSchema = z.object({
   format: OwnerExportFormatSchema, filename: z.string().min(1).max(255), content: z.string().max(OWNER_EXPORT_MAX_BYTES),
 })
+/** Closed Web reaction vocabulary; the owner always writes as the authenticated user. */
+export const ReactionEmojiSchema = z.enum(['👍', '👎', '❤️', '😂', '😮', '🎉'])
+export const ReactionStateSchema = z.object({
+  items: z.array(z.object({ emoji: ReactionEmojiSchema, count: z.number().int().positive(), mine: z.boolean() })),
+  selected: ReactionEmojiSchema.nullable(),
+})
+export const MessageReactionViewSchema = z.object({
+  row_id: z.number().int().positive(), state: ReactionStateSchema,
+  actions: z.array(z.object({ emoji: ReactionEmojiSchema.nullable(), result: ReactionStateSchema })),
+})
+export type ReactionState = z.infer<typeof ReactionStateSchema>
+export type MessageReactionView = z.infer<typeof MessageReactionViewSchema>
 export const GatewayAdmissionSchema = z.object({
   admission_id: z.string(), sequence: z.number().int(), status: z.enum(['queued', 'started', 'unknown', 'terminal']),
   outcome: z.string().nullable(), authority_epoch: z.number().int(), execution_generation: z.number().int().nullable(),
@@ -21,6 +33,7 @@ export const GatewaySnapshotSchema = z.object({
   session_id: z.string(), stored_session_id: z.string(), messages: z.array(ObjectSchema), message_count: z.number().int(),
   running: z.boolean(), authority_epoch: z.number().int(), replay_epoch: z.string(), last_sequence: z.number().int(),
   subscription_id: z.string(), revision: z.number().int(), execution_generation: z.number().int(),
+  reactions_supported: z.boolean().optional(),
   pending: z.array(GatewayAdmissionSchema), prompts: z.array(ObjectSchema), info: ObjectSchema,
 })
 /** Owner mutation receipts are distinct from prompt admissions. Applied mutations have no status. */
@@ -58,7 +71,8 @@ export const GatewayClarifyBatchSchema = z.object({
 export type GatewayClarifyBatch = z.infer<typeof GatewayClarifyBatchSchema>
 export const GatewaySessionParamsSchema = z.object({
   profile_home: z.string().min(1), session_id: z.string().min(1),
-  action: z.enum(['snapshot', 'watch', 'context_detail', 'submit', 'receipt', 'cancel', 'steer_queued', 'replace_queued', 'interrupt', 'approval', 'clarify', 'clarify_lock', 'discard', 'mutate', 'export', 'checkpoint_diff', 'terminal_info', 'shell_exec']),
+  action: z.enum(['snapshot', 'watch', 'context_detail', 'submit', 'receipt', 'cancel', 'steer_queued', 'replace_queued', 'interrupt', 'approval', 'clarify', 'clarify_lock', 'discard', 'mutate', 'export', 'checkpoint_diff', 'terminal_info', 'shell_exec', 'react']),
+  row_id: z.number().int().positive().optional(), emoji: ReactionEmojiSchema.nullable().optional(),
   format: OwnerExportFormatSchema.optional(), redact: z.boolean().optional(),
   command: CapturedCommandSchema.optional(),
   authority_epoch: z.number().int().nonnegative().optional(), replay_epoch: z.string().min(1).optional(),
@@ -98,6 +112,7 @@ export type ExecutionModes = z.infer<typeof ExecutionModesSchema>
 const OwnerActionBase = z.object({ session_id: z.string().min(1) })
 const RecoveryAction = OwnerActionBase.extend({ admission_id: z.string().min(1), execution_generation: z.number().int().positive() })
 export const OwnerActionRequestSchema = z.discriminatedUnion('action', [
+  z.strictObject({ session_id: z.string().min(1), action: z.literal('react'), row_id: z.number().int().positive(), emoji: ReactionEmojiSchema.nullable() }),
   OwnerActionBase.extend({ action: z.literal('cancel'), admission_id: z.string().min(1) }),
   OwnerActionBase.extend({ action: z.literal('steer_queued'), admission_id: z.string().min(1) }),
   OwnerActionBase.extend({ action: z.literal('replace_queued'), admission_id: z.string().min(1),
