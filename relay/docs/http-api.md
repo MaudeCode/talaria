@@ -159,6 +159,8 @@ The publisher sends this once when a session first appears in an enrolled profil
 
 Send either token field as `null` to clear the stored token. The relay uses `pushToStartToken` to start the aggregate Live Activity when work begins while no aggregate activity is registered.
 
+The relay rechecks current device preferences before each queued or retried delivery attempt. Disabling ordinary notifications or an event category prevents queued ordinary alerts for that category. Disabling an event category removes the alert and sound from otherwise valid Live Activity updates, while disabling Live Activities prevents queued updates and starts. Silent end and displacement cleanup can still finish existing activities. Ordinary notification enablement does not control Live Activity alerts. Requests already accepted by APNs cannot be retracted.
+
 Register an aggregate ActivityKit token with `PUT /v1/devices/{deviceId}/live-activities/{activityId}`:
 
 ```json

@@ -1805,7 +1805,7 @@ describe("Convex relay state", () => {
     expect(activities[0]?.activityId).toBe("activity-2");
   });
 
-  it("ends a displaced same-mode activity on its ActivityKit token", async () => {
+  it.each([true, false])("ends a displaced activity with liveActivitiesEnabled=%s", async (liveActivitiesEnabled) => {
     const backend = testBackend();
     const now = 1_800_000_000_000;
     await backend.run(async (ctx) => {
@@ -1861,6 +1861,12 @@ describe("Convex relay state", () => {
       kind: "live_activity_end",
       expectedToken: "old-token",
       stateFingerprint: "end:displaced:device-1:old-activity",
+    });
+    await backend.mutation(internal.devices.upsertDevice, {
+      userId: "user-1", sessionId: "login-1", sessionExpiresAt: now + 600_000,
+      deviceId: "device-1", label: "iPhone", bundleId: "dev.kil.talaria", apsEnvironment: "production",
+      clearPushToken: false, clearPushToStartToken: false,
+      preferences: { ...defaultNotificationPreferences, liveActivitiesEnabled }, now: now + 1,
     });
     const claimed = await backend.mutation(internal.delivery.claimJob, {
       jobId: state.displacedEnd!._id,

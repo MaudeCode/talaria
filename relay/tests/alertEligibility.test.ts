@@ -1,9 +1,9 @@
 import workpoolTest from "@convex-dev/workpool/test";
 import { convexTest } from "convex-test";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { internal } from "../convex/_generated/api";
-import { defaultNotificationPreferences, type SessionPhase } from "../convex/lib/model";
+import { defaultNotificationPreferences, type NotificationPreferences, type SessionPhase } from "../convex/lib/model";
 import schema from "../convex/schema";
 
 const modules = import.meta.glob("../convex/**/*.ts");
@@ -464,5 +464,124 @@ describe("publisher alert eligibility", () => {
     const delivered = await jobs(backend);
     expect(delivered.map((job) => job.kind)).toEqual(["live_activity_start"]);
     expect(delivered[0]!.aps.alert).toEqual({ title: "session-2", body: "Input needed on Home", sound: "default" });
+  });
+});
+
+describe.each([false, true])("claim preferences, retry=%s", (retry) => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(now + 2);
+  });
+  afterEach(() => vi.useRealTimers());
+
+  async function queuedAlert(activity: boolean, phase: SessionPhase = "waiting_for_approval") {
+    const backend = await seed({ pushToken: "push-token", activity });
+    await backend.mutation(internal.publishers.acceptSnapshot, {
+      ...publish, nonce: "preferences", receivedAt: now + 1, snapshotId: "preferences",
+      states: [snapshotState("session-1", 2, phase), snapshotState("session-2", 1, "running")],
+    });
+    await runScheduledRecomputes(backend);
+    const job = await backend.run(async (ctx) => ctx.db.query("deliveryJobs").first());
+    expect(job).toMatchObject({ kind: activity ? "live_activity_update" : "notification", status: "queued" });
+    expect(JSON.parse(job!.request.payloadJson).aps.alert).toBeDefined();
+    if (retry) {
+      await expect(backend.mutation(internal.delivery.claimJob, { jobId: job!._id, now: now + 2 }))
+        .resolves.toMatchObject({ status: "ready" });
+    }
+    return { backend, job: job! };
+  }
+
+  async function changePreferences(backend: Backend, preferences: Partial<NotificationPreferences>) {
+    await expect(backend.mutation(internal.devices.upsertDevice, {
+      userId: "user-1", sessionId: "login-1", sessionExpiresAt: now + 600_000,
+      deviceId: "device-1", label: "iPhone", bundleId: "dev.kil.talaria", apsEnvironment: "production",
+      clearPushToken: false, clearPushToStartToken: false,
+      preferences: { ...defaultNotificationPreferences, notificationsEnabled: true, ...preferences }, now: now + 3,
+    })).resolves.toEqual({ ok: true });
+  }
+
+  it("refuses ordinary notifications after notifications are disabled", async () => {
+    const { backend, job } = await queuedAlert(false);
+    await changePreferences(backend, { notificationsEnabled: false });
+    await expect(backend.mutation(internal.delivery.claimJob, { jobId: job._id, now: now + 4 }))
+      .resolves.toEqual({ status: "stale" });
+    expect(await backend.run(async (ctx) => ctx.db.get(job._id))).toMatchObject({ status: "stale", attemptCount: retry ? 1 : 0 });
+  });
+
+  it("refuses existing activity updates after Live Activities are disabled", async () => {
+    const { backend, job } = await queuedAlert(true);
+    await changePreferences(backend, { liveActivitiesEnabled: false });
+    await expect(backend.mutation(internal.delivery.claimJob, { jobId: job._id, now: now + 4 }))
+      .resolves.toEqual({ status: "stale" });
+  });
+
+  it("refuses push-to-start after Live Activities are disabled and releases its lease", async () => {
+    const backend = await seed({ pushToStartToken: "start-token", activity: false });
+    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
+    const job = await backend.run(async (ctx) => ctx.db.query("deliveryJobs").first());
+    expect(job).toMatchObject({ kind: "live_activity_start", status: "queued" });
+    if (retry) {
+      await expect(backend.mutation(internal.delivery.claimJob, { jobId: job!._id, now: now + 2 }))
+        .resolves.toMatchObject({ status: "ready" });
+    }
+    await changePreferences(backend, { liveActivitiesEnabled: false });
+    await expect(backend.mutation(internal.delivery.claimJob, { jobId: job!._id, now: now + 4 }))
+      .resolves.toEqual({ status: "stale" });
+    expect((await backend.run(async (ctx) => ctx.db.query("devices").first()))?.pushToStartIssuedAt).toBeUndefined();
+  });
+
+  const categories = [
+    ["waiting_for_approval", "notifyOnApproval"],
+    ["waiting_for_input", "notifyOnInput"],
+    ["completed", "notifyOnCompletion"],
+    ["failed", "notifyOnFailure"],
+  ] as const;
+
+  describe.each([false, true])("activity=%s", (activity) => {
+    it.each(categories)("rechecks %s against %s", async (phase, preference) => {
+      const { backend, job } = await queuedAlert(activity, phase);
+      await changePreferences(backend, { [preference]: false });
+      const claimed = await backend.mutation(internal.delivery.claimJob, { jobId: job._id, now: now + 4 });
+      if (!activity) {
+        expect(claimed).toEqual({ status: "stale" });
+        return;
+      }
+      expect(claimed).toMatchObject({ status: "ready", kind: "live_activity_update" });
+      if (claimed.status !== "ready") throw new Error("silent state update was not claimable");
+      const aps = JSON.parse(claimed.request.payloadJson).aps;
+      expect(aps).not.toHaveProperty("alert");
+      expect(aps).not.toHaveProperty("sound");
+      expect(aps["content-state"].rows).toEqual(expect.arrayContaining([expect.objectContaining({ phase })]));
+      expect((await backend.run(async (ctx) => ctx.db.get(job._id)))?.request).toEqual(claimed.request);
+      // A retry must not resurrect the stripped alert if the category is enabled again.
+      await changePreferences(backend, {});
+      const retried = await backend.mutation(internal.delivery.claimJob, { jobId: job._id, now: now + 5 });
+      expect(retried).toMatchObject({ status: "ready", request: claimed.request });
+    });
+
+    it.each(categories)("keeps enabled %s delivery", async (phase) => {
+      const { backend, job } = await queuedAlert(activity, phase);
+      // Activity alerts have their own policy and do not depend on ordinary notifications.
+      await changePreferences(backend, activity ? { notificationsEnabled: false } : { liveActivitiesEnabled: false });
+      const claimed = await backend.mutation(internal.delivery.claimJob, { jobId: job._id, now: now + 4 });
+      expect(claimed).toMatchObject({ status: "ready", request: job.request });
+      expect(await backend.run(async (ctx) => ctx.db.get(job._id))).toMatchObject({ status: "running", attemptCount: retry ? 2 : 1 });
+    });
+  });
+
+  it("preserves silent end cleanup after Live Activities are disabled", async () => {
+    const backend = await seed({ activity: true });
+    await backend.run(async (ctx) => {
+      for (const state of await ctx.db.query("sessionStates").collect()) await ctx.db.delete(state._id);
+    });
+    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
+    const job = await backend.run(async (ctx) => ctx.db.query("deliveryJobs").first());
+    expect(job).toMatchObject({ kind: "live_activity_end" });
+    if (retry) await backend.mutation(internal.delivery.claimJob, { jobId: job!._id, now: now + 2 });
+    await changePreferences(backend, { liveActivitiesEnabled: false });
+    const claimed = await backend.mutation(internal.delivery.claimJob, { jobId: job!._id, now: now + 4 });
+    expect(claimed).toMatchObject({ status: "ready", kind: "live_activity_end", request: job!.request });
+    if (claimed.status !== "ready") throw new Error("end cleanup was not claimable");
+    expect(JSON.parse(claimed.request.payloadJson).aps).not.toHaveProperty("alert");
   });
 });

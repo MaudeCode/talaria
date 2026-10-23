@@ -7,6 +7,7 @@ import type { DataModel, Doc } from "./_generated/dataModel";
 import { internalMutation, internalQuery, type MutationCtx } from "./_generated/server";
 import {
   aggregateFingerprint,
+  alertForState,
   alertForTransition,
   makeAggregate,
   rowForState,
@@ -642,7 +643,8 @@ export const claimJob = internalMutation({
         activity.activityPushToken !== job.expectedToken ||
         !device ||
         device.revokedAt !== undefined ||
-        (device.sessionExpiresAt !== undefined && device.sessionExpiresAt <= args.now)
+        (device.sessionExpiresAt !== undefined && device.sessionExpiresAt <= args.now) ||
+        (job.kind === "live_activity_update" && !device.preferences.liveActivitiesEnabled)
       ) {
         await ctx.db.patch(job._id, { status: "stale", updatedAt: args.now });
         return { status: "stale" as const };
@@ -670,17 +672,18 @@ export const claimJob = internalMutation({
         return { status: "stale" as const };
       }
       const payload = JSON.parse(job.request.payloadJson) as { aps: Record<string, unknown> };
-      if (job.sourcePublisherId && job.sourceSessionId && payload.aps.alert !== undefined) {
-        // The state is still current, but its alert may have been suppressed after this job was queued.
-        const source = await ctx.db
+      if (payload.aps.alert !== undefined) {
+        // Deliver current state silently when its alert policy changed after enqueue.
+        const source = job.sourcePublisherId && job.sourceSessionId ? await ctx.db
           .query("sessionStates")
           .withIndex("by_version_and_user_id_and_publisher_id_and_session_id", (query) =>
             query.eq("version", 2).eq("userId", job.userId)
               .eq("publisherId", job.sourcePublisherId!).eq("sessionId", job.sourceSessionId!),
           )
-          .unique();
-        if (source && !source.deleted && source.alertEligible === false) {
-          const { alert: _alert, ...aps } = payload.aps;
+          .unique() : null;
+        if (!device.preferences.liveActivitiesEnabled
+          || (source && !source.deleted && !alertForState(source, device.preferences))) {
+          const { alert: _alert, sound: _sound, ...aps } = payload.aps;
           request = { ...job.request, payloadJson: JSON.stringify({ ...payload, aps }) };
           await ctx.db.patch(job._id, { request });
         }
@@ -702,7 +705,8 @@ export const claimJob = internalMutation({
         device.revokedAt !== undefined ||
         (device.sessionExpiresAt !== undefined && device.sessionExpiresAt <= args.now) ||
         expectedDeviceToken !== job.expectedToken ||
-        liveActivitiesDisabled
+        liveActivitiesDisabled ||
+        (job.kind === "notification" && !device.preferences.notificationsEnabled)
       ) {
         await ctx.db.patch(job._id, { status: "stale", updatedAt: args.now });
         if (job.kind === "live_activity_start" && device?.pushToStartToken === job.expectedToken) {
@@ -765,6 +769,7 @@ export const claimJob = internalMutation({
           !state ||
           state.deleted ||
           state.alertEligible === false ||
+          (job.kind === "notification" && !alertForState(state, device.preferences)) ||
           !job.stateFingerprint.includes(`:${state.eventId}:`)
         ) {
           await ctx.db.patch(job._id, { status: "stale", updatedAt: args.now });
