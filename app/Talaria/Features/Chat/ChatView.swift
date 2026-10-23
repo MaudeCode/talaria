@@ -526,7 +526,7 @@ struct ChatView: View {
                 }
                 .frame(width: composerFrame.width)
                 .frame(maxWidth: .infinity, alignment: .trailing)
-                .animation(ChatMotion.composerChrome(reduceMotion: reduceMotion), value: composerFrame.minX)
+                .animation(ChatMotion.composerChrome(reduceMotion: reduceMotion), value: geometry.size.width - composerFrame.width)
 
                 if let approvalPrompt = viewModel.approvalPrompt {
                     ApprovalRequestOverlay(
@@ -569,16 +569,16 @@ struct ChatView: View {
         let bounds = CGRect(origin: .zero, size: geometry.size)
 #if DEBUG
         if let divisionFramesForTesting {
-            return DivisionRegionLayout.trailingFrame(in: bounds, divisions: divisionFramesForTesting)
+            return DivisionRegionLayout.availableFrame(in: bounds, divisions: divisionFramesForTesting,
+                layoutDirection: layoutDirection, avoidsHorizontalDivisions: false)
         }
 #endif
         guard #available(iOS 27.1, *) else { return bounds }
-        let divisions = geometry.reservedRegions(kind: .division).filter(\.isActive).map { region in
-            CGRect(x: region.frame.minX - region.margins.leading, y: region.frame.minY,
-                   width: region.frame.width + region.margins.leading + region.margins.trailing,
-                   height: region.frame.height)
-        }
-        return DivisionRegionLayout.trailingFrame(in: bounds, divisions: divisions)
+        // Frames already include margins; both overlays use physical coordinates in their shared resolver.
+        let divisions = geometry.reservedRegions(kind: .division, layoutDirectionBehavior: .fixed)
+            .filter(\.isActive).map(\.frame)
+        return DivisionRegionLayout.availableFrame(in: bounds, divisions: divisions,
+            layoutDirection: layoutDirection, avoidsHorizontalDivisions: false)
     }
 
     private var chatWithLifecycle: some View {

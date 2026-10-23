@@ -11,11 +11,12 @@ import XCTest
 final class ChatHostedTests: XCTestCase {
     private struct FoldHost: View {
         let content: AnyView
+        var division = CGRect(x: 430, y: -100, width: 40, height: 2000)
         @State private var folded = false
         var body: some View {
             content
                 .environment(\.chatDivisionFramesForTesting, folded
-                    ? [CGRect(x: 430, y: -100, width: 40, height: 2000)] : [])
+                    ? [division] : [])
                 .overlay(alignment: .topLeading) {
                     Button("Toggle fixture fold") { folded.toggle() }
                 }
@@ -77,6 +78,30 @@ final class ChatHostedTests: XCTestCase {
         XCTAssertGreaterThan(try transcriptScrollView(in: window).bounds.width, 800)
         settle(0.3)
         attachHostedScreenshot(window, name: "clarification-after-book-fold")
+    }
+
+    func testOffCenterBookFoldUsesThePhysicalTrailingRegionInRTL() async throws {
+        let fixture = try FixtureApp(for: self)
+        let session = try await fixture.session()
+        // Both overlays request fixed physical frames, so RTL must choose the left pane.
+        let chat = fixture.chat(session).environment(\.layoutDirection, .rightToLeft)
+        let window = try hostWindow(FoldHost(content: AnyView(chat),
+            division: CGRect(x: 300, y: -100, width: 40, height: 2000)),
+            size: CGSize(width: 900, height: 700))
+        _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
+        try await typeIntoComposer("Retained RTL draft", in: window)
+        let loadedEditor = await composerTextView(in: window)
+        let editor = try XCTUnwrap(loadedEditor)
+        XCTAssertGreaterThan(editor.convert(editor.bounds, to: window).maxX, 340)
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Toggle fixture fold"))
+        let displaced = await awaitCondition { editor.convert(editor.bounds, to: window).maxX <= 300 }
+        XCTAssertTrue(displaced, "The RTL composer must fit left of the physical division")
+        let send = try await requireElement(in: window, label: "Send")
+        XCTAssertLessThanOrEqual(window.convert(send.accessibilityFrame, from: nil).maxX, 300)
+        XCTAssertEqual(editor.text, "Retained RTL draft")
+        XCTAssertGreaterThan(try transcriptScrollView(in: window).bounds.width, 800)
+        settle(0.3)
+        attachHostedScreenshot(window, name: "composer-off-center-rtl-book-fold")
     }
 
     func testNativeReasoningRefusalIsVisibleWithoutChangingEffort() async throws {

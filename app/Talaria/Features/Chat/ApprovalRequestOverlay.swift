@@ -59,26 +59,9 @@ struct ApprovalRequestOverlay: View {
         return []
     }
 
-    static func availableFrame(in bounds: CGRect, divisions: [CGRect], layoutDirection: LayoutDirection) -> CGRect {
-        divisions.reduce(bounds) { available, division in
-            let fold = bounds.intersection(division)
-            guard !fold.isNull, fold.width > 0, fold.height > 0 else { return available }
-            if fold.height > fold.width {
-                if layoutDirection == .rightToLeft {
-                    return available.intersection(CGRect(x: bounds.minX, y: bounds.minY,
-                        width: fold.minX - bounds.minX, height: bounds.height))
-                }
-                return available.intersection(CGRect(x: fold.maxX, y: bounds.minY,
-                    width: bounds.maxX - fold.maxX, height: bounds.height))
-            }
-            return available.intersection(CGRect(x: bounds.minX, y: bounds.minY,
-                width: bounds.width, height: fold.minY - bounds.minY))
-        }
-    }
-
     static func cardFrame(in bounds: CGRect, divisions: [CGRect], cardSize: CGSize,
                           layoutDirection: LayoutDirection = .leftToRight) -> CGRect {
-        let available = availableFrame(in: bounds, divisions: divisions, layoutDirection: layoutDirection)
+        let available = DivisionRegionLayout.availableFrame(in: bounds, divisions: divisions, layoutDirection: layoutDirection)
         guard !available.isNull else { return CGRect(origin: bounds.origin, size: .zero) }
         let width = min(520, max(0, available.width - 36))
         let height = min(cardSize.height, available.height)
@@ -95,7 +78,7 @@ struct ApprovalRequestOverlay: View {
 
         func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
             guard let card = subviews.first else { return }
-            let available = ApprovalRequestOverlay.availableFrame(in: bounds, divisions: divisions, layoutDirection: layoutDirection)
+            let available = DivisionRegionLayout.availableFrame(in: bounds, divisions: divisions, layoutDirection: layoutDirection)
             guard !available.isNull else { return }
             let offeredFrame = ApprovalRequestOverlay.cardFrame(in: bounds, divisions: divisions,
                 cardSize: available.size, layoutDirection: layoutDirection)
