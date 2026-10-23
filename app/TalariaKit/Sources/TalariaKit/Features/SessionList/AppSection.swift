@@ -54,6 +54,30 @@ public enum AppSection: Hashable {
     }
 }
 
+/// The regular-width split view's sizes, from the split view's own width rather than the device (TAL-1453).
+public enum RegularSplitLayout {
+    /// Every section's sidebar shares this one column width. 340pt is the narrowest width where "Scheduled
+    /// sessions", a "200+" count and the chevron fit at default Dynamic Type.
+    public static let sidebarMinWidth: CGFloat = 340
+    public static let sidebarMaxWidth: CGFloat = 440
+    /// The narrowest chat the app is tested at.
+    public static let detailMinWidth: CGFloat = 320
+    /// The narrowest chat that keeps the Files inspector beside it (TAL-479).
+    public static let filesInspectorChatWidth: CGFloat = 740
+
+    /// 380pt, less where that would leave the chat narrower than it is tested at (the iPhone Duo inner display).
+    public static func sidebarIdealWidth(splitWidth: CGFloat) -> CGFloat {
+        max(sidebarMinWidth, min(380, splitWidth - detailMinWidth))
+    }
+
+    /// Whether the chat reaches the Files inspector's width only with the sidebar column hidden, so opening Files
+    /// hides it rather than pushing the browser over the chat.
+    public static func hidesSidebarForFilesInspector(splitWidth: CGFloat) -> Bool {
+        splitWidth >= filesInspectorChatWidth
+            && splitWidth - sidebarIdealWidth(splitWidth: splitWidth) < filesInspectorChatWidth
+    }
+}
+
 /// An item a section's list selects. Its page shows beside the list at regular width and is
 /// pushed over it at compact width. Device-local UI state, never sent to the server.
 public enum SectionItem: Hashable {

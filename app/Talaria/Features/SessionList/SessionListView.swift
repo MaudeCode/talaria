@@ -32,6 +32,10 @@ struct SessionListView: View {
     /// The detail root a page was pushed over (TAL-643).
     @State private var coveredRegularDetail: RegularDetailIdentity?
     @State private var regularSplitRevision = 0
+    /// The regular-width split view's own width, which sizes its columns (TAL-1453).
+    @State private var regularSplitWidth: CGFloat = 0
+    /// Persists `navigationState.filesInspectorPresented` for the window (TAL-479).
+    @SceneStorage(SplitFilesInspector.storageKey) private var storedFilesInspectorPresented = false
     @State private var sessionPendingRename: SessionSummary?
     @State private var sessionPendingDeletion: SessionSummary?
     @State private var isConfirmingBulkDelete = false
@@ -388,6 +392,10 @@ struct SessionListView: View {
             .onChange(of: requestedNewChat) {
                 openRequestedNewChatIfNeeded()
             }
+            .onAppear { navigationState.filesInspectorPresented = storedFilesInspectorPresented }
+            .onChange(of: navigationState.filesInspectorPresented) { _, presented in
+                storedFilesInspectorPresented = presented
+            }
             .onChange(of: showsProjectsSection) {
                 // The "All" button that clears a project filter lives in the
                 // Projects header, so hiding the section mid-filter would strand
@@ -467,16 +475,24 @@ struct SessionListView: View {
             NavigationSplitView(columnVisibility: regularColumnVisibility) {
                 regularWidthSidebar
                     .toolbar(removing: .sidebarToggle)
-                    // Every section's sidebar shares this one column width. 340pt is the narrowest
-                    // width where "Scheduled sessions", a "200+" count and the chevron fit at
-                    // default Dynamic Type.
-                    .navigationSplitViewColumnWidth(min: 340, ideal: 380, max: 440)
+                    // Every section's sidebar shares this one column width.
+                    .navigationSplitViewColumnWidth(
+                        min: RegularSplitLayout.sidebarMinWidth,
+                        ideal: RegularSplitLayout.sidebarIdealWidth(splitWidth: regularSplitWidth),
+                        max: RegularSplitLayout.sidebarMaxWidth
+                    )
             } detail: {
                 // Only the detail rebuilds for a new destination or item, so the sidebar keeps its
                 // scroll position, search text and selection.
                 NavigationStack {
                     regularDetailRoot
                 }
+                // Without a minimum, UIKit lays the sidebar over a detail narrower than about 448pt, as on the
+                // iPhone Duo inner display and iPad in portrait.
+                .navigationSplitViewColumnWidth(
+                    min: RegularSplitLayout.detailMinWidth,
+                    ideal: RegularSplitLayout.detailMinWidth
+                )
                 .id(regularDetailIdentity)
             }
             .onChange(of: regularDetailIdentity) { oldIdentity, _ in
@@ -487,6 +503,7 @@ struct SessionListView: View {
                 regularSplitRevision += 1
             }
             .navigationSplitViewStyle(.balanced)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { regularSplitWidth = $0 }
             // Starts fresh when its columns change, since showing the sidebar column again after a
             // full-width section left it without its navigation bar, and to drop covered pages.
             .id(RegularSplitIdentity(
@@ -524,6 +541,14 @@ struct SessionListView: View {
     private var regularDetailRoot: some View {
         let identity = regularDetailIdentity
         return regularWidthDetail
+            .toolbar {
+                // The drawer button leads the first visible column.
+                if hidesSidebarColumn {
+                    ToolbarItem(placement: .topBarLeading) {
+                        sidebarButton
+                    }
+                }
+            }
             .onAppear {
                 if coveredRegularDetail == identity { coveredRegularDetail = nil }
             }
@@ -538,9 +563,27 @@ struct SessionListView: View {
         RegularDetailIdentity(rootRevision: navigationState.rootRevision, item: navigationState.displayedItem)
     }
 
-    /// Kanban and Insights have no list, so they take the whole width.
     private var regularColumnVisibility: Binding<NavigationSplitViewVisibility> {
-        .constant(navigationState.section.isFullWidth ? .detailOnly : .all)
+        .constant(hidesSidebarColumn ? .detailOnly : .all)
+    }
+
+    /// Kanban and Insights have no list, so they take the whole width, and a chat takes it while its Files
+    /// inspector needs the room.
+    private var hidesSidebarColumn: Bool {
+        navigationState.section.isFullWidth || (navigationState.chatShowsFilesInspector && widensForFilesInspector)
+    }
+
+    /// Whether hiding the sidebar column is what puts a chat's Files inspector beside it.
+    private var widensForFilesInspector: Bool {
+        horizontalSizeClass == .regular && RegularSplitLayout.hidesSidebarForFilesInspector(splitWidth: regularSplitWidth)
+    }
+
+    private var splitFilesInspector: SplitFilesInspector {
+        SplitFilesInspector(
+            isPresented: $navigationState.filesInspectorPresented,
+            widensChat: widensForFilesInspector,
+            reportShown: { navigationState.chatShowsFilesInspector = $0 }
+        )
     }
 
     @ViewBuilder
@@ -559,8 +602,8 @@ struct SessionListView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(.systemBackground))
         .toolbar {
-            // A full-width section's hidden column must not hold a second drawer button.
-            if !section.isFullWidth {
+            // A hidden column must not hold a second drawer button.
+            if !hidesSidebarColumn {
                 ToolbarItem(placement: .topBarLeading) {
                     sidebarButton
                 }
@@ -697,7 +740,7 @@ struct SessionListView: View {
     private var regularWidthDetail: some View {
         let section = navigationState.section
         if section.isFullWidth {
-            withDrawerButton(sectionRoot(section))
+            sectionRoot(section)
         } else if let item = navigationState.displayedItem {
             sectionItemPage(item)
                 .navigationDestination(isPresented: $navigationState.pushesProviderQuotaWidget) {
@@ -737,7 +780,8 @@ struct SessionListView: View {
                 server: server,
                 onAPIError: { authManager.handleAPIError($0, server: server) },
                 draftStore: draftStore,
-                sessionListOwner: viewModel
+                sessionListOwner: viewModel,
+                splitFilesInspector: splitFilesInspector
             )
                 .id(session.id)
         case .newChat(let route):
@@ -753,7 +797,8 @@ struct SessionListView: View {
                 viewModel: viewModel,
                 onAPIError: { authManager.handleAPIError($0, server: server) },
                 onSessionCreated: rememberCreatedSession,
-                draftStore: draftStore
+                draftStore: draftStore,
+                splitFilesInspector: splitFilesInspector
             )
             .id(route.id)
         case .utility(let destination):

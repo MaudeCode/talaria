@@ -35,7 +35,15 @@ public enum SessionNavigationDestination: Hashable, Identifiable {
 }
 
 public struct SessionNavigationState: Equatable {
-    public private(set) var destination: SessionNavigationDestination?
+    public private(set) var destination: SessionNavigationDestination? {
+        // The chat a destination opens reports its own Files inspector when it appears.
+        didSet { chatShowsFilesInspector = false }
+    }
+    /// Whether chats in this window show Files beside them (TAL-479). Device-local UI state.
+    public var filesInspectorPresented = false
+    /// Whether the open chat shows its Files inspector, which can hide the regular-width sidebar column to make room
+    /// (TAL-1453).
+    public var chatShowsFilesInspector = false
     public private(set) var lastSelectedSessionID: String?
     public private(set) var rootRevision = 0
     /// What the regular-width sidebar column shows. A chat opened from Archived, Scheduled or
