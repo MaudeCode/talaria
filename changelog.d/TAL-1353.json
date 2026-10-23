@@ -1,0 +1,8 @@
+{
+  "entries": [{
+    "category": "Added",
+    "summary": "Quote selected chat text into your draft while keeping your question and attachments.",
+    "highlight": false,
+    "components": ["web"]
+  }]
+}

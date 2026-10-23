@@ -344,10 +344,12 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     await navigate({ to: '/session/$sessionId', params: { sessionId: r.session_id } })
   }, [sessionId, navigate, qc])
 
+  const canQuote = !clarify && !!session && (!session.read_only || session.owner_attachment?.can_submit === true)
   const actions = useMemo(() => ({
+    ...(sessionId && canQuote ? { onQuoteSelection: (text: string) => returnToComposer(sessionId, text, 'quote') } : {}),
     ...(session?.read_only ? {} : { onEdit: (row: VisibleMessage, text: string) => { void onEdit(row, text) }, onRegenerate: () => { void onRegenerate() } }),
     ...(session?.can_branch ? { onBranch: (row: VisibleMessage) => { void onBranch(row) } } : {}),
-  }), [session?.read_only, session?.can_branch, onEdit, onRegenerate, onBranch])
+  }), [sessionId, canQuote, session?.read_only, session?.can_branch, onEdit, onRegenerate, onBranch])
 
   const mode = (settings.data?.chat_activity_display_mode as ActivityMode | undefined) ?? 'compact_worklog'
   const assistantName = session?.assistant_name ?? bootstrap.assistant_name
