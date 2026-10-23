@@ -34,6 +34,9 @@ test('an owner-consumed voice stop clears its optimistic row without a new strea
 test('native queued prompts use owner controls and confirmed snapshots', async ({ page }, info) => {
   const sid = 'native-queued-controls'
   const calls: Record<string, unknown>[] = []
+  const waitForCalls = (count: number) => expect.poll(() => calls.length).toBe(count)
+  let allowOwner!: () => void
+  const ownerProcessing = new Promise<void>((resolve) => { allowOwner = resolve })
   const queued = (id: string, text: string, actions: string[]) => ({ admission_id: id, sequence: 1, status: 'queued', outcome: null, authority_epoch: 1, execution_generation: null, text, actions })
   let admissions = [queued('editable', 'Check the backup logs too', ['cancel', 'steer', 'edit']), queued('legacy', 'Summarize the backup', ['cancel'])]
   const session = () => ({ session_id: sid, title: 'Back up the cluster', read_only: true, active_stream_id: null, is_streaming: false,
@@ -41,7 +44,8 @@ test('native queued prompts use owner controls and confirmed snapshots', async (
     owner_attachment: { state: 'attached', reason: null, can_submit: true, can_interrupt: false, can_attach: false, revision: 2, execution_generation: 1, admissions } })
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: session() } }))
   await page.route('**/api/chat/stream/status?**', (route) => route.fulfill({ json: { active: false, stream_id: null, replay_available: false } }))
-  await page.route('**/api/chat/owner-action', (route) => {
+  await page.route('**/api/chat/owner-action', async (route) => {
+    await ownerProcessing
     const input = route.request().postDataJSON() as Record<string, unknown>
     calls.push(input)
     if (input.action === 'replace_queued') admissions = admissions.map((row) => row.admission_id === input.admission_id ? { ...row, text: String(input.text) } : row)
@@ -64,10 +68,15 @@ test('native queued prompts use owner controls and confirmed snapshots', async (
   }
   await dialog.getByRole('textbox').press('Enter')
   await expect(dialog).toContainText('Check the restored backup')
+  // Optimistic text must be visible before the simulated owner processes the edit.
+  expect(calls).toEqual([])
+  allowOwner()
+  await waitForCalls(1)
   expect(calls[0]).toMatchObject({ session_id: sid, action: 'replace_queued', admission_id: 'editable', text: 'Check the restored backup', submission_id: expect.any(String) })
   if (process.env.TAL1270_SHOTS) await page.screenshot({ path: `${process.env.TAL1270_SHOTS}/edited-${info.project.name}.png` })
   await dialog.getByRole('button', { name: 'Steer current response' }).click()
   await expect(dialog.locator('li')).toHaveCount(1)
+  await waitForCalls(2)
   expect(calls[1]).toEqual({ session_id: sid, action: 'steer_queued', admission_id: 'editable' })
   if (process.env.TAL1270_SHOTS) {
     await page.screenshot({ path: `${process.env.TAL1270_SHOTS}/steered-${info.project.name}.png` })
