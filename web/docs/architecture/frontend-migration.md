@@ -157,7 +157,9 @@ answer text is also composer-local, keyed by session, prompt, step and choice re
 `useClarify` owns step progression and selected choices. A refused final answer restores
 the same local text, while choosing an option or advancing a step replaces it. Model
 picker rows mount only while the menu is open and surviving search results retain their
-memoized labels. The auxiliary-model custom id input owns its own draft.
+memoized labels. Search menus use `Menu`'s initial-focus target so a delayed popup
+focus cannot interrupt typing; Escape still returns focus to the trigger. The auxiliary-model
+custom id input owns its own draft.
 
 Session and project writes keep submitted values in a separate, ephemeral resource-intent query.
 `useResourceMutation` owns that intent across row menus, the sidebar and the chat header, and fences

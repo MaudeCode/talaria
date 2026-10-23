@@ -68,6 +68,7 @@ test('typing keeps the model picker and clarification answer usable', async ({ p
     await expect(input).toHaveValue('Draft kept')
     await page.screenshot({ path: testInfo.outputPath('draft-restored.png') })
   } finally {
+    await page.close()
     for (const stream of streams) stream.end()
     server.closeAllConnections()
     await new Promise<void>((resolve) => server.close(() => { resolve() }))

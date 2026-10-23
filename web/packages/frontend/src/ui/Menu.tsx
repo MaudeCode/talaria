@@ -1,6 +1,6 @@
 import { Menu as BaseMenu } from '@base-ui/react/menu'
 import { ContextMenu as BaseContextMenu } from '@base-ui/react/context-menu'
-import type { ComponentProps, ReactElement, ReactNode } from 'react'
+import type { ComponentProps, ReactElement, ReactNode, RefObject } from 'react'
 import { cn } from './cn'
 
 export interface MenuProps {
@@ -12,18 +12,20 @@ export interface MenuProps {
   onOpenChange?: (open: boolean) => void
   className?: string
   label?: string
+  /** A search menu keeps its input focused when the opening popup receives delayed focus. */
+  initialFocus?: RefObject<HTMLElement | null>
 }
 
 const POPUP = 'min-w-44 max-w-[min(92vw,360px)] overflow-y-auto rounded-lg border border-border bg-surface p-1 text-sm text-text shadow-md outline-none'
 
 /** Base UI menu with token styling: keyboard navigation, typeahead, focus return, and escape are provided by Base UI. */
-export function Menu({ trigger, children, side = 'bottom', align = 'start', open, onOpenChange, className, label }: MenuProps) {
+export function Menu({ trigger, children, side = 'bottom', align = 'start', open, onOpenChange, className, label, initialFocus }: MenuProps) {
   return (
     <BaseMenu.Root {...(open !== undefined ? { open } : {})} {...(onOpenChange ? { onOpenChange } : {})}>
       <BaseMenu.Trigger render={trigger} />
       <BaseMenu.Portal>
         <BaseMenu.Positioner side={side} align={align} sideOffset={6} className="z-[1200] outline-none">
-          <BaseMenu.Popup aria-label={label} className={cn(POPUP, className)}>
+          <BaseMenu.Popup aria-label={label} onFocus={(event) => { if (event.target === event.currentTarget) initialFocus?.current?.focus() }} className={cn(POPUP, className)}>
             {children}
           </BaseMenu.Popup>
         </BaseMenu.Positioner>

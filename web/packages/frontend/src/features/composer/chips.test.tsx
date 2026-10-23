@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
@@ -54,12 +54,31 @@ function renderChip(props: { model: string | null; optionId: string | null }, on
 }
 
 describe('ModelChip', () => {
+  it('keeps model-search focus through initialization and closes on Escape', async () => {
+    catalog = COLON_CATALOG
+    renderChip({ model: null, optionId: null })
+    const trigger = screen.getByRole('button')
+    await userEvent.click(trigger)
+    const search = await screen.findByRole('searchbox')
+    expect(search).toHaveFocus()
+    act(() => screen.getByRole('menu').focus())
+    expect(search).toHaveFocus()
+    const row = screen.getByRole('menuitemradio', { name: 'Claude Opus 4.7' })
+    act(() => row.focus())
+    expect(row).toHaveFocus()
+    act(() => search.focus())
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+    expect(trigger).toHaveFocus()
+  })
+
   it('keeps surviving model rows out of search renders and mounts returning rows once', async () => {
     catalog = COLON_CATALOG
     renderChip({ model: null, optionId: null })
     await userEvent.click(screen.getByRole('button'))
     await screen.findAllByRole('menuitemradio')
     const search = screen.getByRole('searchbox')
+    expect(search).toHaveFocus()
     const before = new Map(rowRenders)
     await userEvent.type(search, 'gemini')
     for (const id of ['@gemini:gemini-2.5-flash', '@google:gemini-2.5-flash']) expect(rowRenders.get(id)).toBe(before.get(id))
