@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Relay clears large backlogs of expired state in one cleanup run instead of a fixed amount every five minutes.",
+      "highlight": false,
+      "components": ["relay"]
+    }
+  ]
+}
