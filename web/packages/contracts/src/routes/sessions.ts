@@ -1,4 +1,5 @@
 import { OutboundDraftActionSchema, OutboundDraftQuerySchema, OutboundDraftResultSchema } from '../outbound-drafts.js'
+import { SourceReferenceSearchSchema } from '../views.js'
 import { ContextDetailSchema } from '../context-detail.js'
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
@@ -137,6 +138,7 @@ export type RecoveryRepair = z.infer<typeof RecoveryRepairSchema>
 
 export const sessionsContract = {
   sessions: {
+    references: oc.route({ method: 'GET', path: '/api/sessions/references', tags, summary: 'Bounded same-profile title search for new-chat references; no transcript snippets.' }).input(z.object({ q: z.string().max(200).optional() })).output(SourceReferenceSearchSchema),
     list: oc.route({ method: 'GET', path: '/api/sessions', tags, summary: 'Sidebar rows for the active profile.' }).input(SessionsListQuerySchema).output(SessionsListSchema),
     search: oc.route({ method: 'GET', path: '/api/sessions/search', tags, summary: 'Title, metadata and content matches; any sidebar filter answers from the /api/sessions rows, in their order.' }).input(SessionsSearchQuerySchema).output(z.looseObject({ sessions: z.array(SessionRowSchema), query: z.string().optional(), count: z.number().int().optional(), all_profiles: z.boolean(), active_profile: z.string(), sidebar_filtered: z.boolean().optional() })),
     bulk: oc.route({ method: 'POST', path: '/api/sessions/bulk', tags, summary: 'Archive, unarchive or delete up to 200 sessions, one ordered result per id.' }).input(SessionsBulkRequestSchema).output(SessionsBulkResultSchema),

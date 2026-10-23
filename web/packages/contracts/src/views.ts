@@ -339,12 +339,22 @@ export type CompressionReference = z.infer<typeof CompressionReferenceSchema>
 export const BranchedFromSchema = z.object({ session_id: SessionIdSchema, title: z.string() })
 export type BranchedFrom = z.infer<typeof BranchedFromSchema>
 
+export const MAX_SOURCE_REFERENCES = 5
+export const SourceReferenceSchema = z.object({
+  session_id: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/).describe('Retained logical conversation identity.'),
+  tip_session_id: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
+  profile: z.string().min(1).max(128),
+})
+export type SourceReference = z.infer<typeof SourceReferenceSchema>
+export const AcceptedSourceReferenceSchema = SourceReferenceSchema.extend({ title: z.string() })
+export type AcceptedSourceReference = z.infer<typeof AcceptedSourceReferenceSchema>
 /** Full session record from `GET /api/session` and mutations returning `session`. */
 export const SessionActivityPhaseSchema = z.enum(['starting', 'running', 'waiting_for_approval', 'waiting_for_input', 'completed', 'failed', 'cancelled', 'stale'])
 export type SessionActivityPhase = z.infer<typeof SessionActivityPhaseSchema>
 
 export const SessionSchema = z.looseObject({
   activity_phase: SessionActivityPhaseSchema.optional(),
+  source_references: z.array(AcceptedSourceReferenceSchema).optional(),
   context_detail_key: z.string().nullable().optional().describe('Opaque identity for open-only context details; changes with owner epoch, model and context.'),
   composer_state_key: z.string().optional().describe('Opaque profile-home and owner identity for device-local composer state; never an API session id.'),
   session_id: SessionIdSchema, title: z.string(), workspace: z.string().optional(), created_workspace: z.string().nullable().optional(), model: NullableString.optional(), model_provider: NullableString.optional(),
@@ -589,11 +599,17 @@ export const ShareMessageSchema = z.looseObject({ role: z.string(), content: z.u
 export const ShareSchema = z.looseObject({ title: z.string(), messages: z.array(ShareMessageSchema), message_count: z.number().int(), created_at: z.number().optional(), updated_at: z.number().optional(), model: NullableString.optional() })
 export const ShareReadSchema = z.looseObject({ share: ShareSchema })
 
+export const SourceReferenceSearchSchema = z.object({
+  sessions: z.array(SessionRowSchema.extend({ source_reference: SourceReferenceSchema })),
+  active_profile: z.string(), max_sources: z.number().int(),
+})
+
 export const SessionNewRequestSchema = z.looseObject({
   title: z.string().optional(), workspace: z.string().optional(), workspace_inherited_from_prev_session: z.boolean().optional(), model: z.string().nullable().optional(), model_provider: z.string().nullable().optional(),
   profile: z.string().nullable().optional(), prev_session_id: z.string().optional(), project_id: z.string().nullable().optional(), worktree: Json.optional(), enabled_toolsets: z.array(z.string()).nullable().optional(), parent_session_id: z.string().optional(),
   execution_mode: ExecutionModeSchema.optional().describe('TAL-1040: `ignore_config` and `safe` start the session through the Agent owner; omitted means normal.'),
-  request_id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/).optional().describe('TAL-1040: stable creation identity for a diagnostic chat. Reuse it only to retry the same creation.'),
+  request_id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/).optional().describe('TAL-1040: stable creation identity for a diagnostic or referenced chat. Reuse it only to retry the same creation.'),
+  source_references: z.array(SourceReferenceSchema).max(MAX_SOURCE_REFERENCES).optional().describe('Same-profile search pointers. Nonempty selections require request_id; unavailable or changed identities refuse creation.'),
 })
 /**
  * `streaming` (TAL-802): live dictation over `TRANSCRIBE_STREAM_PATH` would open for this profile (`stt.streaming` on, a live provider wire).

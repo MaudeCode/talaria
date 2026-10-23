@@ -6,6 +6,11 @@ import { newSession } from '../../api/endpoints'
 import { createSessionNow, useCreationId } from './useNewChat'
 
 describe('createSessionNow (TAL-1040)', () => {
+  it('sends selected references and one retry identity with the existing creation choices', async () => {
+    const source_references = [{ session_id: 'earlier', tip_session_id: 'tip', profile: 'default' }]
+    await createSessionNow({ source_references, request_id: 'same-creation', workspace: '/workspace', model: 'chosen', enabled_toolsets: ['memory'] })
+    expect(newSession).toHaveBeenLastCalledWith({ source_references, request_id: 'same-creation', workspace: '/workspace', model: 'chosen', enabled_toolsets: ['memory'], worktree: false })
+  })
   it('sends a diagnostic worktree request so the server can refuse it instead of starting elsewhere', async () => {
     await createSessionNow({ worktree: true, execution_mode: 'safe' })
     expect(newSession).toHaveBeenLastCalledWith({ worktree: true, execution_mode: 'safe' })

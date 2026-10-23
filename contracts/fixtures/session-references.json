@@ -1,0 +1,20 @@
+{
+  "request": {
+    "request_id": "reference-creation",
+    "source_references": [
+      {
+        "session_id": "earlier-conversation",
+        "tip_session_id": "current-tip",
+        "profile": "default"
+      }
+    ]
+  },
+  "accepted": [
+    {
+      "session_id": "earlier-conversation",
+      "tip_session_id": "current-tip",
+      "profile": "default",
+      "title": "Parser decisions"
+    }
+  ]
+}

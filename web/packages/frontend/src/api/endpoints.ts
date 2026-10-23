@@ -85,6 +85,7 @@ export const actOnOutboundDraft = (input: OutboundDraftAction) => orpc().session
 export const fetchSessionStatus = (id: SessionId) => orpc().session.status({ session_id: id })
 export const fetchSessionUsage = (id: SessionId) => orpc().session.usage({ session_id: id })
 export const markSessionViewed = (session_id: SessionId) => orpc().talaria.viewed({ session_id })
+export const fetchSourceReferences = (q: string, signal?: AbortSignal) => orpc().sessions.references({ q }, { signal: timeout(30_000, signal) })
 export const newSession = (body: z.infer<typeof SessionNewRequestSchema>) => orpc().session.new(body)
 export const fetchExecutionModes = () => orpc().session.executionModes({})
 export const renameSession = (session_id: SessionId, title: string) => orpc().session.rename({ session_id, title })

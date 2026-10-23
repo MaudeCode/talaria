@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Start a chat with references to up to five earlier conversations.",
+      "components": [
+        "web"
+      ],
+      "highlight": false
+    }
+  ]
+}

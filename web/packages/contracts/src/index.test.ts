@@ -1,3 +1,4 @@
+import { AcceptedSourceReferenceSchema, SessionNewRequestSchema } from './views.js'
 import { settingsContract, ReasoningUnsupportedSchema } from './routes/settings.js'
 import { SessionStreamEventSchema } from './sse.js'
 import { RpcRequestSchema } from './sidecar/rpc.js'
@@ -13,6 +14,14 @@ import { CronBlueprintsSchema, CronBlueprintFillSchema, AgentHealthSchema, Error
 const shared = (path: string): unknown => JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../contracts', path), 'utf8'))
 
 describe('contracts package', () => {
+  it('shares bounded source pointers and accepted labels without requiring them from older clients', () => {
+    const fixture = shared('fixtures/session-references.json') as { request: unknown; accepted: unknown }
+    expect(SessionNewRequestSchema.parse(fixture.request)).toEqual(fixture.request)
+    expect(AcceptedSourceReferenceSchema.array().parse(fixture.accepted)).toEqual(fixture.accepted)
+    expect(SessionNewRequestSchema.parse({})).toEqual({})
+    const pointer = { session_id: '../private', tip_session_id: 'tip', profile: 'default' }
+    expect(SessionNewRequestSchema.safeParse({ source_references: [pointer] }).success).toBe(false)
+  })
   it('preserves the Web connector sign-in state and accepts older page responses', () => {
     const fixture = shared('fixtures/connectors.json') as { page: unknown; sign_in_page: unknown }
     expect(ConnectorsPageSchema.parse(fixture.page)).toEqual(fixture.page)

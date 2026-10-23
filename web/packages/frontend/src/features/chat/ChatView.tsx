@@ -43,7 +43,8 @@ import { ErrorState, formatDate } from '../../ui/States'
 import { readPersisted, removePersisted, writePersisted } from '../../lib/persisted'
 import type { ActivityMode } from './blocks/Worklog'
 import { createSessionNow, useCreationId } from '../sessions/useNewChat'
-import type { ExecutionMode } from '@maudecode/talaria-web-contracts'
+import { SessionReferences } from '../sessions/SessionReferences'
+import type { AcceptedSourceReference, ExecutionMode } from '@maudecode/talaria-web-contracts'
 import { WorktreeRemoveDialog } from '../sessions/WorktreeRemoveDialog'
 import { beginDock, playDock, requestScroll } from './sendMotion'
 import { bindFirstSend, ownsFirstSend, useFirstSend } from './firstSend'
@@ -89,7 +90,9 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   const draining = useRef(false)
   const [failedQueued, setFailedQueued] = useState<string | null>(null)
   // Choices made on the unsaved chat (no session yet) apply when the session is created.
-  const [pending, setPending] = useState<{ model?: string; model_provider?: string | null; workspace?: string; enabled_toolsets?: string[] | null; execution_mode?: ExecutionMode }>({})
+  const [pending, setPending] = useState<{ model?: string; model_provider?: string | null; workspace?: string; enabled_toolsets?: string[] | null; execution_mode?: ExecutionMode; source_references?: AcceptedSourceReference[] }>({})
+  const [draftProfile, setDraftProfile] = useState(bootstrap.profile?.name)
+  if (draftProfile !== bootstrap.profile?.name) { setDraftProfile(bootstrap.profile?.name); setPending({}) }
   const focusKey = useSearch({ strict: false }).msg
   const creation = useCreationId(pending)
 
@@ -139,7 +142,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   // TAL-605: a new conversation in its own git worktree of the chosen workspace; the server creates the worktree.
   const newWorktreeChat = useCallback(async (workspace: string | undefined) => {
     try {
-      const created = await createSessionNow({ ...pending, ...(workspace ? { workspace } : {}), profile: bootstrap.profile?.name ?? 'default', worktree: true })
+      const created = await createSessionNow({ ...pending, ...(workspace ? { workspace } : {}), profile: bootstrap.profile?.name ?? 'default', worktree: true, request_id: creation.next() })
       qc.setQueryData(keys.sessions.detail(created.session_id), { session: created })
       void invalidateSessionQueries(qc, created.session_id)
       showToast(m.workspace_worktree_created())
@@ -147,7 +150,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     } catch (e) {
       showToast(m.workspace_worktree_failed() + (e instanceof Error ? e.message : String(e)), 4000, 'error')
     }
-  }, [pending, bootstrap.profile, qc, navigate])
+  }, [pending, bootstrap.profile, qc, navigate, creation])
   const onNewWorktreeChat = useCallback((workspace: string | undefined) => { void newWorktreeChat(workspace) }, [newWorktreeChat])
 
   // Reasoning effort is server state shared with the CLI (config.yaml), keyed on the session's model.
@@ -501,6 +504,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
             </TerminalPanelFrame>
           }><TerminalPanel key={JSON.stringify([sessionId, workspace])} sessionId={sessionId} workspace={workspace} onClose={() => setTerminalOpen(false)} onReopen={() => setTerminalOpen(true)} /></Suspense>}
         </div>
+        <SessionReferences key={bootstrap.profile?.name} profile={bootstrap.profile?.name ?? 'default'} selected={sessionId ? session?.source_references ?? [] : pending.source_references ?? []} {...(!sessionId ? { onChange: (source_references: AcceptedSourceReference[]) => setPending((p) => ({ ...p, source_references })) } : {})} />
         <Composer
           sessionId={sessionId}
           session={composerSession}
