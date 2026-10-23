@@ -32,8 +32,8 @@ const agent = (overrides: Partial<BackgroundTask>): BackgroundTask => ({
 const tasks = (list: BackgroundTask[], agent_available = true) => ({ session_id: 's1', agent_available, tasks: list, agents_working: list.some((t) => t.status === 'running' || t.status === 'attention') })
 
 let qc: QueryClient
-function Panel({ workspace = '/repo', sessionId = 's1' }: { workspace?: string | null; sessionId?: string }) {
-  return <QueryClientProvider client={qc}><ChatSidePanel key={sessionId} sessionId={sessionId} workspace={workspace} open onToggle={() => undefined} onClose={() => undefined} /></QueryClientProvider>
+function Panel({ workspace = '/repo', sessionId = 's1', open = true }: { workspace?: string | null; sessionId?: string; open?: boolean }) {
+  return <QueryClientProvider client={qc}><ChatSidePanel key={sessionId} sessionId={sessionId} workspace={workspace} open={open} onToggle={() => undefined} onClose={() => undefined} /></QueryClientProvider>
 }
 
 beforeEach(() => {
@@ -47,6 +47,8 @@ beforeEach(() => {
 
 describe('chat side panel (TAL-373)', () => {
   it('opens on Agents when agents are running, and a later status change never moves the tab', async () => {
+    // The app's stale time: the Agents page shown after the first answer reuses it rather than asking again.
+    qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 15_000 } } })
     vi.mocked(api.fetchBackgroundTasks).mockResolvedValue(tasks([agent({ task_id: 'd1' })]))
     render(<Panel />)
     await waitFor(() => { expect(screen.getByRole('tab', { name: 'Agents' })).toHaveAttribute('aria-selected', 'true') })
@@ -72,6 +74,22 @@ describe('chat side panel (TAL-373)', () => {
     qc.setQueryData(['sessions', 'background', 's1', 'agents'], tasks([agent({ task_id: 'd1' })]))
     vi.mocked(api.fetchBackgroundTasks).mockResolvedValue(tasks([agent({ task_id: 'd1' })]))
     render(<Panel />)
+    await waitFor(() => { expect(screen.getByRole('tab', { name: 'Agents' })).toHaveAttribute('aria-selected', 'true') })
+    expect(api.fetchBackgroundTasks).toHaveBeenCalledWith('s1', 'delegation')
+  })
+
+  it('asks for agents only once the panel opens, then picks the first page from that answer (TAL-1388)', async () => {
+    // A snapshot still fresh from an earlier visit must not stand in for this visit's answer when the panel opens later.
+    qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 15_000 } } })
+    qc.setQueryData(['sessions', 'background', 's1', 'agents'], tasks([]))
+    localStorage.setItem('talaria-right-panel-page', 'agents')
+    vi.mocked(api.fetchBackgroundTasks).mockResolvedValue(tasks([agent({ task_id: 'd1' })]))
+    const { rerender } = render(<Panel open={false} />)
+    await screen.findByRole('tab', { name: 'Agents' })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(api.fetchBackgroundTasks).not.toHaveBeenCalled()
+    localStorage.setItem('talaria-right-panel-page', 'files')
+    rerender(<Panel />)
     await waitFor(() => { expect(screen.getByRole('tab', { name: 'Agents' })).toHaveAttribute('aria-selected', 'true') })
     expect(api.fetchBackgroundTasks).toHaveBeenCalledWith('s1', 'delegation')
   })

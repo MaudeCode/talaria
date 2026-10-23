@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Chats stay smoother while a response streams, and opening a chat no longer checks for running agents until you open the side panel.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

@@ -19,6 +19,8 @@ import { useAutoRead } from './useAutoRead'
 import { useLiveTurn } from '../../stream/store'
 
 const VIRTUALIZE_AT = 200
+const NO_ACTIONS: RowActions = {}
+const NO_ATTACHMENTS: Attachment[] = []
 /** How long after a wheel or touch move a scroll still counts as the reader's own. */
 const HAND_SCROLL_MS = 250
 
@@ -93,6 +95,9 @@ export function Transcript(props: TranscriptProps) {
   const persistedPending = !!live && live.streamId !== props.pendingPreviousStreamId && hasPersistedPending
   const pending = pendingUserText !== undefined && !persistedPending
   const liveUserText = pending ? pendingUserText : showLiveUser ? (live?.userText ?? '') : ''
+  // Built once per text and attachments, so a streamed token frame leaves the user's bubble unrendered.
+  const liveUserAttachments = pending ? props.pendingAttachments ?? NO_ATTACHMENTS : live?.userAttachments ?? NO_ATTACHMENTS
+  const liveUserRow = useMemo<VisibleMessage>(() => ({ index: -1, key: 'pending-user', message: { role: 'user', content: liveUserText, attachments: liveUserAttachments } }), [liveUserText, liveUserAttachments])
   useAutoRead(props.autoRead === true, rows, live, !showLive)
   const lastAssistantIndex = useMemo(() => rows.findLastIndex((row) => isReplyRow(row.message)), [rows])
   const virtualize = virtualizeLongTranscripts && rows.length > VIRTUALIZE_AT
@@ -380,7 +385,7 @@ export function Transcript(props: TranscriptProps) {
                 })}
               </div>
             ) : <div className="messages-inner messages-history">{renderedRows}</div>}
-            {(pending || showLiveUser) && <UserMessageRow row={{ index: -1, key: 'pending-user', message: { role: 'user', content: liveUserText, attachments: pending ? props.pendingAttachments ?? [] : live?.userAttachments ?? [] } }} renderMarkdown={renderUserMarkdown} sessionId={sessionId} actions={{}} pending />}
+            {(pending || showLiveUser) && <UserMessageRow row={liveUserRow} renderMarkdown={renderUserMarkdown} sessionId={sessionId} actions={NO_ACTIONS} pending />}
             {showLive && live && <LiveTurnView turn={live} name={assistantName} mode={mode} userVisible omitToolIds={continuedTools} />}
             {/* The settled error row carries the message; only the frame's continuation link lives outside the session. */}
             {!showLive && live?.error?.continuationSessionId && <Link to="/session/$sessionId" params={{ sessionId: live.error.continuationSessionId }} className="mt-1 inline-block text-[13px] text-accent-text underline">{m.live_continuation()}</Link>}

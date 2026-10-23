@@ -3,8 +3,9 @@
  * shared panel (edge toggle, resize, close, mobile drawer); each page owns its data, actions and navigation. A new page
  * is a component plus an entry in the caller's `pages` list. Every page stays mounted while the panel is, hidden when
  * inactive, so its state (a folder, a preview, an unsaved draft) survives tab switches; pages use `active` to stop work.
+ * An inactive page sits in a hidden `Activity`, so its effects pause and its renders wait for idle time (TAL-1388).
  */
-import { useId, useRef, type KeyboardEvent, type ReactNode } from 'react'
+import { Activity, useId, useRef, type KeyboardEvent, type ReactNode } from 'react'
 import { RightPanel } from './RightPanel'
 import { cn } from '../ui/cn'
 
@@ -79,7 +80,7 @@ export function PanelPageHost({ open, onToggle, onClose, label, pages, activeId,
     <RightPanel open={open} onToggle={onToggle} onClose={onClose} label={label} panelId="pages" title={tablist}>
       {pages.map((p) => (
         <div key={p.id} role="tabpanel" id={panelId(p.id)} aria-labelledby={tabId(p.id)} hidden={p.id !== active?.id} className="flex min-h-0 flex-1 flex-col" data-page-panel={p.id}>
-          {p.render(open && p.id === active?.id)}
+          <Activity mode={p.id === active?.id ? 'visible' : 'hidden'}>{p.render(open && p.id === active?.id)}</Activity>
         </div>
       ))}
     </RightPanel>
