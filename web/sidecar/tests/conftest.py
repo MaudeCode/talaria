@@ -84,7 +84,7 @@ def isolated_env(hermes_home: pathlib.Path, *, home: pathlib.Path | None = None,
 class SidecarProcess:
     """Drive one sidecar over stdio from a test."""
 
-    def __init__(self, hermes_home: pathlib.Path, *, env: dict | None = None, python: str | None = None, agent_dir: pathlib.Path | None = None):
+    def __init__(self, hermes_home: pathlib.Path, *, env: dict | None = None, python: str | None = None, agent_dir: pathlib.Path | None = None, command: list[str] | None = None):
         environ = isolated_env(hermes_home, **{
             "TALARIA_SIDECAR_AGENT_DIR": str(agent_dir or AGENT_DIR or ""),
             "PYTHONUNBUFFERED": "1",
@@ -92,7 +92,7 @@ class SidecarProcess:
             **(env or {}),
         })
         self.proc = subprocess.Popen(
-            [python or AGENT_PYTHON or sys.executable, "-m", "talaria_sidecar"],
+            command or [python or AGENT_PYTHON or sys.executable, "-m", "talaria_sidecar"],
             cwd=str(SIDECAR_ROOT), env=environ, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1,
         )
         self._next_id = 0

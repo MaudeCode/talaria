@@ -261,6 +261,8 @@ def recover_retained(runtime, ctx, *, probe=False, complete_revision=None):
     env.update(HERMES_HOME=str(runtime.hermes_home), HERMES_DISABLE_LAZY_INSTALLS='1',
                PYTHONPATH=str(Path(__file__).parents[1]) + os.pathsep + str(root))
     try:
+        if complete_revision is None:
+            runtime.retire()
         with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
             child = subprocess.Popen([sys.executable, '-m', 'talaria_sidecar.agent_mutation', '--recover-current', str(root), complete_revision or ''],
                                      cwd=root, env=env, stdin=subprocess.PIPE, stdout=stdout, stderr=stderr)
@@ -434,6 +436,7 @@ def call(runtime, ctx, params):
                 _CONSENTS[nonce].update(binding=confirmation['binding'], expires=time.monotonic() + CONSENT_SECONDS)
             result['refresh_confirmation'] = {'token': nonce, 'services': confirmation['services']}
         if action == "begin" and result["ok"]:
+            runtime.retire()
             return {**result, "token": token}
         if action != "finish" and result["ok"]:
             return result

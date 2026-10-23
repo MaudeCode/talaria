@@ -278,10 +278,14 @@ class AgentRuntime:
         self.revision: str | None = None
         self.import_error: str | None = None
         self._lock = threading.Lock()
+        self._handoff = None
+        self._retired = False
 
     # ── loading ───────────────────────────────────────────────────────────
     def load(self) -> None:
         with self._lock:
+            if self._retired:
+                raise AgentRuntimeStale(None)
             if self.loaded:
                 return
             try:
@@ -297,7 +301,20 @@ class AgentRuntime:
                 # a named profile's plugin loaded later never enters that process-wide snapshot.
                 importlib.import_module("hermes_cli.auth")
                 _check_site_packages_python()
+                try:
+                    handoff = importlib.import_module("hermes_cli.guest_handoff")
+                except ModuleNotFoundError as exc:
+                    if exc.name != "hermes_cli.guest_handoff":
+                        raise
+                else:
+                    # Retain custody even when startup raises after creating its thread.
+                    if not callable(handoff.start_worker) or not callable(handoff.stop_worker):
+                        raise RuntimeError("Native handoff lifecycle API is incomplete")
+                    self._handoff = handoff
+                    if not handoff.start_worker().is_alive():
+                        raise RuntimeError("Native handoff worker did not start")
             except Exception as exc:  # noqa: BLE001 - reported as a handshake condition
+                self._stop_handoff()
                 self.import_error = f"{type(exc).__name__}: {exc}"
                 raise AgentIncompatible(f"Hermes Agent could not be imported: {self.import_error}", import_error=self.import_error)
             module_file = getattr(module, "__file__", None)
@@ -306,6 +323,21 @@ class AgentRuntime:
                 self.agent_dir = self.module_path.parent
             self.revision = read_agent_revision(self.agent_dir, self.module_path)
             self.loaded = True
+
+    def _stop_handoff(self) -> None:
+        if self._handoff is not None:
+            # Native requests are bounded. Join fully before code/dependencies may change.
+            self._handoff.stop_worker(timeout=None)
+            self._handoff = None
+
+    def retire(self) -> None:
+        """Release native background writes; only a fresh process may own them again."""
+        with self._lock:
+            if self._handoff is None:
+                return
+            self._retired = True
+            self.loaded = False
+            self._stop_handoff()
 
     @property
     def agent_version(self) -> str | None:
@@ -379,12 +411,16 @@ class AgentRuntime:
             self._source_changed = fresh is not None and fresh != self.revision
             self._stale = fresh != self.revision
             self._stale_stamp = stamp if fresh is not None else None
-            return self._stale
+            stale = self._stale
+        if stale:
+            self.retire()
+        return stale
 
     def ensure_current(self) -> None:
         """Refuse Agent work until source drift or a durable Web update obligation is reconciled."""
         repair = self.web_repair_state()
         if repair != "absent":
+            self.retire()
             raise AgentRuntimeStale("unknown" if repair == "unknown" else self.update_transaction_state())
         if self.is_stale():
             raise AgentRuntimeStale(self.update_transaction_state(), source_changed=self._source_changed)
@@ -393,6 +429,7 @@ class AgentRuntime:
     def describe(self) -> dict:
         # The pin records official test coverage, not runtime capability. Each operation still checks its imports,
         # profile isolation and loaded-revision guard at the point of use.
+        stale = self.is_stale() or self._retired
         return {
             "rpc_version": SIDECAR_RPC_VERSION,
             "python": sys.executable,
@@ -404,7 +441,7 @@ class AgentRuntime:
             "pinned_version": self.pin["version"],
             "pinned_image": self.pin["image"],
             "compatible": self.loaded,
-            "stale": self.is_stale(),
+            "stale": stale,
             "agent_source_changed": self._source_changed,
             "update_state": self.update_transaction_state(),
             "import_error": self.import_error,

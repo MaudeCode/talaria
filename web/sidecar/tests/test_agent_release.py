@@ -110,7 +110,7 @@ def test_a_model_switch_releases_the_replaced_agent(monkeypatch) -> None:
 
 def test_evict_agent_and_runtime_env_release_their_agents(monkeypatch) -> None:
     _setup(monkeypatch)
-    registry = Registry(runtime=None)  # type: ignore[arg-type]
+    registry = _registry()
     chat.register(registry)
     assert chat.start(Ctx(), _params("st-e", "evicted"))["status"] == "completed"
     assert registry.methods["chat.evict_agent"](Ctx(), {"session_id": "evicted"}) == {"evicted": True}
@@ -223,6 +223,10 @@ def test_an_agent_dropped_during_its_turn_is_released_when_the_turn_ends(monkeyp
     assert _ended("live") == _released("live")
 
 
+def _registry():
+    return Registry(runtime=types.SimpleNamespace(retire=lambda: None))
+
+
 class _Server:
     exit_code = None
 
@@ -234,7 +238,7 @@ def test_runtime_shutdown_releases_every_cached_agent_before_exiting(monkeypatch
     _setup(monkeypatch)
     for sid in ("down-1", "down-2"):
         assert chat.start(Ctx(), _params(f"st-{sid}", sid))["status"] == "completed"
-    registry = Registry(runtime=None)  # type: ignore[arg-type]
+    registry = _registry()
     runtime_methods.register(registry)
     ctx = Ctx()
     ctx.server = _Server()
@@ -263,7 +267,7 @@ def test_shutdown_stops_a_running_turn_and_waits_for_its_release(monkeypatch) ->
     worker = threading.Thread(target=lambda: result.update(chat.start(Ctx(), _params("st-run", "running"))))
     worker.start()
     assert started.wait(5)
-    registry = Registry(runtime=None)  # type: ignore[arg-type]
+    registry = _registry()
     runtime_methods.register(registry)
     ctx = Ctx()
     ctx.server = _Server()
@@ -276,7 +280,7 @@ def test_shutdown_stops_a_running_turn_and_waits_for_its_release(monkeypatch) ->
 
 def test_no_turn_is_admitted_once_shutdown_has_drained(monkeypatch) -> None:
     _setup(monkeypatch)
-    registry = Registry(runtime=None)  # type: ignore[arg-type]
+    registry = _registry()
     runtime_methods.register(registry)
     ctx = Ctx()
     ctx.server = _Server()
@@ -411,7 +415,7 @@ def test_clearing_a_session_mid_turn_stops_its_agent_forking_a_review(monkeypatc
             return super().run_conversation(**kwargs)
 
     monkeypatch.setattr(chat, "_agent_class", lambda: BlockingAgent)
-    registry = Registry(runtime=None)  # type: ignore[arg-type]
+    registry = _registry()
     chat.register(registry)
     worker = threading.Thread(target=chat.start, args=(Ctx(), _params("st-clear", "cleared")))
     worker.start()
@@ -437,7 +441,7 @@ def test_clearing_a_session_before_its_turn_binds_an_agent_fences_and_never_cach
             super().__init__(**kwargs)
 
     monkeypatch.setattr(chat, "_agent_class", lambda: SlowAgent)
-    registry = Registry(runtime=None)  # type: ignore[arg-type]
+    registry = _registry()
     chat.register(registry)
     worker = threading.Thread(target=chat.start, args=(Ctx(), _params("st-early", "early")))
     worker.start()
@@ -454,7 +458,7 @@ def test_a_turn_ending_without_a_clear_keeps_its_review(monkeypatch) -> None:
     _setup(monkeypatch)
     _reviews(monkeypatch)
     assert chat.start(Ctx(), _params("st-kept", "kept"))["status"] == "completed"
-    registry = Registry(runtime=None)  # type: ignore[arg-type]
+    registry = _registry()
     chat.register(registry)
     registry.methods["chat.evict_agent"](Ctx(), {"session_id": "kept"})
     assert _cancels() == []
@@ -475,7 +479,7 @@ def test_shutdown_releases_an_agent_a_running_turn_caches_after_the_first_evicti
     worker = threading.Thread(target=chat.start, args=(Ctx(), _params("st-late-cache", "late-cache")))
     worker.start()
     assert resolving.wait(5)  # the run is registered; its agent is not built or cached yet
-    registry = Registry(runtime=None)  # type: ignore[arg-type]
+    registry = _registry()
     runtime_methods.register(registry)
     ctx = Ctx()
     ctx.server = _Server()
@@ -530,7 +534,7 @@ def test_an_agent_evicted_during_a_memory_commit_is_released_after_the_commit(mo
 
     monkeypatch.setattr(chat, "_agent_class", lambda: CommittingAgent)
     assert chat.start(Ctx(), _params("st-commit", "commit"))["status"] == "completed"
-    registry = Registry(runtime=None)  # type: ignore[arg-type]
+    registry = _registry()
     chat.register(registry)
     reply: dict = {}
     worker = threading.Thread(target=lambda: reply.update(registry.methods["chat.commit_memory"](Ctx(), {"session_id": "commit", "profile_home": "/tmp/unused"})))

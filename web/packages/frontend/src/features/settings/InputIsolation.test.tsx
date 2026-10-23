@@ -16,7 +16,19 @@ vi.mock('../../paraglide/messages.js', async (original) => {
     delete: (...args: Parameters<typeof actual.m.delete>) => { renders.passkey(); return actual.m.delete(...args) },
     skill_uses: (...args: Parameters<typeof actual.m.skill_uses>) => { renders.skill(args[0].n); return actual.m.skill_uses(...args) },
     mcp_tool_count: (...args: Parameters<typeof actual.m.mcp_tool_count>) => { renders.server(); return actual.m.mcp_tool_count(...args) },
-    mcp_status_active: (...args: Parameters<typeof actual.m.mcp_status_active>) => { renders.tool(); return actual.m.mcp_status_active(...args) },
+  } }
+})
+// StatusBadge can be compiler-cached independently of a changed tool row.
+vi.mock('react', async (original) => {
+  const actual = await original<typeof import('react')>()
+  return { ...actual, memo: (...args: Parameters<typeof actual.memo>) => {
+    const [Component, compare] = args
+    if (typeof Component !== 'function' || Component.name !== 'McpToolRow') return actual.memo(...args)
+    function CountedToolRow(props: Record<string, unknown>) {
+      renders.tool()
+      return actual.createElement(Component, props)
+    }
+    return actual.memo(CountedToolRow, compare)
   } }
 })
 vi.mock('../../api/client', async (original) => ({ ...await original<typeof import('../../api/client')>(), post: vi.fn() }))

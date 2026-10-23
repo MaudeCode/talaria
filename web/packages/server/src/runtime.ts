@@ -796,7 +796,17 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     recoverAgent: async (probe = false, signal) => {
       if (!sidecar) throw new Error('Hermes Agent sidecar is unavailable for recovery.')
       if (sidecar.status === 'starting' || sidecar.status === 'restarting' || sidecar.status === 'stopped') throw new Error('Agent recovery is waiting for its sidecar connection.')
-      let result = await sidecar.call('runtime.agent_recovery', { probe }, { ...(signal ? { signal } : {}), timeoutMs: 660_000 })
+      let completeRevision: string | null = null
+      if (!probe && pendingRuntimeRecovery?.runtime_pending && recoveredAgentRevision) {
+        const current = await sidecar.call('runtime.status', {}, { ...(signal ? { signal } : {}), timeoutMs: 5000 })
+        if (signal?.aborted) throw new Error('Agent recovery was cancelled.')
+        // A reconnected runtime must acknowledge the repaired generation before another repair retires it.
+        if (current.compatible && !current.stale && current.agent_revision === recoveredAgentRevision) {
+          completeRevision = recoveredAgentRevision
+          pendingRuntimeRecovery = null // A refused acknowledgement must re-enter native recovery.
+        }
+      }
+      let result = await sidecar.call('runtime.agent_recovery', completeRevision ? { complete_revision: completeRevision } : { probe }, { ...(signal ? { signal } : {}), timeoutMs: 660_000 })
       if (signal?.aborted) throw new Error('Agent recovery was cancelled.')
       if (!probe && result.local_restore && result.revision) recoveredAgentRevision = result.revision
       if (probe) {

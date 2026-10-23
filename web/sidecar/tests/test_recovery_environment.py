@@ -184,6 +184,18 @@ def test_server_retry_refreshes_runtime_and_restores_agent_rpcs(tmp_path):
     (root / 'pm/__init__.py').write_text('')  # Synthetic checkout has only PM's stdlib selection module.
     (root / 'run_agent.py').write_text("from selected_generation import NAME\nif NAME != 'selected': raise ImportError('old dependency generation')\nclass AIAgent: pass\n")
     (root / 'hermes_cli/auth.py').write_text("PROVIDER_REGISTRY={'synthetic':{'id':'synthetic','name':'Synthetic','auth_type':'api_key'}}\n")
+    # The optional worker API owns background writes after the repaired runtime loads.
+    (root / 'hermes_cli/guest_handoff.py').write_text("""from types import SimpleNamespace
+alive = False
+thread = SimpleNamespace(is_alive=lambda: alive)
+def start_worker():
+ global alive
+ alive = True
+ return thread
+def stop_worker(timeout=None):
+ global alive
+ alive = False
+""")
     (root / 'hermes_cli/models.py').write_text("def provider_model_ids(provider,**kw): return ['synthetic-model']\n")
     (root / 'providers.py').write_text('def get_provider_profile(provider): return None\n')
     (root / 'agent').mkdir()
