@@ -109,6 +109,7 @@ export function makeAggregate(
   return {
     schemaVersion: 1,
     isFinal: visible.every((state) => isTerminalPhase(state.phase)),
+    isStale: activeCount === 0 && visible.some((state) => state.phase === "stale"),
     activeCount,
     title: "Talaria",
     subtitle:

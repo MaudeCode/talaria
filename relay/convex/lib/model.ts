@@ -61,6 +61,7 @@ export interface AggregateRow {
 
 export interface ActivityAggregate {
   isFinal?: boolean;
+  isStale?: boolean;
   schemaVersion: 1;
   activeCount: number;
   title: string;

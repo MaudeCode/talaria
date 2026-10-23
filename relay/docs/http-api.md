@@ -124,7 +124,9 @@ continue to use `phase` and the original `streamId`. A completed turn with
 `activityPhase: "running"` therefore renders Working without ending its activity.
 Unconfirmed work publishes `stale`; it never counts as confirmed active work.
 Aggregates include additive `isFinal`, true only when all session work is settled,
-so zero confirmed active sessions with stale work cannot render success.
+and `isStale`, the server's decision to use the stale presentation. Clients render
+these decisions, so zero confirmed active sessions with stale work cannot render
+success.
 
 For publishers supplying `activityPhase`, Relay retains the current session row
 after the activity lease expires and projects it as stale. Its existing cleanup

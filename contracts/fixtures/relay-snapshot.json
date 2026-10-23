@@ -2,6 +2,7 @@
   "aggregate": {
     "schemaVersion": 1,
     "isFinal": false,
+    "isStale": false,
     "activeCount": 1,
     "title": "Talaria",
     "subtitle": "1 active session",

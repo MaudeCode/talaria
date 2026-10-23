@@ -45,6 +45,7 @@ export const aggregateRowValidator = v.object({
 
 export const aggregateValidator = v.object({
   isFinal: v.optional(v.boolean()),
+  isStale: v.optional(v.boolean()),
   schemaVersion: v.literal(1),
   activeCount: v.number(),
   title: v.string(),

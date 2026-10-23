@@ -26,7 +26,7 @@ it.each(["all_running", "per_session"] as const)("keeps unconfirmed background a
   const jobs = await backend.run((ctx) => ctx.db.query("deliveryJobs").take(20));
   expect(jobs.some((job) => job.kind === "live_activity_end")).toBe(false);
   const update = jobs.find((job) => job.kind === "live_activity_update")!;
-  expect(JSON.parse(update.request.payloadJson).aps).toMatchObject({ event: "update", "content-state": { isFinal: false, ...(mode === "per_session" ? { isStale: true } : { activeCount: 0, rows: [{ phase: "stale" }] }) } });
+  expect(JSON.parse(update.request.payloadJson).aps).toMatchObject({ event: "update", "content-state": { isFinal: false, isStale: true, ...(mode === "per_session" ? {} : { activeCount: 0, rows: [{ phase: "stale" }] }) } });
   const inbox = (await list())!;
   expect(inbox.completions[0]?.row.phase).toBe("completed");
   await backend.mutation(internal.completions.acknowledge, { userId: "user", deviceId: "device", ids: inbox.completions.map((row) => row.id) });

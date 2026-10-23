@@ -3,9 +3,15 @@ import XCTest
 
 @MainActor
 final class LiveActivityTests: XCTestCase {
+    func testAggregateStalePresentationUsesTheServerFlag() throws {
+        let decoder = JSONDecoder()
+        let fresh = try decoder.decode(TalariaAggregateActivityAttributes.ContentState.self, from: Data(#"{"schemaVersion":1,"isFinal":false,"isStale":false,"activeCount":0,"title":"Talaria","subtitle":"Server state","updatedAt":100,"rows":[]}"#.utf8))
+        XCTAssertFalse(TalariaAggregateLiveActivityPresentation.isEffectivelyStale(state: fresh, isStale: false))
+    }
+
     func testZeroConfirmedWorkWithServerNonFinalAggregateShowsStaleInsteadOfDone() throws {
         let decoder = JSONDecoder()
-        let data = Data(#"{"schemaVersion":1,"isFinal":false,"activeCount":0,"title":"Talaria","subtitle":"Waiting for server","updatedAt":100,"rows":[]}"#.utf8)
+        let data = Data(#"{"schemaVersion":1,"isFinal":false,"isStale":true,"activeCount":0,"title":"Talaria","subtitle":"Waiting for server","updatedAt":100,"rows":[]}"#.utf8)
         let state = try decoder.decode(TalariaAggregateActivityAttributes.ContentState.self, from: data)
         XCTAssertTrue(TalariaAggregateLiveActivityPresentation.isEffectivelyStale(state: state, isStale: false))
         XCTAssertEqual(TalariaAggregateLiveActivityPresentation.headerText(state: state, isStale: false), "Waiting for server")
