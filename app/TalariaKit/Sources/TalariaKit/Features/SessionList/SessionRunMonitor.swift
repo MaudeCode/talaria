@@ -17,12 +17,12 @@ public enum SessionRunMonitor {
         sessions: [SessionSummary]
     ) -> Bool {
         horizontalSizeClassIsCompact && verticalSizeClassIsCompact && hinge == .partiallyOpen
-            && sessions.contains { runStatus(for: $0, isStopping: false) != nil }
+            && sessions.contains { runStatus(for: $0) != nil }
     }
 
     /// A row's run card status: what waits on the user (`attention`) first, else the live run; nil for an idle row.
     /// The elapsed time counts from the server's `pending_started_at`.
-    public static func runStatus(for session: SessionSummary, isStopping: Bool) -> ChatActiveRunStatusPresentation? {
+    public static func runStatus(for session: SessionSummary) -> ChatActiveRunStatusPresentation? {
         let startedAt = ChatStreamCoordinator.runStart(fromEpochSeconds: session.pendingStartedAt)
         switch session.attention?.kind {
         case .approval:
@@ -33,7 +33,7 @@ public enum SessionRunMonitor {
             return ChatActiveRunStatusPresentation(kind: .awaitingInput, runStartedAt: startedAt)
         case nil:
             guard session.isStreaming == true else { return nil }
-            return ChatActiveRunStatusPresentation(kind: isStopping ? .stopping : .active, runStartedAt: startedAt)
+            return ChatActiveRunStatusPresentation(kind: .active, runStartedAt: startedAt)
         }
     }
 }

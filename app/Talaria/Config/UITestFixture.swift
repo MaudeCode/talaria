@@ -59,7 +59,7 @@ struct UITestFixtureEnvironment {
     /// Reports the hinge partly open to the Chats list, which no simulator pose produces on the Duo's outer display
     /// (TAL-1460); the list then reads no hinge API.
     nonisolated static let tentHingeArgument = "--ui-test-tent-hinge"
-    /// Holds `/api/chat/cancel` until the test releases it, so a run card's Stopping stays up (TAL-1460).
+    /// Holds `/api/chat/cancel` until the test releases it, so a test sees a stop before the server answers (TAL-1460).
     nonisolated static let holdChatCancelArgument = "--ui-test-hold-chat-cancel"
 
     /// The fixture's response-cache directory, emptied once per launch.

@@ -51,7 +51,7 @@ struct SessionInteractiveRow: View {
     /// run instead of opening the chat.
     @ViewBuilder
     private var rowContent: some View {
-        if monitorsRuns, let runStatus = SessionRunMonitor.runStatus(for: session, isStopping: viewModel.isStopping(session)) {
+        if monitorsRuns, let runStatus = SessionRunMonitor.runStatus(for: session) {
             HStack(spacing: 12) {
                 openButton(style: .monitor(runStatus))
                 if !runStatus.isAwaitingUser {
@@ -102,12 +102,12 @@ struct SessionInteractiveRow: View {
         } label: {
             Label("Stop", systemImage: "stop.fill")
                 .font(AppFont.title3(weight: .semibold))
-                .foregroundStyle(viewModel.isStopping(session) ? Color.secondary : Color.red)
+                .foregroundStyle(viewModel.isSelectingSessions || viewModel.isViewingCachedData ? Color.secondary : Color.red)
         }
         .buttonStyle(.bordered)
         .controlSize(.large)
         .tint(.red)
-        .disabled(viewModel.isStopping(session) || viewModel.isSelectingSessions || viewModel.isViewingCachedData)
+        .disabled(viewModel.isSelectingSessions || viewModel.isViewingCachedData)
         .accessibilityIdentifier("session-run-stop")
         .padding(.trailing, 12)
     }

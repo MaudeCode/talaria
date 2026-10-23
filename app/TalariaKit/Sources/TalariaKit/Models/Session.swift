@@ -358,7 +358,8 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
     public let outputTokens: Int?
     public let estimatedCost: Double?
     public let activeStreamId: String?
-    public let isStreaming: Bool?
+    /// Settable so the list can show a run the user stopped as stopped before the server agrees (TAL-1460).
+    public internal(set) var isStreaming: Bool?
     public let isCliSession: Bool?
     let userMessageCount: Int?
     let hasPendingUserMessage: Bool?

@@ -935,7 +935,7 @@ extension SessionListHostedTests {
     }
 
     /// The Duo propped like a tent: the running chats become run cards with Stop, the waiting one says it needs you, the
-    /// idle ones keep their list rows, and Stop reads Stopping before the server answers (TAL-1460). The hinge is the
+    /// idle ones keep their list rows, and Stop shows the run stopped before the server answers (TAL-1460). The hinge is the
     /// fixture's; no hinge API runs in tests.
     func testTentPoseShowsRunCardsAndStopsARunAtOnce() async throws {
         let titles = UITestFixtureURLProtocol.monitorSessionTitles
@@ -961,15 +961,12 @@ extension SessionListHostedTests {
             }
         }
         XCTAssertTrue(held, "Stop sent no stop request for the first card's run")
-        let stopping = await awaitElement(in: window) {
-            self.isRunCard($0, titled: titles[0]) && $0.accessibilityLabel?.contains("Stopping") == true
-        }
-        XCTAssertNotNil(stopping, "The card must read Stopping before the server answers")
-        attachHostedScreenshot(window, name: "tent-run-monitor-stopping")
+        let cardGone = await awaitNoElement(in: window, timeout: 2) { self.isRunCard($0, titled: titles[0]) }
+        XCTAssertTrue(cardGone, "The stopped chat must leave its run card before the server answers")
+        XCTAssertEqual(UITestFixtureHold.shared.pendingCount, 1, "The stop request is still unanswered")
+        attachHostedScreenshot(window, name: "tent-run-monitor-stopped")
 
         fixture.releaseHeldLoads()
-        let cardGone = await awaitNoElement(in: window) { self.isRunCard($0, titled: titles[0]) }
-        XCTAssertTrue(cardGone, "The stopped chat kept its run card")
         // The server lists it with the idle chats again.
         _ = try await scrollList(in: window, toFind: "The stopped chat did not return to its list row") {
             $0.accessibilityLabel?.hasPrefix(titles[0]) == true && HostedAccessibility.identifier(of: $0) != "session-run-card"
