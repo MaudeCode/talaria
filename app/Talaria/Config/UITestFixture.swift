@@ -434,12 +434,23 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     private static let generationHeader = "X-UI-Fixture-Generation"
     private let startedGeneration = UITestFixtureURLProtocol.generation.withLock { $0 }
 
+    /// What the next `/api/sessions` answers send instead of the list, in order (TAL-1195).
+    enum SessionListFailure: Sendable {
+        case transport(URLError.Code)
+        case status(Int)
+    }
+    static let sessionListFailures = OSAllocatedUnfairLock<[SessionListFailure]>(initialState: [])
+    /// Every path the fixture has answered since the hosted test's reset, in order.
+    static let answeredPaths = OSAllocatedUnfairLock<[String]>(initialState: [])
+
     /// Puts the fixture's per-launch server state back to a fresh launch's, for hosted tests that start the fixture in
     /// process once per test (TAL-856).
     static func resetForHostedTest() {
         generation.withLock { $0 += 1 }
         approvalBypassOverride = nil
         sessionToolsets.withLock { $0 = nil }
+        sessionListFailures.withLock { $0 = [] }
+        answeredPaths.withLock { $0 = [] }
         transcriptReads = 0
         archivedSessionIDs = []
         backgroundDismissed.withLock { $0 = false }
@@ -532,9 +543,18 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     private func sendResponse(for url: URL) {
+        Self.answeredPaths.withLock { $0.append(url.path) }
         let contentType = url.path.hasSuffix("/stream") ? "text/event-stream" : "application/json"
+        let listFailure = url.path == "/api/sessions"
+            ? Self.sessionListFailures.withLock { $0.isEmpty ? nil : $0.removeFirst() }
+            : nil
+        if case .transport(let code) = listFailure {
+            client?.urlProtocol(self, didFailWithError: URLError(code))
+            return
+        }
         let statusCode: Int
-        if Self.failsInitialUpload(url) { statusCode = 500 }
+        if case .status(let code) = listFailure { statusCode = code }
+        else if Self.failsInitialUpload(url) { statusCode = 500 }
         else if Self.failsSessionCreation(url) {
             statusCode = ProcessInfo.processInfo.arguments.contains("--ui-test-refuse-first-session-creation") ? 409 : 500
         } else { statusCode = 200 }

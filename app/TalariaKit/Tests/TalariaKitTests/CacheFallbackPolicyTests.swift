@@ -54,6 +54,27 @@ final class CacheFallbackPolicyTests: XCTestCase {
         }
     }
 
+    /// TAL-1195: only a failure that shows the device has no network is offline; a dropped or timed-out request and a
+    /// down server keep the saved rows under their own reason.
+    func testNamesWhyEachFailureFallsBackToSavedData() {
+        let cases: [(error: Error, reason: CacheFallbackReason)] = [
+            (APIError.network(underlying: URLError(.notConnectedToInternet)), .offline),
+            (APIError.network(underlying: URLError(.dataNotAllowed)), .offline),
+            (APIError.network(underlying: URLError(.cannotConnectToHost)), .serverUnreachable),
+            (APIError.network(underlying: URLError(.cannotFindHost)), .serverUnreachable),
+            (APIError.network(underlying: URLError(.dnsLookupFailed)), .serverUnreachable),
+            (APIError.network(underlying: URLError(.networkConnectionLost)), .connectionInterrupted),
+            (APIError.network(underlying: URLError(.timedOut)), .connectionInterrupted),
+            (URLError(.networkConnectionLost), .connectionInterrupted),
+        ] + [408, 502, 503, 504].map { (APIError.http(statusCode: $0, body: nil), .serverUnavailable) }
+
+        for testCase in cases {
+            XCTAssertEqual(CacheFallbackPolicy.reason(for: testCase.error), testCase.reason, "\(testCase.error)")
+        }
+        XCTAssertNil(CacheFallbackPolicy.reason(for: APIError.http(statusCode: 500, body: nil)))
+        XCTAssertNil(CacheFallbackPolicy.reason(for: APIError.network(underlying: URLError(.cancelled))))
+    }
+
     func testRawURLErrorUsesSameConnectivityRules() {
         XCTAssertTrue(CacheFallbackPolicy.shouldUseCache(for: URLError(.timedOut)))
         XCTAssertFalse(CacheFallbackPolicy.shouldUseCache(for: URLError(.badURL)))

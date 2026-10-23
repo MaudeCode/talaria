@@ -58,7 +58,11 @@ public final class SessionListViewModel {
     public var isRenamingSession: Bool { pendingChanges.contains { $0.key.hasPrefix("session:") && $0.value.title != nil } }
     public var isRenamingProject: Bool { pendingChanges.contains { $0.key.hasPrefix("project:") && $0.key != "project:new" && $0.value.title != nil } }
     public var isMovingSession: Bool { pendingChanges.values.contains { $0.isMoving } }
-    public private(set) var isViewingCachedData = false
+    /// Why the rows are saved ones rather than the server's (TAL-1195): what the Chats list says about them. nil while
+    /// they are the server's, or the cold-launch paint.
+    public private(set) var cachedDataReason: CacheFallbackReason?
+    /// Every action gate reads this, never the reason, so the notice's wording cannot reopen a write.
+    public var isViewingCachedData: Bool { cachedDataReason != nil }
     public private(set) var projects: [ProjectSummary] = []
     public private(set) var errorMessage: String?
     public private(set) var actionErrorMessage: String?
@@ -467,7 +471,7 @@ public final class SessionListViewModel {
                 if let claim = change.snapshotClaim { return claim > claimCountAtStart }
                 return !change.requiresRefresh
             }
-            isViewingCachedData = false
+            cachedDataReason = nil
             isShowingCachedPaint = false
 
             if let modelContext {
@@ -492,25 +496,25 @@ public final class SessionListViewModel {
                 isShowingCachedPaint = false
                 sessions = []
             }
-            if CacheFallbackPolicy.shouldUseCache(for: error), let modelContext {
+            if let reason = CacheFallbackPolicy.reason(for: error), let modelContext {
                 do {
                     let cachedSessions = try CacheStore.cachedSessions(serverURL: server, in: modelContext)
                         .filter(\.shouldAppearInSessionList)
                     if !cachedSessions.isEmpty {
                         sessions = cachedSessions
-                        isViewingCachedData = true
+                        cachedDataReason = reason
                         errorMessage = nil
                     } else {
-                        isViewingCachedData = false
+                        cachedDataReason = nil
                         errorMessage = error.localizedDescription
                     }
                 } catch {
                     cacheErrorMessage = error.localizedDescription
-                    isViewingCachedData = false
+                    cachedDataReason = nil
                     errorMessage = lastError?.localizedDescription
                 }
             } else {
-                isViewingCachedData = false
+                cachedDataReason = nil
                 errorMessage = error.localizedDescription
             }
 

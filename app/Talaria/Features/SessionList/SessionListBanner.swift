@@ -56,3 +56,22 @@ struct AgentStorageBanner: View {
         }
     }
 }
+
+/// The notice above saved rows (TAL-1195), worded for why the list fell back to them: only a lost network says Offline.
+struct CachedDataBanner: View {
+    let reason: CacheFallbackReason
+
+    var body: some View {
+        let notice = Self.notice(for: reason)
+        SessionListBanner(systemImage: notice.systemImage, title: notice.title)
+    }
+
+    private static func notice(for reason: CacheFallbackReason) -> (systemImage: String, title: LocalizedStringKey) {
+        switch reason {
+        case .offline: ("wifi.slash", "Offline - viewing cached version")
+        case .serverUnreachable: ("network.slash", "Server unreachable - cached version")
+        case .serverUnavailable: ("exclamationmark.icloud", "Server unavailable - cached version")
+        case .connectionInterrupted: ("arrow.triangle.2.circlepath", "Reconnecting - cached version")
+        }
+    }
+}

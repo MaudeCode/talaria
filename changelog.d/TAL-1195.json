@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "components": ["app"],
+      "summary": "The Chats list no longer says you are offline when a refresh is cut short or the server is briefly unavailable; it says what happened and clears once the server answers.",
+      "highlight": false
+    }
+  ]
+}
