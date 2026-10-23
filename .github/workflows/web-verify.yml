@@ -221,6 +221,7 @@ jobs:
 
       # Chromium's system packages (fonts, mesa, xvfb) come from the runner's apt mirror, which has taken over eight minutes
       # for 32 MB (TAL-432). Their .debs are cached per runner image and installed offline on a hit.
+      # Reuse that image's packages when an unrelated dependency changes the lockfile.
       - name: Name the runner image for the system-package cache
         id: runner-image
         run: echo "id=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
@@ -230,6 +231,8 @@ jobs:
         with:
           path: web/.codex-tmp/playwright-apt
           key: playwright-apt-${{ steps.runner-image.outputs.id }}-${{ hashFiles('web/package-lock.json') }}
+          restore-keys: |
+            playwright-apt-${{ steps.runner-image.outputs.id }}-
 
       - name: Playwright end-to-end on the Node server with the fixture replay sidecar (desktop + mobile)
         run: ../../../scripts/check-web-browser --shard=${{ matrix.shard }}/6
