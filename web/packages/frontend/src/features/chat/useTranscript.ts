@@ -96,7 +96,21 @@ export function useTranscript(sessionId: string | null, equalLive?: (previous: L
   // family as the tail, so reaction reconciliation covers every displayed snapshot without dropping scroll history.
   const olderOwner = useQuery({
     queryKey: [...keys.sessions.detail(sessionId ?? ''), 'owner-history', windowOffset, older.length],
-    queryFn: ({ signal }) => api.fetchSession(sessionId ?? '', { messages: true, msg_limit: older.length, msg_before: windowOffset, resolve_model: false }, signal),
+    queryFn: async ({ signal }) => {
+      const start = Math.max(0, windowOffset - older.length)
+      let before = windowOffset
+      const chunks: Message[][] = []
+      while (before > start) {
+        const page = await api.fetchSession(sessionId ?? '', { messages: true, msg_limit: TRANSCRIPT_WINDOW, msg_before: before, resolve_model: false }, signal)
+        const offset = page.session._messages_offset
+        if (offset === undefined || offset >= before || !page.session.messages?.length) throw new Error('Owner history window changed')
+        chunks.unshift(page.session.messages.slice(Math.max(0, start - offset), before - offset))
+        before = offset
+      }
+      const refreshed = chunks.flat()
+      if (refreshed.length !== older.length) throw new Error('Owner history window changed')
+      return refreshed
+    },
     enabled: !!sessionId && !!session?.owner_attachment && older.length > 0,
     retry: false, refetchOnWindowFocus: false,
   })
@@ -151,7 +165,7 @@ export function useTranscript(sessionId: string | null, equalLive?: (previous: L
 
   const messages = useMemo(() => {
     const current = session?.messages ?? []
-    return older.length ? [...(olderOwner.data?.session.messages ?? older), ...current] : current
+    return older.length ? [...(olderOwner.data ?? older), ...current] : current
   }, [session, older, olderOwner.data])
 
   const base = Math.max(0, (session?._messages_offset ?? 0) - older.length)

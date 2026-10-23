@@ -342,7 +342,7 @@ it('refreshes reactions on already loaded owner history when another viewer chan
   const tail = sessionFixture({ session_id: 'older-reactions', owner_attachment: owner, messages: [{ id: 241, role: 'user', content: 'latest' }], message_count: 241, _messages_offset: 240, _messages_truncated: true })
   let selected: '👍' | '🎉' = '👍'
   vi.mocked(api.fetchSession).mockImplementation((_sid, options) => Promise.resolve({ session: options?.msg_before
-    ? sessionFixture({ ...tail, messages: [{ id: 240, role: 'assistant', content: 'older answer', reaction_view: { row_id: 42, state: { selected, items: [{ emoji: selected, count: 1, mine: true }] }, actions: [] } }] }) : tail }))
+    ? sessionFixture({ ...tail, _messages_offset: 239, messages: [{ id: 240, role: 'assistant', content: 'older answer', reaction_view: { row_id: 42, state: { selected, items: [{ emoji: selected, count: 1, mine: true }] }, actions: [] } }] }) : tail }))
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>
   const { result } = renderHook(() => useTranscript('older-reactions'), { wrapper })
@@ -352,4 +352,29 @@ it('refreshes reactions on already loaded owner history when another viewer chan
   selected = '🎉'
   await act(() => qc.invalidateQueries({ queryKey: keys.sessions.detail('older-reactions') }))
   await waitFor(() => expect(result.current.rows[0]?.message.reaction_view?.state.selected).toBe('🎉'))
+})
+
+it('keeps all loaded owner history when reaction readback crosses the server window cap', async () => {
+  const owner = { state: 'attached' as const, reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 2, execution_generation: 1, admissions: [] }
+  const tail = sessionFixture({ session_id: 'bounded-reactions', owner_attachment: owner, messages: [{ id: 840, role: 'user', content: 'latest' }], message_count: 841, _messages_offset: 840, _messages_truncated: true })
+  let selected: '👍' | '🎉' = '👍'
+  vi.mocked(api.fetchSession).mockImplementation((_sid, options) => {
+    if (!options?.msg_before) return Promise.resolve({ session: tail })
+    const end = options.msg_before
+    const offset = Math.max(0, end - Math.min(options.msg_limit ?? 120, 500))
+    const messages = Array.from({ length: end - offset }, (_, i) => ({ id: offset + i, role: 'user', content: `Older ${offset + i}`, reaction_view: { row_id: offset + i + 1, state: { selected, items: [{ emoji: selected, count: 1, mine: true }] }, actions: [] } }))
+    return Promise.resolve({ session: sessionFixture({ ...tail, messages, _messages_offset: offset }) })
+  })
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+  const { result } = renderHook(() => useTranscript('bounded-reactions'), { wrapper })
+  await waitFor(() => expect(result.current.session).not.toBeNull())
+  for (let page = 0; page < 6; page++) await act(() => result.current.loadOlder())
+  await waitFor(() => expect(result.current.rows).toHaveLength(721))
+  selected = '🎉'
+  await act(() => qc.invalidateQueries({ queryKey: keys.sessions.detail('bounded-reactions') }))
+  await waitFor(() => expect(result.current.rows[0]?.message.reaction_view?.state.selected).toBe('🎉'))
+  expect(result.current.rows).toHaveLength(721)
+  expect(result.current.rows[0]?.index).toBe(120)
+  expect(result.current.rows[0]?.message.id).toBe(120)
 })
