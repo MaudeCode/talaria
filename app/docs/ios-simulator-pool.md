@@ -43,6 +43,69 @@ scripts/select-ios-simulator   # finds an iPhone Duo, or creates one on the newe
 scripts/test-ios TalariaTests/ComposerChipLayoutTests
 ```
 
+### Set a Duo posture
+
+`scripts/duo-pose <udid|booted> <open|closed|book|rotate-right> [--screenshot <path>]`
+uses the same local simulator backend as T3's 3D panel. Run Node 24 and open a
+simulator in T3 first. Accessibility trust and the Device Hub window are unnecessary.
+The command reads the running hub's port from
+`~/.t3/userdata/device/agent-device/hub.json`. For another existing local hub,
+set `DUO_POSE_HUB_URL=http://127.0.0.1:<port>`. Remote origins, credentials,
+query strings, and redirects are refused. The command never starts or restarts T3.
+
+Agents with T3 device tools first call `device_list`, acquire the shared simulator
+lease, then call `device_open` for that exact leased UDID so the user can watch.
+Keep the lease through posture changes, app checks, and screenshots. Use the
+shared command for posture control and the returned device CLI's config/session
+flags for other interaction. A nonzero posture exit means the requested state
+is unverified; resolve that failure before collecting layout evidence.
+
+Use it inside the shared lease, selecting the leased UDID explicitly when another
+Duo is already booted:
+
+```sh
+env IOS_SIMULATOR_DEVICE_TYPE=com.apple.CoreSimulator.SimDeviceType.iPhone-Duo \
+  scripts/ios-simulator-pool /bin/zsh -c \
+  'exec scripts/duo-pose "$IOS_SIMULATOR_ID" book --screenshot /tmp/duo-book.png'
+scripts/test-duo-pose --live
+```
+
+`booted` requires exactly one booted Duo. `rotate-right` sets the absolute native
+orientation `landscape_right`; repeating any settled target sends no command.
+The result is JSON containing the device, requested pose, native state, and
+`changed`, which is false for a no-op. Each call captures and validates the active
+panel even without `--screenshot`. The screenshot option saves that verified PNG.
+Display 1 is the 1398 by 2034 cover; display 3 is the 2007 by 2853 inner panel.
+Width and height can swap with orientation.
+
+This is an owner-approved, undocumented protocol, checked with T3's bundled
+expo-device-hub 0.15.3. The single transport in `scripts/duo-pose.mjs` handles
+input admission, pose requests, acknowledgements, and native state. An
+acknowledgement can arrive before the display handoff: success waits for the
+requested hinge angle and active panel together. `open`, `closed`, and `book`
+require 180, 0, and 90 degrees respectively. Rotation waits for a fresh native
+sensor orientation update; an orientation-locked app can keep its framebuffer
+unchanged. When the backend omits sensor orientation, its screen orientation is
+the verification field. Inactive panels can retain a framebuffer, so a successful
+screenshot of display 3 alone does not prove the phone is open. Protocol changes,
+refusals, disconnected input, and missing state fail verification. Input has a
+10-second deadline; simulator discovery, capture bootstrap, and PNG capture are
+separately bounded at 5, 2, and 10 seconds.
+
+Exit codes are 0 for verified success, 2 for an unavailable local backend or
+hinge capability, 3 for a missing or ambiguous booted Duo, 4 for failed pose or
+capture verification, and 64 for invalid arguments. `xcodebuild test` may close
+the Duo or select a clone when parallel testing is enabled; set the pose again
+on the actual test destination afterward.
+
+`scripts/test-duo-pose` runs only synthetic protocol tests and never consults a
+running simulator or T3 backend. Explicit `scripts/test-duo-pose --live`
+validation also creates a disposable Duo, owns its shared lease, exercises
+closed/open/closed, book, rotation, screenshots and repeated-target no-ops, then deletes only that
+test device. The live portion skips clearly when the Duo type or running local
+T3 backend is unavailable. CI runs the synthetic tests without live accounts,
+Accessibility access, or a simulator backend.
+
 Every consumer uses `/tmp/ios-simulator-pool-$EUID/pool.lock` for setup/admission
 and `leases/<UDID>.lock` for the duration of a device session. Locks use macOS
 `shlock` and the owning process PID. `IOS_SIMULATOR_ID` selects a specific device
