@@ -52,8 +52,12 @@ def _open(*, creates_guest: bool = False) -> None:
         raise RpcError(failure, condition="connectors_failed")
 
 
-def _portal():
+def _portal(*, refresh_auth: bool = False):
     from tools.connectors.portal.client import PortalConnectorClient
+
+    # Explicit writes retain native refresh; reads never acquire that authority.
+    if refresh_auth:
+        return PortalConnectorClient()
     from tools.managed_tool_gateway import peek_nous_access_token
 
     # The normal token reader may refresh and replace a dead guest. Page reads must never own auth writes.
@@ -134,7 +138,7 @@ def accounts() -> dict:
 
 
 def remove(connection_id: str) -> dict:
-    removed = _portal().delete_account(connection_id)
+    removed = _portal(refresh_auth=True).delete_account(connection_id)
     return {"connection_id": removed["connectionId"], "connector": removed["connector"], "status": removed["status"]}
 
 
@@ -167,7 +171,7 @@ def set_policy(connector: str, expected_revision: str, *, enabled: bool | None =
     The portal refuses the write when ``expected_revision`` is no longer its member revision."""
     from tools.connectors.portal.policy import InvalidMemberPolicy, compose_connector_write, compose_tools_write
 
-    client = _portal()
+    client = _portal(refresh_auth=True)
     client.require_authentication()
     member = next((layer.body for layer in client.policy().layers if layer.kind == "member"), None)
     try:

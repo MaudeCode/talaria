@@ -21,7 +21,7 @@ class AuthError(Exception):
 def page(monkeypatch, tmp_path):
     home = tmp_path / "profile"
     home.mkdir()
-    state = types.SimpleNamespace(home=home, tokens={}, calls=[], failure=None)
+    state = types.SimpleNamespace(home=home, tokens={}, calls=[], failure=None, refreshes=0, writes=[])
 
     @contextlib.contextmanager
     def scoped(path):
@@ -36,7 +36,10 @@ def page(monkeypatch, tmp_path):
         (state.home / "auth.json").write_text("synthetic-created-identity")
 
     def refreshing_token():
+        state.refreshes += 1
         create()
+        if isinstance(state.failure, AuthError):
+            state.failure = None
         return "substitute-token"
 
     def peek():
@@ -72,6 +75,15 @@ def page(monkeypatch, tmp_path):
             self.request("accounts")
             return []
 
+        def delete_account(self, connection_id):
+            self.request("remove")
+            return {"connectionId": connection_id, "connector": "gmail", "status": "removed"}
+
+        def set_policy(self, body):
+            self.request("set_policy")
+            state.writes.append(body)
+            return types.SimpleNamespace(revision="rev-2")
+
         def policy(self):
             self.request("policy")
             return types.SimpleNamespace(layers=[], effective=types.SimpleNamespace(model_dump=lambda **_: {"revision": "native"}))
@@ -82,6 +94,11 @@ def page(monkeypatch, tmp_path):
         "tools.connectors.portal.errors": {"InvalidConnectorSlug": ValueError},
         "tools.connectors.gateway": {}, "tools.connectors.gateway.errors": {"GatewayAuthError": AuthError},
         "tools.managed_tool_gateway": {"peek_nous_access_token": peek},
+        "tools.connectors.portal.policy": {
+            "InvalidMemberPolicy": ValueError,
+            "compose_connector_write": lambda member, action: {"mode": "deny", "disabledConnectors": [] if action.enabled else [action.connector]},
+            "compose_tools_write": lambda member, action: {"tools": {action.connector: {"disable": action.disabled_tools}}},
+        },
     }.items():
         module = types.ModuleType(name)
         module.__dict__.update(attrs)
@@ -150,3 +167,21 @@ def test_only_explicit_connect_enters_the_guest_creation_gate(page, monkeypatch)
     assert page.call("connectors.connect", connector="gmail") == {"started": "gmail"}
     assert page.calls == ["create"]
     assert (page.home / "auth.json").exists()
+
+
+@pytest.mark.parametrize("method,params,expected", [
+    ("connectors.remove", {"connection_id": "conn-gmail"}, {"connection_id": "conn-gmail", "connector": "gmail", "status": "removed"}),
+    ("connectors.policy.set", {"connector": "gmail", "expected_revision": "rev-1", "enabled": False}, {"revision": "rev-2"}),
+    ("connectors.policy.set", {"connector": "gmail", "expected_revision": "rev-1", "tool": "gmail_send", "tool_enabled": False}, {"revision": "rev-2"}),
+], ids=["disconnect", "connector-rule", "tool-rule"])
+def test_explicit_writes_refresh_expired_credentials(page, method, params, expected):
+    page.tokens[page.home] = "expired-held-token"
+    page.failure = AuthError("TOKEN_EXPIRED")
+    try:
+        answer = page.call(method, **params)
+    except RpcError as error:
+        answer = error.data
+    assert answer == expected
+    assert page.refreshes > 0
+    if method == "connectors.policy.set":
+        assert page.writes[0]["expectedRevision"] == "rev-1"
