@@ -194,6 +194,17 @@ Use **Use profile defaults** to remove the session override. An operator's `agen
 always applies, including to saved overrides, cached chat Agents, and manual compression. Catalog
 availability is read from the server; a failed catalog load leaves selection disabled.
 
+Settings → System → **MCP Servers → Cost policy** shows declared tool estimates,
+per-chat limits and whether each value comes from native config or a portable package.
+These are declared estimates, not vendor bills. Edit one native policy field at a time;
+**Use inherited/default** removes that key, while zero explicitly disables a limit and
+an empty tool-cost object clears the table. Package-only declarations are read-only;
+an existing native server override can change or inherit package values. Edits reject
+stale config and preserve transport, trust and unrelated settings. Saving does not
+reload a runtime or change another owner's frozen policy. Use the existing
+**Reload MCP** command explicitly for the profile; the inspector does not claim that
+saved policy is active. The Agent owns budget enforcement and approvals.
+
 The first MCP discovery for a profile waits for its tools before chat starts. Later turns wait at most
 two seconds for discovery, then use the registered tools while connections finish in the background.
 The composer shows a notice while that turn is waiting for more tools.

@@ -75347,6 +75347,248 @@
                       "items": {
                         "type": "object",
                         "properties": {
+                          "cost_policy": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "source": {
+                                    "enum": [
+                                      "native",
+                                      "package",
+                                      "native_override"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "valid": {
+                                    "type": "boolean"
+                                  },
+                                  "can_edit": {
+                                    "type": "boolean"
+                                  },
+                                  "error": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "overrides": {
+                                    "type": "object",
+                                    "properties": {
+                                      "tool_costs": {
+                                        "anyOf": [
+                                          {
+                                            "type": "object",
+                                            "propertyNames": {
+                                              "type": "string"
+                                            },
+                                            "additionalProperties": {
+                                              "anyOf": [
+                                                {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "number",
+                                                      "minimum": 0
+                                                    },
+                                                    {
+                                                      "type": "array",
+                                                      "prefixItems": [
+                                                        {
+                                                          "type": "number",
+                                                          "minimum": 0
+                                                        },
+                                                        {
+                                                          "type": "number",
+                                                          "minimum": 0
+                                                        }
+                                                      ]
+                                                    }
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "credits": {
+                                                      "anyOf": [
+                                                        {
+                                                          "type": "number",
+                                                          "minimum": 0
+                                                        },
+                                                        {
+                                                          "type": "array",
+                                                          "prefixItems": [
+                                                            {
+                                                              "type": "number",
+                                                              "minimum": 0
+                                                            },
+                                                            {
+                                                              "type": "number",
+                                                              "minimum": 0
+                                                            }
+                                                          ]
+                                                        }
+                                                      ]
+                                                    },
+                                                    "note": {
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "credits"
+                                                  ],
+                                                  "additionalProperties": false
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "spend_limit": {
+                                        "anyOf": [
+                                          {
+                                            "type": "number",
+                                            "minimum": 0
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "cost_unit": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "tool_costs",
+                                      "spend_limit",
+                                      "cost_unit"
+                                    ]
+                                  },
+                                  "tool_costs": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "name": {
+                                          "type": "string"
+                                        },
+                                        "low": {
+                                          "type": "number",
+                                          "minimum": 0
+                                        },
+                                        "high": {
+                                          "type": "number",
+                                          "minimum": 0
+                                        },
+                                        "note": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "name",
+                                        "low",
+                                        "high",
+                                        "note"
+                                      ]
+                                    }
+                                  },
+                                  "spend_limit": {
+                                    "type": "number",
+                                    "minimum": 0
+                                  },
+                                  "cost_unit": {
+                                    "type": "string"
+                                  },
+                                  "budget_enabled": {
+                                    "type": "boolean"
+                                  },
+                                  "field_sources": {
+                                    "type": "object",
+                                    "properties": {
+                                      "tool_costs": {
+                                        "enum": [
+                                          "native",
+                                          "package",
+                                          "default"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "spend_limit": {
+                                        "enum": [
+                                          "native",
+                                          "package",
+                                          "default"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "cost_unit": {
+                                        "enum": [
+                                          "native",
+                                          "package",
+                                          "default"
+                                        ],
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "tool_costs",
+                                      "spend_limit",
+                                      "cost_unit"
+                                    ]
+                                  },
+                                  "revision": {
+                                    "type": "string"
+                                  },
+                                  "provenance": {
+                                    "const": "declared_estimate"
+                                  },
+                                  "reload_required": {
+                                    "const": true
+                                  },
+                                  "runtime_state": {
+                                    "const": "unknown"
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "source",
+                                  "valid",
+                                  "can_edit",
+                                  "error",
+                                  "overrides",
+                                  "tool_costs",
+                                  "spend_limit",
+                                  "cost_unit",
+                                  "budget_enabled",
+                                  "field_sources",
+                                  "revision",
+                                  "provenance",
+                                  "reload_required",
+                                  "runtime_state"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "name": {
                             "type": "string"
                           },
@@ -75601,6 +75843,122 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "config_revision": {
+                    "type": "string"
+                  },
+                  "cost_policy": {
+                    "type": "object",
+                    "properties": {
+                      "tool_costs": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "additionalProperties": {
+                              "anyOf": [
+                                {
+                                  "anyOf": [
+                                    {
+                                      "type": "number",
+                                      "minimum": 0
+                                    },
+                                    {
+                                      "type": "array",
+                                      "prefixItems": [
+                                        {
+                                          "type": "number",
+                                          "minimum": 0
+                                        },
+                                        {
+                                          "type": "number",
+                                          "minimum": 0
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "credits": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number",
+                                          "minimum": 0
+                                        },
+                                        {
+                                          "type": "array",
+                                          "prefixItems": [
+                                            {
+                                              "type": "number",
+                                              "minimum": 0
+                                            },
+                                            {
+                                              "type": "number",
+                                              "minimum": 0
+                                            }
+                                          ]
+                                        }
+                                      ]
+                                    },
+                                    "note": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "credits"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "spend_limit": {
+                        "anyOf": [
+                          {
+                            "type": "number",
+                            "minimum": 0
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "cost_unit": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 32
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK",
@@ -75615,6 +75973,248 @@
                     "server": {
                       "type": "object",
                       "properties": {
+                        "cost_policy": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "name": {
+                                  "type": "string"
+                                },
+                                "source": {
+                                  "enum": [
+                                    "native",
+                                    "package",
+                                    "native_override"
+                                  ],
+                                  "type": "string"
+                                },
+                                "valid": {
+                                  "type": "boolean"
+                                },
+                                "can_edit": {
+                                  "type": "boolean"
+                                },
+                                "error": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "overrides": {
+                                  "type": "object",
+                                  "properties": {
+                                    "tool_costs": {
+                                      "anyOf": [
+                                        {
+                                          "type": "object",
+                                          "propertyNames": {
+                                            "type": "string"
+                                          },
+                                          "additionalProperties": {
+                                            "anyOf": [
+                                              {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "number",
+                                                    "minimum": 0
+                                                  },
+                                                  {
+                                                    "type": "array",
+                                                    "prefixItems": [
+                                                      {
+                                                        "type": "number",
+                                                        "minimum": 0
+                                                      },
+                                                      {
+                                                        "type": "number",
+                                                        "minimum": 0
+                                                      }
+                                                    ]
+                                                  }
+                                                ]
+                                              },
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "credits": {
+                                                    "anyOf": [
+                                                      {
+                                                        "type": "number",
+                                                        "minimum": 0
+                                                      },
+                                                      {
+                                                        "type": "array",
+                                                        "prefixItems": [
+                                                          {
+                                                            "type": "number",
+                                                            "minimum": 0
+                                                          },
+                                                          {
+                                                            "type": "number",
+                                                            "minimum": 0
+                                                          }
+                                                        ]
+                                                      }
+                                                    ]
+                                                  },
+                                                  "note": {
+                                                    "type": "string"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "credits"
+                                                ],
+                                                "additionalProperties": false
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "spend_limit": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number",
+                                          "minimum": 0
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "cost_unit": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "tool_costs",
+                                    "spend_limit",
+                                    "cost_unit"
+                                  ]
+                                },
+                                "tool_costs": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "name": {
+                                        "type": "string"
+                                      },
+                                      "low": {
+                                        "type": "number",
+                                        "minimum": 0
+                                      },
+                                      "high": {
+                                        "type": "number",
+                                        "minimum": 0
+                                      },
+                                      "note": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "name",
+                                      "low",
+                                      "high",
+                                      "note"
+                                    ]
+                                  }
+                                },
+                                "spend_limit": {
+                                  "type": "number",
+                                  "minimum": 0
+                                },
+                                "cost_unit": {
+                                  "type": "string"
+                                },
+                                "budget_enabled": {
+                                  "type": "boolean"
+                                },
+                                "field_sources": {
+                                  "type": "object",
+                                  "properties": {
+                                    "tool_costs": {
+                                      "enum": [
+                                        "native",
+                                        "package",
+                                        "default"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "spend_limit": {
+                                      "enum": [
+                                        "native",
+                                        "package",
+                                        "default"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "cost_unit": {
+                                      "enum": [
+                                        "native",
+                                        "package",
+                                        "default"
+                                      ],
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "tool_costs",
+                                    "spend_limit",
+                                    "cost_unit"
+                                  ]
+                                },
+                                "revision": {
+                                  "type": "string"
+                                },
+                                "provenance": {
+                                  "const": "declared_estimate"
+                                },
+                                "reload_required": {
+                                  "const": true
+                                },
+                                "runtime_state": {
+                                  "const": "unknown"
+                                }
+                              },
+                              "required": [
+                                "name",
+                                "source",
+                                "valid",
+                                "can_edit",
+                                "error",
+                                "overrides",
+                                "tool_costs",
+                                "spend_limit",
+                                "cost_unit",
+                                "budget_enabled",
+                                "field_sources",
+                                "revision",
+                                "provenance",
+                                "reload_required",
+                                "runtime_state"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "name": {
                           "type": "string"
                         },

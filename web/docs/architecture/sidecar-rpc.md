@@ -36,6 +36,9 @@ the sidecar being killed closes that pipe, so the supervisor stops the
 writer's process tree and reaps the writer before releasing the lock. A concurrent repair fails
 without starting another writer.
 
+RPC v58 adds profile-scoped declared MCP cost-policy inspection. It retains the
+reaction boundary introduced in v57; a v57 peer is rejected before Agent loading.
+
 RPC v57 adds the closed `gateway.session` reaction action and safe message reaction metadata.
 It retains v56's managed buffers, v55's captured commands and outbound draft review, plus v54's checkpoint read
 below. Reaction-only watch snapshots invalidate display data without settling a turn; writes
@@ -791,3 +794,22 @@ fields. It does not import producer code or call its unsafe HTTP approval route.
 The reviewed source identity and explicit native plugin consent are revalidated;
 SQLite transactions serialize version checks and writes with native tool writers.
 No send or chat-start action is exposed by this method.
+
+### Declared MCP costs
+
+RPC v58 adds `mcp.cost_policies`. The server supplies its profile's saved native
+server entries; the sidecar uses the installed Agent parser and the scoped cached
+portable-package declarations. This read never calls a tool, reconnects a server,
+or changes a runtime's frozen policy. It returns validated scalar/range/note values,
+explicit native overrides, field sources and a package-declaration fingerprint.
+Validation errors expose fixed wording rather than raw config values.
+
+`GET /api/mcp/servers` includes an optional `cost_policy` on each applicable row.
+`PUT /api/mcp/servers/{name}` accepts `cost_policy` and `config_revision` as a
+policy-only patch. Null removes a native key, zero is explicit, and omitted keys
+are preserved. The server checks the whole-config/profile/package revision under
+the existing config update lock and validates the resulting policy before writing.
+Package-only rows cannot be edited; native overrides inherit omitted package keys.
+Every view reports `provenance: declared_estimate`, `reload_required: true` and
+`runtime_state: unknown`. Saved declarations do not attest any owner's loaded
+policy. The existing profile-scoped Reload MCP command remains an explicit action.

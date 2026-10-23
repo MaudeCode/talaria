@@ -53,6 +53,56 @@ describe('MCP config updates', () => {
   })
 })
 
+describe('MCP declared cost policy', () => {
+  it('publishes declared estimates and revision-fenced edits without changing transport or trust', async () => {
+    const cfg: Dict = { mcp_servers: { paid: { command: 'paid-mcp', trust: 'full', enabled: false, tool_costs: { search: { credits: [1, 3], note: 'estimate' } }, spend_limit: 5, future: 'keep' } } }
+    const config = { read: () => Promise.resolve(structuredClone(cfg)), update: async (_home: string, fn: (c: Dict) => unknown) => { const next = structuredClone(cfg); await fn(next); Object.assign(cfg, next); return next } } as unknown as AgentConfig
+    let packageRevision = 'none'
+    let editable = true
+    let valid = true
+    let changePackageDuringEdit = false
+    let policyReads = 0
+    const sidecar = { call: (method: string, params: { servers: Dict }) => {
+      if (method === 'mcp.status') return Promise.resolve({ servers: [] })
+      if (method !== 'mcp.cost_policies') throw new Error(method)
+      if (changePackageDuringEdit && ++policyReads === 2) packageRevision = 'changed-during-edit'
+      return Promise.resolve({ supported: true, policies: Object.entries(params.servers).map(([name, raw]) => {
+        const c = raw as Dict
+        return { name, source: 'native', valid, can_edit: editable, error: null, package_revision: packageRevision, overrides: { tool_costs: c.tool_costs ?? null, spend_limit: c.spend_limit ?? null, cost_unit: c.cost_unit ?? null }, tool_costs: [{ name: 'search', low: 1, high: 3, note: 'estimate' }], spend_limit: c.spend_limit ?? 0, cost_unit: c.cost_unit ?? 'credits', budget_enabled: true, field_sources: { tool_costs: 'native', spend_limit: 'native', cost_unit: 'default' } }
+      }) })
+    } } as unknown as FakeSidecar
+    const service = new McpService({ config, sidecar: () => sidecar })
+    const row = ((await service.servers('/profiles/a')).servers as Dict[])[0]!
+    expect(row.cost_policy).toMatchObject({ source: 'native', can_edit: true, valid: true, spend_limit: 5, reload_required: true, runtime_state: 'unknown', provenance: 'declared_estimate' })
+    const policy = row.cost_policy as { revision: string }
+    await service.update('/profiles/a', 'paid', { config_revision: policy.revision, cost_policy: { spend_limit: 0, cost_unit: 'USD' } })
+    expect((cfg.mcp_servers as Dict).paid).toEqual({ command: 'paid-mcp', trust: 'full', enabled: false, tool_costs: { search: { credits: [1, 3], note: 'estimate' } }, spend_limit: 0, cost_unit: 'USD', future: 'keep' })
+    await expect(service.update('/profiles/a', 'paid', { config_revision: policy.revision, cost_policy: { spend_limit: 10 } })).rejects.toMatchObject({ status: 409 })
+    const refreshed = ((await service.servers('/profiles/a')).servers as Dict[])[0]!.cost_policy as { revision: string }
+    await service.update('/profiles/a', 'paid', { config_revision: refreshed.revision, cost_policy: { spend_limit: null } })
+    expect((cfg.mcp_servers as Dict).paid).not.toHaveProperty('spend_limit')
+    await expect(service.update('/profiles/a', 'paid', { config_revision: refreshed.revision, cost_policy: { spend_limit: -1 } })).rejects.toMatchObject({ status: 400 })
+    await expect(service.update('/profiles/a', 'paid', { config_revision: refreshed.revision, cost_policy: { spend_limit: 1 }, trust: 'full' })).rejects.toMatchObject({ status: 400 })
+    await expect(new McpService({ config, sidecar: () => null }).update('/profiles/a', 'paid', { config_revision: refreshed.revision, cost_policy: { spend_limit: 1 } })).rejects.toMatchObject({ status: 503 })
+    await expect(service.update('/profiles/b', 'paid', { config_revision: refreshed.revision, cost_policy: { spend_limit: 2 } })).rejects.toMatchObject({ status: 409 })
+    const latest = ((await service.servers('/profiles/a')).servers as Dict[])[0]!.cost_policy as { revision: string }
+    const unchanged = structuredClone(cfg)
+    packageRevision = 'package-changed'
+    await expect(service.update('/profiles/a', 'paid', { config_revision: latest.revision, cost_policy: { spend_limit: 2 } })).rejects.toMatchObject({ status: 409 })
+    packageRevision = 'none'
+    editable = false
+    await expect(service.update('/profiles/a', 'paid', { config_revision: latest.revision, cost_policy: { spend_limit: 2 } })).rejects.toMatchObject({ status: 409 })
+    editable = true
+    valid = false
+    await expect(service.update('/profiles/a', 'paid', { config_revision: latest.revision, cost_policy: { spend_limit: 2 } })).rejects.toMatchObject({ status: 400 })
+    expect(cfg).toEqual(unchanged)
+    valid = true
+    changePackageDuringEdit = true
+    await expect(service.update('/profiles/a', 'paid', { config_revision: latest.revision, cost_policy: { spend_limit: 2 } })).rejects.toMatchObject({ status: 409 })
+    expect(cfg).toEqual(unchanged)
+  })
+})
+
 describe('MCP tool inventory', () => {
   it('lists registry tools only for servers in the profile\'s effective MCP config', async () => {
     const sidecar = new FakeSidecar()

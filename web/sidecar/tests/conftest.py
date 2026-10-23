@@ -288,8 +288,10 @@ def _type_ok(value, expected: str) -> bool:
     }[expected]
 
 
-def validate(value, schema: dict, path: str = "$") -> list[str]:
+def validate(value, schema: dict | bool, path: str = "$") -> list[str]:
     """Minimal JSON Schema (draft 2020-12 subset) validator: enough for Zod's output."""
+    if isinstance(schema, bool):
+        return [] if schema else [f"{path}: value is disallowed"]
     errors: list[str] = []
     if "anyOf" in schema:
         if not any(not validate(value, option, path) for option in schema["anyOf"]):
@@ -323,9 +325,17 @@ def validate(value, schema: dict, path: str = "$") -> list[str]:
             for key in value:
                 if key not in props:
                     errors.extend(validate(value[key], additional, f"{path}.{key}"))
-    if expected == "array" and "items" in schema:
+    if expected in ("number", "integer") and "minimum" in schema and value < schema["minimum"]:
+        errors.append(f"{path}: below minimum {schema['minimum']}")
+    if expected == "array":
+        if "minItems" in schema and len(value) < schema["minItems"]:
+            errors.append(f"{path}: too few items")
+        if "maxItems" in schema and len(value) > schema["maxItems"]:
+            errors.append(f"{path}: too many items")
+        prefix = schema.get("prefixItems", [])
         for index, item in enumerate(value):
-            errors.extend(validate(item, schema["items"], f"{path}[{index}]"))
+            sub = prefix[index] if index < len(prefix) else schema.get("items", True)
+            errors.extend(validate(item, sub, f"{path}[{index}]"))
     return errors
 
 
