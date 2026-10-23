@@ -20,6 +20,7 @@ struct SessionListView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @Environment(\.layoutDirection) private var layoutDirection
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -53,6 +54,8 @@ struct SessionListView: View {
     @State private var isSearchPresented = false
     @State private var selectedProjectID: String?
     @State private var sidebarScrollPosition: String?
+    /// The app's one hinge read (TAL-1460), for the tent pose's run cards.
+    @State private var hingeStatus: SessionRunMonitor.HingeStatus?
     @State private var appSidebar = AppSidebarPresentation()
     @State private var isPresentingUpdateNotifications: Bool
     @AccessibilityFocusState private var openNavigationIsFocused: Bool
@@ -189,6 +192,7 @@ struct SessionListView: View {
             .onChange(of: viewModel.activeProfileName) {
                 sectionViewModels = SectionViewModels(server: server)
             }
+            .modifier(SessionListHingeReader(status: $hingeStatus))
         }
         .safeAreaInset(edge: .top, spacing: 0) {
             if hasWaitingSharedImport { waitingSharedImportBanner }
@@ -991,6 +995,16 @@ struct SessionListView: View {
         )
     }
 
+    /// The Duo's tent pose with a run going (TAL-1460).
+    private var monitorsRuns: Bool {
+        SessionRunMonitor.isActive(
+            horizontalSizeClassIsCompact: horizontalSizeClass == .compact,
+            verticalSizeClassIsCompact: verticalSizeClass == .compact,
+            hinge: hingeStatus,
+            sessions: viewModel.sessions
+        )
+    }
+
     private var content: some View {
         let groups = scheduledSessionGroups
         return SidebarList {
@@ -1097,6 +1111,8 @@ struct SessionListView: View {
                 .accessibilityHidden(true)
         }
         .scrollPosition(id: $sidebarScrollPosition)
+        .environment(\.sessionRowsMonitorRuns, monitorsRuns)
+        .animation(SessionListMotion.rowStyleAnimation(reduceMotion: reduceMotion), value: monitorsRuns)
         .scrollDismissesKeyboard(.interactively)
         .refreshable {
             await refreshSessionsAndActiveProfile()
@@ -1611,6 +1627,9 @@ struct SessionListView: View {
             },
             export: { session, format in
                 Task { await export(session, format: format) }
+            },
+            stopRun: { session in
+                Task { await viewModel.stopRun(session, modelContext: modelContext) }
             }
         )
     }

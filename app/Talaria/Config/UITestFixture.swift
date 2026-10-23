@@ -54,6 +54,13 @@ struct UITestFixtureEnvironment {
     nonisolated static let corruptAgentStorageReason = "Agent session storage (state.db) is damaged: database disk image is malformed."
     /// Serves Tasks with an unwritable cron store, a recovered job's last failure and a job another process runs (TAL-835).
     nonisolated static let unwritableCronStoreArgument = "--ui-test-unwritable-cron-store"
+    /// Lists two running chats and one waiting on an approval ahead of the idle ones, as the server orders them (TAL-1460).
+    nonisolated static let runMonitorArgument = "--ui-test-run-monitor"
+    /// Reports the hinge partly open to the Chats list, which no simulator pose produces on the Duo's outer display
+    /// (TAL-1460); the list then reads no hinge API.
+    nonisolated static let tentHingeArgument = "--ui-test-tent-hinge"
+    /// Holds `/api/chat/cancel` until the test releases it, so a run card's Stopping stays up (TAL-1460).
+    nonisolated static let holdChatCancelArgument = "--ui-test-hold-chat-cancel"
 
     /// The fixture's response-cache directory, emptied once per launch.
     nonisolated static let responseCacheRoot: URL? = {
@@ -91,6 +98,9 @@ struct UITestFixtureEnvironment {
         let warning: [String: Any] = ["key": "startup-warning.fixture", "level": "warn", "text": "Memory provider 'honcho' could not be loaded; memory is off.", "expires_at": NSNull()]
         let band: [String: Any] = ["key": "credits.usage_band", "level": "info", "text": "You've used 90% of your credits.", "expires_at": NSNull()]
         return clearingWarning ? [band] : [warning, band]
+    }
+    nonisolated static var forcesTentHinge: Bool {
+        ProcessInfo.processInfo.arguments.contains(launchArgument) && ProcessInfo.processInfo.arguments.contains(tentHingeArgument)
     }
     nonisolated static var hasUnwritableCronStore: Bool {
         ProcessInfo.processInfo.arguments.contains(unwritableCronStoreArgument)
@@ -422,6 +432,11 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     private static let sessionToolsets = OSAllocatedUnfairLock<[String]?>(initialState: nil)
     nonisolated(unsafe) private static var transcriptReads = 0
     nonisolated(unsafe) private static var archivedSessionIDs: Set<String> = []
+    nonisolated(unsafe) private static var cancelledMonitorStreamIDs: Set<String> = []
+    /// The `--ui-test-run-monitor` rows: running, running, waiting on an approval.
+    static let monitorSessionTitles = ["Fixture Session 01", "Fixture Session 02", "Fixture Session 03"]
+    private static let monitorStreamPrefix = "ui-fixture-monitor-stream-"
+    static func monitorStreamID(_ index: Int) -> String { monitorStreamPrefix + String(index) }
     private static let chatStreamID = "ui-fixture-stream"
     static let pendingSteerID = "steer-ui-fixture-web"
     static let pendingSteerText = "Check the backup logs too"
@@ -453,6 +468,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         answeredPaths.withLock { $0 = [] }
         transcriptReads = 0
         archivedSessionIDs = []
+        cancelledMonitorStreamIDs = []
         backgroundDismissed.withLock { $0 = false }
         ownerSettledAdmissions.withLock { $0 = [] }
         nativeNoticePhase.withLock { $0 = 0 }
@@ -512,7 +528,9 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             && ProcessInfo.processInfo.arguments.contains("--ui-test-hold-steer")
         let holdsStart = url.path == "/api/chat/start"
             && ProcessInfo.processInfo.arguments.contains("--ui-test-hold-chat-start")
-        if Self.holdsTranscriptReload(for: url) || holdsSessionList || holdsUpload || holdsSteer || holdsStart {
+        let holdsCancel = url.path == "/api/chat/cancel"
+            && ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.holdChatCancelArgument)
+        if Self.holdsTranscriptReload(for: url) || holdsSessionList || holdsUpload || holdsSteer || holdsStart || holdsCancel {
             UITestFixtureHold.shared.hold(request: request) { [weak self] in
                 guard let self, !self.isStopped else { return }
                 self.sendResponse(for: url)
@@ -770,6 +788,11 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             chatState.startChat()
             return json(["stream_id": chatStreamID, "session_id": sessionID])
         case "/api/chat/cancel":
+            let streamID = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "stream_id" }?.value
+            if let streamID, streamID.hasPrefix(monitorStreamPrefix) {
+                recoveryState.withLock { _ = cancelledMonitorStreamIDs.insert(streamID) }
+                return json(["ok": true, "cancelled": true, "stream_id": streamID])
+            }
             chatState.cancel()
             return json(["ok": true, "cancelled": true, "stream_id": chatStreamID])
         case "/api/chat/stream/status":
@@ -843,13 +866,28 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     private static func sessionsResponse() -> Data {
-        let archivedIDs = recoveryState.withLock { archivedSessionIDs }
-        let sessions: [[String: Any]] = (0..<18).map { index in
+        let (archivedIDs, cancelledStreams) = recoveryState.withLock { (archivedSessionIDs, cancelledMonitorStreamIDs) }
+        var sessions: [[String: Any]] = (0..<18).map { index in
             session(
                 id: index == 0 ? sessionID : "ui-fixture-session-\(index)",
                 title: index == 0 ? sessionTitle : String(format: "Fixture Session %02d", index)
             )
         }.filter { !archivedIDs.contains($0["session_id"] as? String ?? "") }
+        if ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.runMonitorArgument) {
+            // The server lists active sessions first (TAL-306).
+            var active: [[String: Any]] = []
+            for index in (1...monitorSessionTitles.count).reversed() {
+                guard let position = sessions.firstIndex(where: { $0["session_id"] as? String == "ui-fixture-session-\(index)" }),
+                      !cancelledStreams.contains(monitorStreamID(index)) else { continue }
+                var row = sessions.remove(at: position)
+                row["is_streaming"] = true
+                row["active_stream_id"] = monitorStreamID(index)
+                row["pending_started_at"] = Date().timeIntervalSince1970 - Double(60 * index + 12)
+                if index == 3 { row["attention"] = ["kind": "approval", "count": 1, "severity": "critical"] }
+                active.insert(row, at: 0)
+            }
+            sessions.insert(contentsOf: active, at: 0)
+        }
         let storage: [String: Any] = ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.corruptAgentStorageArgument)
             ? ["state": "corrupt", "reason": UITestFixtureEnvironment.corruptAgentStorageReason]
             : ["state": "ok", "reason": NSNull()]

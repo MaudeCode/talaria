@@ -48,8 +48,14 @@ public enum ActiveSessionStateRefreshResult: Equatable {
 @Observable
 public final class SessionListViewModel {
     public private(set) var sessions: [SessionSummary] = [] {
-        didSet { invalidateSessionPresentation() }
+        didSet {
+            invalidateSessionPresentation()
+            // A stop is confirmed once the server's rows no longer list its stream as live.
+            stoppingStreamIDs.formIntersection(sessions.compactMap(\.activeStreamId))
+        }
     }
+    /// The live streams the user stopped from a run card (TAL-1460), which read Stopping until the rows converge.
+    public private(set) var stoppingStreamIDs: Set<String> = []
     public private(set) var isLoading = false
     public private(set) var isCreatingSession = false
     public var isCreatingProject: Bool { pendingChanges["project:new"].map { !$0.requiresRefresh } ?? false }
@@ -932,6 +938,38 @@ public final class SessionListViewModel {
         await changeSession(session, label: String(localized: "Delete"), removing: true, clearTranscript: true, modelContext: modelContext, animation: animation) { id in
             try await self.sessionMutator.delete(sessionID: id)
         }
+    }
+
+    public func isStopping(_ session: SessionSummary) -> Bool {
+        session.activeStreamId.map(stoppingStreamIDs.contains) ?? false
+    }
+
+    /// Stops a run card's live stream with the chat's Stop request, showing Stopping at once (TAL-1460). A refusal
+    /// rolls back with the server's error; an unknown outcome reloads the list before keeping or rolling back.
+    public func stopRun(_ session: SessionSummary, modelContext: ModelContext? = nil) async {
+        guard !isViewingCachedData, let streamID = Self.nonEmpty(session.activeStreamId),
+              stoppingStreamIDs.insert(streamID).inserted else { return }
+        actionErrorMessage = nil
+        do {
+            let response = try await client.cancelChat(streamID: streamID)
+            guard response.ok != false else {
+                stoppingStreamIDs.remove(streamID)
+                actionErrorMessage = response.error ?? String(localized: "The server did not stop the run.")
+                return
+            }
+        } catch {
+            guard !APIError.isCancellation(error) else {
+                stoppingStreamIDs.remove(streamID)
+                return
+            }
+            _ = await load(modelContext: modelContext)
+            if sessions.contains(where: { $0.activeStreamId == streamID }) {
+                stoppingStreamIDs.remove(streamID)
+                actionErrorMessage = error.localizedDescription
+            }
+            return
+        }
+        _ = await load(modelContext: modelContext)
     }
 
     static let bulkActionLimit = 200
