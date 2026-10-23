@@ -264,6 +264,7 @@ export class McpService {
       const validated = await this.policies(profileHome, config)
       const updated = validated?.supported ? validated.policies.find((p) => p.name === name) : null
       if (!updated?.valid) throw new HttpFailure(400, 'Invalid declared cost policy')
+      if (updated.package_revision !== policy.package_revision) throw new HttpFailure(409, 'MCP package policy changed; refresh before editing')
       summary = { ...serverSummary(name, server, null), cost_policy: this.policyView(profileHome, config, updated) }
     })
     return { ok: true, server: summary }

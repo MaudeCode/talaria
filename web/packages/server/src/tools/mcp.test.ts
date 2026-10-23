@@ -60,9 +60,12 @@ describe('MCP declared cost policy', () => {
     let packageRevision = 'none'
     let editable = true
     let valid = true
+    let changePackageDuringEdit = false
+    let policyReads = 0
     const sidecar = { call: (method: string, params: { servers: Dict }) => {
       if (method === 'mcp.status') return Promise.resolve({ servers: [] })
       if (method !== 'mcp.cost_policies') throw new Error(method)
+      if (changePackageDuringEdit && ++policyReads === 2) packageRevision = 'changed-during-edit'
       return Promise.resolve({ supported: true, policies: Object.entries(params.servers).map(([name, raw]) => {
         const c = raw as Dict
         return { name, source: 'native', valid, can_edit: editable, error: null, package_revision: packageRevision, overrides: { tool_costs: c.tool_costs ?? null, spend_limit: c.spend_limit ?? null, cost_unit: c.cost_unit ?? null }, tool_costs: [{ name: 'search', low: 1, high: 3, note: 'estimate' }], spend_limit: c.spend_limit ?? 0, cost_unit: c.cost_unit ?? 'credits', budget_enabled: true, field_sources: { tool_costs: 'native', spend_limit: 'native', cost_unit: 'default' } }
@@ -92,6 +95,10 @@ describe('MCP declared cost policy', () => {
     editable = true
     valid = false
     await expect(service.update('/profiles/a', 'paid', { config_revision: latest.revision, cost_policy: { spend_limit: 2 } })).rejects.toMatchObject({ status: 400 })
+    expect(cfg).toEqual(unchanged)
+    valid = true
+    changePackageDuringEdit = true
+    await expect(service.update('/profiles/a', 'paid', { config_revision: latest.revision, cost_policy: { spend_limit: 2 } })).rejects.toMatchObject({ status: 409 })
     expect(cfg).toEqual(unchanged)
   })
 })
