@@ -1053,12 +1053,21 @@ export class SessionService {
     } catch {
       return (await this.foreignSessionDetail(sid, loadMessages, msgLimit, msgBefore))
     }
-    let revisionBefore = (await this.loadRevision(s))
+    const revisionBefore = (await this.loadRevision(s))
     if (!this.visibleToActiveProfile(s.profile)) {
       if (s.profile) throw new HttpFailure(409, 'Session belongs to a different profile', { code: 'session_profile_mismatch', session_id: sid, profile: s.profile })
       throw new HttpFailure(404, 'Session not found')
     }
     await this.clearStaleStreamState(s)
+    return this.detailPayload(s, loadMessages, msgLimit, msgBefore, revisionBefore)
+  }
+
+  /** Project an already settled session without reloading it or running endpoint recovery/profile gates. */
+  async windowedDetail(s: Session, limit: number): Promise<Record<string, unknown>> {
+    return this.detailPayload(s, true, limit, null, await this.loadRevision(s))
+  }
+
+  private async detailPayload(s: Session, loadMessages: boolean, msgLimit: number | null, msgBefore: number | null, revisionBefore: string | null): Promise<Record<string, unknown>> {
     // TAL-1162: the full transcript read runs on the state.db worker before the lifecycle snapshots are taken, so they
     // describe the session the payload is built from.
     const stateRows = loadMessages && msgLimit === null ? await this.stateDbRows(s) : []
