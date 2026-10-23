@@ -1,7 +1,8 @@
 /** Health, gateway status, logs, dashboard probe and link settings, and diagnostics (Python `api/agent_health.py`, `api/system_health.py`, `api/dashboard_probe.py`, `_handle_logs`). */
 import { readCapped } from '../http/capped.js'
 import { execFile } from 'node:child_process'
-import { constants, existsSync, fstatSync, openSync, readSync, readFileSync, closeSync, statSync, statfsSync } from 'node:fs'
+import { constants, existsSync, readFileSync, statSync, statfsSync } from 'node:fs'
+import { open, type FileHandle } from 'node:fs/promises'
 import { cpus, loadavg, freemem, totalmem } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import type { GatewayMode, GatewayStatus } from '@maudecode/talaria-web-contracts'
@@ -14,11 +15,14 @@ import { str } from '../util.js'
 const LOG_FILES: Record<string, string> = { agent: 'agent.log', errors: 'errors.log', gateway: 'gateway.log' }
 const LOG_TAILS = new Set([100, 200, 500, 1000])
 const LOG_MAX_BYTES = 4 * 1024 * 1024
+const LOG_CHUNK_BYTES = 64 * 1024
+/** Rereads after a log shrinks under the read (truncation or rotation in place) before giving up. */
+const LOG_READ_ATTEMPTS = 3
 
 // Opening with O_NOFOLLOW refuses a symlinked log atomically; O_NONBLOCK keeps a FIFO in its place from blocking the open.
 const LOG_OPEN_FLAGS = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0)
 
-export function readLogTail(profileHome: string, fileKeyRaw: unknown, tailRaw: unknown): Dict {
+export async function readLogTail(profileHome: string, fileKeyRaw: unknown, tailRaw: unknown, signal?: AbortSignal): Promise<Dict> {
   const fileKey = (str(fileKeyRaw ?? 'agent').trim().toLowerCase()) || 'agent'
   const filename = LOG_FILES[fileKey]
   if (!filename) throw new HttpFailure(400, 'Unknown log file')
@@ -27,25 +31,55 @@ export function readLogTail(profileHome: string, fileKeyRaw: unknown, tailRaw: u
   const logDir = resolve(profileHome, 'logs')
   const path = resolve(logDir, filename)
   const notFound = { file: fileKey, tail, lines: [], truncated: false, total_bytes: 0, mtime: null, hint: `Log file for ${fileKey} not found yet.` }
-  let fd: number
-  try { fd = openSync(path, LOG_OPEN_FLAGS) } catch (error) {
+  let handle: FileHandle
+  try { handle = await open(path, LOG_OPEN_FLAGS) } catch (error) {
     // Python `_handle_logs` refused a log resolving outside the logs dir; refusing every symlink makes the open itself the check.
     if ((error as NodeJS.ErrnoException).code === 'ELOOP') throw new HttpFailure(400, 'Invalid log file')
     return notFound
   }
-  let st: ReturnType<typeof fstatSync>
-  let buffer: Buffer
   try {
-    st = fstatSync(fd)
-    if (!st.isFile()) return notFound
-    const readBytes = Math.min(st.size, LOG_MAX_BYTES)
-    buffer = Buffer.alloc(readBytes)
-    readSync(fd, buffer, 0, readBytes, st.size - readBytes)
-  } finally { closeSync(fd) }
-  const total = st.size
-  const lines = buffer.toString('utf8').split(/\r?\n/)
+    for (let attempt = 0; attempt < LOG_READ_ATTEMPTS; attempt += 1) {
+      const st = await handle.stat()
+      if (!st.isFile()) return notFound
+      const lines = await tailLines(handle, st.size, tail, signal)
+      if (lines) return { file: fileKey, tail, lines, truncated: st.size > LOG_MAX_BYTES, total_bytes: st.size, mtime: st.mtimeMs / 1000, hint: '' }
+    }
+    throw new HttpFailure(503, 'Log file changed while reading')
+  } finally { await handle.close() }
+}
+
+/**
+ * The last `tail` lines of the window `[size - LOG_MAX_BYTES, size)`, read backward in chunks until `tail` complete
+ * lines are held, so only the retained tail is decoded. Null when a short read shows the file shrank under the read.
+ */
+async function tailLines(handle: FileHandle, size: number, tail: number, signal?: AbortSignal): Promise<string[] | null> {
+  const floor = Math.max(0, size - LOG_MAX_BYTES)
+  const chunks: Buffer[] = []
+  let start = size
+  let cut = floor
+  let newlines = 0
+  while (start > floor) {
+    const length = Math.min(LOG_CHUNK_BYTES, start - floor)
+    const chunk = Buffer.alloc(length)
+    const { bytesRead } = await handle.read(chunk, 0, length, start - length)
+    signal?.throwIfAborted()
+    if (bytesRead < length) return null
+    start -= length
+    chunks.unshift(chunk)
+    // A newline ending the file closes its last line rather than separating another one.
+    // A negative offset would search from the chunk's end, so the loop stops before one.
+    for (let from = start + length === size ? length - 2 : length - 1; from >= 0;) {
+      const i = chunk.lastIndexOf(0x0a, from)
+      if (i < 0) break
+      newlines += 1
+      if (newlines === tail) { cut = start + i + 1; break }
+      from = i - 1
+    }
+    if (newlines === tail) break
+  }
+  const lines = Buffer.concat(chunks).subarray(cut - start).toString('utf8').split(/\r?\n/)
   if (lines[lines.length - 1] === '') lines.pop()
-  return { file: fileKey, tail, lines: lines.slice(-tail), truncated: total > buffer.length, total_bytes: total, mtime: st.mtimeMs / 1000, hint: '' }
+  return lines.slice(-tail)
 }
 
 const checkedAt = (): string => new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')

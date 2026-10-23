@@ -517,7 +517,7 @@ export const toolsRouter = os.router({
     try { entries = (await ctx.deps.sessionStore.readIndexEntries()) } catch { entries = [] }
     return buildInsights(entries, input.days, ctx.deps.nowSeconds(), (cutoff) => stateDbSessionReadAsync([], 'insightsSessionRows', join(home(ctx), 'state.db'), cutoff)) as never
   })),
-  logs: os.logs.handler(({ input, context: { ctx } }) => run(() => readLogTail(home(ctx), input.file, input.tail) as never)),
+  logs: os.logs.handler(({ input, signal, context: { ctx } }) => run(() => readLogTail(home(ctx), input.file, input.tail, signal) as Promise<never>)),
   ops: {
     agent: os.ops.agent.handler(({ context: { ctx } }) => run(async () => { const [gateway, chat] = await Promise.all([health(ctx), currentChatReadiness(ctx.deps.sidecar())]); return { ...gateway, chat } })),
     system: os.ops.system.handler(({ context: { ctx } }) => run(() => systemHealth(ctx.deps.config.homeDir, ctx.deps.runtimeDiagnostics()) as never)),

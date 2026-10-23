@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The Logs page reads only the end of a large log file, so refreshing it no longer stalls the server.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
