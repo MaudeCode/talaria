@@ -39,6 +39,7 @@ def register(registry) -> None:
             raise InvalidParams("agent_dir must match the sidecar's configured Agent checkout")
         if not (root / "hermes_cli" / "venv_sync.py").is_file():
             return {"ok": True, "skipped": True, "detail": ""}
+        runtime.retire()
         env = _frozen_launch_env()
         env.update(HERMES_HOME=str(runtime.hermes_home), HERMES_DISABLE_LAZY_INSTALLS="1",
                    PYTHONPATH=str(root) + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else ""))
@@ -137,5 +138,6 @@ def register(registry) -> None:
 
         close_all()
         drain_agents()
+        runtime.retire()
         ctx.server.request_shutdown(exit_code=code)
         return {"ok": True}

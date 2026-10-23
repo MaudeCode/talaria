@@ -51,7 +51,10 @@ def main() -> int:
             close_all()
             drain_agents()
         finally:
-            close_dashboard_sources()
+            try:
+                runtime.retire()
+            finally:
+                close_dashboard_sources()
 
 
 if __name__ == "__main__":

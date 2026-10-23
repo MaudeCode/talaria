@@ -311,6 +311,14 @@ owner for background continuations. Repeated keys keep their dismissal/read stat
 the full warning text changes; `notice_clear` removes the row and `notices_reset` leaves
 it alone. Credit, usage and other per-session notices keep their existing lifecycle.
 
+The shared Agent runtime starts the native Nous connected-app handoff worker when the installed
+Agent provides it. It runs without a Nous chat or auth keepalive, including retained work from
+other profiles. The Agent owns account proof, locks, backoff and credential cleanup. Sidecar
+shutdown, source drift and dependency/source mutation retirement join the worker before releasing
+custody; retained work remains resumable by a fresh process. Missing modules on older Agents are
+supported, while a present worker that fails startup makes the Agent import incompatible.
+OAuth and connector status reads do not dispatch retries.
+
 ## 5. Frontend
 
 `packages/frontend` keeps the TanStack Start structure documented in

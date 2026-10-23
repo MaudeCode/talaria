@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Connected apps left waiting after Nous sign-in resume moving when Talaria Web starts.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
