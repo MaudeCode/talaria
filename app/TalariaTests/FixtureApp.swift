@@ -98,13 +98,13 @@ final class FixtureApp {
         .modelContainer(cache)
     }
 
-    func sessionList() -> some View {
+    func sessionList(scenePhase: ScenePhase = .active) -> some View {
         SessionListView(
             authManager: environment.authManager,
             server: UITestFixtureEnvironment.serverURL,
             draftStore: environment.draftStore
         )
-        .environment(\.scenePhase, .active)
+        .environment(\.scenePhase, scenePhase)
         .modelContainer(cache)
     }
 }

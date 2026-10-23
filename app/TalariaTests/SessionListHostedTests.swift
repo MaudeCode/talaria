@@ -609,3 +609,178 @@ private final class HeldRowMutationProtocol: URLProtocol {
         client?.urlProtocolDidFinishLoading(self)
     }
 }
+
+/// TAL-1195: what the Chats list says about its saved rows when a reload fails. Only a failure that shows the device has
+/// no network says Offline; one cut off by backgrounding, or a server that is down, says so instead, and the next answer
+/// clears it.
+extension SessionListHostedTests {
+    func testAReloadCutOffByBackgroundingIsNotShownAsOffline() async throws {
+        let fixture = try FixtureApp(for: self)
+        let scene = HostedScenePhase()
+        let window = try hostWindow(ScenePhasedSessionList(fixture: fixture, scene: scene))
+        let listed = await awaitElement(in: window, where: isFixtureRow)
+        let row = try XCTUnwrap(listed, "Missing deterministic session fixture")
+        await awaitInitialLoad(scene)
+
+        holdSessionList(true)
+        try await openChat(row, in: window)
+        try popToList(in: window)
+        let reloading = await awaitHeldSessionList()
+        XCTAssertTrue(reloading, "Returning to the list started no reload")
+
+        // The reload is still in flight when the App leaves the foreground, and the suspended connection drops.
+        scene.phase = .background
+        settle()
+        UITestFixtureURLProtocol.sessionListFailures.withLock { $0 = [.transport(.networkConnectionLost)] }
+        fixture.releaseHeldLoads()
+        let fellBack = await awaitElement(in: window, where: isCachedDataNotice)
+        XCTAssertNotNil(fellBack, "The dropped reload did not fall back to the saved rows")
+
+        scene.phase = .active
+        let returned = await awaitHeldSessionList()
+        XCTAssertTrue(returned, "Returning to the foreground started no list reload")
+        let found = await awaitElement(in: window, where: isCachedDataNotice)
+        let notice = try XCTUnwrap(found?.accessibilityLabel, "No saved-rows notice. Elements: \(HostedAccessibility.labels(in: window))")
+        attachHostedScreenshot(window, name: "dropped-reload-on-return")
+        XCTAssertFalse(notice.contains("Offline"), "A dropped connection is not a lost network: \(notice)")
+        XCTAssertTrue(notice.hasPrefix("Reconnecting"), notice)
+        XCTAssertNotNil(HostedAccessibility.elements(in: window).first(where: isFixtureRow), "The saved rows left the list")
+        XCTAssertEqual(isSelectChatsEnabled(in: window), false, "Saved rows must keep their action gates")
+
+        holdSessionList(false)
+        fixture.releaseHeldLoads()
+        let live = await awaitCondition { self.isSelectChatsEnabled(in: window) == true }
+        XCTAssertTrue(live, "The server's answer did not end the saved-rows mode")
+    }
+
+    func testReturningFromAChatWhileTheListReloadsMakesNoOfflineClaim() async throws {
+        let fixture = try FixtureApp(for: self)
+        let scene = HostedScenePhase()
+        let window = try hostWindow(ScenePhasedSessionList(fixture: fixture, scene: scene))
+        let listed = await awaitElement(in: window, where: isFixtureRow)
+        let row = try XCTUnwrap(listed, "Missing deterministic session fixture")
+        await awaitInitialLoad(scene)
+
+        // A plain return: the reload is held, and a pending reload says nothing about the connection.
+        holdSessionList(true)
+        try await openChat(row, in: window)
+        try popToList(in: window)
+        let reloading = await awaitHeldSessionList()
+        XCTAssertTrue(reloading, "Returning to the list started no reload")
+        XCTAssertNotNil(HostedAccessibility.elements(in: window).first(where: isFixtureRow), "The rows left during the reload")
+        XCTAssertFalse(HostedAccessibility.elements(in: window).contains(where: isCachedDataNotice), "\(HostedAccessibility.labels(in: window))")
+
+        // That reload answers 503 while a chat covers the list; the return shows the server's state, not Offline.
+        let reopened = await awaitElement(in: window, where: isFixtureRow)
+        try await openChat(try XCTUnwrap(reopened), in: window)
+        UITestFixtureURLProtocol.sessionListFailures.withLock { $0 = [.status(503)] }
+        fixture.releaseHeldLoads()
+        try popToList(in: window)
+        let returned = await awaitHeldSessionList()
+        XCTAssertTrue(returned, "Returning to the list started no reload")
+        let found = await awaitElement(in: window, where: isCachedDataNotice)
+        let notice = try XCTUnwrap(found?.accessibilityLabel, "No saved-rows notice. Elements: \(HostedAccessibility.labels(in: window))")
+        attachHostedScreenshot(window, name: "server-unavailable-on-return")
+        XCTAssertFalse(notice.contains("Offline"), "A 503 is not a lost network: \(notice)")
+        XCTAssertTrue(notice.hasPrefix("Server unavailable"), notice)
+        XCTAssertNotNil(HostedAccessibility.elements(in: window).first(where: isFixtureRow), "The saved rows left the list")
+        XCTAssertEqual(isSelectChatsEnabled(in: window), false, "Saved rows must keep their action gates")
+
+        holdSessionList(false)
+        fixture.releaseHeldLoads()
+        let live = await awaitCondition { self.isSelectChatsEnabled(in: window) == true }
+        XCTAssertTrue(live, "The server's answer did not end the saved-rows mode")
+    }
+
+    /// Each reason reads its own notice at phone width, and only a lost network says Offline.
+    func testCachedDataBannerReadsEachReason() throws {
+        let notices: [(CacheFallbackReason, String)] = [
+            (.offline, "Offline - viewing cached version"),
+            (.serverUnreachable, "Server unreachable - cached version"),
+            (.serverUnavailable, "Server unavailable - cached version"),
+            (.connectionInterrupted, "Reconnecting - cached version"),
+        ]
+        for (reason, title) in notices {
+            let window = try hostWindow(CachedDataBanner(reason: reason).frame(width: HostedSize.phone.width).fixedSize(horizontal: false, vertical: true))
+            XCTAssertEqual(HostedAccessibility.labels(in: window), [title], "\(reason)")
+            attachHostedScreenshot(window, name: "cached-data-banner-\(reason)")
+        }
+    }
+
+    /// Select Chats is off while the list shows saved rows. A removed list row can linger in the accessibility tree, so
+    /// this live control, not the notice's absence, shows that the list is the server's again.
+    private func isSelectChatsEnabled(in window: UIWindow) -> Bool? {
+        HostedAccessibility.element(in: window, label: "Select Chats").map { !$0.accessibilityTraits.contains(.notEnabled) }
+    }
+
+    private func isCachedDataNotice(_ element: NSObject) -> Bool {
+        element.accessibilityLabel?.contains("cached version") == true
+    }
+
+    private func holdSessionList(_ holds: Bool) {
+        FixtureLaunchArguments.scenario.removeAll { $0 == UITestFixtureEnvironment.holdSessionListArgument }
+        if holds { FixtureLaunchArguments.scenario.append(UITestFixtureEnvironment.holdSessionListArgument) }
+    }
+
+    private func awaitHeldSessionList(timeout: TimeInterval = 10) async -> Bool {
+        await awaitCondition(timeout: timeout) {
+            UITestFixtureHold.shared.pendingRequests.contains { $0.url?.path == "/api/sessions" }
+        }
+    }
+
+    /// Returns to the foreground until the return reloads the list at once, which it does only once the list's first
+    /// load has finished; before that, the restarted automatic refresh waits out its interval.
+    private func awaitInitialLoad(_ scene: HostedScenePhase) async {
+        func answeredLists() -> Int {
+            UITestFixtureURLProtocol.answeredPaths.withLock { $0.filter { $0 == "/api/sessions" }.count }
+        }
+        let deadline = Date().addingTimeInterval(35)
+        while Date() < deadline {
+            let answered = answeredLists()
+            scene.phase = .inactive
+            settle()
+            scene.phase = .active
+            if await awaitCondition(timeout: 1, { answeredLists() > answered }) { return }
+        }
+        XCTFail("The list's first load never finished")
+    }
+
+    private func openChat(_ row: NSObject, in window: UIWindow) async throws {
+        XCTAssertTrue(HostedAccessibility.activate(row), "The row did not open")
+        let opened = await awaitCondition { self.pushedNavigation(in: window) != nil }
+        XCTAssertTrue(opened, "The chat did not open over the list")
+    }
+
+    private func popToList(in window: UIWindow) throws {
+        let navigation = try XCTUnwrap(pushedNavigation(in: window), "No chat over the list")
+        navigation.popToRootViewController(animated: false)
+        settle()
+    }
+
+    private func pushedNavigation(in window: UIWindow) -> UINavigationController? {
+        var pending = window.rootViewController.map { [$0] } ?? []
+        while let controller = pending.popLast() {
+            if let navigation = controller as? UINavigationController, navigation.viewControllers.count > 1 {
+                return navigation
+            }
+            pending += controller.children
+        }
+        return nil
+    }
+}
+
+/// The scene phase a hosted test moves, standing in for the App leaving the foreground and returning (TAL-1195).
+@MainActor
+@Observable
+private final class HostedScenePhase {
+    var phase: ScenePhase = .active
+}
+
+private struct ScenePhasedSessionList: View {
+    let fixture: FixtureApp
+    let scene: HostedScenePhase
+
+    var body: some View {
+        fixture.sessionList(scenePhase: scene.phase)
+    }
+}

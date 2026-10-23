@@ -919,8 +919,8 @@ struct SessionListView: View {
     private var content: some View {
         let groups = scheduledSessionGroups
         return SidebarList {
-            if viewModel.isViewingCachedData {
-                SessionListBanner(systemImage: "wifi.slash", title: "Offline - viewing cached version")
+            if let reason = viewModel.cachedDataReason {
+                CachedDataBanner(reason: reason)
                     .padding(.top, 16)
                     .sessionsScreenListRow()
             }

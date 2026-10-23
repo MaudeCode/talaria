@@ -276,3 +276,112 @@ private final class RecordedSessionIDs: @unchecked Sendable {
         lock.withLock { recorded }
     }
 }
+
+// TAL-1195: a failed reload keeps the saved rows and says why, and only a lost network reads as offline.
+@MainActor
+extension SessionListMutationTests {
+    func testAFailedReloadKeepsTheSavedRowsUnderItsReasonUntilTheNextAnswer() async throws {
+        let failures: [(error: Error?, statusCode: Int, reason: CacheFallbackReason)] = [
+            (URLError(.notConnectedToInternet), 200, .offline),
+            (URLError(.cannotConnectToHost), 200, .serverUnreachable),
+            (nil, 503, .serverUnavailable),
+            (URLError(.networkConnectionLost), 200, .connectionInterrupted),
+            (URLError(.timedOut), 200, .connectionInterrupted),
+        ]
+        for failure in failures {
+            let context = try makeContext()
+            let requests = LockedCounter()
+            let viewModel = try makeViewModel { request in
+                switch request.url?.path {
+                case "/api/sessions" where requests.increment() == 2:
+                    if let error = failure.error { throw error }
+                    return apiTestJSONResponse(#"{"error": "Unavailable"}"#, statusCode: failure.statusCode, for: request)
+                case "/api/sessions":
+                    return apiTestJSONResponse(#"{"sessions": [{"session_id": "saved-1", "title": "Saved chat"}]}"#, for: request)
+                default:
+                    return apiTestJSONResponse(#"{"active": "default", "profiles": [{"name": "default"}, {"name": "work"}]}"#, for: request)
+                }
+            }
+            await viewModel.load(modelContext: context)
+            await viewModel.loadActiveProfile()
+            XCTAssertNil(viewModel.cachedDataReason)
+
+            await viewModel.load(modelContext: context)
+
+            XCTAssertEqual(viewModel.cachedDataReason, failure.reason, "\(failure.reason)")
+            XCTAssertEqual(viewModel.sessions.compactMap(\.sessionId), ["saved-1"], "\(failure.reason)")
+            XCTAssertTrue(viewModel.isViewingCachedData, "\(failure.reason): the saved rows keep their action gates")
+            let work = try JSONDecoder().decode(ProfileSummary.self, from: Data(#"{"name": "work"}"#.utf8))
+            let switched = await viewModel.switchActiveProfile(work)
+            XCTAssertFalse(switched, "\(failure.reason): a profile switch stays refused on saved rows")
+
+            await viewModel.load(modelContext: context)
+
+            XCTAssertNil(viewModel.cachedDataReason, "\(failure.reason): the server's answer ends the fallback")
+            XCTAssertFalse(viewModel.isViewingCachedData)
+        }
+    }
+
+    /// Navigating away or backgrounding cancels a reload; that says nothing about the connection.
+    func testACancelledReloadLeavesTheListAsItWas() async throws {
+        let context = try makeContext()
+        let requests = LockedCounter()
+        let viewModel = try makeViewModel { request in
+            if requests.increment() == 2 { throw URLError(.cancelled) }
+            return apiTestJSONResponse(#"{"sessions": [{"session_id": "live-1", "title": "Live chat"}]}"#, for: request)
+        }
+        await viewModel.load(modelContext: context)
+
+        let didApply = await viewModel.load(modelContext: context)
+
+        XCTAssertFalse(didApply)
+        XCTAssertNil(viewModel.cachedDataReason)
+        XCTAssertEqual(viewModel.sessions.compactMap(\.sessionId), ["live-1"])
+    }
+
+    /// A reload sent for the previous profile that fails after a switch belongs to that profile: it neither marks the
+    /// new profile's list as saved data nor puts the old rows back.
+    func testAReloadFailingAfterAProfileSwitchLeavesTheNewProfileLive() async throws {
+        let host = "tal1195-profile-switch.test"
+        let requests = DeferredRequestsByPath()
+        let reloadArrived = expectation(description: "reload arrived")
+        let switchArrived = expectation(description: "switch arrived")
+        DeferredMockURLProtocol.setOnRequest({ request in
+            requests.record(request)
+            switch request.request.url?.path {
+            case "/api/sessions": reloadArrived.fulfill()
+            case "/api/profile/switch": switchArrived.fulfill()
+            default: XCTFail("Unexpected request: \(request.request.url?.path ?? "nil")")
+            }
+        }, forHost: host)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [DeferredMockURLProtocol.self]
+        let server = try XCTUnwrap(URL(string: "https://\(host)"))
+        let context = try makeContext()
+        try CacheStore.cacheSessions(
+            [SessionSummary(sessionId: "old-profile", title: "Old profile chat", archived: false)],
+            serverURL: server,
+            in: context
+        )
+        let viewModel = SessionListViewModel(
+            server: server,
+            client: APIClient(baseURL: server, session: URLSession(configuration: configuration))
+        )
+
+        let reload = Task { await viewModel.load(modelContext: context) }
+        await fulfillment(of: [reloadArrived], timeout: 5)
+        let work = try JSONDecoder().decode(ProfileSummary.self, from: Data(#"{"name": "work"}"#.utf8))
+        let switched = Task { await viewModel.switchActiveProfile(work) }
+        await fulfillment(of: [switchArrived], timeout: 5)
+        requests.request("/api/profile/switch")?.complete(withJSON: #"{"active": "work", "profiles": [{"name": "work"}]}"#)
+        let didSwitch = await switched.value
+        XCTAssertTrue(didSwitch)
+
+        requests.request("/api/sessions")?.fail(with: URLError(.notConnectedToInternet))
+        _ = await reload.value
+
+        XCTAssertNil(viewModel.cachedDataReason, "The old profile's failure marked the new profile's list")
+        XCTAssertEqual(viewModel.sessions, [], "The old profile's saved rows came back")
+    }
+}
