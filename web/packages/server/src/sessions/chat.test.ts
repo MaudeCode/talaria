@@ -4225,7 +4225,12 @@ describe('live metering and todo_state (TAL-397)', () => {
   afterAll(() => s.close())
 
   const turn = async (sid: string, message: string): Promise<SseFrame[]> => {
-    const streamId = String((await json(await post(s, '/api/chat/start', { session_id: sid, message }))).stream_id)
+    const response = await post(s, '/api/chat/start', { session_id: sid, message })
+    const body = await json(response)
+    const admission = JSON.stringify({ body, logs: s.logs.slice(-20), methods: sidecar.calls.filter((call) => (call.params as Json).session_id === sid).map((call) => call.method) })
+    expect(response.status, admission).toBe(200)
+    expect(body.stream_id, admission).toEqual(expect.stringMatching(/\S/))
+    const streamId = String(body.stream_id)
     return s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'stream_end')
   }
   const meterings = (frames: SseFrame[]): Json[] => frames.slice(0, frames.findIndex((f) => f.event === 'done')).filter((f) => f.event === 'metering').map((f) => f.data as Json)
