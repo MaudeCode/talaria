@@ -1,6 +1,88 @@
 import SwiftUI
 import TalariaKit
 
+/// A single root measurement, shared in physical window coordinates across navigation columns.
+struct DivisionRegionGeometry: Equatable {
+    var frame: CGRect = .zero
+    var divisions: [CGRect] = []
+
+    init() {}
+
+    init(_ geometry: GeometryProxy, divisions override: [CGRect]? = nil) {
+        frame = geometry.frame(in: .global)
+        let local: [CGRect]
+        if let override {
+            local = override
+        } else if #available(iOS 27.1, *) {
+            local = geometry.reservedRegions(kind: .division, layoutDirectionBehavior: .fixed)
+                .filter(\.isActive).map(\.frame)
+        } else {
+            local = []
+        }
+        divisions = local.map { $0.offsetBy(dx: frame.minX, dy: frame.minY) }
+    }
+
+    func localDivisions(in geometry: GeometryProxy) -> [CGRect] {
+        let origin = geometry.frame(in: .global).origin
+        return divisions.map { $0.offsetBy(dx: -origin.x, dy: -origin.y) }
+    }
+}
+
+extension EnvironmentValues {
+    @Entry var divisionRegionGeometry: DivisionRegionGeometry? = nil
+    @Entry var tabletopComposerHeight: CGFloat? = nil
+}
+
+/// Extends the shared adaptive-content modifiers to place a centered state inside one usable pane.
+private struct FoldAvoidingPlacementModifier: ViewModifier {
+    var avoidsHorizontalDivisions = true
+    var isEnabled = true
+    @Environment(\.divisionRegionGeometry) private var divisions
+    @Environment(\.layoutDirection) private var layoutDirection
+    @State private var frame: CGRect = .zero
+
+    func body(content: Content) -> some View {
+        FoldAvoidingPlacementLayout(geometry: isEnabled ? divisions : nil, contentFrame: frame,
+            layoutDirection: layoutDirection, avoidsHorizontalDivisions: avoidsHorizontalDivisions) {
+            content
+        }
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame = $0 }
+    }
+}
+
+/// Unlike the alert card's width-capped layout, states also occupy intrinsic-height List rows.
+private struct FoldAvoidingPlacementLayout: Layout {
+    let geometry: DivisionRegionGeometry?
+    let contentFrame: CGRect
+    let layoutDirection: LayoutDirection
+    let avoidsHorizontalDivisions: Bool
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        size(proposal: proposal, subviews: subviews)
+    }
+
+    private func size(proposal: ProposedViewSize, subviews: Subviews) -> CGSize {
+        guard let content = subviews.first else { return .zero }
+        let natural = content.sizeThatFits(proposal)
+        guard let geometry, !geometry.divisions.isEmpty else { return natural }
+        // An unavailable-state row may use the remaining viewport; populated lists never use this modifier.
+        return CGSize(width: proposal.width ?? natural.width,
+            height: proposal.height ?? max(natural.height, geometry.frame.maxY - contentFrame.minY))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard let content = subviews.first else { return }
+        let globalBounds = CGRect(origin: contentFrame.origin, size: bounds.size)
+        let available = DivisionRegionLayout.availableFrame(in: globalBounds,
+            divisions: geometry?.divisions ?? [], layoutDirection: layoutDirection,
+            avoidsHorizontalDivisions: avoidsHorizontalDivisions, horizontalPlacement: .bottom)
+        guard !available.isNull else { return }
+        content.place(at: CGPoint(x: bounds.minX + available.midX - globalBounds.minX,
+                                  y: bounds.minY + available.midY - globalBounds.minY), anchor: .center,
+                      proposal: ProposedViewSize(available.size))
+    }
+}
+
 private struct AdaptiveReadableContentModifier: ViewModifier {
     let maxWidth: CGFloat
 
@@ -35,6 +117,10 @@ private struct AdaptiveReadableScrollContentModifier: ViewModifier {
 }
 
 extension View {
+    func foldAvoidingPlacement(avoidsHorizontalDivisions: Bool = true, isEnabled: Bool = true) -> some View {
+        modifier(FoldAvoidingPlacementModifier(avoidsHorizontalDivisions: avoidsHorizontalDivisions, isEnabled: isEnabled))
+    }
+
     func adaptiveReadableContent(maxWidth: CGFloat) -> some View {
         modifier(AdaptiveReadableContentModifier(maxWidth: maxWidth))
     }

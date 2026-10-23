@@ -3,6 +3,7 @@ import TalariaKit
 
 struct KanbanStatusFocusView: View {
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.divisionRegionGeometry) private var divisionGeometry
     @Bindable var model: KanbanFeatureState
     @State private var showsFilters = false
     @State private var showsBoardManagement = false
@@ -196,6 +197,7 @@ struct KanbanStatusFocusView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text("Loading Kanban"))
+        .foldAvoidingPlacement()
     }
 
     private var boardContent: some View {
@@ -476,6 +478,7 @@ struct KanbanStatusFocusView: View {
             }
             .frame(minHeight: 44)
         }
+        .foldAvoidingPlacement()
     }
 
     private var bulkProgressBanner: some View {
@@ -952,7 +955,7 @@ struct KanbanStatusFocusView: View {
 
     private var cardList: some View {
         List {
-            if model.isRefreshing {
+            if model.isRefreshing, divisionGeometry?.divisions.isEmpty != false {
                 HStack {
                     Spacer()
                     ProgressView("Refreshing Board")
@@ -984,6 +987,13 @@ struct KanbanStatusFocusView: View {
         }
         .listStyle(.plain)
         .refreshable { await model.refresh() }
+        .overlay {
+            if model.isRefreshing, divisionGeometry?.divisions.isEmpty == false {
+                ProgressView("Refreshing Board")
+                    .foldAvoidingPlacement()
+                    .allowsHitTesting(false)
+            }
+        }
     }
 
     @ViewBuilder
@@ -1163,6 +1173,7 @@ struct KanbanStatusFocusView: View {
                     .frame(minHeight: 44)
             }
         }
+        .foldAvoidingPlacement()
     }
 
     @ToolbarContentBuilder
@@ -1310,5 +1321,6 @@ struct KanbanStatusFocusView: View {
             Button("Try Again") { Task { await model.retry() } }
                 .frame(minHeight: 44)
         }
+        .foldAvoidingPlacement()
     }
 }

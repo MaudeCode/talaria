@@ -1,15 +1,35 @@
 import CoreGraphics
 import SwiftUI
 
-/// Selects the trailing book pane and, optionally, the top tabletop pane using physical coordinates.
+/// Resolves panes around the fold using physical coordinates for every app section and chat overlay.
 public enum DivisionRegionLayout {
+    public struct ChatFrames: Equatable {
+        public let transcript: CGRect
+        public let composer: CGRect
+        public let isTabletop: Bool
+    }
+
+    public static func chatFrames(in bounds: CGRect, divisions: [CGRect],
+                                  layoutDirection: LayoutDirection = .leftToRight,
+                                  keyboardIsVisible: Bool) -> ChatFrames {
+        let transcript = availableFrame(in: bounds, divisions: divisions,
+            avoidsHorizontalDivisions: !keyboardIsVisible, avoidsVerticalDivisions: false)
+        return ChatFrames(transcript: transcript,
+            composer: availableFrame(in: bounds, divisions: divisions, layoutDirection: layoutDirection,
+                avoidsHorizontalDivisions: !keyboardIsVisible, horizontalPlacement: .bottom),
+            isTabletop: transcript != bounds)
+    }
+
     public static func availableFrame(in bounds: CGRect, divisions: [CGRect],
                                       layoutDirection: LayoutDirection = .leftToRight,
-                                      avoidsHorizontalDivisions: Bool = true) -> CGRect {
+                                      avoidsHorizontalDivisions: Bool = true,
+                                      avoidsVerticalDivisions: Bool = true,
+                                      horizontalPlacement: VerticalEdge = .top) -> CGRect {
         divisions.reduce(bounds) { available, division in
             let fold = bounds.intersection(division)
             guard !fold.isNull, fold.width > 0, fold.height > 0 else { return available }
-            if fold.height > fold.width {
+            if division.height > division.width {
+                guard avoidsVerticalDivisions else { return available }
                 if layoutDirection == .rightToLeft {
                     return available.intersection(CGRect(x: bounds.minX, y: bounds.minY,
                         width: fold.minX - bounds.minX, height: bounds.height))
@@ -18,8 +38,20 @@ public enum DivisionRegionLayout {
                     width: bounds.maxX - fold.maxX, height: bounds.height))
             }
             guard avoidsHorizontalDivisions else { return available }
+            if horizontalPlacement == .bottom {
+                return available.intersection(CGRect(x: bounds.minX, y: fold.maxY,
+                    width: bounds.width, height: bounds.maxY - fold.maxY))
+            }
             return available.intersection(CGRect(x: bounds.minX, y: bounds.minY,
                 width: bounds.width, height: fold.minY - bounds.minY))
         }
+    }
+
+    public static func sidebarWidth(in bounds: CGRect, divisions: [CGRect],
+                                    layoutDirection: LayoutDirection = .leftToRight) -> CGFloat? {
+        let leading = availableFrame(in: bounds, divisions: divisions,
+            layoutDirection: layoutDirection == .leftToRight ? .rightToLeft : .leftToRight,
+            avoidsHorizontalDivisions: false)
+        return leading == bounds ? nil : max(0, leading.width)
     }
 }

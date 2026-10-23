@@ -12,12 +12,35 @@ final class ComposerTextViewMarkedTextTests: XCTestCase {
         var revision = 0
         var writeCount = 0
         var isFocused = false
+        var inputHeight: CGFloat = 22
+        var measuredHeight: CGFloat = 0
         var text = "" {
             didSet {
                 revision += 1
                 writeCount += 1
             }
         }
+    }
+
+    func testOneRowDisplayKeepsTheFullTextMeasurement() async throws {
+        let draft = Draft()
+        draft.text = String(repeating: "Synthetic measurement line\n", count: 20)
+        let window = try hostWindow(ComposerTextInputView(
+            text: Binding(get: { draft.text }, set: { draft.text = $0 }), revision: draft.revision,
+            isFocused: Binding(get: { draft.isFocused }, set: { draft.isFocused = $0 }),
+            inputHeight: Binding(get: { draft.inputHeight }, set: { draft.inputHeight = $0 }),
+            measuredHeight: Binding(get: { draft.measuredHeight }, set: { draft.measuredHeight = $0 }),
+            isDisabled: false, isKeyboardSendEnabled: false, keyboardSendKey: .return,
+            alternateSendBehavior: .steer, verticalPadding: 0, onKeyboardSend: { _ in },
+            onPasteFileProviders: { _ in }, onPasteFileURLs: { _ in },
+            onPasteImageProviders: { _ in }, onPasteImages: { _ in }, maximumInputHeight: 22
+        ))
+        let editor = try XCTUnwrap(window.firstView(ofType: UITextView.self))
+        editor.delegate?.textViewDidChange?(editor)
+        let measured = await awaitCondition { draft.measuredHeight > 0 }
+        XCTAssertTrue(measured)
+        XCTAssertEqual(editor.bounds.height, 22, accuracy: 1)
+        XCTAssertEqual(draft.measuredHeight, 96, "One-row display must retain the full measurement used by flat composer chrome")
     }
 
     // MARK: - Marked text protection

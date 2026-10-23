@@ -61,6 +61,101 @@ final class ChatHostedTests: XCTestCase {
         XCTAssertTrue(editor.isFirstResponder)
     }
 
+    func testTabletopPartitionsTranscriptAndComposerWithoutLosingTheDraft() async throws {
+        let fixture = try FixtureApp(for: self)
+        let session = try await fixture.session()
+        let fold = CGRect(x: -100, y: 330, width: 2000, height: 40)
+        let recorder = ChatBodyEvaluationRecorder()
+        var transcriptFrame: CGRect { recorder.transcriptFrame }
+        let chat = fixture.chat(session).environment(\.chatBodyEvaluation, recorder)
+        let window = try hostWindow(FoldHost(content: AnyView(chat), division: fold),
+                                    size: CGSize(width: 900, height: 900))
+        _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
+        XCTAssertFalse(transcriptFrame.isNull)
+        let foldInWindow = fold.offsetBy(dx: 0, dy: transcriptFrame.minY)
+        let draft = (1...20).map { "Retained tabletop draft line \($0)" }.joined(separator: "\n")
+        try await typeIntoComposer(draft, in: window)
+        let loadedEditor = await composerTextView(in: window)
+        let editor = try XCTUnwrap(loadedEditor)
+        editor.resignFirstResponder()
+        settle(0.5)
+        let flatHeight = editor.bounds.height
+        let composerControls = Set(HostedAccessibility.elements(in: window).filter {
+            $0.accessibilityTraits.contains(.button)
+                && window.convert($0.accessibilityFrame, from: nil).minY >= editor.convert(editor.bounds, to: window).minY
+        }.compactMap(\.accessibilityLabel))
+        attachHostedScreenshot(window, name: "tabletop-before-flat")
+
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Toggle fixture fold"))
+        let transcript = try transcriptScrollView(in: window)
+        let partitioned = await awaitCondition {
+            transcriptFrame.maxY <= foldInWindow.minY + 1
+        }
+        XCTAssertTrue(partitioned, "The tabletop transcript still extends below the horizontal fold: \(transcriptFrame), fold \(foldInWindow)")
+        XCTAssertGreaterThanOrEqual(editor.convert(editor.bounds, to: window).minY, foldInWindow.maxY)
+        XCTAssertGreaterThan(editor.bounds.height, flatHeight + 30, "A long draft must grow into the tabletop control region")
+        let send = try await requireElement(in: window, label: "Send")
+        XCTAssertGreaterThanOrEqual(window.convert(send.accessibilityFrame, from: nil).minY, foldInWindow.maxY)
+        XCTAssertEqual(editor.text, draft)
+        attachHostedScreenshot(window, name: "tabletop-after-fold")
+        for label in composerControls {
+            let control = try await requireElement(in: window, label: label)
+            XCTAssertGreaterThanOrEqual(window.convert(control.accessibilityFrame, from: nil).minY, foldInWindow.maxY,
+                "The tabletop composer lost or displaced \(label) across the fold")
+        }
+
+        // System keyboard notifications are the integration seam; native keyboard geometry is checked separately.
+        NotificationCenter.default.post(name: UIResponder.keyboardWillShowNotification, object: nil)
+        let keyboardWins = await awaitCondition { transcriptFrame.maxY > foldInWindow.maxY }
+        XCTAssertTrue(keyboardWins, "The keyboard must suspend tabletop partitioning")
+        NotificationCenter.default.post(name: UIResponder.keyboardWillHideNotification, object: nil)
+        let tabletopReturns = await awaitCondition { transcriptFrame.maxY <= foldInWindow.minY + 1 }
+        XCTAssertTrue(tabletopReturns, "Dismissing the keyboard must restore tabletop partitioning")
+        XCTAssertEqual(editor.text, draft)
+
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Toggle fixture fold"))
+        let restored = await awaitCondition { transcript.convert(transcript.bounds, to: window).maxY > 600 }
+        XCTAssertTrue(restored)
+        XCTAssertEqual(editor.text, draft)
+        let restoredEditor = await composerTextView(in: window)
+        XCTAssertTrue(restoredEditor === editor)
+    }
+
+    func testTabletopDisablesStripToggleAndPreservesTheFlatPreference() async throws {
+        let fixture = try FixtureApp(for: self)
+        let session = try await fixture.session()
+        let suite = "TAL-495-strip-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(false, forKey: ComposerVisibilitySettings.controlStripKey)
+        let window = try hostWindow(FoldHost(content: AnyView(fixture.chat(session)),
+            division: CGRect(x: -100, y: 330, width: 2000, height: 40))
+            .defaultAppStorage(defaults), size: CGSize(width: 900, height: 900))
+        _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
+        try await typeIntoComposer("Retained control-strip preference", in: window)
+        let loadedEditor = await composerTextView(in: window)
+        try XCTUnwrap(loadedEditor).resignFirstResponder()
+        settle(0.3)
+        _ = try await requireElement(in: window, label: "Show composer controls")
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Toggle fixture fold"))
+        _ = try await requireElement(in: window, label: "Select model")
+        let toggle = try await requireElement(in: window) {
+            ["Show composer controls", "Hide composer controls"].contains($0.accessibilityLabel ?? "")
+        }
+        XCTAssertTrue(toggle.accessibilityTraits.contains(.notEnabled),
+            "Tabletop must not offer an ineffective toggle that mutates the saved flat preference")
+        XCTAssertEqual(toggle.accessibilityLabel, "Hide composer controls")
+        XCTAssertFalse(defaults.bool(forKey: ComposerVisibilitySettings.controlStripKey))
+        attachHostedScreenshot(window, name: "tabletop-strip-toggle-disabled")
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Toggle fixture fold"))
+        let restored = try await requireElement(in: window, label: "Show composer controls")
+        XCTAssertFalse(restored.accessibilityTraits.contains(.notEnabled))
+        XCTAssertFalse(defaults.bool(forKey: ComposerVisibilitySettings.controlStripKey))
+        HostedAccessibility.activate(restored)
+        _ = try await requireElement(in: window, label: "Hide composer controls")
+        XCTAssertTrue(defaults.bool(forKey: ComposerVisibilitySettings.controlStripKey))
+    }
+
     func testBookFoldMovesTheClarificationCardAndItsChoices() async throws {
         let fixture = try FixtureApp(["--ui-test-chat-clarification"], for: self)
         let session = try await fixture.session()

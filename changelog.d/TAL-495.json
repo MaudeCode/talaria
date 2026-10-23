@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "App sections adapt to the iPhone Duo fold, with chat messages above the fold and composer controls below in tabletop use.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

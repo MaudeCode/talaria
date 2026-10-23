@@ -11,6 +11,9 @@ import TalariaKit
 @MainActor
 final class ChatBodyEvaluationRecorder {
     private(set) var counts: [String: Int] = [:]
+    private(set) var transcriptFrame: CGRect = .null
+
+    func recordTranscriptFrame(_ frame: CGRect) { transcriptFrame = frame }
 
     func callAsFunction(_ body: String) {
         counts[body, default: 0] += 1
@@ -210,6 +213,10 @@ struct ChatView: View {
     @State private var scrollToBottomRequest = 0
     @State private var clarificationPanelHeight: CGFloat = 320
     @State private var composerAvailableHeight: CGFloat = 0
+    @State private var tabletopIsActive = false
+    @State private var composerAccessoriesHeight: CGFloat = 0
+    @State private var keyboardIsVisible = false
+    @Environment(\.divisionRegionGeometry) private var divisionGeometry
     @State private var composerIsFocused = false
     @State private var composerRequiresExpandedPresentation = false
     @State private var didHydrateDraft = false
@@ -545,7 +552,8 @@ struct ChatView: View {
 
     private var chatLayout: some View {
         GeometryReader { geometry in
-            let composerFrame = composerRegion(in: geometry)
+            let frames = chatFrames(in: geometry)
+            let composerFrame = frames.composer
             ZStack(alignment: .bottom) {
                 VStack(spacing: 0) {
                     if viewModel.isViewingCachedData {
@@ -559,15 +567,26 @@ struct ChatView: View {
                         // banner above stays in the app's default direction.
                         .environment(\.layoutDirection, chatLayoutDirection)
                 }
+                .frame(height: frames.transcript.height, alignment: .top)
+#if DEBUG
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { recordBodyEvaluation?.recordTranscriptFrame($0) }
+#endif
+                // ScrollView otherwise extends its native viewport through the container's safe areas.
+                .mask { Rectangle().ignoresSafeArea(.container, edges: frames.isTabletop ? [] : .all) }
+                .frame(maxHeight: .infinity, alignment: .top)
                 .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: viewModel.showsListenPlaybackBar)
 
                 ZStack(alignment: .bottom) {
                     BottomComposerMaterialFade(composerHeight: composerHeight)
                     composerAccessoryStack
+                        .onGeometryChange(for: CGFloat.self) { max(0, $0.size.height - composerHeight - 8) } action: {
+                            composerAccessoriesHeight = $0
+                        }
                     messageComposer
                 }
-                .frame(width: composerFrame.width)
-                .frame(maxWidth: .infinity, alignment: .trailing)
+                .environment(\.tabletopComposerHeight, frames.isTabletop ? max(0, composerFrame.height - composerAccessoriesHeight - 8) : nil)
+                .frame(width: composerFrame.width, height: frames.isTabletop ? composerFrame.height : nil, alignment: .bottom)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                 .animation(ChatMotion.composerChrome(reduceMotion: reduceMotion), value: geometry.size.width - composerFrame.width)
 
                 if let approvalPrompt = viewModel.approvalPrompt {
@@ -597,7 +616,16 @@ struct ChatView: View {
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
         }
-        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerAvailableHeight = $0 }
+        .onGeometryChange(for: DivisionRegionLayout.ChatFrames.self) { chatFrames(in: $0) } action: {
+            composerAvailableHeight = $0.composer.height
+            tabletopIsActive = $0.isTabletop
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+            keyboardIsVisible = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            keyboardIsVisible = false
+        }
         .overlay(alignment: .top) {
             GitActionToastOverlay(state: gitToastState)
         }
@@ -607,20 +635,19 @@ struct ChatView: View {
         }
     }
 
-    private func composerRegion(in geometry: GeometryProxy) -> CGRect {
-        let bounds = CGRect(origin: .zero, size: geometry.size)
+    private func chatFrames(in geometry: GeometryProxy) -> DivisionRegionLayout.ChatFrames {
+        let divisions: [CGRect]
+        if let divisionGeometry {
+            divisions = divisionGeometry.localDivisions(in: geometry)
+        } else {
 #if DEBUG
-        if let divisionFramesForTesting {
-            return DivisionRegionLayout.availableFrame(in: bounds, divisions: divisionFramesForTesting,
-                layoutDirection: layoutDirection, avoidsHorizontalDivisions: false)
-        }
+            divisions = DivisionRegionGeometry(geometry, divisions: divisionFramesForTesting).localDivisions(in: geometry)
+#else
+            divisions = DivisionRegionGeometry(geometry).localDivisions(in: geometry)
 #endif
-        guard #available(iOS 27.1, *) else { return bounds }
-        // Frames already include margins; both overlays use physical coordinates in their shared resolver.
-        let divisions = geometry.reservedRegions(kind: .division, layoutDirectionBehavior: .fixed)
-            .filter(\.isActive).map(\.frame)
-        return DivisionRegionLayout.availableFrame(in: bounds, divisions: divisions,
-            layoutDirection: layoutDirection, avoidsHorizontalDivisions: false)
+        }
+        return DivisionRegionLayout.chatFrames(in: CGRect(origin: .zero, size: geometry.size),
+            divisions: divisions, layoutDirection: layoutDirection, keyboardIsVisible: keyboardIsVisible)
     }
 
     private var chatWithLifecycle: some View {
@@ -1696,6 +1723,7 @@ struct ChatView: View {
     }
 
     private var transcriptBottomInsetHeight: CGFloat {
+        if tabletopIsActive { return 8 }
         let inset = max(96, composerHeight + 44 + composerAccessorySpacerHeight())
         guard composerAvailableHeight > 0 else { return inset }
         // A short pane, as on an iPhone in landscape with the keyboard up, keeps the transcript's minimum in view

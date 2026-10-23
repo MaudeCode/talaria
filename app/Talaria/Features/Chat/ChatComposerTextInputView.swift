@@ -24,6 +24,7 @@ struct ComposerTextInputView: View {
     var placeholder: LocalizedStringKey = "Ask anything... /commands"
     /// Caps the text at that height; longer text scrolls inside it.
     var maximumInputHeight: CGFloat = .infinity
+    var maximumMeasuredHeight: CGFloat = 96
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -37,6 +38,7 @@ struct ComposerTextInputView: View {
                 alternateSendBehavior: alternateSendBehavior,
                 onKeyboardSend: onKeyboardSend,
                 onHeightChange: updateMeasuredHeight,
+                maximumHeight: maximumMeasuredHeight,
                 onPasteFileProviders: onPasteFileProviders,
                 onPasteFileURLs: onPasteFileURLs,
                 onPasteImageProviders: onPasteImageProviders,

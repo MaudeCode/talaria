@@ -68,6 +68,29 @@ final class SessionListHostedTests: XCTestCase {
         }
     }
 
+    func testCenteredStatesUseTheTrailingAndBottomPanes() throws {
+        let size = CGSize(width: 900, height: 900)
+        for (name, fold, center) in [
+            ("book", CGRect(x: 430, y: 0, width: 40, height: 900), CGPoint(x: 685, y: 450)),
+            ("tabletop", CGRect(x: 0, y: 330, width: 900, height: 40), CGPoint(x: 450, y: 635))
+        ] {
+            var geometry = DivisionRegionGeometry()
+            geometry.frame = CGRect(origin: .zero, size: size)
+            geometry.divisions = [fold]
+            let window = try hostWindow(
+                Button("Try Again") {}.foldAvoidingPlacement().ignoresSafeArea()
+                    .environment(\.divisionRegionGeometry, geometry), size: size)
+            let button = try XCTUnwrap(HostedAccessibility.element(in: window, label: "Try Again"))
+            let frame = window.convert(button.accessibilityFrame, from: nil)
+            XCTAssertEqual(frame.midX, center.x, accuracy: 1)
+            XCTAssertEqual(frame.midY, center.y, accuracy: 1)
+            XCTAssertFalse(frame.intersects(fold))
+            attachHostedScreenshot(window, name: "centered-state-\(name)")
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+    }
+
     func testSettingsAvatarOpensSettings() async throws {
         let fixture = try FixtureApp(for: self)
         let window = try hostWindow(fixture.sessionList())
@@ -657,9 +680,9 @@ final class RegularSplitHostedTests: XCTestCase {
     }
 
     /// The fixture chat opened from the Chats sidebar in a regular-width window of `size`.
-    private func openChat(size: CGSize) async throws -> Split {
+    private func openChat(size: CGSize, divisions: [CGRect]? = nil) async throws -> Split {
         let fixture = try FixtureApp(for: self)
-        let window = try hostWindow(fixture.sessionList(), size: size) {
+        let window = try hostWindow(fixture.sessionList().environment(\.chatDivisionFramesForTesting, divisions), size: size) {
             $0.horizontalSizeClass = .regular
             $0.verticalSizeClass = .regular
         }
@@ -672,6 +695,52 @@ final class RegularSplitHostedTests: XCTestCase {
         let split = Split(fixture: fixture, window: window, controller: controller)
         XCTAssertTrue(split.showsSidebar, "Chats did not show the list beside the chat")
         return split
+    }
+
+    func testFullWidthLoadingAndErrorStatesStayInTheFoldPane() async throws {
+        let size = HostedSize.duoInnerLandscape
+        let poses = [
+            ("book", CGRect(x: 455, y: -100, width: 40, height: 2000)),
+            ("tabletop", CGRect(x: -100, y: 300, width: 2000, height: 40))
+        ]
+        for (section, flag, label) in [
+            ("Kanban", UITestFixtureEnvironment.panelLoadingArgument, "Loading Kanban"),
+            ("Kanban", UITestFixtureEnvironment.panelUnavailableArgument, "The Kanban server is unavailable."),
+            ("Insights", UITestFixtureEnvironment.panelLoadingArgument, "Loading analytics…"),
+            ("Insights", UITestFixtureEnvironment.panelUnavailableArgument, "Could Not Load Analytics")
+        ] {
+            for (pose, fold) in poses {
+                let fixture = try FixtureApp([flag], for: self)
+                let window = try hostWindow(fixture.sessionList()
+                    .environment(\.chatDivisionFramesForTesting, [fold]).ignoresSafeArea(), size: size) {
+                    $0.horizontalSizeClass = .regular
+                    $0.verticalSizeClass = .regular
+                }
+                let foundNavigation = await barButton("Open navigation", in: window)
+                let navigation = try XCTUnwrap(foundNavigation)
+                press(navigation)
+                HostedAccessibility.activate(try await requireElement(in: window, label: section))
+                let state = try await requireElement(in: window, label: label)
+                let stateFrame = window.convert(state.accessibilityFrame, from: nil)
+                if pose == "book" {
+                    XCTAssertGreaterThanOrEqual(stateFrame.minX, fold.maxX, "\(section) \(label) still crosses the book fold")
+                } else {
+                    XCTAssertGreaterThanOrEqual(stateFrame.minY, fold.maxY, "\(section) \(label) still crosses the tabletop fold")
+                }
+                for control in HostedAccessibility.elements(in: window) where control.accessibilityTraits.contains(.button)
+                    && ["Try Again", "Open provider quota settings", "Refresh all provider quotas"].contains(control.accessibilityLabel ?? "") {
+                    let frame = window.convert(control.accessibilityFrame, from: nil)
+                    guard !frame.isEmpty else { continue }
+                    if pose == "book" { XCTAssertGreaterThanOrEqual(frame.minX, fold.maxX) }
+                    else { XCTAssertGreaterThanOrEqual(frame.minY, fold.maxY) }
+                }
+                attachHostedScreenshot(window, name: "\(section.lowercased())-\(flag.hasSuffix("loading") ? "loading" : "error")-\(pose)")
+                window.isHidden = true
+                window.rootViewController = nil
+                fixture.releaseHeldLoads()
+                settle()
+            }
+        }
     }
 
     /// Every element in the window, including the bar buttons and inspector each split-view column keeps out of the
@@ -739,6 +808,16 @@ final class RegularSplitHostedTests: XCTestCase {
             XCTAssertLessThanOrEqual(control.maxX, HostedSize.duoInner.width + 1, "\(name) runs off the screen")
         }
         attachHostedScreenshot(split.window, name: "duo-inner-chats")
+    }
+
+    func testBookFoldAlignsTheSharedSidebarToTheDivision() async throws {
+        let split = try await openChat(size: HostedSize.duoInnerLandscape,
+            divisions: [CGRect(x: 470, y: -100, width: 10, height: 2000)])
+        XCTAssertEqual(split.controller.primaryColumnWidth, 470, accuracy: 1,
+            "The shared sidebar boundary must align to the book division")
+        let send = try await requireElement(in: split.window, label: "Send")
+        XCTAssertGreaterThanOrEqual(split.window.convert(send.accessibilityFrame, from: nil).minX, 480)
+        attachHostedScreenshot(split.window, name: "book-shared-sidebar")
     }
 
     func testDuoInnerLandscapeHidesTheSidebarToShowFilesBesideTheChat() async throws {

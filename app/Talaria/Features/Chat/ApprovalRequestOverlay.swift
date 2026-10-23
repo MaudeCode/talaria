@@ -9,6 +9,7 @@ struct ApprovalRequestOverlay: View {
     let onChoice: (ApprovalChoice) -> Void
     let onSkipAll: () -> Void
     @Environment(\.layoutDirection) private var layoutDirection
+    @Environment(\.divisionRegionGeometry) private var divisionGeometry
     // Synthetic divisions let hosted tests exercise the same layout without device-pose state.
     var divisionFrames: [CGRect]? = nil
 
@@ -52,11 +53,7 @@ struct ApprovalRequestOverlay: View {
 
     private func divisions(in geometry: GeometryProxy) -> [CGRect] {
         if let divisionFrames { return divisionFrames }
-        if #available(iOS 27.1, *) {
-            return geometry.reservedRegions(kind: .division, layoutDirectionBehavior: .fixed)
-                .filter(\.isActive).map(\.frame)
-        }
-        return []
+        return (divisionGeometry ?? DivisionRegionGeometry(geometry)).localDivisions(in: geometry)
     }
 
     static func cardFrame(in bounds: CGRect, divisions: [CGRect], cardSize: CGSize,

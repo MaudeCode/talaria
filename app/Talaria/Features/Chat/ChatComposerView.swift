@@ -12,6 +12,7 @@ struct MessageComposerView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.tabletopComposerHeight) private var tabletopHeight
     @AppStorage(HeaderLogoColor.storageKey) private var headerLogoColorHex = HeaderLogoColor.defaultHex
     @AppStorage(PrimaryActionTintSettings.isEnabledKey) private var tintsPrimaryActions = false
     @ScaledMetric(relativeTo: .footnote) private var actionIconSize: CGFloat = 13
@@ -713,7 +714,8 @@ struct MessageComposerView: View {
                         onPasteImages: onPasteImages,
                         placeholder: isAnsweringClarification ? "Type a response" : "Ask anything... /commands",
                         // One line, scrolling inside it.
-                        maximumInputHeight: usesOneRowCard ? 22 : .infinity
+                        maximumInputHeight: maximumTextInputHeight,
+                        maximumMeasuredHeight: tabletopHeight == nil ? 96 : maximumTextInputHeight
                     )
                     HStack(spacing: 12) { leadingComposerControls }
                     HStack(spacing: 12) { trailingComposerControls }
@@ -734,12 +736,19 @@ struct MessageComposerView: View {
     /// The transcript's share of the chat pane: room under the navigation bar for at least one row (TAL-680).
     static let minimumTranscriptHeight: CGFloat = 96
 
+    private var maximumTextInputHeight: CGFloat {
+        if usesOneRowCard { return 22 }
+        guard let tabletopHeight else { return 96 }
+        let chromeHeight = max(0, twoRowComposerHeight - textInputHeight)
+        return max(22, tabletopHeight - chromeHeight - 8)
+    }
+
     /// A pane too short for the two-row composer and the transcript's minimum, as on an iPhone in landscape with
     /// the keyboard up, gets the card in one row: +, the text, then voice, context and send. The control strip folds
     /// away meanwhile (TAL-680). It is judged against the two-row composer's height, so the shorter composer does not
     /// switch it back.
     private var usesOneRowCard: Bool {
-        guard !usesSingleLineShell, !isAnsweringClarification, availableHeight > 0 else { return false }
+        guard tabletopHeight == nil, !usesSingleLineShell, !isAnsweringClarification, availableHeight > 0 else { return false }
         return availableHeight - twoRowComposerHeight < Self.minimumTranscriptHeight
     }
 
@@ -930,7 +939,7 @@ struct MessageComposerView: View {
 
     /// The chevron's choice, except in the one-row card, which has no room for the strip (TAL-680).
     private var showsControlStripContent: Bool {
-        isControlStripExpanded && !usesOneRowCard
+        (tabletopHeight != nil || isControlStripExpanded) && !usesOneRowCard
     }
 
     /// + and, beside it, the chevron that shows or hides the control strip; the one-row card has no strip to show.
@@ -944,20 +953,21 @@ struct MessageComposerView: View {
         }
     }
 
-    /// Shows or hides the control strip; the choice holds for every chat until it is changed.
+    /// Tabletop keeps the strip visible without changing the user's flat-layout preference.
     private var controlStripToggle: some View {
         Button {
             isControlStripExpanded.toggle()
         } label: {
             Image(systemName: "chevron.down")
                 .font(.system(size: plusIconSize * 0.62, weight: .semibold))
-                .rotationEffect(.degrees(isControlStripExpanded ? 0 : 180))
+                .rotationEffect(.degrees(showsControlStripContent ? 0 : 180))
                 .foregroundStyle(metaControlColor)
                 .frame(width: plusButtonSize, height: plusButtonSize)
                 .chatMinimumHitTarget(in: Circle())
         }
         .buttonStyle(.chatTactile(.icon))
-        .accessibilityLabel(isControlStripExpanded ? "Hide composer controls" : "Show composer controls")
+        .disabled(tabletopHeight != nil)
+        .accessibilityLabel(showsControlStripContent ? "Hide composer controls" : "Show composer controls")
     }
 
     @ViewBuilder
@@ -1251,7 +1261,7 @@ struct MessageComposerView: View {
     }
 
     private var usesSingleLineShell: Bool {
-        !isAnsweringClarification && (isChromeCompact || (
+        tabletopHeight == nil && !isAnsweringClarification && (isChromeCompact || (
             !isFocused
                 && draftMessage.isEmpty
                 && pendingAttachments.isEmpty

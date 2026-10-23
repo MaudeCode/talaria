@@ -36,9 +36,18 @@ struct SessionListView: View {
     @State private var coveredRegularDetail: RegularDetailIdentity?
     @State private var regularSplitRevision = 0
     /// The regular-width split view's own width, which sizes its columns (TAL-1453).
-    @State private var regularSplitWidth: CGFloat = 0
+    @State private var splitGeometry = DivisionRegionGeometry()
+    private var regularSplitWidth: CGFloat { splitGeometry.frame.width }
+#if DEBUG
+    @Environment(\.chatDivisionFramesForTesting) private var divisionFramesForTesting
+#endif
     /// Read live by the chat being replaced, whose own environment still says regular (TAL-1477).
     @State private var isCompactWidth = false
+
+    private var foldedSidebarWidth: CGFloat? {
+        DivisionRegionLayout.sidebarWidth(in: splitGeometry.frame, divisions: splitGeometry.divisions,
+            layoutDirection: layoutDirection)
+    }
     /// Persists `navigationState.filesInspectorPresented` for the window (TAL-479).
     @SceneStorage(SplitFilesInspector.storageKey) private var storedFilesInspectorPresented = false
     @State private var sessionPendingRename: SessionSummary?
@@ -177,6 +186,14 @@ struct SessionListView: View {
             ZStack {
                 Color(.systemBackground)
                 navigationContainer
+                    .environment(\.divisionRegionGeometry, splitGeometry)
+                    .onGeometryChange(for: DivisionRegionGeometry.self) { geometry in
+#if DEBUG
+                        DivisionRegionGeometry(geometry, divisions: divisionFramesForTesting)
+#else
+                        DivisionRegionGeometry(geometry)
+#endif
+                    } action: { splitGeometry = $0 }
             }
             .onChange(of: navigationState.destination?.selectedSessionID) { _, sessionID in
                 chats.keepOnly(sessionID: sessionID)
@@ -493,9 +510,9 @@ struct SessionListView: View {
                     .toolbar(removing: .sidebarToggle)
                     // Every section's sidebar shares this one column width.
                     .navigationSplitViewColumnWidth(
-                        min: RegularSplitLayout.sidebarMinWidth,
-                        ideal: RegularSplitLayout.sidebarIdealWidth(splitWidth: regularSplitWidth),
-                        max: RegularSplitLayout.sidebarMaxWidth
+                        min: foldedSidebarWidth ?? RegularSplitLayout.sidebarMinWidth,
+                        ideal: foldedSidebarWidth ?? RegularSplitLayout.sidebarIdealWidth(splitWidth: regularSplitWidth),
+                        max: foldedSidebarWidth ?? RegularSplitLayout.sidebarMaxWidth
                     )
             } detail: {
                 // Only the detail rebuilds for a new destination or item, so the sidebar keeps its
@@ -503,6 +520,7 @@ struct SessionListView: View {
                 NavigationStack {
                     regularDetailRoot
                 }
+                .foldAvoidingPlacement(avoidsHorizontalDivisions: false, isEnabled: !hidesSidebarColumn)
                 // Without a minimum, UIKit lays the sidebar over a detail narrower than about 448pt, as on the
                 // iPhone Duo inner display and iPad in portrait.
                 .navigationSplitViewColumnWidth(
@@ -519,7 +537,6 @@ struct SessionListView: View {
                 regularSplitRevision += 1
             }
             .navigationSplitViewStyle(.balanced)
-            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { regularSplitWidth = $0 }
             // Starts fresh when its columns change, since showing the sidebar column again after a
             // full-width section left it without its navigation bar, and to drop covered pages. A split
             // built before its width was measured, as opening an iPhone Duo builds one, keeps the sidebar
