@@ -677,8 +677,13 @@ struct SessionListView: View {
                 }
             }
 
-            ToolbarItem(placement: .topBarTrailing) {
+            let settingsItem = ToolbarItem(placement: .topBarTrailing) {
                 settingsButton
+            }
+            if #available(iOS 27.1, *) {
+                settingsItem.axisBehavior(.verticalPreferred)
+            } else {
+                settingsItem
             }
 
             // In regular width the floating button would cover rows in the narrow
