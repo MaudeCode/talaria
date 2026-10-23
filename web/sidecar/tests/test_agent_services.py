@@ -3467,3 +3467,39 @@ def test_readiness_retry_retains_departed_successor_identity(gateway_successor, 
     if revived: parents[42005] = 42002
     with pytest.raises(RuntimeError): fresh.resume(lambda *args: [])
     assert fresh.path.exists() and calls == []
+
+
+@pytest.mark.parametrize('departed', [False, True])
+def test_readiness_tree_switch_requires_every_previous_writer_to_exit(gateway_successor, monkeypatch, departed):
+    from talaria_sidecar import agent_services as services
+    recovery, entry, calls, parents, pause, records, modules = gateway_successor
+    parents[42005] = 42002
+    matches = services._gateway_home_matches
+    probes = 0
+
+    def not_ready_once(*args):
+        nonlocal probes
+        probes += 1
+        return False if probes == 2 else matches(*args)
+
+    monkeypatch.setattr(services, '_gateway_home_matches', not_ready_once)
+    assert recovery._ready(entry, lambda *args: []) is False
+    assert set(json.loads(recovery.path.read_text())['entries'][0]['readiness_processes']) == {'42001', '42002', '42005'}
+    discovered = pause._discover_launchd()[0]
+    parents.update({43001: 1, 43002: 43001})
+    pause._discover_launchd = lambda: [{**discovered, 'pid': 43001}]
+    modules['hermes_cli.gateway']._launchd_print_service_pid = lambda *args: (True, 43001)
+    modules['gateway.status'].get_running_pid_identity_strict = lambda path: (43002, 430020)
+    if departed:
+        for pid in (42001, 42002, 42005): parents.pop(pid)
+    fresh = services.ServiceRecovery(recovery.root, entry['home'], records, recovery.identity, pause)
+    before = fresh.path.read_bytes()
+    if departed:
+        fresh.resume(lambda *args: [])
+        assert not fresh.path.exists()
+    else:
+        with pytest.raises(RuntimeError, match='outside|ancestry'):
+            fresh.resume(lambda *args: [])
+        assert fresh.path.read_bytes() == before
+        assert {42001, 42002, 42005} <= parents.keys()
+    assert calls == []

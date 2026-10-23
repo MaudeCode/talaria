@@ -166,7 +166,9 @@ obligations intact. Ordinary verification replaces the live tree only after the
 complete sample and unchanged supervisor/configuration checks succeed. Departed
 identities stay in the additive `departed_processes` custody field across checks
 and successor discovery. The additive `readiness_processes` field retains the
-last live successor sample between readiness attempts. A departed PID becoming
+last live successor sample between readiness attempts. Switching to another tree
+requires every previously observed writer outside that tree to have definitively
+exited. A departed PID becoming
 live or unreadable refuses the operation. ServiceRecovery saves refreshed custody before the next lifecycle
 effect. This tolerance never replaces a runtime or supervisor anchor. Stop
 verification retains its separate permission to lose anchors after stopping is

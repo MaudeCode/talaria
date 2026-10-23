@@ -191,6 +191,10 @@ def snapshot(entry, *, records=None, expected=None):
                     continue
                 raise RuntimeError(f'{_name(entry)} process {p} identity/ancestry changed during discovery; source was not changed.')
         descendants = _descendants(service, parents)
+        # Successor retries cannot discard a live writer from a previously observed tree.
+        for p in seen_parents.keys() - descendants - departed:
+            if not exited(p):
+                raise RuntimeError(f'{_name(entry)} process {p} remains live outside the attested tree; recovery remains owed.')
         seen_parents.update({p: parents[p] for p in descendants})
         # Zombies may remain in ps. Recheck departed PIDs at every inventory so
         # neither a recycled PID nor unknown liveness can be silently excluded.
