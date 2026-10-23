@@ -255,6 +255,29 @@ operation. A save can replace concurrent native edits. Unknown outcomes retain
 the editor draft and reconcile by reading; they never trigger an automatic PUT
 retry. Cleanup continues to belong to the plugin.
 
+## Kanban inspection
+
+`GET /api/kanban/inspection` returns one profile-scoped snapshot for the Kanban
+Timeline and Relationships views. An optional `board` restricts the read to that
+live board; omission inspects the active profile's live boards. It never reads
+another profile. The sidecar reads at most 32 boards, 500 tasks and 2,000 edges
+without initializing or migrating databases. `truncated` explicitly marks an
+incomplete graph. Board-qualified `key` values disambiguate task IDs.
+
+The server applies the ordinary assignee, tenant, search and archived filters
+before traversing visible dependencies, and supplies transitive `ancestors`,
+`descendants`, `cycle`, `running_lineage`, task action capabilities and actual
+`timing`. `running_only=1` keeps running tasks and their ancestors/descendants.
+Unknown timestamps, durations and timeline positions remain null. Running task
+durations use the current attempt's actual start and the snapshot's
+`generated_at`; creation timestamps never become effort dates. Relationships
+are dependencies across the displayed boards, not inferred task provenance.
+Both layouts use the same query and existing task detail/actions. The existing
+board event stream invalidates it; a visible-page refresh also covers writes on
+other boards. Profile switching clears the existing Query cache and closes the
+previous detail selection. The shared fixture is
+`contracts/fixtures/kanban-inspection.json` at the repository root.
+
 ## Memory compaction
 
 `POST /api/memory/compaction/preview` accepts `section` (`memory` or `user`) and the
@@ -280,26 +303,3 @@ proposed revision; neither server nor client blindly replays the write.
 carry the same preview/apply interface for the downstream App consumer. These
 user-requested previews are distinct from the Agent's pending-write queue; both
 use the shared Web proposal review presentation.
-
-## Kanban inspection
-
-`GET /api/kanban/inspection` returns one profile-scoped snapshot for the Kanban
-Timeline and Relationships views. An optional `board` restricts the read to that
-live board; omission inspects the active profile's live boards. It never reads
-another profile. The sidecar reads at most 32 boards, 500 tasks and 2,000 edges
-without initializing or migrating databases. `truncated` explicitly marks an
-incomplete graph. Board-qualified `key` values disambiguate task IDs.
-
-The server applies the ordinary assignee, tenant, search and archived filters
-before traversing visible dependencies, and supplies transitive `ancestors`,
-`descendants`, `cycle`, `running_lineage`, task action capabilities and actual
-`timing`. `running_only=1` keeps running tasks and their ancestors/descendants.
-Unknown timestamps, durations and timeline positions remain null. Running task
-durations use the current attempt's actual start and the snapshot's
-`generated_at`; creation timestamps never become effort dates. Relationships
-are dependencies across the displayed boards, not inferred task provenance.
-Both layouts use the same query and existing task detail/actions. The existing
-board event stream invalidates it; a visible-page refresh also covers writes on
-other boards. Profile switching clears the existing Query cache and closes the
-previous detail selection. The shared fixture is
-`contracts/fixtures/kanban-inspection.json` at the repository root.
