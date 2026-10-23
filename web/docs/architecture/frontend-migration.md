@@ -311,6 +311,14 @@ lint outside `packages/frontend/src/features/chat/render/`, which contains no
 such use today. The Markdown corpus lives in
 `packages/frontend/src/features/chat/__fixtures__/markdown/`.
 
+While a reply streams, `MarkdownRenderer` extends Streamdown's block parser with
+a per-renderer cache. Only blocks ending at a blank line before an unindented,
+non-list successor settle; Streamdown still owns fence, list, HTML and math
+grouping. Subsequent frames parse the unsettled tail. Footnotes, reference
+definitions and non-raw parser output use the full parser, and replaced or
+shortened text invalidates the prefix. Ending the stream discards the cache and
+renders the full static document. This cache owns display parsing only.
+
 ### Turn activity projection
 
 `packages/frontend/src/features/chat/turnActivity.ts` projects live reducer segments

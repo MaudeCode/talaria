@@ -1,16 +1,28 @@
 import { memo, useContext } from 'react'
-import { afterEach, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { render, screen, waitFor } from '@testing-library/react'
 import Markdown from './MarkdownRenderer'
+import fixtures from '../__fixtures__/streamingMarkdown'
 
-const { controlRender } = vi.hoisted(() => ({ controlRender: vi.fn() }))
+const { controlRender, parseInput } = vi.hoisted(() => ({ controlRender: vi.fn(), parseInput: vi.fn<(length: number) => void>() }))
+
+beforeEach(() => { vi.clearAllMocks() })
 
 afterEach(() => { Reflect.deleteProperty(HTMLElement.prototype, 'scrollTo') })
 
 vi.mock('streamdown', async (importOriginal) => {
   const actual = await importOriginal<typeof import('streamdown')>()
+  const parseMarkdownIntoBlocks: typeof actual.parseMarkdownIntoBlocks = (text) => {
+    parseInput(text.length)
+    return actual.parseMarkdownIntoBlocks(text)
+  }
   return {
     ...actual,
+    parseMarkdownIntoBlocks,
+    // Count the input to the real parser, including the default pre-optimization path.
+    Streamdown: (props: React.ComponentProps<typeof actual.Streamdown>) => (
+      <actual.Streamdown {...props} parseMarkdownIntoBlocksFn={props.parseMarkdownIntoBlocksFn ?? parseMarkdownIntoBlocks} />
+    ),
     // Observe a real control's context subscription without replacing Streamdown's provider or parser.
     CodeBlockCopyButton: memo(function CopyButtonProbe(props: React.ComponentProps<typeof actual.CodeBlockCopyButton>) {
       useContext(actual.StreamdownContext)
@@ -18,6 +30,36 @@ vi.mock('streamdown', async (importOriginal) => {
       return <actual.CodeBlockCopyButton {...props} />
     }),
   }
+})
+
+it('lexes a 200-paragraph reply in 400 increments with a bounded character budget', () => {
+  const text = Array.from({ length: 200 }, (_, i) => `Paragraph ${i}: a streamed reply with **formatted** content.\n\n`).join('')
+  const view = render(<Markdown text="" streaming />)
+  for (let frame = 1; frame <= 400; frame += 1) {
+    view.rerender(<Markdown text={text.slice(0, Math.ceil(text.length * frame / 400))} streaming />)
+  }
+  const characters = parseInput.mock.calls.reduce((sum, [length]) => sum + length, 0)
+  // Each frame adds roughly half a paragraph; retain at most the unfinished block.
+  expect(characters).toBeLessThan(text.length * 6)
+  expect(view.container.querySelectorAll('p')).toHaveLength(200)
+})
+
+it.each(Object.entries(fixtures))('converges to the static DOM and snapshot for %s', async (name, text) => {
+  Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: vi.fn() })
+  const view = render(<Markdown text="" streaming />)
+  for (let length = 1; length <= text.length; length += 3) {
+    view.rerender(<Markdown text={text.slice(0, length)} streaming />)
+  }
+  view.rerender(<Markdown text={text} streaming />)
+  if (name === 'math') await waitFor(() => { expect(view.container.querySelector('.katex')).not.toBeNull() })
+  view.rerender(<Markdown text={text} />)
+  const streamed = view.container.innerHTML
+  view.unmount()
+  const staticView = render(<Markdown text={text} />)
+  if (name === 'math') await waitFor(() => { expect(staticView.container.querySelector('.katex')).not.toBeNull() })
+  expect(streamed).toBe(staticView.container.innerHTML)
+  // Snapshot semantic content without generated SVG/control IDs or KaTeX's presentation tree.
+  expect([...staticView.container.querySelectorAll('p, li, pre, table')].map((node) => ({ tag: node.tagName, text: node.textContent }))).toMatchSnapshot()
 })
 
 it('keeps a completed code-block control stable while subsequent text streams', async () => {
