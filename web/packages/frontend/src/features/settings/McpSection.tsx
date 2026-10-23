@@ -61,7 +61,7 @@ export function McpSection({ heading }: { heading: string }) {
           <EmptyState>{q ? m.mcp_tools_no_matches() : m.mcp_tools_no_tools()}{!q && unavailable.length > 0 && <span className="mt-1 block text-xs">{m.mcp_tools_inactive_configured_servers({ servers: unavailable.join(', ') })}</span>}</EmptyState>
         ) : (
           <ul aria-label={m.mcp_tools_title()} className={cn('flex max-h-96 flex-col divide-y divide-border-subtle overflow-y-auto', tools.isPlaceholderData && 'opacity-60')}>
-            {tools.data.tools.map((t) => <McpToolRow key={`${t.server ?? ''}\0${t.name ?? ''}`} tool={t} />)}
+            {tools.data.tools.map((t) => <McpToolRow key={`${t.server ?? ''}\0${t.name ?? ''}`} name={t.name} server={t.server} description={t.description} status={typeof t.status === 'string' ? t.status : undefined} />)}
           </ul>
         )}
       </section>
@@ -101,15 +101,20 @@ const McpServerRow = memo(function McpServerRow({ server: s, effect, toggleSuppo
   )
 })
 
-const McpToolRow = memo(function McpToolRow({ tool: t }: { tool: Awaited<ReturnType<typeof api.fetchMcpTools>>['tools'][number] }) {
+const McpToolRow = memo(function McpToolRow({ name, server, description, status }: {
+  name: string | undefined
+  server: string | undefined
+  description: string | undefined
+  status: string | undefined
+}) {
   return (
     <li className="py-2">
       <div className="flex flex-wrap items-center gap-1.5 text-sm">
-        <span className="font-mono text-[13px] text-text">{t.name}</span>
-        <span className="text-[11px] text-muted">{t.server}</span>
-        <StatusBadge status={typeof t.status === 'string' ? t.status : undefined} />
+        <span className="font-mono text-[13px] text-text">{name}</span>
+        <span className="text-[11px] text-muted">{server}</span>
+        <StatusBadge status={status} />
       </div>
-      {t.description && <div className="line-clamp-2 text-[11px] text-muted">{t.description}</div>}
+      {description && <div className="line-clamp-2 text-[11px] text-muted">{description}</div>}
     </li>
   )
 })

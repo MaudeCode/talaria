@@ -38,7 +38,7 @@ vi.mock('../../api/endpoints', async (original) => ({
   fetchSkills: vi.fn(() => Promise.resolve({ skills })),
   fetchSkillsUsage: vi.fn(() => Promise.resolve({ usage: Object.fromEntries(skills.map((s, i) => [s.name, { use_count: i + 1 }])) })),
   fetchMcpServers: vi.fn(() => Promise.resolve({ toggle_supported: true, servers: [{ name: 'test', status: 'configured', enabled: true, can_toggle: true, tool_count: 3 }] })),
-  fetchMcpTools: vi.fn((q: string) => Promise.resolve({ tools: tools.filter((t) => t.name.includes(q)), total: 3 })),
+  fetchMcpTools: vi.fn((q: string) => Promise.resolve({ tools: tools.filter((t) => t.name.includes(q)).map((t) => ({ ...t })), total: 3 })),
 }))
 import * as api from '../../api/endpoints'
 import { post } from '../../api/client'
@@ -175,5 +175,14 @@ describe('input render isolation (TAL-1405)', () => {
     expect(screen.getByText('zebra')).toBeInTheDocument()
     expect(renders.server).not.toHaveBeenCalled()
     expect(renders.tool).toHaveBeenCalledTimes(1)
+    renders.tool.mockClear()
+    vi.mocked(api.fetchMcpTools).mockResolvedValueOnce({ tools: [{ ...tools[0]!, description: 'Updated description' }, { ...tools[1]! }], total: 3 })
+    fireEvent.change(input, { target: { value: 'abcdefghi' } })
+    await act(async () => { await vi.advanceTimersByTimeAsync(251) })
+    expect(api.fetchMcpTools).toHaveBeenLastCalledWith('abcdefghi')
+    await act(async () => { await vi.advanceTimersByTimeAsync(1) })
+    expect(screen.getByText('Updated description')).toBeInTheDocument()
+    expect(renders.tool).toHaveBeenCalledTimes(1)
+    expect(renders.server).not.toHaveBeenCalled()
   })
 })
