@@ -366,6 +366,29 @@ describe('crons, kanban, extensions, terminal', () => {
     s.deps.terminals.close('update-blocker')
   })
 
+  it('kanban event stream resumes from a valid Last-Event-ID instead of the original since cursor', async () => {
+    const reads: number[] = []
+    sidecar.respond('kanban.events', (params) => {
+      const since = params.since ?? 0
+      reads.push(since)
+      const events = since < 901 ? [{ id: 901, task_id: 't_1', run_id: null, kind: 'created', payload: null, created_at: 1 }] : []
+      return { events, cursor: events.length ? 901 : since, latest_event_id: 901, read_only: false }
+    })
+    // Every read below 901 answers one event, so each stream stops at its first `events` frame.
+    const open = async (url: string, lastEventId?: string): Promise<{ hello: number; firstRead: number }> => {
+      const before = reads.length
+      const frames = await s.sse(url, (f: SseFrame) => f.event === 'events', { timeoutMs: 5_000, ...(lastEventId === undefined ? {} : { headers: { 'last-event-id': lastEventId } }) })
+      expect(frames.find((f) => f.event === 'events')?.id).toBe('901')
+      return { hello: (frames[0]?.data as Json).cursor as number, firstRead: reads[before]! }
+    }
+    expect(await open('/api/kanban/events/stream?since=10', '900')).toEqual({ hello: 900, firstRead: 900 })
+    expect(await open('/api/kanban/events/stream?since=10')).toEqual({ hello: 10, firstRead: 10 })
+    for (const bad of ['', 'abc', '-5', '9007199254740993', '1.5']) {
+      expect(await open('/api/kanban/events/stream?since=10', bad)).toEqual({ hello: 10, firstRead: 10 })
+    }
+    expect(await open('/api/kanban/events/stream?since=nope', 'x')).toEqual({ hello: 0, firstRead: 0 })
+  })
+
   it('kanban routes map to the sidecar, including path-parameter actions and the event stream', async () => {
     let res = await s.get('/api/kanban/boards')
     expect(res.status).toBe(200)

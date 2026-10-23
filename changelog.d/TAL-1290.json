@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The Kanban board's live updates now resume where they stopped after a dropped connection instead of replaying every change since the page opened.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
