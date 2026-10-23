@@ -88,10 +88,13 @@ final class ChatHostedTests: XCTestCase {
 
         HostedAccessibility.activate(try await requireElement(in: window, label: "Toggle fixture fold"))
         let transcript = try transcriptScrollView(in: window)
+        // Transcript, editor height, and composer placement settle in separate queued layout updates.
         let partitioned = await awaitCondition {
             transcriptFrame.maxY <= foldInWindow.minY + 1
+                && editor.convert(editor.bounds, to: window).minY >= foldInWindow.maxY
+                && editor.bounds.height > flatHeight + 30
         }
-        XCTAssertTrue(partitioned, "The tabletop transcript still extends below the horizontal fold: \(transcriptFrame), fold \(foldInWindow)")
+        XCTAssertTrue(partitioned, "The tabletop transcript and draft editor did not finish laying out: \(transcriptFrame), fold \(foldInWindow), editor height \(editor.bounds.height)")
         XCTAssertGreaterThanOrEqual(editor.convert(editor.bounds, to: window).minY, foldInWindow.maxY)
         XCTAssertGreaterThan(editor.bounds.height, flatHeight + 30, "A long draft must grow into the tabletop control region")
         let send = try await requireElement(in: window, label: "Send")
