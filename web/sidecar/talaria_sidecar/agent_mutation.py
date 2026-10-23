@@ -158,6 +158,21 @@ def _receipt_candidates(path, pattern, cache):
     return found
 
 
+def _process_presence(pid):
+    """A stdlib rearm trigger only; native identity verification alone decides recovery."""
+    if os.name == 'nt' or pid <= 0:
+        return 'unknown'
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return 'exited'
+    except PermissionError:
+        pass
+    except (OSError, OverflowError):
+        return 'unknown'
+    return 'present'
+
+
 def recovery_receipts(runtime, *, watch=False, discovery_cache=None):
     """Read only the configured checkout's receipts without importing its possibly torn code."""
     root, home = runtime.agent_dir, runtime.hermes_home
@@ -204,15 +219,23 @@ def recovery_receipts(runtime, *, watch=False, discovery_cache=None):
                     watched.append(common / ref)
         except (OSError, UnicodeError):
             pass
+        lifecycle = []
         try:
             body = json.loads(services.recovery_path(root, home).read_text())
             for baseline in body.get('tree', {}).get('baselines', []):
                 changed = [*baseline.get('dirty_at_pause', []), *baseline.get('move_paths', [])]
                 changed.extend(path for paths in baseline.get('landed', {}).values() for path in paths)
                 watched.extend(root / path for path in changed if isinstance(path, str) and not Path(path).is_absolute() and '..' not in Path(path).parts)
+            # A retained gateway's exit or successor rearms exhausted recovery without changing any receipt.
+            for entry in body.get('entries', []):
+                if entry.get('purpose') == 'gateway' and isinstance(entry.get('home'), str):
+                    watched.append(Path(entry['home']) / 'gateway.pid')
+                    pids = {**entry.get('retired_processes', {}), **entry.get('processes', {})}
+                    lifecycle.extend(('process', int(pid), _process_presence(int(pid))) for pid in sorted(pids, key=int))
         except (OSError, ValueError, TypeError, AttributeError):
             pass  # The receipt's own stamp still rearms corrected evidence; the worker reports its exact refusal.
         found.extend(stamps(watched))
+        found.extend(lifecycle)
     return found, marker
 
 
@@ -953,7 +976,10 @@ def _resume_worker(root, stopped=None, complete_revision=None):
         if not Path(main_module.__file__).resolve().is_relative_to(root):
             raise RuntimeError("Gateway recovery loaded another Agent runtime.")
         records.recover(argv=[])
-        recovery.resume(_writer_ledger)
+        try:
+            recovery.resume(_writer_ledger)
+        except services.GatewayDraining as exc:
+            return {'ok': False, 'draining': True, 'detail': str(exc)}
         owed = records.record_path().exists() or bool(records._claims(records.record_path())) or bool(recovery.state['entries'])
         runtime_pending = bool((marker and marker.exists()) or (recovery.state.get('transaction') or {}).get('runtime_revision'))
         if not owed and runtime_pending:

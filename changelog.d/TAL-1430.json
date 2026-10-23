@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Hermes Agent becomes usable again on its own after a failed update, even when the gateway takes longer to finish its in-progress chat than the recovery retries.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

@@ -1283,6 +1283,9 @@ async function syncAgentDependencies(path: string | null, revision: string, sync
 export interface RestartBlockers { active_streams: number; active_runs: number; active_terminals?: number; active_cron_jobs?: number; blocking_stream_ids: string[]; blocking_run_ids: string[]; restart_blocked: boolean }
 
 const RECOVERY_DELAYS = [0, 1000, 4000, 15000, 60000, 120000]
+/** TAL-1430: re-check spacing for a native drain, and the lightweight lifecycle probe of exhausted debt. */
+const RECOVERY_DRAIN_RETRY_MS = 15000
+const RECOVERY_PROBE_MS = 60000
 
 export interface UpdateServiceDeps {
   /** One retained-transaction step, including loaded-runtime reconciliation. No release selection. */
@@ -1338,6 +1341,9 @@ export class UpdateService {
   private recoveryUnsubscribe: (() => void) | null = null
   private recoveryAttempt = 0
   private recoveryFingerprint = ''
+  private recoveryDraining = false
+  /** The pending timer is an exhausted obligation's lightweight probe, which any immediate trigger may replace. */
+  private recoveryProbe = false
   private recovery: AgentRecoveryState = { phase: 'idle', attempt: 0, detail: '', retry_at: null }
   private readonly cache: Dict = { webui: null, agent: null, checked_at: 0, include_agent: true, channel: DEFAULT_CHANNEL, agent_channel: DEFAULT_CHANNEL }
   private checking: Promise<Dict> | null = null
@@ -1555,6 +1561,8 @@ export class UpdateService {
     this.autoTimer = null
     if (this.recoveryTimer) clearTimeout(this.recoveryTimer)
     this.recoveryTimer = null
+    this.recoveryProbe = false
+    this.recoveryDraining = false
     this.recoveryAbort?.abort()
     this.recoveryUnsubscribe?.()
     this.recoveryUnsubscribe = null
@@ -1562,7 +1570,12 @@ export class UpdateService {
 
   /** One sequence owns its timer and RPC; unchanged permanent debt cannot restart it. */
   private armRecovery(): void {
-    if (!this.deps.recoverAgent || !this.deps.agentDir() || this.recoveryTimer || this.recoveryAbort || !this.autoStarted) return
+    if (!this.deps.recoverAgent || !this.deps.agentDir() || this.recoveryAbort || !this.autoStarted) return
+    if (this.recoveryTimer) {
+      if (!this.recoveryProbe) return
+      clearTimeout(this.recoveryTimer)
+    }
+    this.recoveryProbe = false
     const lifecycle = this.lifecycle
     this.recoveryTimer = setTimeout(() => {
       this.recoveryTimer = null
@@ -1582,27 +1595,44 @@ export class UpdateService {
     const current = (): boolean => !abort.signal.aborted && lifecycle === this.lifecycle && this.autoStarted
     let retry = false
     let retryDelay = 1000
-    const waitForIdle = (detail: string): void => {
+    let probeOnly = false
+    let ran = false
+    const waitWithoutSpending = (detail: string, delay = 1000): void => {
       retry = true
+      retryDelay = delay
       this.recovery = { phase: 'waiting', attempt: this.recoveryAttempt, detail, retry_at: new Date(this.now() * 1000 + retryDelay).toISOString() }
     }
     try {
       if (this.applying || this.deps.gatewayRestarting?.()) { retry = true; return }
       const probe = await this.deps.recoverAgent!(true, abort.signal)
       if (!current()) return
-      if (probe.waiting_for_idle) { waitForIdle(probe.detail); return }
+      if (probe.waiting_for_idle) { waitWithoutSpending(probe.detail); return }
       if (!probe.owed && ['idle', 'complete'].includes(this.recovery.phase) && !this.deps.hasPendingRecovery?.()) return
       if (probe.fingerprint !== this.recoveryFingerprint && ['idle', 'complete', 'blocked'].includes(this.recovery.phase)) this.recoveryAttempt = 0
-      if (probe.owed && this.recovery.phase === 'blocked' && this.recoveryAttempt >= RECOVERY_DELAYS.length && probe.fingerprint === this.recoveryFingerprint) return
+      if (probe.owed && this.recovery.phase === 'blocked' && this.recoveryAttempt >= RECOVERY_DELAYS.length && probe.fingerprint === this.recoveryFingerprint) {
+        // Exhausted debt keeps a cheap probe; a changed receipt or attested gateway lifecycle rearms the sequence.
+        retry = probeOnly = true
+        retryDelay = RECOVERY_PROBE_MS
+        return
+      }
       this.recoveryFingerprint = probe.fingerprint
       this.recoveryAttempt += 1
-      this.recovery = { phase: 'running', attempt: this.recoveryAttempt, detail: '', retry_at: null }
-      await this.publishRecovery()
-      if (!current()) return
+      ran = true
+      // A re-check of a still-draining gateway keeps its waiting notice rather than flapping to running.
+      if (!this.recoveryDraining) {
+        this.recovery = { phase: 'running', attempt: this.recoveryAttempt, detail: '', retry_at: null }
+        await this.publishRecovery()
+        if (!current()) return
+      }
       const result = await this.deps.recoverAgent!(false, abort.signal)
       if (!current()) return
       this.recoveryFingerprint = result.fingerprint
-      if (result.waiting_for_idle) { this.recoveryAttempt -= 1; waitForIdle(result.detail); return }
+      this.recoveryDraining = result.draining === true
+      if (result.waiting_for_idle || result.draining) {
+        this.recoveryAttempt -= 1
+        waitWithoutSpending(result.detail, result.draining ? RECOVERY_DRAIN_RETRY_MS : 1000)
+        return
+      }
       if (result.local_restore && result.revision) {
         const path = this.deps.agentDir()
         if (!path) throw new Error('Agent checkout is unavailable for retained local-edit recovery.')
@@ -1619,11 +1649,15 @@ export class UpdateService {
       this.recovery = { phase: 'complete', attempt: this.recoveryAttempt, detail: 'Agent service and runtime recovery is verified. The original update outcome is unchanged.', retry_at: null }
     } catch (error) {
       if (!current()) return
-      // A failed discovery also consumes the bounded sequence.
-      if (this.recovery.phase !== 'running') this.recoveryAttempt += 1
-      retry = this.recoveryAttempt < RECOVERY_DELAYS.length
-      retryDelay = RECOVERY_DELAYS[this.recoveryAttempt] ?? 1000
-      this.recovery = { phase: retry ? 'waiting' : 'blocked', attempt: this.recoveryAttempt, detail: sanitizeGitDiagnostic((error as Error).message), retry_at: retry ? new Date(this.now() * 1000 + retryDelay).toISOString() : null }
+      this.recoveryDraining = false
+      // A failed discovery also consumes the bounded sequence; an exhausted probe's failure does not extend it.
+      if (!ran && this.recoveryAttempt < RECOVERY_DELAYS.length) this.recoveryAttempt += 1
+      const exhausted = this.recoveryAttempt >= RECOVERY_DELAYS.length
+      this.recovery = { phase: exhausted ? 'blocked' : 'waiting', attempt: this.recoveryAttempt, detail: sanitizeGitDiagnostic((error as Error).message), retry_at: null }
+      retry = true
+      probeOnly = exhausted
+      retryDelay = exhausted ? RECOVERY_PROBE_MS : RECOVERY_DELAYS[this.recoveryAttempt] ?? 1000
+      if (!exhausted) this.recovery.retry_at = new Date(this.now() * 1000 + retryDelay).toISOString()
     } finally {
       if (current()) {
         await this.publishRecovery()
@@ -1631,7 +1665,8 @@ export class UpdateService {
       if (this.recoveryAbort === abort) this.recoveryAbort = null
       if (this.autoStarted && lifecycle !== this.lifecycle) this.armRecovery()
       if (current() && retry) {
-        this.recoveryTimer = setTimeout(() => { this.recoveryTimer = null; void this.recoverOnce(lifecycle) }, retryDelay)
+        this.recoveryProbe = probeOnly
+        this.recoveryTimer = setTimeout(() => { this.recoveryTimer = null; this.recoveryProbe = false; void this.recoverOnce(lifecycle) }, retryDelay)
         this.recoveryTimer.unref()
       }
     }

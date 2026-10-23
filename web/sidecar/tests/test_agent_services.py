@@ -1348,7 +1348,7 @@ def test_wrong_listener_never_discharges_backend_debt(supervised_inventory, monk
     recovery.save()
     clock = [0.0]
     def advance(seconds): clock[0] += seconds
-    monkeypatch.setattr(services, 'time', types.SimpleNamespace(monotonic=lambda: clock[0], sleep=advance))
+    monkeypatch.setattr(services, 'time', types.SimpleNamespace(monotonic=lambda: clock[0], time=lambda: clock[0], sleep=advance))
     monkeypatch.setattr(services, 'READY_SECONDS', .01)
     monkeypatch.setattr(services, '_auth', lambda entry: 'synthetic-local-token')
     with pytest.raises(RuntimeError, match='readiness is unverified'):
@@ -2200,7 +2200,7 @@ def test_gateway_successor_waits_for_runtime_identity_before_drain(gateway_succe
             clock[0] += 1
             if publishes: runtime[0] = (42002, 420020)
             return False
-    monkeypatch.setattr(services, 'time', types.SimpleNamespace(monotonic=lambda: clock[0]))
+    monkeypatch.setattr(services, 'time', types.SimpleNamespace(monotonic=lambda: clock[0], time=lambda: clock[0]))
     pause._ask_to_drain = lambda e: calls.append(('drain', e['pid'])) or False
     with pytest.raises(RuntimeError, match='did not acknowledge' if publishes else 'gateway drain remains owed'):
         recovery.settle_gateway(entry, Waiting(), deadline=3)
@@ -2352,7 +2352,7 @@ def test_recovery_shares_gateway_drain_budget(gateway_successor, monkeypatch):
     class Waiting:
         def is_set(self): return False
         def wait(self, seconds): clock[0] += 1; return False
-    monkeypatch.setattr(services, 'time', types.SimpleNamespace(monotonic=lambda: clock[0]))
+    monkeypatch.setattr(services, 'time', types.SimpleNamespace(monotonic=lambda: clock[0], time=lambda: 0))
     monkeypatch.setattr(services, 'threading', types.SimpleNamespace(Event=Waiting))
     pause._drain_budget = lambda: 3
     with pytest.raises(RuntimeError, match='gateway drain remains owed'):
@@ -2405,7 +2405,7 @@ def native_drain(gateway_successor, monkeypatch):
                 event[1]()
             return self.is_set()
 
-    monkeypatch.setattr(services, 'time', types.SimpleNamespace(monotonic=lambda: model['clock'], sleep=lambda s: Waiting().wait(s)))
+    monkeypatch.setattr(services, 'time', types.SimpleNamespace(monotonic=lambda: model['clock'], time=lambda: model['clock'], sleep=lambda s: Waiting().wait(s)))
     model.update(exit=exit_runtime, respawn=respawn, waiting=Waiting)
     entry.update(phase='retiring', drain_acknowledged=True)
     recovery.save()
@@ -2465,6 +2465,132 @@ def test_profiles_share_the_longest_bounded_native_budget(native_drain, monkeypa
     assert model['clock'] == services.RECOVERY_DRAIN_SECONDS and calls == []
 
 
+@pytest.fixture
+def drain_progress(gateway_successor, monkeypatch):
+    """TAL-1430: the original acknowledged gateway is still draining; a controlled clock owns every deadline."""
+    import types
+    from talaria_sidecar import agent_services as services
+    recovery, entry, calls, parents, pause, records, modules = gateway_successor
+    status = modules['gateway.status']
+    successor = pause._discover_launchd
+    parents.pop(42001); parents.pop(42002)
+    parents.update({41001: 1, 41002: 41001})
+    modules['hermes_cli.gateway']._launchd_print_service_pid = lambda *args: (True, 41001 if 41001 in parents else 42001)
+    status.get_running_pid_identity_strict = lambda path: (41002, 410020) if 41002 in parents else (42002, 420020)
+    clock, wall, exits = [0], [1000.0], []
+    class Waiting:
+        def is_set(self): return False
+        def wait(self, seconds):
+            clock[0] += 1
+            if exits and clock[0] >= exits[0]:
+                exit_original()
+            return False
+    def exit_original():
+        # The native drain finishes and the unchanged supervisor admits a verified successor.
+        parents.pop(41001, None); parents.pop(41002, None)
+        parents.update({42001: 1, 42002: 42001})
+        pause._discover_launchd = successor
+    monkeypatch.setattr(services, 'time', types.SimpleNamespace(monotonic=lambda: clock[0], time=lambda: wall[0], sleep=lambda s: None))
+    monkeypatch.setattr(services, 'threading', types.SimpleNamespace(Event=Waiting))
+    pause._drain_budget = lambda: 1800
+    entry['drain_acknowledged_at'] = wall[0]
+    recovery.save()
+    return types.SimpleNamespace(recovery=recovery, entry=entry, calls=calls, parents=parents, pause=pause, clock=clock,
+                                 wall=wall, exits=exits, exit_original=exit_original, Waiting=Waiting)
+
+
+def test_acknowledged_native_drain_is_progress_until_its_native_budget(drain_progress):
+    from talaria_sidecar import agent_services as services
+    d = drain_progress
+    with pytest.raises(services.GatewayDraining, match='gateway drain remains owed'):
+        d.recovery.resume(lambda *args: [])
+    assert d.clock[0] == 300, 'recovery waited past its own bounded step'
+    d.wall[0] += 1799
+    with pytest.raises(services.GatewayDraining):
+        d.recovery.resume(lambda *args: [])
+    # Past the native budget the same live drain is a genuine failure that spends the bounded sequence.
+    d.wall[0] += 2
+    with pytest.raises(RuntimeError, match='gateway drain remains owed') as exceeded:
+        d.recovery.resume(lambda *args: [])
+    assert not isinstance(exceeded.value, services.GatewayDraining)
+    assert d.calls == []
+    assert json.loads(d.recovery.path.read_text())['entries'][0]['phase'] == 'retiring'
+
+
+@pytest.mark.parametrize('unsafe', ['unacknowledged', 'cancelled', 'clock-rewound', 'unprovable-identity'])
+def test_unsafe_or_unprovable_drains_are_never_progress_or_exit(drain_progress, unsafe):
+    from talaria_sidecar import agent_services as services
+    d = drain_progress
+    stopped = d.Waiting()
+    if unsafe == 'unacknowledged': d.entry['drain_acknowledged'] = False
+    if unsafe == 'cancelled': stopped.is_set = lambda: True
+    if unsafe == 'clock-rewound': d.wall[0] -= 1
+    if unsafe == 'unprovable-identity':
+        # An unreadable recorded identity is live to the native rule; it neither exits nor discharges custody.
+        d.recovery.records.identity_is_live = lambda p: True
+        d.exit_original()
+    with pytest.raises(RuntimeError) as failure:
+        d.recovery.settle_gateway(d.entry, stopped, deadline=3)
+    assert isinstance(failure.value, services.GatewayDraining) is (unsafe == 'unprovable-identity')
+    assert d.calls == []
+    assert d.recovery.path.exists()
+
+
+def test_legacy_acknowledged_drain_starts_its_native_budget_at_first_observation(drain_progress):
+    from talaria_sidecar import agent_services as services
+    d = drain_progress
+    d.entry.pop('drain_acknowledged_at')
+    d.recovery.save()
+    with pytest.raises(services.GatewayDraining):
+        d.recovery.resume(lambda *args: [])
+    assert json.loads(d.recovery.path.read_text())['entries'][0]['drain_acknowledged_at'] == d.wall[0]
+
+
+@pytest.mark.parametrize('when', ['between-steps', 'during-step'])
+def test_finished_native_drain_adopts_the_verified_successor_without_draining_it(drain_progress, when):
+    from talaria_sidecar import agent_services as services
+    d = drain_progress
+    if when == 'between-steps':
+        with pytest.raises(services.GatewayDraining):
+            d.recovery.resume(lambda *args: [])
+        d.exit_original()
+    else:
+        d.exits.append(2)
+    failure = None
+    try:
+        d.recovery.resume(lambda *args: [])
+    except RuntimeError as exc:
+        failure = str(exc)
+    assert d.calls == [], 'recovery asked the ready successor to drain or disarmed its supervisor'
+    assert failure is None and not d.recovery.path.exists(), 'verified successor readiness did not discharge the gateway obligation'
+
+
+def test_recovery_probe_rearms_on_retained_gateway_lifecycle_change(tmp_path, monkeypatch):
+    from talaria_sidecar import agent_mutation, agent_services
+    from talaria_sidecar.runtime import AgentRuntime
+    from types import SimpleNamespace
+    root, home = tmp_path / 'agent', tmp_path / 'home'
+    root.mkdir(); home.mkdir()
+    runtime = AgentRuntime(home, root)
+    file = agent_services.recovery_path(root, home)
+    file.parent.mkdir()
+    file.write_text(json.dumps({'schema': 1, 'root': str(root), 'tree': {'baselines': [{}]}, 'sync_failed': False, 'entries': [{
+        'purpose': 'gateway', 'home': str(home), 'pid': 41002, 'service_pid': 41001, 'phase': 'retiring', 'drain_acknowledged': True,
+        'processes': {'41001': {'ct': 1}, '41002': {'ct': 2}}}]}))
+    live = {41001: 'present', 41002: 'present'}
+    monkeypatch.setattr(agent_mutation, '_process_presence', lambda pid: live.get(pid, 'exited'), raising=False)
+    (home / 'gateway.pid').write_text('{"pid": 41002}')
+    probe = lambda: agent_mutation.recover_retained(runtime, SimpleNamespace(), probe=True)
+    draining = probe()
+    assert draining['owed'] and draining == probe(), 'a stable drain changed the recovery fingerprint'
+    live[41002] = 'exited'
+    exited = probe()
+    assert exited['owed'] and exited['fingerprint'] != draining['fingerprint']
+    (home / 'gateway.pid').unlink()
+    (home / 'gateway.pid').write_text('{"pid": 42002, "successor": true}')
+    assert probe()['fingerprint'] != exited['fingerprint']
+
+
 @pytest.mark.parametrize('manager', ['launchd', 'systemd'])
 def test_successor_configuration_is_rechecked_before_drain(gateway_successor, monkeypatch, manager):
     import threading
@@ -2519,7 +2645,7 @@ def backend_stop(supervised_inventory, monkeypatch):
     clock = [0.0]
     def advance(seconds): clock[0] += seconds
     pause.advance = advance
-    monkeypatch.setattr(services, 'time', types.SimpleNamespace(monotonic=lambda: clock[0], sleep=advance))
+    monkeypatch.setattr(services, 'time', types.SimpleNamespace(monotonic=lambda: clock[0], time=lambda: clock[0], sleep=advance))
     pause.model = model
     pause.ledger = lambda *args: [(dict(rows[0]), True)] if model['runtime'] in parents else []
 
@@ -3014,7 +3140,7 @@ def test_gateway_wrapper_without_a_runtime_cannot_discharge_readiness_debt(gatew
     monkeypatch.setattr(modules['gateway.status'], 'get_running_pid_identity_strict', lambda path: None)
     clock = [0.0]
     def advance(seconds): clock[0] += seconds
-    monkeypatch.setattr(services, 'time', SimpleNamespace(monotonic=lambda: clock[0], sleep=advance))
+    monkeypatch.setattr(services, 'time', SimpleNamespace(monotonic=lambda: clock[0], time=lambda: clock[0], sleep=advance))
     before = recovery.path.read_bytes()
     with pytest.raises(RuntimeError, match='readiness is unverified'):
         recovery._wait_ready(entry, lambda *args: [])

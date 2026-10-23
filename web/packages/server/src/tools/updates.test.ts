@@ -361,6 +361,69 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     } finally { svc.stopAutoApply(); vi.useRealTimers() }
   })
 
+  it('waits out an acknowledged native drain past every former retry, then recovers its successor without another trigger (TAL-1430)', async () => {
+    vi.useFakeTimers()
+    const { svc } = service(sourceInstall(), { checkEnabled: () => false, agentDir: '/synthetic' })
+    let draining = true
+    let actions = 0
+    const published: string[] = []
+    const detail = 'ai.hermes.gateway gateway drain remains owed while its acknowledged native drain finishes; recovery will retry.'
+    Object.assign((svc as unknown as { deps: object }).deps, {
+      recoverAgent: (probe: boolean) => {
+        if (!probe) actions += 1
+        if (probe || draining) return Promise.resolve({ ok: false, owed: true, fingerprint: 'retained', detail, ...(probe ? {} : { draining: true }) })
+        return Promise.resolve({ ok: true, owed: false, fingerprint: '', detail: '' })
+      },
+      recoveryChanged: (state: { phase: string }) => { published.push(state.phase); return Promise.resolve() },
+    })
+    try {
+      // No receipt stamp, sidecar connection, apply or check changes while the drain runs past the former six-attempt budget.
+      svc.startAutoApply(24 * 3600_000)
+      await vi.advanceTimersByTimeAsync(28 * 60_000)
+      expect(actions).toBeGreaterThan(6)
+      expect(svc.cachedStatus().agent_recovery).toMatchObject({ phase: 'waiting', attempt: 0, detail })
+      expect(published).not.toContain('blocked')
+      expect(published.filter((phase) => phase === 'running')).toHaveLength(1)
+      draining = false
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(svc.cachedStatus().agent_recovery).toMatchObject({ phase: 'complete' })
+      const settled = actions
+      await vi.advanceTimersByTimeAsync(10 * 60_000)
+      expect(actions).toBe(settled)
+    } finally { svc.stopAutoApply(); vi.useRealTimers() }
+  })
+
+  it('keeps probing an exhausted obligation and reruns it once its attested lifecycle changes (TAL-1430)', async () => {
+    vi.useFakeTimers()
+    const { svc } = service(sourceInstall(), { checkEnabled: () => false, agentDir: '/synthetic' })
+    let fingerprint = 'original-gateway'
+    let probes = 0
+    let actions = 0
+    Object.assign((svc as unknown as { deps: object }).deps, {
+      recoverAgent: (probe: boolean) => {
+        if (probe) probes += 1
+        else actions += 1
+        if (probe || fingerprint === 'original-gateway') return Promise.resolve({ ok: false, owed: true, fingerprint, detail: 'synthetic supervisor identity is unverified' })
+        return Promise.resolve({ ok: true, owed: false, fingerprint: '', detail: '' })
+      },
+    })
+    try {
+      svc.startAutoApply(24 * 3600_000)
+      await vi.advanceTimersByTimeAsync(300_000)
+      expect(actions).toBe(6)
+      expect(svc.cachedStatus().agent_recovery).toMatchObject({ phase: 'blocked', detail: 'synthetic supervisor identity is unverified' })
+      const blockedProbes = probes
+      await vi.advanceTimersByTimeAsync(10 * 60_000)
+      expect(actions).toBe(6)
+      expect(probes).toBeGreaterThan(blockedProbes)
+      // The old gateway exits and its supervisor starts a successor: only the probed lifecycle stamp changes.
+      fingerprint = 'successor-gateway'
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(actions).toBe(7)
+      expect(svc.cachedStatus().agent_recovery).toMatchObject({ phase: 'complete' })
+    } finally { svc.stopAutoApply(); vi.useRealTimers() }
+  })
+
   it('verifies loaded readiness for a persisted recovery notice after its debt disappeared', async () => {
     vi.useFakeTimers()
     const { svc } = service(sourceInstall(), { checkEnabled: () => false, agentDir: '/synthetic' })
