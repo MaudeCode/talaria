@@ -1,6 +1,6 @@
 /**
  * TAL-373: the right panel's Agents page. It lists the session's delegated agents as the server records them (TAL-372):
- * the server scopes, orders and labels them; a split batch's units are separate entries. It refreshes only while shown.
+ * the server scopes, orders and labels them; a split batch's units are separate entries. It fetches only while shown.
  */
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
@@ -20,10 +20,12 @@ const fetchAgents = async (sessionId: string) => {
   return { ...response, tasks: response.tasks.filter((t) => t.kind === 'delegation') }
 }
 /** Whether the session has agents running or needing attention (the panel's first default page); undefined until this
- * mount has its own answer, so a snapshot cached from an earlier visit never picks the page. */
-export function useHasActiveAgents(sessionId: string): boolean | undefined {
-  // Always ask on mount: a snapshot still fresh under the app's stale time is from an earlier visit, not this one.
-  const query = useQuery({ queryKey: keys.backgroundAgents(sessionId), queryFn: () => fetchAgents(sessionId), refetchOnMount: 'always' })
+ * mount has its own answer, so a snapshot cached from an earlier visit never picks the page. Asks only while the panel
+ * is open, so a chat opened with the panel closed sends no request (TAL-1388). */
+export function useHasActiveAgents(sessionId: string, open: boolean): boolean | undefined {
+  // Always stale: a snapshot still fresh under the app's stale time is from an earlier visit, not this one, so mounting
+  // open or opening later both ask again. The Agents page keeps the list current; this probe never refetches on focus.
+  const query = useQuery({ queryKey: keys.backgroundAgents(sessionId), queryFn: () => fetchAgents(sessionId), enabled: open, staleTime: 0, refetchOnWindowFocus: false })
   if (!query.isFetchedAfterMount && !query.isError) return undefined
   // ponytail: old-server fallback — a server before TAL-373 sends no `agents_working`; it then opens on the last page.
   return query.data?.agents_working ?? false
@@ -33,6 +35,7 @@ export function AgentsPage({ sessionId, active }: { sessionId: string; active: b
   const query = useQuery({
     queryKey: keys.backgroundAgents(sessionId),
     queryFn: () => fetchAgents(sessionId),
+    enabled: active,
     refetchInterval: (q) => (active && q.state.data?.tasks.some((t) => t.active) ? LIVE_REFRESH_MS : false),
   })
   if (query.isPending) return <LoadingState />

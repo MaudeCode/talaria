@@ -9,16 +9,22 @@ import { dispatch, resetStreamStoreForTests } from '../../stream/store'
 import { resetConnectionsForTests } from '../../stream/connection'
 import { ApiError } from '../../contracts/common'
 
-const { renders, navigate, composer } = vi.hoisted(() => ({ renders: vi.fn(), navigate: vi.fn(), composer: vi.fn() }))
+const { renders, navigate, composer, chatRenders, sidePanel } = vi.hoisted(() => ({ renders: vi.fn(), navigate: vi.fn(), composer: vi.fn(), chatRenders: vi.fn(), sidePanel: vi.fn() }))
 vi.mock('@tanstack/react-router', async (original) => ({ ...await original<object>(), useNavigate: () => navigate, useSearch: () => ({}) }))
 vi.mock('../../shell/AppShell', () => ({ MAIN_VIEW: '' }))
 vi.mock('../../app/bootstrap', async (original) => {
   const bootstrap = { profile: { name: 'default' }, assistant_name: 'Assistant', features: {} }
-  return { ...await original<object>(), useBootstrap: () => bootstrap }
+  // ChatView is the only caller here (the Composer is mocked), so each call is one ChatView render.
+  return { ...await original<object>(), useBootstrap: () => { chatRenders(); return bootstrap } }
 })
 vi.mock('../../app/queries', () => ({ useSettingsQuery: () => ({ data: { auto_scroll_follow: false } }), useWorkspacesQuery: () => ({ data: { workspaces: [] } }) }))
 vi.mock('../composer/Composer', () => ({ Composer: (props: unknown) => { composer(props); return null } }))
-vi.mock('./ChatSidePanel', () => ({ ChatSidePanel: () => null }))
+// Count side panel renders inside the real export's memo boundary, if it has one.
+vi.mock('./ChatSidePanel', async (original) => {
+  const { ChatSidePanel } = await original<typeof import('./ChatSidePanel')>()
+  const body = () => { sidePanel(); return null }
+  return { ChatSidePanel: typeof ChatSidePanel === 'function' ? body : { ...(ChatSidePanel as object), type: body } }
+})
 vi.mock('./useMarkViewed', () => ({ useMarkViewed: () => undefined }))
 vi.mock('../toast/toast', async (original) => ({ ...await original<object>(), showToast: vi.fn() }))
 vi.mock('../../api/endpoints', async (original) => ({
@@ -94,6 +100,47 @@ it('updates streamed text without rendering composer controls again until turn s
   expect(composer).not.toHaveBeenCalled()
   act(() => dispatch({ type: 'event', sessionId: 'memo-chat', streamId: 'live-run', event: { event: 'cancel', data: {} }, lastEventId: 'live-run:12', now: Date.now() }))
   await waitFor(() => expect(composer).toHaveBeenLastCalledWith(expect.objectContaining({ busy: false })))
+})
+
+const token = (text: string, seq: number) => act(() => dispatch({ type: 'event', sessionId: 'memo-chat', streamId: 'live-run', event: { event: 'token', data: { text } }, lastEventId: `live-run:${seq}`, now: Date.now() }))
+
+it('streams 20 token frames into the live row alone, rendering neither ChatView, the side panel nor a settled row (TAL-1388)', async () => {
+  chat()
+  await screen.findByText('Persisted answer')
+  token('First', 1)
+  await screen.findByText('First')
+  for (const probe of [chatRenders, sidePanel, renders]) probe.mockClear()
+  let text = 'First'
+  for (let seq = 2; seq <= 21; seq++) {
+    token(` t${seq}`, seq)
+    text += ` t${seq}`
+    await screen.findByText(text)
+  }
+  expect(chatRenders).not.toHaveBeenCalled()
+  expect(sidePanel).not.toHaveBeenCalled()
+  expect(renders).not.toHaveBeenCalled()
+})
+
+it('renders ChatView for a turn-state frame without rendering the side panel again (TAL-1388)', async () => {
+  chat()
+  await screen.findByText('Persisted answer')
+  await waitFor(() => expect(sidePanel).toHaveBeenCalled())
+  for (const probe of [chatRenders, sidePanel]) probe.mockClear()
+  act(() => dispatch({ type: 'event', sessionId: 'memo-chat', streamId: 'live-run', event: { event: 'tool', data: { id: 'call-1', name: 'terminal' } }, lastEventId: 'live-run:1', now: Date.now() }))
+  await waitFor(() => expect(chatRenders).toHaveBeenCalled())
+  expect(sidePanel).not.toHaveBeenCalled()
+})
+
+it('re-renders no settled row when a notices frame updates the cached session (TAL-1388)', async () => {
+  const { qc, session } = chat(false)
+  await screen.findByText('Persisted answer')
+  renders.mockClear()
+  chatRenders.mockClear()
+  // The cache write the stream's `notices` frame makes (stream/connection.ts).
+  const notices = [{ key: 'n1', level: 'info' as const, text: 'Heads up', expires_at: null }]
+  act(() => { qc.setQueryData<{ session: typeof session }>(keys.sessions.detail(session.session_id), (old) => (old ? { ...old, session: { ...old.session, notices } } : old)) })
+  await waitFor(() => expect(chatRenders).toHaveBeenCalled())
+  expect(renders).not.toHaveBeenCalled()
 })
 
 it('locks sending and shows the server restart state on a gateway-owned session', async () => {

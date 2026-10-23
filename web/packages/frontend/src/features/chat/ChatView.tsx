@@ -58,6 +58,8 @@ function sameTurnControls(previous: LiveTurn | null, next: LiveTurn | null): boo
   return (Object.keys(next) as (keyof LiveTurn)[]).every((key) => TEXT_FIELDS.has(key) || Object.is(previous[key], next[key]))
 }
 
+const closeSidePanel = () => setSidePanelOpen(false)
+
 type AdmissionRequest = Extract<OwnerActionRequest, { admission_id: string }>
 const admissionResource = (sessionId: string, admissionId: string) => `owner-admission:${sessionId}:${admissionId}`
 
@@ -225,7 +227,12 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
 
   // Regenerate, `/retry`, and the error notice's Retry: the server drops the last exchange, then its prompt and files are resent.
   // One at a time: a second retry while the first is pending would drop the exchange before it too.
+  // Read through a ref: the session object changes on every turn start, end and notices frame, and the row actions
+  // built on this callback must not, or every settled row renders again (TAL-1388).
+  const sessionRef = useRef(session)
+  useLayoutEffect(() => { sessionRef.current = session }, [session])
   const onRegenerate = useCallback(async () => {
+    const session = sessionRef.current
     if (!sessionId || !session) return false
     return runHistory(m.history_retrying(), async (current) => {
       const r = await api.retrySession(sessionId)
@@ -238,7 +245,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
       const attachments = r.last_user_attachments ?? []
       await startTurn({ sessionId, message: r.last_user_prompt, recover: true, request: { ...turnRequest(session, bootstrap.profile?.name ?? 'default'), ...(attachments.length ? { attachments } : {}) } })
     })
-  }, [sessionId, session, refresh, bootstrap.profile, runHistory])
+  }, [sessionId, refresh, bootstrap.profile, runHistory])
 
   // Manual compression: start, poll the job to done/error, then load the compacted session (a new id when the server forks).
   // Leaving the session unmounts this view and stops the poll, so it never navigates from the session shown next.
@@ -531,7 +538,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
       {/* Always mounted beside main (its queries run only while open) so opening and closing animate and the edge tab is always there. */}
       {editDialog}{modelDialog}
       {sessionId && removingWorktree && <WorktreeRemoveDialog sessionId={sessionId} onClose={() => setRemovingWorktree(false)} />}
-      {sessionId && <ChatSidePanel key={sessionId} sessionId={sessionId} workspace={workspace} open={sidePanelOpen} onToggle={toggleSidePanel} onClose={() => setSidePanelOpen(false)} />}
+      {sessionId && <ChatSidePanel key={sessionId} sessionId={sessionId} workspace={workspace} open={sidePanelOpen} onToggle={toggleSidePanel} onClose={closeSidePanel} />}
     </>
   )
 }

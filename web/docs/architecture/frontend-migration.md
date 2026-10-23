@@ -234,6 +234,13 @@ from the changing live tail. Its height remains content-sized; the existing row
 containment keeps history searchable and lets reader anchors measure visible rows.
 The opt-in virtualizer retains its existing measurement ownership.
 
+The live user bubble keeps one row object per text and attachments, so token
+frames render only the live turn. Row actions read the session through a ref, so a
+turn start or end, a `notices` or `session_goal` cache write, or a refetch leaves
+settled rows unrendered. The memoized side panel takes stable handlers and skips
+the chat's turn-state renders; its inactive pages sit in a hidden `Activity`, and
+its Agents queries run only while the panel is open.
+
 Passive navigation closes the transport and invalidates pending status/settlement
 requests, retaining each existing `LiveTurn` with its cursor in the same store.
 Returning paints that turn immediately and reconnects from its last applied event.
