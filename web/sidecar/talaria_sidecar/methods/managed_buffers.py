@@ -99,8 +99,9 @@ def run(ctx, params):
                 _bad()
             result.update(content=text, size=_text_size(text), read_only=selected['read_only'])
         else:
-            if value.get('name') != name or type(value.get('bytes')) is not int or not 0 <= value['bytes'] <= MAX_BYTES:
-                _bad()
+            # Native PUT acknowledgements may omit session_id, but an explicit identity must match.
+            if value.get('session_id', sid) != sid or value.get('name') != name or type(value.get('bytes')) is not int or not 0 <= value['bytes'] <= MAX_BYTES:
+                raise RpcError('Save outcome is unknown; reload before retrying', condition='buffer_save_unconfirmed')
             result.update(size=value['bytes'], read_only=False)
         return result
 

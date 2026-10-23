@@ -105,3 +105,31 @@ it('opens native session buffers without creating a local session document or wo
   expect(read.status).toBe(200)
   expect(await read.json()).toMatchObject({ content: 'native', read_only: true })
 })
+
+it.each(['imported', 'subagent'])('refuses a session that becomes %s while save inventory is in flight', async (owner) => {
+  const { vi } = await import('vitest')
+  const b = await setupBuffers()
+  let enter!: () => void
+  let resume!: () => void
+  const entered = new Promise<void>((resolve) => { enter = resolve })
+  const release = new Promise<void>((resolve) => { resume = resolve })
+  const original = b.fake.responderFor('plugins.buffers')!
+  let subagent = false
+  const subagentGate = vi.spyOn(s!.deps.sessions, 'isSubagentViewOnly').mockImplementation(() => Promise.resolve(subagent))
+  b.fake.respond('plugins.buffers', async (params, emit, opts) => {
+    if (params.action === 'list') { enter(); await release }
+    return original(params, emit, opts)
+  })
+  const saving = b.save('must not be written')
+  await entered
+  if (owner === 'imported') {
+    const session = await s!.deps.sessionStore.get(b.sid)
+    session.read_only = true
+    await s!.deps.sessionStore.save(session)
+  } else subagent = true
+  resume()
+  const response = await saving
+  expect(response.status, 'ownership changed before native dispatch').toBe(403)
+  expect(b.fake.calls.filter((c) => c.method === 'plugins.buffers' && (c.params as { action: string }).action === 'save')).toHaveLength(0)
+  subagentGate.mockRestore()
+})

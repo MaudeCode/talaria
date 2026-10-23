@@ -47,6 +47,11 @@ export async function managedBuffers(ctx: RequestContext, input: { session_id: s
   if (!list.supported || !selected) throw new HttpError(404, 'Managed buffer no longer exists')
   if (action === 'save' && selected.read_only) throw new HttpError(403, 'Managed buffer is read-only')
   if (action === 'save' && Buffer.byteLength(input.content ?? '', 'utf8') > MAX_MANAGED_BUFFER_BYTES) throw new HttpError(413, 'Managed buffer is too large')
+  if (action === 'save') {
+    // Inventory is asynchronous; ownership may have changed since the displayed permission was computed.
+    if (await ctx.deps.sessions.isSubagentViewOnly(input.session_id)) throw new HttpError(403, 'Managed buffer is read-only')
+    await ctx.deps.sessions.assertWritable(input.session_id)
+  }
   const value = await call(action, selected.name)
   if (action === 'save') {
     if (!value.supported || value.size === undefined) throw new HttpError(503, 'Save outcome is unknown. Reload before retrying.', { condition: 'buffer_save_unconfirmed' })

@@ -297,7 +297,9 @@ def _managed(d, monkeypatch):
             assert path == '/sessions/native-one/buffers/draft.txt'
             if method == 'PUT':
                 state.text = json.loads(body)['content']
-            value = {'session_id': 'one', 'name': 'draft.txt', 'content': state.text, 'bytes': len(state.text.encode()), 'path': '/private/plugin-data/devkit/draft.txt'}
+            value = {'name': 'draft.txt', 'bytes': len(state.text.encode()), 'path': '/private/plugin-data/devkit/draft.txt'}
+            if method == 'GET':
+                value.update(session_id='one', content=state.text)
         if state.bad is not None:
             value = state.bad
         return {'status': 200, 'body': json.dumps(value).encode(), 'headers': [('content-type', 'application/json')]}
@@ -418,3 +420,27 @@ def test_managed_revoked_consent_between_inventory_and_save_prevents_dispatch(da
         s.call('save', name='draft.txt', content='refused')
     assert s.text == 'original'
     assert not any(method == 'PUT' for method, _ in s.calls)
+
+
+@pytest.mark.parametrize('identity', ['absent', 'one', 'foreign', None, 7])
+def test_managed_save_acknowledgement_rejects_explicit_foreign_session(dashboards, monkeypatch, identity):
+    import base64
+    from talaria_sidecar.errors import RpcError
+    from talaria_sidecar.methods import managed_buffers
+    s = _managed(dashboards, monkeypatch)
+    real = managed_buffers.host._request
+    def acknowledgement(ctx, plugin, params, **kwargs):
+        reply = real(ctx, plugin, params, **kwargs)
+        if params['method'] == 'PUT' and identity != 'absent':
+            body = json.loads(base64.b64decode(reply['body']))
+            body['session_id'] = identity
+            reply['body'] = base64.b64encode(json.dumps(body).encode()).decode()
+        return reply
+    monkeypatch.setattr(managed_buffers.host, '_request', acknowledgement)
+    if identity in ('absent', 'one'):
+        assert s.call('save', name='draft.txt', content='saved')['size'] == 5
+    else:
+        with pytest.raises(RpcError, match='outcome is unknown') as refused:
+            s.call('save', name='draft.txt', content='uncertain')
+        assert refused.value.data['condition'] == 'buffer_save_unconfirmed'
+    assert sum(method == 'PUT' for method, _ in s.calls) == 1

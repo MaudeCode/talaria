@@ -60,6 +60,7 @@ export function FilesPage({ workspace, sessionId, active, restored = null }: { w
 
 function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, restored }: { workspace: string; sessionId: string; sourceControl: ReactNode; source: 'workspace' | 'managed'; active: boolean; restored: RestoredFiles | null }) {
   const managed = source === 'managed'
+  const sourceArgs: [] | ['managed'] = managed ? ['managed'] : []
   const qc = useQueryClient()
   const [dir, setDir] = useState('.')
   const [showHidden, setShowHidden] = useState(false)
@@ -78,16 +79,16 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, r
     setSeenRestore(restored.seq)
     if (file && restored.paths.includes(file)) setDraft(null)
   }
-  const listing = useQuery({ queryKey: keys.files.list(workspace, dir, showHidden), queryFn: () => api.listDir(sessionId, dir, showHidden, managed ? source : undefined), staleTime: 10_000, enabled: active })
+  const listing = useQuery({ queryKey: keys.files.list(workspace, dir, showHidden), queryFn: () => api.listDir(sessionId, dir, showHidden, ...sourceArgs), staleTime: 10_000, enabled: active })
   const git = useQuery({ queryKey: keys.files.git(sessionId), queryFn: () => api.fetchGitInfo(sessionId), staleTime: 30_000, retry: false, enabled: active && !managed })
-  const content = useQuery({ queryKey: keys.files.content(workspace, file ?? ''), queryFn: () => api.readFile(sessionId, file ?? '', managed ? source : undefined), enabled: !!file && active, staleTime: 5_000 })
+  const content = useQuery({ queryKey: keys.files.content(workspace, file ?? ''), queryFn: () => api.readFile(sessionId, file ?? '', ...sourceArgs), enabled: !!file && active, staleTime: 5_000 })
   const effects = useResourceEffects()
   // The saved text shows until the reread of that same file confirms it; edits typed meanwhile stay as the draft.
   const save = useResourceMutation({
     resource: ({ path }: { path: string; text: string }) => contentResource(workspace, path),
     queryKey: keys.files.contents(workspace), readKeys: ({ path }) => [{ queryKey: keys.files.content(workspace, path), exact: true }],
     effect: ({ text }) => ({ value: text }),
-    mutationFn: ({ path, text }) => managed ? api.saveFile(sessionId, path, text, source) : api.saveFile(sessionId, path, text),
+    mutationFn: ({ path, text }) => api.saveFile(sessionId, path, text, ...sourceArgs),
     onSuccess: (_, { path, text }) => { showToast(m.ws_panel_saved()); setDraftOf((d) => d?.path === path && d.text === text ? null : d) },
     onError: (e) => showErrorToast(e),
   })
