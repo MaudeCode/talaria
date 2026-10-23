@@ -128,7 +128,7 @@ describe('OpenRouter cost card', () => {
 
   it('keeps a confirmed budget until a later read succeeds when the reread fails (TAL-1384)', async () => {
     vi.mocked(api.fetchOpenRouterCostHistory).mockResolvedValue(fixture)
-    vi.mocked(api.saveSettings).mockResolvedValue({ provider_cost_budget: 7 } as never)
+    vi.mocked(api.saveSettings).mockResolvedValue({ provider_cost_budget: 7 })
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
     render(<QueryClientProvider client={qc}><OpenRouterCost /></QueryClientProvider>)
     const input = await screen.findByLabelText('Monthly budget')
