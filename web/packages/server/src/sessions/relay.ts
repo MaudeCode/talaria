@@ -1,3 +1,4 @@
+import type { SessionEventBus } from './events.js'
 import { filterAsync } from '../util.js'
 /**
  * Talaria Relay: publisher pairing, profile enrollment, browser presence
@@ -600,6 +601,7 @@ export class RelayPublisher {
 // ── pairing and lifecycle ─────────────────────────────────────────────────
 
 export interface RelayServiceDeps extends RelayPublisherDeps {
+  events: SessionEventBus
   env: Record<string, string | undefined>
   canonicalProfile: (profile: string) => string
   addListener: (listener: () => void) => () => void
@@ -702,6 +704,23 @@ export class RelayService {
     publisher?.noteTerminal(streamId, phase)
     const current = this.publisher ?? this.candidate
     if (current && current !== publisher) current.noteTerminal(streamId, phase)
+    const run = this.deps.registry.activeRuns.get(streamId)
+    if (phase !== 'completed' || !run || run.ephemeral || (run as { health_only?: boolean }).health_only) return
+    // Capture the run before teardown; this never materializes an owner-managed session.
+    void this.deps.store.get(run.session_id, { metadataOnly: true }).then((session) => {
+      this.noteWebCompletion(session.profile ?? 'default', run.session_id, run.stream_id)
+    }).catch(() => undefined)
+  }
+
+  /** Shared Web-only projection for direct turns and receipt-confirmed native owner executions. */
+  noteWebCompletion(profileName: string, sessionId: string, runIdentity: string): void {
+    const profile = this.deps.canonicalProfile(profileName)
+    const expires = this.deps.now() * 1000 + 60_000
+    void (async () => {
+      const scope = await profileIdentity(this.deps, profile)
+      const identity = createHash('sha256').update(JSON.stringify([scope, runIdentity])).digest('hex')
+      this.deps.events.publish('web_completion', { profile, sessionId, webAudio: { identity, scope, profile, eligible: true, expires_at: expires } })
+    })().catch(() => undefined)
   }
 
   /** Python `configure_talaria_relay_publisher`: validate with a real snapshot before swapping publishers. */

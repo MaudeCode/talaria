@@ -7,6 +7,7 @@ import { LoadingState, ErrorState } from '../../ui/States'
 import { NAV_ITEMS, FIXED_TABS } from '../../shell/nav'
 import { useState } from 'react'
 import { Button } from '../../ui/Button'
+import { CompletionAudioSettings } from './CompletionAudioSettings'
 import { AuxiliaryModelsSetting } from './AuxiliaryModels'
 import { useBootstrap } from '../../app/bootstrap'
 import { catalogEntryById, catalogGroupLabel } from '../../lib/modelEntry'
@@ -88,6 +89,7 @@ export function PreferencesSection() {
       <Toggle label={m.settings_label_new_chat_on_workspace_switch()} settingKey="new_chat_on_workspace_switch" />
       <Toggle label={m.settings_label_notifications()} settingKey="notifications_enabled" />
       <Toggle label={m.settings_label_sound()} settingKey="sound_enabled" />
+      <CompletionAudioSettings />
       <FieldRow label={m.settings_label_sidebar_density()} htmlFor="settingsSidebarDensity" inline>
         <Select id="settingsSidebarDensity" value={str('sidebar_density', 'compact')} onValueChange={(v) => set({ sidebar_density: v })}>
           <option value="compact">{m.settings_sidebar_density_compact()}</option>

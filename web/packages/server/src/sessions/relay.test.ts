@@ -14,6 +14,22 @@ import * as atomic from '../fs/atomic.js'
 import { loadRelayConfig, saveRelayConfig, PRESENCE_FENCE_SECONDS, PRESENCE_LEASE_SECONDS, PRESENCE_MAX_LEASES, PresenceLeases, RelayPairingError, RelayPublisher, validatedOrigin, type RelayConfig } from './relay.js'
 
 type Json = Record<string, unknown>
+it('projects a live Web completion without pairing and keeps terminal failures quiet', async () => {
+  const server = await bootTestServer()
+  try {
+    const session = await server.deps.sessionStore.newSession()
+    server.deps.registry.registerActiveRun({ stream_id: 'audio-run', session_id: session.session_id, started_at: 1, phase: 'running', workspace: '', model: null, provider: null, ephemeral: false })
+    const sub = server.deps.events.subscribe()
+    server.deps.relay.noteTerminal('audio-run', 'completed')
+    const event = await sub.next(AbortSignal.timeout(1500))
+    expect(event).toMatchObject({ reason: 'web_completion', web_audio: [{ eligible: true, profile: 'default', identity: expect.any(String) as string, scope: expect.any(String) as string }] })
+    sub.close()
+    const failed = server.deps.events.subscribe()
+    server.deps.relay.noteTerminal('audio-run', 'failed')
+    expect(await failed.next(AbortSignal.timeout(30))).toBeNull()
+    failed.close()
+  } finally { await server.close() }
+})
 const RELAY = 'https://relay.talaria.kil.dev'
 const post = (s: TestServer, path: string, body: unknown): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
 const json = async (res: Response): Promise<Json> => (await res.json()) as Json

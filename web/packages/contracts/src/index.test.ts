@@ -252,6 +252,13 @@ it('parses the shared diagnostic execution mode fixtures the App renders (TAL-10
   expect(ErrorBodySchema.parse(fixture.refusal)).toMatchObject({ code: 'execution_mode_unavailable', reason: 'gateway_stopped' })
 })
 
+it('retains server-owned Web audio instructions and accepts older session feeds', async () => {
+  const { SessionListEventSchema } = await import('./sse.js')
+  const fixture = shared('fixtures/web-completion-audio.json')
+  expect(SessionListEventSchema.parse(fixture)).toEqual(fixture)
+  expect(SessionListEventSchema.parse({ event: 'sessions_changed', data: { reason: 'legacy' } })).toEqual({ event: 'sessions_changed', data: { reason: 'legacy' } })
+})
+
 it('pins the explicit native captured-command route and bounded result', async () => {
   const { automationContract, TerminalStartSchema, CapturedCommandResultSchema } = await import('./index.js')
   const fixture = shared('fixtures/native-captured-command.json') as Record<'target' | 'web_target' | 'command' | 'result', unknown>

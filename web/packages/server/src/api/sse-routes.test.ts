@@ -109,3 +109,18 @@ it('falls back to a snapshot when an unseen run finishes before idle attachment'
   expect(readReplay).toHaveBeenCalledTimes(1)
   expect(io.full).toHaveLength(1)
 })
+
+it('filters coalesced Web audio instructions to the SSE request profile and never replays them', async () => {
+  const s = server = await bootTestServer()
+  const received = s.sse('/api/sessions/events', (frame) => {
+    if (frame.event === 'initial') {
+      for (const profile of ['default', 'foreign']) s.deps.events.publish('web_completion', { profile, webAudio: { identity: profile, scope: profile, profile, eligible: true, expires_at: Date.now() + 60_000 } })
+    }
+    return frame.event === 'sessions_changed'
+  })
+  const frames = await received
+  expect(frames.find((frame) => frame.event === 'sessions_changed')?.data).toMatchObject({ web_audio: [{ identity: 'default', profile: 'default' }] })
+  const reconnect = await s.sse('/api/sessions/events', () => true)
+  expect(reconnect[0]).toMatchObject({ event: 'initial', data: { stream: 'sessions' } })
+  expect(reconnect[0]?.data).not.toHaveProperty('web_audio')
+})

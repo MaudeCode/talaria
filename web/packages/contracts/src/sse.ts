@@ -112,8 +112,14 @@ export type ChatEvent = z.infer<typeof ChatEventSchema>
 /** Relay close set: stop draining after these (the server's `SSE_RELAY_CLOSE_EVENTS`). */
 export const RELAY_CLOSE_EVENTS: ReadonlySet<ChatEventName> = new Set(['stream_end', 'cancel', 'apperror', 'error'])
 
-/** `GET /api/sessions/events` (global session list invalidation; `/api/session/stream` is the per-session channel). */
-export const SessionsChangedSchema = z.looseObject({ type: z.literal('sessions_changed').optional(), version: z.number().optional(), reason: z.string().optional(), profile: z.string().nullable().optional(), session_id: z.string().nullable().optional() })
+/** Live-only Web playback instruction. Absent from initial/history/replay frames. */
+export const WebAudioCompletionSchema = z.object({
+  identity: z.string().min(1).max(128), scope: z.string().min(1).max(128), profile: z.string().min(1),
+  eligible: z.boolean(), expires_at: z.number(),
+})
+export type WebAudioCompletion = z.infer<typeof WebAudioCompletionSchema>
+/** `GET /api/sessions/events` global invalidation and live Web playback. */
+export const SessionsChangedSchema = z.looseObject({ type: z.literal('sessions_changed').optional(), version: z.number().optional(), reason: z.string().optional(), profile: z.string().nullable().optional(), session_id: z.string().nullable().optional(), web_audio: z.array(WebAudioCompletionSchema).max(32).optional() })
 export const SessionListEventSchema = z.discriminatedUnion('event', [
   z.object({ event: z.literal('initial'), data: Loose }),
   z.object({ event: z.literal('sessions_changed'), data: SessionsChangedSchema }),

@@ -478,7 +478,9 @@ export async function handleSessionEvents(ctx: RequestContext): Promise<void> {
         lastWrite = Date.now()
         continue
       }
-      sse.event(event.type, { ...event, stream: 'sessions' })
+      // A global invalidation may span profiles; playback instructions never cross the bound request profile.
+      const web_audio = event.web_audio?.filter((completion) => ctx.deps.profilesMatch(completion.profile, ctx.deps.activeProfile()))
+      sse.event(event.type, { ...event, web_audio, stream: 'sessions' })
       lastWrite = Date.now()
     }
   } finally {

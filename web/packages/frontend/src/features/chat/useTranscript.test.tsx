@@ -10,7 +10,8 @@ import { keys } from '../../api/queryKeys'
 import { TRANSCRIPT_WINDOW } from '@maudecode/talaria-web-contracts'
 
 const streams: { event: (event: ChatEvent, id: string) => void; replay: unknown; close: ReturnType<typeof vi.fn> }[] = []
-vi.mock('../../api/endpoints', () => ({ fetchSession: vi.fn(), fetchStreamStatus: vi.fn() }))
+vi.mock('../../api/endpoints', () => ({
+  fetchSettings: vi.fn(() => Promise.resolve({ sound_enabled: false })), fetchSession: vi.fn(), fetchStreamStatus: vi.fn() }))
 vi.mock('../../api/sse', () => ({
   SSE_CLOSED: 2,
   SSE_OPEN: 1,

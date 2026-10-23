@@ -215,6 +215,17 @@ authority, replay epoch, execution generation and admission, and are discarded o
 replacement or replay gaps. Web hides Retry when the server sends `retryable:
 false`; absent fields retain older-server behavior.
 
+Web completion audio uses optional `web_audio` instructions on the live global session feed.
+The shared terminal projection supplies a stable run identity, persisted server/profile scope,
+eligibility and expiry. The server filters instructions to the request's profile; initial,
+history and reconnect snapshots carry none. Coalesced invalidations retain at most 32 instructions.
+The browser never infers completion from text or transcript rows. Its existing bounded IndexedDB
+playback claim ledger serializes attempts across tabs, including failed or muted attempts.
+Settings > Preferences stores sound, volume, local quiet hours and at most one local audio file
+in browser storage. Audio files are limited to 1 MiB and 10 seconds; preview requires a click.
+Storage or autoplay failure stays quiet. Web audio does not change Relay/APNs policy, viewed
+acknowledgements, speech preferences or background-process notification settings.
+
 Explicit prompt queues use `/api/prompt-queues` and its versioned edit/action
 routes. Creating a run saves a draft; only `start` or `resume` authorizes dispatch.
 The server owns target profile/project/backend fences, ordered steps, availability,
