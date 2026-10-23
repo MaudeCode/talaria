@@ -5,8 +5,8 @@ import type { ApprovalPending } from '../../contracts'
 import * as api from '../../api/endpoints'
 import { Menu, MenuItem } from '../../ui/Menu'
 import { IconButton } from '../../ui/Button'
-import { showToast } from '../toast/toast'
-import { showErrorToast } from '../toast/errorToast'
+import { keys } from '../../api/queryKeys'
+import { usePromptAnswer } from './usePromptAnswer'
 import { cn } from '../../ui/cn'
 
 /**
@@ -15,22 +15,18 @@ import { cn } from '../../ui/cn'
  * is outside a text field. Cleared by the terminal event or a successful respond.
  */
 export function ApprovalCard({ sessionId, pending, onResolved }: { sessionId: string; pending: ApprovalPending; onResolved: () => void }) {
-  // The card leaves as soon as the user answers; a refused answer brings it back with the error.
-  const [answered, setAnswered] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   const [dismissed, setDismissed] = useState(false)
-  const respond = async (choice: 'once' | 'session' | 'always' | 'deny', yolo = false) => {
-    if (answered) return
-    setAnswered(true)
-    try {
-      const res = await api.respondApproval({ session_id: sessionId, choice, ...(pending.approval_id ? { approval_id: pending.approval_id } : {}), ...(pending.run_id ? { run_id: pending.run_id } : {}), ...(pending.mirror_token ? { mirror_token: pending.mirror_token } : {}), ...(yolo ? { yolo: true } : {}) })
-      if (res.error) { setAnswered(false); showToast(res.error, 4000, 'error') }
-      else onResolved()
-    } catch (e) {
-      setAnswered(false)
-      showErrorToast(e)
-    }
-  }
+  // The card leaves as soon as the user answers; a refused answer brings it back with the error.
+  const resource = `approval:${sessionId}:${pending.approval_id ?? ''}`
+  const { answer, answered: isAnswered } = usePromptAnswer({
+    resource: () => resource, queryKey: keys.approval(sessionId),
+    send: ({ choice, yolo }: { choice: 'once' | 'session' | 'always' | 'deny'; yolo: boolean }) => api.respondApproval({ session_id: sessionId, choice, ...(pending.approval_id ? { approval_id: pending.approval_id } : {}), ...(pending.run_id ? { run_id: pending.run_id } : {}), ...(pending.mirror_token ? { mirror_token: pending.mirror_token } : {}), ...(yolo ? { yolo: true } : {}) }),
+    waiting: async () => { const { pending: head } = await api.fetchApprovalPending(sessionId); return !!head && (head.approval_id ?? '') === (pending.approval_id ?? '') },
+    onAnswered: onResolved,
+  })
+  const answered = isAnswered(resource)
+  const respond = (choice: 'once' | 'session' | 'always' | 'deny', yolo = false) => { if (!answered) answer({ choice, yolo }) }
   useEffect(() => {
     if (dismissed || answered) return
     const onKey = (e: KeyboardEvent) => {
@@ -38,7 +34,7 @@ export function ApprovalCard({ sessionId, pending, onResolved }: { sessionId: st
       const t = e.target as HTMLElement | null
       if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'BUTTON' || t.tagName === 'A')) return
       e.preventDefault()
-      void respond('once')
+      respond('once')
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
@@ -61,12 +57,12 @@ export function ApprovalCard({ sessionId, pending, onResolved }: { sessionId: st
           {(pending.description ?? pending.question ?? pending.reason) && <div className="approval-desc mt-1 text-[13px] text-muted" id="approvalDesc">{pending.description ?? pending.question ?? pending.reason}</div>}
           {command && <pre className="approval-cmd mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-md bg-code-bg p-2 font-mono text-[12.5px] text-pre-text">{command}</pre>}
           <div className="approval-btns mt-3 flex flex-wrap items-center gap-2">
-            <button type="button" onClick={() => { void respond('once') }} className="approval-btn once inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-fg" title={m.approval_btn_once_title()}>{m.approval_btn_once()} <kbd className="rounded border border-current/30 px-1 text-[10px]">↵</kbd></button>
-            <button type="button" onClick={() => { void respond('deny') }} className="approval-btn deny inline-flex items-center rounded-md border border-border bg-surface px-3 py-1.5 text-sm font-medium text-text hover:bg-hover">{m.approval_btn_deny()}</button>
+            <button type="button" onClick={() => { respond('once') }} className="approval-btn once inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-fg" title={m.approval_btn_once_title()}>{m.approval_btn_once()} <kbd className="rounded border border-current/30 px-1 text-[10px]">↵</kbd></button>
+            <button type="button" onClick={() => { respond('deny') }} className="approval-btn deny inline-flex items-center rounded-md border border-border bg-surface px-3 py-1.5 text-sm font-medium text-text hover:bg-hover">{m.approval_btn_deny()}</button>
             {(pending.can_enable_yolo !== false || (pending.allowed_choices?.includes('session') ?? true) || (pending.allowed_choices?.includes('always') ?? true)) && <Menu label={m.approval_more()} side="top" trigger={<button type="button" className="approval-btn more inline-flex items-center rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-text hover:bg-hover">{m.approval_more()}</button>}>
-              {(pending.allowed_choices?.includes('session') ?? true) && <MenuItem onClick={() => { void respond('session') }}>{m.approval_btn_session()}</MenuItem>}
-              {(pending.allowed_choices?.includes('always') ?? true) && <MenuItem onClick={() => { void respond('always') }}>{m.approval_btn_always()}</MenuItem>}
-              {pending.can_enable_yolo !== false && <MenuItem onClick={() => { void respond('once', true) }}>{m.approval_skip_all()}</MenuItem>}
+              {(pending.allowed_choices?.includes('session') ?? true) && <MenuItem onClick={() => { respond('session') }}>{m.approval_btn_session()}</MenuItem>}
+              {(pending.allowed_choices?.includes('always') ?? true) && <MenuItem onClick={() => { respond('always') }}>{m.approval_btn_always()}</MenuItem>}
+              {pending.can_enable_yolo !== false && <MenuItem onClick={() => { respond('once', true) }}>{m.approval_skip_all()}</MenuItem>}
             </Menu>}
           </div>
         </div>

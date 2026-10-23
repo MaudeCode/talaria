@@ -1,10 +1,17 @@
 import { describe, expect, it, vi } from 'vitest'
-import { act, render, screen, waitFor } from '@testing-library/react'
+import type { ReactElement } from 'react'
+import { act, render as renderView, screen, waitFor } from '@testing-library/react'
+import { queryWrapper } from '../../test/fixtures'
 import userEvent from '@testing-library/user-event'
 
-vi.mock('../../api/endpoints', () => ({ respondApproval: vi.fn(() => Promise.resolve({ ok: true })) }))
+vi.mock('../../api/endpoints', () => ({ respondApproval: vi.fn(() => Promise.resolve({ ok: true })), fetchApprovalPending: vi.fn() }))
+vi.mock('../toast/toast', () => ({ showToast: vi.fn() }))
 import * as api from '../../api/endpoints'
 import { ApprovalCard } from './ApprovalCard'
+import { showToast } from '../toast/toast'
+import { ApiError } from '../../contracts/common'
+
+const render = (ui: ReactElement) => renderView(ui, { wrapper: queryWrapper() })
 
 describe('ApprovalCard', () => {
   it('offers only owner-approved choices and never offers native YOLO', () => {
@@ -41,8 +48,31 @@ describe('ApprovalCard', () => {
     render(<ApprovalCard sessionId="s1" pending={{ approval_id: 'a5', command: 'rm -rf build' }} onResolved={() => undefined} />)
     await userEvent.click(screen.getByRole('button', { name: /deny/i }))
     expect(screen.queryByRole('alertdialog')).toBeNull()
-    await act(async () => { refuse(new Error('Approval expired')); await Promise.resolve() })
+    await act(async () => { refuse(new ApiError({ kind: 'http', status: 400, path: '/api/approval/respond', message: 'Approval expired' })); await Promise.resolve() })
     expect(await screen.findByRole('alertdialog')).toBeInTheDocument()
+    expect(showToast).toHaveBeenLastCalledWith('Approval expired', 4000, 'error')
+    expect(api.fetchApprovalPending).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['still waits', { approval_id: 'a6', command: 'rm -rf build' }, true],
+    ['has moved on', null, false],
+  ] as const)('asks the server whether the approval still waits after an unknown outcome: it %s (TAL-1384)', async (_, head, back) => {
+    const onResolved = vi.fn(() => { view.rerender(<></>) })
+    vi.mocked(api.respondApproval).mockClear().mockRejectedValueOnce(new ApiError({ kind: 'network', path: '/api/approval/respond', message: 'Network down' }))
+    vi.mocked(api.fetchApprovalPending).mockResolvedValueOnce({ pending: head, pending_count: head ? 1 : 0 })
+    // ChatView drops the card when the stream's approval clears.
+    const view = render(<ApprovalCard sessionId="s1" pending={{ approval_id: 'a6', command: 'rm -rf build' }} onResolved={onResolved} />)
+    await userEvent.click(screen.getByRole('button', { name: /deny/i }))
+    await waitFor(() => { expect(api.fetchApprovalPending).toHaveBeenCalledWith('s1') })
+    if (back) {
+      expect(await screen.findByRole('alertdialog')).toBeInTheDocument()
+      expect(showToast).toHaveBeenLastCalledWith('Network down', 4000, 'error')
+    } else {
+      await waitFor(() => { expect(onResolved).toHaveBeenCalled() })
+      expect(screen.queryByRole('alertdialog')).toBeNull()
+    }
+    expect(api.respondApproval).toHaveBeenCalledTimes(1)
   })
 
   it('does not treat Enter inside a text field as an approval', async () => {

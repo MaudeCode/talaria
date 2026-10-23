@@ -6,7 +6,9 @@ import { formatDurationUnits, resetTime } from '../../i18n/units'
 import { ArrowUp, Pencil, X } from 'lucide-react'
 import type { LiveTurn, PendingSteerRow } from '../../stream/reducer'
 import { useLiveTurn } from '../../stream/store'
-import { sendSteerNow, withdrawSteer } from '../../api/endpoints'
+import { fetchSession, sendSteerNow, withdrawSteer } from '../../api/endpoints'
+import { dispatch } from '../../stream/store'
+import { usePromptAnswer } from './usePromptAnswer'
 import type { RateLimitWait, SteerWithdrawRequest } from '@maudecode/talaria-web-contracts'
 import { showToast } from '../toast/toast'
 import { showErrorToast } from '../toast/errorToast'
@@ -53,27 +55,27 @@ export function LiveTurnView({ turn, name, mode, userVisible, omitToolIds }: { t
 function PendingSteerMessage({ sessionId, steer }: { sessionId: string; steer: PendingSteerRow }) {
   // Send now is executed by the server: its button is busy, and Edit and Cancel wait rather than race it.
   const [busy, setBusy] = useState(false)
-  // Edit and Cancel take the row away at once (the stream drops it once the server confirms); a refusal brings it back.
-  // The steer lives in stream state, not a query, so the row keeps this until the stream removes it.
-  const [gone, setGone] = useState(false)
   const keepFocus = (e: PointerEvent) => { e.preventDefault() }
   const run = async (request: () => Promise<void>) => {
     if (busy) return
     setBusy(true)
     try { await request() } catch (e) { showErrorToast(e) } finally { setBusy(false) }
   }
-  const withdraw = async (reason: SteerWithdrawRequest['reason']) => {
-    setGone(true)
-    if (reason === 'edit') returnToComposer(sessionId, steer.text)
-    try {
-      const r = await withdrawSteer({ session_id: sessionId, steer_id: steer.steerId, reason })
+  // Edit and Cancel take the row away at once; a refusal brings it back. Edit's text returns once the server has it back.
+  const resource = `steer:${sessionId}:${steer.steerId}`
+  const { answer: withdrawNow, answered } = usePromptAnswer({
+    resource: () => resource, queryKey: ['steer', sessionId],
+    send: (reason: SteerWithdrawRequest['reason']) => withdrawSteer({ session_id: sessionId, steer_id: steer.steerId, reason }),
+    waiting: async () => (await fetchSession(sessionId, { messages: false })).session.pending_steers?.some((p) => p.steer_id === steer.steerId) ?? false,
+    onAnswered: (r, reason) => {
+      dispatch({ type: 'steer_closed', sessionId, steerId: steer.steerId })
       // Already taken: the steer is being delivered, so the row stays gone and says why.
-      if (!r.withdrawn) showToast(m.steer_already_taken(), 2500)
-    } catch (e) {
-      setGone(false)
-      showErrorToast(e)
-    }
-  }
+      if (r && !r.withdrawn) { showToast(m.steer_already_taken(), 2500); return }
+      // Unconfirmed but no longer waiting: the text comes back rather than being lost.
+      if (reason === 'edit') returnToComposer(sessionId, r?.text ?? steer.text)
+    },
+  })
+  const withdraw = (reason: SteerWithdrawRequest['reason']) => { if (!busy) withdrawNow(reason); return Promise.resolve() }
   const sendNow = () => run(async () => {
     const reply = await sendSteerNow({ session_id: sessionId, steer_id: steer.steerId })
     // Older servers only send redirected; remove this fallback with that field.
@@ -97,7 +99,7 @@ function PendingSteerMessage({ sessionId, steer }: { sessionId: string; steer: P
       {cancel && button(m.steer_cancel(), <X size={14} aria-hidden="true" />, () => withdraw('cancel'))}
     </span>
   ) : null
-  if (gone) return null
+  if (answered(resource)) return null
   return <SteerMessage text={steer.text} state={steer.state} actions={actions} />
 }
 

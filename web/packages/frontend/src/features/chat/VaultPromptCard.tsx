@@ -1,16 +1,14 @@
 import { useEffect, useState, type SyntheticEvent } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
 import { KeyRound } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import type { VaultPrompt, VaultPromptField } from '../../contracts'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
-import { isApiError } from '../../contracts/common'
 import type { LiveTurn } from '../../stream/reducer'
 import { Button } from '../../ui/Button'
 import { HelpTip, TextInput } from '../../ui/Field'
-import { showErrorToast } from '../toast/errorToast'
-import { useClarifyHead } from './useClarify'
+import { clarifyResource, useClarifyHead } from './useClarify'
+import { usePromptAnswer } from './usePromptAnswer'
 
 /** TAL-887: the clarify queue head when it is one of the Agent's password-manager prompts. */
 export function useVaultPrompt(sessionId: string | null, live: LiveTurn | null): { clarifyId: string; vault: VaultPrompt } | null {
@@ -36,34 +34,28 @@ const AUTOCOMPLETE: Record<VaultPromptField['key'], string> = { master_password:
  * is dropped here; Skip, an empty submit, or the deadline leave the Agent unanswered.
  */
 export function VaultPromptCard({ sessionId, clarifyId, vault }: { sessionId: string; clarifyId: string; vault: VaultPrompt }) {
-  const qc = useQueryClient()
   const [values, setValues] = useState<Record<string, string>>({})
-  const [busy, setBusy] = useState(false)
-  const [done, setDone] = useState(false)
   const [remaining, setRemaining] = useState(() => Math.max(0, Math.round(vault.timeout_at - Date.now() / 1000)))
   useEffect(() => {
     const t = window.setInterval(() => setRemaining(Math.max(0, Math.round(vault.timeout_at - Date.now() / 1000))), 1000)
     return () => window.clearInterval(t)
   }, [vault.timeout_at])
 
-  const respond = async (decline: boolean) => {
-    if (busy) return
-    setBusy(true)
+  // The card leaves on the answer; a refused relay brings it back (empty: secrets are never kept for a retry).
+  const resource = clarifyResource(sessionId, clarifyId)
+  const { answer, answered } = usePromptAnswer({
+    resource: () => resource, queryKey: keys.clarify(sessionId),
+    send: (body: { decline: true } | { answers: Record<string, string> }) => api.respondClarify({ session_id: sessionId, clarify_id: clarifyId, ...body }),
+    waiting: async () => (await api.fetchClarifyPending(sessionId)).pending?.clarify_id === clarifyId,
+  })
+  const done = answered(resource)
+  const respond = (decline: boolean) => {
+    if (done) return
     const answers = values
     setValues({})
-    // The card leaves on the answer; a failed relay brings it back (empty: secrets are never kept for a retry).
-    setDone(true)
-    try {
-      await api.respondClarify({ session_id: sessionId, clarify_id: clarifyId, ...(decline ? { decline: true } : { answers }) })
-    } catch (e) {
-      if (!(isApiError(e) && e.status === 409)) setDone(false)
-      showErrorToast(e)
-    } finally {
-      setBusy(false)
-      void qc.invalidateQueries({ queryKey: keys.clarify(sessionId) })
-    }
+    answer(decline ? { decline: true } : { answers })
   }
-  const onSubmit = (e: SyntheticEvent) => { e.preventDefault(); void respond(false) }
+  const onSubmit = (e: SyntheticEvent) => { e.preventDefault(); respond(false) }
   if (done) return null
   const heading = HEADING[vault.kind](vault)
   return (
@@ -91,7 +83,6 @@ export function VaultPromptCard({ sessionId, clarifyId, vault }: { sessionId: st
                 spellCheck={false}
                 autoCapitalize="off"
                 autoFocus={i === 0}
-                disabled={busy}
                 value={values[field.key] ?? ''}
                 onChange={(e) => setValues((v) => ({ ...v, [field.key]: e.target.value }))}
               />
@@ -99,8 +90,8 @@ export function VaultPromptCard({ sessionId, clarifyId, vault }: { sessionId: st
           ))}
         </div>
         <div className="mt-3 flex items-center gap-2">
-          <Button type="submit" variant="primary" disabled={busy || vault.fields.some((f) => !(values[f.key] ?? '').trim())}>{SUBMIT[vault.kind]()}</Button>
-          <Button disabled={busy} onClick={() => { void respond(true) }}>{m.vault_skip()}</Button>
+          <Button type="submit" variant="primary" disabled={vault.fields.some((f) => !(values[f.key] ?? '').trim())}>{SUBMIT[vault.kind]()}</Button>
+          <Button onClick={() => { respond(true) }}>{m.vault_skip()}</Button>
         </div>
       </div>
     </form>

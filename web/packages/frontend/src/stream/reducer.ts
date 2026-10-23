@@ -112,6 +112,8 @@ export type StreamAction =
   /** A steer this tab is sending: shown until the server reports it (or it is taken), dropped when refused. */
   | { type: 'steer_sending'; sessionId: string; steerId: string; text: string }
   | { type: 'steer_refused'; sessionId: string; steerId: string }
+  /** The server confirmed this tab's withdrawal, or a read showed the steer no longer waits. */
+  | { type: 'steer_closed'; sessionId: string; steerId: string }
   /** The session's pending steers when this view attached; events keep them current from then on. */
   | { type: 'pending_steers'; sessionId: string; streamId: string; steers: PendingSteer[] }
 
@@ -404,6 +406,11 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
       const turn = state.turns[action.sessionId]
       if (!turn) return state
       return { turns: { ...state.turns, [action.sessionId]: { ...turn, pendingSteers: turn.pendingSteers.filter((p) => p.steerId !== action.steerId) } } }
+    }
+    case 'steer_closed': {
+      const turn = state.turns[action.sessionId]
+      if (!turn) return state
+      return { turns: { ...state.turns, [action.sessionId]: closeSteer(turn, action.steerId) } }
     }
     case 'pending_steers': {
       const turn = state.turns[action.sessionId]
