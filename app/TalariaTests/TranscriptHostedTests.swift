@@ -344,34 +344,57 @@ final class TranscriptHostedTests: XCTestCase {
     }
 
     func testANewTopAppearanceDuringLoadingRunsAfterThePageSettles() async throws {
+        // Repeat the same held-request handoff; each iteration owns a fresh window.
+        for _ in 0..<5 { try await assertTopReentryDuringHeldHistoryLoad() }
+    }
+
+    private func assertTopReentryDuringHeldHistoryLoad() async throws {
         var requests = 0
         var finish: ((Bool) -> Void)?
         var proxy: ChatTranscriptScrollProxy?
         var referenceScroll: UIScrollView?
         var observedNearTop: Bool?
+        var bottomRequested = false
+        var movement: [Bool] = []
         defer { finish?(false); proxy = nil; referenceScroll = nil }
         let window = try hostWindow(PagedHistoryTranscript(onMetrics: { _ in
             if let scroll = referenceScroll, let geometry = ChatScrollMetrics.geometry(of: scroll) {
                 observedNearTop = ChatScrollPolicy.shouldPrefetchHistory(geometry: geometry)
+                if bottomRequested, let observedNearTop, movement.last != observedNearTop {
+                    movement.append(observedNearTop)
+                }
             }
         }, load: { _ in
             requests += 1
             return await withCheckedContinuation { continuation in
                 finish = { result in finish = nil; continuation.resume(returning: result) }
+                if requests == 1 {
+                    bottomRequested = true
+                    proxy?.scrollTo("bottom", anchor: .bottom)
+                }
             }
         }, onScrollRequest: { proxy = $0 }))
         let scroll = try XCTUnwrap(historyScroll(in: window))
         referenceScroll = scroll
+        defer {
+            if (testRun?.failureCount ?? 0) > 0 {
+                attachHostedScreenshot(window, name: "Held history navigation", lifetime: .deleteOnSuccess)
+            }
+            window.isHidden = true
+            window.rootViewController = nil
+        }
         let ready = await awaitCondition { proxy != nil }
         XCTAssertTrue(ready)
         try XCTUnwrap(proxy).scrollTo("transcript:1952", anchor: .top)
         for _ in 0..<30 where requests == 0 { try await Task.sleep(for: .milliseconds(50)) }
         XCTAssertEqual(requests, 1)
-        proxy?.scrollTo("bottom", anchor: .bottom)
-        let left = await awaitCondition { observedNearTop == false }
+        let left = await awaitCondition { movement.contains(false) }
         XCTAssertTrue(left, "The native bottom jump must leave the prefetch region before returning")
         proxy?.scrollTo("chat-transcript-content", anchor: .top)
-        let returned = await awaitCondition { observedNearTop == true }
+        let returned = await awaitCondition {
+            guard let departure = movement.firstIndex(of: false) else { return false }
+            return movement.dropFirst(departure + 1).contains(true)
+        }
         XCTAssertTrue(returned, "The observer must acknowledge top re-entry while the request is held")
         XCTAssertEqual(requests, 1, "A repeated appearance must not overlap a page")
         finish?(true)

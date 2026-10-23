@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Jumping to the latest messages no longer gets stuck while older history is loading.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}
