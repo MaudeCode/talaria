@@ -1,10 +1,10 @@
 /* eslint-disable @typescript-eslint/require-await -- Synchronous JSON transactions implement the async storage port. */
 import { rmSync } from 'node:fs'
-import { closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, statSync, unlinkSync, constants as fsConstants, type BigIntStats } from 'node:fs'
+import { closeSync, existsSync, fsync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, statSync, unlinkSync, constants as fsConstants, type BigIntStats } from 'node:fs'
 import { open, readdir, readFile, stat, unlink } from 'node:fs/promises'
 import { setImmediate as nextTurn } from 'node:timers/promises'
 import { atomicWriteTextAsync, writeFully } from '../../fs/atomic.js'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
 
 
@@ -525,6 +525,8 @@ function readSyncAt(fd: number, buf: Buffer, offset: number, position: number): 
 
 export class JsonJournalWriter {
   private fd: number | null = null
+  // fsyncs run on the thread pool; this tail orders them and every close after them.
+  private syncs: Promise<void> = Promise.resolve()
   private seq = 0
   private closed = false
   readonly path: string
@@ -545,7 +547,8 @@ export class JsonJournalWriter {
 
   async appendSseEvent(eventName: string, payload: unknown, meta: JournalEventMeta = {}): Promise<JournalEvent> { return this.appendSseEventNow(eventName, payload, meta) }
 
-  private appendSseEventNow(eventName: string, payload: unknown, meta: JournalEventMeta = {}, terminal?: boolean, createdAt?: number): JournalEvent {
+  /** Writes stay synchronous so frames land in order; a durable frame settles only after its fsync, before callers publish it. */
+  private async appendSseEventNow(eventName: string, payload: unknown, meta: JournalEventMeta = {}, terminal?: boolean, createdAt?: number): Promise<JournalEvent> {
     if (this.closed) throw new Error('run journal writer is closed')
     const name = eventName.trim()
     if (!name) throw new Error('event_name is required')
@@ -556,24 +559,31 @@ export class JsonJournalWriter {
       created_at: createdAt ?? meta.createdAt ?? this.now(), terminal: terminal ?? Boolean(terminalState), terminal_state: terminalState, payload: payload ?? {},
       ...(meta.redacted === undefined ? {} : { redacted: meta.redacted }),
     }
-    mkdirSync(join(this.path, '..'), { recursive: true })
-    this.fd ??= openSync(this.path, fsConstants.O_CREAT | fsConstants.O_APPEND | fsConstants.O_WRONLY, 0o600)
-    writeFully(this.fd, `${JSON.stringify(event)}\n`)
-    if (this.fsyncMode === 'eager' || event.terminal) { try { fsyncSync(this.fd) } catch { /* best effort */ } }
+    if (this.fd === null) {
+      mkdirSync(dirname(this.path), { recursive: true })
+      this.fd = openSync(this.path, fsConstants.O_CREAT | fsConstants.O_APPEND | fsConstants.O_WRONLY, 0o600)
+    }
+    const fd = this.fd
+    writeFully(fd, `${JSON.stringify(event)}\n`)
+    // Best effort, as before: a failed fsync never fails the append.
+    const synced = this.fsyncMode === 'eager' || event.terminal ? (this.syncs = this.syncs.then(() => new Promise((resolve) => { fsync(fd, () => { resolve() }) }))) : null
     if (SSE_RELAY_CLOSE_EVENTS.has(name)) this.closeHandle()
+    await synced
     return event
   }
 
+  /** Detach the fd now so the next append reopens; close it once queued fsyncs finish. */
   private closeHandle(): void {
-    if (this.fd !== null) {
-      try { closeSync(this.fd) } catch { /* ignore */ }
-      this.fd = null
-    }
+    const fd = this.fd
+    if (fd === null) return
+    this.fd = null
+    this.syncs = this.syncs.then(() => { try { closeSync(fd) } catch { /* ignore */ } })
   }
 
   async close(): Promise<void> {
-    this.closeHandle()
     this.closed = true
+    this.closeHandle()
+    await this.syncs
     this.journal.release(this)
   }
 }
