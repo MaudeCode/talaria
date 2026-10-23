@@ -82,8 +82,7 @@ export function setRtl(on: boolean): void {
   bump()
 }
 export function setLanguage(code: string): void {
-  applyLocale(code)
-  bump()
+  void applyLocale(code).then(bump)
 }
 
 let shown: AppearanceState | undefined

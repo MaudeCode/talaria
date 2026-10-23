@@ -7,6 +7,8 @@
  * Behaviour carried over from the legacy sw.js:
  * - precache the app shell (index.html, entry chunks, stylesheet, manifest);
  * - hashed lazy chunks are cached on first use (cache-first, bounded);
+ * - the active locale's message chunk is kept outside that bounded cache, as the
+ *   shell is, when the page reports it (`CACHE_LOCALE`, TAL-1403);
  * - never cache API responses or SSE (the UI needs a live backend);
  * - navigations are network-first and fall back to the cached shell so an
  *   installed app still opens offline and shows its own offline notice; the
@@ -27,6 +29,7 @@ declare const self: ServiceWorkerGlobalScope & { __WB_MANIFEST: { url: string; r
 
 const SHELL_URL = './index.html'
 const ASSET_CACHE = 'hermes-assets-v1'
+const LOCALE_CACHE = 'hermes-locale-v1'
 
 precache(self.__WB_MANIFEST)
 cleanupOutdatedCaches()
@@ -37,15 +40,32 @@ registerRoute(
   async ({ request }) => (await matchPrecache(request.url)) ?? fetch(request),
 )
 
-// Hashed, immutable chunks under the mount root: cache on first use, keep a bounded set.
+function isAsset(url: URL): boolean {
+  return url.origin === self.location.origin && url.pathname.startsWith(new URL('./assets/', self.registration.scope).pathname)
+}
+
+// Hashed, immutable chunks under the mount root: the active locale chunk, else cache on first use and keep a bounded set.
+const assets = new CacheFirst({ cacheName: ASSET_CACHE, plugins: [new ExpirationPlugin({ maxEntries: 400, maxAgeSeconds: 60 * 60 * 24 * 30, purgeOnQuotaError: true }) as unknown as WorkboxPlugin] })
 registerRoute(
-  ({ url, request }) => request.method === 'GET' && url.origin === self.location.origin && url.pathname.startsWith(new URL('./assets/', self.registration.scope).pathname),
-  new CacheFirst({ cacheName: ASSET_CACHE, plugins: [new ExpirationPlugin({ maxEntries: 400, maxAgeSeconds: 60 * 60 * 24 * 30, purgeOnQuotaError: true }) as unknown as WorkboxPlugin] }),
+  ({ url, request }) => request.method === 'GET' && isAsset(url),
+  async (options) => (await caches.match(options.request, { cacheName: LOCALE_CACHE })) ?? assets.handle(options),
 )
+
+/** Keeps exactly one locale chunk: the one the page runs now. */
+async function cacheLocale(href: string): Promise<void> {
+  const url = new URL(href, self.registration.scope)
+  if (!isAsset(url)) return
+  const cache = await caches.open(LOCALE_CACHE)
+  if (!(await cache.match(url.href))) await cache.add(url.href)
+  await Promise.all((await cache.keys()).filter((request) => request.url !== url.href).map((request) => cache.delete(request)))
+}
 
 self.addEventListener('message', (event: ExtendableMessageEvent) => {
   const data: unknown = event.data
-  if (typeof data === 'object' && data !== null && (data as { type?: unknown }).type === 'SKIP_WAITING') void self.skipWaiting()
+  if (typeof data !== 'object' || data === null) return
+  const { type, url } = data as { type?: unknown; url?: unknown }
+  if (type === 'SKIP_WAITING') void self.skipWaiting()
+  if (type === 'CACHE_LOCALE' && typeof url === 'string') event.waitUntil(cacheLocale(url))
 })
 
 self.addEventListener('activate', (event) => {

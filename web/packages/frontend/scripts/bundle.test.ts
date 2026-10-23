@@ -27,6 +27,11 @@ it('the app layout static dependency graph excludes Mermaid and KaTeX runtimes a
   }
 })
 
+it('the app layout static dependency graph carries only base-locale messages', () => {
+  // TAL-1403: other locales load as per-locale chunks; Paraglide's minified locale dispatch survives as `===\`ja\``.
+  for (const file of readLayout().files) expect(/===`(?:ja|de|ru)`/.exec(readFileSync(resolve(clientDir, file), 'utf8')), file).toBeNull()
+})
+
 it('counts shared static imports and styles once, follows cycles, and excludes dynamic imports', () => {
   expect(layoutFiles({
     'src/routes/_app.tsx?tsr-split=component': { file: 'layout.js', imports: ['shared', 'child'], css: ['layout.css'], dynamicImports: ['lazy'] },

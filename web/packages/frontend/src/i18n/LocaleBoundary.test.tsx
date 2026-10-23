@@ -6,12 +6,12 @@ import { applyLocale } from './runtime'
 
 function Label() { return <p data-testid="label">{m.loading()}</p> }
 
-afterEach(() => { applyLocale('en', { persist: false }) })
+afterEach(async () => { await applyLocale('en', { persist: false }) })
 
-it('shows compiled text in the new language after a locale switch', () => {
-  applyLocale('en', { persist: false })
+it('shows compiled text in the new language after a locale switch', async () => {
+  await applyLocale('en', { persist: false })
   render(<LocaleBoundary><Label /></LocaleBoundary>)
   expect(screen.getByTestId('label')).toHaveTextContent(m.loading({}, { locale: 'en' }))
-  act(() => { applyLocale('de', { persist: false }) })
+  await act(async () => { await applyLocale('de', { persist: false }) })
   expect(screen.getByTestId('label')).toHaveTextContent(m.loading({}, { locale: 'de' }))
 })
