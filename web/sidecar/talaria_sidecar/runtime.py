@@ -334,6 +334,7 @@ class AgentRuntime:
         """Release native background writes; only a fresh process may own them again."""
         with self._lock:
             self._retired = True
+            self.loaded = False
             self._stop_handoff()
 
     @property
@@ -426,6 +427,7 @@ class AgentRuntime:
     def describe(self) -> dict:
         # The pin records official test coverage, not runtime capability. Each operation still checks its imports,
         # profile isolation and loaded-revision guard at the point of use.
+        stale = self.is_stale() or self._retired
         return {
             "rpc_version": SIDECAR_RPC_VERSION,
             "python": sys.executable,
@@ -437,7 +439,7 @@ class AgentRuntime:
             "pinned_version": self.pin["version"],
             "pinned_image": self.pin["image"],
             "compatible": self.loaded,
-            "stale": self.is_stale(),
+            "stale": stale,
             "agent_source_changed": self._source_changed,
             "update_state": self.update_transaction_state(),
             "import_error": self.import_error,

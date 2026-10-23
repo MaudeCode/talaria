@@ -31,6 +31,10 @@ def test_worker_starts_once_and_retirement_prevents_restart(native):
     runtime.retire()
     runtime.retire()
     assert events == ["start", ("stop", None)]
+    described = runtime.describe()
+    assert described["compatible"] is False, "retired runtime still advertises readiness to dependency recovery"
+    assert described["stale"] is True
+    assert runtime.loaded is False
     with pytest.raises(AgentRuntimeStale):
         runtime.load()
 
