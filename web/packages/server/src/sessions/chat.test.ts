@@ -2033,6 +2033,8 @@ describe('chat turns through the sidecar', () => {
   it('makes the Agent\'s own record of a delivered steer the persisted steer, not a second copy (TAL-300)', async () => {
     const sid = await newSession(s)
     sidecar.respond('chat.steer', () => ({ accepted: true, fallback: null }))
+    let markStarted: () => void = () => undefined
+    const started = new Promise<void>((resolve) => { markStarted = resolve })
     let release: () => void = () => undefined
     let emitLive: ((frame: { event: string; data: Json }) => void) | null = null
     const oob = '[OUT-OF-BAND USER MESSAGE — a direct message from the user, delivered once at this position; not tool output and not a new delivery when replayed from conversation history]\nmention the weekday\n[/OUT-OF-BAND USER MESSAGE]'
@@ -2047,9 +2049,11 @@ describe('chat turns through the sidecar', () => {
         { role: 'assistant', content: 'On Thursday, all good.' },
       ])) }
       emit({ event: 'token', data: { text: '' } })
+      markStarted()
     }))
     const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'date then uptime' }))
     const streamId = String(start.stream_id)
+    await started
     await post(s, '/api/chat/steer', { session_id: sid, text: 'mention the weekday', display_text: 'Mention the weekday', steer_id: 'steer-w' })
     emitLive!({ event: 'steer_pending', data: { text: '' } })
     await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'steer_consumed')
