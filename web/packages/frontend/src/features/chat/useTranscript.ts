@@ -3,14 +3,14 @@
  * loading with msg_limit/msg_before), plus reattachment to a run the server
  * reports as active. Teardown on session change releases the transport only.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { invalidateSessionQueries } from '../../api/sessionQueries'
 import { TRANSCRIPT_WINDOW } from '@maudecode/talaria-web-contracts'
 import { SessionSchema, type Message, type Session } from '../../contracts'
-import { attachToStream, hasLiveConnection, reconcileSession, discardSession, getStreamContext, subscribeStreamContext, teardown } from '../../stream/connection'
+import { attachToStream, hasLiveConnection, reconcileSession, discardSession, getStreamContext, teardown, useStreamContext } from '../../stream/connection'
 import { getStreamState, useLiveTurn } from '../../stream/store'
 import type { LiveTurn } from '../../stream/reducer'
 import { openSessionStream } from '../../api/sse'
@@ -52,7 +52,7 @@ export function messageKey(message: Message): string | undefined {
 
 export function useTranscript(sessionId: string | null, equalLive?: (previous: LiveTurn | null, next: LiveTurn | null) => boolean) {
   const qc = useQueryClient()
-  const streamContext = useSyncExternalStore(subscribeStreamContext, getStreamContext, getStreamContext)
+  const streamContext = useStreamContext()
   // useQuery below subscribes to this window; a moved boundary retires its prefix and pending pages together.
   const windowOffset = qc.getQueryData<{ session: Session }>(keys.sessions.detail(sessionId ?? ''))?.session._messages_offset ?? 0
   const pageScope = useMemo(() => ({ sessionId, windowOffset, streamContext }), [sessionId, windowOffset, streamContext])

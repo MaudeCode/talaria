@@ -100,6 +100,7 @@ export const HIGHLIGHTED_LANGUAGES = [...supported, ...aliases.keys()]
 type Highlighter = HighlighterGeneric<string, string>
 const loading = new Map<string, Promise<Highlighter>>()
 const loaded = new Map<string, Highlighter>()
+const loadListeners = new Set<() => void>()
 const shared = createIncrementalHighlighter()
 
 function scopeOf(language: string, themes: Themes) {
@@ -115,9 +116,19 @@ export function loadHighlighter(language: string, themes: Themes): Promise<unkno
   if (pending) return pending
   const promise = createHighlighter({ themes: themes as Parameters<typeof createHighlighter>[0]['themes'], langs: [lang], engine }) as Promise<Highlighter>
   // A failed load stays failed, as in `@streamdown/code`; callers report it and keep the plain text.
-  promise.then((highlighter) => { loaded.set(key, highlighter) }, () => undefined)
+  promise.then((highlighter) => { loaded.set(key, highlighter); for (const listener of loadListeners) listener() }, () => undefined)
   loading.set(key, promise)
   return promise
+}
+
+export function subscribeHighlighterLoads(listener: () => void): () => void {
+  loadListeners.add(listener)
+  return () => { loadListeners.delete(listener) }
+}
+
+/** Whether `loadHighlighter` has finished for this language and these themes. */
+export function highlighterLoaded(language: string, themes: Themes): boolean {
+  return loaded.has(scopeOf(language, themes).key)
 }
 
 /** Tokens for `code`, or null until its highlighter has loaded. */

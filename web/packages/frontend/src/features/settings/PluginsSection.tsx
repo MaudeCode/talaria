@@ -12,7 +12,7 @@ import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { OAuthSignIn } from '../onboarding/OAuthSignIn'
 import { useResourceEffects, useResourceMutation } from '../sessions/useResourceMutation'
-import { getStreamContext } from '../../stream/connection'
+import { getStreamContext, useStreamContext } from '../../stream/connection'
 
 export function PluginsSection() {
   const qc = useQueryClient()
@@ -95,6 +95,7 @@ function PluginCatalogList() {
   const [offset, setOffset] = useState(0)
   const [details, setDetails] = useState<string | null>(null)
   const [result, setResult] = useState<{ context: object; value: PluginInstallResult } | null>(null)
+  const streamContext = useStreamContext()
   const active = useRef(false)
   const catalog = useQuery({ queryKey: [...keys.pluginCatalog, query, offset], queryFn: () => api.fetchPluginCatalog(query, offset), retry: false })
   const refresh = async () => { await Promise.all([qc.invalidateQueries({ queryKey: keys.plugins }), qc.invalidateQueries({ queryKey: keys.pluginCatalog })]) }
@@ -123,7 +124,7 @@ function PluginCatalogList() {
     setResult(null)
     install.mutate({ name, ...(token ? { token } : {}), context: getStreamContext() })
   }
-  const current = result?.context === getStreamContext() ? result.value : null
+  const current = result?.context === streamContext ? result.value : null
   return <section aria-label={m.plugins_catalog()} className="border-b border-border-subtle pb-4">
     <form className="flex gap-2" onSubmit={(event) => { event.preventDefault(); setQuery(search); setOffset(0) }}>
       <TextInput aria-label={m.plugins_catalog_search()} value={search} maxLength={200} onChange={(event) => setSearch(event.target.value)} />

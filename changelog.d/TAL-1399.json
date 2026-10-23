@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "The web app redraws less of the page when something changes, so lists and panels respond faster.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

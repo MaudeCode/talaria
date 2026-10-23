@@ -4,7 +4,7 @@ import { ModelConfirmationRequiredSchema, type ModelChange, type OwnerAttachment
 import * as api from '../../api/endpoints'
 import { ApiError } from '../../contracts/common'
 import { m } from '../../paraglide/messages.js'
-import { getStreamContext } from '../../stream/connection'
+import { getStreamContext, useStreamContext } from '../../stream/connection'
 import { ConfirmDialog } from '../../ui/Dialog'
 import type { ComposerNotice } from '../composer/ComposerNotices'
 import { showErrorToast } from '../toast/errorToast'
@@ -36,6 +36,7 @@ export function useSessionUpdate(sessionId: string | null, refresh: (session?: S
   const lifecycle = useRef<object | null>(null)
   const offered = useRef<string | null>(null)
   const [pending, setPending] = useState<Pending | null>(null)
+  const context = useStreamContext()
   useEffect(() => {
     lifecycle.current = {}
     offered.current = null
@@ -98,7 +99,7 @@ export function useSessionUpdate(sessionId: string | null, refresh: (session?: S
       },
     })
   }, [sessionId, refresh, nativeOwner, presentNative, send])
-  const shown = pending?.sessionId === sessionId && pending?.scope === getStreamContext() ? pending : null
+  const shown = pending?.sessionId === sessionId && pending?.scope === context ? pending : null
   const dialog = <ConfirmDialog open={shown !== null} onOpenChange={(open) => { if (!open) setPending((p) => p === shown ? null : p) }}
     title={m.dialog_confirm_title()} description={shown?.decision.error} confirmLabel={m.dialog_confirm_btn()} cancelLabel={m.cancel()}
     onConfirm={() => shown ? updateSession({ ...shown.body, confirm_token: shown.decision.confirm_token }) : undefined} />

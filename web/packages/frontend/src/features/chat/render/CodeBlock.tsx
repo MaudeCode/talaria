@@ -1,7 +1,7 @@
-import { createContext, memo, use, useEffect, useState, type CSSProperties, type ReactNode } from 'react'
+import { createContext, memo, use, useEffect, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
 import { CodeBlockContainer, CodeBlockCopyButton, CodeBlockDownloadButton, CodeBlockHeader, StreamdownContext, type CustomRendererProps } from 'streamdown'
 import type { ThemedToken, TokensResult } from 'shiki'
-import { highlightCode, loadHighlighter } from './codeHighlight'
+import { highlightCode, highlighterLoaded, loadHighlighter, subscribeHighlighterLoads } from './codeHighlight'
 
 // Streamdown's own code-block chrome, so custom blocks sit in the same frame as its built-in ones.
 export const ACTIONS = 'pointer-events-none sticky top-2 z-10 -mt-10 flex h-8 items-center justify-end'
@@ -58,15 +58,13 @@ function plain(code: string): TokensResult {
 /** Highlighted tokens; plain lines until the language's highlighter has loaded. */
 function useTokens(code: string, language: string, incomplete: boolean): TokensResult {
   const themes = use(StreamdownContext).shikiTheme
-  // Bumped once the highlighter loads; the shared highlighter keeps repeat calls cheap.
-  const [, setReady] = useState(0)
-  const highlighted = highlightCode({ code, language, themes }, incomplete)
+  // A store read, so the React Compiler recomputes the tokens once the highlighter loads.
+  const ready = useSyncExternalStore(subscribeHighlighterLoads, () => highlighterLoaded(language, themes), () => false)
+  const highlighted = ready ? highlightCode({ code, language, themes }, incomplete) : null
   const missing = highlighted === null
   useEffect(() => {
     if (!missing) return
-    let live = true
-    loadHighlighter(language, themes).then(() => { if (live) setReady((count) => count + 1) }, (error: unknown) => { console.error('[Talaria code] Failed to highlight code:', error) })
-    return () => { live = false }
+    loadHighlighter(language, themes).then(undefined, (error: unknown) => { console.error('[Talaria code] Failed to highlight code:', error) })
   }, [missing, language, themes])
   return highlighted ?? plain(code)
 }

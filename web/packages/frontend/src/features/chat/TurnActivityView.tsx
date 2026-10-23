@@ -19,6 +19,13 @@ import { MediaTiles } from './blocks/MediaTiles'
 // The live turn's last rendered height, so the settled row that replaces it can fold from that height.
 let lastLiveTurn: { key: string; height: number } | null = null
 export function rememberLiveTurnHeight(key: string, height: number) { lastLiveTurn = { key, height } }
+/** Hands the remembered live turn to its settled row once. Kept outside the component: the React Compiler inlines a local alias of module state. */
+function takeLiveTurn(key: string) {
+  const live = lastLiveTurn
+  if (live?.key !== key) return null
+  lastLiveTurn = null
+  return live
+}
 
 const FOLD = { duration: 320, easing: 'ease-out', fill: 'forwards' } as const
 
@@ -30,11 +37,10 @@ const FOLD = { duration: 320, easing: 'ease-out', fill: 'forwards' } as const
 function SettleSpacer({ turnKey }: { turnKey: string }) {
   const ref = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
-    const live = lastLiveTurn
     const el = ref.current
     const row = el?.closest('.assistant-turn')
-    if (live?.key !== turnKey || !el || !row) return
-    lastLiveTurn = null
+    const live = el && row ? takeLiveTurn(turnKey) : null
+    if (!live || !el || !row) return
     if (typeof el.animate !== 'function' || prefersReducedMotion()) return
     // Grow before measuring: a layout forced while the row is shorter than the live turn would clamp the scroll first.
     el.style.height = `${live.height}px`

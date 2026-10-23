@@ -20,7 +20,7 @@ import { showToast } from '../toast/toast'
 import { showErrorToast } from '../toast/errorToast'
 import { cn } from '../../ui/cn'
 import { newResource, useResourceEffects, useResourceMutation, withCreated, withEffect, withEffects, type ResourceEffect } from '../sessions/useResourceMutation'
-import { getStreamContext } from '../../stream/connection'
+import { getStreamContext, useStreamContext } from '../../stream/connection'
 import { isDefiniteRefusal } from '../../contracts/common'
 
 // Same owner for single-card and bulk writes; profile/server identity comes from the connection context.
@@ -85,7 +85,8 @@ export function KanbanPage() {
   const [onlyMine, setOnlyMine] = useState(false)
   const [searchText, setSearchText] = useState('')
   const search = useDebounced(searchText.trim(), 250)
-  const [selection, setSelection] = useState<{ context: object; board: string | undefined; ids: string[] }>({ context: getStreamContext(), board: undefined, ids: [] })
+  const context = useStreamContext()
+  const [selection, setSelection] = useState<{ context: object; board: string | undefined; ids: string[] }>({ context, board: undefined, ids: [] })
   const [bulkStatus, setBulkStatus] = useState('')
   const [openTaskId, setOpenTaskId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
@@ -103,7 +104,7 @@ export function KanbanPage() {
   // Archiving the current board returns the server to its board that cannot be removed; the reread confirms which.
   const confirmedBoard = boards.data?.current && effects[boardResource(boards.data.current)]?.remove ? boardList.find((b) => !b.removable)?.slug : boards.data?.current
   const current = typeof requestedBoard?.value === 'string' ? requestedBoard.value : confirmedBoard
-  const selected = selection.context === getStreamContext() && selection.board === current ? selection.ids : []
+  const selected = selection.context === context && selection.board === current ? selection.ids : []
   const setSelected = (ids: string[]) => setSelection({ context: getStreamContext(), board: current, ids })
   const filters = { include_archived: includeArchived, assignee, tenant, only_mine: onlyMine, search }
   // Filter placeholders stay within one board. A destination board uses only its own cached answer.

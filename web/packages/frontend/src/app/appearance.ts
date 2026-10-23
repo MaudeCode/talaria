@@ -11,8 +11,7 @@ import { useSyncExternalStore } from 'react'
 import { applyExtensionSkin, extensionSkin } from '../extensions/registry'
 
 const listeners = new Set<() => void>()
-let version = 0
-const bump = () => { version += 1; for (const l of listeners) l() }
+const bump = () => { for (const l of listeners) l() }
 
 export interface AppearanceState { theme: Theme; skin: Skin; fontSize: FontSize; chatWidth: ChatWidth; rtl: boolean }
 
@@ -87,7 +86,14 @@ export function setLanguage(code: string): void {
   bump()
 }
 
+let shown: AppearanceState | undefined
+/** The store snapshot: the same object until a field changes, so readers re-render only on a real change. */
+function snapshot(): AppearanceState {
+  const next = readAppearance()
+  if (!shown || (Object.keys(next) as (keyof AppearanceState)[]).some((key) => next[key] !== shown?.[key])) shown = next
+  return shown
+}
+
 export function useAppearance(): AppearanceState {
-  useSyncExternalStore((l) => { listeners.add(l); return () => listeners.delete(l) }, () => version, () => version)
-  return readAppearance()
+  return useSyncExternalStore((l) => { listeners.add(l); return () => listeners.delete(l) }, snapshot, snapshot)
 }

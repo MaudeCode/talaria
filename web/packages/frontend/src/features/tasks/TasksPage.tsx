@@ -27,7 +27,7 @@ import { contextFromList, cronDiagnostics, cronResource, cronState, jobId, lastR
 import { Markdown } from '../chat/render/Markdown'
 import { JobForm, type EditorMode } from './JobForm'
 import { useResourceEffects, useResourceMutation, withCreated, withEffects, type ResourceEffect } from '../sessions/useResourceMutation'
-import { getStreamContext } from '../../stream/connection'
+import { getStreamContext, useStreamContext } from '../../stream/connection'
 
 type CronAction = Parameters<typeof api.cronAction>[0]
 type CronWrite = Exclude<CronAction, 'run'>
@@ -67,13 +67,13 @@ export function TasksRoute() {
 /** Both panes over one query set; `selectedId` is owned by the caller (the URL in the app, state in tests). */
 export function useTasksWorkbench(selectedId: string | null, onSelect: (id: string | null) => void): { sidebar: ReactNode; main: ReactNode } {
   const qc = useQueryClient()
-  const context = getStreamContext()
+  const context = useStreamContext()
   const selection = useRef(selectedId)
   useEffect(() => { selection.current = selectedId }, [selectedId])
   const [allProfiles, setAllProfiles] = useState(false)
   const [editor, setEditor] = useState<Editor | null>(null)
   const [deletion, setDeletion] = useState<{ context: object; job: CronJob } | null>(null)
-  const confirmDelete = deletion?.context === getStreamContext() ? deletion.job : null
+  const confirmDelete = deletion?.context === context ? deletion.job : null
   const effects = useResourceEffects()
   // The list polls because it carries `last_run_at`, the only completion signal that covers scheduled runs
   // (the status map below only tracks runs started from the UI).

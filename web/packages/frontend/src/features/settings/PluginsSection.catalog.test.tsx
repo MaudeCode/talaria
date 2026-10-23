@@ -6,7 +6,7 @@ import { PluginsSection } from './PluginsSection'
 import { deferred } from '../../test/fixtures'
 
 const state = vi.hoisted(() => ({ context: {} }))
-vi.mock('../../stream/connection', () => ({ getStreamContext: () => state.context }))
+vi.mock('../../stream/connection', () => ({ getStreamContext: () => state.context, useStreamContext: () => state.context }))
 vi.mock('../../api/endpoints', () => ({ fetchPlugins: vi.fn(), fetchPluginCatalog: vi.fn(), installPlugin: vi.fn() }))
 vi.mock('../toast/toast', () => ({ showToast: vi.fn() }))
 const entry = { name: 'probe', title: 'Probe', description: 'Synthetic plugin', repo: 'https://example.invalid/probe', sha: 'a'.repeat(40), tier: 'verified', category: 'tools', requirements: ['Environment: SYNTHETIC_KEY'], installed_key: null, installed_sha: null, can_install: true, refusal: null }
