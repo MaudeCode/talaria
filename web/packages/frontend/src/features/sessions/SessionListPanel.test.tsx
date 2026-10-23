@@ -263,7 +263,8 @@ describe('session row renders (TAL-1211)', () => {
     vi.mocked(api.fetchProjects).mockResolvedValue({ projects: [{ project_id: 'p1', name: 'Renamed project', color: '#50c878' }] } as never)
     await act(() => qc.refetchQueries({ queryKey: ['projects'] }))
     await screen.findByRole('button', { name: 'Renamed project' })
-    expect(rowRender.mock.calls.map(([id]) => id)).toEqual(['alpha', 'delta'])
+    // Rows outside the renamed project keep their subtree; the compiled rows in it may skip the unchanged menu.
+    expect(rowRender.mock.calls.map(([id]) => id)).not.toContain('other')
     expect(document.querySelector('[data-sid="alpha"] .session-project-dot')).toHaveAttribute('title', 'Renamed project')
     expect(document.querySelector('[data-sid="alpha"] .session-project-dot')).toHaveStyle({ background: '#50c878' })
   })

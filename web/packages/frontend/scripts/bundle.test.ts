@@ -37,3 +37,10 @@ it('counts shared static imports and styles once, follows cycles, and excludes d
   expect(() => layoutFiles({})).toThrow('route entry missing')
   expect(() => layoutFiles({ 'src/routes/_app.tsx?tsr-split=component': { file: 'layout.js', imports: ['missing'] } })).toThrow('manifest import missing')
 })
+
+it('SessionListPanel ships React Compiler output', () => {
+  const manifest = JSON.parse(readFileSync(resolve(clientDir, '.vite/manifest.json'), 'utf8'))
+  const chunks = Object.values<{ file: string }>(manifest).filter(({ file }) => /\/SessionListPanel-[^/]+\.js$/.test(file))
+  // Compiled components compare memo cache slots against this symbol; React DOM defines it in a different chunk.
+  expect(chunks.map(({ file }) => readFileSync(resolve(clientDir, file), 'utf8').includes('react.memo_cache_sentinel'))).toEqual([true])
+})

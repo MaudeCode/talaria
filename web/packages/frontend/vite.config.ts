@@ -56,7 +56,7 @@ export default defineConfig({
       client: { entry: './client.tsx' },
       router: { entry: './router.tsx' },
     }),
-    viteReact(),
+    viteReact({ compiler: true }),
   ],
   build: {
     chunkSizeWarningLimit: 500,
