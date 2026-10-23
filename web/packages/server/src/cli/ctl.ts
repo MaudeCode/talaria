@@ -15,6 +15,7 @@ import { request as httpsRequest } from 'node:https'
 import { loadLauncherDotenv, loadStartupEnv } from './dotenv.js'
 import { resolveHermesHome } from '../config.js'
 import { str } from '../util.js'
+import { STOP_GRACE_MS } from './supervise.js'
 
 export interface CtlContext {
   env: Record<string, string | undefined>
@@ -427,8 +428,11 @@ export async function stopCmd(ctx: CtlContext): Promise<number> {
   if (!isAlive(pid) || !isOwnedPid(p, ctx, pid)) { await warnIfUnmanaged(ctx, p); clearStalePid(p, ctx.log); return 0 }
   ctx.log(`[ctl] Stopping Talaria Web (PID ${String(pid)})`)
   try { process.kill(pid, 'SIGTERM') } catch { /* gone */ }
-  for (let i = 0; i < 50; i += 1) {
+  // The supervisor kills its worker after its grace; leave it time to reap that worker and exit before killing the group.
+  const deadline = Date.now() + STOP_GRACE_MS + 5_000
+  for (;;) {
     if (!isAlive(pid)) { rmSync(p.pidFile, { force: true }); rmSync(p.stateFile, { force: true }); ctx.log('[ctl] Stopped'); return 0 }
+    if (Date.now() >= deadline) break
     await sleep(100)
   }
   ctx.warn('[ctl] Process did not exit after SIGTERM; sending SIGKILL')

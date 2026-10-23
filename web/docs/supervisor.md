@@ -57,6 +57,9 @@ The worker never outlives its supervisor while holding the port:
   The supervisor then keeps waiting instead of starting a worker that cannot
   bind; stopping it needs the operating system to release the process.
 
+`talaria-web ctl stop` waits 20 seconds, the supervisor's grace plus time to
+reap its worker, before it kills the whole process group.
+
 Keep a service manager's stop timeout above 15 seconds (launchd's default
 `ExitTimeOut` is 20 seconds, systemd's `TimeoutStopSec` 90 seconds) so the
 supervisor can reap its worker before it is killed itself.
