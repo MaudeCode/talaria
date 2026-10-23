@@ -1,9 +1,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
 import { Mic, Paperclip, Square, ArrowUp, TerminalSquare, SlidersHorizontal, ListPlus, Layers } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
-import { keys } from '../../api/queryKeys'
 import type { Session, Settings } from '../../contracts'
 import type { ExecutionMode, OwnerActionRequest } from '@maudecode/talaria-web-contracts'
 import { adoptTurn, cancelTurn, getStreamContext, retryPendingTurn, startTurn } from '../../stream/connection'
@@ -132,7 +130,6 @@ let handoff: { draft: { readonly current: string }; files: File[]; sessionId: st
 export const Composer = memo(function Composer(props: ComposerProps) {
   const { sessionId, session, busy, streamId, settings, onEnsureSession, onLocalCommand, terminalOpen, onToggleTerminal, onModelChange, onWorkspaceChange, onNewWorktreeChat, onRemoveWorktree, onToolsetsChange, onExecutionModeChange, onReasoningChange, reasoning, reasoningLevels, reasoningSupported = true, pendingChoices, locked = false, yolo, onToggleYolo, queued, onQueue, onQueueChange, clarify, notices = [] } = props
   const bootstrap = useBootstrap()
-  const qc = useQueryClient()
   const launchBackground = useStartBackground().mutate
   const localStateId = composerStateId(session)
   const [text, setText] = useState(() => (localStateId ? readLocalDraft(localStateId) : ''))
@@ -542,7 +539,7 @@ export const Composer = memo(function Composer(props: ComposerProps) {
         textarea.current?.focus()
       }
     } finally { submitting.current = false }
-  }, [nativeOwner, localStateId, text, files, sending, session, onEnsureSession, busy, busyMode, sessionId, trySteer, locked, queueEntry, onQueue, onLocalCommand, bootstrap.profile, qc, askBtw, runCommand, catalog, launchBackground])
+  }, [nativeOwner, localStateId, text, files, sending, session, onEnsureSession, busy, busyMode, sessionId, trySteer, locked, queueEntry, onQueue, onLocalCommand, bootstrap.profile, askBtw, runCommand, catalog, launchBackground])
 
   const applySuggestion = (s: CommandSuggestion) => { setText(`/${s.name} `); textarea.current?.focus() }
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
