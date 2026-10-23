@@ -86,7 +86,6 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   const onQueue = useCallback((entry: QueuedTurn) => setQueued((q) => [...q, entry]), [setQueued])
   const draining = useRef(false)
   const [failedQueued, setFailedQueued] = useState<string | null>(null)
-  const [yolo, setYolo] = useState(false)
   // Choices made on the unsaved chat (no session yet) apply when the session is created.
   const [pending, setPending] = useState<{ model?: string; model_provider?: string | null; workspace?: string; enabled_toolsets?: string[] | null; execution_mode?: ExecutionMode }>({})
   const focusKey = useSearch({ strict: false }).msg
@@ -97,17 +96,9 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   }, [qc, navigate, sessionId])
 
   const yoloSessionId = session && !session.owner_attachment ? sessionId : null
-  useEffect(() => {
-    if (!yoloSessionId) return
-    let current = true
-    api.fetchSessionYolo(yoloSessionId).then((r) => { if (current) setYolo(r.yolo_enabled) }).catch(() => { if (current) setYolo(false) })
-    return () => { current = false }
-  }, [yoloSessionId])
-  // A late YOLO answer belongs to the chat that sent it.
-  const yoloSession = useRef(yoloSessionId)
-  useEffect(() => { yoloSession.current = yoloSessionId }, [yoloSessionId])
+  const yoloQuery = useQuery({ queryKey: keys.yolo(yoloSessionId ?? ''), queryFn: () => api.fetchSessionYolo(yoloSessionId ?? ''), enabled: !!yoloSessionId, retry: false })
   const yoloEffect = useResourceEffects<boolean>()[`yolo:${sessionId}`]
-  const yoloShown = typeof yoloEffect?.value === 'boolean' ? yoloEffect.value : yolo
+  const yoloShown = typeof yoloEffect?.value === 'boolean' ? yoloEffect.value : yoloQuery.data?.yolo_enabled ?? false
   const yoloOn = yoloSessionId ? yoloShown : false
 
   // Queue drain: when the live turn settles, send the next queued message. A queue a reload restored onto a session
@@ -218,9 +209,9 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   const onExecutionModeChange = useCallback((mode: ExecutionMode) => { setPending((p) => ({ ...p, execution_mode: mode })) }, [])
   const onToolsetsChange = useCallback((toolsets: string[] | null) => { if (!sessionId) { setPending((p) => ({ ...p, enabled_toolsets: toolsets })); return } sendSessionWrite({ sid: sessionId, fields: { enabled_toolsets: toolsets }, run: () => api.setSessionToolsets(sessionId, toolsets) }) }, [sessionId, sendSessionWrite])
   const yoloWrite = useResourceMutation({
-    resource: ({ sid }: { sid: string; on: boolean }) => `yolo:${sid}`, queryKey: ['yolo'], effect: ({ on }) => ({ value: on }),
+    resource: ({ sid }: { sid: string; on: boolean }) => `yolo:${sid}`, queryKey: ['yolo'], readKeys: ({ sid }) => [{ queryKey: keys.yolo(sid), exact: true }], effect: ({ on }) => ({ value: on }),
     mutationFn: ({ sid, on }) => api.setSessionYolo(sid, on),
-    onSuccess: (r, { sid }) => { if (sid === yoloSession.current) setYolo(r.yolo_enabled) },
+    onSuccess: (r, { sid }) => { qc.setQueryData(keys.yolo(sid), r) },
     onError: (e) => showErrorToast(e),
   })
   const sendYolo = yoloWrite.mutate

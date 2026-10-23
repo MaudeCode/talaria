@@ -62,6 +62,7 @@ export const keys = {
   notes: { sources: ['notes', 'sources'] as const },
   approval: (sid: string) => ['approval', sid] as const,
   clarify: (sid: string) => ['clarify', sid] as const,
+  yolo: (sid: string) => ['yolo', sid] as const,
   /** Under `sessions`, so a `sessions_changed` for the session refreshes its background work too (TAL-372). */
   background: (sid: string) => ['sessions', 'background', sid] as const,
   backgroundResult: (sid: string, taskId: string) => ['sessions', 'background', sid, 'result', taskId] as const,
