@@ -10,6 +10,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { createHash } from 'node:crypto'
 import { Worker } from 'node:worker_threads'
 import { AsyncLocalStorage } from 'node:async_hooks'
+import { startupTimingScope } from '../startup-timing.js'
 import type { AgentStorage, ExecutionMode } from '@maudecode/talaria-web-contracts'
 import { str } from '../util.js'
 import { stateDbMessageFingerprint, stateDbMessageKey } from './state-db-identity.js'
@@ -1062,15 +1063,16 @@ type ListingCall =
   | { op: 'sources' | 'existing'; dbPath: string; ids: string[] }
   | { [K in SessionReadName]: { op: 'session'; read: K; args: Parameters<typeof SESSION_READS[K]> } }[SessionReadName]
   | { op: 'crash' | 'stop' }
-/** A request to either state.db worker; `delayMs` carries the test read delay across the thread boundary. */
-export type StateDbWorkerRequest = ListingCall & { id: number; delayMs: number }
+/** A request to a state.db worker; `delayMs` carries the test read delay across the thread boundary. */
+export type StateDbWorkerRequest = ListingCall & { id: number; delayMs: number; queuedAtNs?: bigint; testBarrier?: SharedArrayBuffer }
 /** The call's result or error message, plus the log lines and `[reason, message]` failures it reported in the worker. */
-export interface StateDbWorkerReply { id: number; value?: unknown; error?: string; logs: string[]; failures: [string, string][] }
+export interface StateDbWorkerReply { id: number; value?: unknown; error?: string; logs: string[]; failures: [string, string][]; timing?: { queue_wait_ms: number; execution_ms: number } }
 
 interface PendingCall { resolve: (reply: StateDbWorkerReply) => void; reject: (error: Error) => void }
 interface ListingWorker { worker: Worker; pending: Map<number, PendingCall> }
 
-type StateDbWorkerLane = 'listing' | 'session'
+const STATE_DB_WORKER_LANES = ['listing', 'authority', 'session'] as const
+type StateDbWorkerLane = typeof STATE_DB_WORKER_LANES[number]
 const listingWorkers = new Map<StateDbWorkerLane, ListingWorker>()
 const listingReadScope = new AsyncLocalStorage<'listing'>()
 
@@ -1078,7 +1080,7 @@ const listingReadScope = new AsyncLocalStorage<'listing'>()
 export function withStateDbListingReads<T>(read: () => T): T { return listingReadScope.run('listing', read) }
 
 let nextCallId = 0
-/** Set until both workers exit during shutdown; calls then reject instead of starting another worker. */
+/** Set until every worker exits during shutdown; calls then reject instead of starting another worker. */
 let stoppingWorker = false
 
 /** Reject every call still waiting on `current` and forget it, so the next call starts a fresh worker. */
@@ -1112,14 +1114,18 @@ function startedListingWorker(lane: StateDbWorkerLane): ListingWorker {
 function callListingWorker(call: ListingCall, lane?: StateDbWorkerLane): Promise<StateDbWorkerReply> {
   // A multi-read caller the stop interrupted goes on to its next read; that read must not restart the worker.
   if (stoppingWorker) return Promise.reject(new Error('state.db worker stopped'))
-  const target = lane ?? listingReadScope.getStore() ?? (call.op === 'session' || call.op === 'sources' || call.op === 'existing' ? 'session' : 'listing')
+  const target = lane ?? listingReadScope.getStore() ?? (call.op === 'session' ? SESSION_READ_LANES[call.read] : call.op === 'sources' || call.op === 'existing' ? 'authority' : 'listing')
   const current = startedListingWorker(target)
   const id = ++nextCallId
+  const timing = startupTimingScope.getStore()
   return new Promise((resolve, reject) => {
-    current.pending.set(id, { resolve, reject })
+    current.pending.set(id, { resolve: (reply) => {
+      if (reply.timing) timing?.workerRead(target, call.op === 'session' ? call.read : call.op, reply.timing)
+      resolve(reply)
+    }, reject })
     // A call in flight keeps the process alive until it settles; an idle worker never does.
     current.worker.ref()
-    current.worker.postMessage({ ...call, id, delayMs: readDelayMs } satisfies StateDbWorkerRequest)
+    current.worker.postMessage({ ...call, id, delayMs: readDelayMs, queuedAtNs: process.hrtime.bigint() } satisfies StateDbWorkerRequest)
   })
 }
 
@@ -1158,7 +1164,7 @@ export async function stateDbStorageAsync(dbPath: string): Promise<AgentStorage>
   try { return (await callListingWorker({ op: 'storage', dbPath })).value as AgentStorage } catch (error) { return stateDbReadFailure(error) }
 }
 
-/** `stateDbSessionSources` on the session worker; a worker failure is an unreadable state.db (null), so owners stay locked. Without a state.db it answers here, opening nothing. */
+/** `stateDbSessionSources` on the authority worker; a worker failure is an unreadable state.db (null), so owners stay locked. Without a state.db it answers here, opening nothing. */
 export async function stateDbSessionSourcesAsync(dbPath: string, sessionIds: Iterable<string>): Promise<Map<string, StateDbSessionSource> | null> {
   if (!existsSync(dbPath)) return stateDbSessionSources(dbPath, sessionIds)
   try { return (await callListingWorker({ op: 'sources', dbPath, ids: [...sessionIds] })).value as Map<string, StateDbSessionSource> | null } catch { return null }
@@ -1169,7 +1175,7 @@ export async function stateDbWebDiagnosticIdsAsync(dbPath: string): Promise<stri
   try { return (await callListingWorker({ op: 'webDiagnostic', dbPath })).value as string[] } catch { return [] }
 }
 
-/** `agentSessionRowsExisting` on the session worker; a worker failure assumes every row present, so nothing is pruned. */
+/** `agentSessionRowsExisting` on the authority worker; a worker failure assumes every row present, so nothing is pruned. */
 export async function agentSessionRowsExistingAsync(dbPath: string, sessionIds: Iterable<string>): Promise<Set<string>> {
   const ids = [...sessionIds]
   try { return (await callListingWorker({ op: 'existing', dbPath, ids })).value as Set<string> } catch { return new Set(ids.map((s) => s.trim()).filter(Boolean)) }
@@ -1183,8 +1189,16 @@ export async function agentSessionRowsExistingAsync(dbPath: string, sessionIds: 
 export const SESSION_READS = { stateDbHasSession, stateDbSessionHasMessages, insightsSessionRows, countConversationRounds, stateDbTailToolContent, stateDbLineageReport, stateDbCronJobIds, latestCronSessionInfo, stateDbLocalTargetRead, stateDbSessionRow, stateDbSessionMessages, stateDbCompressionLineage, stateDbSessionRead, stateDbSessionTailRead, stateDbSettlementRead }
 type SessionReadName = keyof typeof SESSION_READS
 
+/** Exhaustive policy: authority never waits for transcript materialization; sidebar-scoped probes stay on listing. */
+const SESSION_READ_LANES = {
+  stateDbHasSession: 'authority', stateDbSessionHasMessages: 'authority', stateDbLocalTargetRead: 'authority', stateDbSessionRow: 'authority',
+  insightsSessionRows: 'session', countConversationRounds: 'session', stateDbTailToolContent: 'session', stateDbLineageReport: 'session',
+  stateDbCronJobIds: 'session', latestCronSessionInfo: 'session', stateDbSessionMessages: 'session', stateDbCompressionLineage: 'session',
+  stateDbSessionRead: 'session', stateDbSessionTailRead: 'session', stateDbSettlementRead: 'session',
+} satisfies Record<SessionReadName, StateDbWorkerLane>
+
 /**
- * A `SESSION_READS` reader on the session worker, so listings cannot hold up a session's lookup. Each reader
+ * A `SESSION_READS` reader on its authority or transcript lane, so expensive reads cannot hold up authority. Each reader
  * already answers a failed read with `fallback`'s value; a worker failure answers it too. Without a state.db the reader
  * answers here, as it opens nothing then.
  */
@@ -1198,12 +1212,12 @@ export async function stateDbSessionReadAsync<K extends SessionReadName>(fallbac
   }
 }
 
-/** Test hook: crash one lane, or both when omitted, while its calls are in flight. */
+/** Test hook: crash one lane, or all when omitted, while its calls are in flight. */
 export function crashStateDbWorkerForTests(lane?: StateDbWorkerLane): Promise<unknown> {
-  return Promise.all((lane ? [lane] : ['listing', 'session'] as const).map((target) => callListingWorker({ op: 'crash' }, target)))
+  return Promise.all((lane ? [lane] : STATE_DB_WORKER_LANES).map((target) => callListingWorker({ op: 'crash' }, target)))
 }
 
-/** Stop both workers (server shutdown). Calls in flight reject; later calls start fresh workers. */
+/** Stop every worker (server shutdown). Calls in flight reject; later calls start fresh workers. */
 export async function stopStateDbWorker(): Promise<void> {
   closeStateDbs()
   const workers = [...listingWorkers.values()]

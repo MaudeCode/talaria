@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
-import { configureClient, get, post, request, resetClientForTests } from './client'
+import { configureClient, get, post, request, resetClientForTests, type TransportRequest } from './client'
 import { createMemoryAdapter, makeSession } from '../contracts/adapters/memory'
-import { checkUpdatesNow, fetchSessions, searchSessions, fetchSession, fetchUpdatesCheck, renameSession, setReasoningEffort, startChat } from './endpoints'
+import { checkUpdatesNow, fetchSessions, searchSessions, fetchSession, fetchUpdatesCheck, renameSession, setReasoningEffort, startChat, newSession } from './endpoints'
 import { isApiError } from '../contracts/common'
 import { resetAppRootForTests } from '../lib/appRoot'
 
@@ -35,6 +35,28 @@ describe('typed client against the in-memory adapter', () => {
     expect(call.method).toBe('POST')
     expect(call.headers.get('X-Hermes-CSRF-Token')).toBe('csrf-test-token')
     expect(call.credentials).toBe('include')
+  })
+
+  it('keeps the ordinary new-chat deadline and never replays an unknown create outcome', async () => {
+    const deadline = new AbortController()
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(deadline.signal)
+    let entered!: () => void
+    const started = new Promise<void>((resolve) => { entered = resolve })
+    const transport = vi.fn((req: TransportRequest) => new Promise<Response>((_resolve, reject) => {
+      expect(req.method).toBe('POST')
+      expect(req.url.pathname).toBe('/api/session/new')
+      req.signal!.addEventListener('abort', () => { reject(new DOMException('Deadline exceeded', 'TimeoutError')) }, { once: true })
+      entered()
+    }))
+    configureClient({ transport })
+    try {
+      const result = newSession({}).catch((error: unknown) => error)
+      await started
+      expect(timeout).toHaveBeenCalledWith(30_000)
+      deadline.abort(new DOMException('Deadline exceeded', 'TimeoutError'))
+      expect(await result).toMatchObject({ kind: 'network', path: 'api/session/new', cause: { name: 'TimeoutError' } })
+      expect(transport).toHaveBeenCalledTimes(1)
+    } finally { timeout.mockRestore() }
   })
 
   it('advertises the secure skill prompt at the shared Web chat-start boundary', async () => {

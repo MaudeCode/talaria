@@ -1,5 +1,8 @@
 /** Bounded, payload-free chat startup diagnostics. All offsets use this process's monotonic clock. */
 import { createHash, randomUUID } from 'node:crypto'
+import { AsyncLocalStorage } from 'node:async_hooks'
+
+export const startupTimingScope = new AsyncLocalStorage<StartupTiming | undefined>()
 
 export type TimingOutcome = 'ok' | 'noop' | 'cache_hit' | 'timeout' | 'refused' | 'cancelled' | 'unknown' | 'error'
 export type StartupSpan = 'request_guards' | 'runtime_barrier' | 'owner_routing' | 'catalog_wait' | 'session_load' | 'ownership_checks' | 'prompt_preparation' | 'background_yield' | 'workspace_preparation' | 'admission' | 'admission_checks' | 'admission_persistence' | 'workspace_persistence' | 'worker_preparation' | 'sidecar_dispatch' | 'sidecar_call' | 'owner_snapshot' | 'owner_detail' | 'owner_submit'
@@ -25,6 +28,7 @@ export class StartupTiming {
   private readonly spans = new Map<StartupSpan, Span>()
   private readonly observations: Partial<Record<Observation, number>> = {}
   private readonly emitted = new Set<Stage>()
+  private readonly stateDbReads = new Map<string, { count: number; queue_wait_ms: number; execution_ms: number }>()
   private sessionKey: string | undefined
   private streamKey: string | undefined
   rpcId: number | undefined
@@ -80,8 +84,19 @@ export class StartupTiming {
 
   fail(error: unknown): void { this.outcome = timingOutcome(error) }
 
+  /** Aggregate only dispatcher-owned operation names and durations, never ids, paths or query payloads. */
+  workerRead(lane: string, operation: string, timing: { queue_wait_ms: number; execution_ms: number }): void {
+    if (this.ended) return
+    const key = `${lane}.${operation}`
+    const total = this.stateDbReads.get(key) ?? { count: 0, queue_wait_ms: 0, execution_ms: 0 }
+    total.count += 1
+    total.queue_wait_ms += timing.queue_wait_ms
+    total.execution_ms += timing.execution_ms
+    this.stateDbReads.set(key, total)
+  }
+
   snapshot() {
-    return { spans: Object.fromEntries([...this.spans].map(([name, span]) => [name, { ...span }])), observations: { ...this.observations } }
+    return { spans: Object.fromEntries([...this.spans].map(([name, span]) => [name, { ...span }])), observations: { ...this.observations }, state_db_reads: Object.fromEntries([...this.stateDbReads].map(([key, value]) => [key, { ...value }])) }
   }
 
   finish(outcome = this.outcome): void {

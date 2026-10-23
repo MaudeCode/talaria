@@ -227,6 +227,19 @@ session, database and WAL revisions, so unchanged older pages do not open SQLite
 serialization before extending an appended prefix; rewritten rows invalidate it. Requests without `msg_limit` retain
 the full projection. No index is written to the Agent database or the session document.
 
+Agent `state.db` reads use three lazy workers with separate FIFOs and read-only handle caches.
+Sidebar batches and their nested enrichment probes stay on the listing lane. Source/ownership,
+existence, local-target and raw-row probes use the authority lane; transcript and settlement reads
+use the session lane. Admission subagent classification and fresh-chat wire projection share the
+authority source reader, including receipt and compression ownership fences. A slow history or
+sidebar read cannot queue ahead of those checks. An intrinsically blocked authority query can still
+wait on SQLite or the filesystem; failed authority remains read-only.
+The dispatcher adds aggregate `state_db_reads` to chat startup timing, keyed only by lane and
+operation, with `count`, `queue_wait_ms` and `execution_ms`. Queue wait includes worker startup
+and delivery; execution includes the query and filesystem work. Both use the process monotonic
+clock across worker threads. No database paths, session ids or transcript payloads enter these fields.
+All lanes terminate on shutdown and reject their pending calls before a later request can restart them.
+
 Cron completion links and imported session titles share the read-only identity reader in
 `sessions/state-db.ts`, dispatched on that worker. Gateway-fired runs resolve through the
 scheduler principal's `cron:<job>:<execution>` admission; legacy timestamp ids resolve their

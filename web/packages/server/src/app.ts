@@ -31,6 +31,7 @@ import { isSpaPath } from './spa.js'
 import { buildCspReportOnlyPolicy, CSP_REPORT_TO } from './http/csp.js'
 import { STARTUP_IMMEDIATE_PATHS } from './startup.js'
 import { escapedProfileMessage } from './profiles/profiles.js'
+import { startupTimingScope } from './startup-timing.js'
 
 const SHELL_ERROR_HTML = `<!doctype html>
 <html lang="en">
@@ -336,7 +337,7 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
 
   const handler: RequestHandler = (req, res) => {
     const ctx = new RequestContext(req, res, deps)
-    return deps.requestScope.run(ctx, async () => { await dispatch(ctx); })
+    return deps.requestScope.run(ctx, () => startupTimingScope.run(ctx.startupTiming, async () => { await dispatch(ctx); }))
   }
 
   const upgrade = (req: IncomingMessage, socket: Duplex, head: Buffer) => {
