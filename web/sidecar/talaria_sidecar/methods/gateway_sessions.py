@@ -87,7 +87,6 @@ def _snapshot(value: dict) -> dict:
     return {**value, "messages": rows, "info": {k: v for k, v in value["info"].items() if k in info_keys}}
 
 
-
 def _refused(state: str, reason: str) -> dict:
     return {"state": state, "reason": reason, "snapshot": None, "receipt": None}
 

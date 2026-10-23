@@ -37,8 +37,9 @@ writer's process tree and reaps the writer before releasing the lock. A concurre
 without starting another writer.
 
 RPC v56 adds the closed `gateway.session` reaction action and safe message reaction metadata.
-It retains v55's captured commands and v54's checkpoint read below. Reaction-only watch snapshots invalidate display data
-without settling a turn; writes use the authenticated owner and uncertain outcomes are read back.
+It retains v55's captured commands and outbound draft review, plus v54's checkpoint read
+below. Reaction-only watch snapshots invalidate display data without settling a turn; writes
+use the authenticated owner and uncertain outcomes are read back.
 
 RPC v55 adds closed `gateway.session` actions `terminal_info` and `shell_exec`.
 They require a verified native owner boot revision supporting captured commands.
