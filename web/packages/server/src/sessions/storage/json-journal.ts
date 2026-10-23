@@ -547,7 +547,7 @@ export class JsonJournalWriter {
 
   async appendSseEvent(eventName: string, payload: unknown, meta: JournalEventMeta = {}): Promise<JournalEvent> { return this.appendSseEventNow(eventName, payload, meta) }
 
-  /** Writes stay synchronous so frames land in order; a durable frame settles only after its fsync, before callers publish it. */
+  /** Writes stay synchronous so frames land in order; a durable frame settles only after its fsync, so callers publish it durable. */
   private async appendSseEventNow(eventName: string, payload: unknown, meta: JournalEventMeta = {}, terminal?: boolean, createdAt?: number): Promise<JournalEvent> {
     if (this.closed) throw new Error('run journal writer is closed')
     const name = eventName.trim()
@@ -566,9 +566,11 @@ export class JsonJournalWriter {
     const fd = this.fd
     writeFully(fd, `${JSON.stringify(event)}\n`)
     // Best effort, as before: a failed fsync never fails the append.
-    const synced = this.fsyncMode === 'eager' || event.terminal ? (this.syncs = this.syncs.then(() => new Promise((resolve) => { fsync(fd, () => { resolve() }) }))) : null
+    if (this.fsyncMode === 'eager' || event.terminal) this.syncs = this.syncs.then(() => new Promise((resolve) => { fsync(fd, () => { resolve() }) }))
+    // Every frame waits for earlier fsyncs, so appends settle (and callers publish) in append order.
+    const settled = this.syncs
     if (SSE_RELAY_CLOSE_EVENTS.has(name)) this.closeHandle()
-    await synced
+    await settled
     return event
   }
 

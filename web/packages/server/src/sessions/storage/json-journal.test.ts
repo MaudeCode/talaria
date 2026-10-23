@@ -223,7 +223,7 @@ it('creates the run directory once across 100 appends', async () => {
   await writer.close()
 })
 
-it('settles a terminal append only after its fsync completes, before closing the file', async () => {
+it('settles a terminal append only after its fsync completes, before closing the file or settling later frames', async () => {
   const journal = fixture()
   const writer = await journal.writer('session', 'run')
   await writer.appendSseEvent('token', { text: 'first' })
@@ -232,14 +232,15 @@ it('settles a terminal append only after its fsync completes, before closing the
   vi.mocked(fs.fsync).mockImplementationOnce((fd: number, cb: (err: NodeJS.ErrnoException | null) => void) => { finish = () => { fs.fsyncSync(fd); cb(null) } })
   const order: string[] = []
   const terminal = writer.appendSseEvent('cancel', {}).then(() => order.push('published'))
+  const later = writer.appendSseEvent('token', { text: 'late' }).then(() => order.push('later'))
   await new Promise((resolve) => setImmediate(resolve))
   expect(fs.fsync).toHaveBeenCalledTimes(1)
   expect(order).toEqual([])
   expect(fs.closeSync).not.toHaveBeenCalled()
   order.push('synced')
   finish!()
-  await terminal
-  expect(order).toEqual(['synced', 'published'])
+  await Promise.all([terminal, later])
+  expect(order).toEqual(['synced', 'published', 'later'])
   expect(fs.closeSync).toHaveBeenCalledTimes(1)
   await writer.close()
 })
