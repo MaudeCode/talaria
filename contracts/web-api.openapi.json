@@ -75738,6 +75738,978 @@
         }
       }
     },
+    "/api/prompt-queues": {
+      "get": {
+        "operationId": "promptQueues.list",
+        "tags": [
+          "automation"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "runs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "revision": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "profile": {
+                            "type": "string"
+                          },
+                          "phase": {
+                            "enum": [
+                              "draft",
+                              "running",
+                              "paused",
+                              "cancelled",
+                              "completed",
+                              "failed",
+                              "refused",
+                              "unknown"
+                            ],
+                            "type": "string"
+                          },
+                          "current_step": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "cards": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "session_id": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 256
+                                },
+                                "project_id": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "text": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 32000
+                                },
+                                "request_id": {
+                                  "type": "string"
+                                },
+                                "title": {
+                                  "type": "string"
+                                },
+                                "backend": {
+                                  "enum": [
+                                    "direct",
+                                    "owner"
+                                  ],
+                                  "type": "string"
+                                },
+                                "authority_epoch": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": -9007199254740991,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "status": {
+                                  "enum": [
+                                    "waiting",
+                                    "dispatching",
+                                    "running",
+                                    "completed",
+                                    "failed",
+                                    "refused",
+                                    "unknown"
+                                  ],
+                                  "type": "string"
+                                },
+                                "stream_id": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "admission_id": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "outcome": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "session_id",
+                                "project_id",
+                                "text",
+                                "request_id",
+                                "title",
+                                "backend",
+                                "authority_epoch",
+                                "status",
+                                "stream_id",
+                                "admission_id",
+                                "outcome"
+                              ]
+                            }
+                          },
+                          "actions": {
+                            "type": "array",
+                            "items": {
+                              "enum": [
+                                "start",
+                                "pause",
+                                "resume",
+                                "cancel",
+                                "reconcile"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "editable": {
+                            "type": "boolean"
+                          },
+                          "error": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "title",
+                          "revision",
+                          "profile",
+                          "phase",
+                          "current_step",
+                          "cards",
+                          "actions",
+                          "editable",
+                          "error"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "runs"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "promptQueues.create",
+        "tags": [
+          "automation"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "request_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "cards": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 100,
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "session_id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 256
+                        },
+                        "project_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "text": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 32000
+                        }
+                      },
+                      "required": [
+                        "session_id",
+                        "project_id",
+                        "text"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "request_id",
+                  "cards"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "profile": {
+                      "type": "string"
+                    },
+                    "phase": {
+                      "enum": [
+                        "draft",
+                        "running",
+                        "paused",
+                        "cancelled",
+                        "completed",
+                        "failed",
+                        "refused",
+                        "unknown"
+                      ],
+                      "type": "string"
+                    },
+                    "current_step": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "cards": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "session_id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 256
+                          },
+                          "project_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "text": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 32000
+                          },
+                          "request_id": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "backend": {
+                            "enum": [
+                              "direct",
+                              "owner"
+                            ],
+                            "type": "string"
+                          },
+                          "authority_epoch": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "status": {
+                            "enum": [
+                              "waiting",
+                              "dispatching",
+                              "running",
+                              "completed",
+                              "failed",
+                              "refused",
+                              "unknown"
+                            ],
+                            "type": "string"
+                          },
+                          "stream_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "admission_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "outcome": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "session_id",
+                          "project_id",
+                          "text",
+                          "request_id",
+                          "title",
+                          "backend",
+                          "authority_epoch",
+                          "status",
+                          "stream_id",
+                          "admission_id",
+                          "outcome"
+                        ]
+                      }
+                    },
+                    "actions": {
+                      "type": "array",
+                      "items": {
+                        "enum": [
+                          "start",
+                          "pause",
+                          "resume",
+                          "cancel",
+                          "reconcile"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "editable": {
+                      "type": "boolean"
+                    },
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "title",
+                    "revision",
+                    "profile",
+                    "phase",
+                    "current_step",
+                    "cards",
+                    "actions",
+                    "editable",
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/prompt-queues/{id}": {
+      "patch": {
+        "operationId": "promptQueues.edit",
+        "tags": [
+          "automation"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "revision": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "cards": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 100,
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "session_id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 256
+                        },
+                        "project_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "text": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 32000
+                        }
+                      },
+                      "required": [
+                        "session_id",
+                        "project_id",
+                        "text"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "revision",
+                  "cards"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "profile": {
+                      "type": "string"
+                    },
+                    "phase": {
+                      "enum": [
+                        "draft",
+                        "running",
+                        "paused",
+                        "cancelled",
+                        "completed",
+                        "failed",
+                        "refused",
+                        "unknown"
+                      ],
+                      "type": "string"
+                    },
+                    "current_step": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "cards": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "session_id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 256
+                          },
+                          "project_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "text": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 32000
+                          },
+                          "request_id": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "backend": {
+                            "enum": [
+                              "direct",
+                              "owner"
+                            ],
+                            "type": "string"
+                          },
+                          "authority_epoch": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "status": {
+                            "enum": [
+                              "waiting",
+                              "dispatching",
+                              "running",
+                              "completed",
+                              "failed",
+                              "refused",
+                              "unknown"
+                            ],
+                            "type": "string"
+                          },
+                          "stream_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "admission_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "outcome": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "session_id",
+                          "project_id",
+                          "text",
+                          "request_id",
+                          "title",
+                          "backend",
+                          "authority_epoch",
+                          "status",
+                          "stream_id",
+                          "admission_id",
+                          "outcome"
+                        ]
+                      }
+                    },
+                    "actions": {
+                      "type": "array",
+                      "items": {
+                        "enum": [
+                          "start",
+                          "pause",
+                          "resume",
+                          "cancel",
+                          "reconcile"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "editable": {
+                      "type": "boolean"
+                    },
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "title",
+                    "revision",
+                    "profile",
+                    "phase",
+                    "current_step",
+                    "cards",
+                    "actions",
+                    "editable",
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/prompt-queues/{id}/action": {
+      "post": {
+        "operationId": "promptQueues.action",
+        "tags": [
+          "automation"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "revision": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "action": {
+                    "enum": [
+                      "start",
+                      "pause",
+                      "resume",
+                      "cancel",
+                      "reconcile"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "revision",
+                  "action"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "profile": {
+                      "type": "string"
+                    },
+                    "phase": {
+                      "enum": [
+                        "draft",
+                        "running",
+                        "paused",
+                        "cancelled",
+                        "completed",
+                        "failed",
+                        "refused",
+                        "unknown"
+                      ],
+                      "type": "string"
+                    },
+                    "current_step": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "cards": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "session_id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 256
+                          },
+                          "project_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "text": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 32000
+                          },
+                          "request_id": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "backend": {
+                            "enum": [
+                              "direct",
+                              "owner"
+                            ],
+                            "type": "string"
+                          },
+                          "authority_epoch": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "status": {
+                            "enum": [
+                              "waiting",
+                              "dispatching",
+                              "running",
+                              "completed",
+                              "failed",
+                              "refused",
+                              "unknown"
+                            ],
+                            "type": "string"
+                          },
+                          "stream_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "admission_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "outcome": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "session_id",
+                          "project_id",
+                          "text",
+                          "request_id",
+                          "title",
+                          "backend",
+                          "authority_epoch",
+                          "status",
+                          "stream_id",
+                          "admission_id",
+                          "outcome"
+                        ]
+                      }
+                    },
+                    "actions": {
+                      "type": "array",
+                      "items": {
+                        "enum": [
+                          "start",
+                          "pause",
+                          "resume",
+                          "cancel",
+                          "reconcile"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "editable": {
+                      "type": "boolean"
+                    },
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "title",
+                    "revision",
+                    "profile",
+                    "phase",
+                    "current_step",
+                    "cards",
+                    "actions",
+                    "editable",
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/cron/blueprints": {
       "get": {
         "operationId": "crons.blueprints",

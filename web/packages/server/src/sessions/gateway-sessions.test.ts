@@ -104,6 +104,18 @@ describe('canonical owner attachment', () => {
   afterEach(async () => { db.close(); await s.close() })
   const post = (path: string, body: unknown) => s.get(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
 
+  it('reconciles queue steps through the exact native admission receipt without submitting', async () => {
+    sidecar.respond('gateway.session', (params) => {
+      expect(params.action).toBe('receipt')
+      expect(params.admission_id).toBe('synthetic-queue-admission')
+      expect(params.request_id).toBeUndefined()
+      return { ...attached(snapshot()), receipt: { ...admission('terminal'), admission_id: 'synthetic-queue-admission', outcome: 'completed' } }
+    })
+    const result = await s.deps.sessions.owner!.queueReceipt(sid, 'synthetic-queue-admission')
+    expect(result?.receipt).toMatchObject({ admission_id: 'synthetic-queue-admission', status: 'terminal', outcome: 'completed' })
+    expect(sidecar.calls.some((call) => call.method === 'chat.start')).toBe(false)
+  })
+
   it.each(['epoch', 'replay', 'model', 'workspace'])('rejects a stale rendered context identity after native %s replacement', async (change) => {
     const detail = ContextDetailSchema.parse((JSON.parse(readFileSync(new URL('../../../contracts/fixtures/sidecar/context-detail.json', import.meta.url), 'utf8')) as Record<string, { result: unknown }[]>)['chat.context_detail']![0]!.result)
     let current = snapshot()

@@ -1,6 +1,7 @@
 import { CHECKPOINT_DIFF_MAX_BYTES, unavailableContextDetail, type CheckpointDiff, type ContextDetail } from '@maudecode/talaria-web-contracts'
 import { checkpointDiffFiles } from '../workspace/rollback.js'
 /** One native-owner seam. Talaria observes its history and never settles it into a local Session. */
+import type { QueueAdmissionFence } from './admission.js'
 import type { StartupTiming } from '../startup-timing.js'
 import { createHash, randomUUID } from 'node:crypto'
 import { OWNER_EXPORT_MAX_BYTES, SessionNoticeSchema, GatewayClarifyBatchSchema, GatewaySessionResultSchema, type ClarifyAnswers, type ClarifyStep, type ExecutionModes, type GatewayClarifyBatch, type GatewayCreateParams, type GatewaySessionParams, type GatewaySessionResult, type GatewaySnapshot, type OwnerAttachment, type ModelChange } from '@maudecode/talaria-web-contracts'
@@ -245,6 +246,12 @@ export class GatewaySessions {
 
   async isOwned(sid: string): Promise<boolean> { return (await this.target(sid)) !== null }
 
+  /** Exact native receipt lookup for a durable queue step, never another submit. */
+  async queueReceipt(sid: string, admissionId?: string): Promise<GatewaySessionResult | null> {
+    const target = await this.target(sid)
+    return target ? this.call(target, admissionId ? { action: 'receipt', admission_id: admissionId } : { action: 'snapshot' }) : null
+  }
+
   async checkpointDiff(sid: string): Promise<CheckpointDiff | null> {
     const profile = this.deps.activeProfile()
     const target = await this.target(sid, profile)
@@ -414,7 +421,7 @@ export class GatewaySessions {
   }
 
   /** Called before the direct-chat admission path, including for an already materialized foreign session. */
-  async submit(sid: string, body: Row, timing?: StartupTiming): Promise<Row | null> {
+  async submit(sid: string, body: Row, timing?: StartupTiming, fence?: QueueAdmissionFence): Promise<Row | null> {
     const target = await this.target(sid)
     if (!target) return null
     const text = str(body.message).trim()
@@ -429,6 +436,7 @@ export class GatewaySessions {
     if (Array.isArray(body.attachments) && body.attachments.length) throw new HttpFailure(400, 'File attachments are unavailable through this owner connection', { code: 'owner_attachments_unavailable' })
     // Resolve display state before admission; a failed post-ACK read must never turn accepted work into a refusal.
     const base = await (timing ? timing.measure('owner_detail', () => this.deps.service.detail(sid, {})) : this.deps.service.detail(sid, {}))
+    if (fence && (!this.deps.service.deps.profilesMatch(str(base.profile) || null, fence.profile) || (str(base.project_id) || null) !== fence.project_id || before.snapshot?.authority_epoch !== fence.authority_epoch || before.snapshot.running || before.snapshot.pending.some((p) => p.status !== 'terminal'))) throw new HttpFailure(409, 'Queue target changed or is busy')
     const closeSubmit = timing?.begin('owner_submit')
     const result = await this.call(target, { action: 'submit', request_id: body.submission_id, text })
     closeSubmit?.(result.receipt ? 'ok' : result.state === 'unavailable' ? 'unknown' : 'refused')
