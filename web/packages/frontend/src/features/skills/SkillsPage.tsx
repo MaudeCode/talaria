@@ -10,6 +10,7 @@ import { Select } from '../../ui/Select'
 import { ConfirmDialog } from '../../ui/Dialog'
 import { EmptyState, ErrorState, LoadingState, formatBytes } from '../../ui/States'
 import { showToast } from '../toast/toast'
+import { showErrorToast } from '../toast/errorToast'
 import { cn } from '../../ui/cn'
 import { useResourceEffects, useResourceMutation, withEffects } from '../sessions/useResourceMutation'
 import { ResourceSwitch } from '../sessions/ResourceSwitch'
@@ -28,7 +29,7 @@ export function SkillsPage() {
     const q = query.trim().toLowerCase()
     return list.filter((s) => (!category || s.category === category) && (!q || s.name.toLowerCase().includes(q) || (s.description ?? '').toLowerCase().includes(q)))
   }, [list, query, category])
-  const toggle = useResourceMutation({ resource: ({ name }: { name: string; enabled: boolean }) => `skill:${name}`, effect: ({ enabled }) => ({ value: enabled }), queryKey: keys.skills.all, readKeys: () => [{ queryKey: keys.skills.all, exact: true }], mutationFn: ({ name, enabled }: { name: string; enabled: boolean }) => api.toggleSkill(name, enabled), onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error') })
+  const toggle = useResourceMutation({ resource: ({ name }: { name: string; enabled: boolean }) => `skill:${name}`, effect: ({ enabled }) => ({ value: enabled }), queryKey: keys.skills.all, readKeys: () => [{ queryKey: keys.skills.all, exact: true }], mutationFn: ({ name, enabled }: { name: string; enabled: boolean }) => api.toggleSkill(name, enabled), onError: (e) => showErrorToast(e) })
 
   if (selected) return <SkillDetail name={selected} onBack={() => setSelected(null)} />
   return (
@@ -87,9 +88,9 @@ function SkillDetail({ name, onBack }: { name: string; onBack: () => void }) {
     effect: (text: string) => ({ value: text }),
     mutationFn: (text) => api.saveSkill(name, text),
     onSuccess: (_, text) => { showToast(m.skill_saved()); setDraft((d) => d === text ? null : d) },
-    onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error'),
+    onError: (e) => showErrorToast(e),
   })
-  const del = useResourceMutation({ resource: () => `skill:${name}`, effect: () => ({ remove: true }), queryKey: keys.skills.all, readKeys: () => [{ queryKey: keys.skills.all, exact: true }], mutationFn: () => api.deleteSkill(name), onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error') })
+  const del = useResourceMutation({ resource: () => `skill:${name}`, effect: () => ({ remove: true }), queryKey: keys.skills.all, readKeys: () => [{ queryKey: keys.skills.all, exact: true }], mutationFn: () => api.deleteSkill(name), onError: (e) => showErrorToast(e) })
   const text = draft ?? content.data?.content ?? ''
   const linked = Object.entries(content.data?.linked_files ?? {})
   if (file) return <SkillFile name={name} file={file} onBack={() => setFile(null)} />

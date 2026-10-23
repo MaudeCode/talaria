@@ -8,7 +8,7 @@ import type { Clarify } from './useClarify'
 
 /** The active clarification step: its question and choices, with the server countdown; the composer takes the typed answer. */
 export function ClarifyCard({ clarify }: { clarify: Clarify }) {
-  const { pending, step, index, total, selected, busy } = clarify
+  const { pending, step, index, total, selected } = clarify
   const [collapsed, setCollapsed] = useState(false)
   const [remaining, setRemaining] = useState<number | null>(pending.timeout_seconds ?? null)
   const hasTimeout = remaining !== null
@@ -34,7 +34,7 @@ export function ClarifyCard({ clarify }: { clarify: Clarify }) {
           {step.choices.length > 0 && (
             <div className="clarify-choices mt-2 flex flex-wrap gap-2">
               {step.choices.map((c, i) => (
-                <button key={`${c}-${i}`} type="button" disabled={busy} aria-pressed={step.multi_select ? selected.includes(c) : undefined} onClick={() => clarify.choose(c)} className={cn('rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-text hover:border-accent hover:text-accent-text', selected.includes(c) && 'border-accent text-accent-text')}>{c}</button>
+                <button key={`${c}-${i}`} type="button" aria-pressed={step.multi_select ? selected.includes(c) : undefined} onClick={() => clarify.choose(c)} className={cn('rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-text hover:border-accent hover:text-accent-text', selected.includes(c) && 'border-accent text-accent-text')}>{c}</button>
               ))}
             </div>
           )}

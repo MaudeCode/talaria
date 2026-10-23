@@ -2,21 +2,29 @@ import { beforeEach, expect, it, vi } from 'vitest'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 vi.mock(import('../../api/endpoints'), async (original) => ({ ...(await original()), updateSession: vi.fn(), ownerAction: vi.fn() }))
+vi.mock(import('../toast/toast'), async (original) => ({ ...(await original()), showToast: vi.fn() }))
 import * as api from '../../api/endpoints'
 import { sessionFixture } from '../../test/fixtures'
 import { ApiError } from '../../contracts/common'
 import { teardownAll } from '../../stream/connection'
 import type { OwnerAttachment } from '@maudecode/talaria-web-contracts'
 import { useSessionUpdate } from './useSessionUpdate'
+import { showToast } from '../toast/toast'
+import { useResourceEffects } from '../sessions/useResourceMutation'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 const refresh = vi.fn(() => Promise.resolve())
 const body = { model: 'contributor', model_provider: 'custom' }
 const nativeOwner: OwnerAttachment = { state: 'attached', reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 8, execution_generation: 3, admissions: [] }
 const refusal = (token: string, message = 'This model may train on your conversation.') => new ApiError({ kind: 'http', status: 409, path: '/api/session/update', message, body: { error: message, type: 'model_confirmation_required', confirm_token: token, warnings: [{ kind: 'data_policy', title: 'Warning', model: 'contributor', provider: 'custom', message }] } })
-function Chat({ sid = 's1', owner, change = body }: { sid?: string; owner?: OwnerAttachment; change?: Parameters<typeof api.updateSession>[1] }) {
-  const { updateSession, dialog } = useSessionUpdate(sid, refresh, owner)
-  return <><button onClick={() => { void updateSession(change) }}>Pick model</button>{dialog}</>
+let client = new QueryClient()
+function Chat(props: { sid?: string; owner?: OwnerAttachment; change?: Parameters<typeof api.updateSession>[1] }) {
+  return <QueryClientProvider client={client}><Picker {...props} /></QueryClientProvider>
 }
-beforeEach(() => { vi.mocked(api.updateSession).mockReset(); vi.mocked(api.ownerAction).mockReset(); refresh.mockClear() })
+function Picker({ sid = 's1', owner, change = body }: { sid?: string; owner?: OwnerAttachment; change?: Parameters<typeof api.updateSession>[1] }) {
+  const { updateSession, dialog } = useSessionUpdate(sid, refresh, owner)
+  return <><button onClick={() => { updateSession(change) }}>Pick model</button>{dialog}</>
+}
+beforeEach(() => { client = new QueryClient({ defaultOptions: { mutations: { retry: false } } }); vi.mocked(api.updateSession).mockReset(); vi.mocked(api.ownerAction).mockReset(); refresh.mockClear() })
 it('Cancel leaves the selection unchanged, Confirm sends the exact server token', async () => {
   vi.mocked(api.updateSession).mockRejectedValueOnce(refusal('one')).mockRejectedValueOnce(refusal('two')).mockResolvedValueOnce({ session: sessionFixture({ session_id: 's1', model: 'contributor' }) })
   render(<Chat />)
@@ -134,4 +142,55 @@ it('keeps a cancelled native confirmation closed when a workspace response repea
   expect(screen.queryByRole('alertdialog')).toBeNull()
   expect(api.ownerAction).toHaveBeenLastCalledWith(expect.objectContaining({ operation: 'workspace', payload: { cwd: '/trusted-workspace' } }))
   expect(api.ownerAction).toHaveBeenCalledTimes(2)
+})
+
+function Shown() {
+  const { updateSession, dialog, confirming } = useSessionUpdate('s1', refresh)
+  const effect = useResourceEffects()['session:s1']
+  const model = confirming?.model ?? effect?.fields?.model
+  return <><button onClick={() => { updateSession(body) }}>Pick model</button><output aria-label="chip">{typeof model === 'string' ? model : 'old'}</output>{dialog}</>
+}
+it('shows the picked model at once, keeps it while confirming, and Cancel rolls it back (TAL-1384)', async () => {
+  let refuse!: (error: unknown) => void
+  vi.mocked(api.updateSession).mockReturnValueOnce(new Promise((_, reject) => { refuse = reject }) as never)
+  render(<QueryClientProvider client={client}><Shown /></QueryClientProvider>)
+  await userEvent.click(screen.getByText('Pick model'))
+  await waitFor(() => expect(screen.getByLabelText('chip')).toHaveTextContent('contributor'))
+  await act(async () => { refuse(refusal('one')); await Promise.resolve() })
+  expect(await screen.findByRole('alertdialog')).toBeInTheDocument()
+  expect(screen.getByLabelText('chip')).toHaveTextContent('contributor')
+  await userEvent.click(screen.getByText('Cancel'))
+  await waitFor(() => expect(screen.getByLabelText('chip')).toHaveTextContent('old'))
+})
+
+function WorkspaceChip() {
+  const { updateSession } = useSessionUpdate('s1', refresh)
+  const workspace = useResourceEffects()['session:s1']?.fields?.workspace
+  return <><button onClick={() => { updateSession({ workspace: '/srv/beta' }) }}>Pick workspace</button><output aria-label="chip">{typeof workspace === 'string' ? workspace : '/srv/alpha'}</output></>
+}
+it('shows the picked workspace at once and rolls a refusal back with the error (TAL-1384)', async () => {
+  let refuse!: (error: unknown) => void
+  vi.mocked(api.updateSession).mockReturnValueOnce(new Promise((_, reject) => { refuse = reject }) as never)
+  render(<QueryClientProvider client={client}><WorkspaceChip /></QueryClientProvider>)
+  await userEvent.click(screen.getByText('Pick workspace'))
+  await waitFor(() => expect(screen.getByLabelText('chip')).toHaveTextContent('/srv/beta'))
+  expect(api.updateSession).toHaveBeenCalledWith('s1', { workspace: '/srv/beta' })
+  await act(async () => { refuse(new ApiError({ kind: 'http', status: 400, path: '/api/session/update', message: 'Workspace is not allowed' })); await Promise.resolve() })
+  await waitFor(() => expect(screen.getByLabelText('chip')).toHaveTextContent('/srv/alpha'))
+  expect(showToast).toHaveBeenCalledWith('Workspace is not allowed', 4000, 'error')
+  expect(screen.queryByRole('alertdialog')).toBeNull()
+})
+
+it('sends a pick queued behind another against the owner revision the first one produced (TAL-1384)', async () => {
+  let first!: (value: unknown) => void
+  vi.mocked(api.ownerAction)
+    .mockReturnValueOnce(new Promise((resolve) => { first = resolve }) as never)
+    .mockResolvedValueOnce({ ok: true, session: sessionFixture({ session_id: 's1', owner_attachment: { ...nativeOwner, revision: 10 } }) })
+  render(<Chat owner={{ ...nativeOwner }} />)
+  await userEvent.click(screen.getByText('Pick model'))
+  await userEvent.click(screen.getByText('Pick model'))
+  expect(api.ownerAction).toHaveBeenCalledTimes(1)
+  await act(async () => { first({ ok: true, session: sessionFixture({ session_id: 's1', owner_attachment: { ...nativeOwner, revision: 9 } }) }); await Promise.resolve() })
+  await waitFor(() => expect(api.ownerAction).toHaveBeenCalledTimes(2))
+  expect(vi.mocked(api.ownerAction).mock.calls.map(([request]) => (request as { expected_revision: number }).expected_revision)).toEqual([8, 9])
 })

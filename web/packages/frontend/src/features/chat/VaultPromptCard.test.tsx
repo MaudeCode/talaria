@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ClarifyPending } from '../../contracts'
@@ -14,6 +14,7 @@ vi.mock(import('../../api/endpoints'), async (importOriginal) => ({
   ...(await importOriginal()), fetchClarifyPending: vi.fn(() => Promise.resolve({ pending: head, pending_count: head ? 1 : 0 })), respondClarify: vi.fn(() => Promise.resolve({ ok: true })),
 }))
 import * as api from '../../api/endpoints'
+import { ApiError } from '../../contracts/common'
 import { useClarify } from './useClarify'
 import { VaultPromptCard, useVaultPrompt } from './VaultPromptCard'
 
@@ -99,5 +100,29 @@ describe('password-manager prompts (TAL-887)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Skip' }))
     expect(api.respondClarify).toHaveBeenCalledWith({ session_id: 's1', clarify_id: 'contract-vault-code', decline: true })
     expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('leaves on Skip at once and comes back empty when the relay fails (TAL-1384)', async () => {
+    let refuse!: (error: unknown) => void
+    vi.mocked(api.respondClarify).mockReturnValueOnce(new Promise((_, reject) => { refuse = reject }) as never)
+    renderHead(fixture.code.pending)
+    expect(await screen.findByRole('dialog', { name: 'Code for login.example.com' })).toBeTruthy()
+    await userEvent.type(screen.getByLabelText('Code'), '4815')
+    await userEvent.click(screen.getByRole('button', { name: 'Skip' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    await act(async () => { refuse(new Error('relay failed')); await Promise.resolve() })
+    expect(await screen.findByRole('dialog', { name: 'Code for login.example.com' })).toBeTruthy()
+    expect(screen.getByLabelText('Code')).toHaveValue('')
+  })
+
+  it('stays gone after an unknown outcome when the server no longer asks, and never resends the secret (TAL-1384)', async () => {
+    vi.mocked(api.respondClarify).mockImplementationOnce(() => { head = null; return Promise.reject(new ApiError({ kind: 'network', path: 'api/clarify/respond', message: 'Network down' })) })
+    renderHead(fixture.unlock.pending)
+    await userEvent.type(await screen.findByLabelText('Master password'), 'correct horse')
+    await userEvent.keyboard('{Enter}')
+    await waitFor(() => { expect(api.respondClarify).toHaveBeenCalledTimes(1) })
+    await waitFor(() => { expect(vi.mocked(api.fetchClarifyPending).mock.calls.length).toBeGreaterThan(1) })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(api.respondClarify).toHaveBeenCalledTimes(1)
   })
 })

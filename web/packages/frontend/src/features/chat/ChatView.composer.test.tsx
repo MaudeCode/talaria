@@ -137,6 +137,33 @@ it.each(['high', 'default'])('routes native /reasoning %s with the current conve
   qc.clear()
 })
 
+it.each([
+  ['shown', 200, null],
+  ['refused', 400, 'Reasoning display is locked'],
+] as const)('finishes /reasoning hide at once and reports only a refusal: %s (TAL-1384)', async (_, status, error) => {
+  let answer!: () => void
+  const held = new Promise<void>((resolve) => { answer = resolve })
+  const adapter = createMemoryAdapter({ routes: { 'POST /api/reasoning': async () => { await held; return status === 200 ? [200, { show_reasoning: false }] : [status, { error }] } } })
+  configureClient({ transport: adapter })
+  const showToast = vi.spyOn(toast, 'showToast').mockImplementation(() => undefined)
+  const session = sessionFixture({ session_id: 'display-chat', model: 'shared-model' })
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  vi.mocked(api.fetchSession).mockResolvedValue({ session })
+  qc.setQueryData(keys.sessions.detail(session.session_id), { session })
+  const view = render(<QueryClientProvider client={qc}><ChatView sessionId={session.session_id} /></QueryClientProvider>)
+  await waitFor(() => expect(qc.isFetching()).toBe(0))
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: '/reasoning hide' } })
+  fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter', code: 'Enter' })
+  await waitFor(() => expect(screen.getByRole('textbox')).toHaveValue(''))
+  await waitFor(() => expect(adapter.calls.filter((call) => call.url.pathname.endsWith('/api/reasoning'))).toHaveLength(1))
+  expect(JSON.parse(adapter.calls.find((call) => call.url.pathname.endsWith('/api/reasoning'))!.body as string)).toEqual({ display: 'hide' })
+  answer()
+  if (error) await waitFor(() => expect(showToast).toHaveBeenCalledWith(error, 4000, 'error'))
+  else { await waitFor(() => expect(qc.isMutating()).toBe(0)); expect(showToast).not.toHaveBeenCalledWith(expect.anything(), 4000, 'error') }
+  view.unmount()
+  qc.clear()
+})
+
 it('routes picker effort and reset through the current direct-chat identity after navigation', async () => {
   const adapter = createMemoryAdapter({ routes: { 'POST /api/reasoning': () => [200, { show_reasoning: false, reasoning_effort: 'high' }] } })
   configureClient({ transport: adapter })

@@ -14,6 +14,7 @@ import { Switch, FieldRow, TextInput } from '../../ui/Field'
 import { Select } from '../../ui/Select'
 import { ErrorState, LoadingState } from '../../ui/States'
 import { showToast } from '../toast/toast'
+import { showErrorToast } from '../toast/errorToast'
 import { cn } from '../../ui/cn'
 import { useModelsQuery, useProfilesQuery } from '../../app/queries'
 import { contextFromList, cronResource, jobId } from './cronJob'
@@ -33,7 +34,7 @@ interface FormValues {
 
 interface JobWrite { resource: string; body: Record<string, unknown>; shown: Record<string, unknown> }
 const cronReads = () => [keys.crons.list(false), keys.crons.list(true), keys.crons.status]
-const showError = (e: unknown) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
+const showError = (e: unknown) => showErrorToast(e)
 
 /** `onSubmitted` closes the editor on submit; `onCreated` names the job the server created. */
 export function JobForm({ mode, job, jobs, onCancel, onSubmitted, onCreated }: { mode: EditorMode; job: CronJob | null; jobs: CronJob[]; onCancel: () => void; onSubmitted: (id?: string) => void; onCreated: (id?: string) => void }) {

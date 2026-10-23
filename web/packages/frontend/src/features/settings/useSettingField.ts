@@ -1,5 +1,5 @@
 import { useSaveSettings, useSettingsQuery } from '../../app/queries'
-import { showToast } from '../toast/toast'
+import { showErrorToast } from '../toast/errorToast'
 import { m } from '../../paraglide/messages.js'
 import { getStreamContext } from '../../stream/connection'
 
@@ -11,7 +11,7 @@ export function useSettingField() {
     const context = getStreamContext()
     return save.mutateAsync(patch).then(
       () => { if (context === getStreamContext()) onSuccess?.() },
-      (e: unknown) => { if (context === getStreamContext()) showToast(e instanceof Error ? e.message : String(e), 4000, 'error') },
+      (e: unknown) => { if (context === getStreamContext()) showErrorToast(e) },
     )
   }
   const set = (patch: Record<string, unknown>, onSuccess?: () => void) => { void setAsync(patch, onSuccess) }

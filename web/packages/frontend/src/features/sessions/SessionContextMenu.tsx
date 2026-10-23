@@ -15,6 +15,7 @@ import { Button, IconButton } from '../../ui/Button'
 import { TextInput } from '../../ui/Field'
 import { Select } from '../../ui/Select'
 import { showToast } from '../toast/toast'
+import { showErrorToast } from '../toast/errorToast'
 import { WorktreeRemoveDialog } from './WorktreeRemoveDialog'
 import { useQuery } from '@tanstack/react-query'
 
@@ -30,7 +31,7 @@ export function SessionContextMenu({ row, active }: { row: SessionRow; active: b
   const projects = useQuery({ queryKey: keys.projects, queryFn: api.fetchProjects, staleTime: 60_000, enabled: dialog?.kind === 'move' })
   const sid = row.session_id
   const invalidate = () => { void qc.invalidateQueries({ queryKey: keys.sessions.all }) }
-  const fail = (e: unknown) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
+  const fail = (e: unknown) => showErrorToast(e)
   // `row` is the displayed row, so a repeated toggle targets the state the user sees.
   const rename = useResourceMutation({ resource: () => `session:${sid}`, effect: (title: string) => ({ fields: { title } }), mutationFn: (title) => api.renameSession(sid, title), onError: fail })
   const pin = useResourceMutation({ resource: () => `session:${sid}`, effect: (pinned: boolean) => ({ fields: { pinned } }), mutationFn: (pinned) => api.pinSession(sid, pinned), onError: (e) => showToast(m.session_pin_failed() + (e instanceof Error ? e.message : ''), 4000, 'error') })

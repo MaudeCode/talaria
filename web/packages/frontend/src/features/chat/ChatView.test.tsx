@@ -7,6 +7,7 @@ import { keys } from '../../api/queryKeys'
 import { sessionFixture } from '../../test/fixtures'
 import { dispatch, resetStreamStoreForTests } from '../../stream/store'
 import { resetConnectionsForTests } from '../../stream/connection'
+import { ApiError } from '../../contracts/common'
 
 const { renders, navigate, composer } = vi.hoisted(() => ({ renders: vi.fn(), navigate: vi.fn(), composer: vi.fn() }))
 vi.mock('@tanstack/react-router', async (original) => ({ ...await original<object>(), useNavigate: () => navigate, useSearch: () => ({}) }))
@@ -19,14 +20,16 @@ vi.mock('../../app/queries', () => ({ useSettingsQuery: () => ({ data: { auto_sc
 vi.mock('../composer/Composer', () => ({ Composer: (props: unknown) => { composer(props); return null } }))
 vi.mock('./ChatSidePanel', () => ({ ChatSidePanel: () => null }))
 vi.mock('./useMarkViewed', () => ({ useMarkViewed: () => undefined }))
+vi.mock('../toast/toast', async (original) => ({ ...await original<object>(), showToast: vi.fn() }))
 vi.mock('../../api/endpoints', async (original) => ({
   ...await original<object>(),
   fetchSession: vi.fn(),
-  fetchSessionYolo: () => Promise.resolve({ yolo_enabled: false }),
+  fetchSessionYolo: vi.fn(() => Promise.resolve({ yolo_enabled: false })),
   fetchReasoning: () => Promise.resolve({ reasoning_effort: null }),
   fetchClarifyPending: () => Promise.resolve({ pending: null }),
   fetchAgentHealth: () => Promise.resolve({ available: true }),
   branchSession: vi.fn(() => Promise.resolve({ session_id: 'branched' })),
+  clearSession: vi.fn(), undoSession: vi.fn(), setSessionToolsets: vi.fn(), setSessionYolo: vi.fn(), setReasoningEffort: vi.fn(), setPersonality: vi.fn(), ownerAction: vi.fn(),
 }))
 // Probe the real row bodies inside their existing React.memo boundary, without a production test prop.
 vi.mock('./MessageRow', async (original) => {
@@ -40,6 +43,7 @@ vi.mock('./MessageRow', async (original) => {
 })
 
 const { ChatView } = await import('./ChatView')
+const { showToast } = await import('../toast/toast')
 const api = await import('../../api/endpoints')
 
 beforeEach(() => {
@@ -119,4 +123,146 @@ it('updates row controls when the server changes read-only and branching capabil
   await waitFor(() => expect(screen.getByRole('button', { name: 'Edit message' })).toBeInTheDocument())
   expect(screen.getByRole('button', { name: 'Regenerate response' })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Branch from here' })).toBeInTheDocument()
+})
+
+interface ComposerProps { session: { enabled_toolsets?: string[] | null; personality?: string | null; owner_attachment?: { admissions: { admission_id: string }[] } } | null; yolo: boolean; reasoning: string | null
+  onToolsetsChange: (t: string[] | null) => void; onToggleYolo: () => void; onReasoningChange: (level: string | null) => void
+  onLocalCommand: (name: string, args: string) => Promise<boolean | 'refused'>; onOwnerAction: (request: object) => Promise<void> }
+const lastComposer = () => composer.mock.calls.at(-1)![0] as ComposerProps
+
+it('shows toolsets, YOLO and reasoning choices to the composer before the writes answer (TAL-1384)', async () => {
+  const held = () => new Promise<never>(() => undefined)
+  vi.mocked(api.setSessionToolsets).mockReturnValue(held())
+  vi.mocked(api.setSessionYolo).mockReturnValue(held())
+  vi.mocked(api.setReasoningEffort).mockReturnValue(held())
+  chat(false)
+  await screen.findByText('Persisted answer')
+  await waitFor(() => expect(lastComposer().session).not.toBeNull())
+  act(() => { lastComposer().onToolsetsChange(['web']) })
+  await waitFor(() => expect(lastComposer().session?.enabled_toolsets).toEqual(['web']))
+  act(() => { lastComposer().onToggleYolo() })
+  await waitFor(() => expect(lastComposer().yolo).toBe(true))
+  act(() => { lastComposer().onReasoningChange('high') })
+  await waitFor(() => expect(lastComposer().reasoning).toBe('high'))
+  expect(api.setSessionToolsets).toHaveBeenCalledWith('memo-chat', ['web'])
+  expect(api.setSessionYolo).toHaveBeenCalledWith('memo-chat', true)
+})
+
+it('rolls a refused YOLO change back and finishes /personality without waiting (TAL-1384)', async () => {
+  let refuse!: (error: unknown) => void
+  vi.mocked(api.setSessionYolo).mockReturnValue(new Promise((_, reject) => { refuse = reject }) as never)
+  vi.mocked(api.setPersonality).mockReturnValue(new Promise(() => undefined) as never)
+  chat(false)
+  await screen.findByText('Persisted answer')
+  await waitFor(() => expect(lastComposer().session).not.toBeNull())
+  act(() => { lastComposer().onToggleYolo() })
+  await waitFor(() => expect(lastComposer().yolo).toBe(true))
+  await act(async () => { refuse(new ApiError({ kind: 'http', status: 403, path: '/x', message: 'Not allowed' })); await Promise.resolve() })
+  await waitFor(() => expect(lastComposer().yolo).toBe(false))
+  await expect(lastComposer().onLocalCommand('personality', 'pirate')).resolves.toBe(true)
+  expect(api.setPersonality).toHaveBeenCalledWith('memo-chat', 'pirate')
+})
+
+const refusal = () => new ApiError({ kind: 'http', status: 400, path: '/x', message: 'Refused by the server' })
+
+it.each([
+  ['toolsets', () => vi.mocked(api.setSessionToolsets), (c: ComposerProps) => { c.onToolsetsChange(['web']) }, (c: ComposerProps) => c.session?.enabled_toolsets ?? null, ['web'], null],
+  ['reasoning effort', () => vi.mocked(api.setReasoningEffort), (c: ComposerProps) => { c.onReasoningChange('high') }, (c: ComposerProps) => c.reasoning, 'high', null],
+  ['/personality', () => vi.mocked(api.setPersonality), (c: ComposerProps) => { void c.onLocalCommand('personality', 'pirate') }, (c: ComposerProps) => c.session?.personality ?? null, 'pirate', null],
+] as const)('rolls a refused %s change back with the error (TAL-1384)', async (_, write, act_, shown, chosen, confirmed) => {
+  let refuse!: (error: unknown) => void
+  write().mockReturnValue(new Promise((_, reject) => { refuse = reject }) as never)
+  chat(false)
+  await screen.findByText('Persisted answer')
+  await waitFor(() => expect(lastComposer().session).not.toBeNull())
+  act(() => { act_(lastComposer()) })
+  await waitFor(() => expect(shown(lastComposer())).toEqual(chosen))
+  await act(async () => { refuse(refusal()); await Promise.resolve() })
+  await waitFor(() => expect(shown(lastComposer())).toEqual(confirmed))
+  expect(showToast).toHaveBeenCalledWith('Refused by the server', 4000, 'error')
+})
+
+it('rereads YOLO after an unknown outcome and shows what the server kept, without resending (TAL-1384)', async () => {
+  vi.mocked(api.setSessionYolo).mockRejectedValue(new ApiError({ kind: 'network', path: '/x', message: 'Network down' }))
+  chat(false)
+  await screen.findByText('Persisted answer')
+  await waitFor(() => expect(lastComposer().session).not.toBeNull())
+  await waitFor(() => expect(api.fetchSessionYolo).toHaveBeenCalledTimes(1))
+  vi.mocked(api.fetchSessionYolo).mockResolvedValue({ yolo_enabled: true })
+  act(() => { lastComposer().onToggleYolo() })
+  await waitFor(() => expect(api.fetchSessionYolo).toHaveBeenCalledTimes(2))
+  await waitFor(() => expect(lastComposer().yolo).toBe(true))
+  expect(api.setSessionYolo).toHaveBeenCalledTimes(1)
+  vi.mocked(api.fetchSessionYolo).mockResolvedValue({ yolo_enabled: false })
+})
+
+it('brings a refused owner-input discard back with the error (TAL-1384)', async () => {
+  const owner = { state: 'attached' as const, reason: null, restarting: false, can_submit: true, can_interrupt: true, can_attach: false, revision: 1, execution_generation: 1,
+    admissions: [{ admission_id: 'a1', text: 'first', status: 'unknown', actions: ['retry', 'discard'], execution_generation: 1 }, { admission_id: 'a2', text: 'second', status: 'queued', actions: ['cancel'], execution_generation: 1 }] }
+  const session = sessionFixture({ session_id: 'owner-chat', owner_attachment: owner as never })
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  vi.mocked(api.fetchSession).mockResolvedValue({ session })
+  qc.setQueryData(keys.sessions.detail(session.session_id), { session })
+  let refuse!: (error: unknown) => void
+  vi.mocked(api.ownerAction).mockReturnValue(new Promise((_, reject) => { refuse = reject }) as never)
+  render(<QueryClientProvider client={qc}><ChatView sessionId={session.session_id} /></QueryClientProvider>)
+  await waitFor(() => expect(lastComposer().session?.owner_attachment?.admissions).toHaveLength(2))
+  const result = lastComposer().onOwnerAction({ session_id: 'owner-chat', action: 'discard', admission_id: 'a1', execution_generation: 1 }).catch(() => 'refused')
+  await waitFor(() => expect(lastComposer().session?.owner_attachment?.admissions.map((a) => a.admission_id)).toEqual(['a2']))
+  await act(async () => { refuse(refusal()); await Promise.resolve() })
+  await waitFor(() => expect(lastComposer().session?.owner_attachment?.admissions.map((a) => a.admission_id)).toEqual(['a1', 'a2']))
+  await expect(result).resolves.toBe('refused')
+  expect(showToast).toHaveBeenCalledWith('Refused by the server', 4000, 'error')
+})
+
+it('brings the last exchange back when /undo is refused (TAL-1384)', async () => {
+  let refuse!: (error: unknown) => void
+  vi.mocked(api.undoSession).mockReturnValue(new Promise((_, reject) => { refuse = reject }) as never)
+  chat(false)
+  await screen.findByText('Persisted answer')
+  await waitFor(() => expect(lastComposer().session).not.toBeNull())
+  const result = lastComposer().onLocalCommand('undo', '')
+  await waitFor(() => expect(screen.queryByText('Persisted answer')).toBeNull())
+  await act(async () => { refuse(refusal()); await Promise.resolve() })
+  expect(await screen.findByText('Persisted answer')).toBeInTheDocument()
+  expect(screen.getByText('Persisted question')).toBeInTheDocument()
+  await expect(result).resolves.toBe('refused')
+  expect(showToast).toHaveBeenCalledWith('Refused by the server', 4000, 'error')
+})
+
+it('drops a discarded owner input from the composer at once (TAL-1384)', async () => {
+  const owner = { state: 'attached' as const, reason: null, restarting: false, can_submit: true, can_interrupt: true, can_attach: false, revision: 1, execution_generation: 1,
+    admissions: [{ admission_id: 'a1', text: 'first', status: 'unknown', actions: ['retry', 'discard'], execution_generation: 1 }, { admission_id: 'a2', text: 'second', status: 'queued', actions: ['cancel'], execution_generation: 1 }] }
+  const session = sessionFixture({ session_id: 'owner-chat', owner_attachment: owner as never })
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  vi.mocked(api.fetchSession).mockResolvedValue({ session })
+  qc.setQueryData(keys.sessions.detail(session.session_id), { session })
+  vi.mocked(api.ownerAction).mockReturnValue(new Promise(() => undefined) as never)
+  render(<QueryClientProvider client={qc}><ChatView sessionId={session.session_id} /></QueryClientProvider>)
+  await waitFor(() => expect(lastComposer().session?.owner_attachment?.admissions).toHaveLength(2))
+  void lastComposer().onOwnerAction({ session_id: 'owner-chat', action: 'discard', admission_id: 'a1', execution_generation: 1 })
+  await waitFor(() => expect(lastComposer().session?.owner_attachment?.admissions.map((a) => a.admission_id)).toEqual(['a2']))
+})
+
+it('empties the transcript on /clear and drops the last exchange on /undo before the server answers (TAL-1384)', async () => {
+  vi.mocked(api.undoSession).mockReturnValue(new Promise(() => undefined) as never)
+  chat(false)
+  await screen.findByText('Persisted answer')
+  await waitFor(() => expect(lastComposer().session).not.toBeNull())
+  void lastComposer().onLocalCommand('undo', '')
+  await waitFor(() => expect(screen.queryByText('Persisted question')).toBeNull())
+  expect(screen.queryByText('Persisted answer')).toBeNull()
+})
+
+it('brings the transcript back when /clear is refused (TAL-1384)', async () => {
+  let refuse!: (error: unknown) => void
+  vi.mocked(api.clearSession).mockReturnValue(new Promise((_, reject) => { refuse = reject }) as never)
+  chat(false)
+  await screen.findByText('Persisted answer')
+  await waitFor(() => expect(lastComposer().session).not.toBeNull())
+  const result = lastComposer().onLocalCommand('clear', '')
+  await waitFor(() => expect(screen.queryByText('Persisted answer')).toBeNull())
+  await act(async () => { refuse(new ApiError({ kind: 'http', status: 409, path: '/x', message: 'Busy' })); await Promise.resolve() })
+  expect(await screen.findByText('Persisted answer')).toBeInTheDocument()
+  await expect(result).resolves.toBe('refused')
 })

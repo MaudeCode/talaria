@@ -5,6 +5,7 @@ import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { Button } from '../../ui/Button'
 import { showToast } from '../toast/toast'
+import { showErrorToast } from '../toast/errorToast'
 import { useResourceEffects, useResourceMutation, withEffects } from '../sessions/useResourceMutation'
 
 type Kind = 'skills' | 'memory'
@@ -25,7 +26,7 @@ export function PendingWritesPanel({ kind }: { kind: Kind }) {
       void qc.invalidateQueries({ queryKey: kind === 'skills' ? keys.skills.all : keys.memory })
       void qc.invalidateQueries({ queryKey: keys.profiles })
     },
-    onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error'),
+    onError: (e) => showErrorToast(e),
   })
   const items = withEffects(pending.data?.items ?? [], (item) => `pending-write:${kind}:${item.id}`, effects)
   if (!pending.data?.visible || items.length === 0) return null

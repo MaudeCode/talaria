@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { useState } from 'react'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueuedTurnsSchema } from '../../contracts/persisted'
 
@@ -57,6 +57,24 @@ describe('QueueCard (TAL-562)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Discard' }))
     expect(action).toHaveBeenCalledWith({ session_id: 'native', action: 'discard', admission_id: 'lost', execution_generation: 4 })
   })
+  it('keeps Retry busy while the server runs it, so a second click never sends twice (TAL-1384)', async () => {
+    let finish!: () => void
+    const action = vi.fn(() => new Promise<void>((resolve) => { finish = resolve }))
+    render(<QueueCard sessionId="native" queued={[]} onChange={() => undefined} admissions={[{
+      admission_id: 'lost', sequence: 1, status: 'unknown', outcome: null, authority_epoch: 2,
+      execution_generation: 4, text: 'Inspect this result before retrying', actions: ['retry', 'discard'],
+    }]} onAdmissionAction={action} />)
+    const retry = screen.getByRole('button', { name: 'Retry' })
+    await userEvent.click(retry)
+    expect(retry).toBeDisabled()
+    expect(retry).toHaveAttribute('aria-busy', 'true')
+    expect(screen.getByRole('button', { name: 'Discard' })).toBeEnabled()
+    await userEvent.click(retry)
+    expect(action).toHaveBeenCalledTimes(1)
+    finish()
+    await waitFor(() => { expect(retry).toBeEnabled() })
+  })
+
   it('does not let an in-flight admission remove or roll back its queued receipt', async () => {
     vi.mocked(api.rollbackUpload).mockClear()
     const onChange = vi.fn()

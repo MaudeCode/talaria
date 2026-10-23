@@ -1,3 +1,5 @@
+import { createElement, type ReactNode } from 'react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { Session } from '../contracts'
 
 /** A writable, synthetic server session; each test supplies its own identity and transcript. */
@@ -14,4 +16,10 @@ export function deferred<T>() {
   let reject!: (reason: unknown) => void
   const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail })
   return { promise, resolve, reject }
+}
+
+/** A render wrapper with one fresh query client, for components whose writes go through the optimistic owner. */
+export function queryWrapper() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+  return ({ children }: { children: ReactNode }) => createElement(QueryClientProvider, { client }, children)
 }

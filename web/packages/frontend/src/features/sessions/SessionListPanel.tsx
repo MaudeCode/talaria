@@ -20,6 +20,7 @@ import { closeMobileSidebar } from '../../shell/useShellState'
 import { inTextField } from '../../shell/useShortcuts'
 import { useLocale } from '../../i18n/useLocale'
 import { showToast } from '../toast/toast'
+import { showErrorToast } from '../toast/errorToast'
 import { useResourceEffects, useResourceMutation, withEffects } from './useResourceMutation'
 
 export function useSessionListQuery(params: api.SessionListParams = {}) {
@@ -227,7 +228,7 @@ export function SessionListPanel() {
     resource: ({ id }: { id: string; archived: boolean }) => `session:${id}`,
     effect: ({ archived }) => ({ fields: { archived } }),
     mutationFn: ({ id, archived }) => api.archiveSession(id, archived),
-    onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error'),
+    onError: (e) => showErrorToast(e),
   })
   const mutateArchive = archive.mutate
   const onArchive = useCallback((id: string, archived: boolean) => mutateArchive({ id, archived }), [mutateArchive])
@@ -236,7 +237,7 @@ export function SessionListPanel() {
     effect: (name: string) => ({ fields: { name } }),
     exclusive: true,
     mutationFn: (name) => api.createProject(name),
-    onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error'),
+    onError: (e) => showErrorToast(e),
   })
   const navigate = useNavigate()
   // Legacy J/K: open the next or previous shown session in sidebar order, unless typing, modified, or inside a dialog or menu (TAL-613).

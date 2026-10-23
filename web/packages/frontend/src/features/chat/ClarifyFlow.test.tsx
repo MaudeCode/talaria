@@ -17,6 +17,7 @@ vi.mock(import('../../api/endpoints'), async (importOriginal) => ({
 }))
 // A controllable Web Speech stand-in.
 const recognizer = { lang: '', interimResults: false, continuous: false, onresult: null as unknown, onerror: null, onend: null as (() => void) | null, start: vi.fn(), stop: vi.fn() }
+vi.mock(import('../toast/toast'), async (importOriginal) => ({ ...(await importOriginal()), showToast: vi.fn() }))
 vi.mock(import('../voice/dictation'), async (importOriginal) => ({ ...(await importOriginal()), dictationSupported: () => true, createRecognition: vi.fn(() => recognizer as never) }))
 vi.mock(import('../../stream/connection'), async (importOriginal) => ({ ...(await importOriginal()), startTurn: vi.fn(), cancelTurn: vi.fn(() => Promise.resolve(true)) }))
 import * as api from '../../api/endpoints'
@@ -24,6 +25,7 @@ import * as connection from '../../stream/connection'
 import { Composer } from '../composer/Composer'
 import { ClarifyCard } from './ClarifyCard'
 import { useClarify } from './useClarify'
+import { showToast } from '../toast/toast'
 
 const noop = (): void => undefined
 const session: Session = { session_id: 's1', title: 'Evening', is_streaming: true, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, source_kind: 'webui', is_messaging_session: false, sort_ts: 0 }
@@ -129,6 +131,39 @@ describe('clarification through the composer (TAL-362)', () => {
     await waitFor(() => expect(api.respondClarify).toHaveBeenLastCalledWith({ session_id: 's1', clarify_id: 'single-1', answers: { q0: '/steer prod' } }))
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(api.steerChat).not.toHaveBeenCalled()
+  })
+
+  it('brings a refused answer back with the error and the answer kept (TAL-1384)', async () => {
+    vi.mocked(api.respondClarify).mockRejectedValueOnce(new ApiError({ kind: 'http', status: 400, path: 'api/clarify/respond', message: 'Answer rejected' }))
+    head = single
+    renderChat()
+    await screen.findByRole('dialog')
+    await userEvent.type(screen.getByRole('textbox'), 'prod{Enter}')
+    expect(await screen.findByRole('dialog')).toHaveTextContent('Which env?')
+    expect(screen.getByRole('textbox')).toHaveValue('prod')
+    expect(showToast).toHaveBeenLastCalledWith('Answer rejected', 4000, 'error')
+  })
+
+  it('keeps an answer with an unknown outcome hidden when the server no longer asks, without resending (TAL-1384)', async () => {
+    vi.mocked(api.respondClarify).mockImplementationOnce(() => { head = null; return Promise.reject(new ApiError({ kind: 'network', path: 'api/clarify/respond', message: 'Network down' })) })
+    head = single
+    renderChat()
+    await screen.findByRole('dialog')
+    await userEvent.type(screen.getByRole('textbox'), 'prod{Enter}')
+    await waitFor(() => expect(api.fetchClarifyPending).toHaveBeenCalled())
+    await act(() => qc.invalidateQueries({ queryKey: keys.clarify('s1') }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(api.respondClarify).toHaveBeenCalledTimes(1)
+  })
+
+  it('hides the question as soon as the last answer is sent (TAL-1384)', async () => {
+    vi.mocked(api.respondClarify).mockReturnValueOnce(new Promise(() => undefined) as never)
+    head = single
+    renderChat()
+    await screen.findByRole('dialog')
+    await userEvent.type(screen.getByRole('textbox'), 'prod{Enter}')
+    expect(api.respondClarify).toHaveBeenCalledWith({ session_id: 's1', clarify_id: 'single-1', answers: { q0: 'prod' } })
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 
   it('replaces the temporary answer when a new queue head arrives and clears when the server drops the prompt', async () => {

@@ -1,9 +1,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
 import { Mic, Paperclip, Square, ArrowUp, TerminalSquare, SlidersHorizontal, ListPlus, Layers } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
-import { keys } from '../../api/queryKeys'
 import type { Session, Settings } from '../../contracts'
 import type { ExecutionMode, OwnerActionRequest } from '@maudecode/talaria-web-contracts'
 import { adoptTurn, cancelTurn, getStreamContext, retryPendingTurn, startTurn } from '../../stream/connection'
@@ -12,6 +10,7 @@ import { dispatch, getTurnIntent, setTurnIntent, useTurnIntent } from '../../str
 import { useBootstrap } from '../../app/bootstrap'
 import { cn } from '../../ui/cn'
 import { showToast } from '../toast/toast'
+import { showErrorToast } from '../toast/errorToast'
 import { AttachmentTray, type PendingFile } from './Attachments'
 import { CommandPaletteList, useCommandPalette } from './CommandPalette'
 import { parseCommand, resolveCommand, runsOnServer, type CommandSuggestion } from './commands'
@@ -28,7 +27,7 @@ import { LiveStatusPill } from '../chat/LiveTurnView'
 import { ComposerNotices, type ComposerNotice } from './ComposerNotices'
 import { useBtw } from './useBtw'
 import { useCommandOutput } from './useCommandOutput'
-import { BackgroundWorkCard, useBackgroundTasks } from '../background/BackgroundWork'
+import { BackgroundWorkCard, useBackgroundTasks, useStartBackground } from '../background/BackgroundWork'
 import { beginFirstSend, endFirstSend, failFirstSend, getFirstSend, ownsFirstSend, useFirstSend } from '../chat/firstSend'
 import { REST_MS, onComposerRestRequest, requestScroll } from '../chat/sendMotion'
 import { MOTION_EASE, prefersReducedMotion } from '../../lib/motion'
@@ -131,7 +130,7 @@ let handoff: { draft: { readonly current: string }; files: File[]; sessionId: st
 export const Composer = memo(function Composer(props: ComposerProps) {
   const { sessionId, session, busy, streamId, settings, onEnsureSession, onLocalCommand, terminalOpen, onToggleTerminal, onModelChange, onWorkspaceChange, onNewWorktreeChat, onRemoveWorktree, onToolsetsChange, onExecutionModeChange, onReasoningChange, reasoning, reasoningLevels, reasoningSupported = true, pendingChoices, locked = false, yolo, onToggleYolo, queued, onQueue, onQueueChange, clarify, notices = [] } = props
   const bootstrap = useBootstrap()
-  const qc = useQueryClient()
+  const launchBackground = useStartBackground()
   const localStateId = composerStateId(session)
   const [text, setText] = useState(() => (localStateId ? readLocalDraft(localStateId) : ''))
   const [draftIdentity, setDraftIdentity] = useState(localStateId)
@@ -410,7 +409,7 @@ export const Composer = memo(function Composer(props: ComposerProps) {
       showToast(r.fallback === 'gateway_steer_queued' ? m.steer_leftover_queued() : m.busy_steer_fallback(), 2500)
     } catch (e) {
       if (scope !== getStreamContext()) return
-      showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
+      showErrorToast(e)
     }
     dispatch({ type: 'steer_refused', sessionId, steerId })
     // A Stop that withdrew it while the request was in flight already gave the text back.
@@ -469,12 +468,11 @@ export const Composer = memo(function Composer(props: ComposerProps) {
         // TAL-372: `/background` runs the prompt in a hidden session; its record and result show behind the background chip.
         if (cmd.name === 'background') {
           if (!cmd.args) { showToast(m.bg_usage(), 2000); return }
-          try {
-            const target = session ?? (await onEnsureSession())
-            await api.startBackground(target.session_id, cmd.args)
-            setText('')
-            void qc.invalidateQueries({ queryKey: keys.background(target.session_id) })
-          } catch (e) { showToast(e instanceof Error ? e.message : String(e), 4000, 'error') }
+          let target: { session_id: string }
+          try { target = session ?? (await onEnsureSession()) } catch (e) { showErrorToast(e); return }
+          // Only the submitted draft clears; a launch that never started puts the prompt back beside anything typed since.
+          setText((current) => current === text ? '' : current)
+          launchBackground(target.session_id, cmd.args, () => { if (commandScope === getStreamContext()) setText((current) => current.trim() ? `${current}\n\n${text}` : text) })
           return
         }
         // TAL-518: a side question never steers or sends; its answer shows behind a composer chip, running or idle.
@@ -539,7 +537,7 @@ export const Composer = memo(function Composer(props: ComposerProps) {
         textarea.current?.focus()
       }
     } finally { submitting.current = false }
-  }, [nativeOwner, localStateId, text, files, sending, session, onEnsureSession, busy, busyMode, sessionId, trySteer, locked, queueEntry, onQueue, onLocalCommand, bootstrap.profile, qc, askBtw, runCommand, catalog])
+  }, [nativeOwner, localStateId, text, files, sending, session, onEnsureSession, busy, busyMode, sessionId, trySteer, locked, queueEntry, onQueue, onLocalCommand, bootstrap.profile, askBtw, runCommand, catalog, launchBackground])
 
   const applySuggestion = (s: CommandSuggestion) => { setText(`/${s.name} `); textarea.current?.focus() }
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {

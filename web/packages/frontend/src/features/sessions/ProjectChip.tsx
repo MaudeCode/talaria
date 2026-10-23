@@ -10,7 +10,7 @@ import { ConfirmDialog, Dialog } from '../../ui/Dialog'
 import { Button } from '../../ui/Button'
 import { TextInput } from '../../ui/Field'
 import { cn } from '../../ui/cn'
-import { showToast } from '../toast/toast'
+import { showErrorToast } from '../toast/errorToast'
 
 /** The App's project palette (`ProjectCreationPalette.approvedColors`), offered in the same order. */
 const PROJECT_COLORS: { hex: string; name: () => string }[] = [
@@ -29,7 +29,7 @@ export function ProjectChip({ project, active, onSelect, onDeleted }: { project:
   const [dialog, setDialog] = useState<'rename' | 'delete' | null>(null)
   const [name, setName] = useState(project.name)
   const id = project.project_id
-  const fail = (e: unknown) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
+  const fail = (e: unknown) => showErrorToast(e)
   // `project` is the displayed project, so a recolor keeps a rename the server has not confirmed yet.
   const rename = useResourceMutation({ resource: () => `project:${id}`, effect: (name: string) => ({ fields: { name } }), mutationFn: (name) => api.renameProject(id, name), onError: fail })
   const recolor = useResourceMutation({ resource: () => `project:${id}`, effect: (color: string) => ({ fields: { color } }), mutationFn: (color) => api.renameProject(id, project.name, color), onError: fail })

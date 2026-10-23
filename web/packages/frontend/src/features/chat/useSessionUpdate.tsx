@@ -7,15 +7,33 @@ import { m } from '../../paraglide/messages.js'
 import { getStreamContext } from '../../stream/connection'
 import { ConfirmDialog } from '../../ui/Dialog'
 import type { ComposerNotice } from '../composer/ComposerNotices'
-import { showToast } from '../toast/toast'
+import { showErrorToast } from '../toast/errorToast'
+import { keys } from '../../api/queryKeys'
+import { useResourceMutation } from '../sessions/useResourceMutation'
 
 type Update = Parameters<typeof api.updateSession>[1]
 interface Pending { sessionId: string; body: Update; decision: { error: string; confirm_token: string }; scope: object; native?: boolean }
+type OwnerResult = Awaited<ReturnType<typeof api.ownerAction>>
+
+/** The chip shows the chosen model or workspace at once, and while its confirmation is open; Cancel or a refusal rolls it back. */
+export function chosenFields(body: Update): Record<string, unknown> {
+  return body.workspace !== undefined ? { workspace: body.workspace, workspace_name: null } : { model: body.model, model_option_id: body.model, model_provider: body.model_provider ?? null }
+}
+
+/** A write to one session's fields: shown at once on `session:{sid}`, confirmed by the reread of that session. */
+export function useSessionWrite<V extends { sid: string }, R>(options: { fields: (variables: V) => Record<string, unknown>; mutationFn: (variables: V) => Promise<R>; onError?: (error: unknown) => void }) {
+  return useResourceMutation({
+    resource: ({ sid }: V) => `session:${sid}`,
+    queryKey: keys.sessions.all, readKeys: ({ sid }) => [{ queryKey: keys.sessions.detail(sid), exact: true }],
+    effect: (variables) => ({ fields: options.fields(variables) }),
+    mutationFn: options.mutationFn,
+    ...(options.onError ? { onError: options.onError } : {}),
+  })
+}
 
 /** Session metadata updates share one confirmation flow; transcript Edit owns its separate cut-and-return operation. */
 export function useSessionUpdate(sessionId: string | null, refresh: (session?: Session) => Promise<unknown>, nativeOwner?: OwnerAttachment) {
   const lifecycle = useRef<object | null>(null)
-  const active = useRef<object | null>(null)
   const offered = useRef<string | null>(null)
   const [pending, setPending] = useState<Pending | null>(null)
   useEffect(() => {
@@ -23,7 +41,7 @@ export function useSessionUpdate(sessionId: string | null, refresh: (session?: S
     offered.current = null
     // eslint-disable-next-line react-hooks/set-state-in-effect -- navigation cannot inherit a previous model confirmation
     setPending(null)
-    return () => { lifecycle.current = null; active.current = null }
+    return () => { lifecycle.current = null }
   }, [sessionId])
   const presentNative = useCallback((change: ModelChange | undefined, explicitPick = false) => {
     if (change?.state === 'confirmation_required' && change.confirm && change.model && sessionId) {
@@ -38,31 +56,48 @@ export function useSessionUpdate(sessionId: string | null, refresh: (session?: S
     // eslint-disable-next-line react-hooks/set-state-in-effect -- synchronize an external owner decision
     presentNative(nativeOwner?.model_change)
   }, [nativeOwner?.model_change, presentNative])
-  const updateSession = useCallback(async (body: Update) => {
-    if (!sessionId || active.current) return
-    const owner = {}; active.current = owner
+  // A pick queued behind another is sent against the owner revision the earlier pick produced, not the one it saw.
+  const latestOwner = useRef<{ sid: string; owner: OwnerAttachment } | null>(null)
+  const write = useSessionWrite({
+    fields: ({ body }: { sid: string; body: Update; owner: OwnerAttachment | undefined }) => chosenFields(body),
+    mutationFn: async ({ sid, body, owner: seen }): Promise<{ native: OwnerResult | null; session: unknown }> => {
+      if (!seen) return { native: null, session: (await api.updateSession(sid, body)).session }
+      const carried = latestOwner.current?.sid === sid ? latestOwner.current.owner : undefined
+      const owner = carried && (carried.revision ?? -1) > (seen.revision ?? -1) ? carried : seen
+      if (owner.revision === null || owner.execution_generation === null) throw new Error(m.error_generic())
+      const modelPick = body.workspace === undefined
+      const native = await api.ownerAction({ session_id: sid, action: 'mutate', request_id: randomHex(),
+        expected_revision: owner.revision, execution_generation: owner.execution_generation,
+        operation: modelPick ? 'model' : 'workspace',
+        payload: modelPick ? { model: body.model, ...(body.model_provider !== undefined ? { provider: body.model_provider } : {}), ...(body.confirm_token ? { confirm: body.confirm_token } : {}) } : { cwd: body.workspace } })
+      const next = native.session?.owner_attachment
+      if (next) latestOwner.current = { sid, owner: next }
+      return { native, session: native.session }
+    },
+  })
+  const send = write.mutate
+  const updateSession = useCallback((body: Update) => {
+    if (!sessionId) return
+    if (nativeOwner && (nativeOwner.revision === null || nativeOwner.execution_generation === null)) return
     const life = lifecycle.current
     const scope = getStreamContext()
     const current = () => life !== null && lifecycle.current === life && scope === getStreamContext()
-    try {
-      if (nativeOwner) {
-        if (nativeOwner.revision === null || nativeOwner.execution_generation === null) return
-        const modelPick = body.workspace === undefined
-        const result = await api.ownerAction({ session_id: sessionId, action: 'mutate', request_id: randomHex(),
-          expected_revision: nativeOwner.revision, execution_generation: nativeOwner.execution_generation,
-          operation: modelPick ? 'model' : 'workspace',
-          payload: modelPick ? { model: body.model, ...(body.model_provider !== undefined ? { provider: body.model_provider } : {}), ...(body.confirm_token ? { confirm: body.confirm_token } : {}) } : { cwd: body.workspace } })
-        if (current()) { presentNative(result.model_change, modelPick); await refresh(result.session) }
-        return
-      } else await api.updateSession(sessionId, body)
-      if (current()) { setPending(null); await refresh() }
-    } catch (error) {
-      if (!current()) return
-      const refusal = ModelConfirmationRequiredSchema.safeParse(error instanceof ApiError && error.status === 409 ? error.body : null)
-      if (refusal.success) setPending({ sessionId, body, decision: refusal.data, scope })
-      else { setPending(null); showToast(error instanceof Error ? error.message : String(error), 4000, 'error') }
-    } finally { if (active.current === owner) active.current = null }
-  }, [sessionId, refresh, nativeOwner, presentNative])
+    send({ sid: sessionId, body, owner: nativeOwner }, {
+      onSuccess: (result) => {
+        if (!current()) return
+        // The server's returned session replaces the shown choice at once; the reread converges the rest.
+        if (result.native) presentNative(result.native.model_change, body.workspace === undefined)
+        else setPending(null)
+        void refresh(result.session as Session | undefined)
+      },
+      onError: (error) => {
+        if (!current()) return
+        const refusal = ModelConfirmationRequiredSchema.safeParse(error instanceof ApiError && error.status === 409 ? error.body : null)
+        if (refusal.success) setPending({ sessionId, body, decision: refusal.data, scope })
+        else { setPending(null); showErrorToast(error) }
+      },
+    })
+  }, [sessionId, refresh, nativeOwner, presentNative, send])
   const shown = pending?.sessionId === sessionId && pending?.scope === getStreamContext() ? pending : null
   const dialog = <ConfirmDialog open={shown !== null} onOpenChange={(open) => { if (!open) setPending((p) => p === shown ? null : p) }}
     title={m.dialog_confirm_title()} description={shown?.decision.error} confirmLabel={m.dialog_confirm_btn()} cancelLabel={m.cancel()}
@@ -74,5 +109,5 @@ export function useSessionUpdate(sessionId: string | null, refresh: (session?: S
     : change?.state === 'refused'
       ? { id: 'model-change', tone: 'error', content: change.message, announcement: change.message }
       : null, [change, deferredMessage])
-  return { updateSession, dialog, notice }
+  return { updateSession, dialog, notice, confirming: shown?.body ?? null }
 }

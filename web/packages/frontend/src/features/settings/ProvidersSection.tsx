@@ -12,6 +12,7 @@ import { Button, IconButton } from '../../ui/Button'
 import { FieldRow, TextInput } from '../../ui/Field'
 import { ErrorState, LoadingState } from '../../ui/States'
 import { showToast } from '../toast/toast'
+import { showErrorToast } from '../toast/errorToast'
 import { cn } from '../../ui/cn'
 import { useSettingField } from './useSettingField'
 import { OpenRouterCost } from './OpenRouterCost'
@@ -36,7 +37,7 @@ export function ProvidersSection() {
   const [keyValue, setKeyValue] = useState('')
   const [hosted, setHosted] = useState({ base_url: '', api_key: '', model: '' })
   const invalidate = () => { void qc.invalidateQueries({ queryKey: keys.providers }); void qc.invalidateQueries({ queryKey: keys.models }) }
-  const toastError = (e: unknown) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
+  const toastError = (e: unknown) => showErrorToast(e)
   const saveKey = useMutation({ mutationFn: ({ id, key }: { id: string; key: string | null }) => setProviderKey(id, key), onSuccess: (_r, v) => { showToast(v.key ? m.providers_key_saved() : m.providers_key_removed()); setEditing(null); setKeyValue(''); invalidate() }, onError: toastError })
   // The server also makes the model the default, so settings reread with the provider list.
   const saveHosted = useMutation({

@@ -124,6 +124,7 @@ export const steerChat = (body: z.infer<typeof SteerRequestSchema>) => orpc().ch
 export const withdrawSteer = (body: SteerWithdrawRequest) => orpc().chat.steerWithdraw(body)
 export const sendSteerNow = (body: z.infer<typeof SteerSendNowRequestSchema>) => orpc().chat.steerSendNow(body)
 export const fetchStreamStatus = (stream_id: string) => orpc().chat.streamStatus({ stream_id })
+export const fetchApprovalPending = (session_id: string) => orpc().approval.pending({ session_id })
 export const respondApproval = (body: z.infer<typeof ApprovalRespondRequestSchema>) => orpc().approval.respond(body)
 export const fetchClarifyPending = (session_id: string) => orpc().clarify.pending({ session_id })
 export const respondClarify = (body: z.infer<typeof ClarifyRespondRequestSchema>) => orpc().clarify.respond(body)

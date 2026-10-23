@@ -15,7 +15,7 @@ import { RELAY_CLOSE_EVENTS } from '../contracts/sse'
 import { clearTurnIntents, dispatch, getStreamState, getTurnIntent, setTurnIntent } from './store'
 import { isTerminal } from './reducer'
 import { setTodoState } from '../features/todos/todoStore'
-import { showToast } from '../features/toast/toast'
+import { showErrorToast } from '../features/toast/errorToast'
 import { m } from '../paraglide/messages.js'
 import type { PendingFile } from '../features/composer/Attachments'
 import { endFirstSend, getFirstSend } from '../features/chat/firstSend'
@@ -396,7 +396,7 @@ export function cancelTurn(sessionId: string): Promise<boolean> {
     } catch (error) {
       if (current()) {
         setTurnIntent(sessionId, { ...getTurnIntent(sessionId), stop: { streamId, failed: true } })
-        showToast(error instanceof Error ? error.message : String(error), 4000, 'error')
+        showErrorToast(error)
       }
       return false
     } finally {

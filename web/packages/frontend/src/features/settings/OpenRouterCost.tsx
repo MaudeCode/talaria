@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
@@ -7,6 +7,7 @@ import { useSaveSettings } from '../../app/queries'
 import { Button } from '../../ui/Button'
 import { TextInput } from '../../ui/Field'
 import { showToast } from '../toast/toast'
+import { isDefiniteRefusal } from '../../contracts/common'
 import { cn } from '../../ui/cn'
 
 const LEVEL_FILL = { ok: 'bg-accent', warn: 'bg-warning', over: 'bg-error' } as const
@@ -18,15 +19,34 @@ export function OpenRouterCost() {
   const history = useQuery({ queryKey: keys.providerCostHistory, queryFn: api.fetchOpenRouterCostHistory, staleTime: 60_000 })
   const save = useSaveSettings()
   const [draft, setDraft] = useState<string | null>(null)
+  // A budget saved (or with an unknown outcome) whose reread failed: the next successful read of the history settles it.
+  const uncertain = useRef<string | null>(null)
+  useEffect(() => {
+    const submitted = uncertain.current
+    if (submitted === null || !history.dataUpdatedAt) return
+    uncertain.current = null
+    setDraft((d) => d === submitted ? null : d)
+  }, [history.dataUpdatedAt])
   const h = history.data
   if (!h || h.supported === false) return null
   const budget = h.monthly_budget ?? null
   const level = h.budget_level ?? null
   const snapshots = h.snapshots ?? []
-  const saveBudget = (value: number | null) => {
+  // The submitted budget stays shown until the cost history rereads with it, and a refusal returns to the saved one;
+  // an unknown outcome rereads first and reports a failure only if the server kept the old budget. A budget typed since stays.
+  const saveBudget = (value: number | null, submitted: string) => {
+    const settle = () => { setDraft((d) => d === submitted ? null : d) }
+    const failed = () => showToast(m.provider_cost_budget_save_failed(), 4000, 'error')
+    const reread = () => qc.invalidateQueries({ queryKey: keys.providerCostHistory }, { throwOnError: true }).then(settle)
     save.mutate({ provider_cost_budget: value }, {
-      onSuccess: () => { setDraft(null); void qc.invalidateQueries({ queryKey: keys.providerCostHistory }) },
-      onError: () => showToast(m.provider_cost_budget_save_failed(), 4000, 'error'),
+      onSuccess: () => { void reread().catch(() => { uncertain.current = submitted }) },
+      onError: (error) => {
+        if (isDefiniteRefusal(error)) { settle(); failed(); return }
+        void reread().then(
+          () => { if ((qc.getQueryData<typeof h>(keys.providerCostHistory)?.monthly_budget ?? null) !== value) failed() },
+          () => { uncertain.current = submitted },
+        )
+      },
     })
   }
   const value = draft ?? (budget === null ? '' : budget.toFixed(2))
@@ -57,12 +77,12 @@ export function OpenRouterCost() {
       ) : (
         <div className="text-[11px] text-muted">{m.provider_cost_not_enough_data()}</div>
       )}
-      <form className="flex flex-wrap items-center gap-2" onSubmit={(e) => { e.preventDefault(); const n = Number.parseFloat(value); if (Number.isFinite(n) && n > 0) saveBudget(n) }}>
+      <form className="flex flex-wrap items-center gap-2" onSubmit={(e) => { e.preventDefault(); const n = Number.parseFloat(value); if (Number.isFinite(n) && n > 0) saveBudget(n, value) }}>
         <label htmlFor="provider-cost-budget" className="text-xs text-muted">{m.provider_cost_budget_label()}</label>
         <span className="text-xs text-muted" aria-hidden="true">$</span>
         <div className="w-28"><TextInput id="provider-cost-budget" type="number" min="0.01" step="0.01" inputMode="decimal" value={value} placeholder={m.provider_cost_budget_placeholder()} onChange={(e) => setDraft(e.target.value)} /></div>
-        <Button type="submit" disabled={save.isPending}>{m.provider_cost_budget_set()}</Button>
-        {budget !== null && <Button variant="ghost" disabled={save.isPending} onClick={() => saveBudget(null)}>{m.provider_cost_budget_clear()}</Button>}
+        <Button type="submit">{m.provider_cost_budget_set()}</Button>
+        {budget !== null && <Button variant="ghost" onClick={() => { setDraft(''); saveBudget(null, '') }}>{m.provider_cost_budget_clear()}</Button>}
       </form>
       {budget !== null && level && h.budget_percent !== null && h.budget_percent !== undefined && (
         <div className="flex items-center gap-2" data-budget-level={level}>

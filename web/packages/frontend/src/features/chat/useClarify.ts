@@ -4,10 +4,11 @@ import type { ClarifyPending, ClarifyStep } from '../../contracts'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { isTerminal, type LiveTurn } from '../../stream/reducer'
-import { isApiError } from '../../contracts/common'
-import { showToast } from '../toast/toast'
+import { usePromptAnswer } from './usePromptAnswer'
 
 type Answer = string | string[]
+/** One clarify prompt as its answer owner tracks it; the vault card answers the same prompts. */
+export const clarifyResource = (sessionId: string, clarifyId: string) => `clarify:${sessionId}:${clarifyId}`
 interface Progress { id: string; index: number; answers: Record<string, Answer>; text: string; selected: string[] }
 
 /** The active clarification and the composer's temporary answer for its current step. */
@@ -19,7 +20,6 @@ export interface Clarify {
   text: string
   setText: (text: string) => void
   selected: string[]
-  busy: boolean
   canSend: boolean
   /** A choice button: answers a single-select step, toggles a multi-select one. */
   choose: (choice: string) => void
@@ -58,44 +58,35 @@ export function useClarify(sessionId: string | null, live: LiveTurn | null): Cla
   }, [frame, sessionId, qc])
   const pending: ClarifyPending | null = running ? (query.data?.pending ?? null) : null
   const [progress, setProgress] = useState<Progress | null>(null)
-  const [resolved, setResolved] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
 
   const id = pending?.clarify_id ?? ''
   const steps = pending?.steps ?? []
   const current: Progress = progress?.id === id ? progress : { id, index: 0, answers: {}, text: '', selected: [] }
   const step = steps[current.index]
 
-  const submit = async (answers: Record<string, Answer>) => {
-    if (!sessionId) return
-    setBusy(true)
-    try {
-      await api.respondClarify({ session_id: sessionId, clarify_id: id, answers })
-      setResolved(id)
-    } catch (e) {
-      // 409: the prompt already expired or was answered elsewhere; anything else keeps the answers for a retry.
-      if (isApiError(e) && e.status === 409) setResolved(id)
-      showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
-    } finally {
-      setBusy(false)
-      void qc.invalidateQueries({ queryKey: keys.clarify(sessionId) })
-    }
-  }
+  // The card leaves on the last answer; a refused relay brings it back with the answers kept for a retry.
+  const { answer: respond, answered } = usePromptAnswer({
+    resource: ({ sid, clarifyId }: { sid: string; clarifyId: string; answers: Record<string, Answer> }) => clarifyResource(sid, clarifyId),
+    queryKey: keys.clarify(sessionId ?? ''),
+    send: ({ sid, clarifyId, answers }) => api.respondClarify({ session_id: sid, clarify_id: clarifyId, answers }),
+    waiting: async ({ sid, clarifyId }) => (await api.fetchClarifyPending(sid)).pending?.clarify_id === clarifyId,
+  })
+  const submit = (answers: Record<string, Answer>) => { if (sessionId) respond({ sid: sessionId, clarifyId: id, answers }) }
 
   /** `picked`: a single-select choice, which clears typed text and stays pressed so a failed last submit can be retried. */
   const answer = (value: Answer, picked = false) => {
-    if (!step || busy) return
+    if (!step) return
     const answers = { ...current.answers, [step.qid]: value }
     if (current.index < steps.length - 1) setProgress({ id, index: current.index + 1, answers, text: '', selected: [] })
-    else { setProgress({ ...current, answers, ...(picked ? { text: '', selected: [value as string] } : {}) }); void submit(answers) }
+    else { setProgress({ ...current, answers, ...(picked ? { text: '', selected: [value as string] } : {}) }); submit(answers) }
   }
 
   // Typed text wins over pressed choices (docs/ui-ux clarify-progress): what is submitted is what is on screen.
   const typed = current.text.trim()
   const value: Answer = step?.multi_select && !typed ? current.selected : typed
-  const canSend = !busy && value.length > 0
+  const canSend = value.length > 0
 
-  if (!pending || !step || resolved === id) return null
+  if (!pending || !step || answered(clarifyResource(sessionId ?? '', id))) return null
   return {
     pending,
     step,
@@ -104,7 +95,6 @@ export function useClarify(sessionId: string | null, live: LiveTurn | null): Cla
     text: current.text,
     setText: (text) => setProgress({ ...current, text, selected: text.trim() ? [] : current.selected }),
     selected: current.selected,
-    busy,
     canSend,
     choose: (choice) => {
       if (!step.multi_select) { answer(choice, true); return }

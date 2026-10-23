@@ -514,7 +514,7 @@ test('editing an early message asks with the server counts and cuts only on Disc
   expect(bodies.map((b) => [b.confirm_deep_truncate, b.confirm_token])).toEqual([[false, undefined], [true, 'rows-1']])
 })
 
-test('a second Edit click while the first is pending returns the text once (TAL-516)', async ({ page }) => {
+test('Edit takes the row away at once, so a pending edit cannot be sent twice and returns the text once (TAL-516)', async ({ page }) => {
   const truncate = hold()
   let truncates = 0
   let truncated = false
@@ -525,7 +525,7 @@ test('a second Edit click while the first is pending returns the text once (TAL-
   await page.goto('/session/edit-twice')
   const edit = page.locator('#messages .msg-row[data-role="user"]').getByRole('button', { name: 'Edit message' })
   await edit.click({ force: true })
-  await edit.click({ force: true })
+  await expect(edit).toHaveCount(0)
   truncate.release()
   await expect(page.locator('#msg')).toHaveValue('Plan the release')
   expect(truncates).toBe(1)

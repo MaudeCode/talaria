@@ -3,10 +3,17 @@ import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { ConfirmDialog } from '../../ui/Dialog'
 import { returnToComposer } from '../composer/composerReturn'
-import { showToast } from '../toast/toast'
+import { showErrorToast } from '../toast/errorToast'
 import { getStreamContext } from '../../stream/connection'
 import { getTurnIntent } from '../../stream/store'
 import type { VisibleMessage } from './useTranscript'
+import { keys } from '../../api/queryKeys'
+import { useResourceMutation } from '../sessions/useResourceMutation'
+
+/** The transcript as a history cut leaves it: rows from `value` (a message index) on are gone until the reread. */
+export const transcriptCut = (sessionId: string) => `transcript:${sessionId}`
+/** The server asked to confirm a cut: it was not made, so the transcript comes back while the question shows. */
+class ConfirmationAsked extends Error {}
 
 interface Pending { sessionId: string; row: VisibleMessage; text: string; discard: number; token: string; scope: object }
 
@@ -29,25 +36,35 @@ export function useEditMessage(sessionId: string | null, refresh: (accepted?: un
     setOperation(null)
     return () => { lifecycle.current = null; active.current = null }
   }, [sessionId])
-  const runHistory = useCallback(async (label: string, run: (current: () => boolean) => Promise<unknown>) => {
+  // Edit, /clear and /undo cut the transcript at once and the session's reread confirms it; a refusal puts it back.
+  const cut = useResourceMutation({
+    resource: ({ sid }: { sid: string; from: number; run: () => Promise<unknown> }) => transcriptCut(sid), exclusive: true,
+    queryKey: keys.sessions.all, readKeys: ({ sid }) => [{ queryKey: keys.sessions.detail(sid), exact: true }],
+    effect: ({ from }) => ({ value: from }),
+    mutationFn: ({ run }) => run(),
+  })
+  const sendCut = cut.mutateAsync
+  /** `cutFrom` shows the history change at once; without it (retry) the server produces the result and a status shows. */
+  const runHistory = useCallback(async (label: string, run: (current: () => boolean) => Promise<unknown>, cutFrom?: number) => {
     if (!sessionId || active.current || getTurnIntent(sessionId).send || getTurnIntent(sessionId).stop) return false
     const owner = {}; active.current = owner
     const scope = getStreamContext()
     const life = lifecycle.current
     const current = () => active.current === owner && life !== null && lifecycle.current === life && scope === getStreamContext()
-    setOperation(label)
-    try { const accepted = await run(current); return current() && accepted !== false }
-    catch (e) { if (current()) showToast(e instanceof Error ? e.message : String(e), 4000, 'error'); return false }
+    if (cutFrom === undefined) setOperation(label)
+    try { const accepted = cutFrom === undefined ? await run(current) : await sendCut({ sid: sessionId, from: cutFrom, run: () => run(current) }); return current() && accepted !== false }
+    catch (e) { if (current() && !(e instanceof ConfirmationAsked)) showErrorToast(e); return false }
     finally { if (active.current === owner) { active.current = null; if (lifecycle.current === life) setOperation(null) } }
-  }, [sessionId])
+  }, [sessionId, sendCut])
   const edit = useCallback(async (sid: string, row: VisibleMessage, text: string, token?: string) => {
     await runHistory(m.editing(), async (current) => {
       const r = await api.truncateSession(sid, row.index, token)
       if (!current()) return
-      if (!r.ok) { setPending({ sessionId: sid, row, text, discard: r.discard_messages, token: r.confirm_token, scope: getStreamContext() }); return }
+      // A cut the server asks to confirm is not made: the transcript comes back while the question shows.
+      if (!r.ok) { setPending({ sessionId: sid, row, text, discard: r.discard_messages, token: r.confirm_token, scope: getStreamContext() }); throw new ConfirmationAsked() }
       returnToComposer(sid, text)
       await refresh(r.session)
-    })
+    }, row.index)
   }, [refresh, runHistory])
   const onEdit = useCallback((row: VisibleMessage, text: string) => (sessionId ? edit(sessionId, row, text) : Promise.resolve()), [sessionId, edit])
   const shown = pending?.sessionId === sessionId && pending.scope === getStreamContext() ? pending : null

@@ -9,7 +9,9 @@ vi.mock(import('../toast/toast'), async (importOriginal) => ({ ...(await importO
 import * as api from '../../api/endpoints'
 import { returnToComposer } from '../composer/composerReturn'
 import { showToast } from '../toast/toast'
-import { useEditMessage } from './useEditMessage'
+import { transcriptCut, useEditMessage } from './useEditMessage'
+import { useResourceEffects } from '../sessions/useResourceMutation'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { VisibleMessage } from './useTranscript'
 
 const row: VisibleMessage = { index: 0, key: 'u1', message: { role: 'user', content: 'Plan the release' } }
@@ -17,13 +19,19 @@ const refresh = vi.fn(() => Promise.resolve())
 const session = { session_id: 's1', title: 'Edit' } as never
 
 /** ChatView's Edit wiring: the row's pencil and the confirmation the hook mounts. */
+let client = new QueryClient()
 function Chat({ sid = 's1' }: { sid?: string }) {
+  return <QueryClientProvider client={client}><EditHarness sid={sid} /></QueryClientProvider>
+}
+function EditHarness({ sid }: { sid: string }) {
   const { onEdit, dialog, operation } = useEditMessage(sid, refresh)
-  return <><button type="button" onClick={() => { void onEdit(row, 'Plan the release') }}>Edit message</button>{operation && <span role="status">{operation}</span>}{dialog}</>
+  const cutFrom = useResourceEffects<number>()[transcriptCut(sid)]?.value
+  return <><button type="button" onClick={() => { void onEdit(row, 'Plan the release') }}>Edit message</button>{operation && <span role="status">{operation}</span>}{typeof cutFrom === 'number' && <output aria-label="cut">{cutFrom}</output>}{dialog}</>
 }
 
 describe('Edit asks before a cut the server refuses (TAL-929)', () => {
   beforeEach(() => {
+    client = new QueryClient({ defaultOptions: { mutations: { retry: false } } })
     vi.mocked(api.truncateSession).mockReset()
     vi.mocked(returnToComposer).mockReset()
     refresh.mockClear()
@@ -38,12 +46,13 @@ describe('Edit asks before a cut the server refuses (TAL-929)', () => {
     expect(returnToComposer).toHaveBeenCalledExactlyOnceWith('s1', 'Plan the release')
   })
 
-  it('shows editing while the cut is unresolved, suppresses duplicates, and fences an auth change', async () => {
+  it('cuts the transcript at the row at once, suppresses duplicates, and fences an auth change (TAL-1384)', async () => {
     const cut = deferred<Awaited<ReturnType<typeof api.truncateSession>>>()
     vi.mocked(api.truncateSession).mockReturnValueOnce(cut.promise)
     render(<Chat />)
     await userEvent.click(screen.getByRole('button', { name: 'Edit message' }))
-    expect(screen.getByRole('status')).toHaveTextContent('Editing')
+    expect(await screen.findByLabelText('cut')).toHaveTextContent('0')
+    expect(screen.queryByText(/Editing/)).toBeNull()
     await userEvent.click(screen.getByRole('button', { name: 'Edit message' }))
     expect(api.truncateSession).toHaveBeenCalledOnce()
     teardownAll()

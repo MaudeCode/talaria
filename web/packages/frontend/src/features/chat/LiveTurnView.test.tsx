@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
+import type { ReactElement } from 'react'
+import { act, cleanup, fireEvent, render as renderView, waitFor } from '@testing-library/react'
+import { queryWrapper } from '../../test/fixtures'
 import { Transcript } from './Transcript'
 import { LiveStatusPill, LiveTurnView } from './LiveTurnView'
 import * as activityProjection from './turnActivity'
@@ -10,9 +12,12 @@ import type { ActivityMode } from './blocks/Worklog'
 import * as api from '../../api/endpoints'
 import { showToast } from '../toast/toast'
 import { onReturnToComposer } from '../composer/composerReturn'
+import { ApiError } from '../../contracts/common'
 
-vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), withdrawSteer: vi.fn(), sendSteerNow: vi.fn() }))
+vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), withdrawSteer: vi.fn(), sendSteerNow: vi.fn(), fetchSession: vi.fn() }))
 vi.mock(import('../toast/toast'), async (importOriginal) => ({ ...(await importOriginal()), showToast: vi.fn() }))
+
+const render = (ui: ReactElement) => renderView(ui, { wrapper: queryWrapper() })
 
 const originalScroll = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollTo')
 beforeEach(() => { resetStreamStoreForTests(); Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: vi.fn() }) })
@@ -259,28 +264,93 @@ describe('live steering', () => {
     expect(view.queryAllByRole('button', { name: /steering message|Send now/ })).toHaveLength(0)
   })
 
-  it('Edit returns the text to the composer, Cancel and Send now ask the server, and a refusal says why', async () => {
+  it('Edit drops the row at once and returns the text the server hands back (TAL-1384)', async () => {
     const run = liveRun()
     run.emit(pending('s1'))
     const returned: string[] = []
     const stop = onReturnToComposer('s', (text) => { returned.push(text) })
-    vi.mocked(api.withdrawSteer).mockResolvedValueOnce({ withdrawn: true, text: 'Check b too' }).mockResolvedValueOnce({ withdrawn: false }).mockResolvedValueOnce({ withdrawn: true, text: 'Check b too' })
-    vi.mocked(api.sendSteerNow).mockResolvedValueOnce({ redirected: true } as never).mockResolvedValueOnce({ redirected: false } as never)
+    let confirm!: (value: { withdrawn: boolean; text?: string }) => void
+    vi.mocked(api.withdrawSteer).mockReturnValueOnce(new Promise((resolve) => { confirm = resolve }) as never)
     const view = render(<View run={run} />)
     fireEvent.click(view.getByRole('button', { name: 'Edit steering message' }))
-    await waitFor(() => { expect(returned).toEqual(['Check b too']) })
+    await waitFor(() => { expect(view.queryByText('Check b too')).toBeNull() })
+    expect(returned).toEqual([])
     expect(api.withdrawSteer).toHaveBeenLastCalledWith({ session_id: 's', steer_id: 's1', reason: 'edit' })
+    await act(async () => { confirm({ withdrawn: true, text: 'Check b too' }); await Promise.resolve() })
+    await waitFor(() => { expect(returned).toEqual(['Check b too']) })
+    view.rerender(<View run={run} />)
+    expect(view.queryByText('Check b too')).toBeNull()
+    stop()
+  })
+
+  it('brings only the refused steer back with the error, and leaves the composer alone (TAL-1384)', async () => {
+    const run = liveRun()
+    run.emit(pending('s1'))
+    run.emit({ event: 'steer_pending', data: { steer_id: 's2', text: 'Also check c', submitted_at: 2, state: 'pending', actions: { edit: true, cancel: true, send_now: true } } })
+    const returned: string[] = []
+    const stop = onReturnToComposer('s', (text) => { returned.push(text) })
+    let refuse!: (error: unknown) => void
+    vi.mocked(api.withdrawSteer).mockReturnValueOnce(new Promise((_, reject) => { refuse = reject }) as never)
+    const view = render(<View run={run} />)
+    fireEvent.click(view.getAllByRole('button', { name: 'Edit steering message' })[0]!)
+    await waitFor(() => { expect(view.queryByText('Check b too')).toBeNull() })
+    expect(view.getByText('Also check c')).toBeInTheDocument()
+    await act(async () => { refuse(new ApiError({ kind: 'http', status: 400, path: '/api/chat/steer/withdraw', message: 'Steer is locked' })); await Promise.resolve() })
+    expect(await view.findByText('Check b too')).toBeInTheDocument()
+    expect(view.getByText('Also check c')).toBeInTheDocument()
+    expect(showToast).toHaveBeenLastCalledWith('Steer is locked', 4000, 'error')
+    expect(returned).toEqual([])
+    stop()
+  })
+
+  it.each([
+    ['still waiting', true],
+    ['gone', false],
+  ] as const)('asks the server after an unknown withdraw outcome: %s (TAL-1384)', async (_, waiting) => {
+    const run = liveRun()
+    run.emit(pending('s1'))
+    const returned: string[] = []
+    const stop = onReturnToComposer('s', (text) => { returned.push(text) })
+    vi.mocked(api.withdrawSteer).mockClear().mockRejectedValueOnce(new ApiError({ kind: 'network', path: '/api/chat/steer/withdraw', message: 'Network down' }))
+    vi.mocked(api.fetchSession).mockResolvedValueOnce({ session: { session_id: 's', pending_steers: waiting ? [{ steer_id: 's1', text: 'Check b too', submitted_at: 1, state: 'pending', actions: { edit: true, cancel: true, send_now: true } }] : [] } } as never)
+    const view = render(<View run={run} />)
     fireEvent.click(view.getByRole('button', { name: 'Edit steering message' }))
-    await waitFor(() => { expect(showToast).toHaveBeenCalledWith('The agent already took this steering message.', 2500) })
-    expect(returned).toEqual(['Check b too'])
-    fireEvent.click(view.getByRole('button', { name: 'Cancel steering message' }))
-    await waitFor(() => { expect(api.withdrawSteer).toHaveBeenLastCalledWith({ session_id: 's', steer_id: 's1', reason: 'cancel' }) })
-    expect(returned).toEqual(['Check b too'])
-    fireEvent.click(view.getByRole('button', { name: 'Send now' }))
-    await waitFor(() => { expect(api.sendSteerNow).toHaveBeenCalledWith({ session_id: 's', steer_id: 's1' }) })
+    await waitFor(() => { expect(api.fetchSession).toHaveBeenCalledWith('s', { messages: false }) })
+    if (waiting) {
+      expect(await view.findByText('Check b too')).toBeInTheDocument()
+      expect(returned).toEqual([])
+    } else {
+      // It may have been delivered, so its text never comes back to be sent twice.
+      await waitFor(() => { expect(getStreamState().turns.s!.pendingSteers).toHaveLength(0) })
+      view.rerender(<View run={run} />)
+      expect(view.queryByText('Check b too')).toBeNull()
+      expect(returned).toEqual([])
+    }
+    expect(api.withdrawSteer).toHaveBeenCalledTimes(1)
+    stop()
+  })
+
+  it('Cancel drops the row at once, and Send now asks the server', async () => {
+    const run = liveRun()
+    run.emit(pending('s1'))
+    vi.mocked(api.withdrawSteer).mockReturnValueOnce(new Promise(() => undefined) as never)
+    vi.mocked(api.sendSteerNow).mockResolvedValueOnce({ redirected: false } as never)
+    const view = render(<View run={run} />)
     fireEvent.click(view.getByRole('button', { name: 'Send now' }))
     await waitFor(() => { expect(showToast).toHaveBeenCalledWith('Nothing is running to take it now; it stays pending.', 2500) })
-    stop()
+    fireEvent.click(view.getByRole('button', { name: 'Cancel steering message' }))
+    await waitFor(() => { expect(view.queryByText('Check b too')).toBeNull() })
+    expect(api.withdrawSteer).toHaveBeenLastCalledWith({ session_id: 's', steer_id: 's1', reason: 'cancel' })
+  })
+
+  it('brings a refused Cancel back with the error (TAL-1384)', async () => {
+    const run = liveRun()
+    run.emit(pending('s1'))
+    vi.mocked(api.withdrawSteer).mockRejectedValueOnce(new Error('Steer is locked'))
+    const view = render(<View run={run} />)
+    fireEvent.click(view.getByRole('button', { name: 'Cancel steering message' }))
+    expect(await view.findByText('Check b too')).toBeInTheDocument()
+    expect(showToast).toHaveBeenLastCalledWith('Steer is locked', 4000, 'error')
   })
 
   it.each([
@@ -312,17 +382,16 @@ describe('live steering', () => {
     expect(showToast).toHaveBeenCalledWith("Couldn't send it now; it stays pending.", 2500)
   })
 
-  it('says so when the agent already took a steer being cancelled, and reports a failed request as an error', async () => {
+  it('says so when the agent already took a steer being cancelled, keeping the row gone', async () => {
     const run = liveRun()
     run.emit(pending('s1'))
     vi.mocked(showToast).mockClear()
-    vi.mocked(api.withdrawSteer).mockResolvedValueOnce({ withdrawn: false }).mockRejectedValueOnce(new Error('Network down'))
+    vi.mocked(api.withdrawSteer).mockResolvedValueOnce({ withdrawn: false })
     const view = render(<View run={run} />)
     fireEvent.click(view.getByRole('button', { name: 'Cancel steering message' }))
     await waitFor(() => { expect(showToast).toHaveBeenCalledWith('The agent already took this steering message.', 2500) })
-    await waitFor(() => { expect(view.getByRole('button', { name: 'Cancel steering message' })).toBeEnabled() })
-    fireEvent.click(view.getByRole('button', { name: 'Cancel steering message' }))
-    await waitFor(() => { expect(showToast).toHaveBeenLastCalledWith('Network down', 4000, 'error') })
+    view.rerender(<View run={run} />)
+    expect(view.queryByText('Check b too')).toBeNull()
   })
 
   it('sends one request at a time from a pending steer\'s buttons', async () => {
