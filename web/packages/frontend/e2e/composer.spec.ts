@@ -45,9 +45,9 @@ test('the first send leaves the hero and shows the message before the session or
   const created = hold()
   const started = hold()
   let persisted = false
-  // This synthetic no-stream admission owns its detail response. A real feed for
-  // a nonexistent server session must not inject unrelated reconciliation reads.
-  await page.route('**/api/session/stream?**', (route) => route.fulfill({ headers: { 'content-type': 'text/event-stream' }, body: ': synthetic session\n\n' }))
+  // This synthetic no-stream admission owns its detail response. Neither real feed
+  // can announce this nonexistent server session or inject unrelated detail reads.
+  await page.route(/\/api\/(?:session\/stream|sessions\/events)(?:\?|$)/, (route) => route.fulfill({ headers: { 'content-type': 'text/event-stream' }, body: ': synthetic session\n\n' }))
   await page.route('**/api/session/new', async (route: Route) => {
     await created.gate
     await route.fulfill({ json: { session: { session_id: 'first-send', title: '', messages: [] } } })
