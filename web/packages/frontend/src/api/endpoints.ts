@@ -1,4 +1,3 @@
-import type { OutboundDraftAction, OutboundDraftRef } from '@maudecode/talaria-web-contracts'
 /**
  * Endpoint functions, one per route the application uses, all typed by the
  * contract package through the oRPC client (`orpc.ts`). Byte streams
@@ -7,6 +6,7 @@ import type { OutboundDraftAction, OutboundDraftRef } from '@maudecode/talaria-w
  */
 import { orpc, timeout } from './orpc'
 import type { OwnerActionRequest } from '@maudecode/talaria-web-contracts'
+import type { OutboundDraftAction, OutboundDraftRef } from '@maudecode/talaria-web-contracts'
 import { postForm } from './client'
 import { loadedBuild, tabId } from '../app/tabBuild'
 import { UploadResponseSchema, type ChatStartRequest, type SessionId, type SessionNewRequestSchema, type SteerRequestSchema, type ApprovalRespondRequestSchema, type ClarifyRespondRequestSchema, type DraftRequestSchema } from '../contracts'
@@ -80,6 +80,8 @@ export const fetchSession = (id: SessionId, params: SessionGetParams = {}, signa
 export const fetchAnchorScene = (session_id: string, message_ref: string, message_index: number, before: number, signal: AbortSignal) => orpc().session.anchorSceneGet({ session_id, message_ref, message_index: String(message_index), before: String(before), limit: '80' }, { signal: AbortSignal.any([signal, timeout(30_000)]) })
 /** TAL-331: the whole result of a scene tool row a limited response clipped (`result_truncated`). */
 export const fetchToolResult = (session_id: string, tool_call_id: string, signal: AbortSignal) => orpc().session.toolResult({ session_id, tool_call_id }, { signal: AbortSignal.any([signal, timeout(30_000)]) })
+export const fetchOutboundDraft = (input: OutboundDraftRef & { session_id: string; tool_call_id: string }, signal?: AbortSignal) => orpc().session.outboundDraft(input, signal ? { signal } : {})
+export const actOnOutboundDraft = (input: OutboundDraftAction) => orpc().session.outboundDraftAct(input)
 export const fetchSessionStatus = (id: SessionId) => orpc().session.status({ session_id: id })
 export const fetchSessionUsage = (id: SessionId) => orpc().session.usage({ session_id: id })
 export const markSessionViewed = (session_id: SessionId) => orpc().talaria.viewed({ session_id })
@@ -320,6 +322,3 @@ export const fetchPromptQueues = () => orpc().promptQueues.list()
 export const createPromptQueue = (input: Parameters<ReturnType<typeof orpc>['promptQueues']['create']>[0]) => orpc().promptQueues.create(input)
 export const editPromptQueue = (input: Parameters<ReturnType<typeof orpc>['promptQueues']['edit']>[0]) => orpc().promptQueues.edit(input)
 export const promptQueueAction = (input: Parameters<ReturnType<typeof orpc>['promptQueues']['action']>[0]) => orpc().promptQueues.action(input)
-
-export const fetchOutboundDraft = (input: OutboundDraftRef & { session_id: string; tool_call_id: string }, signal?: AbortSignal) => orpc().session.outboundDraft(input, signal ? { signal } : {})
-export const actOnOutboundDraft = (input: OutboundDraftAction) => orpc().session.outboundDraftAct(input)
