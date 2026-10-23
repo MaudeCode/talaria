@@ -747,6 +747,150 @@
     ],
     "additionalProperties": false
   },
+  "drafts.review": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "draft": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "draft_id": {
+                "type": "string",
+                "pattern": "^d_[0-9a-f]{8}$"
+              },
+              "card": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "producer": {
+                "type": "string",
+                "const": "draft-cards"
+              },
+              "producer_revision": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "email",
+                  "message"
+                ]
+              },
+              "platform": {
+                "type": "string"
+              },
+              "version": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "revision": {
+                "type": "string"
+              },
+              "fields": {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "string",
+                    "maxLength": 320
+                  },
+                  "to": {
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 320
+                    }
+                  },
+                  "cc": {
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 320
+                    }
+                  },
+                  "bcc": {
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 320
+                    }
+                  },
+                  "subject": {
+                    "type": "string",
+                    "maxLength": 300
+                  },
+                  "body": {
+                    "type": "string",
+                    "maxLength": 20000
+                  }
+                },
+                "required": [
+                  "from",
+                  "to",
+                  "cc",
+                  "bcc",
+                  "subject",
+                  "body"
+                ],
+                "additionalProperties": false
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "draft",
+                  "approved",
+                  "sent",
+                  "saved",
+                  "failed",
+                  "discarded",
+                  "superseded",
+                  "unavailable"
+                ]
+              },
+              "can_edit": {
+                "type": "boolean"
+              },
+              "can_approve": {
+                "type": "boolean"
+              },
+              "masked": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "draft_id",
+              "card",
+              "producer",
+              "producer_revision",
+              "kind",
+              "platform",
+              "version",
+              "revision",
+              "fields",
+              "state",
+              "can_edit",
+              "can_approve",
+              "masked"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "draft"
+    ],
+    "additionalProperties": false
+  },
   "commands.registry": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

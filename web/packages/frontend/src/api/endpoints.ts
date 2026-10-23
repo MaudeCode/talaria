@@ -1,3 +1,4 @@
+import type { OutboundDraftAction, OutboundDraftRef } from '@maudecode/talaria-web-contracts'
 /**
  * Endpoint functions, one per route the application uses, all typed by the
  * contract package through the oRPC client (`orpc.ts`). Byte streams
@@ -319,3 +320,6 @@ export const fetchPromptQueues = () => orpc().promptQueues.list()
 export const createPromptQueue = (input: Parameters<ReturnType<typeof orpc>['promptQueues']['create']>[0]) => orpc().promptQueues.create(input)
 export const editPromptQueue = (input: Parameters<ReturnType<typeof orpc>['promptQueues']['edit']>[0]) => orpc().promptQueues.edit(input)
 export const promptQueueAction = (input: Parameters<ReturnType<typeof orpc>['promptQueues']['action']>[0]) => orpc().promptQueues.action(input)
+
+export const fetchOutboundDraft = (input: OutboundDraftRef & { session_id: string; tool_call_id: string }, signal?: AbortSignal) => orpc().session.outboundDraft(input, signal ? { signal } : {})
+export const actOnOutboundDraft = (input: OutboundDraftAction) => orpc().session.outboundDraftAct(input)

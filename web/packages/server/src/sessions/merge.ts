@@ -1,3 +1,4 @@
+import { OutboundDraftRefSchema } from '@maudecode/talaria-web-contracts'
 /**
  * Transcript settlement after an Agent turn (the core of Python
  * `_merge_display_messages_after_agent_result`, `_message_identity`,
@@ -11,7 +12,7 @@ import { stripAttachedFilesMarker, stripWorkspacePrefix, type Message } from './
 
 export { WORKSPACE_PREFIX_RE, stripWorkspacePrefix } from './session.js'
 import type { MediaProjection } from '../workspace/media-refs.js'
-import { decidedEditDiff, toolEditDiff, toolName } from './tool-display.js'
+import { decidedEditDiff, outboundDraftRef, toolEditDiff, toolName } from './tool-display.js'
 import { sourceKind } from './source-kind.js'
 
 const TOOL_RESULT_SNIPPET_MAX = 4000
@@ -403,7 +404,7 @@ function presentError(v: unknown): boolean {
 }
 
 /** A tool result's display sections (TAL-315); clients label and render the fields present, in this order. */
-export interface ToolResultView { text?: string; stdout?: string; stderr?: string; error?: string; exit_code?: number }
+export interface ToolResultView { outbound_draft?: import('@maudecode/talaria-web-contracts').OutboundDraftRef; text?: string; stdout?: string; stderr?: string; error?: string; exit_code?: number }
 
 const RESULT_TEXT_KEYS = ['result', 'results', 'preview', 'content', 'text', 'message', 'summary', 'data', 'items']
 const RESULT_VIEW_MAX_DEPTH = 8
@@ -513,6 +514,8 @@ export function decidedResultView(value: Record<string, unknown>): ToolResultVie
     const field = value[key]
     if (typeof field === 'string' && field) view[key] = toolResultSnippet(field)
   }
+  const ref = OutboundDraftRefSchema.safeParse(value.outbound_draft).data
+  if (ref) view.outbound_draft = ref
   if (typeof value.exit_code === 'number' && Number.isSafeInteger(value.exit_code)) view.exit_code = value.exit_code
   return view
 }
@@ -539,7 +542,8 @@ export function toolOutcome(raw: unknown, toolName?: unknown, flagged = false): 
   // Only the error text: a refused patch also returns a preview of the skill, whose prose may mention the marker.
   const error = isDict(data) ? data.error : value
   const neutral = toolName === 'skill_manage' && !(typeof error === 'string' ? error : JSON.stringify(error ?? '')).includes('ROLLBACK FAILED')
-  return { is_error: failed && !neutral, result_text: toolResultSnippet(value), result_view: toolResultView(raw) }
+  const ref = !failed ? outboundDraftRef(toolName, raw) : undefined
+  return { is_error: failed && !neutral, result_text: toolResultSnippet(value), result_view: { ...toolResultView(raw), ...(ref ? { outbound_draft: ref } : {}) } }
 }
 
 const finiteOrNull = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)

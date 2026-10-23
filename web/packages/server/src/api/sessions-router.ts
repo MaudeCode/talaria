@@ -379,6 +379,8 @@ export const sessionsRouter = os.router({
       await guardVisibility(ctx, input.session_id)
       return (await ctx.deps.sessions.readAnchorScene(input)) as { scene_ref: string; rows: unknown[]; start: number; end: number; total: number; complete: boolean }
     })),
+    outboundDraft: os.session.outboundDraft.handler(({ input, context: { ctx } }) => run(() => ctx.deps.sessions.reviewOutboundDraft(input))),
+    outboundDraftAct: os.session.outboundDraftAct.handler(({ input, context: { ctx } }) => run(() => ctx.deps.sessions.reviewOutboundDraft(input))),
     toolResult: os.session.toolResult.handler(({ input, context: { ctx } }) => run(async () => {
       await guardVisibility(ctx, input.session_id)
       return (await ctx.deps.sessions.readToolResult(input))

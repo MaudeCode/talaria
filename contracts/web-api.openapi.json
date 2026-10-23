@@ -4221,6 +4221,25 @@
                                         {
                                           "type": "object",
                                           "properties": {
+                                            "outbound_draft": {
+                                              "type": "object",
+                                              "properties": {
+                                                "draft_id": {
+                                                  "type": "string",
+                                                  "pattern": "^d_[0-9a-f]{8}$"
+                                                },
+                                                "card": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991,
+                                                  "exclusiveMinimum": 0
+                                                }
+                                              },
+                                              "required": [
+                                                "draft_id",
+                                                "card"
+                                              ]
+                                            },
                                             "text": {
                                               "type": "string"
                                             },
@@ -4507,6 +4526,25 @@
                                                 {
                                                   "type": "object",
                                                   "properties": {
+                                                    "outbound_draft": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "draft_id": {
+                                                          "type": "string",
+                                                          "pattern": "^d_[0-9a-f]{8}$"
+                                                        },
+                                                        "card": {
+                                                          "type": "integer",
+                                                          "minimum": -9007199254740991,
+                                                          "maximum": 9007199254740991,
+                                                          "exclusiveMinimum": 0
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "draft_id",
+                                                        "card"
+                                                      ]
+                                                    },
                                                     "text": {
                                                       "type": "string"
                                                     },
@@ -5324,6 +5362,25 @@
                                   {
                                     "type": "object",
                                     "properties": {
+                                      "outbound_draft": {
+                                        "type": "object",
+                                        "properties": {
+                                          "draft_id": {
+                                            "type": "string",
+                                            "pattern": "^d_[0-9a-f]{8}$"
+                                          },
+                                          "card": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991,
+                                            "exclusiveMinimum": 0
+                                          }
+                                        },
+                                        "required": [
+                                          "draft_id",
+                                          "card"
+                                        ]
+                                      },
                                       "text": {
                                         "type": "string"
                                       },
@@ -7919,6 +7976,25 @@
                                         {
                                           "type": "object",
                                           "properties": {
+                                            "outbound_draft": {
+                                              "type": "object",
+                                              "properties": {
+                                                "draft_id": {
+                                                  "type": "string",
+                                                  "pattern": "^d_[0-9a-f]{8}$"
+                                                },
+                                                "card": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991,
+                                                  "exclusiveMinimum": 0
+                                                }
+                                              },
+                                              "required": [
+                                                "draft_id",
+                                                "card"
+                                              ]
+                                            },
                                             "text": {
                                               "type": "string"
                                             },
@@ -8205,6 +8281,25 @@
                                                 {
                                                   "type": "object",
                                                   "properties": {
+                                                    "outbound_draft": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "draft_id": {
+                                                          "type": "string",
+                                                          "pattern": "^d_[0-9a-f]{8}$"
+                                                        },
+                                                        "card": {
+                                                          "type": "integer",
+                                                          "minimum": -9007199254740991,
+                                                          "maximum": 9007199254740991,
+                                                          "exclusiveMinimum": 0
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "draft_id",
+                                                        "card"
+                                                      ]
+                                                    },
                                                     "text": {
                                                       "type": "string"
                                                     },
@@ -9022,6 +9117,25 @@
                                   {
                                     "type": "object",
                                     "properties": {
+                                      "outbound_draft": {
+                                        "type": "object",
+                                        "properties": {
+                                          "draft_id": {
+                                            "type": "string",
+                                            "pattern": "^d_[0-9a-f]{8}$"
+                                          },
+                                          "card": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991,
+                                            "exclusiveMinimum": 0
+                                          }
+                                        },
+                                        "required": [
+                                          "draft_id",
+                                          "card"
+                                        ]
+                                      },
                                       "text": {
                                         "type": "string"
                                       },
@@ -10828,6 +10942,25 @@
                                         {
                                           "type": "object",
                                           "properties": {
+                                            "outbound_draft": {
+                                              "type": "object",
+                                              "properties": {
+                                                "draft_id": {
+                                                  "type": "string",
+                                                  "pattern": "^d_[0-9a-f]{8}$"
+                                                },
+                                                "card": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991,
+                                                  "exclusiveMinimum": 0
+                                                }
+                                              },
+                                              "required": [
+                                                "draft_id",
+                                                "card"
+                                              ]
+                                            },
                                             "text": {
                                               "type": "string"
                                             },
@@ -11114,6 +11247,25 @@
                                                 {
                                                   "type": "object",
                                                   "properties": {
+                                                    "outbound_draft": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "draft_id": {
+                                                          "type": "string",
+                                                          "pattern": "^d_[0-9a-f]{8}$"
+                                                        },
+                                                        "card": {
+                                                          "type": "integer",
+                                                          "minimum": -9007199254740991,
+                                                          "maximum": 9007199254740991,
+                                                          "exclusiveMinimum": 0
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "draft_id",
+                                                        "card"
+                                                      ]
+                                                    },
                                                     "text": {
                                                       "type": "string"
                                                     },
@@ -11931,6 +12083,25 @@
                                   {
                                     "type": "object",
                                     "properties": {
+                                      "outbound_draft": {
+                                        "type": "object",
+                                        "properties": {
+                                          "draft_id": {
+                                            "type": "string",
+                                            "pattern": "^d_[0-9a-f]{8}$"
+                                          },
+                                          "card": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991,
+                                            "exclusiveMinimum": 0
+                                          }
+                                        },
+                                        "required": [
+                                          "draft_id",
+                                          "card"
+                                        ]
+                                      },
                                       "text": {
                                         "type": "string"
                                       },
@@ -15728,6 +15899,25 @@
                                         {
                                           "type": "object",
                                           "properties": {
+                                            "outbound_draft": {
+                                              "type": "object",
+                                              "properties": {
+                                                "draft_id": {
+                                                  "type": "string",
+                                                  "pattern": "^d_[0-9a-f]{8}$"
+                                                },
+                                                "card": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991,
+                                                  "exclusiveMinimum": 0
+                                                }
+                                              },
+                                              "required": [
+                                                "draft_id",
+                                                "card"
+                                              ]
+                                            },
                                             "text": {
                                               "type": "string"
                                             },
@@ -16014,6 +16204,25 @@
                                                 {
                                                   "type": "object",
                                                   "properties": {
+                                                    "outbound_draft": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "draft_id": {
+                                                          "type": "string",
+                                                          "pattern": "^d_[0-9a-f]{8}$"
+                                                        },
+                                                        "card": {
+                                                          "type": "integer",
+                                                          "minimum": -9007199254740991,
+                                                          "maximum": 9007199254740991,
+                                                          "exclusiveMinimum": 0
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "draft_id",
+                                                        "card"
+                                                      ]
+                                                    },
                                                     "text": {
                                                       "type": "string"
                                                     },
@@ -16831,6 +17040,25 @@
                                   {
                                     "type": "object",
                                     "properties": {
+                                      "outbound_draft": {
+                                        "type": "object",
+                                        "properties": {
+                                          "draft_id": {
+                                            "type": "string",
+                                            "pattern": "^d_[0-9a-f]{8}$"
+                                          },
+                                          "card": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991,
+                                            "exclusiveMinimum": 0
+                                          }
+                                        },
+                                        "required": [
+                                          "draft_id",
+                                          "card"
+                                        ]
+                                      },
                                       "text": {
                                         "type": "string"
                                       },
@@ -20218,6 +20446,25 @@
                                         {
                                           "type": "object",
                                           "properties": {
+                                            "outbound_draft": {
+                                              "type": "object",
+                                              "properties": {
+                                                "draft_id": {
+                                                  "type": "string",
+                                                  "pattern": "^d_[0-9a-f]{8}$"
+                                                },
+                                                "card": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991,
+                                                  "exclusiveMinimum": 0
+                                                }
+                                              },
+                                              "required": [
+                                                "draft_id",
+                                                "card"
+                                              ]
+                                            },
                                             "text": {
                                               "type": "string"
                                             },
@@ -20504,6 +20751,25 @@
                                                 {
                                                   "type": "object",
                                                   "properties": {
+                                                    "outbound_draft": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "draft_id": {
+                                                          "type": "string",
+                                                          "pattern": "^d_[0-9a-f]{8}$"
+                                                        },
+                                                        "card": {
+                                                          "type": "integer",
+                                                          "minimum": -9007199254740991,
+                                                          "maximum": 9007199254740991,
+                                                          "exclusiveMinimum": 0
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "draft_id",
+                                                        "card"
+                                                      ]
+                                                    },
                                                     "text": {
                                                       "type": "string"
                                                     },
@@ -21321,6 +21587,25 @@
                                   {
                                     "type": "object",
                                     "properties": {
+                                      "outbound_draft": {
+                                        "type": "object",
+                                        "properties": {
+                                          "draft_id": {
+                                            "type": "string",
+                                            "pattern": "^d_[0-9a-f]{8}$"
+                                          },
+                                          "card": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991,
+                                            "exclusiveMinimum": 0
+                                          }
+                                        },
+                                        "required": [
+                                          "draft_id",
+                                          "card"
+                                        ]
+                                      },
                                       "text": {
                                         "type": "string"
                                       },
@@ -25431,6 +25716,25 @@
                                         {
                                           "type": "object",
                                           "properties": {
+                                            "outbound_draft": {
+                                              "type": "object",
+                                              "properties": {
+                                                "draft_id": {
+                                                  "type": "string",
+                                                  "pattern": "^d_[0-9a-f]{8}$"
+                                                },
+                                                "card": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991,
+                                                  "exclusiveMinimum": 0
+                                                }
+                                              },
+                                              "required": [
+                                                "draft_id",
+                                                "card"
+                                              ]
+                                            },
                                             "text": {
                                               "type": "string"
                                             },
@@ -25717,6 +26021,25 @@
                                                 {
                                                   "type": "object",
                                                   "properties": {
+                                                    "outbound_draft": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "draft_id": {
+                                                          "type": "string",
+                                                          "pattern": "^d_[0-9a-f]{8}$"
+                                                        },
+                                                        "card": {
+                                                          "type": "integer",
+                                                          "minimum": -9007199254740991,
+                                                          "maximum": 9007199254740991,
+                                                          "exclusiveMinimum": 0
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "draft_id",
+                                                        "card"
+                                                      ]
+                                                    },
                                                     "text": {
                                                       "type": "string"
                                                     },
@@ -26534,6 +26857,25 @@
                                   {
                                     "type": "object",
                                     "properties": {
+                                      "outbound_draft": {
+                                        "type": "object",
+                                        "properties": {
+                                          "draft_id": {
+                                            "type": "string",
+                                            "pattern": "^d_[0-9a-f]{8}$"
+                                          },
+                                          "card": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991,
+                                            "exclusiveMinimum": 0
+                                          }
+                                        },
+                                        "required": [
+                                          "draft_id",
+                                          "card"
+                                        ]
+                                      },
                                       "text": {
                                         "type": "string"
                                       },
@@ -28293,6 +28635,25 @@
                                         {
                                           "type": "object",
                                           "properties": {
+                                            "outbound_draft": {
+                                              "type": "object",
+                                              "properties": {
+                                                "draft_id": {
+                                                  "type": "string",
+                                                  "pattern": "^d_[0-9a-f]{8}$"
+                                                },
+                                                "card": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991,
+                                                  "exclusiveMinimum": 0
+                                                }
+                                              },
+                                              "required": [
+                                                "draft_id",
+                                                "card"
+                                              ]
+                                            },
                                             "text": {
                                               "type": "string"
                                             },
@@ -28579,6 +28940,25 @@
                                                 {
                                                   "type": "object",
                                                   "properties": {
+                                                    "outbound_draft": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "draft_id": {
+                                                          "type": "string",
+                                                          "pattern": "^d_[0-9a-f]{8}$"
+                                                        },
+                                                        "card": {
+                                                          "type": "integer",
+                                                          "minimum": -9007199254740991,
+                                                          "maximum": 9007199254740991,
+                                                          "exclusiveMinimum": 0
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "draft_id",
+                                                        "card"
+                                                      ]
+                                                    },
                                                     "text": {
                                                       "type": "string"
                                                     },
@@ -29396,6 +29776,25 @@
                                   {
                                     "type": "object",
                                     "properties": {
+                                      "outbound_draft": {
+                                        "type": "object",
+                                        "properties": {
+                                          "draft_id": {
+                                            "type": "string",
+                                            "pattern": "^d_[0-9a-f]{8}$"
+                                          },
+                                          "card": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991,
+                                            "exclusiveMinimum": 0
+                                          }
+                                        },
+                                        "required": [
+                                          "draft_id",
+                                          "card"
+                                        ]
+                                      },
                                       "text": {
                                         "type": "string"
                                       },
@@ -31217,6 +31616,25 @@
                                         {
                                           "type": "object",
                                           "properties": {
+                                            "outbound_draft": {
+                                              "type": "object",
+                                              "properties": {
+                                                "draft_id": {
+                                                  "type": "string",
+                                                  "pattern": "^d_[0-9a-f]{8}$"
+                                                },
+                                                "card": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991,
+                                                  "exclusiveMinimum": 0
+                                                }
+                                              },
+                                              "required": [
+                                                "draft_id",
+                                                "card"
+                                              ]
+                                            },
                                             "text": {
                                               "type": "string"
                                             },
@@ -31503,6 +31921,25 @@
                                                 {
                                                   "type": "object",
                                                   "properties": {
+                                                    "outbound_draft": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "draft_id": {
+                                                          "type": "string",
+                                                          "pattern": "^d_[0-9a-f]{8}$"
+                                                        },
+                                                        "card": {
+                                                          "type": "integer",
+                                                          "minimum": -9007199254740991,
+                                                          "maximum": 9007199254740991,
+                                                          "exclusiveMinimum": 0
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "draft_id",
+                                                        "card"
+                                                      ]
+                                                    },
                                                     "text": {
                                                       "type": "string"
                                                     },
@@ -32320,6 +32757,25 @@
                                   {
                                     "type": "object",
                                     "properties": {
+                                      "outbound_draft": {
+                                        "type": "object",
+                                        "properties": {
+                                          "draft_id": {
+                                            "type": "string",
+                                            "pattern": "^d_[0-9a-f]{8}$"
+                                          },
+                                          "card": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991,
+                                            "exclusiveMinimum": 0
+                                          }
+                                        },
+                                        "required": [
+                                          "draft_id",
+                                          "card"
+                                        ]
+                                      },
                                       "text": {
                                         "type": "string"
                                       },
@@ -34139,6 +34595,25 @@
                                         {
                                           "type": "object",
                                           "properties": {
+                                            "outbound_draft": {
+                                              "type": "object",
+                                              "properties": {
+                                                "draft_id": {
+                                                  "type": "string",
+                                                  "pattern": "^d_[0-9a-f]{8}$"
+                                                },
+                                                "card": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991,
+                                                  "exclusiveMinimum": 0
+                                                }
+                                              },
+                                              "required": [
+                                                "draft_id",
+                                                "card"
+                                              ]
+                                            },
                                             "text": {
                                               "type": "string"
                                             },
@@ -34425,6 +34900,25 @@
                                                 {
                                                   "type": "object",
                                                   "properties": {
+                                                    "outbound_draft": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "draft_id": {
+                                                          "type": "string",
+                                                          "pattern": "^d_[0-9a-f]{8}$"
+                                                        },
+                                                        "card": {
+                                                          "type": "integer",
+                                                          "minimum": -9007199254740991,
+                                                          "maximum": 9007199254740991,
+                                                          "exclusiveMinimum": 0
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "draft_id",
+                                                        "card"
+                                                      ]
+                                                    },
                                                     "text": {
                                                       "type": "string"
                                                     },
@@ -35242,6 +35736,25 @@
                                   {
                                     "type": "object",
                                     "properties": {
+                                      "outbound_draft": {
+                                        "type": "object",
+                                        "properties": {
+                                          "draft_id": {
+                                            "type": "string",
+                                            "pattern": "^d_[0-9a-f]{8}$"
+                                          },
+                                          "card": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991,
+                                            "exclusiveMinimum": 0
+                                          }
+                                        },
+                                        "required": [
+                                          "draft_id",
+                                          "card"
+                                        ]
+                                      },
                                       "text": {
                                         "type": "string"
                                       },
@@ -37265,6 +37778,25 @@
                                   {
                                     "type": "object",
                                     "properties": {
+                                      "outbound_draft": {
+                                        "type": "object",
+                                        "properties": {
+                                          "draft_id": {
+                                            "type": "string",
+                                            "pattern": "^d_[0-9a-f]{8}$"
+                                          },
+                                          "card": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991,
+                                            "exclusiveMinimum": 0
+                                          }
+                                        },
+                                        "required": [
+                                          "draft_id",
+                                          "card"
+                                        ]
+                                      },
                                       "text": {
                                         "type": "string"
                                       },
@@ -37555,6 +38087,475 @@
         }
       }
     },
+    "/api/session/outbound-draft": {
+      "get": {
+        "operationId": "session.outboundDraft",
+        "summary": "Resolve a registered producer draft through its session tool result. A directive alone grants nothing.",
+        "tags": [
+          "sessions"
+        ],
+        "parameters": [
+          {
+            "name": "draft_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^d_[0-9a-f]{8}$"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "card",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "exclusiveMinimum": 0
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "session_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "tool_call_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "draft": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "draft_id": {
+                              "type": "string",
+                              "pattern": "^d_[0-9a-f]{8}$"
+                            },
+                            "card": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            "producer": {
+                              "const": "draft-cards"
+                            },
+                            "producer_revision": {
+                              "type": "string"
+                            },
+                            "kind": {
+                              "enum": [
+                                "email",
+                                "message"
+                              ],
+                              "type": "string"
+                            },
+                            "platform": {
+                              "type": "string"
+                            },
+                            "version": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            "revision": {
+                              "type": "string"
+                            },
+                            "fields": {
+                              "type": "object",
+                              "properties": {
+                                "from": {
+                                  "type": "string",
+                                  "maxLength": 320
+                                },
+                                "to": {
+                                  "type": "array",
+                                  "maxItems": 50,
+                                  "items": {
+                                    "type": "string",
+                                    "maxLength": 320
+                                  }
+                                },
+                                "cc": {
+                                  "type": "array",
+                                  "maxItems": 50,
+                                  "items": {
+                                    "type": "string",
+                                    "maxLength": 320
+                                  }
+                                },
+                                "bcc": {
+                                  "type": "array",
+                                  "maxItems": 50,
+                                  "items": {
+                                    "type": "string",
+                                    "maxLength": 320
+                                  }
+                                },
+                                "subject": {
+                                  "type": "string",
+                                  "maxLength": 300
+                                },
+                                "body": {
+                                  "type": "string",
+                                  "maxLength": 20000
+                                }
+                              },
+                              "required": [
+                                "from",
+                                "to",
+                                "cc",
+                                "bcc",
+                                "subject",
+                                "body"
+                              ]
+                            },
+                            "state": {
+                              "enum": [
+                                "draft",
+                                "approved",
+                                "sent",
+                                "saved",
+                                "failed",
+                                "discarded",
+                                "superseded",
+                                "unavailable"
+                              ],
+                              "type": "string"
+                            },
+                            "can_edit": {
+                              "type": "boolean"
+                            },
+                            "can_approve": {
+                              "type": "boolean"
+                            },
+                            "masked": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "draft_id",
+                            "card",
+                            "producer",
+                            "producer_revision",
+                            "kind",
+                            "platform",
+                            "version",
+                            "revision",
+                            "fields",
+                            "state",
+                            "can_edit",
+                            "can_approve",
+                            "masked"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "draft"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "session.outboundDraftAct",
+        "summary": "Edit or approve the exact reviewed version once. Never sends or starts a turn.",
+        "tags": [
+          "sessions"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "draft_id": {
+                    "type": "string",
+                    "pattern": "^d_[0-9a-f]{8}$"
+                  },
+                  "card": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991,
+                    "exclusiveMinimum": 0
+                  },
+                  "session_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "tool_call_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "action": {
+                    "enum": [
+                      "edit",
+                      "approve"
+                    ],
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991,
+                    "exclusiveMinimum": 0
+                  },
+                  "revision": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "fields": {
+                    "type": "object",
+                    "properties": {
+                      "from": {
+                        "type": "string",
+                        "maxLength": 320
+                      },
+                      "to": {
+                        "type": "array",
+                        "maxItems": 50,
+                        "items": {
+                          "type": "string",
+                          "maxLength": 320
+                        }
+                      },
+                      "cc": {
+                        "type": "array",
+                        "maxItems": 50,
+                        "items": {
+                          "type": "string",
+                          "maxLength": 320
+                        }
+                      },
+                      "bcc": {
+                        "type": "array",
+                        "maxItems": 50,
+                        "items": {
+                          "type": "string",
+                          "maxLength": 320
+                        }
+                      },
+                      "subject": {
+                        "type": "string",
+                        "maxLength": 300
+                      },
+                      "body": {
+                        "type": "string",
+                        "maxLength": 20000
+                      }
+                    },
+                    "required": [
+                      "from",
+                      "to",
+                      "cc",
+                      "bcc",
+                      "subject",
+                      "body"
+                    ]
+                  }
+                },
+                "required": [
+                  "draft_id",
+                  "card",
+                  "session_id",
+                  "tool_call_id",
+                  "action",
+                  "version",
+                  "revision"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "draft": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "draft_id": {
+                              "type": "string",
+                              "pattern": "^d_[0-9a-f]{8}$"
+                            },
+                            "card": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            "producer": {
+                              "const": "draft-cards"
+                            },
+                            "producer_revision": {
+                              "type": "string"
+                            },
+                            "kind": {
+                              "enum": [
+                                "email",
+                                "message"
+                              ],
+                              "type": "string"
+                            },
+                            "platform": {
+                              "type": "string"
+                            },
+                            "version": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            "revision": {
+                              "type": "string"
+                            },
+                            "fields": {
+                              "type": "object",
+                              "properties": {
+                                "from": {
+                                  "type": "string",
+                                  "maxLength": 320
+                                },
+                                "to": {
+                                  "type": "array",
+                                  "maxItems": 50,
+                                  "items": {
+                                    "type": "string",
+                                    "maxLength": 320
+                                  }
+                                },
+                                "cc": {
+                                  "type": "array",
+                                  "maxItems": 50,
+                                  "items": {
+                                    "type": "string",
+                                    "maxLength": 320
+                                  }
+                                },
+                                "bcc": {
+                                  "type": "array",
+                                  "maxItems": 50,
+                                  "items": {
+                                    "type": "string",
+                                    "maxLength": 320
+                                  }
+                                },
+                                "subject": {
+                                  "type": "string",
+                                  "maxLength": 300
+                                },
+                                "body": {
+                                  "type": "string",
+                                  "maxLength": 20000
+                                }
+                              },
+                              "required": [
+                                "from",
+                                "to",
+                                "cc",
+                                "bcc",
+                                "subject",
+                                "body"
+                              ]
+                            },
+                            "state": {
+                              "enum": [
+                                "draft",
+                                "approved",
+                                "sent",
+                                "saved",
+                                "failed",
+                                "discarded",
+                                "superseded",
+                                "unavailable"
+                              ],
+                              "type": "string"
+                            },
+                            "can_edit": {
+                              "type": "boolean"
+                            },
+                            "can_approve": {
+                              "type": "boolean"
+                            },
+                            "masked": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "draft_id",
+                            "card",
+                            "producer",
+                            "producer_revision",
+                            "kind",
+                            "platform",
+                            "version",
+                            "revision",
+                            "fields",
+                            "state",
+                            "can_edit",
+                            "can_approve",
+                            "masked"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "draft"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/session/tool-result": {
       "get": {
         "operationId": "session.toolResult",
@@ -37601,6 +38602,25 @@
                     "result_view": {
                       "type": "object",
                       "properties": {
+                        "outbound_draft": {
+                          "type": "object",
+                          "properties": {
+                            "draft_id": {
+                              "type": "string",
+                              "pattern": "^d_[0-9a-f]{8}$"
+                            },
+                            "card": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            }
+                          },
+                          "required": [
+                            "draft_id",
+                            "card"
+                          ]
+                        },
                         "text": {
                           "type": "string"
                         },
@@ -45762,6 +46782,25 @@
                                         {
                                           "type": "object",
                                           "properties": {
+                                            "outbound_draft": {
+                                              "type": "object",
+                                              "properties": {
+                                                "draft_id": {
+                                                  "type": "string",
+                                                  "pattern": "^d_[0-9a-f]{8}$"
+                                                },
+                                                "card": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991,
+                                                  "exclusiveMinimum": 0
+                                                }
+                                              },
+                                              "required": [
+                                                "draft_id",
+                                                "card"
+                                              ]
+                                            },
                                             "text": {
                                               "type": "string"
                                             },
@@ -46048,6 +47087,25 @@
                                                 {
                                                   "type": "object",
                                                   "properties": {
+                                                    "outbound_draft": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "draft_id": {
+                                                          "type": "string",
+                                                          "pattern": "^d_[0-9a-f]{8}$"
+                                                        },
+                                                        "card": {
+                                                          "type": "integer",
+                                                          "minimum": -9007199254740991,
+                                                          "maximum": 9007199254740991,
+                                                          "exclusiveMinimum": 0
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "draft_id",
+                                                        "card"
+                                                      ]
+                                                    },
                                                     "text": {
                                                       "type": "string"
                                                     },
@@ -46865,6 +47923,25 @@
                                   {
                                     "type": "object",
                                     "properties": {
+                                      "outbound_draft": {
+                                        "type": "object",
+                                        "properties": {
+                                          "draft_id": {
+                                            "type": "string",
+                                            "pattern": "^d_[0-9a-f]{8}$"
+                                          },
+                                          "card": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991,
+                                            "exclusiveMinimum": 0
+                                          }
+                                        },
+                                        "required": [
+                                          "draft_id",
+                                          "card"
+                                        ]
+                                      },
                                       "text": {
                                         "type": "string"
                                       },
@@ -48672,6 +49749,25 @@
                                         {
                                           "type": "object",
                                           "properties": {
+                                            "outbound_draft": {
+                                              "type": "object",
+                                              "properties": {
+                                                "draft_id": {
+                                                  "type": "string",
+                                                  "pattern": "^d_[0-9a-f]{8}$"
+                                                },
+                                                "card": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991,
+                                                  "exclusiveMinimum": 0
+                                                }
+                                              },
+                                              "required": [
+                                                "draft_id",
+                                                "card"
+                                              ]
+                                            },
                                             "text": {
                                               "type": "string"
                                             },
@@ -48958,6 +50054,25 @@
                                                 {
                                                   "type": "object",
                                                   "properties": {
+                                                    "outbound_draft": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "draft_id": {
+                                                          "type": "string",
+                                                          "pattern": "^d_[0-9a-f]{8}$"
+                                                        },
+                                                        "card": {
+                                                          "type": "integer",
+                                                          "minimum": -9007199254740991,
+                                                          "maximum": 9007199254740991,
+                                                          "exclusiveMinimum": 0
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "draft_id",
+                                                        "card"
+                                                      ]
+                                                    },
                                                     "text": {
                                                       "type": "string"
                                                     },
@@ -49775,6 +50890,25 @@
                                   {
                                     "type": "object",
                                     "properties": {
+                                      "outbound_draft": {
+                                        "type": "object",
+                                        "properties": {
+                                          "draft_id": {
+                                            "type": "string",
+                                            "pattern": "^d_[0-9a-f]{8}$"
+                                          },
+                                          "card": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991,
+                                            "exclusiveMinimum": 0
+                                          }
+                                        },
+                                        "required": [
+                                          "draft_id",
+                                          "card"
+                                        ]
+                                      },
                                       "text": {
                                         "type": "string"
                                       },
@@ -51970,6 +53104,25 @@
                                         {
                                           "type": "object",
                                           "properties": {
+                                            "outbound_draft": {
+                                              "type": "object",
+                                              "properties": {
+                                                "draft_id": {
+                                                  "type": "string",
+                                                  "pattern": "^d_[0-9a-f]{8}$"
+                                                },
+                                                "card": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991,
+                                                  "exclusiveMinimum": 0
+                                                }
+                                              },
+                                              "required": [
+                                                "draft_id",
+                                                "card"
+                                              ]
+                                            },
                                             "text": {
                                               "type": "string"
                                             },
@@ -52256,6 +53409,25 @@
                                                 {
                                                   "type": "object",
                                                   "properties": {
+                                                    "outbound_draft": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "draft_id": {
+                                                          "type": "string",
+                                                          "pattern": "^d_[0-9a-f]{8}$"
+                                                        },
+                                                        "card": {
+                                                          "type": "integer",
+                                                          "minimum": -9007199254740991,
+                                                          "maximum": 9007199254740991,
+                                                          "exclusiveMinimum": 0
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "draft_id",
+                                                        "card"
+                                                      ]
+                                                    },
                                                     "text": {
                                                       "type": "string"
                                                     },
@@ -53073,6 +54245,25 @@
                                   {
                                     "type": "object",
                                     "properties": {
+                                      "outbound_draft": {
+                                        "type": "object",
+                                        "properties": {
+                                          "draft_id": {
+                                            "type": "string",
+                                            "pattern": "^d_[0-9a-f]{8}$"
+                                          },
+                                          "card": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991,
+                                            "exclusiveMinimum": 0
+                                          }
+                                        },
+                                        "required": [
+                                          "draft_id",
+                                          "card"
+                                        ]
+                                      },
                                       "text": {
                                         "type": "string"
                                       },
@@ -55169,6 +56360,25 @@
                                             {
                                               "type": "object",
                                               "properties": {
+                                                "outbound_draft": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "draft_id": {
+                                                      "type": "string",
+                                                      "pattern": "^d_[0-9a-f]{8}$"
+                                                    },
+                                                    "card": {
+                                                      "type": "integer",
+                                                      "minimum": -9007199254740991,
+                                                      "maximum": 9007199254740991,
+                                                      "exclusiveMinimum": 0
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "draft_id",
+                                                    "card"
+                                                  ]
+                                                },
                                                 "text": {
                                                   "type": "string"
                                                 },
@@ -55451,6 +56661,13 @@
                                                     {
                                                       "type": "object",
                                                       "properties": {
+                                                        "outbound_draft": {
+                                                          "type": "object",
+                                                          "properties": {
+                                                            "draft_id": {},
+                                                            "card": {}
+                                                          }
+                                                        },
                                                         "text": {
                                                           "type": "string"
                                                         },
@@ -56251,6 +57468,25 @@
                                       {
                                         "type": "object",
                                         "properties": {
+                                          "outbound_draft": {
+                                            "type": "object",
+                                            "properties": {
+                                              "draft_id": {
+                                                "type": "string",
+                                                "pattern": "^d_[0-9a-f]{8}$"
+                                              },
+                                              "card": {
+                                                "type": "integer",
+                                                "minimum": -9007199254740991,
+                                                "maximum": 9007199254740991,
+                                                "exclusiveMinimum": 0
+                                              }
+                                            },
+                                            "required": [
+                                              "draft_id",
+                                              "card"
+                                            ]
+                                          },
                                           "text": {
                                             "type": "string"
                                           },

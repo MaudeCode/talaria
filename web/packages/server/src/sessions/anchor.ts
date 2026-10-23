@@ -6,7 +6,7 @@
  */
 import { str } from '../util.js'
 import { createHash } from 'node:crypto'
-import { hasToolUseBlocks, finalAnswerOf, agentRowKind, agentSteerText, isReasoningBlock, markerKind, messageText, normalizeAssistantDisplay, normalizeUserDisplay, reasoningBlockText, reasoningFieldsText, splitDisplayText, stripToolCallXml, decidedResultView, toolResultView, type ToolResultView } from './merge.js'
+import { hasToolUseBlocks, finalAnswerOf, agentRowKind, agentSteerText, isReasoningBlock, markerKind, messageText, normalizeAssistantDisplay, normalizeUserDisplay, reasoningBlockText, reasoningFieldsText, splitDisplayText, stripToolCallXml, decidedResultView, toolResultView, toolOutcome, type ToolResultView } from './merge.js'
 import type { Session } from './session.js'
 import { toolMessageForLimitedPayload } from './window.js'
 import { decidedEditDiff, toolArgs, toolEditDiff } from './tool-display.js'
@@ -378,7 +378,7 @@ export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: 
       const shown = reply && opts.clipToolResults ? toolMessageForLimitedPayload(reply) as Record<string, unknown> : reply
       const result = shown ? messageText(shown.content) : call.result ?? call.output ?? null
       // The view always comes from the full result (TAL-315), with each section capped.
-      const resultView = reply ? toolResultView(reply.content) : isDict(call.result_view) ? call.result_view as ToolResultView : null
+      const resultView = reply ? toolOutcome(reply.content, str(call.name) || str(isDict(call.function) ? call.function.name : '')).result_view : isDict(call.result_view) ? call.result_view as ToolResultView : null
       // TAL-331: a clipped result or a capped section is flagged, so a client can fetch the whole from `/api/session/tool-result`.
       const clipped = shown?._content_truncated === true || (reply !== undefined && resultView !== null && viewCapped(resultView, toolResultView(reply.content, Infinity)))
       const name = str(call.name) || str(isDict(call.function) ? call.function.name : '') || 'tool'
@@ -428,7 +428,7 @@ export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: 
   const terminalState = opts.running ? 'running' : terminalStateOf(last, finalAnswer)
   return {
     version: 'activity_scene_v1', activity_rows: rows, final_answer: finalAnswer, terminal_state: terminalState,
-    expanded_by_default: opts.running === true || (EXPANDED_OUTCOMES.has(terminalState) && rows.length > 0), turn_duration: anchorSceneMessageTurnDuration(last),
+    expanded_by_default: opts.running === true || rows.some((row) => row.tool?.result_view?.outbound_draft) || (EXPANDED_OUTCOMES.has(terminalState) && rows.length > 0), turn_duration: anchorSceneMessageTurnDuration(last),
     file_changes: turnFileChanges(rows),
     ...(typeof last._final_phase_duration === 'number' ? { final_phase_duration: last._final_phase_duration } : {}),
   }

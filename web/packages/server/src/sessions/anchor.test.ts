@@ -11,6 +11,16 @@ type Json = Record<string, unknown>
 const post = (s: TestServer, path: string, body: unknown): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
 const json = async (res: Response): Promise<Json> => (await res.json()) as Json
 
+it('keeps a draft review visible after its producing turn settles', () => {
+  const scene = buildTurnScene([
+    [{ role: 'assistant', content: '', tool_calls: [{ id: 'draft', function: { name: 'draft_card', arguments: '{}' } }] }, 0],
+    [{ role: 'tool', tool_call_id: 'draft', content: JSON.stringify({ draft_id: 'd_1234abcd', card: '::draft-card{id="d_1234abcd" v="1"}' }) }, 1],
+    [{ role: 'assistant', content: 'Review the draft.' }, 2],
+  ])
+  expect(scene?.expanded_by_default, 'The review body must not disappear into the settled worklog').toBe(true)
+  expect(scene?.activity_rows).toMatchObject([{ tool: { result_view: { outbound_draft: { draft_id: 'd_1234abcd', card: 1 } } } }])
+})
+
 /** A legacy scene as the predecessor browser saved it: every shape the clients used to decode differently. */
 const legacyRows = [
   { row_id: 'steer', order_index: '4', role: 'steering', text: 'Also check b.txt', status: 'pending', payload: { steer_id: 's1', created_at: 3 } },

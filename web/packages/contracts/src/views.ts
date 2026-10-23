@@ -5,6 +5,7 @@
  * that must survive a round trip (documented passthrough).
  */
 import { z } from 'zod'
+import { OutboundDraftRefSchema } from './outbound-drafts.js'
 import { RunStatusSchema } from './run-status.js'
 import { AgentRefreshConfirmationSchema } from './sidecar/runtime.js'
 import { SpeedTierSchema } from './speed.js'
@@ -66,7 +67,7 @@ export const ToolDisplayFields = { progress: ToolProgressSchema.nullable().optio
  * `text`, in that order, and never parse result text. Each string is capped server-side; a client without the field
  * shows `preview`.
  */
-export const ToolResultViewSchema = z.object({ text: z.string().optional(), stdout: z.string().optional(), stderr: z.string().optional(), error: z.string().optional(), exit_code: z.number().int().optional() })
+export const ToolResultViewSchema = z.object({ outbound_draft: OutboundDraftRefSchema.optional(), text: z.string().optional(), stdout: z.string().optional(), stderr: z.string().optional(), error: z.string().optional(), exit_code: z.number().int().optional() })
 export type ToolResultView = z.infer<typeof ToolResultViewSchema>
 
 /**

@@ -1,3 +1,4 @@
+import { OutboundDraftRefSchema, OutboundDraftFieldsSchema, OutboundDraftResultSchema } from '../outbound-drafts.js'
 import { ContextDetailSchema } from '../context-detail.js'
 import { z } from 'zod'
 import { ProviderPhaseSchema } from '../run-status.js'
@@ -119,6 +120,7 @@ export const CommandBundleSchema = z.object({ name: z.string(), description: z.s
 /** `message` is the user message that loads the bundle's skills; members not installed or disabled are in `missing_skills` or left out. */
 export const CommandBundleInvocationSchema = z.object({ name: z.string(), source: z.literal('bundle'), message: z.string(), loaded_skills: z.array(z.string()), missing_skills: z.array(z.string()) })
 export const COMMANDS_METHODS = {
+  'drafts.review': { params: OutboundDraftRefSchema.extend({ profile_home: z.string().min(1), session_id: z.string().min(1), action: z.enum(['read', 'edit', 'approve']), version: z.number().int().positive().optional(), revision: z.string().optional(), fields: OutboundDraftFieldsSchema.optional() }), result: OutboundDraftResultSchema },
   'commands.registry': { params: ProfileHomeParams, result: z.object({ commands: z.array(CommandSchema) }) },
   /**
    * With `session_id`, a plugin command runs under that chat's session binding and `workspace` (TAL-904) and receives the session

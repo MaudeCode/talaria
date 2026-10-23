@@ -13,6 +13,7 @@ import { str } from '../util.js'
 import { createHmac, randomUUID } from 'node:crypto'
 import { rmSync } from 'node:fs'
 import { buildActiveTurnToken, copyJson, redactSessionData, redactValue, stripPublicInternalFields, withSceneToolDisplay } from '../redact.js'
+import type { OutboundDraft, OutboundDraftAction, OutboundDraftRef } from '@maudecode/talaria-web-contracts'
 import type { DraftStore } from './drafts.js'
 import { DraftVersionConflict, normalizeDraftVersion } from './drafts.js'
 import type { SessionEventBus } from './events.js'
@@ -2784,6 +2785,47 @@ export class SessionService {
     const full = fullToolResult((await this.fullTranscript(sid)).transcript, id)
     if (full === null) throw new HttpFailure(404, 'Tool result not found')
     return { tool_call_id: id, ...redactValue(full, this.deps.redactEnabled()) as typeof full }
+  }
+
+  /** Artifact state lives in the producer DB, never in a directive, saved scene or client-posted content. */
+  async reviewOutboundDraft(input: OutboundDraftRef & { session_id: string; tool_call_id: string } & Partial<OutboundDraftAction>): Promise<{ draft: OutboundDraft | null }> {
+    return this.store.withLock(input.session_id, async () => {
+      const { session, transcript } = await this.fullTranscript(input.session_id)
+      const calls = withToolCallOutcomes(transcript, session.tool_calls, null).flatMap((m) => Array.isArray(m.tool_calls) ? m.tool_calls as Record<string, unknown>[] : [])
+      const call = calls.findLast((c) => c.id === input.tool_call_id)
+      const ref = (call?.result_view as ToolResultView | undefined)?.outbound_draft
+      if (ref?.draft_id !== input.draft_id || ref.card !== input.card) throw new HttpFailure(404, 'Draft tool result not found')
+      const action = input.action ?? 'read'
+      if (action !== 'read') await this.assertWritable(session)
+      const sidecar = this.deps.sidecar?.()
+      if (!sidecar) {
+        if (action !== 'read') throw new HttpFailure(503, 'Draft backend unavailable')
+        return { draft: null }
+      }
+      const params = { profile_home: this.deps.profileHome(session.profile ?? this.deps.activeProfile()), session_id: input.session_id, ...ref }
+      const display = async (draft: OutboundDraft | null): Promise<OutboundDraft | null> => {
+        if (!draft) return null
+        const safe = redactValue(draft, true) as OutboundDraft
+        const masked = JSON.stringify(safe.fields) !== JSON.stringify(draft.fields)
+        const writable = !(await this.isReadOnly(session))
+        return { ...safe, masked, can_edit: draft.can_edit && !masked && writable, can_approve: draft.can_approve && !masked && writable }
+      }
+      const release = this.deps.profileActivity?.(session.profile ?? null)
+      try {
+        if (this.deps.profileDeleting?.(session.profile ?? null)) throw new HttpFailure(409, 'Profile is being deleted')
+        const current = await sidecar.call('drafts.review', { ...params, action: 'read' })
+        const shown = await display(current.draft)
+        if (action === 'read') return { draft: shown }
+        if (!shown || !shown[action === 'edit' ? 'can_edit' : 'can_approve'] || shown.revision !== input.revision || shown.version !== input.version) throw new HttpFailure(409, 'The draft changed or cannot be approved. Review it again.')
+        const result = await sidecar.call('drafts.review', { ...params, action, version: input.version, revision: input.revision, ...(input.fields ? { fields: input.fields } : {}) })
+        return { draft: await display(result.draft) }
+      } catch (error) {
+        if (error instanceof HttpFailure) throw error
+        if (error instanceof SidecarError && error.condition === 'outbound_draft_conflict') throw new HttpFailure(409, 'The draft changed or this version was already approved. Review it again.')
+        // A lost acknowledgement is unknown; clients reread, never replay the write.
+        throw new HttpFailure(503, 'Draft backend unavailable; refresh to confirm its state.')
+      } finally { release?.() }
+    })
   }
 
   // ── shares ───────────────────────────────────────────────────────────────
