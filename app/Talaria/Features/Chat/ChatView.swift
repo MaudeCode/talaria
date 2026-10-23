@@ -827,6 +827,27 @@ struct ChatView: View {
                         gitActionsMenu
                     }
                 }
+
+                if #available(iOS 26, *) {
+                    if !viewModel.pinnedBackgroundTasks.isEmpty {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button(action: backgroundTasksAction) {
+                                Label("Background tasks", systemImage: "square.3.layers.3d")
+                            }
+                            .badge(viewModel.pinnedBackgroundTasks.count)
+                        }
+                        .overflowPriority(.chatBackgroundTasks)
+                    }
+                    if !viewModel.queuedMessagePreviews.isEmpty {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button(action: queuedMessagesAction) {
+                                Label("Queued messages", systemImage: "tray.full")
+                            }
+                            .badge(viewModel.queuedMessagePreviews.count)
+                        }
+                        .overflowPriority(.chatQueuedMessages)
+                    }
+                }
             }
     }
 
@@ -1463,10 +1484,16 @@ struct ChatView: View {
         !viewModel.pinnedBackgroundTasks.isEmpty || !viewModel.queuedMessagePreviews.isEmpty || !ownerAdmissions.isEmpty
     }
 
+    private func backgroundTasksAction() {
+        showsBackgroundWorkSheet = true
+    }
+
+    private func queuedMessagesAction() {
+        showsQueuedMessagesSheet = true
+    }
+
     private func backgroundTasksChip(_ tasks: [BackgroundWorkTask]) -> some View {
-        Button {
-            showsBackgroundWorkSheet = true
-        } label: {
+        Button(action: backgroundTasksAction) {
             StatusChip(label: String(localized: "Background tasks · \(tasks.count)"), icon: .symbol("square.stack.3d.up"))
                 .frame(minHeight: 44)
                 .contentShape(.rect)
@@ -1479,9 +1506,7 @@ struct ChatView: View {
     private var queuedMessagesChip: some View {
         let unknown = ownerAdmissions.contains(where: \.isOutcomeUnknown)
         let count = viewModel.queuedMessagePreviews.count + ownerAdmissions.count
-        return Button {
-            showsQueuedMessagesSheet = true
-        } label: {
+        return Button(action: queuedMessagesAction) {
             StatusChip(
                 label: unknown ? String(localized: "Outcome unknown") : String(localized: "\(count) queued"),
                 icon: .symbol(unknown ? "questionmark.circle" : "text.badge.plus"),
