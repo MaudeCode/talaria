@@ -1,7 +1,7 @@
 import { chmodSync, closeSync, fstatSync, fsyncSync, openSync, renameSync, unlinkSync } from 'node:fs'
 import { open } from 'node:fs/promises'
 import { StringDecoder } from 'node:string_decoder'
-import { writeFully } from '../../fs/atomic.js'
+import { stageFileAsync, writeFully } from '../../fs/atomic.js'
 import { signatureOf } from '../../fs/stat.js'
 let tmpCounter = 0
 
@@ -24,6 +24,13 @@ export function writeAtomic(path: string, text: string | Uint8Array, mode?: numb
     try { unlinkSync(tmp) } catch { /* gone */ }
     throw error
   }
+}
+
+/** `writeAtomic`'s staging half off the event loop: the fsynced temp sibling of `path` for the caller to publish or remove. */
+export async function stageAtomic(path: string, text: string): Promise<string> {
+  const tmp = tmpName(path)
+  await stageFileAsync(tmp, text)
+  return tmp
 }
 
 export { statSignature, statSignatureAsync } from '../../fs/stat.js'

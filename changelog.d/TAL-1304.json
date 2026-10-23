@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Other requests no longer wait on the disk while Talaria Web saves a chat.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

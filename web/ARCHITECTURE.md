@@ -174,8 +174,9 @@ The JSON adapter keeps existing paths, bytes, permissions and atomic publication
 ID cache checks the session directory revision on every read and returns an independent set. Owned writes and
 deletes invalidate it before mutation so concurrent external changes cannot be stamped over. External directory
 changes also invalidate it. Session listing reuses one index read
-when the index is healthy and retains its rebuild/full-scan recovery paths. Auth table writes
-stage and fsync asynchronously, then compare the expected revision and publish without an intervening await.
+when the index is healthy and retains its rebuild/full-scan recovery paths. Auth table and session
+document writes stage and fsync asynchronously, then compare the expected revision and publish without an intervening
+await; session index writes stage the same way.
 Shutdown drains queued writes and closes journal writers before storage closes.
 
 JSON documents retain at most 256 recently used byte/revision/parse snapshots per backend. Reads check

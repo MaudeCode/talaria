@@ -6,23 +6,9 @@ import { setImmediate } from 'node:timers/promises'
 import { expect, it, vi } from 'vitest'
 import { RevisionConflict } from './backend.js'
 import { JsonDocuments } from './json-documents.js'
+import { gateFsync } from '../../test/fs-handles.js'
 
 vi.mock('node:fs/promises', async (original) => { const real = await original<typeof fsp>(); return { ...real, open: vi.fn(real.open) } })
-
-function gateFsync() {
-  let release!: () => void
-  let entered!: () => void
-  const gate = new Promise<void>((resolve) => { release = resolve })
-  const started = new Promise<void>((resolve) => { entered = resolve })
-  const open = vi.mocked(fsp.open).getMockImplementation()!
-  vi.mocked(fsp.open).mockImplementationOnce(async (...args) => {
-    const handle = await open(...args)
-    const sync = handle.sync.bind(handle)
-    vi.spyOn(handle, 'sync').mockImplementationOnce(async () => { entered(); await gate; await sync() })
-    return handle
-  })
-  return { release, started }
-}
 
 it('keeps auth fsync off the event loop, publishes atomically, and drains pending commits before close', async () => {
   const state = fs.mkdtempSync(join(tmpdir(), 'talaria-auth-documents-'))

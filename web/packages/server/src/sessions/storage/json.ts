@@ -1,12 +1,13 @@
-/* eslint-disable @typescript-eslint/require-await -- The JSON adapter deliberately keeps each file transaction synchronous behind the async port. */
+/* eslint-disable @typescript-eslint/require-await -- The JSON adapter keeps its other file transactions synchronous behind the async port. */
 import { JsonJournal } from './json-journal.js'
 import { JsonDocuments } from './json-documents.js'
 import { dirname } from 'node:path'
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, unlinkSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync } from 'node:fs'
+import { unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { isSafeSessionId, type Message } from '../session.js'
 import { RevisionConflict, type MessageMatch, type SessionBackend, type SessionChange, type SessionIndexEntry, type StorageBackend, type StorageIssue, type StoredSession } from './backend.js'
-import { readJsonMessagePrefix, readMetadataJsonPrefixWithSignature, statSignature, statSignatureAsync, writeAtomic } from './json-files.js'
+import { readJsonMessagePrefix, readMetadataJsonPrefixWithSignature, stageAtomic, statSignature, statSignatureAsync, writeAtomic } from './json-files.js'
 import { sessionSearchMatches, sessionSearchMessageText } from './search-text.js'
 import { diagnoseJson, repairJson, restoreJsonBackup } from './json-recovery.js'
 import { signatureOf } from '../../fs/stat.js'
@@ -27,7 +28,7 @@ export class JsonStorage implements StorageBackend {
   }
   async close(): Promise<void> {
     await this.journals.close()
-    this.sessions.closed = true
+    await this.sessions.close()
     await this.documents.close()
   }
 }
@@ -39,12 +40,18 @@ const SEARCH_TEXT_CACHE_DEPTH_MAX = 20
 
 class JsonSessions implements SessionBackend {
   closed = false
+  private readonly pending = new Set<Promise<unknown>>()
   private parsedIndex: { revision: string; entries: SessionIndexEntry[] } | null = null
   private persistedIds: { revision: string; ids: Set<string> } | null = null
   /** TAL-1212: each session's leading-message search text, valid while its file keeps the recorded revision. */
   private readonly searchTexts = new Map<string, { revision: string; depth: number; texts: string[] }>()
   constructor(private readonly options: JsonStorageOptions) {}
   private check(): void { if (this.closed) throw new Error('Storage is closed') }
+  /** Lets every staged write publish or fail before the backend refuses further calls. */
+  async close(): Promise<void> {
+    while (this.pending.size) await Promise.allSettled([...this.pending])
+    this.closed = true
+  }
   private path(sid: string): string {
     this.check()
     if (!isSafeSessionId(sid)) throw new Error(`Unsafe session_id ${JSON.stringify(sid)}`)
@@ -123,6 +130,14 @@ class JsonSessions implements SessionBackend {
   async write(sid: string, change: SessionChange, expected: string | null): Promise<string> {
     const path = this.path(sid)
     if (change.doc.session_id !== sid) throw new Error('Session document identity does not match its key')
+    return this.track(this.commit(sid, path, change, expected))
+  }
+  private track<T>(result: Promise<T>): Promise<T> {
+    this.pending.add(result)
+    void result.catch(() => undefined).then(() => this.pending.delete(result))
+    return result
+  }
+  private async commit(sid: string, path: string, change: SessionChange, expected: string | null): Promise<string> {
     if (statSignature(path) !== expected) throw new RevisionConflict(sid)
     const edit = change.messages
     // Appends and growing splices cannot shrink the file, so with the full list in hand there is no base to re-read.
@@ -146,14 +161,25 @@ class JsonSessions implements SessionBackend {
     }
     document.messages ??= rows
     const payload = JSON.stringify(document)
-    this.invalidatePersistedIds()
     mkdirSync(this.options.directory, { recursive: true })
+    // TAL-1304: stage and fsync off the event loop; the revision check and both renames below run without an await.
+    let backup: string | null = null
     if (previousText !== null && Array.isArray(previous?.messages) && previous.messages.length > rows.length) {
-      try { writeAtomic(`${path}.bak`, previousText) } catch { /* backup is best effort */ }
+      backup = await stageAtomic(`${path}.bak`, previousText).catch(() => null) // backup is best effort
     }
-    this.searchTexts.delete(sid)
-    writeAtomic(path, payload)
-    return statSignature(path)!
+    let staged: string | null = null
+    try {
+      staged = await stageAtomic(path, payload)
+      if (statSignature(path) !== expected) throw new RevisionConflict(sid)
+      this.invalidatePersistedIds()
+      this.searchTexts.delete(sid)
+      if (backup) { try { renameSync(backup, `${path}.bak`); backup = null } catch { /* best effort */ } }
+      renameSync(staged, path)
+      staged = null
+      return statSignature(path)!
+    } finally {
+      for (const file of [backup, staged]) if (file) await unlink(file).catch(() => undefined)
+    }
   }
   async delete(sid: string, opts: { tombstone: boolean }): Promise<boolean> {
     const path = this.path(sid)
@@ -194,14 +220,18 @@ class JsonSessions implements SessionBackend {
     return { entries: entries as SessionIndexEntry[], revision: revision ?? '' }
   }
   async writeIndex(entries: SessionIndexEntry[]): Promise<void> {
-    mkdirSync(this.options.directory, { recursive: true })
-    for (const name of readdirSync(this.options.directory)) {
-      if (!name.includes('.tmp.')) continue
-      const path = join(this.options.directory, name)
-      try { if (statSync(path).mtimeMs / 1000 < this.options.now() - 3600) unlinkSync(path) } catch { /* best effort */ }
-    }
-    writeAtomic(this.indexPath, JSON.stringify(entries))
-    this.parsedIndex = { entries, revision: statSignature(this.indexPath)! }
+    const indexPath = this.indexPath
+    return this.track((async () => {
+      mkdirSync(this.options.directory, { recursive: true })
+      for (const name of readdirSync(this.options.directory)) {
+        if (!name.includes('.tmp.')) continue
+        const path = join(this.options.directory, name)
+        try { if (statSync(path).mtimeMs / 1000 < this.options.now() - 3600) unlinkSync(path) } catch { /* best effort */ }
+      }
+      const staged = await stageAtomic(indexPath, JSON.stringify(entries))
+      try { renameSync(staged, indexPath) } catch (error) { await unlink(staged).catch(() => undefined); throw error }
+      this.parsedIndex = { entries, revision: statSignature(indexPath)! }
+    })())
   }
   private allTombstones(): Set<string> {
     try {
