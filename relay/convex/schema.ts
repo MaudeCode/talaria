@@ -162,10 +162,12 @@ export default defineSchema({
     revision: v.number(),
     title: v.string(),
     phase: sessionPhaseValidator,
+    activityPhase: v.optional(sessionPhaseValidator),
     updatedAt: v.number(),
     deepLink: v.string(),
     expiresAt: v.number(),
     terminalExpiresAt: v.optional(v.number()),
+    activityExpiresAt: v.optional(v.number()),
     runKey: v.optional(v.string()),
     alertEligible: v.optional(v.boolean()),
     receivedAt: v.number(),
@@ -174,6 +176,7 @@ export default defineSchema({
     .index("by_version_and_user_id_and_publisher_id_and_session_id", ["version", "userId", "publisherId", "sessionId"])
     .index("by_user_id_and_expires_at", ["userId", "expiresAt"])
     .index("by_version_and_user_id_and_expires_at", ["version", "userId", "expiresAt"])
+    .index("by_activity_expires_at", ["activityExpiresAt"])
     .index("by_expires_at", ["expiresAt"]),
 
   completions: defineTable({
@@ -183,6 +186,7 @@ export default defineSchema({
     profileId: v.string(),
     runKey: v.string(),
     revision: v.optional(v.number()),
+    activityPhase: v.optional(sessionPhaseValidator),
     acknowledged: v.boolean(),
     row: aggregateRowValidator,
   })

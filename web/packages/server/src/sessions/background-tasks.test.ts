@@ -209,3 +209,19 @@ it('can_stop requires confirmed session-owned running Agent work (TAL-1172)', as
   expect(tasks.find((t) => t.task_id === 'bg1')).toMatchObject({ status: 'running', can_stop: false })
   expect((await activity.snapshot('s', 'work', { canStop: false })).tasks.every((t) => t.can_stop === false)).toBe(true)
 })
+
+
+it('does not recreate deleted background receipts when an earlier Agent read finishes (TAL-1520)', async () => {
+  const store = new BackgroundTaskStore(testSessionDocuments(tempDir()), () => 100)
+  await store.update('session', [{ task_id: 'proc_old', kind: 'process', status: 'running' }])
+  let release!: () => void
+  const sidecar = { call: () => new Promise((resolve) => { release = () => { resolve({ delegations: [], processes: [{ process_id: 'proc_old', session_key: 'session', command: 'Synthetic', started_at: 90, exited: false, exited_at: null, exit_code: null, completion_reason: '', watched: false }] }) } }) } as unknown as SidecarLike
+  const activity = new BackgroundActivity({ store, sidecar: () => sidecar, profileHome: () => '', liveStream: () => false, now: () => 100, log: () => undefined })
+  const read = activity.snapshot('session', null)
+  const rejected = expect(read).rejects.toThrow('Background session changed')
+  await store.delete('session')
+  release()
+  await rejected
+  expect(await store.list('session')).toEqual([])
+  expect(await store.sessionIds()).toEqual([])
+})

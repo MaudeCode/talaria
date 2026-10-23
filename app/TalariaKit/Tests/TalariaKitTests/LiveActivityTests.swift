@@ -3,6 +3,32 @@ import XCTest
 
 @MainActor
 final class LiveActivityTests: XCTestCase {
+    func testAggregateStalePresentationUsesTheServerFlag() throws {
+        let decoder = JSONDecoder()
+        let fresh = try decoder.decode(TalariaAggregateActivityAttributes.ContentState.self, from: Data(#"{"schemaVersion":1,"isFinal":false,"isStale":false,"activeCount":0,"title":"Talaria","subtitle":"Server state","updatedAt":100,"rows":[]}"#.utf8))
+        XCTAssertFalse(TalariaAggregateLiveActivityPresentation.isEffectivelyStale(state: fresh, isStale: false))
+    }
+
+    func testZeroConfirmedWorkWithServerNonFinalAggregateShowsStaleInsteadOfDone() throws {
+        let decoder = JSONDecoder()
+        let data = Data(#"{"schemaVersion":1,"isFinal":false,"isStale":true,"activeCount":0,"title":"Talaria","subtitle":"Waiting for server","updatedAt":100,"rows":[]}"#.utf8)
+        let state = try decoder.decode(TalariaAggregateActivityAttributes.ContentState.self, from: data)
+        XCTAssertTrue(TalariaAggregateLiveActivityPresentation.isEffectivelyStale(state: state, isStale: false))
+        XCTAssertEqual(TalariaAggregateLiveActivityPresentation.headerText(state: state, isStale: false), "Waiting for server")
+    }
+
+    func testSessionAndBackgroundSnapshotsDecodeIndependentActivityPhase() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let session = try decoder.decode(SessionDetail.self, from: Data(#"{"session_id":"session","activity_phase":"running"}"#.utf8))
+        let tasks = try decoder.decode(BackgroundTasksResponse.self, from: Data(#"{"session_id":"session","tasks":[],"activity_phase":"stale"}"#.utf8))
+        let status = try decoder.decode(ChatStreamStatusResponse.self, from: Data(#"{"active":false,"activity_phase":"running"}"#.utf8))
+        XCTAssertEqual(session.activityPhase, "running")
+        XCTAssertEqual(tasks.activityPhase, "stale")
+        XCTAssertEqual(status.activityPhase, "running")
+        XCTAssertNil(try decoder.decode(SessionDetail.self, from: Data(#"{"session_id":"old"}"#.utf8)).activityPhase)
+    }
+
     override func tearDown() {
         LiveActivityURLProtocol.handler = nil
         super.tearDown()
@@ -2406,6 +2432,8 @@ final class LiveActivityTests: XCTestCase {
 
 @MainActor
 private final class SpyAgentLiveActivityManager: AgentLiveActivityManaging {
+    var currentSessionID: String? { starts.last?.sessionID }
+    var currentStreamID: String? { starts.last?.streamID }
     struct Start: Equatable {
         let sessionID: String
         let sessionTitle: String

@@ -1,4 +1,4 @@
-import { CHECKPOINT_DIFF_MAX_BYTES, unavailableContextDetail, type CheckpointDiff, type ContextDetail } from '@maudecode/talaria-web-contracts'
+import { CHECKPOINT_DIFF_MAX_BYTES, unavailableContextDetail, type CheckpointDiff, type SessionActivityPhase, type ContextDetail } from '@maudecode/talaria-web-contracts'
 import { checkpointDiffFiles } from '../workspace/rollback.js'
 /** One native-owner seam. Talaria observes its history and never settles it into a local Session. */
 import type { QueueAdmissionFence } from './admission.js'
@@ -242,6 +242,20 @@ export class GatewaySessions {
     if (!target) return unavailableContextDetail()
     const result = await this.call(target, { action: 'context_detail' })
     return profile === this.deps.activeProfile() && result.state === 'attached' && this.contextDetailKey(target, result.snapshot) === expectedKey ? result.context_detail ?? unavailableContextDetail('unsupported') : unavailableContextDetail('changed')
+  }
+
+  private activityPhaseFor(result: GatewaySessionResult, target: Target): SessionActivityPhase | null {
+    if (result.state !== 'attached' || !result.snapshot) return 'stale'
+    const pending = this.prompts(result.snapshot, target.sid, this.batch(target))
+    if (pending.approvalPending(target.sid).pending) return 'waiting_for_approval'
+    if (pending.clarifyPending(target.sid).pending) return 'waiting_for_input'
+    if (result.snapshot.running || result.snapshot.pending.some((entry) => entry.status === 'queued' || entry.status === 'started')) return 'running'
+    return result.snapshot.pending.some((entry) => entry.status === 'unknown') ? 'stale' : null
+  }
+
+  async activityPhase(sid: string, profile: string): Promise<SessionActivityPhase | null | undefined> {
+    const target = await this.target(sid, profile)
+    return target ? this.activityPhaseFor(await this.call(target, { action: 'snapshot' }), target) : undefined
   }
 
   async isOwned(sid: string): Promise<boolean> { return (await this.target(sid)) !== null }
@@ -625,7 +639,7 @@ export class GatewaySessions {
         terminal = true
         // A new claim may arrive while this turn's receipt is being read. Give it its own projection immediately.
         if (this.watches.get(target.key) === watch) this.watches.delete(target.key)
-        registry.retire(watch.stream)
+        registry.activeRuns.delete(watch.stream)
         await clearTools()
         const current = await this.call(target, { action: 'snapshot' })
         const rawReceipt = activeAdmission ? (await this.call(target, { action: 'receipt', admission_id: activeAdmission })).receipt : null
@@ -639,6 +653,7 @@ export class GatewaySessions {
         // A terminal frame for the previous generation must not overwrite the newer turn's state.
         const session = current.snapshot && !sameExecution(current.snapshot, observation.snapshot)
           ? undefined : { ...await this.view(base, current, null, target), ...usage }
+        if (session) session.activity_phase = await this.deps.service.deps.sessionActivity?.(target.sid, target.profile, { terminalPhase: cancelled ? 'cancelled' : failed ? 'failed' : 'completed' })
         await put(cancelled ? 'cancel' : failed ? 'apperror' : 'done', { session_id: target.sid,
           terminal_state: cancelled ? 'cancelled' : failed ? 'error' : 'completed',
           ...(failed ? refusal ?? { message: 'The owning Agent could not complete this turn', type: current.reason ?? 'owner_turn_failed' } : {}),

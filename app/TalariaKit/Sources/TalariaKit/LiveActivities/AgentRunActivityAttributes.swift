@@ -99,6 +99,8 @@ public struct TalariaAggregateActivityAttributes: Codable {
         }
 
         var schemaVersion: Int
+        public var isFinal: Bool? = nil
+        public var isStale: Bool? = nil
         public var activeCount: Int
         var title: String
         public var subtitle: String
@@ -136,7 +138,8 @@ public enum TalariaAggregateLiveActivityPresentation {
         state: TalariaAggregateActivityAttributes.ContentState,
         isStale: Bool
     ) -> Bool {
-        isStale && state.activeCount > 0
+        (isStale && !(state.isFinal ?? (state.activeCount == 0)))
+            || state.isStale == true
     }
 
     public static func headerText(

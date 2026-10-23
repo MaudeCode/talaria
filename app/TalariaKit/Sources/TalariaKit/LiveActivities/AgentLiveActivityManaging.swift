@@ -35,6 +35,8 @@ public struct OrphanedLiveActivity: Equatable {
 
 @MainActor
 public protocol AgentLiveActivityManaging: AnyObject {
+    var currentSessionID: String? { get }
+    var currentStreamID: String? { get }
     func armAggregateForLocalWork(sessionID: String, sessionTitle: String, publisherURL: URL)
     /// `startedAt` is when the run began, not when the widget was created: the
     /// coordinator passes the server-seeded run start so the widget's elapsed
@@ -56,6 +58,8 @@ public protocol AgentLiveActivityManaging: AnyObject {
 }
 
 extension AgentLiveActivityManaging {
+    var currentSessionID: String? { nil }
+    var currentStreamID: String? { nil }
     func armAggregateForLocalWork(sessionID: String, sessionTitle: String, publisherURL: URL) {}
     // Defaults so test spies and non-ActivityKit conformers don't have to care
     // about reconciliation; the real manager overrides both.

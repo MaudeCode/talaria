@@ -58,6 +58,8 @@ public enum TalariaAggregateActivitySeed {
             .prefix(TalariaAggregateLiveActivityPresentation.lockScreenRowLimit)
 
         var merged = existing
+        merged.isFinal = false
+        merged.isStale = false
         merged.activeCount = activeCount
         if !rows.contains(where: {
             $0.phase == "waiting_for_approval" || $0.phase == "waiting_for_input"

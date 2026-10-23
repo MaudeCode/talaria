@@ -142,6 +142,7 @@ export interface StartTurnOptions {
   completionKeys?: string[]
   backgroundUpdate?: BackgroundUpdate
   ephemeral?: boolean
+  activityParentSessionId?: string
   /** TAL-801: a spoken turn, which the Agent runs on the profile's `auxiliary.voice_chat` slot. */
   voiceTurn?: boolean
   /** TAL-818: the starting client renders `connect_card`; other turns keep the Agent's plain connect links. */
@@ -522,7 +523,7 @@ export class TurnRunner {
     if (opts.completionKeys?.length) s.extra.completion_acceptances = { ...accepted, ...Object.fromEntries(opts.completionKeys.map((key) => [key, streamId])) }
     const previousUpdates = s.extra.background_updates
     if (opts.backgroundUpdate) recordBackgroundUpdate(s, streamId, opts.backgroundUpdate)
-    const admission = { stream_id: streamId, session_id: s.session_id, started_at: this.deps.now(), phase: 'starting', workspace: opts.workspace, model: opts.model, provider: opts.modelProvider, ephemeral: Boolean(opts.ephemeral), origin: turnOrigin(source), admitting: true }
+    const admission = { stream_id: streamId, session_id: s.session_id, started_at: this.deps.now(), phase: 'starting', workspace: opts.workspace, model: opts.model, provider: opts.modelProvider, ephemeral: Boolean(opts.ephemeral), ...(opts.activityParentSessionId ? { activity_parent_session_id: opts.activityParentSessionId } : {}), origin: turnOrigin(source), admitting: true }
     this.registry.registerActiveRun(admission)
     try { await timing.measure('admission_persistence', () => this.deps.store.save(s)) } catch (error) {
       this.registry.activeRuns.delete(streamId)
@@ -752,7 +753,7 @@ export class TurnRunner {
       // start an Agent turn (the client also refuses an already-aborted signal outright).
       if (this.registry.cancelled.has(streamId)) {
         await this.finalizeCancelled(s, streamId, opts.ephemeral)
-        await put('cancel', (await this.cancelFrame(sessionId)))
+        await put('cancel', (await this.cancelFrame(sessionId, streamId)))
         return
       }
       const turnContext = {
@@ -990,7 +991,7 @@ export class TurnRunner {
         applyAgentUsage(liveUsage, result.usage)
         this.liveUsage.set(streamId, liveUsage)
         await this.finalizeCancelled(s, streamId, opts.ephemeral, interrupted?.checkpoint ? withImages(interrupted.checkpoint) : result.messages)
-        await put('cancel', (await this.cancelFrame(sessionId)))
+        await put('cancel', (await this.cancelFrame(sessionId, streamId)))
         return
       }
       // Writeback only while this stream still owns the session (Python `_stream_writeback_is_current`).
@@ -1029,7 +1030,7 @@ export class TurnRunner {
         followUp = leftovers
         await this.persistError(s, settlement, streamId, classification.label, payload, activeTurnToken, resultMessages, result.provider)
         // TAL-512: a btw error carries no session: its journaled frame must not keep a copy of the parent conversation.
-        if (!opts.ephemeral) payload.session = (await this.publicTerminalSession(s))
+        if (!opts.ephemeral) payload.session = (await this.publicTerminalSession(s, streamId))
         payload.session_id = s.session_id
         payload.old_session_id = sessionId
         for (const [event, data] of steerEvents) (await put(event, data))
@@ -1165,7 +1166,7 @@ export class TurnRunner {
         cache_hit_percent: cacheHit(cacheReadTokens, inputTokens), turn_cache_hit_percent: cacheHit(turnCacheRead, turnInput), duration_seconds: Math.round(duration * 1000) / 1000,
         context_length: s.context_length ?? 0, threshold_tokens: s.threshold_tokens ?? 0, last_prompt_tokens: s.last_prompt_tokens ?? 0,
       }
-      const doneSession = (await this.publicTerminalSession(s))
+      const doneSession = (await this.publicTerminalSession(s, streamId))
       // TAL-299: the ring's figures match the terminal session's (and a detail reload's).
       for (const key of CONTEXT_USAGE_FIELDS) doneUsage[key] = doneSession[key]
       if (usage.completion_tokens && duration > 0) doneUsage.tps = Math.round((usage.completion_tokens / duration) * 10) / 10
@@ -1213,7 +1214,7 @@ export class TurnRunner {
           if (isDict(s.extra.completion_acceptances)) s.extra.completion_acceptances = Object.fromEntries(Object.entries(s.extra.completion_acceptances).filter(([, value]) => value !== streamId))
           await deps.store.save(s, { touchUpdatedAt: false })
         }
-        await put('apperror', { type: 'error', terminal_state: 'error', message: readOnly, session_id: sessionId, session: (await this.publicTerminalSession(s)) })
+        await put('apperror', { type: 'error', terminal_state: 'error', message: readOnly, session_id: sessionId, session: (await this.publicTerminalSession(s, streamId)) })
         return
       }
       if (settledAt.value && !(error instanceof SidecarError)) {
@@ -1223,7 +1224,7 @@ export class TurnRunner {
       const settlement = await deps.service().settlementRead(s)
       if (this.registry.cancelled.has(streamId)) {
         await this.finalizeCancelled(s, streamId, opts.ephemeral)
-        await put('cancel', (await this.cancelFrame(sessionId)))
+        await put('cancel', (await this.cancelFrame(sessionId, streamId)))
         return
       }
       const message = error instanceof Error ? error.message : String(error)
@@ -1239,7 +1240,7 @@ export class TurnRunner {
         if (current.active_stream_id === streamId) {
           for (const [event, data] of this.takeSteerEventsBefore(streamId, 'apperror')) (await put(event, data))
           await this.persistError(current, settlement, streamId, classification.label, payload, activeTurnToken)
-          if (!opts.ephemeral) payload.session = (await this.publicTerminalSession(current))
+          if (!opts.ephemeral) payload.session = (await this.publicTerminalSession(current, streamId))
         }
       } catch (persistError) {
         deps.log(`[webui] WARNING: failed to persist turn error for ${sessionId}: ${(persistError as Error).message}`)
@@ -1319,8 +1320,13 @@ export class TurnRunner {
   }
 
   /** The settled session as a terminal frame carries it: the display window, redacted. */
-  async publicTerminalSession(s: Session): Promise<Record<string, unknown>> {
-    return this.deps.service().windowedDetail(s, TRANSCRIPT_WINDOW)
+  async publicTerminalSession(s: Session, streamId?: string): Promise<Record<string, unknown>> {
+    const terminal = streamId ? this.deps.service().activitySummary(s, streamId)?.terminalState : null
+    const payload = await this.deps.service().windowedDetail(s, TRANSCRIPT_WINDOW)
+    if (!streamId) return payload
+    const terminalPhase = terminal === 'completed' || terminal === 'tool_limit_reached' ? 'completed' : terminal === 'cancelled' ? 'cancelled' : 'failed'
+    payload.activity_phase = await this.deps.service().activityPhase(s, { excludeStreamId: streamId, terminalPhase })
+    return payload
   }
 
   /** TAL-540, Python `_live_usage_snapshot`: a finished compression's frame, with the counters and the ring's post-compression figures, so clients update before `done`. */
@@ -1456,9 +1462,9 @@ export class TurnRunner {
    * Python `_emit_cancel_event`: the terminal frame carries the settled session so tabs can render the partial without a
    * reload. TAL-364: no copy — clients show their one localized status for the `cancelled` outcome.
    */
-  private async cancelFrame(sessionId: string | null): Promise<Record<string, unknown>> {
+  private async cancelFrame(sessionId: string | null, streamId: string): Promise<Record<string, unknown>> {
     let snapshot: Record<string, unknown> | null = null
-    if (sessionId) try { snapshot = (await this.publicTerminalSession((await this.deps.store.get(sessionId)))) } catch { snapshot = null }
+    if (sessionId) try { snapshot = (await this.publicTerminalSession((await this.deps.store.get(sessionId)), streamId)) } catch { snapshot = null }
     return { type: 'cancelled', status: 'cancelled', terminal_state: 'cancelled', ...(sessionId ? { session_id: sessionId } : {}), ...(snapshot ? { session: snapshot } : {}) }
   }
 
@@ -1852,7 +1858,7 @@ export class TurnRunner {
       for (const [event, data] of steerEvents) (await emit(event, data))
       this.runStatuses.delete(streamId)
       await emit('run_status', { session_id: sessionId, status: null })
-      await emit('cancel', (await this.cancelFrame(sessionId)))
+      await emit('cancel', (await this.cancelFrame(sessionId, streamId)))
       this.registry.streams.delete(streamId)
       this.registry.liveIds.delete(streamId)
     }

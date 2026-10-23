@@ -8,6 +8,7 @@
       "revision": 1800000000000,
       "title": "Contract fixture",
       "phase": "running",
+      "activityPhase": "running",
       "updatedAt": 1800000000000,
       "deepLink": "/sessions/contract-session",
       "alertEligible": false

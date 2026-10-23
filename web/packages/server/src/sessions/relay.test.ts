@@ -137,6 +137,25 @@ describe('Talaria relay pairing and publishing', () => {
     s.deps.registry.activeRuns.delete('stream-h')
   })
 
+  it('keeps the session activity running after its parent reply completes while a background command runs (TAL-1520)', async () => {
+    if (!s.deps.relay.current()) await post(s, '/api/talaria/relay/pair', { relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'invite-background' })
+    const sid = String(((await json(await post(s, '/api/session/new', { title: 'Background liveness' }))).session as Json).session_id)
+    const publisher = s.deps.relay.current()!
+    s.deps.registry.activeRuns.set('parent-bg', { stream_id: 'parent-bg', session_id: sid, started_at: 1, phase: 'running', workspace: s.state, model: null, provider: null, ephemeral: false })
+    s.deps.registry.liveIds.add('command-bg')
+    try {
+      await s.deps.background.trackCommand(sid, 'bg-command', 'Check synthetic data')
+      await s.deps.background.setCommandStream(sid, 'bg-command', 'command-bg')
+      s.deps.relay.noteTerminal('parent-bg', 'completed')
+      s.deps.registry.activeRuns.delete('parent-bg')
+      const state = (await publisher.buildStates('default')).find((state) => state.sessionId === sid)
+      expect(state).toMatchObject({ phase: 'completed', activityPhase: 'running', streamId: 'parent-bg' })
+    } finally {
+      s.deps.registry.liveIds.delete('command-bg')
+      await s.deps.background.settleCommand(sid, 'bg-command', 'completed', 'Done')
+    }
+  })
+
   it('acknowledges a viewed session on the relay after the snapshot carrying its terminal state', async () => {
     const sid = String(((await json(await post(s, '/api/session/new', { title: 'Viewed run' }))).session as Json).session_id)
     const profileId = (await loadRelayConfig(new JsonDocuments(s.state)))!.profiles.default!.profile_id
@@ -789,5 +808,174 @@ describe('session-started events from the running server', () => {
       s.deps.relay.stop()
       await s.close()
     }
+  })
+})
+
+
+describe('session activity lifecycle (TAL-1520)', () => {
+  it('tombstones deleted activity after acknowledgement and persists its revision fence', async () => {
+    const server = await bootTestServer()
+    const remote = fakeRelay()
+    server.deps.fetch = remote.fetch
+    try {
+      await post(server, '/api/talaria/relay/pair', { relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'synthetic' })
+      const session = await server.deps.sessionStore.newSession()
+      await server.deps.sessionStore.save(session)
+      server.deps.registry.activeRuns.set('deleted-parent', { stream_id: 'deleted-parent', session_id: session.session_id, started_at: 1, phase: 'running', workspace: server.state, model: null, provider: null, ephemeral: false })
+      server.deps.relay.noteTerminal('deleted-parent', 'completed')
+      server.deps.registry.activeRuns.delete('deleted-parent')
+      await server.deps.relay.current()!.publishSnapshot()
+      expect((await post(server, '/api/session/delete', { session_id: session.session_id })).status).toBe(200)
+      await vi.waitFor(() => { expect(deletedViews(server)).toEqual([]) })
+      const tombstones = remote.calls.filter((call) => call.url.endsWith(`/sessions/${session.session_id}/activity`) && call.body.state === null)
+      expect(tombstones).toHaveLength(1)
+      const tombstone = tombstones[0]!
+      verifySigned(remote, tombstone, new URL(tombstone.url).pathname)
+      expect(remote.calls.indexOf(tombstone)).toBeGreaterThan(remote.calls.findIndex((call) => call.url.endsWith(`/sessions/${session.session_id}/viewed`)))
+      const revision = Number(tombstone.body.revision)
+      expect(Number(readFileSync(join(server.state, 'talaria-relay-revision'), 'utf8'))).toBeGreaterThanOrEqual(revision)
+      server.deps.relay.stop()
+      expect(await server.deps.relay.start()).toBe(true)
+      const next = await server.deps.sessionStore.newSession()
+      server.deps.registry.activeRuns.set('next-parent', { stream_id: 'next-parent', session_id: next.session_id, started_at: 2, phase: 'running', workspace: server.state, model: null, provider: null, ephemeral: false })
+      expect((await server.deps.relay.current()!.buildStates('default')).find((state) => state.sessionId === next.session_id)?.revision).toBeGreaterThan(revision)
+    } finally { server.deps.registry.activeRuns.delete('next-parent'); server.deps.relay.stop(); await server.close() }
+  })
+
+  it('publishes only the parent activity for an actual background command (TAL-1520)', async () => {
+    const sidecar = new FakeSidecar()
+    const completed = new FakeSidecar()
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    let entered!: () => void
+    const running = new Promise<void>((resolve) => { entered = resolve })
+    sidecar.respond('chat.start', async (params) => { entered(); await gate; return completed.call('chat.start', params) })
+    const server = await bootTestServer({ sidecar })
+    server.deps.fetch = fakeRelay().fetch
+    let streamId = ''
+    try {
+      await post(server, '/api/talaria/relay/pair', { relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'synthetic' })
+      const session = await server.deps.sessionStore.newSession()
+      session.messages = [{ role: 'user', content: 'Start', _turn_id: 'parent', timestamp: 100 }, { role: 'assistant', content: 'Started', _turn_id: 'parent', timestamp: 101 }]
+      await server.deps.sessionStore.save(session)
+      const response = await post(server, '/api/background', { session_id: session.session_id, prompt: 'Synthetic work' })
+      expect(response.status).toBe(200)
+      const started = await json(response)
+      streamId = String(started.stream_id)
+      await running
+      const states = await server.deps.relay.current()!.buildStates('default')
+      expect(states.find((state) => state.sessionId === session.session_id)).toMatchObject({ activityPhase: 'running' })
+      expect(states.map((state) => state.sessionId)).toEqual([session.session_id])
+    } finally { release(); if (streamId) await server.deps.turns.finished(streamId); server.deps.relay.stop(); await server.close() }
+  })
+
+  it.each(['delegation', 'process', 'watch', 'background_command'] as const)('keeps %s work after retention/reload, goes stale on lost ownership, and respects session fences', async (kind) => {
+    let clock = 10_000
+    const sidecar = new FakeSidecar()
+    const server = await bootTestServer({ sidecar, now: () => clock })
+    const remote = fakeRelay()
+    server.deps.fetch = remote.fetch
+    let available = true
+    let running = true
+    try {
+      await post(server, '/api/talaria/relay/pair', { relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'synthetic' })
+      const sid = String(((await json(await post(server, '/api/session/new', { title: 'Synthetic background' }))).session as Json).session_id)
+      const session = await server.deps.sessionStore.get(sid)
+      session.messages = [{ role: 'user', content: 'Start work', _turn_id: 'parent', timestamp: clock }, { role: 'assistant', content: 'Started', _turn_id: 'parent', timestamp: clock }]
+      await server.deps.sessionStore.save(session)
+      sidecar.respond('process.background_list', () => {
+        if (!available) throw new Error('synthetic Agent unavailable')
+        return {
+          delegations: kind === 'delegation' ? [{ delegation_id: 'unit-1', origin_ui_session_id: sid, state: running ? 'running' : 'completed', dispatched_at: 10_000, completed_at: running ? null : clock, updated_at: clock, goals: ['One', 'Two'], child_statuses: running ? [] : ['completed', 'completed'], has_result: !running, live_status: running ? 'running' : null }] : [],
+          processes: kind === 'process' || kind === 'watch' ? [{ process_id: 'proc_fixture', session_key: sid, command: 'synthetic', started_at: 10_000, exited: !running, exited_at: running ? null : clock, exit_code: running ? null : 0, completion_reason: '', watched: kind === 'watch' }] : [],
+        }
+      })
+      if (kind === 'background_command') {
+        await server.deps.background.trackCommand(sid, 'command', 'Synthetic command')
+        await server.deps.background.setCommandStream(sid, 'command', 'background-stream')
+        server.deps.registry.liveIds.add('background-stream')
+      }
+      server.deps.registry.activeRuns.set('parent', { stream_id: 'parent', session_id: sid, started_at: clock, phase: 'running', workspace: server.state, model: null, provider: null, ephemeral: false })
+      server.deps.relay.noteTerminal('parent', 'completed')
+      server.deps.registry.activeRuns.delete('parent')
+      const read = async () => (await server.deps.relay.current()!.buildStates('default')).find((row) => row.sessionId === sid)
+      expect(await read()).toMatchObject({ phase: 'completed', activityPhase: 'running', streamId: 'parent' })
+      expect(await server.deps.requestScope.run({ requestProfile: 'other' }, read)).toMatchObject({ activityPhase: 'running' })
+      const call = sidecar.calls.filter((call) => call.method === 'process.background_list').at(-1)!
+      expect(call.params).toMatchObject({ profile_home: server.deps.profileHome('default') })
+      clock += 901
+      expect(await read()).toMatchObject({ activityPhase: 'running' })
+      server.deps.relay.stop()
+      expect(await server.deps.relay.start()).toBe(true)
+      expect(await read()).toMatchObject({ phase: 'completed', streamId: 'parent', activityPhase: 'running' })
+      available = false
+      if (kind === 'background_command') server.deps.registry.liveIds.delete('background-stream')
+      expect(await read()).toMatchObject({ activityPhase: 'stale' })
+      available = true
+      if (kind === 'background_command') server.deps.registry.liveIds.add('background-stream')
+      expect(await read()).toMatchObject({ activityPhase: 'running' })
+      server.deps.pending.submitApproval(sid, { request_id: 'approval', tool: 'shell' })
+      expect(await read()).toMatchObject({ activityPhase: 'waiting_for_approval' })
+      server.deps.pending.resolveApproval(sid, 'approval')
+      server.deps.pending.submitClarify(sid, { clarify_id: 'input', question: 'Which?' })
+      expect(await read()).toMatchObject({ activityPhase: 'waiting_for_input' })
+      server.deps.pending.resolveClarify(sid, 'input')
+      server.deps.registry.activeRuns.set('wake', { stream_id: 'wake', session_id: sid, started_at: clock, phase: 'running', workspace: server.state, model: null, provider: null, ephemeral: false })
+      running = false
+      if (kind === 'background_command') await server.deps.background.settleCommand(sid, 'command', 'completed', 'Done')
+      expect(await read()).toMatchObject({ activityPhase: 'running', streamId: 'wake' })
+      server.deps.relay.noteTerminal('wake', 'completed')
+      server.deps.registry.activeRuns.delete('wake')
+      expect(await read()).toMatchObject({ activityPhase: 'completed', streamId: 'wake' })
+      session.profile = 'other'
+      await server.deps.sessionStore.save(session)
+      expect(await read()).toBeUndefined()
+      session.profile = null
+      await server.deps.sessionStore.save(session)
+      await server.deps.sessionStore.delete(sid)
+      expect(await read()).toBeUndefined()
+    } finally { server.deps.registry.liveIds.delete('background-stream'); server.deps.relay.stop(); await server.close() }
+  })
+
+  it.each(['failed', 'cancelled'] as const)('retains the parent %s outcome when rebuilding a background-only session', async (phase) => {
+    const server = await bootTestServer()
+    server.deps.fetch = fakeRelay().fetch
+    try {
+      const session = await server.deps.sessionStore.newSession()
+      session.messages = [{ role: 'user', content: 'Start', _turn_id: 'parent', timestamp: 100 }, { role: 'assistant', content: '', _turn_id: 'parent', _error: true, _terminal_state: phase === 'failed' ? 'error' : 'cancelled', timestamp: 101 }]
+      await server.deps.sessionStore.save(session)
+      await server.deps.background.trackCommand(session.session_id, 'command', 'Synthetic')
+      await server.deps.background.setCommandStream(session.session_id, 'command', 'command-stream')
+      server.deps.registry.liveIds.add('command-stream')
+      await post(server, '/api/talaria/relay/pair', { relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'synthetic' })
+      const read = async () => (await server.deps.relay.current()!.buildStates('default')).find((row) => row.sessionId === session.session_id)
+      expect(await read()).toMatchObject({ phase, activityPhase: 'running', streamId: 'parent' })
+      await server.deps.background.settleCommand(session.session_id, 'command', 'completed', 'Done')
+      expect(await read()).toMatchObject({ phase, activityPhase: phase, streamId: 'parent' })
+    } finally { server.deps.registry.liveIds.delete('command-stream'); server.deps.relay.stop(); await server.close() }
+  })
+
+  it.each(['completed', 'failed', 'cancelled'] as const)('does not settle several commands until the final command settles, preserving %s', async (outcome) => {
+    const server = await bootTestServer()
+    const remote = fakeRelay()
+    server.deps.fetch = remote.fetch
+    try {
+      await post(server, '/api/talaria/relay/pair', { relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'synthetic' })
+      const sid = String(((await json(await post(server, '/api/session/new', {}))).session as Json).session_id)
+      for (const id of ['one', 'two']) {
+        await server.deps.background.trackCommand(sid, id, id)
+        await server.deps.background.setCommandStream(sid, id, id)
+        server.deps.registry.liveIds.add(id)
+      }
+      const snapshot = () => server.deps.background.snapshot(sid, null)
+      // Commands settle through their owner; cancellation is an authoritative receipt outcome too.
+      if (outcome === 'cancelled') {
+        await server.deps.background.recordEvent(sid, { type: 'async_delegation', process_id: 'cancelled-unit', status: 'interrupted', goal: 'Cancelled work' }, '')
+      }
+      await server.deps.background.settleCommand(sid, 'one', outcome === 'failed' ? 'failed' : 'completed', 'Settled')
+      expect(await snapshot()).toMatchObject({ activity_phase: 'running' })
+      await server.deps.background.settleCommand(sid, 'two', 'completed', 'Settled')
+      expect(await snapshot()).toMatchObject({ activity_phase: outcome })
+    } finally { server.deps.registry.liveIds.clear(); server.deps.relay.stop(); await server.close() }
   })
 })

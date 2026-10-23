@@ -5,6 +5,79 @@ import XCTest
 
 final class ChatStreamCoordinatorTests: APIClientTestCase {
     @MainActor
+    func testUnrelatedSessionPhaseCannotMutateSharedActivity() {
+        let manager = CoordinatorSpyLiveActivityManager()
+        manager.start(sessionID: "session-a", sessionTitle: "Running A", streamID: "run-a", publisherURL: URL(string: "https://fixture.example")!, startedAt: Self.fixedNow)
+        let delegate = CoordinatorDelegateSpy()
+        delegate.streamCoordinatorSessionID = "session-b"
+        let coordinator = makeCoordinator(liveActivityManager: manager, delegate: delegate)
+        for phase in ["completed", "failed", "cancelled", "running", "waiting_for_approval", "waiting_for_input", "stale"] {
+            coordinator.applySessionActivityPhase(phase)
+        }
+        XCTAssertTrue(manager.ends.isEmpty, "Idle session B must not finalize A's activity")
+        XCTAssertTrue(manager.updates.isEmpty, "Idle session B must not repaint A's activity")
+        XCTAssertEqual(manager.markStaleCount, 0)
+    }
+
+    @MainActor
+    func testOlderCoordinatorCannotFinalizeNewerRunOfSameSession() {
+        let manager = CoordinatorSpyLiveActivityManager()
+        let delegate = CoordinatorDelegateSpy()
+        let coordinator = makeCoordinator(liveActivityManager: manager, delegate: delegate)
+        coordinator.start(streamID: "old-run")
+        manager.start(sessionID: "session-abc", sessionTitle: "New run", streamID: "new-run", publisherURL: URL(string: "https://fixture.example")!, startedAt: Self.fixedNow)
+        coordinator.applySessionActivityPhase("completed")
+        XCTAssertTrue(manager.ends.isEmpty)
+    }
+
+    @MainActor
+    func testDoneKeepsWorkingUntilServerBackgroundPhaseSettles() throws {
+        let stream = CoordinatorSpySSEStreamingClient()
+        let manager = CoordinatorSpyLiveActivityManager()
+        let delegate = CoordinatorDelegateSpy()
+        let coordinator = makeCoordinator(streamClient: stream, liveActivityManager: manager, delegate: delegate)
+        coordinator.start(streamID: "parent")
+        stream.emit(SSEEventDecoder.decode(eventType: "done", data: #"{"terminal_state":"completed","session":{"session_id":"session-abc","activity_phase":"running"}}"#))
+        XCTAssertTrue(manager.ends.isEmpty)
+        XCTAssertEqual(manager.updates.last, .promptSettled)
+        coordinator.applySessionActivityPhase("stale")
+        XCTAssertEqual(manager.markStaleCount, 1)
+        coordinator.applySessionActivityPhase("running")
+        XCTAssertTrue(manager.ends.isEmpty)
+        coordinator.applySessionActivityPhase("failed")
+        XCTAssertEqual(manager.ends.last?.status, .failed)
+    }
+
+    @MainActor
+    func testRefreshedTranscriptUsesServerPhaseWhileForegroundRunIsInactive() async throws {
+        let stream = CoordinatorSpySSEStreamingClient()
+        let manager = CoordinatorSpyLiveActivityManager()
+        let delegate = CoordinatorDelegateSpy()
+        delegate.serverTerminalState = "completed"
+        let coordinator = makeCoordinator(streamClient: stream, liveActivityManager: manager, delegate: delegate) { request in
+            apiTestJSONResponse(#"{"active":false,"activity_phase":"running"}"#, for: request)
+        }
+        coordinator.start(streamID: "parent")
+        await coordinator.refreshTranscriptIfCompleted(streamID: "parent")
+        XCTAssertTrue(manager.ends.isEmpty)
+        XCTAssertEqual(manager.updates.last, .promptSettled)
+    }
+
+    @MainActor
+    func testRefreshedTranscriptAndCancellationUseSessionActivityPhase() {
+        for phase in ["running", "waiting_for_approval", "waiting_for_input", "stale"] {
+            let stream = CoordinatorSpySSEStreamingClient()
+            let manager = CoordinatorSpyLiveActivityManager()
+            let delegate = CoordinatorDelegateSpy()
+            let coordinator = makeCoordinator(streamClient: stream, liveActivityManager: manager, delegate: delegate)
+            coordinator.start(streamID: "parent")
+            coordinator.applySessionActivityPhase(phase)
+            stream.emit(.cancelled)
+            XCTAssertTrue(manager.ends.isEmpty, phase)
+        }
+    }
+
+    @MainActor
     func testWarningDoesNotFinishTheTurnAndResetsOnlyForANewResponse() {
         let streamClient = CoordinatorSpySSEStreamingClient()
         let delegate = CoordinatorDelegateSpy()
@@ -2053,6 +2126,8 @@ private final class CoordinatorSpySSEStreamingClient: SSEStreamingClient {
 
 @MainActor
 private final class CoordinatorSpyLiveActivityManager: AgentLiveActivityManaging {
+    var currentSessionID: String? { starts.last?.sessionID }
+    var currentStreamID: String? { starts.last?.streamID }
     struct AggregateArm: Equatable {
         let sessionID: String
         let sessionTitle: String

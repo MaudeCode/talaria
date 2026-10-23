@@ -4,7 +4,7 @@ import { recordCompletion, retainedStates } from "./completions";
 import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import { internalMutation, internalQuery, type MutationCtx } from "./_generated/server";
-import { isTerminalPhase, type SessionPhase } from "./lib/model";
+import { activityPhase, isCurrentActivityState, isTerminalPhase, type SessionPhase } from "./lib/model";
 import {
   sessionStateContentValidator,
   sessionStateInputValidator,
@@ -41,38 +41,41 @@ function expiryForPhase(phase: SessionPhase, now: number) {
 
 function expiryForState(
   current: Doc<"sessionStates"> | null | undefined,
-  next: { phase: SessionPhase; streamId?: string },
+  next: { phase: SessionPhase; activityPhase?: SessionPhase; streamId?: string },
   now: number,
 ) {
+  if (next.activityPhase !== undefined && !isTerminalPhase(next.activityPhase)) {
+    return { expiresAt: now + 24 * 60 * 60_000, activityExpiresAt: now + 3 * 60_000 };
+  }
   if (
     current &&
     !current.deleted &&
-    isTerminalPhase(current.phase) &&
-    current.phase === next.phase &&
+    isTerminalPhase(activityPhase(current)) &&
+    activityPhase(current) === activityPhase(next) &&
     next.streamId !== undefined &&
     next.streamId === current.streamId &&
     current.terminalExpiresAt !== undefined
   ) {
     return { expiresAt: current.expiresAt, terminalExpiresAt: current.terminalExpiresAt };
   }
-  return expiryForPhase(next.phase, now);
+  return expiryForPhase(activityPhase(next), now);
 }
 
 // Ineligibility belongs to the phase transition that carried it, so same-phase updates of the same run inherit it
 // until the phase changes. A new stream is a new run and starts from its own value.
 function alertEligibleForState(
   current: Doc<"sessionStates"> | null | undefined,
-  next: { phase: SessionPhase; streamId?: string; alertEligible?: boolean },
+  next: { phase: SessionPhase; activityPhase?: SessionPhase; streamId?: string; alertEligible?: boolean },
 ): boolean | undefined {
-  return current && !current.deleted && current.phase === next.phase && current.streamId === next.streamId
+  return current && !current.deleted && activityPhase(current) === activityPhase(next) && current.streamId === next.streamId
     && current.alertEligible === false ? false : next.alertEligible;
 }
 
 // The phase a delivery transition starts from. A first publication, a re-created session, or a new run that begins in
 // the same phase has none: it never alerts, but it still carries eligibility to delivery.
-function previousPhaseFor(current: Doc<"sessionStates"> | null | undefined, next: { phase: SessionPhase; streamId?: string }): SessionPhase | undefined {
+function previousPhaseFor(current: Doc<"sessionStates"> | null | undefined, next: { phase: SessionPhase; activityPhase?: SessionPhase; streamId?: string }): SessionPhase | undefined {
   if (!current || current.deleted) return undefined;
-  return current.phase === next.phase && current.streamId !== next.streamId ? undefined : current.phase;
+  return activityPhase(current) === activityPhase(next) && current.streamId !== next.streamId ? undefined : activityPhase(current);
 }
 
 function stateRunKey(current: Doc<"sessionStates"> | null | undefined, next: { streamId?: string; phase: SessionPhase; eventId: string }): string {
@@ -99,10 +102,12 @@ function exposedState(state: Doc<"sessionStates">) {
     revision: state.revision,
     title: state.title,
     phase: state.phase,
+    activityPhase: state.activityPhase,
     updatedAt: state.updatedAt,
     deepLink: state.deepLink,
     expiresAt: state.expiresAt,
     terminalExpiresAt: state.terminalExpiresAt,
+    activityExpiresAt: state.activityExpiresAt,
     alertEligible: state.alertEligible,
     receivedAt: state.receivedAt,
   };
@@ -178,6 +183,19 @@ async function grantsForProfile(
     ).take(500);
 }
 
+/** Share the revoke path's bound; the indexed read and all writes share one transaction. */
+async function statesForAdmission(ctx: MutationCtx, grant: Doc<"publisherGrants">, sessionIds: readonly string[]) {
+  const states = await ctx.db.query("sessionStates")
+    .withIndex("by_version_and_user_id_and_publisher_id_and_session_id", (query) =>
+      query.eq("version", 2).eq("userId", grant.userId).eq("publisherId", grant.publisherId),
+    ).take(501);
+  const existing = new Set(states.map((state) => state.sessionId));
+  if (states.length + sessionIds.filter((id) => !existing.has(id)).length > 500) {
+    throw new Error("too_many_states");
+  }
+  return states;
+}
+
 export const acceptState = internalMutation({
   args: {
     ...publisherRequestArgs,
@@ -214,14 +232,10 @@ export const acceptState = internalMutation({
       }
       if (existing && args.revision <= existing.revision) continue;
       if (!existing) {
-        const states = await ctx.db.query("sessionStates")
-          .withIndex("by_version_and_user_id_and_publisher_id_and_session_id", (query) =>
-            query.eq("version", 2).eq("userId", grant.userId).eq("publisherId", args.publisherId),
-          ).take(500);
-        if (states.length >= 500) continue;
+        await statesForAdmission(ctx, grant, [args.sessionId]);
       }
 
-      const previousPhase = args.state ? previousPhaseFor(existing, args.state) : existing?.deleted ? undefined : existing?.phase;
+      const previousPhase = args.state ? previousPhaseFor(existing, args.state) : existing?.deleted || !existing ? undefined : activityPhase(existing);
       const next = args.state
         ? {
             deleted: false,
@@ -292,10 +306,7 @@ export const acceptSnapshot = internalMutation({
       args.publisherId,
       args.profileId,
     )) {
-      const existing = await ctx.db.query("sessionStates")
-        .withIndex("by_version_and_user_id_and_publisher_id_and_session_id", (query) =>
-          query.eq("version", 2).eq("userId", grant.userId).eq("publisherId", args.publisherId),
-        ).take(500);
+      const existing = await statesForAdmission(ctx, grant, args.states.map((state) => state.sessionId));
       const bySessionId = new Map(existing.map((state) => [state.sessionId, state]));
       const transitions: {
         publisherId: string;
@@ -309,7 +320,7 @@ export const acceptSnapshot = internalMutation({
         if (current && state.revision === current.revision) {
           await backfillCompletion(ctx, grant, current);
           await ctx.db.patch(current._id, {
-            ...(isTerminalPhase(current.phase) ? {} : expiryForPhase(current.phase, args.receivedAt)),
+            ...(isTerminalPhase(activityPhase(current)) ? {} : expiryForState(current, current, args.receivedAt)),
             receivedAt: args.receivedAt,
           });
           continue;
@@ -329,7 +340,7 @@ export const acceptSnapshot = internalMutation({
         };
         // A newly suppressed same-phase update is also delivered as a (non-alerting) transition so delivery can
         // record the deferral and revalidate any queued alert for it.
-        if (!current || current.phase !== state.phase || current.streamId !== state.streamId
+        if (!current || activityPhase(current) !== activityPhase(state) || current.streamId !== state.streamId
           || (next.alertEligible === false && current.alertEligible !== false)) {
           transitions.push({
             publisherId: args.publisherId,
@@ -396,7 +407,7 @@ export const listCurrentStates = internalQuery({
         query.eq("version", 2).eq("userId", args.userId).gt("expiresAt", args.now),
       ).take(500);
     return [
-      ...states.filter((state) => !state.deleted && (!isTerminalPhase(state.phase) || state.runKey === undefined)).map(exposedState),
+      ...states.filter(isCurrentActivityState).map(exposedState),
       ...(await retainedStates(ctx, args.userId)).map((state) => ({ ...state, deleted: false, receivedAt: state.updatedAt })),
     ];
   },

@@ -147,3 +147,42 @@ describe('classifyProviderError quota phrases', () => {
     expect(classifyProviderError(message).type).toBe('quota_exhausted')
   })
 })
+
+
+it('keeps a newer run working when an earlier turn builds its terminal session (TAL-1520)', async () => {
+  const server = await bootTestServer()
+  try {
+    const session = await server.deps.sessionStore.newSession()
+    session.messages = [
+      { role: 'user', content: 'First', _turn_id: 'old', timestamp: 100 },
+      { role: 'assistant', content: 'Answer', _turn_id: 'old', timestamp: 101 },
+      { role: 'user', content: 'Next', _turn_id: 'new', timestamp: 200 },
+    ]
+    session.active_stream_id = 'new'
+    await server.deps.sessionStore.save(session)
+    server.deps.registry.liveIds.add('new')
+    server.deps.registry.activeRuns.set('new', { stream_id: 'new', session_id: session.session_id, started_at: 200, phase: 'running', workspace: server.state, model: null, provider: null, ephemeral: false })
+    expect(await server.deps.turns.publicTerminalSession(session, 'old')).toMatchObject({ activity_phase: 'running', active_stream_id: 'new' })
+  } finally { server.deps.registry.activeRuns.delete('new'); server.deps.registry.liveIds.delete('new'); await server.close() }
+})
+
+
+it('carries the continuing session phase in the completed foreground frame and background snapshots (TAL-1520)', async () => {
+  const sidecar = new FakeSidecar()
+  sidecar.respond('chat.start', completed)
+  const server = await bootTestServer({ sidecar })
+  try {
+    const session = await server.deps.sessionStore.newSession()
+    await server.deps.background.trackCommand(session.session_id, 'command', 'Synthetic')
+    server.deps.registry.liveIds.add('background')
+    await server.deps.background.setCommandStream(session.session_id, 'command', 'background')
+    const start = await server.get('/api/chat/start', { method: 'POST', body: JSON.stringify({ session_id: session.session_id, message: 'hello' }), headers: { 'content-type': 'application/json' } })
+    const { stream_id: streamId } = await start.json() as { stream_id: string }
+    const frames = await server.sse(`/api/chat/stream?stream_id=${streamId}`, (frame) => frame.event === 'done')
+    expect(frames.find((frame) => frame.event === 'done')?.data).toMatchObject({ terminal_state: 'completed', session: { activity_phase: 'running' } })
+    const read = async () => (await server.get(`/api/background/tasks?session_id=${session.session_id}`)).json()
+    expect(await read()).toMatchObject({ activity_phase: 'running' })
+    await server.deps.background.settleCommand(session.session_id, 'command', 'completed', 'Done')
+    expect(await read()).toMatchObject({ activity_phase: 'completed' })
+  } finally { server.deps.registry.liveIds.delete('background'); await server.close() }
+})

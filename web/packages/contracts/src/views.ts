@@ -339,7 +339,11 @@ export const BranchedFromSchema = z.object({ session_id: SessionIdSchema, title:
 export type BranchedFrom = z.infer<typeof BranchedFromSchema>
 
 /** Full session record from `GET /api/session` and mutations returning `session`. */
+export const SessionActivityPhaseSchema = z.enum(['starting', 'running', 'waiting_for_approval', 'waiting_for_input', 'completed', 'failed', 'cancelled', 'stale'])
+export type SessionActivityPhase = z.infer<typeof SessionActivityPhaseSchema>
+
 export const SessionSchema = z.looseObject({
+  activity_phase: SessionActivityPhaseSchema.optional(),
   context_detail_key: z.string().nullable().optional().describe('Opaque identity for open-only context details; changes with owner epoch, model and context.'),
   composer_state_key: z.string().optional().describe('Opaque profile-home and owner identity for device-local composer state; never an API session id.'),
   session_id: SessionIdSchema, title: z.string(), workspace: z.string().optional(), created_workspace: z.string().nullable().optional(), model: NullableString.optional(), model_provider: NullableString.optional(),
@@ -413,6 +417,7 @@ export const SessionsListSchema = z.looseObject({
 export type SessionsList = z.infer<typeof SessionsListSchema>
 
 export const SessionStatusSchema = z.looseObject({
+  activity_phase: SessionActivityPhaseSchema.optional(),
   session_id: SessionIdSchema, title: z.string().optional(), active_stream_id: ActiveStreamIdSchema, active_turn_origin: ActiveTurnOriginSchema, agent_running: IsStreamingSchema, is_streaming: IsStreamingSchema, read_only: ReadOnlySchema, read_only_reason: ReadOnlyReasonSchema, owner_attachment: OwnerAttachmentSchema.optional(), message_count: z.number().optional(), model: NullableString.optional(),
   profile: NullableString.optional(), workspace: z.string().optional(), input_tokens: z.number().optional(), output_tokens: z.number().optional(), total_tokens: z.number().optional(), estimated_cost: NullableNumber.optional(), updated_at: UnixSeconds.optional(),
 })
@@ -449,7 +454,7 @@ export type ChatStartResponse = z.infer<typeof ChatStartResponseSchema>
  * stream's session: this run while it unwinds after a Stop, or a successor such as a goal continuation. A session delete
  * answers 409 while it is set, so a client draining a session before deleting it waits until it is null.
  */
-export const StreamStatusSchema = z.looseObject({ active: z.boolean(), stream_id: z.string(), replay_available: z.boolean().optional(), journal: Json.optional(), blocking_stream_id: z.string().nullable() })
+export const StreamStatusSchema = z.looseObject({ activity_phase: SessionActivityPhaseSchema.optional(), active: z.boolean(), stream_id: z.string(), replay_available: z.boolean().optional(), journal: Json.optional(), blocking_stream_id: z.string().nullable() })
 export type StreamStatus = z.infer<typeof StreamStatusSchema>
 /**
  * TAL-424: a pending steer is no longer pending without the Agent taking it: Edit and Cancel by the user, `stopped` by a
@@ -462,7 +467,7 @@ export type SteerWithdrawn = z.infer<typeof SteerWithdrawnSchema>
  * `withdrawn_steers` (TAL-426): the steers this Stop withdrew, the same `steer_withdrawn` (stopped) the stream carries, so
  * a client that stops reading the stream once the Stop answers still gives its own text back.
  */
-export const CancelResponseSchema = z.looseObject({ ok: z.boolean(), cancelled: z.boolean(), stream_id: z.string().optional(), withdrawn_steers: z.array(SteerWithdrawnSchema).optional(), error: z.string().optional() })
+export const CancelResponseSchema = z.looseObject({ activity_phase: SessionActivityPhaseSchema.optional(), ok: z.boolean(), cancelled: z.boolean(), stream_id: z.string().optional(), withdrawn_steers: z.array(SteerWithdrawnSchema).optional(), error: z.string().optional() })
 export const SteerWithdrawRequestSchema = z.object({ session_id: SessionIdSchema, steer_id: z.string().min(1), reason: z.enum(['edit', 'cancel']) })
 export type SteerWithdrawRequest = z.infer<typeof SteerWithdrawRequestSchema>
 /** `withdrawn: false` when the steer is unknown, already taken by the Agent (it then settles as consumed), or being sent. */
@@ -573,7 +578,7 @@ export type BackgroundTask = z.infer<typeof BackgroundTaskSchema>
  * result. `agents_working` (TAL-373): a delegation is running or needs attention, whatever `kind` the list is narrowed to;
  * the chat's side panel opens on Agents for it. Absent from servers before TAL-373.
  */
-export const BackgroundTasksResponseSchema = z.object({ session_id: z.string(), tasks: z.array(BackgroundTaskSchema), agent_available: z.boolean(), agents_working: z.boolean().optional() })
+export const BackgroundTasksResponseSchema = z.object({ activity_phase: SessionActivityPhaseSchema.optional(), session_id: z.string(), tasks: z.array(BackgroundTaskSchema), agent_available: z.boolean(), agents_working: z.boolean().optional() })
 export const BackgroundTaskResultSchema = z.object({ task_id: z.string(), text: z.string() })
 export const BackgroundDismissRequestSchema = z.object({ session_id: SessionIdSchema, task_id: z.string().min(1) })
 export const BackgroundStopResponseSchema = z.object({ outcome: z.enum(['stopped', 'not_running', 'not_found']) })

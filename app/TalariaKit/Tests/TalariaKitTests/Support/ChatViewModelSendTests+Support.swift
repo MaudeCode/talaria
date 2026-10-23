@@ -269,6 +269,8 @@ final class LockedCounter {
 
 @MainActor
 final class SpyChatLiveActivityManager: AgentLiveActivityManaging {
+    private(set) var currentSessionID: String?
+    private(set) var currentStreamID: String?
     struct AggregateArm: Equatable {
         let sessionID: String
         let sessionTitle: String
@@ -292,7 +294,10 @@ final class SpyChatLiveActivityManager: AgentLiveActivityManaging {
         ))
     }
 
-    func start(sessionID: String, sessionTitle: String, streamID: String?, publisherURL: URL, startedAt: Date) {}
+    func start(sessionID: String, sessionTitle: String, streamID: String?, publisherURL: URL, startedAt: Date) {
+        currentSessionID = sessionID
+        currentStreamID = streamID
+    }
 
     private(set) var updates: [AgentLiveActivityEvent] = []
     func update(_ event: AgentLiveActivityEvent) { updates.append(event) }

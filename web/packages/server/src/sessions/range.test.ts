@@ -503,3 +503,28 @@ it('does not publish an unfinished newest-reply cache entry to concurrent page r
     } finally { release(); await first }
   } finally { release(); vi.restoreAllMocks(); await server.close() }
 })
+
+
+it('cached pages keep the latest session activity through append and edit (TAL-1520)', async () => {
+  const server = await bootTestServer()
+  try {
+    const session = new Session({ session_id: 'range-activity', messages: [
+      { role: 'user', content: 'Old', _turn_id: 'old', timestamp: 1 },
+      { role: 'assistant', content: 'Answer', _turn_id: 'old', timestamp: 2 },
+      { role: 'user', content: 'New', _turn_id: 'new', timestamp: 3 },
+      { role: 'assistant', content: '', _error: true, _terminal_state: 'error', _turn_id: 'new', timestamp: 4 },
+    ] }, { workspace: server.state, model: null })
+    await server.deps.sessionStore.save(session)
+    const older = () => server.deps.sessions.detail(session.session_id, { msg_limit: '1', msg_before: '2' })
+    expect(await older()).toMatchObject({ activity_phase: 'failed' })
+    Object.assign(session.messages[3]!, { content: 'Recovered', _error: false, _terminal_state: 'completed' })
+    await server.deps.sessionStore.save(session)
+    expect(await older()).toMatchObject({ activity_phase: 'completed' })
+    session.messages.push({ role: 'user', content: 'Still needs an answer', _turn_id: 'unanswered', timestamp: 5 })
+    await server.deps.sessionStore.save(session)
+    expect(await older()).toMatchObject({ activity_phase: 'failed' })
+    session.messages.push({ role: 'assistant', content: 'Done', _turn_id: 'unanswered', timestamp: 6 })
+    await server.deps.sessionStore.save(session)
+    expect(await older()).toMatchObject({ activity_phase: 'completed' })
+  } finally { await server.close() }
+})

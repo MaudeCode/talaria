@@ -44,6 +44,8 @@ export const aggregateRowValidator = v.object({
 });
 
 export const aggregateValidator = v.object({
+  isFinal: v.optional(v.boolean()),
+  isStale: v.optional(v.boolean()),
   schemaVersion: v.literal(1),
   activeCount: v.number(),
   title: v.string(),
@@ -59,6 +61,7 @@ export const sessionStateContentValidator = v.object({
   streamId: v.optional(v.string()),
   title: v.string(),
   phase: sessionPhaseValidator,
+  activityPhase: v.optional(sessionPhaseValidator),
   updatedAt: v.number(),
   deepLink: v.string(),
   alertEligible: v.optional(v.boolean()),
@@ -81,10 +84,12 @@ export const storedSessionStateValidator = v.object({
   revision: v.number(),
   title: v.string(),
   phase: sessionPhaseValidator,
+  activityPhase: v.optional(sessionPhaseValidator),
   updatedAt: v.number(),
   deepLink: v.string(),
   expiresAt: v.number(),
   terminalExpiresAt: v.optional(v.number()),
+  activityExpiresAt: v.optional(v.number()),
   alertEligible: v.optional(v.boolean()),
   receivedAt: v.number(),
 });

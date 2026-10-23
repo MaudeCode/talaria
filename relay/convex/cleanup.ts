@@ -5,6 +5,7 @@ import type { Doc } from "./_generated/dataModel";
 import { internalMutation, type MutationCtx } from "./_generated/server";
 import { revokeDevicesForSession } from "./auth";
 import { grantMatches } from "./completions";
+import { activityPhase, isTerminalPhase } from "./lib/model";
 
 const batchSize = 100;
 
@@ -35,7 +36,7 @@ async function prunePass(ctx: MutationCtx) {
   const now = Date.now();
   const oldJobCutoff = now - 7 * 24 * 60 * 60 * 1_000;
   const retiredCutoff = now - 30 * 24 * 60 * 60 * 1_000;
-  const [nonces, userSessions, appleTokens, invitations, sessions, doneJobs, keys, pendingKeys, devices, activities, deadJobs, staleJobs, acknowledgedCompletions] = await Promise.all([
+  const [nonces, userSessions, appleTokens, invitations, sessions, expiredActivities, doneJobs, keys, pendingKeys, devices, activities, deadJobs, staleJobs, acknowledgedCompletions] = await Promise.all([
     ctx.db
       .query("publisherNonces")
       .withIndex("by_expires_at", (query) => query.lt("expiresAt", now))
@@ -55,6 +56,10 @@ async function prunePass(ctx: MutationCtx) {
     ctx.db
       .query("sessionStates")
       .withIndex("by_expires_at", (query) => query.lt("expiresAt", now))
+      .take(batchSize),
+    ctx.db
+      .query("sessionStates")
+      .withIndex("by_activity_expires_at", (query) => query.gt("activityExpiresAt", 0).lt("activityExpiresAt", now))
       .take(batchSize),
     ctx.db
       .query("deliveryJobs")
@@ -105,9 +110,13 @@ async function prunePass(ctx: MutationCtx) {
       )
       .take(batchSize),
   ]);
-  const full = [nonces, userSessions, appleTokens, invitations, sessions, doneJobs, keys, pendingKeys, devices, activities, deadJobs, staleJobs, acknowledgedCompletions]
+  const full = [nonces, userSessions, appleTokens, invitations, sessions, expiredActivities, doneJobs, keys, pendingKeys, devices, activities, deadJobs, staleJobs, acknowledgedCompletions]
     .some((rows) => rows.length === batchSize);
   let revokedDevices = 0;
+  for (const state of expiredActivities) {
+    await ctx.db.patch(state._id, { activityExpiresAt: undefined,
+      ...(!state.deleted && !isTerminalPhase(activityPhase(state, now)) ? { activityPhase: "stale" as const } : {}) });
+  }
   for (const session of userSessions) {
     revokedDevices += await revokeDevicesForSession(ctx, session.userId, session.sessionId, now);
   }
@@ -130,7 +139,7 @@ async function prunePass(ctx: MutationCtx) {
   const uniqueDocuments = [...new Map(documents.map((document) => [document._id, document])).values()];
   for (const document of uniqueDocuments) await ctx.db.delete(document._id);
   const affectedUsers = new Set(
-    sessions.flatMap((session) => session.userId ? [session.userId] : []),
+    [...sessions, ...expiredActivities].flatMap((session) => session.userId ? [session.userId] : []),
   );
   for (const userId of affectedUsers) {
     await ctx.scheduler.runAfter(0, internal.delivery.recompute, { userId });

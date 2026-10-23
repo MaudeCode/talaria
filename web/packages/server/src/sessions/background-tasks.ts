@@ -5,7 +5,7 @@
  * `sessions/_background/<sid>.json`, so reloads, restarts and every client read the same history, and reading never
  * consumes anything. The Agent stays authoritative for its own work: a receipt only fills in what it no longer reports.
  */
-import type { BackgroundLink, BackgroundTask, SidecarResult } from '@maudecode/talaria-web-contracts'
+import type { BackgroundLink, BackgroundTask, SessionActivityPhase, SidecarResult } from '@maudecode/talaria-web-contracts'
 import type { DocumentBackend } from './storage/backend.js'
 import { updateDocument } from './storage/document.js'
 import { SidecarError, type SidecarLike } from '../sidecar/client.js'
@@ -175,6 +175,8 @@ export function taskView(r: Receipt, opts: { unconfirmed?: boolean; canStop?: bo
 /** The receipts of every session, one small file each, cached after the first read. */
 export class BackgroundTaskStore {
   private readonly cache = new Map<string, Receipt[]>()
+  private readonly generations = new Map<string, number>()
+  generation(sid: string): number { return this.generations.get(sid) ?? 0 }
 
   constructor(private readonly documents: DocumentBackend, private readonly now: () => number, private readonly onChange?: (sid: string) => void | Promise<void>) {}
 
@@ -187,27 +189,31 @@ export class BackgroundTaskStore {
     if (!isSafeSessionId(sid)) return []
     const cached = this.cache.get(sid)
     if (cached) return cached
+    const generation = this.generation(sid)
     let receipts: Receipt[]
     try { receipts = this.parse((await this.documents.get('background', sid))?.value) } catch { receipts = [] }
+    if (generation !== this.generation(sid)) return []
     this.cache.set(sid, receipts)
     return receipts
   }
 
   async get(sid: string, taskId: string): Promise<Receipt | undefined> { return (await this.list(sid)).find((receipt) => receipt.task_id === taskId) }
 
-  private async mutate<T>(sid: string, edit: (receipts: Receipt[]) => T, opts: { skipUnchanged?: boolean } = {}): Promise<T> {
+  private async mutate<T>(sid: string, edit: (receipts: Receipt[]) => T, opts: { skipUnchanged?: boolean; generation?: number } = {}): Promise<T> {
+    const generation = opts.generation ?? this.generation(sid)
     const committed = await updateDocument(this.documents, 'background', sid, (raw) => {
+      if (generation !== this.generation(sid)) throw new Error('Background session changed during reconciliation')
       const receipts = this.parse(raw)
       const before = JSON.stringify(receipts)
       const result = edit(receipts)
       const tasks = this.bounded(receipts)
       return { value: { version: 1, tasks }, result: { tasks, result }, skip: opts.skipUnchanged === true && before === JSON.stringify(tasks) }
     }, { replaceInvalid: true })
-    this.cache.set(sid, committed.tasks)
+    if (generation === this.generation(sid)) this.cache.set(sid, committed.tasks)
     return committed.result
   }
 
-  async update(sid: string, updates: (Partial<Receipt> & Pick<Receipt, 'task_id' | 'kind'>)[], opts: { notify?: boolean } = {}): Promise<boolean> {
+  async update(sid: string, updates: (Partial<Receipt> & Pick<Receipt, 'task_id' | 'kind'>)[], opts: { notify?: boolean; generation?: number } = {}): Promise<boolean> {
     if (!isSafeSessionId(sid) || !updates.length) return false
     const now = this.now()
     const changed = await this.mutate(sid, (receipts) => {
@@ -221,7 +227,7 @@ export class BackgroundTaskStore {
         changed = true
       }
       return changed
-    })
+    }, opts.generation === undefined ? {} : { generation: opts.generation })
     if (changed && opts.notify !== false) void this.onChange?.(sid)
     return changed
   }
@@ -237,9 +243,12 @@ export class BackgroundTaskStore {
     return receipt
   }
 
+  async sessionIds(): Promise<string[]> { return (await this.documents.list('background')).map((entry) => entry.key).filter(isSafeSessionId) }
+
   evict(sid: string): void { this.cache.delete(sid) }
 
   async delete(sid: string): Promise<void> {
+    this.generations.set(sid, this.generation(sid) + 1)
     this.cache.delete(sid)
     try { await this.documents.delete('background', sid) } catch { /* best effort */ }
   }
@@ -303,6 +312,8 @@ const REFRESH_RETRY_MS = [1_000, 4_000, 15_000]
 
 export interface BackgroundActivityDeps {
   store: BackgroundTaskStore
+  validateSession?: (sid: string, profile: string | null) => Promise<void>
+  sessionState?: (sid: string, excludeStreamId?: string, profile?: string | null) => Promise<{ foreground: SessionActivityPhase | null; settled: SessionActivityPhase; since: number }>
   sidecar: () => SidecarLike | null
   profileHome: (profile: string | null) => string
   /** The stream is still running in this server. */
@@ -315,13 +326,21 @@ export interface BackgroundActivityDeps {
 export class BackgroundActivity {
   constructor(private readonly deps: BackgroundActivityDeps) {}
 
+  async sessionIds(): Promise<string[]> { return this.deps.store.sessionIds() }
+
+  async activityPhase(sid: string, profile: string | null, opts: { excludeStreamId?: string; terminalPhase?: SessionActivityPhase } = {}): Promise<SessionActivityPhase> {
+    if (opts.terminalPhase || opts.excludeStreamId || (await this.receipts(sid)).length) return (await this.snapshot(sid, profile, opts)).activity_phase
+    const state = await this.deps.sessionState?.(sid, undefined, profile)
+    return state?.foreground ?? state?.settled ?? 'completed'
+  }
+
   async receipts(sid: string): Promise<Receipt[]> { return (await this.deps.store.list(sid)) }
 
   async trackCommand(sid: string, taskId: string, prompt: string): Promise<void> {
     await this.deps.store.update(sid, [{ task_id: taskId, kind: 'background_command', status: 'running', title: taskTitle(prompt), started_at: this.deps.now() }])
   }
 
-  async setCommandStream(sid: string, taskId: string, streamId: string): Promise<void> { (await this.deps.store.mark(sid, taskId, { stream_id: streamId || null })) }
+  async setCommandStream(sid: string, taskId: string, streamId: string): Promise<void> { await this.deps.store.update(sid, [{ task_id: taskId, kind: 'background_command', stream_id: streamId || null }]) }
 
   /** The `/background` turn finished: its answer, or the failure text old clients showed, is the result. */
   async settleCommand(sid: string, taskId: string, outcome: 'completed' | 'failed', text: string): Promise<void> {
@@ -360,12 +379,15 @@ export class BackgroundActivity {
   }
 
   /** The session's records, refreshed from the Agent; work it cannot confirm right now shows `unknown`. */
-  async snapshot(sid: string, profile: string | null, opts: { agentOnly?: boolean; canStop?: boolean } = {}): Promise<{ tasks: BackgroundTask[]; agent_available: boolean; agents_working: boolean }> {
+  async snapshot(sid: string, profile: string | null, opts: { agentOnly?: boolean; canStop?: boolean; excludeStreamId?: string; terminalPhase?: SessionActivityPhase } = {}): Promise<{ tasks: BackgroundTask[]; agent_available: boolean; agents_working: boolean; activity_phase: SessionActivityPhase }> {
+    const generation = this.deps.store.generation(sid)
     const sidecar = this.deps.sidecar()
     let agent: SidecarResult<'process.background_list'> | null = null
     if (sidecar) {
       try { agent = await sidecar.call('process.background_list', { profile_home: this.deps.profileHome(profile), session_ids: [sid] }) } catch (error) { this.deps.log(`[webui] WARNING: background tasks for ${sid} unavailable from the Agent: ${(error as Error).message}`) }
     }
+    await this.deps.validateSession?.(sid, profile)
+    if (generation !== this.deps.store.generation(sid)) throw new Error('Background session changed during reconciliation')
     if (agent) agent = { delegations: agent.delegations.filter((r) => r.origin_ui_session_id === sid), processes: agent.processes.filter((p) => p.session_key === sid) }
     const now = this.deps.now()
     // A ledger row alone confirms only a settled unit: a running one must still be in the Agent's live registry, else it
@@ -380,15 +402,23 @@ export class BackgroundActivity {
       // says unknown until the Agent reports it again.
       const lost = (await this.deps.store.list(sid)).filter((r) => LIVE.has(r.status) && r.status !== 'unknown' && !confirmed(r)).map((r) => ({ task_id: r.task_id, kind: r.kind, status: 'unknown' as const }))
       const reportedIds = new Set(reported.map((r) => r.task_id))
-      await this.deps.store.update(sid, [...reported.map((r) => (confirmed(r as Receipt) || !RUNNING_LIKE.has(r.status ?? 'running') ? r : { ...r, status: 'unknown' as const })), ...lost.filter((r) => !reportedIds.has(r.task_id))])
+      await this.deps.store.update(sid, [...reported.map((r) => (confirmed(r as Receipt) || !RUNNING_LIKE.has(r.status ?? 'running') ? r : { ...r, status: 'unknown' as const })), ...lost.filter((r) => !reportedIds.has(r.task_id))], { generation })
     } else if (!opts.agentOnly) {
       // The Agent cannot be asked: a running delegation's record says unknown too, so its transcript row matches the
       // card; it returns to running once the Agent reports it again. A refresh (`agentOnly`) leaves the records as they are.
-      await this.deps.store.update(sid, (await this.deps.store.list(sid)).filter((r) => r.kind === 'delegation' && RUNNING_LIKE.has(r.status)).map((r) => ({ task_id: r.task_id, kind: r.kind, status: 'unknown' as const })))
+      await this.deps.store.update(sid, (await this.deps.store.list(sid)).filter((r) => r.kind === 'delegation' && RUNNING_LIKE.has(r.status)).map((r) => ({ task_id: r.task_id, kind: r.kind, status: 'unknown' as const })), { generation })
     }
+    await this.deps.store.update(sid, (await this.deps.store.list(sid)).filter((receipt) => receipt.kind === 'background_command' && receipt.status === 'unknown' && confirmed(receipt)).map((receipt) => ({ task_id: receipt.task_id, kind: receipt.kind, status: 'running' as const })), { generation })
     const tasks = (await this.deps.store.list(sid)).map((r) => taskView(r, { unconfirmed: !agent && !confirmed(r), canStop: opts.canStop !== false && agent !== null && confirmed(r) }))
     tasks.sort((a, b) => (b.started_at ?? b.updated_at) - (a.started_at ?? a.updated_at))
-    return { tasks, agent_available: agent !== null, agents_working: tasks.some((t) => t.kind === 'delegation' && (t.status === 'running' || t.status === 'attention')) }
+    const state = await this.deps.sessionState?.(sid, opts.excludeStreamId, profile)
+    const settled = opts.terminalPhase ?? state?.settled ?? 'completed'
+    const recent = tasks.filter((task) => (task.completed_at ?? Infinity) >= (state?.since ?? 0))
+    const activity_phase = state?.foreground ?? (tasks.some((task) => task.status === 'running' || task.status === 'attention') ? 'running'
+      : tasks.some((task) => task.status === 'unknown') ? 'stale'
+      : settled === 'failed' || recent.some((task) => task.status === 'failed') ? 'failed'
+      : settled === 'cancelled' || recent.some((task) => task.status === 'cancelled') ? 'cancelled' : settled)
+    return { tasks, activity_phase, agent_available: agent !== null, agents_working: tasks.some((t) => t.kind === 'delegation' && (t.status === 'running' || t.status === 'attention')) }
   }
 
   /**

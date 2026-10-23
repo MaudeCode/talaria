@@ -109,12 +109,14 @@ public struct BackgroundLink: Decodable, Equatable {
 public struct BackgroundTasksResponse: Decodable, Equatable {
     public let tasks: [BackgroundWorkTask]
     public let agentAvailable: Bool
+    public let activityPhase: String?
 
-    enum CodingKeys: String, CodingKey { case tasks, agentAvailable }
+    enum CodingKeys: String, CodingKey { case tasks, agentAvailable, activityPhase }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         tasks = container.decodeLossyArrayIfPresent(BackgroundWorkTask.self, forKey: .tasks) ?? []
+        activityPhase = container.decodeLossyStringIfPresent(forKey: .activityPhase)
         agentAvailable = container.decodeLossyBoolIfPresent(forKey: .agentAvailable) ?? true
     }
 }

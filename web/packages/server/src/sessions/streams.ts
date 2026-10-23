@@ -124,6 +124,8 @@ export interface ActiveRun {
   model: string | null
   provider: string | null
   ephemeral: boolean
+  /** The hidden worker's activity belongs to its parent, while its turn persists and settles normally. */
+  activity_parent_session_id?: string
   /** Admission owns the session while its pending snapshot is being committed; no channel exists yet. */
   admitting?: boolean
   /** TAL-460: `background` for a wakeup turn, which a user's message replaces instead of joining. */

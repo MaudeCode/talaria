@@ -545,7 +545,7 @@ describe('chat turns through the sidecar', () => {
     expect(rows[rows.length - 1]).toMatchObject({ event: 'stream_end', terminal: true, terminal_state: 'completed', version: 1, run_id: streamId, session_id: sid })
 
     res = await s.get(`/api/chat/stream/status?stream_id=${streamId}`)
-    expect(await json(res)).toEqual({ active: false, stream_id: streamId, replay_available: true, blocking_stream_id: null, journal: { session_id: sid, run_id: streamId, last_seq: rows.length, last_event_id: `${streamId}:${String(rows.length)}`, last_event: 'stream_end', terminal: true, terminal_state: 'completed' } })
+    expect(await json(res)).toEqual({ active: false, activity_phase: 'completed', stream_id: streamId, replay_available: true, blocking_stream_id: null, journal: { session_id: sid, run_id: streamId, last_seq: rows.length, last_event_id: `${streamId}:${String(rows.length)}`, last_event: 'stream_end', terminal: true, terminal_state: 'completed' } })
     // A late reconnect replays the journal from the cursor and closes at the terminal fence.
     const replay = await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:5`, (f) => f.event === 'stream_end')
     expect(replay.map((f) => Number(f.id?.split(':')[1]))[0]).toBe(6)
@@ -1492,7 +1492,7 @@ describe('chat turns through the sidecar', () => {
     expect(await json(res)).toEqual({ error: 'session already has an active stream', active_stream_id: streamId })
     expect(await json(await s.get(`/api/chat/stream/status?stream_id=${streamId}`))).toMatchObject({ active: true, replay_available: true })
     res = await s.get(`/api/chat/cancel?stream_id=${streamId}`)
-    expect(await json(res)).toEqual({ ok: true, cancelled: true, stream_id: streamId, withdrawn_steers: [] })
+    expect(await json(res)).toEqual({ ok: true, cancelled: true, activity_phase: 'cancelled', stream_id: streamId, withdrawn_steers: [] })
     expect(interrupted).toBe(true)
     const frames = await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'cancel')
     expect(eventNames(frames)).toContain('cancel')
@@ -2116,7 +2116,7 @@ describe('chat turns through the sidecar', () => {
       { steer_id: null, reason: 'stopped', text: 'from elsewhere' },
     ]
     // TAL-426: the Stop's answer carries them too, for a client that stops reading the stream once it answers.
-    expect(await json(await s.get(`/api/chat/cancel?stream_id=${streamId}`))).toEqual({ ok: true, cancelled: true, stream_id: streamId, withdrawn_steers: withdrawn })
+    expect(await json(await s.get(`/api/chat/cancel?stream_id=${streamId}`))).toEqual({ ok: true, cancelled: true, activity_phase: 'cancelled', stream_id: streamId, withdrawn_steers: withdrawn })
     const frames = await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'cancel')
     const names = frames.map((f) => f.event)
     expect(names.lastIndexOf('steer_withdrawn')).toBeLessThan(names.indexOf('cancel'))

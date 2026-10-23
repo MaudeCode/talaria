@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  rowForState,
   alertForTransition,
   makeAggregate,
   MAX_AGGREGATE_ROWS,
@@ -32,6 +33,17 @@ function state(
 }
 
 describe("makeAggregate", () => {
+  it("renders continuing session work independently of retained turn outcomes", () => {
+    for (const phase of ["completed", "failed", "cancelled"] as const) {
+      const turn = { ...state("parent", phase), activityPhase: "running" as const };
+      const aggregate = makeAggregate([turn], now)!;
+      expect(aggregate.activeCount).toBe(1);
+      expect(aggregate.rows[0]).toMatchObject({ phase: "running", status: "Working" });
+      expect(rowForState(turn, turn.phase).phase).toBe(phase);
+      expect(alertForTransition(state("parent", "running"), turn, defaultNotificationPreferences)).toBeNull();
+    }
+    expect(makeAggregate([{ ...state("parent", "completed"), activityPhase: "stale" }], now)?.rows[0]).toMatchObject({ phase: "stale" });
+  });
   it("counts every active session while capping and prioritizing display rows", () => {
     const states = [
       state("run-1", "running"),

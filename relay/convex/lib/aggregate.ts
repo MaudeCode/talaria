@@ -6,7 +6,7 @@ import type {
   SessionPhase,
   SessionState,
 } from "./model";
-import { isTerminalPhase } from "./model";
+import { activityPhase, isTerminalPhase } from "./model";
 
 export const MAX_AGGREGATE_ROWS = 5;
 
@@ -49,7 +49,7 @@ function statusForPhase(phase: SessionPhase): string {
   }
 }
 
-export function rowForState(state: SessionState): AggregateRow {
+export function rowForState(state: SessionState, phase = activityPhase(state)): AggregateRow {
   return {
     ...(state.completionId ? { completionId: state.completionId } : {}),
     publisherId: state.publisherId,
@@ -57,8 +57,8 @@ export function rowForState(state: SessionState): AggregateRow {
     sessionId: state.sessionId,
     streamId: state.streamId,
     title: state.title,
-    phase: state.phase,
-    status: statusForPhase(state.phase),
+    phase,
+    status: statusForPhase(phase),
     updatedAt: state.updatedAt,
     deepLink: state.deepLink,
   };
@@ -70,7 +70,8 @@ export function makeAggregate(
   includeTerminalOnly = false,
 ): ActivityAggregate | null {
   const bySession = new Map<string, SessionState>();
-  for (const state of states) {
+  for (const source of states) {
+    const state = { ...source, phase: activityPhase(source, now) };
     if (state.deleted || state.expiresAt <= now
       || (isTerminalPhase(state.phase) && (state.terminalExpiresAt ?? 0) <= now)) continue;
     const key = JSON.stringify([state.publisherId, state.sessionId]);
@@ -107,18 +108,20 @@ export function makeAggregate(
 
   return {
     schemaVersion: 1,
+    isFinal: visible.every((state) => isTerminalPhase(state.phase)),
+    isStale: activeCount === 0 && visible.some((state) => state.phase === "stale"),
     activeCount,
     title: "Talaria",
     subtitle:
       activeCount === 0
-        ? failed
+        ? visible.some((state) => state.phase === "stale") ? "Waiting for server" : failed
           ? "Agent work failed"
           : "Agent work completed"
         : attentionCount > 0
           ? `${attentionCount} need${attentionCount === 1 ? "s" : ""} attention`
           : `${activeCount} active ${activeCount === 1 ? "session" : "sessions"}`,
     updatedAt: Math.max(...visible.map((state) => state.updatedAt)),
-    rows: visible.slice(0, MAX_AGGREGATE_ROWS).map(rowForState),
+    rows: visible.slice(0, MAX_AGGREGATE_ROWS).map((state) => rowForState(state, state.phase)),
   };
 }
 
@@ -132,12 +135,12 @@ export function aggregateFingerprint(aggregate: ActivityAggregate | null): strin
 }
 
 export function alertForTransition(
-  previous: SessionState | null,
+  previous: SessionState | SessionPhase | null,
   next: SessionState,
   preferences: NotificationPreferences,
 ): ActivityAlert | null {
-  // A first publication has no transition to alert for; it still carries eligibility to delivery.
-  if (!previous || previous.phase === next.phase) return null;
+  const previousPhase = typeof previous === "string" ? previous : previous ? activityPhase(previous) : null;
+  if (!previousPhase || previousPhase === activityPhase(next)) return null;
   return alertForState(next, preferences);
 }
 
@@ -146,7 +149,7 @@ export function alertForState(
   preferences: NotificationPreferences,
 ): ActivityAlert | null {
   if (next.alertEligible === false) return null;
-  switch (next.phase) {
+  switch (activityPhase(next)) {
     case "waiting_for_approval":
       return preferences.notifyOnApproval
         ? { title: next.title, body: `Approval needed on ${next.publisherLabel}` }
