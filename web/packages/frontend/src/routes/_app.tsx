@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { Outlet, createFileRoute, redirect } from '@tanstack/react-router'
+import { useSessionListStream } from '../features/sessions/useSessionListStream'
 import { startPresence } from '../features/presence/presence'
 import { isAuthenticated } from '../contracts/bootstrap'
 import { legacyHashRoute } from '../contracts/url'
@@ -26,6 +27,7 @@ export const Route = createFileRoute('/_app')({
 })
 
 function AppLayout() {
+  useSessionListStream()
   // One presence lease per tab for the whole authenticated session, not per page.
   useEffect(() => startPresence(), [])
   // Signed-in chat Markdown asks the server whether a link skips the warning.

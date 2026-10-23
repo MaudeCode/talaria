@@ -1,14 +1,14 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { SessionsListSchema, type SessionRow } from '../../contracts'
 import { ApiError } from '../../contracts/common'
 
-vi.mock('../../api/endpoints', () => ({ fetchSessions: vi.fn(), searchSessions: vi.fn(), fetchProjects: vi.fn(), archiveSession: vi.fn(), createProject: vi.fn(), importSession: vi.fn() }))
+vi.mock('../../api/endpoints', () => ({ fetchSettings: () => Promise.resolve({ sound_enabled: false }), fetchSessions: vi.fn(), searchSessions: vi.fn(), fetchProjects: vi.fn(), archiveSession: vi.fn(), createProject: vi.fn(), importSession: vi.fn() }))
 const sessionEvents = vi.hoisted(() => ({ emit: vi.fn<(event: { event: string; data: { session_id?: string; reason?: string } }) => void>() }))
 vi.mock('../../api/sse', () => ({ SSE_OPEN: 1, openSessionListStream: ({ onEvent }: { onEvent: typeof sessionEvents.emit }) => { sessionEvents.emit.mockImplementation(onEvent); return { close: () => undefined, readyState: () => 1 } } }))
 vi.mock('./useNewChat', () => ({ useNewChat: () => vi.fn() }))
@@ -24,6 +24,7 @@ vi.mock('@tanstack/react-router', () => ({
 }))
 import * as api from '../../api/endpoints'
 import { groupSessionRows, SessionListPanel } from './SessionListPanel'
+import { useSessionListStream } from './useSessionListStream'
 
 const now = Date.now() / 1000
 const row = (session_id: string, title: string, extra: Partial<SessionRow> = {}): SessionRow => ({
@@ -249,7 +250,10 @@ describe('session row renders (TAL-1211)', () => {
   it('renders only the changed row after a refetch changes one title', async () => {
     vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [alpha, delta, other] } as never)
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    render(<QueryClientProvider client={qc}><SessionListPanel /></QueryClientProvider>)
+    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    // The authenticated layout owns the feed; the panel only renders its shared query cache.
+    renderHook(useSessionListStream, { wrapper })
+    render(<SessionListPanel />, { wrapper })
     await screen.findByText('Alpha zebra')
     await screen.findByRole('button', { name: 'Proj' })
     rowRender.mockClear()

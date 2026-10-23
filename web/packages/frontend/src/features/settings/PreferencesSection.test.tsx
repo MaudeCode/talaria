@@ -115,3 +115,10 @@ it('offers the chosen model\'s own speed tiers before the server answers (TAL-13
   await userEvent.click(screen.getByRole('combobox', { name: 'Speed' }))
   expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(['Standard', 'Fast'])
 })
+
+it('offers device-local completion sound presets and explicit preview', async () => {
+  renderSection()
+  await screen.findByText('Default Model')
+  expect(screen.getByRole('combobox', { name: 'Completion sound' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Preview sound' })).toBeInTheDocument()
+})

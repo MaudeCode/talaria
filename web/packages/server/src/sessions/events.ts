@@ -1,3 +1,4 @@
+import type { WebAudioCompletion } from '@maudecode/talaria-web-contracts'
 /**
  * Session-list change bus (Python `api/session_events.py`): a version counter,
  * a coalescing one-slot queue per subscriber, and synchronous listeners.
@@ -8,6 +9,7 @@ export interface SessionsChangedEvent {
   reason: string
   profile?: string
   session_id?: string
+  web_audio?: WebAudioCompletion[]
 }
 
 export type SessionEventsListener = (profile: string | null) => void
@@ -35,6 +37,7 @@ export class SessionEventBus {
   /** Merge a pending event with an incoming one without dropping profile-relevant work. */
   static coalesce(pending: SessionsChangedEvent | null, incoming: SessionsChangedEvent): SessionsChangedEvent {
     if (!pending) return incoming
+    if (pending.web_audio?.length) incoming = { ...incoming, web_audio: [...pending.web_audio, ...(incoming.web_audio ?? [])].slice(-32) }
     if ((pending.profile ?? null) === (incoming.profile ?? null)) {
       if ((pending.session_id ?? null) === (incoming.session_id ?? null)) return incoming
       const merged = { ...incoming }
@@ -47,8 +50,9 @@ export class SessionEventBus {
     return merged
   }
 
-  publish(reason = 'session_changed', opts: { profile?: string | null; sessionId?: string | null } = {}): void {
+  publish(reason = 'session_changed', opts: { profile?: string | null; sessionId?: string | null; webAudio?: WebAudioCompletion } = {}): void {
     const payload = this.payload(reason, opts.profile ?? null, opts.sessionId ?? null)
+    if (opts.webAudio) payload.web_audio = [opts.webAudio]
     for (const sub of this.subscribers) {
       sub.pending = SessionEventBus.coalesce(sub.pending, payload)
       const wake = sub.wake

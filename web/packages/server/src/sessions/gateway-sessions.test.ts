@@ -612,6 +612,32 @@ describe('canonical owner attachment', () => {
     }
   }
 
+  it('publishes Web audio only for a live owner-confirmed successful completion', async () => {
+    const changes = vi.spyOn(s.deps.events, 'publish')
+    const watch = await observeOwner(snapshot({ running: true, pending: [admission()] }))
+    watch.finish()
+    await watch.read
+    await vi.waitFor(() => { expect(changes.mock.calls.some(([reason]) => reason === 'web_completion')).toBe(true) })
+  })
+
+  it.each(['failed', 'cancelled'])('keeps native %s completions quiet', async (outcome) => {
+    const changes = vi.spyOn(s.deps.events, 'publish')
+    const watch = await observeOwner(snapshot({ running: true, pending: [admission()] }))
+    watch.finish(1, outcome)
+    await watch.read
+    expect(changes.mock.calls.some(([reason]) => reason === 'web_completion')).toBe(false)
+  })
+
+  it('keeps a native completion received during replay quiet', async () => {
+    const changes = vi.spyOn(s.deps.events, 'publish')
+    const watch = await observeOwner(snapshot({ running: true, pending: [admission()] }))
+    watch.replaySnapshot()
+    watch.finish()
+    watch.replayComplete('completed')
+    await watch.read
+    expect(changes.mock.calls.some(([reason]) => reason === 'web_completion')).toBe(false)
+  })
+
   it.each([false, true])('replays a cron refusal that settled before the submit acknowledgement, viewed=%s', async (viewed) => {
     const snap = snapshot()
     sidecar.respond('gateway.session', (params, send, opts) => {

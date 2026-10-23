@@ -106,6 +106,7 @@ export class GatewaySessions {
     return undefined
   }
   constructor(private readonly deps: {
+    onWebCompletion?: (profile: string, sessionId: string, identity: string) => void;
     service: SessionService; sidecar: () => SidecarLike | null; registry: StreamRegistry;
     journal: RunJournal; events: SessionEventBus; channels: SessionChannels; profileHome: (profile: string) => string;
     activeProfile: () => string; showReasoning: (home: string) => Promise<boolean>; redactEnabled: () => boolean; now: () => number; log: (line: string) => void;
@@ -650,6 +651,7 @@ export class GatewaySessions {
       const showReasoning = await this.deps.showReasoning(target.home).catch(() => false)
       let completion: { admission: string; message: string; type: 'cron_session_read_only'; code: 'cron_session_read_only'; retryable: false } | null = null
       let replaying = true
+      let liveRunning = false
       let usage: Row = {}
       let reasoning = ''
       let titles = new ReasoningTitleTracker()
@@ -665,7 +667,7 @@ export class GatewaySessions {
         for (const call of calls) if (call.progress) await put('tool_progress', { id: call.tid, progress: null })
         calls.length = 0
       }
-      const resetProjection = async () => { await clearTools(); reasoning = ''; usage = {}; completion = null; titles = new ReasoningTitleTracker() }
+      const resetProjection = async () => { await clearTools(); liveRunning = false; reasoning = ''; usage = {}; completion = null; titles = new ReasoningTitleTracker() }
       const meter = async (data: Row) => {
         usage = { ...usage, ...ownerUsage(data) }
         if (['input_tokens', 'output_tokens', 'cache_read_tokens', 'cache_write_tokens'].every((key) => typeof usage[key] === 'number')) await put('metering', { session_id: target.sid, usage: { ...usage, estimated_cost: usage.estimated_cost ?? null }, tps: usage.tps ?? null, tps_available: usage.tps !== undefined, estimated: false })
@@ -696,6 +698,10 @@ export class GatewaySessions {
           ...(failed ? refusal ?? { message: 'The owning Agent could not complete this turn', type: current.reason ?? 'owner_turn_failed' } : {}),
           ...(Object.keys(usage).length ? { usage } : {}),
           ...(session ? { session } : {}) })
+        if (liveRunning && !cancelled && !failed && receipt?.admission_id === activeAdmission && receipt?.authority_epoch === watch.snapshot.authority_epoch
+            && receipt.execution_generation === watch.snapshot.execution_generation) {
+          this.deps.onWebCompletion?.(target.profile, target.sid, JSON.stringify(['owner', target.sid, watch.snapshot.authority_epoch, watch.snapshot.replay_epoch, watch.snapshot.execution_generation, receipt.admission_id]))
+        }
         await put('stream_end', { session_id: target.sid })
         watch.controller.abort()
       }
@@ -721,6 +727,7 @@ export class GatewaySessions {
           enqueue(async () => {
             if (frame.event === 'replay_complete') {
               replaying = false
+              liveRunning ||= watch.snapshot.running
               if (!watch.snapshot.running && !watch.snapshot.pending.some((p) => p.status === 'queued' || p.status === 'started')) await finish()
               return
             }
@@ -739,10 +746,12 @@ export class GatewaySessions {
             if (frame.event === 'snapshot') {
               const result = GatewaySessionResultSchema.parse(frame.data)
               replaying = (frame.data as Row).replaying === true
+              if (replaying) liveRunning = false
               if (!result.snapshot) return
               if (result.replay_gap || !sameExecution(result.snapshot, watch.snapshot)) await resetProjection()
               await put('session_snapshot', { session: await this.view(base, result, watch.stream, target), replay_gap: result.replay_gap === true })
               await prompts(result.snapshot)
+              liveRunning ||= !replaying && result.snapshot.running
               if (!result.snapshot.running && !result.snapshot.pending.some((p) => p.status === 'queued' || p.status === 'started')) await finish()
               return
             }
@@ -783,6 +792,7 @@ export class GatewaySessions {
               const claimed = runningAdmission(watch.snapshot)
               if (firstClaim && claimed) activeAdmission = claimed.admission_id
               ran ||= data.running === true
+              liveRunning ||= !replaying && data.running === true
               if (firstClaim) await put('session_snapshot', { session: await this.view(base, { state: 'attached', reason: null, snapshot: watch.snapshot, receipt: null, restarting: watch.restarting }, watch.stream, target) })
               if (data.running === false && (ran || !watch.snapshot.pending.some((p) => p.status === 'queued' || p.status === 'started'))) await finish()
               return
