@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Agent updates and recovery no longer fail when a verified service helper finishes during readiness checks.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

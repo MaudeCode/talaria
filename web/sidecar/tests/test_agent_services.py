@@ -141,7 +141,7 @@ def test_snapshot_refuses_unsafe_identity_evidence(supervised_inventory, monkeyp
 
     monkeypatch.setattr(status, 'get_process_start_time', birth)
     monkeypatch.setattr(status, '_pid_exists', exists)
-    with pytest.raises(RuntimeError, match='live or unreadable|identity/ancestry changed|became live or unreadable'):
+    with pytest.raises(RuntimeError, match='live or unreadable|identity/ancestry changed|became live or unreadable|liveness is unreadable'):
         services.snapshot(dict(pid=41002, service_pid=41001))
 
 
@@ -317,7 +317,7 @@ def test_binding_resamples_exit_during_canonical_identity(supervised_inventory, 
 
 @pytest.mark.parametrize('stopping', [False, True])
 @pytest.mark.parametrize('probe', ['liveness', 'birth', 'canonical', 'ancestry'])
-def test_verification_exit_race_requires_stop_permission(supervised_inventory, monkeypatch, stopping, probe):
+def test_verification_reattests_exited_descendants(supervised_inventory, monkeypatch, stopping, probe):
     from types import SimpleNamespace
     from talaria_sidecar import agent_services as services
     _, _, _, _, _, parents, modules = supervised_inventory
@@ -342,25 +342,19 @@ def test_verification_exit_race_requires_stop_permission(supervised_inventory, m
 
     monkeypatch.setattr(status, 'get_process_start_time', birth)
     records.identity = canonical
-    if probe in {'liveness', 'ancestry'}:
+    if probe == 'liveness':
         parents.pop(41005)
-        if probe == 'ancestry':
-            exists = status._pid_exists
-            first = True
-
-            def race(pid):
-                nonlocal first
-                if pid == 41005 and first:
-                    first = False
-                    return True
-                return exists(pid)
-
-            monkeypatch.setattr(status, '_pid_exists', race)
-    if stopping:
-        services.verify_processes(entry, records, stopping=True)
-    else:
-        with pytest.raises(RuntimeError, match='disappeared|identity/ancestry changed'):
-            services.verify_processes(entry, records)
+    if probe == 'ancestry':
+        table = services._process_table
+        def race():
+            result = table()
+            parents.pop(41005, None)
+            return result
+        monkeypatch.setattr(services, '_process_table', race)
+    assert services.verify_processes(entry, records, stopping=stopping)
+    if not stopping:
+        assert set(entry['processes']) == {'41001', '41002'}
+        assert entry['departed_processes']['41005'] == {'birth': 410050, 'parent': 41002, 'ct': 41005}
 
 
 @pytest.mark.parametrize('stopping', [False, True])
@@ -378,8 +372,12 @@ def test_verification_rejects_a_child_arriving_during_identity_probes(supervised
         return pid * 10
 
     monkeypatch.setattr(modules['gateway.status'], 'get_process_start_time', birth)
-    with pytest.raises(RuntimeError, match='unrecorded descendant'):
-        services.verify_processes(entry, records, stopping=stopping)
+    if stopping:
+        with pytest.raises(RuntimeError, match='unrecorded descendant'):
+            services.verify_processes(entry, records, stopping=True)
+    else:
+        assert services.verify_processes(entry, records)
+        assert entry['processes']['41005'] == {'birth': 410050, 'parent': 41002, 'ct': 41005}
 
 
 @pytest.mark.parametrize('revived', [True, None])
@@ -506,7 +504,7 @@ try:
  entry['processes']=services.snapshot(entry)
  for pid,expected in entry['processes'].items():
   expected['ct']=records.identity(int(pid))['ct']; assert expected['ct'] is not None
- services._service_pid=lambda entry:(False,None)
+ services._service_pid=lambda entry:(child.poll() is None,child.pid if child.poll() is None else None)
  original_exists=status._pid_exists
  def observed_then_exit(pid):
   observed=original_exists(pid)
@@ -518,7 +516,7 @@ try:
   services.verify_processes(entry,records,stopping=True)
  else:
   try: services.verify_processes(entry,records)
-  except RuntimeError as error: assert 'identity/ancestry changed' in str(error),str(error)
+  except RuntimeError as error: assert 'identity/ancestry changed' in str(error) or ('anchor process' in str(error) and 'disappeared' in str(error)),str(error)
   else: raise AssertionError('normal custody must reject a process that exits during verification')
  assert child.returncode==0
  print('natural-exit verification boundary preserved')
@@ -2927,10 +2925,20 @@ def test_worker_lets_an_acknowledged_gateway_finish_past_the_former_cutoff(mutat
         if argv[:2] == ['launchctl', 'kickstart'] and argv[2].endswith('/synthetic.gateway'):
             events.append('gateway-start')
             gateway.update(service=44001, runtime=44002)
-            parents.update({44001: 1, 44002: 44001})
+            parents.update({44001: 1, 44002: 44001, 44005: 44002})
             return subprocess.CompletedProcess(argv, 0, '', '')
         return backend_run(argv, **kwargs)
     monkeypatch.setattr(subprocess, 'run', supervisor)
+    home_matches = services._gateway_home_matches
+    readiness_probes = 0
+    def home_check(home, runtime, owner):
+        nonlocal readiness_probes
+        if runtime[0] == 44002:
+            readiness_probes += 1
+            if readiness_probes == 2:
+                parents.pop(44005)  # Restored runtime bound successfully; its helper now finishes.
+        return home_matches(home, runtime, owner)
+    monkeypatch.setattr(services, '_gateway_home_matches', home_check)
     monkeypatch.setattr(mutation, 'time', services.time)
     advance = pause.advance
     def tick(seconds):
@@ -2949,6 +2957,7 @@ def test_worker_lets_an_acknowledged_gateway_finish_past_the_former_cutoff(mutat
         assert progress == [{'progress': {'phase': 'gateway_drain', 'deadline_seconds': NATIVE_BUDGET, 'services': ['synthetic.gateway']}}]
         assert events.index('gateway-disarm') < events.index('gateway-start')
         assert gateway['runtime'] == 44002 and pause.model['start_attempts'] == 1 and pause.ledger()
+        assert readiness_probes == 2 and 44005 not in parents
         assert not recovery.path.exists()
         return
     # An exceeded native budget or a lost lease refuses the update once; unwind spends no second budget.
@@ -3156,7 +3165,7 @@ def test_backend_stop_persists_commit_and_intent_before_supervisor_action(backen
     assert json.loads(recovery.path.read_text())['entries'][0]['phase'] == 'stopped'
 
 
-@pytest.mark.parametrize('unsafe', ['config', 'birth', 'ancestry', 'successor', 'child', 'cancel'])
+@pytest.mark.parametrize('unsafe', ['config', 'birth', 'ancestry', 'successor', 'unreadable-child', 'cancel'])
 def test_backend_stop_rechecks_custody_after_durable_intent(backend_stop, monkeypatch, unsafe):
     from talaria_sidecar import agent_services as services
     recovery, entry, stopped, parents, modules, events, pause = backend_stop
@@ -3170,11 +3179,13 @@ def test_backend_stop_rechecks_custody_after_durable_intent(backend_stop, monkey
         elif unsafe == 'birth': modules['gateway.status'].get_process_start_time = lambda pid: pid * 10 + 1
         elif unsafe == 'ancestry': parents[41004] = 1
         elif unsafe == 'successor': monkeypatch.setattr(services, '_service_pid', lambda e: (True, 41005))
-        elif unsafe == 'child': parents[41005] = 41003
+        elif unsafe == 'unreadable-child':
+            parents[41005] = 41003
+            recovery.records.identity = lambda pid: {'ct': None if pid == 41005 else pid}
         else: stopped.set()
 
     monkeypatch.setattr(recovery, 'save', change)
-    with pytest.raises(RuntimeError, match='changed|respawned|descendant|cancelled'):
+    with pytest.raises(RuntimeError, match='changed|respawned|descendant|cancelled|live or unreadable'):
         recovery.stop(entry, stopped)
     assert 'disarm' not in events
     assert json.loads(recovery.path.read_text())['entries'][0]['phase'] == 'retiring'
@@ -3266,3 +3277,193 @@ def test_fresh_recovery_replays_durable_backend_stop_boundaries_once(backend_sto
     assert events.count('disarm') == 1
     assert started == [entry['label']]
     assert not fresh.path.exists()
+
+
+def test_ready_successor_reattests_a_child_exiting_after_binding(gateway_successor, monkeypatch):
+    from talaria_sidecar import agent_services as services
+    recovery, entry, calls, parents, pause, records, modules = gateway_successor
+    parents[42005] = 42002
+    matches = services._gateway_home_matches
+    probes = 0
+
+    def home(*args):
+        nonlocal probes
+        probes += 1
+        if probes == 2:  # The readiness check follows the candidate's successful bind.
+            parents.pop(42005)
+        return matches(*args)
+
+    monkeypatch.setattr(services, '_gateway_home_matches', home)
+    recovery.resume(lambda *args: [])
+    assert probes == 2 and calls == []
+    assert not recovery.path.exists()
+
+
+@pytest.mark.parametrize('mode', ['normal', 'force'])
+@pytest.mark.parametrize('failure', [False, True])
+def test_worker_completes_or_recovers_after_post_move_child_exit(mutation_worker, monkeypatch, mode, failure):
+    from talaria_sidecar import agent_services as services
+    run, model, recovery, entry, parents, events, pause = mutation_worker
+    request = services.backend_request
+    bind = services.bind_processes
+    child = 45000
+    bound = False
+
+    def binding(candidate, records):
+        nonlocal bound
+        if model['head'] == model['target'] and not model.get('helper_bound'):
+            parents[child] = candidate['pid']
+            model['helper_bound'] = True
+        bind(candidate, records)
+        if str(child) in candidate.get('processes', {}):
+            bound = True
+
+    def readiness(candidate, *args):
+        if model['head'] == model['target'] and not model.get('helper_exited'):
+            assert str(child) in candidate['processes']
+            parents.pop(child)
+            model['helper_exited'] = True
+            if failure and not model.get('readiness_failed'):
+                model['readiness_failed'] = True
+                raise services.BackendLifecycleUnsupported('synthetic post-move readiness refusal')
+        return request(candidate, *args)
+
+    monkeypatch.setattr(services, 'bind_processes', binding)
+    monkeypatch.setattr(services, 'backend_request', readiness)
+    args = ['merge', '--ff-only', model['target']] if mode == 'normal' else ['reset', '--hard', model['target']]
+    replies = run([{'action': 'git', 'args': args}, {'action': 'sync'}])
+    assert [r['ok'] for r in replies] == [True, True, True, not failure], replies
+    assert model['head'] == model['target'] and pause.ledger() and bound
+    assert pause.model['start_attempts'] == 1
+    if failure:
+        assert recovery.path.exists()
+        failed = list(replies)
+        from types import SimpleNamespace
+        from talaria_sidecar import agent_mutation as mutation, runtime
+        records = recovery.records
+        saved = json.loads(recovery.path.read_text())
+        # This fixture's native checkout gate records the successful selected move here.
+        saved['tree']['baselines'][0]['move_targets'] = [model['target']]
+        recovery.path.write_text(json.dumps(saved))
+        journal = Path(entry['home']) / 'native-journal.json'
+        records.orphans = lambda: []
+        records.merge_into = lambda left, right: right
+        records.recover = lambda **kwargs: journal.unlink(missing_ok=True)
+        records.record_path = lambda: journal
+        records._claims = lambda path: []
+        early = SimpleNamespace(interrupted_pull_marker=lambda root: root / '.interrupted')
+        monkeypatch.setitem(sys.modules, 'hermes_cli._early_recovery', early)
+        monkeypatch.setattr(runtime, 'AgentRuntime', lambda home, root: SimpleNamespace(hermes_home=home))
+        monkeypatch.setattr(mutation, 'recovery_receipts', lambda runtime: ([], None))
+        recovered = mutation._resume_worker(recovery.root)
+        assert recovered['ok'] and recovered['revision'] == model['target'], recovered
+        assert failed[-1]['ok'] is False and model['head'] == model['target']
+    assert not recovery.path.exists()
+
+
+@pytest.mark.parametrize('change', ['multiple-exits', 'zombie', 'arrival', 'reused-departed', 'unknown-departed',
+                                  'unknown-live', 'unreadable-live', 'runtime', 'supervisor', 'churn'])
+def test_bound_custody_resamples_only_proven_changes(supervised_inventory, monkeypatch, change):
+    from types import SimpleNamespace
+    from talaria_sidecar import agent_services as services
+    _, _, _, _, _, parents, modules = supervised_inventory
+    parents.update({41005: 41002, 41006: 41002})
+    entry = dict(kind='launchd', domain='gui/12345', label='synthetic.gateway', pid=41002, service_pid=41001)
+    records = SimpleNamespace(identity=lambda p: {'ct': p})
+    entry['processes'] = services.snapshot(entry)
+    services.bind_processes(entry, records)
+    before = json.loads(json.dumps(entry))
+    status = modules['gateway.status']
+    if change in {'multiple-exits', 'reused-departed', 'unknown-departed'}:
+        parents.pop(41005); parents.pop(41006)
+    if change == 'zombie':
+        exists = status._pid_exists
+        monkeypatch.setattr(status, '_pid_exists', lambda p: False if p == 41005 else exists(p))
+    if change == 'arrival': parents[41007] = 41002
+    if change == 'unknown-live':
+        exists = status._pid_exists
+        monkeypatch.setattr(status, '_pid_exists', lambda p: None if p == 41005 else exists(p))
+    if change == 'unreadable-live': records.identity = lambda p: {'ct': None if p == 41005 else p}
+    if change in {'runtime', 'supervisor'}:
+        anchor = 41002 if change == 'runtime' else 41001
+        monkeypatch.setattr(status, 'get_process_start_time', lambda p: p * 10 + (p == anchor))
+    if change == 'churn':
+        table = services._process_table
+        def changing():
+            parents[45000 + len(parents)] = 41002
+            return table()
+        monkeypatch.setattr(services, '_process_table', changing)
+    if change in {'unknown-live', 'unreadable-live', 'runtime', 'supervisor', 'churn'}:
+        with pytest.raises(RuntimeError): services.verify_processes(entry, records)
+        assert entry == before
+        return
+    assert services.verify_processes(entry, records)
+    if change == 'arrival': assert set(entry['processes']) == {'41001', '41002', '41005', '41006', '41007'}
+    else: assert '41005' not in entry['processes'] and '41005' in entry['departed_processes']
+    if change in {'reused-departed', 'unknown-departed'}:
+        before = json.loads(json.dumps(entry))
+        if change == 'reused-departed': parents[41005] = 41002
+        else:
+            exists = status._pid_exists
+            monkeypatch.setattr(status, '_pid_exists', lambda p: None if p == 41005 else exists(p))
+        with pytest.raises(RuntimeError): services.verify_processes(entry, records)
+        assert entry == before
+
+
+@pytest.mark.parametrize('boundary', ['identity', 'prepare'])
+def test_backend_exit_custody_is_saved_before_the_next_effect(backend_stop, monkeypatch, boundary):
+    from talaria_sidecar import agent_services as services
+    recovery, entry, stopped, parents, modules, events, pause = backend_stop
+    parents[41005] = entry['pid']
+    owed = recovery.state['entries'][0]
+    services.bind_processes(owed, recovery.records)
+    recovery.save()
+    request = services.backend_request
+    disarm = pause._disarm
+
+    def leave(candidate, action=None, permit=None):
+        if action == 'commit' or (action == 'prepare' and boundary == 'identity'):
+            saved = json.loads(recovery.path.read_text())['entries'][0]
+            assert '41005' not in saved['processes'] and '41005' in saved['departed_processes']
+        result = request(candidate, action, permit)
+        if (action or 'identity') == boundary:
+            parents.pop(41005, None)
+        return result
+
+    def stop(candidate):
+        saved = json.loads(recovery.path.read_text())['entries'][0]
+        assert '41005' not in saved['processes'] and '41005' in saved['departed_processes']
+        disarm(candidate)
+
+    monkeypatch.setattr(services, 'backend_request', leave)
+    pause._disarm = stop
+    recovery.stop(entry, stopped)
+    assert events == ['identity', 'prepare', 'commit', 'disarm']
+
+
+@pytest.mark.parametrize('revived', [True, None])
+def test_readiness_retry_retains_departed_successor_identity(gateway_successor, monkeypatch, revived):
+    from talaria_sidecar import agent_services as services
+    recovery, entry, calls, parents, pause, records, modules = gateway_successor
+    parents[42005] = 42002
+    matches = services._gateway_home_matches
+    probes = 0
+
+    def home(*args):
+        nonlocal probes
+        probes += 1
+        if probes == 2:
+            parents.pop(42005)
+            return False
+        return matches(*args)
+
+    monkeypatch.setattr(services, '_gateway_home_matches', home)
+    assert recovery._ready(entry, lambda *args: []) is False
+    saved = json.loads(recovery.path.read_text())
+    assert saved['entries'][0]['departed_processes']['42005']['ct'] == 42005
+    fresh = services.ServiceRecovery(recovery.root, entry['home'], records, recovery.identity, pause)
+    exists = modules['gateway.status']._pid_exists
+    monkeypatch.setattr(modules['gateway.status'], '_pid_exists', lambda p: revived if p == 42005 else exists(p))
+    if revived: parents[42005] = 42002
+    with pytest.raises(RuntimeError): fresh.resume(lambda *args: [])
+    assert fresh.path.exists() and calls == []

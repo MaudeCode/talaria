@@ -671,7 +671,7 @@ def _worker(root, revision, homes, requests, stopped, send, refresh_binding=None
             if stopped.is_set() or time.monotonic() >= gateway_deadline:
                 raise RuntimeError('Gateway drain has not completed; its durable resume obligation is retained.')
             if entry.get('processes'):
-                services.verify_processes(entry, records)
+                recovery.verify_processes(entry)
             recovery.gateway_requested(entry)
             for pid in {entry['pid'], entry.get('service_pid', entry['pid'])}:
                 records.mark_stop_sent(token, pid)
