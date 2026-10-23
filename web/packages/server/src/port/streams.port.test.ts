@@ -149,6 +149,8 @@ describe('session persistence and streaming flags', () => {
     const session = (await s.deps.sessionStore.get(sid))
     session.messages = [{ role: 'user', content: 'indexed' }]
     await s.deps.sessionStore.save(session)
+    // save() returns before the batched index flush; an index read joins it.
+    await s.deps.sessionStore.index()
     expect(readFileSync(join(s.state, 'sessions', '_index.json'), 'utf8')).toContain(sid)
   })
 
