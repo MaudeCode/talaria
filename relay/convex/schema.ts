@@ -186,6 +186,7 @@ export default defineSchema({
     profileId: v.string(),
     runKey: v.string(),
     revision: v.optional(v.number()),
+    activityPhase: v.optional(sessionPhaseValidator),
     acknowledged: v.boolean(),
     row: aggregateRowValidator,
   })

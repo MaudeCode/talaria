@@ -45,7 +45,7 @@ function expiryForState(
   now: number,
 ) {
   if (next.activityPhase !== undefined && !isTerminalPhase(next.activityPhase)) {
-    return { expiresAt: Number.MAX_SAFE_INTEGER, activityExpiresAt: now + 3 * 60_000 };
+    return { expiresAt: now + 24 * 60 * 60_000, activityExpiresAt: now + 3 * 60_000 };
   }
   if (
     current &&
@@ -183,6 +183,19 @@ async function grantsForProfile(
     ).take(500);
 }
 
+/** Share the revoke path's bound; the indexed read and all writes share one transaction. */
+async function statesForAdmission(ctx: MutationCtx, grant: Doc<"publisherGrants">, sessionIds: readonly string[]) {
+  const states = await ctx.db.query("sessionStates")
+    .withIndex("by_version_and_user_id_and_publisher_id_and_session_id", (query) =>
+      query.eq("version", 2).eq("userId", grant.userId).eq("publisherId", grant.publisherId),
+    ).take(501);
+  const existing = new Set(states.map((state) => state.sessionId));
+  if (states.length + sessionIds.filter((id) => !existing.has(id)).length > 500) {
+    throw new Error("too_many_states");
+  }
+  return states;
+}
+
 export const acceptState = internalMutation({
   args: {
     ...publisherRequestArgs,
@@ -219,11 +232,7 @@ export const acceptState = internalMutation({
       }
       if (existing && args.revision <= existing.revision) continue;
       if (!existing) {
-        const states = await ctx.db.query("sessionStates")
-          .withIndex("by_version_and_user_id_and_publisher_id_and_session_id", (query) =>
-            query.eq("version", 2).eq("userId", grant.userId).eq("publisherId", args.publisherId),
-          ).take(500);
-        if (states.length >= 500) continue;
+        await statesForAdmission(ctx, grant, [args.sessionId]);
       }
 
       const previousPhase = args.state ? previousPhaseFor(existing, args.state) : existing?.deleted || !existing ? undefined : activityPhase(existing);
@@ -297,10 +306,7 @@ export const acceptSnapshot = internalMutation({
       args.publisherId,
       args.profileId,
     )) {
-      const existing = await ctx.db.query("sessionStates")
-        .withIndex("by_version_and_user_id_and_publisher_id_and_session_id", (query) =>
-          query.eq("version", 2).eq("userId", grant.userId).eq("publisherId", args.publisherId),
-        ).take(500);
+      const existing = await statesForAdmission(ctx, grant, args.states.map((state) => state.sessionId));
       const bySessionId = new Map(existing.map((state) => [state.sessionId, state]));
       const transitions: {
         publisherId: string;

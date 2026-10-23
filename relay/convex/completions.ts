@@ -23,13 +23,14 @@ export async function recordCompletion(
     // A corrected result keeps the same run identity and acknowledgement.
     await ctx.db.patch(existing._id, {
       revision: state.revision,
+      activityPhase: state.activityPhase,
       ...(changed ? { row: rowForState(state, state.phase) } : {}),
     });
     return;
   }
   await ctx.db.insert("completions", {
     userId: grant.userId, grantId: grant._id, profileId: grant.profileId, publisherOwnerUserId: grant.publisherOwnerUserId,
-    runKey: key, revision: state.revision, acknowledged: false, row: rowForState(state, state.phase),
+    runKey: key, revision: state.revision, activityPhase: state.activityPhase, acknowledged: false, row: rowForState(state, state.phase),
   });
 }
 
@@ -65,7 +66,10 @@ export async function retainedStates(ctx: QueryCtx | MutationCtx, userId: string
   const rows = await ctx.db.query("completions")
     .withIndex("by_user_id_and_acknowledged", (q) => q.eq("userId", userId).eq("acknowledged", false))
     .order("desc").take(500);
-  return (await visibleCompletions(ctx, rows)).map((record) => {
+  // A reply outcome cannot stand in for session settlement after an unconfirmed activity expires.
+  return (await visibleCompletions(ctx, rows)).filter((record) =>
+    record.activityPhase === undefined || isTerminalPhase(record.activityPhase),
+  ).map((record) => {
     const { status: _status, ...row } = record.row;
     return { ...row, deleted: false, receivedAt: row.updatedAt,
       completionId: record._id, eventId: record.runKey, revision: 0,

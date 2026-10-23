@@ -11,6 +11,55 @@ import { makeAggregate } from "../convex/lib/aggregate";
 
 const modules = import.meta.glob("../convex/**/*.ts");
 
+it("atomically caps cumulative publisher states while allowing updates and revocation", async () => {
+  const { backend } = await fixture();
+  const now = Date.now();
+  const request = (nonce: string) => ({ publisherOwnerUserId: "owner", publisherId: "https://hermes.example", profileId: "profile", keyId: "key", nonce, nonceExpiresAt: now + 60_000, receivedAt: now });
+  const content = (sessionId: string) => ({ sessionId, streamId: sessionId, title: "Original", phase: "running" as const, activityPhase: "running" as const, updatedAt: now, deepLink: `/sessions/${sessionId}` });
+  const state = (sessionId: string, revision = 1) => ({ ...content(sessionId), eventId: `${sessionId}-${revision}`, revision });
+  await backend.mutation(internal.publishers.acceptSnapshot, { ...request("first"), snapshotId: "first", states: Array.from({ length: 500 }, (_, index) => state(`session-${index}`)) });
+  await expect(backend.mutation(internal.publishers.acceptSnapshot, {
+    ...request("overflow"), snapshotId: "overflow", states: [{ ...state("session-0", 2), title: "Must roll back" }, ...Array.from({ length: 499 }, (_, index) => state(`extra-${index}`))],
+  })).rejects.toThrow("too_many_states");
+  expect(await backend.run((ctx) => ctx.db.query("sessionStates").take(501))).toHaveLength(500);
+  expect(await backend.query(internal.publishers.getState, { userId: "user", publisherId: "https://hermes.example", sessionId: "session-0" })).toMatchObject({ revision: 1, title: "Original" });
+  expect((await backend.run((ctx) => ctx.db.query("publisherNonces").take(10))).some((row) => row.nonce === "overflow")).toBe(false);
+  await expect(backend.mutation(internal.publishers.acceptState, {
+    ...request("single-overflow"), sessionId: "extra", eventId: "extra-1", revision: 1, state: content("extra"),
+  })).rejects.toThrow("too_many_states");
+  expect(await backend.mutation(internal.publishers.acceptSnapshot, { ...request("update"), snapshotId: "update", states: [{ ...state("session-0", 2), title: "Updated" }] })).toEqual({ status: "accepted" });
+  expect(await backend.mutation(internal.subscriptions.revokePublisher, { userId: "user", publisherId: "https://hermes.example", now })).toEqual({ ok: true });
+  expect(await backend.run((ctx) => ctx.db.query("publisherGrants").first())).toBeNull();
+  await backend.finishAllScheduledFunctions(vi.runAllTimers);
+});
+
+it.each(["all_running", "per_session"] as const)("expires abandoned background state without promoting retained completion (%s)", async (mode) => {
+  const { backend, publish, list } = await fixture();
+  if (mode === "per_session") await backend.run(async (ctx) => {
+    const activity = await ctx.db.query("liveActivities").first();
+    await ctx.db.patch(activity!._id, { mode, publisherId: "https://hermes.example", sessionId: "session", streamId: "run-1", attributesType: "AgentRunActivityAttributes" });
+  });
+  await publish("completed", "run-1", "session", "running");
+  const now = Date.now();
+  const stored = await backend.run((ctx) => ctx.db.query("sessionStates").first());
+  expect(stored!.expiresAt).toBeLessThanOrEqual(now + 24 * 60 * 60_000);
+  vi.setSystemTime(now + 3 * 60_000 + 1);
+  await backend.mutation(internal.cleanup.prune, {});
+  await backend.mutation(internal.delivery.recompute, { userId: "user" });
+  expect(makeAggregate(await backend.query(internal.publishers.listCurrentStates, { userId: "user", now: Date.now() }), Date.now(), true)).toMatchObject({ isFinal: false, isStale: true });
+  vi.setSystemTime(now + 24 * 60 * 60_000 + 1);
+  await backend.mutation(internal.cleanup.prune, {});
+  expect(await backend.run((ctx) => ctx.db.query("sessionStates").take(1))).toEqual([]);
+  expect(await backend.query(internal.publishers.listCurrentStates, { userId: "user", now: Date.now() })).toEqual([]);
+  expect((await list())!.completions[0]!.row.phase).toBe("completed");
+  await backend.mutation(internal.delivery.recompute, { userId: "user" });
+  const jobs = await backend.run((ctx) => ctx.db.query("deliveryJobs").take(20));
+  const end = jobs.find((job) => job.kind === "live_activity_end")!;
+  expect(end).toBeDefined();
+  expect(JSON.parse(end.request.payloadJson).aps).not.toHaveProperty("content-state");
+  await backend.finishAllScheduledFunctions(vi.runAllTimers);
+});
+
 it.each(["all_running", "per_session"] as const)("keeps unconfirmed background activity stale after its publisher lease expires (%s)", async (mode) => {
   const { backend, publish, list } = await fixture();
   if (mode === "per_session") await backend.run(async (ctx) => {
