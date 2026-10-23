@@ -1528,7 +1528,7 @@ describe('diagnostic execution modes (TAL-1040)', () => {
     expect(response.status).toBe(409)
     expect(await response.json()).toMatchObject({ code: 'execution_mode_unavailable', reason })
     const modes = await (await s.get('/api/session/execution-modes')).json()
-    expect(modes).toEqual({ modes: [{ mode: 'normal', available: true, reason: null, can_attach: true }, { mode: 'ignore_config', available: false, reason, can_attach: false }, { mode: 'safe', available: false, reason, can_attach: false }] })
+    expect(modes).toEqual({ modes: [{ mode: 'normal', available: true, reason: null, can_attach: true, can_reference: true }, { mode: 'ignore_config', available: false, reason, can_attach: false, can_reference: false }, { mode: 'safe', available: false, reason, can_attach: false, can_reference: false }] })
     expect(sidecar.calls.filter((c) => c.method === 'gateway.create').map((c) => c.params)).toContainEqual({ profile_home: s.state, probe: true })
     expect((await (await s.get('/api/sessions')).json() as { sessions: { session_id: string }[] }).sessions.map((row) => row.session_id).sort()).toEqual([ids.cli, fixture.sessions.tui!, fixture.sessions.acp!, ids.safe, ids.ignore_config, ids.fresh].sort())
   })
@@ -1536,8 +1536,8 @@ describe('diagnostic execution modes (TAL-1040)', () => {
   it('reports available modes from a capable owner and keeps normal chats on the local path', async () => {
     sidecar.respond('gateway.create', () => ({ state: 'attached', reason: null, snapshot: null, receipt: null }))
     expect(await (await s.get('/api/session/execution-modes')).json()).toEqual({ modes: [
-      { mode: 'normal', available: true, reason: null, can_attach: true }, { mode: 'ignore_config', available: true, reason: null, can_attach: false },
-      { mode: 'safe', available: true, reason: null, can_attach: false }] })
+      { mode: 'normal', available: true, reason: null, can_attach: true, can_reference: true }, { mode: 'ignore_config', available: true, reason: null, can_attach: false, can_reference: false },
+      { mode: 'safe', available: true, reason: null, can_attach: false, can_reference: false }] })
     const normal = await post('/api/session/new', { execution_mode: 'normal', model: 'fixture' })
     expect(normal.status).toBe(200)
     expect(SessionEnvelopeSchema.parse(await normal.json()).session).not.toHaveProperty('owner_attachment')

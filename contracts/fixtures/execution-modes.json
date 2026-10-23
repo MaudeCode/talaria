@@ -5,19 +5,22 @@
         "mode": "normal",
         "available": true,
         "reason": null,
-        "can_attach": true
+        "can_attach": true,
+        "can_reference": true
       },
       {
         "mode": "ignore_config",
         "available": true,
         "reason": null,
-        "can_attach": false
+        "can_attach": false,
+        "can_reference": false
       },
       {
         "mode": "safe",
         "available": true,
         "reason": null,
-        "can_attach": false
+        "can_attach": false,
+        "can_reference": false
       }
     ]
   },
@@ -27,19 +30,22 @@
         "mode": "normal",
         "available": true,
         "reason": null,
-        "can_attach": true
+        "can_attach": true,
+        "can_reference": true
       },
       {
         "mode": "ignore_config",
         "available": false,
         "reason": "gateway_stopped",
-        "can_attach": false
+        "can_attach": false,
+        "can_reference": false
       },
       {
         "mode": "safe",
         "available": false,
         "reason": "gateway_stopped",
-        "can_attach": false
+        "can_attach": false,
+        "can_reference": false
       }
     ]
   },

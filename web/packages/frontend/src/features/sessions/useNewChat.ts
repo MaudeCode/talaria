@@ -5,7 +5,7 @@ import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { removePersisted } from '../../lib/persisted'
 import { closeMobileSidebar } from '../../shell/useShellState'
-import type { ExecutionMode } from '@maudecode/talaria-web-contracts'
+import type { ExecutionMode, SourceReference } from '@maudecode/talaria-web-contracts'
 import { randomHex } from '../../lib/randomHex'
 
 /**
@@ -24,9 +24,9 @@ export function useNewChat() {
   }, [navigate, qc])
 }
 
-export async function createSessionNow(opts: { workspace?: string; model?: string; model_provider?: string | null; profile?: string; enabled_toolsets?: string[] | null; worktree?: boolean; execution_mode?: ExecutionMode; request_id?: string } = {}) {
+export async function createSessionNow(opts: { source_references?: SourceReference[]; workspace?: string; model?: string; model_provider?: string | null; profile?: string; enabled_toolsets?: string[] | null; worktree?: boolean; execution_mode?: ExecutionMode; request_id?: string } = {}) {
   const diagnostic = opts.execution_mode !== undefined && opts.execution_mode !== 'normal'
-  const { session } = await api.newSession({ ...(opts.workspace ? { workspace: opts.workspace } : {}), ...(opts.model ? { model: opts.model } : {}), ...(opts.model_provider !== undefined ? { model_provider: opts.model_provider } : {}), ...(opts.profile ? { profile: opts.profile } : {}), ...(opts.enabled_toolsets !== undefined ? { enabled_toolsets: opts.enabled_toolsets } : {}), worktree: opts.worktree ?? false, ...(diagnostic ? { execution_mode: opts.execution_mode, ...(opts.request_id ? { request_id: opts.request_id } : {}) } : {}) })
+  const { session } = await api.newSession({ ...(opts.workspace ? { workspace: opts.workspace } : {}), ...(opts.model ? { model: opts.model } : {}), ...(opts.model_provider !== undefined ? { model_provider: opts.model_provider } : {}), ...(opts.profile ? { profile: opts.profile } : {}), ...(opts.enabled_toolsets !== undefined ? { enabled_toolsets: opts.enabled_toolsets } : {}), worktree: opts.worktree ?? false, ...(opts.source_references?.length ? { source_references: opts.source_references.map(({ session_id, tip_session_id, profile }) => ({ session_id, tip_session_id, profile })) } : {}), ...(opts.source_references?.length && opts.request_id ? { request_id: opts.request_id } : {}), ...(diagnostic ? { execution_mode: opts.execution_mode, ...(opts.request_id ? { request_id: opts.request_id } : {}) } : {}) })
   return session
 }
 

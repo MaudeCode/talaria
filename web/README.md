@@ -148,6 +148,13 @@ client-IP selection as rate limiting and is limited to 256 characters.
 
 ### How chat runs
 
+On a new chat, **Earlier conversations** selects up to five retained conversations
+in the active profile. The chat stores their accepted search pointers and titles,
+without copying transcripts. The Agent can consult them with `session_search`.
+Unavailable, retired, deleted, or changed source identities refuse creation so
+you can select again. References inherit source-history privacy requirements.
+References are available for ordinary chats; diagnostic modes refuse them.
+
 Talaria-created chats run `run_agent.AIAgent` in-process on the Agent venv, reading the profile's
 `HERMES_HOME` config. Existing canonical Agent conversations use their original gateway owner when it
 offers the authenticated `hermes-gateway-v1` session protocol. Opening or leaving a conversation never

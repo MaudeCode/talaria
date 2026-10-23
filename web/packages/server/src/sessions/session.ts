@@ -500,6 +500,7 @@ export class Session {
     let lastMessageAt: number = (opts.transcriptSummary ? opts.transcriptSummary.lastTimestamp : lastMessageTimestamp(this.messages)) ?? this.updated_at
     if (hasPending && this.pending_started_at) lastMessageAt = this.pending_started_at
     const compact: Record<string, unknown> = {
+      ...(Array.isArray(this.extra.source_references) ? { source_references: this.extra.source_references } : {}),
       session_id: this.session_id,
       title: this.title,
       workspace: this.workspace,

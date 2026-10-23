@@ -83,16 +83,31 @@ export function groupSessionRows(rows: SessionRow[], now = Date.now()): { id: Gr
 }
 
 /** The existing sidebar row, memoized so unchanged server rows retain their rendered subtree. */
-const SessionListItem = memo(function SessionListItem({ row, active, proj, preview, timeLabel, onArchive }: {
+export const SessionListItem = memo(function SessionListItem({ row, active, proj, preview, timeLabel, onArchive, selection }: {
   row: SessionRow
   active: boolean
   proj: Awaited<ReturnType<typeof api.fetchProjects>>['projects'][number] | undefined
   preview: string | undefined
   timeLabel: string
   onArchive: (id: string, archived: boolean) => void
+  selection?: { selected: boolean; disabled: boolean; onSelect: () => void }
 }) {
   useLocale()
   const displayTitle = row.title || m.untitled()
+  const content = (<>
+      <div className="session-text">
+        <div className="session-title-row">
+          <span className="session-title" title={displayTitle}>{displayTitle}</span>
+          {row.worktree_branch && <span className="session-worktree-badge" role="img" aria-label={`${m.session_worktree_badge()}: ${row.worktree_branch}`} title={`${m.session_worktree_badge()}: ${row.worktree_branch}`}><GitBranch size={12} aria-hidden="true" /></span>}
+          {proj && <span className="session-project-dot" style={{ background: proj.color ?? 'var(--blue)' }} title={proj.name} />}
+          <span className="session-time">{timeLabel}</span>
+        </div>
+        {preview && <div className="session-search-preview truncate text-[11px] text-muted" title={m.session_search_content_matches()}>{preview}</div>}
+      </div>
+  </>)
+  if (selection) return <button type="button" role="checkbox" aria-checked={selection.selected} disabled={selection.disabled} onClick={selection.onSelect} className={cn('session-item min-h-11 w-full text-left', selection.selected && 'active')} data-sid={row.session_id}>
+    {content}<span aria-hidden="true">{selection.selected ? '✓' : ''}</span>
+  </button>
   return (
     <Link
       to="/session/$sessionId"
@@ -104,15 +119,7 @@ const SessionListItem = memo(function SessionListItem({ row, active, proj, previ
       aria-current={active ? 'page' : undefined}
       className={cn('session-item', active && 'active', row.is_streaming && 'streaming', row.is_cli_session && 'cli-session', row.attention && 'needs-attention', row.archived && 'archived')}
     >
-      <div className="session-text">
-        <div className="session-title-row">
-          <span className="session-title" title={displayTitle}>{displayTitle}</span>
-          {row.worktree_branch && <span className="session-worktree-badge" role="img" aria-label={`${m.session_worktree_badge()}: ${row.worktree_branch}`} title={`${m.session_worktree_badge()}: ${row.worktree_branch}`}><GitBranch size={12} aria-hidden="true" /></span>}
-          {proj && <span className="session-project-dot" style={{ background: proj.color ?? 'var(--blue)' }} title={proj.name} />}
-          <span className="session-time">{timeLabel}</span>
-        </div>
-        {preview && <div className="session-search-preview truncate text-[11px] text-muted" title={m.session_search_content_matches()}>{preview}</div>}
-      </div>
+      {content}
       {/* The rail shows status by color; this says it in words (TAL-365). */}
       {row.is_streaming ? <span className="sr-only">{m.status_streaming()}</span> : row.attention && <span className="sr-only">{attentionLabel(row.attention.kind)}</span>}
       <div className="session-actions">

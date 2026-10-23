@@ -105,12 +105,13 @@ export class SessionStore {
   }
 
   /** In-memory only until the first message is persisted (Python `new_session`). */
-  async newSession(opts: { workspace?: string | null; model?: string | null; modelProvider?: string | null; profile?: string | null; projectId?: string | null; worktree?: { path: string; branch: string; repo_root: string; created_at: number } | null; enabledToolsets?: string[] | null } = {}): Promise<Session> {
+  async newSession(opts: { sessionId?: string; workspace?: string | null; model?: string | null; modelProvider?: string | null; profile?: string | null; projectId?: string | null; worktree?: { path: string; branch: string; repo_root: string; created_at: number } | null; enabledToolsets?: string[] | null } = {}): Promise<Session> {
     const profile = opts.profile ?? null
     const defaults = (await this.deps.defaults(profile))
     const wt = opts.worktree ?? null
     const s = new Session(
       {
+        ...(opts.sessionId ? { session_id: opts.sessionId } : {}),
         workspace: (wt ? wt.path : opts.workspace) || defaults.workspace,
         model: opts.model ?? defaults.model,
         model_provider: opts.model ? opts.modelProvider ?? null : opts.modelProvider ?? defaults.modelProvider ?? null,

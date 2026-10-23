@@ -2686,5 +2686,10 @@
   "terminal_captured_command": "Captured command",
   "terminal_run_command": "Run",
   "terminal_command_running": "Running…",
-  "terminal_exit_code": "Exit code {code}"
+  "terminal_exit_code": "Exit code {code}",
+	"session_references": "Earlier conversations",
+	"session_reference_remove": "Remove {title}",
+	"session_reference_search": "Search conversation titles",
+	"session_reference_empty": "No available conversations",
+	"session_reference_count": "{selected} of {max} selected"
 }

@@ -118,6 +118,7 @@ async function sidebarListParams(ctx: RequestContext, input: SessionsListQuery):
 
 export const sessionsRouter = os.router({
   sessions: {
+    references: os.sessions.references.handler(({ input, context: { ctx } }) => run(async () => ctx.deps.sessions.referenceSearch(input.q ?? '', await sidebarListParams(ctx, {})))),
     list: os.sessions.list.handler(({ input, context: { ctx } }) => run(async () => {
       const { body, etag } = await ctx.deps.sessions.list((await sidebarListParams(ctx, input)))
       ctx.extraResponseHeaders = { etag }
@@ -193,6 +194,7 @@ export const sessionsRouter = os.router({
     })),
     executionModes: os.session.executionModes.handler(({ context: { ctx } }) => run(async () => ctx.deps.sessions.owner!.modes(ctx.deps.activeProfile()))),
     new: os.session.new.handler(({ input, context: { ctx } }) => run(async () => {
+      if (input.source_references?.length && input.execution_mode && input.execution_mode !== 'normal') throw new HttpError(400, 'Conversation references require an ordinary chat')
       if (input.execution_mode === 'ignore_config' || input.execution_mode === 'safe') {
         // The owner has no worktree flow; refuse it rather than silently start an ordinary chat.
         if (input.worktree !== undefined && input.worktree !== false) throw new HttpError(400, 'A diagnostic chat cannot start in a new worktree')
@@ -204,33 +206,40 @@ export const sessionsRouter = os.router({
       // The middleware warms only the cookie profile's config; new-session defaults read the target's synchronously.
       // `profileHome` refuses a profile whose home escapes the profiles root (400) before any warm-up failure is swallowed.
       if (profile) { const home = ctx.deps.profileHome(profile); await ctx.deps.agentConfig.read(home).catch(() => undefined) }
-      let worktree: { path: string; branch: string; repo_root: string; created_at: number } | null = null
       let worktreeSkipped: string | null = null
-      const explicit = 'worktree' in input
-      let requested = explicit ? input.worktree === true || ['1', 'true', 'yes', 'on'].includes(String(input.worktree).trim().toLowerCase()) : ctx.deps.worktreeDefault(profile)
-      if (requested && !ctx.deps.workspaces.profileSupportsLocalIo(profile)) {
-        if (explicit) throw new HttpError(400, REMOTE_WORKSPACE_UNSUPPORTED_CODE, { message: REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE })
-        worktreeSkipped = REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE
-        requested = false
-      }
-      if (requested) {
-        try {
-          let base = input.workspace ? (await ctx.deps.sessions.resolveNewSessionWorkspace(input, null, profile)) : null
-          base ??= (await ctx.deps.workspaces.resolveTrusted((await ctx.deps.workspaces.lastWorkspace(profile)), profile))
-          const repo = base
-          worktree = await ctx.deps.git.holdWrite(repo, () => ctx.deps.worktrees.create(repo))
-        } catch (error) {
-          if (error instanceof GitWorkspaceError) throw new HttpError(409, error.message, { code: error.code })
-          // Python: `ValueError`/`TypeError` (not a repo, not a directory) → 400 or a degraded plain session; the Agent
-          // helper failing (`RuntimeError`) → 500 `Failed to create worktree: ...`.
-          const valueError = error instanceof SidecarError ? (error.condition === 'not_a_repo' || error.condition === 'invalid_params' || error.code === -32602) : !(error instanceof Error && 'code' in error)
-          if (!valueError) throw new HttpError(500, `Failed to create worktree: ${(error as Error).message}`)
-          if (explicit) throw new HttpError(400, (error as Error).message)
-          worktree = null
-          worktreeSkipped = (error as Error).message
+      const s = await ctx.deps.sessions.createWithReferences(input, async (sessionId, validateSources) => {
+        let worktree: { path: string; branch: string; repo_root: string; created_at: number } | null = null
+        const explicit = 'worktree' in input
+        let requested = explicit ? input.worktree === true || ['1', 'true', 'yes', 'on'].includes(String(input.worktree).trim().toLowerCase()) : ctx.deps.worktreeDefault(profile)
+        if (requested && !ctx.deps.workspaces.profileSupportsLocalIo(profile)) {
+          if (explicit) throw new HttpError(400, REMOTE_WORKSPACE_UNSUPPORTED_CODE, { message: REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE })
+          worktreeSkipped = REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE
+          requested = false
         }
-      }
-      const s = (await ctx.deps.sessions.create(input, { worktree }))
+        if (requested) {
+          try {
+            let base = input.workspace ? (await ctx.deps.sessions.resolveNewSessionWorkspace(input, null, profile)) : null
+            base ??= (await ctx.deps.workspaces.resolveTrusted((await ctx.deps.workspaces.lastWorkspace(profile)), profile))
+            const repo = base
+            worktree = await ctx.deps.git.holdWrite(repo, async () => {
+              await validateSources?.()
+              return ctx.deps.worktrees.create(repo)
+            })
+          } catch (error) {
+            if (error instanceof HttpFailure) throw error
+            if (error instanceof GitWorkspaceError) throw new HttpError(409, error.message, { code: error.code })
+            // Python: `ValueError`/`TypeError` (not a repo, not a directory) → 400 or a degraded plain session; the Agent
+            // helper failing (`RuntimeError`) → 500 `Failed to create worktree: ...`.
+            const valueError = error instanceof SidecarError ? (error.condition === 'not_a_repo' || error.condition === 'invalid_params' || error.code === -32602) : !(error instanceof Error && 'code' in error)
+            if (!valueError) throw new HttpError(500, `Failed to create worktree: ${(error as Error).message}`)
+            if (explicit) throw new HttpError(400, (error as Error).message)
+            worktree = null
+            worktreeSkipped = (error as Error).message
+          }
+        }
+        // A worktree has already passed source validation before allocation.
+        return ctx.deps.sessions.create(input, { worktree, ...(sessionId ? { sessionId } : {}), ...(!worktree && validateSources ? { validateSources } : {}) })
+      })
       const payload: Record<string, unknown> = { session: (await ctx.deps.sessions.publicSession(s)) }
       if (worktreeSkipped) payload.worktree_skipped = worktreeSkipped
       return payload as { session: { session_id: string; title: string }; worktree_skipped?: string }

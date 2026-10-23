@@ -91,6 +91,7 @@ export type GatewayCreateParams = z.infer<typeof GatewayCreateParamsSchema>
 export const ExecutionModeUnavailableSchema = z.enum(['agent_unsupported', 'served_profile', 'gateway_stopped', 'gateway_unavailable'])
 export const ExecutionModesSchema = z.object({
   modes: z.array(z.object({ mode: ExecutionModeSchema, available: z.boolean(), reason: ExecutionModeUnavailableSchema.nullable(),
+    can_reference: z.boolean().optional().describe('A fresh chat in this mode accepts earlier-conversation references. Absent means unavailable.'),
     can_attach: z.boolean().describe('A fresh chat in this mode accepts file attachments.') })),
 })
 export type ExecutionModes = z.infer<typeof ExecutionModesSchema>

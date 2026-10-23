@@ -1278,6 +1278,701 @@
         }
       }
     },
+    "/api/sessions/references": {
+      "get": {
+        "operationId": "sessions.references",
+        "summary": "Bounded same-profile title search for new-chat references; no transcript snippets.",
+        "tags": [
+          "sessions"
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "sessions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "session_id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "workspace": {
+                            "type": "string"
+                          },
+                          "model": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "created_at": {
+                            "type": "number"
+                          },
+                          "updated_at": {
+                            "type": "number"
+                          },
+                          "last_message_at": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "message_count": {
+                            "type": "number"
+                          },
+                          "pinned": {
+                            "type": "boolean"
+                          },
+                          "archived": {
+                            "type": "boolean"
+                          },
+                          "project_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "profile": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "is_streaming": {
+                            "type": "boolean",
+                            "description": "True only while the session's run is a live stream on this server."
+                          },
+                          "is_cli_session": {
+                            "type": "boolean"
+                          },
+                          "source_kind": {
+                            "enum": [
+                              "webui",
+                              "cli",
+                              "messaging",
+                              "cron",
+                              "webhook",
+                              "subagent",
+                              "claude_code",
+                              "kanban",
+                              "api",
+                              "other"
+                            ],
+                            "type": "string",
+                            "description": "The session's source family. `is_cli_session` is true only for `cli` and `claude_code`."
+                          },
+                          "is_messaging_session": {
+                            "type": "boolean",
+                            "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
+                          },
+                          "sort_ts": {
+                            "type": "number",
+                            "description": "Epoch seconds the session sorts and date-buckets by: `last_message_at`, else `updated_at`, else `created_at`."
+                          },
+                          "cron_running": {
+                            "type": "boolean"
+                          },
+                          "read_only": {
+                            "type": "boolean",
+                            "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
+                          },
+                          "read_only_reason": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "Server-owned reason this session is display-only or its ownership cannot be verified."
+                          },
+                          "owner_attachment": {
+                            "type": "object",
+                            "properties": {
+                              "state": {
+                                "enum": [
+                                  "attached",
+                                  "stopped",
+                                  "unavailable",
+                                  "incompatible",
+                                  "refused"
+                                ],
+                                "type": "string"
+                              },
+                              "reason": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "can_submit": {
+                                "type": "boolean"
+                              },
+                              "can_interrupt": {
+                                "type": "boolean"
+                              },
+                              "can_attach": {
+                                "type": "boolean"
+                              },
+                              "restarting": {
+                                "type": "boolean",
+                                "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
+                              },
+                              "revision": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "execution_generation": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "model_change": {
+                                "type": "object",
+                                "properties": {
+                                  "state": {
+                                    "enum": [
+                                      "applied",
+                                      "deferred",
+                                      "confirmation_required",
+                                      "refused"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "message": {
+                                    "type": "string"
+                                  },
+                                  "confirm": {
+                                    "type": "string"
+                                  },
+                                  "model": {
+                                    "type": "string"
+                                  },
+                                  "provider": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "state"
+                                ]
+                              },
+                              "active_admission": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "admission_id": {
+                                        "type": "string"
+                                      },
+                                      "sequence": {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991
+                                      },
+                                      "status": {
+                                        "enum": [
+                                          "queued",
+                                          "started",
+                                          "unknown",
+                                          "terminal"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "outcome": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "authority_epoch": {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991
+                                      },
+                                      "execution_generation": {
+                                        "anyOf": [
+                                          {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "controls": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "steering": {
+                                        "type": "boolean"
+                                      },
+                                      "text": {
+                                        "type": "string"
+                                      },
+                                      "input_id": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "admission_id",
+                                      "sequence",
+                                      "status",
+                                      "outcome",
+                                      "authority_epoch",
+                                      "execution_generation"
+                                    ]
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "admissions": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "admission_id": {
+                                      "type": "string"
+                                    },
+                                    "sequence": {
+                                      "type": "integer",
+                                      "minimum": -9007199254740991,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "status": {
+                                      "enum": [
+                                        "queued",
+                                        "started",
+                                        "unknown",
+                                        "terminal"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "outcome": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "authority_epoch": {
+                                      "type": "integer",
+                                      "minimum": -9007199254740991,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "execution_generation": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "controls": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "steering": {
+                                      "type": "boolean"
+                                    },
+                                    "text": {
+                                      "type": "string"
+                                    },
+                                    "input_id": {
+                                      "type": "string"
+                                    },
+                                    "actions": {
+                                      "type": "array",
+                                      "items": {
+                                        "enum": [
+                                          "cancel",
+                                          "steer",
+                                          "edit",
+                                          "retry",
+                                          "discard"
+                                        ],
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "admission_id",
+                                    "sequence",
+                                    "status",
+                                    "outcome",
+                                    "authority_epoch",
+                                    "execution_generation",
+                                    "actions"
+                                  ]
+                                }
+                              }
+                            },
+                            "required": [
+                              "state",
+                              "reason",
+                              "can_submit",
+                              "can_interrupt",
+                              "can_attach",
+                              "restarting",
+                              "revision",
+                              "execution_generation",
+                              "admissions"
+                            ]
+                          },
+                          "can_branch": {
+                            "type": "boolean",
+                            "description": "Web may branch this session: never a subagent child or an ownership-locked session; other read-only sessions only when they are cron runs."
+                          },
+                          "can_pin": {
+                            "type": "boolean",
+                            "description": "Web may pin or unpin this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
+                          },
+                          "can_archive": {
+                            "type": "boolean",
+                            "description": "Web may archive or unarchive this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
+                          },
+                          "can_delete": {
+                            "type": "boolean",
+                            "description": "Web may delete this session: never a read-only session (a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming)."
+                          },
+                          "can_duplicate": {
+                            "type": "boolean",
+                            "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
+                          },
+                          "attention": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string"
+                                  },
+                                  "count": {
+                                    "type": "number"
+                                  }
+                                },
+                                "additionalProperties": {}
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "source_tag": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "source_label": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "session_source": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "raw_source": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "parent_session_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "active_stream_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "The live stream id; non-null only while `is_streaming` is true."
+                          },
+                          "share_token": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "share_url": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "worktree_branch": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "match_type": {
+                            "enum": [
+                              "title",
+                              "metadata",
+                              "content"
+                            ],
+                            "type": "string"
+                          },
+                          "match_preview": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "workspace_name": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "context_used_tokens": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991,
+                                "exclusiveMinimum": 0
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "context_window_tokens": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991,
+                                "exclusiveMinimum": 0
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "context_usage_percent": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 100
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "context_threshold_percent": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 100
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "source_reference": {
+                            "type": "object",
+                            "properties": {
+                              "session_id": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9_-]{1,128}$",
+                                "description": "Retained logical conversation identity."
+                              },
+                              "tip_session_id": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9_-]{1,128}$"
+                              },
+                              "profile": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                              }
+                            },
+                            "required": [
+                              "session_id",
+                              "tip_session_id",
+                              "profile"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "session_id",
+                          "title",
+                          "is_streaming",
+                          "source_kind",
+                          "is_messaging_session",
+                          "sort_ts",
+                          "read_only",
+                          "can_branch",
+                          "can_pin",
+                          "can_archive",
+                          "can_delete",
+                          "can_duplicate",
+                          "source_reference"
+                        ],
+                        "additionalProperties": {}
+                      }
+                    },
+                    "active_profile": {
+                      "type": "string"
+                    },
+                    "max_sources": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "sessions",
+                    "active_profile",
+                    "max_sources"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/sessions": {
       "get": {
         "operationId": "sessions.list",
@@ -3846,6 +4541,37 @@
                             "stale"
                           ],
                           "type": "string"
+                        },
+                        "source_references": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "session_id": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9_-]{1,128}$",
+                                "description": "Retained logical conversation identity."
+                              },
+                              "tip_session_id": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9_-]{1,128}$"
+                              },
+                              "profile": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                              },
+                              "title": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "session_id",
+                              "tip_session_id",
+                              "profile",
+                              "title"
+                            ]
+                          }
                         },
                         "context_detail_key": {
                           "anyOf": [
@@ -7614,7 +8340,36 @@
                   "request_id": {
                     "type": "string",
                     "pattern": "^[A-Za-z0-9_-]{1,64}$",
-                    "description": "TAL-1040: stable creation identity for a diagnostic chat. Reuse it only to retry the same creation."
+                    "description": "TAL-1040: stable creation identity for a diagnostic or referenced chat. Reuse it only to retry the same creation."
+                  },
+                  "source_references": {
+                    "type": "array",
+                    "maxItems": 5,
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "session_id": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9_-]{1,128}$",
+                          "description": "Retained logical conversation identity."
+                        },
+                        "tip_session_id": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9_-]{1,128}$"
+                        },
+                        "profile": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
+                        }
+                      },
+                      "required": [
+                        "session_id",
+                        "tip_session_id",
+                        "profile"
+                      ]
+                    },
+                    "description": "Same-profile search pointers. Nonempty selections require request_id; unavailable or changed identities refuse creation."
                   }
                 },
                 "additionalProperties": {}
@@ -7645,6 +8400,37 @@
                             "stale"
                           ],
                           "type": "string"
+                        },
+                        "source_references": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "session_id": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9_-]{1,128}$",
+                                "description": "Retained logical conversation identity."
+                              },
+                              "tip_session_id": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9_-]{1,128}$"
+                              },
+                              "profile": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                              },
+                              "title": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "session_id",
+                              "tip_session_id",
+                              "profile",
+                              "title"
+                            ]
+                          }
                         },
                         "context_detail_key": {
                           "anyOf": [
@@ -10579,6 +11365,10 @@
                               }
                             ]
                           },
+                          "can_reference": {
+                            "type": "boolean",
+                            "description": "A fresh chat in this mode accepts earlier-conversation references. Absent means unavailable."
+                          },
                           "can_attach": {
                             "type": "boolean",
                             "description": "A fresh chat in this mode accepts file attachments."
@@ -10655,6 +11445,37 @@
                             "stale"
                           ],
                           "type": "string"
+                        },
+                        "source_references": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "session_id": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9_-]{1,128}$",
+                                "description": "Retained logical conversation identity."
+                              },
+                              "tip_session_id": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9_-]{1,128}$"
+                              },
+                              "profile": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                              },
+                              "title": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "session_id",
+                              "tip_session_id",
+                              "profile",
+                              "title"
+                            ]
+                          }
                         },
                         "context_detail_key": {
                           "anyOf": [
@@ -15657,6 +16478,37 @@
                           ],
                           "type": "string"
                         },
+                        "source_references": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "session_id": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9_-]{1,128}$",
+                                "description": "Retained logical conversation identity."
+                              },
+                              "tip_session_id": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9_-]{1,128}$"
+                              },
+                              "profile": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                              },
+                              "title": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "session_id",
+                              "tip_session_id",
+                              "profile",
+                              "title"
+                            ]
+                          }
+                        },
                         "context_detail_key": {
                           "anyOf": [
                             {
@@ -20247,6 +21099,37 @@
                             "stale"
                           ],
                           "type": "string"
+                        },
+                        "source_references": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "session_id": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9_-]{1,128}$",
+                                "description": "Retained logical conversation identity."
+                              },
+                              "tip_session_id": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9_-]{1,128}$"
+                              },
+                              "profile": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                              },
+                              "title": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "session_id",
+                              "tip_session_id",
+                              "profile",
+                              "title"
+                            ]
+                          }
                         },
                         "context_detail_key": {
                           "anyOf": [
@@ -25562,6 +26445,37 @@
                           ],
                           "type": "string"
                         },
+                        "source_references": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "session_id": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9_-]{1,128}$",
+                                "description": "Retained logical conversation identity."
+                              },
+                              "tip_session_id": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9_-]{1,128}$"
+                              },
+                              "profile": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                              },
+                              "title": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "session_id",
+                              "tip_session_id",
+                              "profile",
+                              "title"
+                            ]
+                          }
+                        },
                         "context_detail_key": {
                           "anyOf": [
                             {
@@ -28524,6 +29438,37 @@
                             "stale"
                           ],
                           "type": "string"
+                        },
+                        "source_references": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "session_id": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9_-]{1,128}$",
+                                "description": "Retained logical conversation identity."
+                              },
+                              "tip_session_id": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9_-]{1,128}$"
+                              },
+                              "profile": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                              },
+                              "title": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "session_id",
+                              "tip_session_id",
+                              "profile",
+                              "title"
+                            ]
+                          }
                         },
                         "context_detail_key": {
                           "anyOf": [
@@ -31550,6 +32495,37 @@
                           ],
                           "type": "string"
                         },
+                        "source_references": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "session_id": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9_-]{1,128}$",
+                                "description": "Retained logical conversation identity."
+                              },
+                              "tip_session_id": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9_-]{1,128}$"
+                              },
+                              "profile": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                              },
+                              "title": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "session_id",
+                              "tip_session_id",
+                              "profile",
+                              "title"
+                            ]
+                          }
+                        },
                         "context_detail_key": {
                           "anyOf": [
                             {
@@ -34572,6 +35548,37 @@
                             "stale"
                           ],
                           "type": "string"
+                        },
+                        "source_references": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "session_id": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9_-]{1,128}$",
+                                "description": "Retained logical conversation identity."
+                              },
+                              "tip_session_id": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9_-]{1,128}$"
+                              },
+                              "profile": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                              },
+                              "title": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "session_id",
+                              "tip_session_id",
+                              "profile",
+                              "title"
+                            ]
+                          }
                         },
                         "context_detail_key": {
                           "anyOf": [
@@ -46924,6 +47931,37 @@
                           ],
                           "type": "string"
                         },
+                        "source_references": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "session_id": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9_-]{1,128}$",
+                                "description": "Retained logical conversation identity."
+                              },
+                              "tip_session_id": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9_-]{1,128}$"
+                              },
+                              "profile": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                              },
+                              "title": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "session_id",
+                              "tip_session_id",
+                              "profile",
+                              "title"
+                            ]
+                          }
+                        },
                         "context_detail_key": {
                           "anyOf": [
                             {
@@ -49934,6 +50972,37 @@
                             "stale"
                           ],
                           "type": "string"
+                        },
+                        "source_references": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "session_id": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9_-]{1,128}$",
+                                "description": "Retained logical conversation identity."
+                              },
+                              "tip_session_id": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9_-]{1,128}$"
+                              },
+                              "profile": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                              },
+                              "title": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "session_id",
+                              "tip_session_id",
+                              "profile",
+                              "title"
+                            ]
+                          }
                         },
                         "context_detail_key": {
                           "anyOf": [
@@ -53334,6 +54403,37 @@
                           ],
                           "type": "string"
                         },
+                        "source_references": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "session_id": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9_-]{1,128}$",
+                                "description": "Retained logical conversation identity."
+                              },
+                              "tip_session_id": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9_-]{1,128}$"
+                              },
+                              "profile": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                              },
+                              "title": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "session_id",
+                              "tip_session_id",
+                              "profile",
+                              "title"
+                            ]
+                          }
+                        },
                         "context_detail_key": {
                           "anyOf": [
                             {
@@ -56634,6 +57734,37 @@
                                 "stale"
                               ],
                               "type": "string"
+                            },
+                            "source_references": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "session_id": {
+                                    "type": "string",
+                                    "pattern": "^[A-Za-z0-9_-]{1,128}$",
+                                    "description": "Retained logical conversation identity."
+                                  },
+                                  "tip_session_id": {
+                                    "type": "string",
+                                    "pattern": "^[A-Za-z0-9_-]{1,128}$"
+                                  },
+                                  "profile": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 128
+                                  },
+                                  "title": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "session_id",
+                                  "tip_session_id",
+                                  "profile",
+                                  "title"
+                                ]
+                              }
                             },
                             "context_detail_key": {
                               "anyOf": [
