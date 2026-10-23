@@ -67,7 +67,7 @@ Duo is already booted:
 env IOS_SIMULATOR_DEVICE_TYPE=com.apple.CoreSimulator.SimDeviceType.iPhone-Duo \
   scripts/ios-simulator-pool /bin/zsh -c \
   'exec scripts/duo-pose "$IOS_SIMULATOR_ID" book --screenshot /tmp/duo-book.png'
-scripts/test-duo-pose
+scripts/test-duo-pose --live
 ```
 
 `booted` requires exactly one booted Duo. `rotate-right` sets the absolute native
@@ -98,9 +98,10 @@ capture verification, and 64 for invalid arguments. `xcodebuild test` may close
 the Duo or select a clone when parallel testing is enabled; set the pose again
 on the actual test destination afterward.
 
-`scripts/test-duo-pose` always runs synthetic protocol tests. Its live check
-creates a disposable Duo, owns its shared lease, exercises closed/open/closed,
-book, rotation, screenshots and repeated-target no-ops, then deletes only that
+`scripts/test-duo-pose` runs only synthetic protocol tests and never consults a
+running simulator or T3 backend. Explicit `scripts/test-duo-pose --live`
+validation also creates a disposable Duo, owns its shared lease, exercises
+closed/open/closed, book, rotation, screenshots and repeated-target no-ops, then deletes only that
 test device. The live portion skips clearly when the Duo type or running local
 T3 backend is unavailable. CI runs the synthetic tests without live accounts,
 Accessibility access, or a simulator backend.

@@ -65,7 +65,10 @@ export async function controlDuo(origin, device, pose, timeoutMs = 10_000) {
       if (error) reject(error);
       else resolveResult({ ...state, changed: sent });
     };
-    const timer = setTimeout(() => finish(fail('Pose was not verified before the deadline.')), timeoutMs);
+    const timer = setTimeout(() => finish(fail(`Pose was not verified before the deadline. Last native state: ${JSON.stringify(state && {
+      screenId: state.screenId, hingeAngle: state.hingeAngle, hingePose: state.hingePose,
+      orientation: state.orientation, physicalOrientation: state.physicalOrientation,
+    })}`)), timeoutMs);
     socket.addEventListener('error', () => finish(fail('T3 simulator input is unavailable.', 2)));
     socket.addEventListener('close', () => finish(fail('T3 simulator input disconnected before verification.')));
     socket.addEventListener('message', event => {

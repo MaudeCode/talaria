@@ -1,7 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 script_dir=$(cd "$(dirname "$0")" && pwd)
-node --test "$script_dir/duo-pose.test.mjs"
+if [[ $# -gt 1 || ${1:-} != '' && ${1:-} != --live ]]; then
+    echo 'Usage: scripts/test-duo-pose [--live]' >&2
+    exit 64
+fi
+env -u DUO_POSE_LIVE_DEVICE node --test "$script_dir/duo-pose.test.mjs"
+[[ ${1:-} == --live ]] || exit 0
 
 if [[ $(uname) != Darwin ]] || ! xcrun simctl list devicetypes | /usr/bin/grep -q 'com.apple.CoreSimulator.SimDeviceType.iPhone-Duo'; then
     echo 'SKIP live duo-pose: no iPhone Duo simulator type on this host.'

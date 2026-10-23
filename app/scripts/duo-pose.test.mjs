@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { setImmediate as tick } from 'node:timers/promises';
 import test from 'node:test';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -191,6 +191,32 @@ test('PNG checks require the active panel dimensions in either orientation', () 
   validatePng(png(1398, 2034), 1);
   assert.throws(() => validatePng(png(1398, 2034), 3), /dimensions/);
   assert.throws(() => validatePng(Buffer.from('invalid'), 1), /PNG/);
+});
+
+test('default test launcher never consults the host simulator or backend', () => {
+  const root = mkdtempSync(join(tmpdir(), 'duo-pose-launcher-'));
+  const bin = join(root, 'bin');
+  mkdirSync(bin);
+  const log = join(root, 'host-calls');
+  const nodeLog = join(root, 'node-call');
+  const command = fileURLToPath(new URL('./test-duo-pose', import.meta.url));
+  const stub = (name, body) => {
+    const path = join(bin, name);
+    writeFileSync(path, `#!/bin/sh\n${body}\n`);
+    chmodSync(path, 0o755);
+  };
+  stub('node', 'printf "%s\\n" "${DUO_POSE_LIVE_DEVICE-unset}" "$@" > "$DUO_TEST_NODE_CALLS"');
+  stub('uname', 'printf "Darwin\\n"');
+  stub('xcrun', 'printf "%s\\n" "$*" >> "$DUO_TEST_HOST_CALLS"');
+  try {
+    execFileSync(command, { env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, DUO_TEST_HOST_CALLS: log,
+      DUO_TEST_NODE_CALLS: nodeLog, DUO_POSE_LIVE_DEVICE: 'inherited-synthetic-marker' } });
+    let calls = '';
+    try { calls = readFileSync(log, 'utf8'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    assert.equal(calls, '', 'default test command must not inspect a live host dependency');
+    assert.deepEqual(readFileSync(nodeLog, 'utf8').trim().split('\n'),
+      ['unset', '--test', fileURLToPath(new URL('./duo-pose.test.mjs', import.meta.url))]);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 test('live leased Duo round trip and repeated targets', { skip: !process.env.DUO_POSE_LIVE_DEVICE }, () => {
