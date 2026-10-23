@@ -229,6 +229,14 @@ Without an identity, Agents with a public catalog let you browse apps; older Age
 Rules stay off and read-only until the portal returns them. Sign in or choose **Connect** to authorize
 account setup; after signing in through the Agent, refresh the page to load that account.
 
+The Memory page offers **Preview compaction** for saved Memory and User profile entries. It uses the configured
+Compression auxiliary model, shows the source, proposal and diff, and saves only after **Apply compaction**.
+The preview expires after 30 minutes and is bound to the profile and saved revision. A changed source requires a
+new preview; a refusal keeps the review visible. Secret-bearing and explicitly protected entries stay unchanged
+and never enter the model request. Because memory files do not record per-entry history privacy metadata,
+compaction requires an auxiliary route that enforces both no-training and zero-retention restrictions.
+An unavailable or incompatible route reports an error without saving. SOUL and project context remain outside compaction.
+
 ### Remote access
 
 Bind to loopback and use an SSH tunnel or Tailscale, or set `HERMES_WEBUI_HOST=0.0.0.0` with

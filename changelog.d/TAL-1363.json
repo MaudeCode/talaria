@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Preview compacted memory and review the changes before applying them.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
