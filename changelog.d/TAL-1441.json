@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Update Web HTML sanitization with upstream fixes.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
