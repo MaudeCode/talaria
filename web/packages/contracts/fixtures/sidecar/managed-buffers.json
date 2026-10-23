@@ -1,0 +1,16 @@
+{
+  "plugins.buffers": [
+    {
+      "params": {
+        "profile_home": "/synthetic",
+        "session_id": "session-one",
+        "action": "list"
+      },
+      "result": {
+        "supported": false,
+        "buffers": [],
+        "write_semantics": "unconditional"
+      }
+    }
+  ]
+}

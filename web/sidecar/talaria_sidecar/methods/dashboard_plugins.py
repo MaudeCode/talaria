@@ -190,15 +190,15 @@ def _plugins(home):
     return out
 
 
-def _named(home, name):
-    return next((p for p in _plugins(home) if p['name'] == name and p['enabled'] and p['panel']), None)
+def _named(home, name, *, require_panel=True):
+    return next((p for p in _plugins(home) if p['name'] == name and p['enabled'] and (p['panel'] if require_panel else p.get('_api_file'))), None)
 
 
 def _reply(status=404, body=b'', content_type='application/octet-stream'):
     return {'status': status, 'body': base64.b64encode(body).decode('ascii'), 'content_type': content_type}
 
 
-def _request(ctx, plugin, params):
+def _request(ctx, plugin, params, *, require_panel=True):
     ctx.check_cancelled()
     if params.get('authenticated') is not True:
         return _reply()
@@ -240,7 +240,7 @@ def _request(ctx, plugin, params):
     content_type = next((v for k, v in result.get('headers', []) if k.lower() == 'content-type'), 'application/octet-stream')
     if 'text/event-stream' in content_type.lower():
         return _reply(501, b'Agent plugin host supports buffered HTTP only', 'text/plain; charset=utf-8')
-    if _named(homes.profile_home_param(params), plugin['name']) is None:
+    if _named(homes.profile_home_param(params), plugin['name'], require_panel=require_panel) is None:
         return _reply()
     raw = result.get('body', b'')
     if not isinstance(raw, bytes) or len(raw) > _MAX_API:

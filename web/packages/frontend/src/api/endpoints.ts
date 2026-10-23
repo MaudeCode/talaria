@@ -4,6 +4,7 @@
  * (uploads, downloads, exports) keep the raw transport in `client.ts`.
  * Dead endpoints were deleted in TAL-245; do not add untyped routes here.
  */
+import { m } from '../paraglide/messages.js'
 import { orpc, timeout } from './orpc'
 import type { OwnerActionRequest } from '@maudecode/talaria-web-contracts'
 import type { OutboundDraftAction, OutboundDraftRef } from '@maudecode/talaria-web-contracts'
@@ -169,11 +170,16 @@ export const removeWorkspace = (path: string) => orpc().workspaces.remove({ path
 export const renameWorkspace = (path: string, name: string) => orpc().workspaces.rename({ path, name })
 export const reorderWorkspaces = (paths: string[]) => orpc().workspaces.reorder({ paths })
 export const suggestWorkspaces = (prefix: string) => orpc().workspaces.suggest({ prefix })
-export const listDir = (session_id: string, path = '.', showHidden = false) => orpc().files.list({ session_id, path, ...(showHidden ? { show_hidden: '1' } : {}) })
-export const readFile = (session_id: string, path: string) => orpc().files.read({ session_id, path })
+/** An older server may ignore an unknown query field. Never present its workspace reply as a buffer. */
+function fileSource<T extends { source?: unknown }>(result: T, source?: 'workspace' | 'managed'): T {
+  if (source === 'managed' && result.source !== source) throw new Error(m.ws_panel_source_unsupported())
+  return result
+}
+export const listDir = (session_id: string, path = '.', showHidden = false, source?: 'workspace' | 'managed') => orpc().files.list({ session_id, path, ...(source ? { source } : {}), ...(showHidden ? { show_hidden: '1' } : {}) }).then((result) => fileSource(result, source))
+export const readFile = (session_id: string, path: string, source?: 'workspace' | 'managed') => orpc().files.read({ session_id, path, ...(source ? { source } : {}) }).then((result) => fileSource(result, source))
 /** `inline` asks for the sandboxed, frameable preview response (HTML, PDF). */
 export const rawFileUrl = (session_id: string, path: string, inline?: boolean) => `api/file/raw${qs({ session_id, path, inline: flag(inline) })}`
-export const saveFile = (session_id: string, path: string, content: string) => orpc().files.save({ session_id, path, content })
+export const saveFile = (session_id: string, path: string, content: string, source?: 'workspace' | 'managed') => orpc().files.save({ session_id, path, content, ...(source ? { source } : {}) }).then((result) => fileSource(result, source))
 export const createFile = (session_id: string, path: string) => orpc().files.create({ session_id, path, content: '' })
 export const createDir = (session_id: string, path: string) => orpc().files.createDir({ session_id, path })
 export const renameEntry = (session_id: string, path: string, new_name: string) => orpc().files.rename({ session_id, path, new_name })

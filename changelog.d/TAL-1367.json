@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Browse and edit managed session buffers from the Files panel.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
