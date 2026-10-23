@@ -953,20 +953,21 @@ struct MessageComposerView: View {
         }
     }
 
-    /// Shows or hides the control strip; the choice holds for every chat until it is changed.
+    /// Tabletop keeps the strip visible without changing the user's flat-layout preference.
     private var controlStripToggle: some View {
         Button {
             isControlStripExpanded.toggle()
         } label: {
             Image(systemName: "chevron.down")
                 .font(.system(size: plusIconSize * 0.62, weight: .semibold))
-                .rotationEffect(.degrees(isControlStripExpanded ? 0 : 180))
+                .rotationEffect(.degrees(showsControlStripContent ? 0 : 180))
                 .foregroundStyle(metaControlColor)
                 .frame(width: plusButtonSize, height: plusButtonSize)
                 .chatMinimumHitTarget(in: Circle())
         }
         .buttonStyle(.chatTactile(.icon))
-        .accessibilityLabel(isControlStripExpanded ? "Hide composer controls" : "Show composer controls")
+        .disabled(tabletopHeight != nil)
+        .accessibilityLabel(showsControlStripContent ? "Hide composer controls" : "Show composer controls")
     }
 
     @ViewBuilder

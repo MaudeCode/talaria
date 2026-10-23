@@ -121,6 +121,41 @@ final class ChatHostedTests: XCTestCase {
         XCTAssertTrue(restoredEditor === editor)
     }
 
+    func testTabletopDisablesStripToggleAndPreservesTheFlatPreference() async throws {
+        let fixture = try FixtureApp(for: self)
+        let session = try await fixture.session()
+        let suite = "TAL-495-strip-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(false, forKey: ComposerVisibilitySettings.controlStripKey)
+        let window = try hostWindow(FoldHost(content: AnyView(fixture.chat(session)),
+            division: CGRect(x: -100, y: 330, width: 2000, height: 40))
+            .defaultAppStorage(defaults), size: CGSize(width: 900, height: 900))
+        _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
+        try await typeIntoComposer("Retained control-strip preference", in: window)
+        let loadedEditor = await composerTextView(in: window)
+        try XCTUnwrap(loadedEditor).resignFirstResponder()
+        settle(0.3)
+        _ = try await requireElement(in: window, label: "Show composer controls")
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Toggle fixture fold"))
+        _ = try await requireElement(in: window, label: "Select model")
+        let toggle = try await requireElement(in: window) {
+            ["Show composer controls", "Hide composer controls"].contains($0.accessibilityLabel ?? "")
+        }
+        XCTAssertTrue(toggle.accessibilityTraits.contains(.notEnabled),
+            "Tabletop must not offer an ineffective toggle that mutates the saved flat preference")
+        XCTAssertEqual(toggle.accessibilityLabel, "Hide composer controls")
+        XCTAssertFalse(defaults.bool(forKey: ComposerVisibilitySettings.controlStripKey))
+        attachHostedScreenshot(window, name: "tabletop-strip-toggle-disabled")
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Toggle fixture fold"))
+        let restored = try await requireElement(in: window, label: "Show composer controls")
+        XCTAssertFalse(restored.accessibilityTraits.contains(.notEnabled))
+        XCTAssertFalse(defaults.bool(forKey: ComposerVisibilitySettings.controlStripKey))
+        HostedAccessibility.activate(restored)
+        _ = try await requireElement(in: window, label: "Hide composer controls")
+        XCTAssertTrue(defaults.bool(forKey: ComposerVisibilitySettings.controlStripKey))
+    }
+
     func testBookFoldMovesTheClarificationCardAndItsChoices() async throws {
         let fixture = try FixtureApp(["--ui-test-chat-clarification"], for: self)
         let session = try await fixture.session()
