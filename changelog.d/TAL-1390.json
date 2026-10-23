@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Session search waits for typing to pause and keeps existing matches visible while loading new results.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

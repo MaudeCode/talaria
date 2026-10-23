@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { useDebounced } from '../../lib/useDebounced'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
@@ -31,8 +32,7 @@ function StatusBadge({ status }: { status: string | undefined }) {
 export function McpSection({ heading }: { heading: string }) {
   const effects = useResourceEffects<boolean>()
   const [query, setQuery] = useState('')
-  const [q, setQ] = useState('')
-  useEffect(() => { const t = setTimeout(() => setQ(query), 250); return () => clearTimeout(t) }, [query])
+  const q = useDebounced(query, 250)
   // A cold health cache answers `health_pending`; re-read until the server's probes settle.
   const servers = useQuery({ queryKey: keys.mcp.servers, queryFn: api.fetchMcpServers, staleTime: 30_000, refetchInterval: (s) => (s.state.data?.health_pending ? 2500 : false) })
   const tools = useQuery({ queryKey: [...keys.mcp.tools, q], queryFn: () => api.fetchMcpTools(q), staleTime: 30_000, placeholderData: keepPreviousData })

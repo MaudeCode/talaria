@@ -2,6 +2,7 @@ import { useEffect, useEffectEvent, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { Archive, FolderPlus, Plus, RefreshCw, X } from 'lucide-react'
+import { useDebounced } from '../../lib/useDebounced'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
@@ -54,12 +55,6 @@ function withCardEffects(columns: KanbanColumn[], board: string | undefined, eff
 /** Labels for the Agent's statuses; an unknown status shows the server's label, else the status as sent. */
 const STATUS_LABELS: Record<string, () => string> = { triage: m.kanban_status_triage, todo: m.kanban_status_todo, scheduled: m.kanban_status_scheduled, ready: m.kanban_status_ready, running: m.kanban_status_running, blocked: m.kanban_status_blocked, review: m.kanban_status_review, done: m.kanban_status_done, archived: m.kanban_status_archived }
 const statusLabel = (status: string, label?: string) => STATUS_LABELS[status]?.() ?? label ?? status
-
-function useDebounced<T>(value: T, ms: number): T {
-  const [debounced, setDebounced] = useState(value)
-  useEffect(() => { const t = window.setTimeout(() => setDebounced(value), ms); return () => window.clearTimeout(t) }, [value, ms])
-  return debounced
-}
 
 /** Refetches every Kanban query when the server's event stream reports a write from any client; a burst refreshes once.
  * `latestEventId` must be the shown board's own cursor, never placeholder data from the previous board. */

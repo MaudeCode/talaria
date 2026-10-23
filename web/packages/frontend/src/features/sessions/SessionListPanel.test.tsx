@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
@@ -9,7 +9,8 @@ import { SessionsListSchema, type SessionRow } from '../../contracts'
 import { ApiError } from '../../contracts/common'
 
 vi.mock('../../api/endpoints', () => ({ fetchSessions: vi.fn(), searchSessions: vi.fn(), fetchProjects: vi.fn(), archiveSession: vi.fn(), createProject: vi.fn(), importSession: vi.fn() }))
-vi.mock('../../api/sse', () => ({ openSessionListStream: () => ({ close: () => undefined, readyState: () => 1 }) }))
+const sessionEvents = vi.hoisted(() => ({ emit: vi.fn<(event: { event: string; data: { session_id?: string; reason?: string } }) => void>() }))
+vi.mock('../../api/sse', () => ({ openSessionListStream: ({ onEvent }: { onEvent: typeof sessionEvents.emit }) => { sessionEvents.emit.mockImplementation(onEvent); return { close: () => undefined, readyState: () => 1 } } }))
 vi.mock('./useNewChat', () => ({ useNewChat: () => vi.fn() }))
 const rowRender = vi.hoisted(() => vi.fn())
 vi.mock('./SessionContextMenu', () => ({ SessionContextMenu: ({ row }: { row: SessionRow }) => { rowRender(row.session_id); return null } }))
@@ -61,6 +62,96 @@ describe('SessionListPanel search (TAL-308)', () => {
     await screen.findByRole('button', { name: 'Proj' })
     await userEvent.type(screen.getByRole('searchbox'), 'zebra alpha')
     await waitFor(() => { expect(shown()).toEqual(['alpha']) })
+  })
+})
+
+describe('sidebar search work (TAL-1390)', () => {
+  it('debounces a burst into one request and aborts it when the next term settles', async () => {
+    vi.mocked(api.searchSessions).mockReturnValue(new Promise(() => undefined))
+    const panel = render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SessionListPanel /></QueryClientProvider>)
+    await screen.findByText('Alpha zebra')
+    vi.useFakeTimers()
+    try {
+      for (const value of ['h', 'he', 'hel', 'hell', 'hello']) {
+        fireEvent.change(screen.getByRole('searchbox'), { target: { value } })
+        await act(() => vi.advanceTimersByTimeAsync(20))
+      }
+      expect(api.searchSessions).not.toHaveBeenCalled()
+      await act(() => vi.advanceTimersByTimeAsync(200))
+      expect(api.searchSessions).toHaveBeenCalledTimes(1)
+      expect(vi.mocked(api.searchSessions).mock.calls[0]?.[0]).toBe('hello')
+      const signal = vi.mocked(api.searchSessions).mock.calls[0]![3]!
+      fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'hello again' } })
+      await act(() => vi.advanceTimersByTimeAsync(200))
+      expect(signal.aborted).toBe(true)
+      expect(api.searchSessions).toHaveBeenCalledTimes(2)
+      const nextSignal = vi.mocked(api.searchSessions).mock.calls[1]![3]!
+      panel.unmount()
+      expect(nextSignal.aborted).toBe(true)
+    } finally { vi.useRealTimers() }
+  })
+
+  it('keeps server content matches visible while the next term is loading', async () => {
+    vi.mocked(api.searchSessions).mockImplementation((q) => q === 'zebra'
+      ? Promise.resolve({ sessions: [{ ...delta, match_preview: 'server content preview', match_type: 'content' }], sidebar_filtered: true, all_profiles: false, active_profile: 'default' })
+      : new Promise(() => undefined))
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SessionListPanel /></QueryClientProvider>)
+    await screen.findByText('Alpha zebra')
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'zebra' } })
+    await waitFor(() => expect(shown()).toEqual(['delta']))
+    rowRender.mockClear()
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'zebras' } })
+    await waitFor(() => expect(api.searchSessions).toHaveBeenLastCalledWith('zebras', expect.any(Object), 5, expect.any(AbortSignal)))
+    expect(shown()).toEqual(['delta'])
+    expect(rowRender).not.toHaveBeenCalled()
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: '' } })
+    await waitFor(() => expect(shown()).toEqual(['alpha', 'delta', 'other']))
+    expect(screen.queryByText('server content preview')).toBeNull()
+  })
+
+  it.each(['', 'x'])('does not resurrect old matches after pausing on %j', async (shortTerm) => {
+    let answer!: (value: Awaited<ReturnType<typeof api.searchSessions>>) => void
+    const pending = new Promise<Awaited<ReturnType<typeof api.searchSessions>>>((resolve) => { answer = resolve })
+    vi.mocked(api.searchSessions).mockImplementation((q) => q === 'zebra'
+      ? Promise.resolve({ sessions: [delta], sidebar_filtered: true, all_profiles: false, active_profile: 'default' })
+      : q === 'alpha' ? pending : new Promise(() => undefined))
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SessionListPanel /></QueryClientProvider>)
+    await screen.findByText('Alpha zebra')
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'zebra' } })
+    await waitFor(() => expect(shown()).toEqual(['delta']))
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: shortTerm } })
+    await waitFor(() => expect(shown()).toEqual(shortTerm ? [] : ['alpha', 'delta', 'other']))
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'alpha' } })
+    await waitFor(() => expect(api.searchSessions).toHaveBeenLastCalledWith('alpha', expect.any(Object), 5, expect.any(AbortSignal)))
+    expect(shown()).toEqual(['alpha'])
+    answer({ sessions: [other], sidebar_filtered: true, all_profiles: false, active_profile: 'default' })
+    await waitFor(() => expect(shown()).toEqual(['other']))
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'alphas' } })
+    await waitFor(() => expect(api.searchSessions).toHaveBeenLastCalledWith('alphas', expect.any(Object), 5, expect.any(AbortSignal)))
+    expect(shown()).toEqual(['other'])
+  })
+
+  it('drops retained matches when the project or source scope changes', async () => {
+    vi.mocked(api.searchSessions).mockResolvedValueOnce({ sessions: [other], sidebar_filtered: true, all_profiles: false, active_profile: 'default' })
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SessionListPanel /></QueryClientProvider>)
+    await screen.findByText('Alpha zebra')
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'zebra' } })
+    await waitFor(() => expect(shown()).toEqual(['other']))
+    vi.mocked(api.searchSessions).mockReturnValue(new Promise(() => undefined))
+    await userEvent.click(screen.getByRole('button', { name: 'Proj' }))
+    expect(shown()).toEqual(['alpha'])
+    await userEvent.click(screen.getByRole('button', { name: /CLI/ }))
+    expect(shown()).toEqual(['cli'])
+  })
+
+  it('does not render unchanged visible rows while typing', async () => {
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SessionListPanel /></QueryClientProvider>)
+    await screen.findByText('Alpha zebra')
+    await screen.findByRole('button', { name: 'Proj' })
+    rowRender.mockClear()
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'a' } })
+    expect(shown()).toEqual(['alpha', 'delta', 'other'])
+    expect(rowRender).not.toHaveBeenCalled()
   })
 })
 
@@ -123,6 +214,18 @@ describe('session list date groups (TAL-306)', () => {
     expect(allocations.size).toBe(1)
   })
 
+  it('groups 1,000 interleaved rows at local day boundaries in server order (TAL-1390)', () => {
+    const today = new Date(2026, 9, 22)
+    const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1)
+    const week = new Date(today); week.setDate(today.getDate() - 7)
+    const buckets = ['pinned', 'today', 'yesterday', 'week', 'older'] as const
+    const timestamps = [0, today.getTime(), yesterday.getTime(), week.getTime(), week.getTime() - 1]
+    const many = Array.from({ length: 1_000 }, (_, i) => row(`group-${String(i)}`, 'Grouped', { pinned: i % 5 === 0, sort_ts: timestamps[i % 5]! / 1000 }))
+    const groups = groupSessionRows(many, today.getTime() + 3_600_000)
+    expect(groups.map((g) => g.id)).toEqual(buckets)
+    groups.forEach((g, index) => expect(g.rows).toEqual(many.filter((_, i) => i % 5 === index)))
+  })
+
   it('keeps the server order inside every group', () => {
     const at = (rows.find((r) => r.session_id === 'tal306-created-only')!.sort_ts + 60) * 1000
     const groups = groupSessionRows(rows, at)
@@ -152,7 +255,7 @@ describe('session row renders (TAL-1211)', () => {
     rowRender.mockClear()
     // A fresh wire response has fresh objects; Query's structural sharing preserves unchanged rows.
     vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [{ ...alpha, title: 'Alpha renamed' }, { ...delta }, { ...other }] } as never)
-    await act(() => qc.refetchQueries({ queryKey: ['sessions', 'list'] }))
+    act(() => sessionEvents.emit({ event: 'sessions_changed', data: { session_id: 'alpha', reason: 'title' } }))
     await screen.findByText('Alpha renamed')
     expect(rowRender.mock.calls.map(([id]) => id)).toEqual(['alpha'])
 

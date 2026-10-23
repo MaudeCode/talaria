@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from '@tanstack/react-router'
-import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { Archive, ArchiveRestore, Filter, GitBranch, Plus, Search, Upload, X } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
@@ -12,6 +12,7 @@ import { openSessionListStream } from '../../api/sse'
 import type { SessionRow } from '../../contracts'
 import { PanelHead, PanelHeadButton } from '../../shell/Sidebar'
 import { cn } from '../../ui/cn'
+import { useDebounced } from '../../lib/useDebounced'
 import { HelpTip } from '../../ui/Field'
 import { useNewChat } from './useNewChat'
 import { SessionContextMenu } from './SessionContextMenu'
@@ -90,21 +91,6 @@ export function relativeTime(ts: number | null | undefined, now = Date.now()): s
 
 type GroupId = 'pinned' | 'today' | 'yesterday' | 'week' | 'older'
 
-function groupLabel(row: SessionRow, now: number): GroupId {
-  if (row.pinned) return 'pinned'
-  const d = new Date(row.sort_ts * 1000)
-  const today = new Date(now)
-  today.setHours(0, 0, 0, 0)
-  if (d >= today) return 'today'
-  const yesterday = new Date(today)
-  yesterday.setDate(today.getDate() - 1)
-  if (d >= yesterday) return 'yesterday'
-  const week = new Date(today)
-  week.setDate(today.getDate() - 7)
-  if (d >= week) return 'week'
-  return 'older'
-}
-
 const GROUP_LABEL: Record<GroupId, () => string> = {
   pinned: () => m.session_time_bucket_pinned(),
   today: () => m.session_time_bucket_today(),
@@ -120,9 +106,14 @@ const GROUP_ORDER: GroupId[] = ['pinned', 'today', 'yesterday', 'week', 'older']
 
 /** Files rows under local-date groups by the server's `sort_ts`, keeping the server's order inside each group (TAL-306). */
 export function groupSessionRows(rows: SessionRow[], now = Date.now()): { id: GroupId; rows: SessionRow[] }[] {
+  const today = new Date(now); today.setHours(0, 0, 0, 0)
+  const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1)
+  const week = new Date(today); week.setDate(today.getDate() - 7)
+  const todayMs = today.getTime(), yesterdayMs = yesterday.getTime(), weekMs = week.getTime()
   const byGroup = new Map<GroupId, SessionRow[]>()
   for (const r of rows) {
-    const g = groupLabel(r, now)
+    const ts = r.sort_ts * 1000
+    const g: GroupId = r.pinned ? 'pinned' : ts >= todayMs ? 'today' : ts >= yesterdayMs ? 'yesterday' : ts >= weekMs ? 'week' : 'older'
     const grouped = byGroup.get(g)
     if (grouped) grouped.push(r)
     else byGroup.set(g, [r])
@@ -198,9 +189,19 @@ export function SessionListPanel() {
   const rows = useMemo(() => withEffects(data?.sessions ?? [], (r) => `session:${r.session_id}`, effects).filter((r) => showArchived || !r.archived), [data, effects, showArchived])
   const cliCount = useMemo(() => rows.filter((r) => r.is_cli_session).length, [rows])
   // TAL-308: the server searches within the visible project, source tab and archive state; the local title filter covers the wait.
-  const q = filter.trim()
+  const q = useDebounced(filter.trim(), 200)
+  const [retainSearchMatches, setRetainSearchMatches] = useState(false)
   const searchFilters: api.SessionSearchFilters = { project_id: project === NO_PROJECT ? 'none' : (project ?? undefined), sidebar_source: cliCount > 0 ? source : undefined, include_archived: showArchived }
-  const search = useQuery({ queryKey: keys.sessions.search(q, searchFilters), queryFn: ({ signal }) => api.searchSessions(q, searchFilters, 5, signal), enabled: q.length >= 2, staleTime: 15_000 })
+  const search = useQuery({ queryKey: keys.sessions.search(q, searchFilters), queryFn: ({ signal }) => api.searchSessions(q, searchFilters, 5, signal), enabled: q.length >= 2, staleTime: 15_000,
+    // Retain matches only within the same source, project and archive scope.
+    placeholderData: (previous, query) => {
+      const before = query?.queryKey[3] as api.SessionSearchFilters | undefined
+      return retainSearchMatches && before?.project_id === searchFilters.project_id && before?.sidebar_source === searchFilters.sidebar_source && before?.include_archived === searchFilters.include_archived ? keepPreviousData(previous) : undefined
+    },
+  })
+  // Disabled short-term queries never replace Query's previous data. Re-arm only after a real search result.
+  if (q.length < 2 && retainSearchMatches) setRetainSearchMatches(false)
+  else if (q.length >= 2 && search.data && !search.isPlaceholderData && !retainSearchMatches) setRetainSearchMatches(true)
   const webuiCount = rows.length - cliCount
   // TAL-785: the server says when state.db could not serve the Agent sessions; an empty list alone would read as deleted history.
   const storage = data?.agent_storage
@@ -212,16 +213,16 @@ export function SessionListPanel() {
   // The provisional chip gives way as soon as the server's list carries the created project.
   const newProject = typeof newName === 'string' && !projectList.some((p) => p.name === newName) ? newName : null
   const filtered = useMemo(() => {
-    const q = filter.trim().toLowerCase()
+    const term = q.toLowerCase()
     let visible = rows
     if (cliCount > 0) visible = visible.filter((r) => (source === 'cli' ? !!r.is_cli_session : !r.is_cli_session))
     if (project === NO_PROJECT) visible = visible.filter((r) => !r.project_id)
     else if (project) visible = visible.filter((r) => r.project_id === project)
-    if (!q) return visible
-    if (search.data) return withEffects(search.data.sessions, (r) => `session:${r.session_id}`, effects).filter((r) => showArchived || !r.archived)
-    return visible.filter((r) => r.title.toLowerCase().includes(q))
-  }, [rows, filter, cliCount, source, project, search.data, effects, showArchived])
-  const previews = useMemo(() => new Map((search.data?.sessions ?? []).flatMap((r) => (r.match_preview ? [[r.session_id, r.match_preview] as const] : []))), [search.data])
+    if (!term) return visible
+    if (q.length >= 2 && search.data) return withEffects(search.data.sessions, (r) => `session:${r.session_id}`, effects).filter((r) => showArchived || !r.archived)
+    return visible.filter((r) => r.title.toLowerCase().includes(term))
+  }, [rows, q, cliCount, source, project, search.data, effects, showArchived])
+  const previews = useMemo(() => new Map((q.length >= 2 ? search.data?.sessions ?? [] : []).flatMap((r) => (r.match_preview ? [[r.session_id, r.match_preview] as const] : []))), [q, search.data])
   const groups = useMemo(() => groupSessionRows(filtered).map((g) => ({ ...g, label: GROUP_LABEL[g.id]() })), [filtered])
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({})
   const archive = useResourceMutation({
