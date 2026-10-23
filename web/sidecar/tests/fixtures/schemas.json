@@ -1950,6 +1950,129 @@
     ],
     "additionalProperties": false
   },
+  "kanban.inspection": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "nodes": {
+        "maxItems": 500,
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "board": {
+              "type": "string"
+            },
+            "board_name": {
+              "type": "string"
+            },
+            "task": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "priority": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "claim_live": {
+                  "type": "boolean"
+                },
+                "has_completion_evidence": {
+                  "type": "boolean"
+                },
+                "agent_move_targets": {
+                  "anyOf": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "current_run_started_at": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "title",
+                "status",
+                "priority",
+                "claim_live",
+                "has_completion_evidence",
+                "agent_move_targets",
+                "current_run_started_at"
+              ],
+              "additionalProperties": {}
+            }
+          },
+          "required": [
+            "key",
+            "board",
+            "board_name",
+            "task"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "edges": {
+        "maxItems": 2000,
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "source": {
+              "type": "string"
+            },
+            "target": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "source",
+            "target"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "generated_at": {
+        "type": "number"
+      },
+      "truncated": {
+        "type": "boolean"
+      },
+      "read_only": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "nodes",
+      "edges",
+      "generated_at",
+      "truncated",
+      "read_only"
+    ],
+    "additionalProperties": false
+  },
   "kanban.board": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "anyOf": [
