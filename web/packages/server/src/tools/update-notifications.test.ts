@@ -136,6 +136,20 @@ describe('UpdateNotificationStore', () => {
     expect((await restarted.list(scope)).tab_update).toMatchObject({ id: original.id, phase: 'succeeded', dialog_close: 'auto' })
   })
 
+  it('hands a correlated readiness failure to recovery before making it terminal', async () => {
+    const scope = { ...alice, tab: 'tab-recovery' }
+    const store = await initializeStore(new UpdateNotificationStore(new JsonDocuments(temp())))
+    const original = await store.begin(scope, 'agent')
+    await store.bindAgentOperation(original.id, 'a'.repeat(40), 'b'.repeat(40))
+    await store.transition(original.id, 'verifying', null, { revision: 'b'.repeat(40), version: 'v2.0.0' })
+    await store.transition(original.id, 'failed', null, undefined, 'Synthetic loaded runtime is not ready.')
+    expect((await store.list(scope)).tab_update).toMatchObject({ id: original.id, phase: 'recovering', active: true, dialog_close: 'none', recovery: { attempt_error: 'Synthetic loaded runtime is not ready.', operation: { failed_stage: 'agent_ready' } } })
+    await store.agentRecovery({ phase: 'complete', attempt: 1, detail: '', retry_at: null,
+      operation: { operation_id: original.id, baseline_revision: 'a'.repeat(40), target_revision: 'b'.repeat(40), stage: 'agent_ready', recovered_revision: 'b'.repeat(40) },
+      verified_revision: 'b'.repeat(40), runtime_revision: 'b'.repeat(40), verified_version: 'v2.0.0' })
+    expect((await store.list(scope)).tab_update).toMatchObject({ id: original.id, phase: 'succeeded', recovery: { operation: { failed_stage: 'agent_ready' } } })
+  })
+
   it('clears an old installed identity when recovery can prove only the loaded runtime', async () => {
     const scope = { ...alice, tab: 'tab-recovery' }
     const store = await initializeStore(new UpdateNotificationStore(new JsonDocuments(temp())))

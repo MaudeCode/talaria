@@ -591,6 +591,8 @@ def _worker(root, revision, homes, requests, stopped, send, refresh_binding=None
         if operation and operation['baseline_revision'] != initial:
             raise RuntimeError('The Agent baseline changed before the operation acquired its native lease.')
         previous = recovery.state.get('update_operation')
+        if operation and previous and recovery.state.get('transaction') and previous['operation_id'] != operation['operation_id']:
+            raise RuntimeError('The previous update operation still owns native recovery.')
         if operation and previous and previous['operation_id'] == operation['operation_id'] and (previous['target_revision'] != revision or previous['baseline_revision'] != operation['baseline_revision']):
             raise RuntimeError('The immutable target or baseline changed within the same update operation.')
         initial_tree = records.tree_state(root)
@@ -1064,13 +1066,16 @@ def _resume_worker(root, stopped=None, complete_revision=None):
                 transaction['runtime_revision'] = revision
                 recovery.save(tree)
         if not owed and not runtime_pending:
+            # Retain the transaction through durable marker removal, including a failed unlink or crash.
+            if marker:
+                marker.unlink(missing_ok=True)
+                if marker.parent.is_dir():
+                    recovery._sync_directory(marker.parent)
             if recovery.state.get('update_operation'):
                 recovery.state['update_operation'].update(stage='agent_ready', recovered_revision=revision)
             recovery.state.pop('transaction', None)
             recovery.state['sync_failed'] = False
             recovery.save()
-            if marker:
-                marker.unlink(missing_ok=True)
         return {"ok": not owed, "revision": revision, "runtime_pending": runtime_pending, "detail": "Gateway recovery remains durably recorded." if owed else ""}
     finally:
         lock.release()

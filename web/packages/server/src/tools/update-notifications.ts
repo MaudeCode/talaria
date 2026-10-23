@@ -348,7 +348,12 @@ export class UpdateNotificationStore {
       const bound = evidence?.operation_id === expected.operation_id && evidence.baseline_revision === expected.baseline_revision && evidence.target_revision === expected.target_revision
       original.recovery ??= { operation: expected, attempt_error: original.detail, runtime_revision: null, outcome: 'recovering' }
       const recovery = original.recovery
-      if (bound) { recovery.operation = evidence; recovery.attempt_error ??= safeDetail(evidence.attempt_error); original.failed_step = evidence.failed_stage ?? evidence.stage }
+      if (bound) {
+        const failedStage = evidence.failed_stage ?? recovery.operation.failed_stage
+        recovery.operation = { ...evidence, ...(failedStage ? { failed_stage: failedStage } : {}) }
+        recovery.attempt_error ??= safeDetail(evidence.attempt_error)
+        original.failed_step = failedStage ?? evidence.stage
+      }
       recovery.runtime_revision = state.runtime_revision ?? null
       const identity = state.verified_revision ? { revision: state.verified_revision, version: state.verified_version ?? null } : state.phase === 'complete' ? { revision: null, version: null } : undefined
       if (state.phase === 'complete') {
@@ -507,6 +512,12 @@ export class UpdateNotificationStore {
     const row = this.rows.find((entry) => entry.id === id)
     if (!row) return null
     if (phase === 'applying' && !['applying', 'awaiting_confirmation'].includes(row.phase)) return this.publish(row)
+    const failedStep = currentStep(row, this.webPending(row))
+    if (phase === 'failed' && row.target === 'agent' && row.agent_operation && ['restarting', 'verifying'].includes(row.phase)
+        && (failedStep === 'gateway_restart' || failedStep === 'agent_ready')) {
+      row.recovery ??= { operation: { ...row.agent_operation, failed_stage: failedStep }, attempt_error: safeDetail(detail), runtime_revision: null, outcome: 'recovering' }
+      phase = 'recovering'
+    }
     const phaseChanged = row.phase !== phase
     // TAL-1138: a failure keeps the step it stopped at, so the dialog marks that step failed.
     if (!TERMINAL_FAILURE.has(phase)) row.failed_step = null

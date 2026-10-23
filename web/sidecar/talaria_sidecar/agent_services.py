@@ -771,9 +771,9 @@ class ServiceRecovery:
             with contextlib.suppress(FileNotFoundError):
                 os.unlink(temporary)
 
-    def _sync_directory(self):
+    def _sync_directory(self, directory=None):
         if os.name != 'nt':
-            fd = os.open(self.path.parent, os.O_RDONLY)
+            fd = os.open(directory if directory is not None else self.path.parent, os.O_RDONLY)
             try:
                 os.fsync(fd)
             finally:
