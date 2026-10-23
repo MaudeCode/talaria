@@ -395,6 +395,7 @@ it('shares the inspection read across modes, opens the qualified board detail, a
   await choose('Inspection scope', 'All boards')
   expect(await screen.findAllByText('Actual timing unknown')).toHaveLength(1)
   await choose('View', 'Relationships')
+  expect(screen.getByRole('button', { name: /^Task A/ })).toHaveAccessibleDescription(/Other.*Todo/)
   await userEvent.click(screen.getByRole('button', { name: /^Task A/ }))
   await waitFor(() => expect(api.fetchKanbanTask).toHaveBeenCalledWith('other', 'A'))
   await choose('Column', 'done')

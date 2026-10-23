@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useEffectEvent, useId, useMemo, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { Archive, FolderPlus, Plus, RefreshCw, X } from 'lucide-react'
@@ -256,9 +256,10 @@ export function KanbanPage() {
 
 /** Shared task identity/metadata presentation; inspection adds timing or relationships beside it. */
 function KanbanTaskButton({ task, onOpen, disabled, selected, row, children }: { task: KanbanTask; onOpen: () => void; disabled?: boolean; selected?: boolean; row?: boolean; children?: ReactNode }) {
-  return <button type="button" aria-label={task.title ?? String(task.id)} disabled={disabled} onClick={onOpen} className={cn('w-full min-w-0 text-left text-sm text-text', row ? 'py-2 hover:text-accent-text' : 'kanban-card rounded-md border border-border-subtle bg-bg p-2.5 hover:border-accent-bg-strong', selected && 'selected')} data-task-id={String(task.id)}>
-    <span className="block font-medium">{task.title ?? String(task.id)}</span>
-    <span className="mt-1 flex flex-wrap gap-2 text-[11px] text-muted">
+  const id = useId()
+  return <button type="button" aria-labelledby={`${id}-title`} aria-describedby={`${id}-metadata`} disabled={disabled} onClick={onOpen} className={cn('w-full min-w-0 text-left text-sm text-text', row ? 'py-2 hover:text-accent-text' : 'kanban-card rounded-md border border-border-subtle bg-bg p-2.5 hover:border-accent-bg-strong', selected && 'selected')} data-task-id={String(task.id)}>
+    <span id={`${id}-title`} className="block font-medium">{task.title ?? String(task.id)}</span>
+    <span id={`${id}-metadata`} className="mt-1 flex flex-wrap gap-2 text-[11px] text-muted">
       {task.assignee && <span>{task.assignee}</span>}
       {task.priority !== undefined && task.priority !== null && <span>P{String(task.priority)}</span>}
       {task.session_id && <span className="text-accent-text">●</span>}
