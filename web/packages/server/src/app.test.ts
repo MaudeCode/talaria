@@ -1,6 +1,6 @@
 import { IncomingMessage, request, ServerResponse } from 'node:http'
 import { Socket } from 'node:net'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -8,6 +8,7 @@ import { BootstrapSchema, AuthStatusSchema, HealthSchema } from '@maudecode/tala
 import { bootTestServer, cookieHeader, WEB_ROOT, type TestServer } from './test/harness.js'
 import { FakeSidecar } from './sidecar/fake.js'
 import { RequestContext } from './http/context.js'
+import { AssetCache, SpaShell } from './spa.js'
 
 const DIST_INDEX = resolve(WEB_ROOT, 'static/dist/index.html')
 
@@ -214,6 +215,49 @@ describe('open server (no auth)', () => {
       expect((await s.get('/session/static/brand/favicon.svg')).status).toBe(200)
       expect((await s.get('/session/static/missing.css')).status).toBe(404)
       expect((await s.get('/favicon.ico')).headers.get('content-type')).toBe('image/x-icon')
+    })
+
+    it('serves synthetic cold assets with gzip, ETag, MIME, replacement and path checks', async () => {
+      const root = mkdtempSync(join(tmpdir(), 'talaria-static-'))
+      mkdirSync(join(root, 'dist', 'assets'), { recursive: true })
+      const bundle = 'console.log("cold");\n'.repeat(50_000)
+      writeFileSync(join(root, 'dist', 'assets', 'app-cold.js'), bundle)
+      writeFileSync(join(root, 'mark.svg'), '<svg/>')
+      const synthetic = await bootTestServer({ deps: (deps) => {
+        deps.spa = new SpaShell(join(root, 'dist'))
+        deps.staticFiles = new AssetCache(root)
+      } })
+      try {
+        const [first, second, health] = await Promise.all([
+          synthetic.get('/assets/app-cold.js', { headers: { 'accept-encoding': 'gzip' } }),
+          synthetic.get('/static/dist/assets/app-cold.js', { headers: { 'accept-encoding': 'identity' } }),
+          synthetic.get('/health'),
+        ])
+        expect(health.status).toBe(200)
+        expect(first.status).toBe(200)
+        expect(first.headers.get('content-type')).toBe('application/javascript; charset=utf-8')
+        expect(first.headers.get('content-encoding')).toBe('gzip')
+        expect(await first.text()).toBe(bundle)
+        expect(second.headers.get('content-encoding')).toBeNull()
+        expect(await second.text()).toBe(bundle)
+        const etag = first.headers.get('etag')
+        expect(etag).toBe(second.headers.get('etag'))
+        expect((await synthetic.get('/assets/app-cold.js', { headers: { 'if-none-match': etag! } })).status).toBe(304)
+        const mark = await synthetic.get('/static/mark.svg')
+        expect(mark.headers.get('content-type')).toBe('image/svg+xml')
+        expect(await mark.text()).toBe('<svg/>')
+        writeFileSync(join(root, 'mark.svg'), '<svg width="1"/>')
+        const replaced = await synthetic.get('/static/mark.svg')
+        expect(await replaced.text()).toBe('<svg width="1"/>')
+        expect(replaced.headers.get('etag')).not.toBe(mark.headers.get('etag'))
+        expect((await synthetic.get('/static/missing.css')).status).toBe(404)
+        expect((await synthetic.get('/assets/missing.js')).status).toBe(404)
+        expect(await synthetic.rawStatus('/static/dist/../../mark.svg')).toBe(404)
+        expect(await synthetic.rawStatus('/assets/%2e%2e/%2e%2e/mark.svg')).toBe(404)
+      } finally {
+        await synthetic.close()
+        rmSync(root, { recursive: true, force: true })
+      }
     })
   })
 })

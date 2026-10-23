@@ -1,8 +1,8 @@
-import { describe, expect, it } from 'vitest'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { baseHrefFor, isPublicSpaPath, isSpaPath, quoteAll, SpaShell } from './spa.js'
+import { AssetCache, baseHrefFor, isPublicSpaPath, isSpaPath, quoteAll, SpaShell } from './spa.js'
 import { WEB_ROOT } from './test/harness.js'
 
 describe('SPA allowlist', () => {
@@ -62,9 +62,72 @@ describe('shell rendering', () => {
     }
   })
 
-  it('refuses paths that escape the dist root', () => {
-    expect(shell.asset('../server.py')).toBeNull()
-    expect(shell.asset('/etc/passwd')).toBeNull()
-    expect(shell.asset('')).toBeNull()
+  it('refuses paths that escape the dist root', async () => {
+    expect(await shell.asset('../server.py')).toBeNull()
+    expect(await shell.asset('/etc/passwd')).toBeNull()
+    expect(await shell.asset('')).toBeNull()
+  })
+})
+
+describe('AssetCache', () => {
+  let root: string
+  beforeEach(() => { root = mkdtempSync(join(tmpdir(), 'talaria-assets-')) })
+  afterEach(() => { rmSync(root, { recursive: true, force: true }) })
+
+  it('lets the event loop progress while a cold asset is read and compressed', async () => {
+    writeFileSync(join(root, 'big.js'), 'console.log("cold");\n'.repeat(50_000))
+    const cache = new AssetCache(root)
+    const order: string[] = []
+    setImmediate(() => order.push('immediate'))
+    await Promise.resolve(cache.get('big.js')).then(() => order.push('loaded'))
+    await new Promise((done) => setImmediate(done))
+    expect(order).toEqual(['immediate', 'loaded'])
+  })
+
+  it('shares one load between concurrent cold requests and reuses it warm', async () => {
+    writeFileSync(join(root, 'big.js'), 'x'.repeat(4096))
+    const cache = new AssetCache(root)
+    const [a, b] = await Promise.all([cache.get('big.js'), cache.get('big.js')])
+    expect(a).not.toBeNull()
+    expect(b).toBe(a)
+    expect(await cache.get('big.js')).toBe(a)
+  })
+
+  it.skipIf(process.getuid?.() === 0)('does not cache a failed load and retries it', async () => {
+    const file = join(root, 'locked.css')
+    writeFileSync(file, 'body{}')
+    chmodSync(file, 0o000)
+    const cache = new AssetCache(root)
+    await expect(cache.get('locked.css')).rejects.toThrow(/EACCES/)
+    chmodSync(file, 0o644)
+    expect((await cache.get('locked.css'))?.body.toString()).toBe('body{}')
+  })
+
+  it('reloads a replaced file and keeps MIME, ETag and gzip rules', async () => {
+    writeFileSync(join(root, 'app.js'), 'a'.repeat(2048))
+    const cache = new AssetCache(root)
+    const first = await cache.get('app.js')
+    expect(first?.contentType).toBe('application/javascript; charset=utf-8')
+    expect(first?.etag).toMatch(/^W\/"800-[0-9a-f]+"$/)
+    expect(first?.gz).not.toBeNull()
+    writeFileSync(join(root, 'app.js'), 'b'.repeat(16))
+    const second = await cache.get('app.js')
+    expect(second?.body.toString()).toBe('b'.repeat(16))
+    expect(second?.etag).toMatch(/^W\/"10-[0-9a-f]+"$/)
+    expect(second?.gz).toBeNull()
+    writeFileSync(join(root, 'icon.png'), Buffer.alloc(4096))
+    writeFileSync(join(root, 'blob.bin'), 'z')
+    expect(await cache.get('icon.png')).toMatchObject({ contentType: 'image/png', gz: null })
+    expect((await cache.get('blob.bin'))?.contentType).toBe('application/octet-stream')
+  })
+
+  it('returns null for missing files, directories, and paths outside the root', async () => {
+    mkdirSync(join(root, 'dir'))
+    const cache = new AssetCache(join(root, 'dir'))
+    writeFileSync(join(root, 'outside.js'), 'secret')
+    expect(await cache.get('missing.js')).toBeNull()
+    expect(await cache.get('.')).toBeNull()
+    expect(await cache.get('../outside.js')).toBeNull()
+    expect(await cache.get(join(root, 'outside.js'))).toBeNull()
   })
 })

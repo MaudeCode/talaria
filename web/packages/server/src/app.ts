@@ -92,7 +92,7 @@ async function handleSpa(ctx: RequestContext): Promise<boolean> {
     return true
   }
   const distFile = async (rel: string, cacheControl?: string) => {
-    const asset = spa.asset(rel)
+    const asset = await spa.asset(rel)
     if (!asset) {
       await notFound(ctx)
       return true
@@ -107,7 +107,7 @@ async function handleSpa(ctx: RequestContext): Promise<boolean> {
   // Legacy alias: `/session/static/<rel>` is `/static/<rel>` (deep-linked shells before the relative base href).
   const staticRel = path.startsWith('/static/') ? path.slice('/static/'.length) : path.startsWith('/session/static/') ? path.slice('/session/static/'.length) : null
   if (staticRel !== null) {
-    const asset = ctx.deps.staticFiles.get(staticRel)
+    const asset = await ctx.deps.staticFiles.get(staticRel)
     if (!asset) {
       await notFound(ctx)
       return true
