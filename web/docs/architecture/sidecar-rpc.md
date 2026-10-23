@@ -794,7 +794,7 @@ No send or chat-start action is exposed by this method.
 
 ### Declared MCP costs
 
-RPC v56 adds `mcp.cost_policies`. The server supplies its profile's saved native
+RPC v57 adds `mcp.cost_policies`. The server supplies its profile's saved native
 server entries; the sidecar uses the installed Agent parser and the scoped cached
 portable-package declarations. This read never calls a tool, reconnects a server,
 or changes a runtime's frozen policy. It returns validated scalar/range/note values,

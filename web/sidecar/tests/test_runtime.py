@@ -295,7 +295,7 @@ def test_catalog_reads_keep_agent_recovery_admission(method):
 
 
 @pytest.mark.parametrize('peer_version', [54, 55, 56])
-def test_handshake_rejects_retired_owner_schema(peer_version):
+def test_handshake_rejects_pre_cost_policy_protocol(peer_version):
     from types import SimpleNamespace
     from talaria_sidecar.methods import Registry
     from talaria_sidecar.methods import runtime as runtime_methods
