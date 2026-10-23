@@ -2084,6 +2084,9 @@ def test_gateway_successor_work_finishes_before_disarm_or_mutation(tmp_path):
         assert git(root, 'rev-parse', 'HEAD') == base
         (home / 'hold-successor-drain').unlink()
         begun = sidecar.next_message(timeout=30)
+        while begun.get('method') == 'stream' and begun['params']['id'] == request:
+            assert begun['params']['event'] == 'progress' and begun['params']['data']['phase'] == 'gateway_drain', begun
+            begun = sidecar.next_message(timeout=30)
         assert begun['id'] == request and begun['result']['ok'], begun
         assert not (home / 'active').exists()
         assert git(root, 'rev-parse', 'HEAD') == base
