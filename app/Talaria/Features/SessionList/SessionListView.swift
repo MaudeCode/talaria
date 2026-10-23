@@ -563,9 +563,7 @@ struct SessionListView: View {
             .toolbar {
                 // The drawer button leads the first visible column.
                 if hidesSidebarColumn {
-                    ToolbarItem(placement: .topBarLeading) {
-                        sidebarButton
-                    }
+                    drawerToolbarItem
                 }
             }
             .onAppear {
@@ -630,9 +628,7 @@ struct SessionListView: View {
         .toolbar {
             // A hidden column must not hold a second drawer button.
             if !hidesSidebarColumn {
-                ToolbarItem(placement: .topBarLeading) {
-                    sidebarButton
-                }
+                drawerToolbarItem
             }
             if section.chatList != nil {
                 ToolbarItem(placement: .topBarLeading) {
@@ -647,11 +643,14 @@ struct SessionListView: View {
         }
     }
 
+    private var drawerToolbarItem: some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) { sidebarButton }
+            .overflowPriority(.drawer)
+    }
+
     private func withDrawerButton(_ content: some View) -> some View {
         content.toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                sidebarButton
-            }
+            drawerToolbarItem
         }
     }
 
@@ -701,6 +700,7 @@ struct SessionListView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     selectChatsButton
                 }
+                .overflowPriority(.selectChats)
             }
 
             let settingsItem = ToolbarItem(placement: .topBarTrailing) {
@@ -721,12 +721,13 @@ struct SessionListView: View {
                     HapticButton(feedbackStyle: .medium) {
                         openNewChat()
                     } label: {
-                        Image(systemName: "square.and.pencil")
+                        Label("New Chat", systemImage: "square.and.pencil")
                     }
                     .disabled(isNewChatDisabled)
                     .accessibilityLabel("New Chat")
                     .newChatModeMenu(viewModel.newChatExecutionModes, isDisabled: isNewChatDisabled, onSelect: openNewChat(in:))
                 }
+                .overflowPriority(.newChat)
             }
 
             // iOS 26 minimizes search into the bottom bar, so New Chat joins that row instead
@@ -739,6 +740,7 @@ struct SessionListView: View {
                     ToolbarItem(placement: .bottomBar) {
                         newChatToolbarButton
                     }
+                    .overflowPriority(.newChat)
                 }
             }
         }
@@ -1202,7 +1204,7 @@ struct SessionListView: View {
         Button {
             appSidebar.isPresented = true
         } label: {
-            Image(systemName: "sidebar.left")
+            Label("Open navigation", systemImage: "sidebar.left")
                 .font(.body.weight(.semibold))
         }
         .accessibilityLabel("Open navigation")
@@ -1382,7 +1384,7 @@ struct SessionListView: View {
         HapticButton(feedbackStyle: .medium) {
             openNewChat()
         } label: {
-            Image(systemName: "square.and.pencil")
+            Label("New Chat", systemImage: "square.and.pencil")
                 .foregroundStyle(newSessionButtonForegroundColor)
         }
         .buttonStyle(.glassProminent)

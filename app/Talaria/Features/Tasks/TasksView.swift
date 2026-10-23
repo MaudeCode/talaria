@@ -14,7 +14,7 @@ struct TasksView: View {
         content
             .navigationTitle("Tasks")
             .toolbar {
-                ToolbarItemGroup(placement: .topBarTrailing) {
+                ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         viewModel.clearActionError()
                         isPresentingCreateTask = true
@@ -22,7 +22,10 @@ struct TasksView: View {
                         Label("New Task", systemImage: "plus")
                     }
                     .disabled(viewModel.isMutating)
+                }
+                .overflowPriority(.create)
 
+                ToolbarItem(placement: .topBarTrailing) {
                     RefreshToolbarButton(isLoading: viewModel.isLoading) {
                         Task { await loadTasks() }
                     }

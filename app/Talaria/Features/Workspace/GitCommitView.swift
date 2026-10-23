@@ -45,6 +45,7 @@ struct GitCommitView: View {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button("Done") { dismiss() }
                     }
+                    .overflowPriority(.done)
                 }
                 .task {
                     await viewModel.load()

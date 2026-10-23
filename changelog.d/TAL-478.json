@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Keep key actions visible longer when the iPhone Duo toolbar runs out of room.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

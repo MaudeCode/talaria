@@ -4,6 +4,77 @@ import XCTest
 @testable import Talaria
 import TalariaKit
 
+/// Overflow priorities must reach real bar items, not just an unused policy table (TAL-478).
+@MainActor
+final class ToolbarPriorityHostedTests: XCTestCase {
+    func testHorizontalBarsKeepStandardPriorities() async throws {
+        guard #available(iOS 27, *) else { throw XCTSkip("Requires bar-item visibility priorities") }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        if #available(iOS 27.1, *) {
+            try XCTSkipIf(scene.traitCollection.verticalBarEdge != .unspecified, "Covered by the native vertical-bar tests")
+        }
+        for size in [HostedSize.phone, HostedSize.padLandscape] {
+            let fixture = try FixtureApp(for: self)
+            let window = try hostWindow(fixture.sessionList(), size: size) {
+                $0.horizontalSizeClass = size == HostedSize.phone ? .compact : .regular
+            }
+            _ = try await requireElement(in: window, label: "New Chat")
+            _ = try await requireElement(in: window, label: "Select Chats")
+            for title in ["New Chat", "Open navigation", "Select Chats"] {
+                XCTAssertEqual(try XCTUnwrap(HostedAccessibility.toolbarItem(title, in: window)).visibilityPriority, .standard, title)
+            }
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+    }
+
+    private func landscapeScene() async throws -> UIWindowScene {
+        guard #available(iOS 27.1, *) else { throw XCTSkip("Requires the vertical-bar SDK") }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        try XCTSkipUnless(scene.traitCollection.verticalBarEdge != .unspecified, "Requires the Duo cover's native vertical bar")
+        scene.requestGeometryUpdate(.iOS(interfaceOrientations: .landscapeRight))
+        let rotated = await awaitCondition { scene.interfaceOrientation == .landscapeRight }
+        XCTAssertTrue(rotated)
+        addTeardownBlock { @MainActor in
+            scene.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait))
+            let restored = await self.awaitCondition { scene.interfaceOrientation == .portrait }
+            XCTAssertTrue(restored)
+        }
+        return scene
+    }
+
+    func testChatPrioritiesReachTheNativeToolbar() async throws {
+        guard #available(iOS 27.1, *) else { throw XCTSkip("Requires the vertical-bar SDK") }
+        _ = try await landscapeScene()
+        let fixture = try FixtureApp(["--ui-test-goal"], for: self)
+        let session = try await fixture.session()
+        let model = ChatViewModel(session: session, server: UITestFixtureEnvironment.serverURL, client: fixture.client)
+        let activated = await model.submitGoal(args: "status")
+        XCTAssertTrue(activated)
+        let window = try hostWindow(fixture.chat(session, viewModel: model), size: HostedSize.duoOuterLandscape)
+        _ = try await requireElement(in: window, label: "Files")
+        let ready = await awaitCondition { HostedAccessibility.toolbarItem("Goal", in: window) != nil }
+        XCTAssertTrue(ready, "Items: \(HostedAccessibility.toolbarItems(in: window).map { $0.title ?? $0.accessibilityLabel ?? "?" })")
+        attachHostedScreenshot(window, name: "duo-chat-priorities")
+        XCTAssertEqual(try XCTUnwrap(HostedAccessibility.toolbarItem("Goal", in: window)).visibilityPriority, .high)
+        XCTAssertEqual(try XCTUnwrap(HostedAccessibility.toolbarItem("Files", in: window)).visibilityPriority, .high)
+    }
+
+    func testChatsPrioritiesReachTheNativeToolbar() async throws {
+        guard #available(iOS 27.1, *) else { throw XCTSkip("Requires the vertical-bar SDK") }
+        _ = try await landscapeScene()
+        let fixture = try FixtureApp(for: self)
+        let window = try hostWindow(fixture.sessionList(), size: HostedSize.duoOuterLandscape)
+        _ = try await requireElement(in: window, label: "New Chat")
+        _ = try await requireElement(in: window, label: "Select Chats")
+        attachHostedScreenshot(window, name: "duo-chats-priorities")
+        XCTAssertEqual(try XCTUnwrap(HostedAccessibility.toolbarItem("New Chat", in: window)).visibilityPriority, .high)
+        XCTAssertEqual(try XCTUnwrap(HostedAccessibility.toolbarItem("Open navigation", in: window)).visibilityPriority, .high)
+        XCTAssertEqual(try XCTUnwrap(HostedAccessibility.toolbarItem("Select Chats", in: window)).visibilityPriority, .low)
+        XCTAssertEqual(try XCTUnwrap(HostedAccessibility.toolbarItem("Notifications", in: window)).visibilityPriority, .standard)
+    }
+}
+
 /// The Chats list and a reopened chat, hosted in process against the UI fixture (TAL-856): the row actions and the
 /// selection bar a user reaches, and what a reopen or relaunch paints from the offline cache before the server answers.
 /// The row swipe that reveals Archive is a system gesture; the phone check covers it (`app/docs/phone-checks.md`).

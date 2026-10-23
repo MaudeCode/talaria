@@ -86,6 +86,7 @@ struct WorkspaceManagerView: View {
                         dismiss()
                     }
                 }
+                .overflowPriority(.done)
 
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     EditButton()

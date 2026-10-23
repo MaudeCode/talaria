@@ -27,6 +27,7 @@ struct GitWorkspaceView: View {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button("Done") { dismiss() }
                     }
+                    .overflowPriority(.done)
                 }
                 .task {
                     await viewModel.loadIfNeeded()

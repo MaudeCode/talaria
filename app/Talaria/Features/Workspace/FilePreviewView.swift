@@ -77,16 +77,19 @@ struct FilePreviewView: View {
                     .disabled(exportActionsAreDisabled)
                     .accessibilityLabel("Save image to Photos")
                 }
+            }
 
-                if viewModel.canExportFile {
+            if viewModel.canExportFile {
+                ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         Task { await exportFile() }
                     } label: {
-                        Image(systemName: "square.and.arrow.up")
+                        Label("Export file", systemImage: "square.and.arrow.up")
                     }
                     .disabled(exportActionsAreDisabled)
                     .accessibilityLabel("Export file")
                 }
+                .overflowPriority(.share)
             }
         }
         .task(id: entry.path) {
