@@ -16,7 +16,7 @@ const LOG_FILES: Record<string, string> = { agent: 'agent.log', errors: 'errors.
 const LOG_TAILS = new Set([100, 200, 500, 1000])
 const LOG_MAX_BYTES = 4 * 1024 * 1024
 const LOG_CHUNK_BYTES = 64 * 1024
-/** Rereads after a log shrinks under the read (truncation or rotation in place) before giving up. */
+/** Rereads after a log shrinks under the read (truncation in place) before giving up. */
 const LOG_READ_ATTEMPTS = 3
 
 // Opening with O_NOFOLLOW refuses a symlinked log atomically; O_NONBLOCK keeps a FIFO in its place from blocking the open.
@@ -50,7 +50,7 @@ export async function readLogTail(profileHome: string, fileKeyRaw: unknown, tail
 
 /**
  * The last `tail` lines of the window `[size - LOG_MAX_BYTES, size)`, read backward in chunks until `tail` complete
- * lines are held, so only the retained tail is decoded. Null when a short read shows the file shrank under the read.
+ * lines are held, so only the retained tail is decoded. Null when end of file comes early: the log shrank under the read.
  */
 async function tailLines(handle: FileHandle, size: number, tail: number, signal?: AbortSignal): Promise<string[] | null> {
   const floor = Math.max(0, size - LOG_MAX_BYTES)
@@ -61,9 +61,13 @@ async function tailLines(handle: FileHandle, size: number, tail: number, signal?
   while (start > floor) {
     const length = Math.min(LOG_CHUNK_BYTES, start - floor)
     const chunk = Buffer.alloc(length)
-    const { bytesRead } = await handle.read(chunk, 0, length, start - length)
-    signal?.throwIfAborted()
-    if (bytesRead < length) return null
+    // A positioned read may return fewer bytes than asked; only end of file (0 bytes) shows the log shrank.
+    for (let filled = 0; filled < length;) {
+      const { bytesRead } = await handle.read(chunk, filled, length - filled, start - length + filled)
+      signal?.throwIfAborted()
+      if (bytesRead === 0) return null
+      filled += bytesRead
+    }
     start -= length
     chunks.unshift(chunk)
     // A newline ending the file closes its last line rather than separating another one.

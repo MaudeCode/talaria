@@ -9,7 +9,7 @@ import { HttpFailure } from '../sessions/service.js'
 import { readLogTail } from './health.js'
 
 /** Bytes read and descriptors opened/closed by `readLogTail`, with an optional gate that holds the next read. */
-const io = vi.hoisted(() => ({ bytes: 0, opened: 0, closed: 0, hold: null as Promise<void> | null, held: null as (() => void) | null, fail: null as Error | null }))
+const io = vi.hoisted(() => ({ bytes: 0, opened: 0, closed: 0, hold: null as Promise<void> | null, held: null as (() => void) | null, fail: null as Error | null, cap: Infinity }))
 
 vi.mock('node:fs', async (importOriginal) => {
   const fs = await importOriginal<typeof import('node:fs')>()
@@ -28,7 +28,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
       const hold = io.hold
       if (hold) { io.hold = null; io.held?.(); await hold }
       if (io.fail) throw io.fail
-      const result = await read(buffer, offset, length, position)
+      const result = await read(buffer, offset, Math.min(length, io.cap), position)
       io.bytes += result.bytesRead
       return result
     }
@@ -60,7 +60,7 @@ describe('readLogTail', () => {
     home = mkdtempSync(join(tmpdir(), 'talaria-logs-'))
     mkdirSync(join(home, 'logs'))
     log = join(home, 'logs', 'agent.log')
-    Object.assign(io, { bytes: 0, opened: 0, closed: 0, hold: null, held: null, fail: null })
+    Object.assign(io, { bytes: 0, opened: 0, closed: 0, hold: null, held: null, fail: null, cap: Infinity })
   })
   afterEach(() => { rmSync(home, { recursive: true, force: true }) })
 
@@ -122,6 +122,12 @@ describe('readLogTail', () => {
     writeFileSync(log, 'fresh\n')
     gate.release()
     expect(await pending).toMatchObject({ lines: ['fresh'], total_bytes: 6, truncated: false })
+    expect(io.closed).toBe(io.opened)
+  })
+
+  it('fills each chunk across partial reads of a stable log', async () => {
+    io.cap = 1000
+    await check(Buffer.from(Array.from({ length: 3000 }, (_, i) => `partial ${String(i)} é€😀`).join('\n')), 1000)
     expect(io.closed).toBe(io.opened)
   })
 
