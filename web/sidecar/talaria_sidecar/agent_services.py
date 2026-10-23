@@ -164,12 +164,15 @@ def snapshot(entry, *, records=None, expected=None):
     from gateway.status import get_process_start_time, _pid_exists
     service, pid = entry.get('service_pid', entry['pid']), entry['pid']
     anchors = {service, pid}
-    observed = dict(expected or {})
+    observed = {**entry.get('departed_processes', {}), **(expected or {})}
     seen_parents = {int(p): proof['parent'] for p, proof in observed.items() if 'parent' in proof}
-    departed = set()
+    departed = set(map(int, entry.get('departed_processes', {})))
 
     def exited(p):
-        if _pid_exists(p) is False:
+        live = _pid_exists(p)
+        if live is None:
+            raise RuntimeError(f'{_name(entry)} process {p} liveness is unreadable; source was not changed.')
+        if live is False:
             if p in anchors:
                 raise RuntimeError(f'{_name(entry)} anchor process {p} disappeared during discovery; source was not changed.')
             departed.add(p)
@@ -179,7 +182,7 @@ def snapshot(entry, *, records=None, expected=None):
     def inventory():
         parents = _process_table()
         if service not in _ancestors(pid, parents):
-            raise RuntimeError(f'{_name(entry)} does not own backend/gateway PID {pid}.')
+            raise RuntimeError(f'{_name(entry)} identity/ancestry changed: does not own backend/gateway PID {pid}.')
         if service in _ancestors(os.getpid(), parents):
             raise RuntimeError(f'{_name(entry)} owns the updater or an ancestor; source was not changed.')
         for p, parent in seen_parents.items():
@@ -188,6 +191,10 @@ def snapshot(entry, *, records=None, expected=None):
                     continue
                 raise RuntimeError(f'{_name(entry)} process {p} identity/ancestry changed during discovery; source was not changed.')
         descendants = _descendants(service, parents)
+        # Successor retries cannot discard a live writer from a previously observed tree.
+        for p in seen_parents.keys() - descendants - departed:
+            if not exited(p):
+                raise RuntimeError(f'{_name(entry)} process {p} remains live outside the attested tree; recovery remains owed.')
         seen_parents.update({p: parents[p] for p in descendants})
         # Zombies may remain in ps. Recheck departed PIDs at every inventory so
         # neither a recycled PID nor unknown liveness can be silently excluded.
@@ -205,6 +212,8 @@ def snapshot(entry, *, records=None, expected=None):
             if exited(p):
                 return None
             raise RuntimeError(f'{_name(entry)} process {p} birth identity is live or unreadable; source was not changed.')
+        if exited(p):
+            return None
         if any(proof.get(key) != value for key, value in observed.get(str(p), {}).items()):
             raise RuntimeError(f'{_name(entry)} process {p} identity/ancestry changed during discovery; source was not changed.')
         observed[str(p)] = proof
@@ -219,6 +228,8 @@ def snapshot(entry, *, records=None, expected=None):
         _, final = inventory()
         if live & departed or remaining != live or final != live:
             continue
+        if departed:
+            entry['departed_processes'] = {str(p): observed.get(str(p), {'parent': seen_parents[p]}) for p in departed}
         return proofs
     raise RuntimeError(f'{_name(entry)} process inventory kept changing after {SNAPSHOT_ATTEMPTS} samples; retry when descendants settle. Source was not changed and recovery remains owed.')
 
@@ -403,8 +414,23 @@ def _service_pid(entry):
 
 def verify_processes(entry, records, *, stopping=False, fenced=False):
     from gateway.status import get_process_start_time, _pid_exists
+    if not stopping:
+        # Reuse discovery's bounded proof without granting permission to lose an anchor.
+        candidate = dict(entry)
+        for boundary in range(2):
+            _, service_pid = _service_pid(entry)
+            if service_pid != entry['service_pid']:
+                raise RuntimeError(f'{_name(entry)} supervisor respawned during quiescence; source was not changed.')
+            if 'config_stamp' in entry and _config_stamp(entry) != entry['config_stamp']:
+                raise RuntimeError(f'{_name(entry)} service configuration changed; recovery remains owed.')
+            if boundary == 0:
+                candidate['processes'] = snapshot(candidate, records=records, expected=entry['processes'])
+        entry.update(processes=candidate['processes'])
+        if candidate.get('departed_processes'):
+            entry['departed_processes'] = candidate['departed_processes']
+        return True
     parents = _process_table()
-    departed = set()
+    departed = set(map(int, entry.get('departed_processes', {})))
     for pid, expected in entry['processes'].items():
         pid = int(pid)
         if _pid_exists(pid) is False:
@@ -442,7 +468,6 @@ def verify_processes(entry, records, *, stopping=False, fenced=False):
 
 def bind_processes(entry, records):
     if entry.get('processes'):
-        entry['processes'] = snapshot(entry, records=records, expected=entry['processes'])
         verify_processes(entry, records)
 
 
@@ -767,10 +792,17 @@ class ServiceRecovery:
             self.records.write(token)
             self.save(token)
 
+    def verify_processes(self, entry, **permissions):
+        owed = next(e for e in self.state['entries'] if _service_key(e) == _service_key(entry))
+        result = verify_processes(owed, self.records, **permissions)
+        self.save()  # Updated custody must precede the next lifecycle effect.
+        return result
+
     def stop(self, entry, stopped):
         owed = next(e for e in self.state['entries'] if _service_key(e) == _service_key(entry))
-        verify_processes(owed, self.records)
+        self.verify_processes(owed)
         backend_request(owed)
+        self.verify_processes(owed)
         permit = backend_request(owed, 'prepare')
         if permit.get('ok') is not True or permit.get('idle') is not True or not isinstance(permit.get('token'), str):
             if owed['phase'] == 'recorded':
@@ -783,7 +815,7 @@ class ServiceRecovery:
         except BaseException:
             backend_request(owed, 'cancel', permit['token'])
             raise
-        verify_processes(owed, self.records)
+        self.verify_processes(owed)
         if backend_request(owed, 'commit', permit['token']).get('ok') is not True:
             raise RuntimeError(f'{_name(owed)} did not commit its backend retirement; recovery remains owed.')
         owed['backend_committed'] = True
@@ -794,14 +826,14 @@ class ServiceRecovery:
         # Disarm through the original manager before its KeepAlive can admit a successor.
         owed['backend_stop_requested'] = True
         self.save()
-        verify_processes(owed, self.records, stopping=stopping)
+        self.verify_processes(owed, stopping=stopping)
         if _config_stamp(owed) != owed['config_stamp']:
             raise RuntimeError(f'{_name(owed)} service configuration changed before backend stop; recovery remains owed.')
         if stopped.is_set():
             raise RuntimeError(f'{_name(owed)} backend stop was cancelled; recovery remains owed.')
         self.pause._disarm(service_entry(owed))
         wait_stopped(owed, self.records, stopped)
-        verify_processes(owed, self.records, stopping=True)
+        self.verify_processes(owed, stopping=True)
         owed['phase'] = 'stopped'
         self.save()
 
@@ -811,15 +843,15 @@ class ServiceRecovery:
             raise RuntimeError(f'{_name(entry)} legacy shutdown remains owed; no signal was replayed.')
         if _config_stamp(owed) != owed['config_stamp']:
             raise RuntimeError(f'{_name(entry)} configuration changed before legacy refresh.')
-        verify_processes(owed, self.records)
+        self.verify_processes(owed)
         verify_listener(owed)
         owed.update(legacy_refresh=True, phase='refreshing')
         self.save()  # Older readers reject this phase and retain debt; no reader replays its signal.
-        verify_processes(owed, self.records)
+        self.verify_processes(owed)
         verify_listener(owed)
         if _config_stamp(owed) != owed['config_stamp']:
             raise RuntimeError(f'{_name(owed)} configuration changed before legacy refresh.')
-        verify_processes(owed, self.records)
+        self.verify_processes(owed)
         try:
             if stopped.is_set():
                 raise InterruptedError('Legacy refresh was cancelled before interruption.')
@@ -883,6 +915,8 @@ class ServiceRecovery:
         if (_config_stamp(candidate) != entry['config_stamp']
                 or candidate.get('profile') != entry.get('profile')):
             raise RuntimeError(f'{_name(entry)} successor configuration/profile changed; recovery remains owed.')
+        if entry.get('departed_processes'):
+            candidate['departed_processes'] = entry['departed_processes']
         bind_processes(candidate, self.records)
         parents = {int(pid): p['parent'] for pid, p in candidate['processes'].items()}
         chain, pid = set(), candidate['pid']
@@ -894,7 +928,8 @@ class ServiceRecovery:
         if chain | _descendants(candidate['pid'], parents) != set(parents):
             raise RuntimeError(f'{_name(entry)} successor has unrelated descendants; recovery remains owed.')
         for pid, process in candidate['processes'].items():
-            old = entry['processes'].get(pid) or entry.get('retired_processes', {}).get(pid)
+            old = (entry['processes'].get(pid) or entry.get('departed_processes', {}).get(pid)
+                   or entry.get('retired_processes', {}).get(pid))
             if old is not None and old != process:
                 raise RuntimeError(f'{_name(entry)} successor reused a recorded process identity; recovery remains owed.')
         return candidate
@@ -966,7 +1001,7 @@ class ServiceRecovery:
                         if pending:
                             stopped.wait(.05)
                             continue
-                        if not verify_processes(entry, self.records, stopping=True, fenced=True):
+                        if not self.verify_processes(entry, stopping=True, fenced=True):
                             stopped.wait(.05)
                             continue
                         if self._gateway_writers_live(entry) or _config_stamp(entry) != entry['config_stamp']:
@@ -989,7 +1024,7 @@ class ServiceRecovery:
                 entry.update(candidate, retired_processes=retired, phase='retiring',
                              drain_acknowledged=False, drain_acknowledged_at=None, settle_attempts=attempts)
                 self.save()  # Successor custody precedes its cooperative lifecycle request.
-                verify_processes(entry, self.records)
+                self.verify_processes(entry)
                 if _config_stamp(entry) != entry['config_stamp']:
                     raise RuntimeError(f'{_name(entry)} service configuration changed; recovery remains owed.')
                 if not self.pause._ask_to_drain(entry):
@@ -1036,7 +1071,7 @@ class ServiceRecovery:
                         raise RuntimeError(f'{_name(entry)} uncommitted retirement could not yet be cancelled; recovery remains owed.')
                     self.stop(entry, threading.Event())
                 elif any(self.records.identity_is_live({'pid': int(pid), 'ct': p['ct']}) for pid, p in entry['processes'].items()):
-                    verify_processes(entry, self.records, stopping=True)
+                    self.verify_processes(entry, stopping=True)
                     if any(self.records.identity_is_live({'pid': int(pid), 'ct': p['ct']}) for pid, p in entry['processes'].items() if int(pid) != entry['service_pid']):
                         raise RuntimeError(f'{_name(entry)} still has live writer descendants; recovery remains owed.')
                     self._stop_backend_supervisor(entry, threading.Event(), stopping=True)
@@ -1062,6 +1097,18 @@ class ServiceRecovery:
                 raise RuntimeError(f'{_name(entry)} readiness is unverified at its original endpoint; recovery remains owed.')
             time.sleep(.1)
 
+    def _verify_candidate(self, candidate, entry):
+        # Readiness retries must retain both live observations and proved departures.
+        candidate['config_stamp'] = entry['config_stamp']
+        candidate['processes'] = {**candidate['processes'], **entry.get('readiness_processes', {})}
+        candidate['departed_processes'] = {**entry.get('departed_processes', {}),
+                                            **candidate.get('departed_processes', {})}
+        bind_processes(candidate, self.records)
+        entry['readiness_processes'] = candidate['processes']
+        if candidate['departed_processes']:
+            entry['departed_processes'] = candidate['departed_processes']
+        self.save()
+
     def _ready(self, entry, ledger):
         if _config_stamp(entry) != entry['config_stamp']:
             raise RuntimeError(f'{_name(entry)} service configuration changed; backend recovery remains owed.')
@@ -1075,8 +1122,9 @@ class ServiceRecovery:
             candidate = self._gateway_candidate(entry)
             if candidate is None:
                 return False
+            self._verify_candidate(candidate, entry)
             ready = _gateway_home_matches(entry['home'], (candidate['pid'], candidate['ct']), self.pause)
-            verify_processes(candidate, self.records)
+            self._verify_candidate(candidate, entry)
             return ready
         if entry.get('legacy_refresh') and any(self.records.identity_is_live({'pid': int(pid), 'ct': p['ct']})
                 for pid, p in entry['processes'].items()
@@ -1095,7 +1143,7 @@ class ServiceRecovery:
         if (candidate['profile'] != entry['profile'] or _service_key(candidate) != _service_key(entry)
                 or _config_stamp(candidate) != entry['config_stamp']):
             return False
-        bind_processes(candidate, self.records)
+        self._verify_candidate(candidate, entry)
         try:
             if entry.get('legacy_refresh'):
                 verify_listener(candidate)
@@ -1106,7 +1154,7 @@ class ServiceRecovery:
                     return False
                 if backend_request(candidate, 'cancel', permit['token']).get('ok') is not True:
                     return False
-            verify_processes(candidate, self.records)
+            self._verify_candidate(candidate, entry)
             if self.identity._pid_alive_matches(row['pid'], row['create_time'], strict=True) is not True:
                 return False
         except BackendLifecycleUnsupported:
