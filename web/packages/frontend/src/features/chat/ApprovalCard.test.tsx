@@ -54,6 +54,18 @@ describe('ApprovalCard', () => {
     expect(api.fetchApprovalPending).not.toHaveBeenCalled()
   })
 
+  it('brings the card back when the relay to the run is unavailable and the approval still waits (TAL-1384)', async () => {
+    const onResolved = vi.fn()
+    vi.mocked(api.respondApproval).mockClear().mockRejectedValueOnce(new ApiError({ kind: 'http', status: 409, code: 'gateway_run_unavailable', path: '/api/approval/respond', message: 'The run is not reachable from Web' }))
+    vi.mocked(api.fetchApprovalPending).mockResolvedValueOnce({ pending: { approval_id: 'a7', command: 'deploy', run_id: 'r1' }, pending_count: 1 })
+    render(<ApprovalCard sessionId="s1" pending={{ approval_id: 'a7', command: 'deploy', run_id: 'r1' }} onResolved={onResolved} />)
+    await userEvent.click(screen.getByRole('button', { name: /deny/i }))
+    expect(await screen.findByRole('alertdialog')).toBeInTheDocument()
+    expect(showToast).toHaveBeenLastCalledWith('The run is not reachable from Web', 4000, 'error')
+    expect(onResolved).not.toHaveBeenCalled()
+    expect(api.respondApproval).toHaveBeenCalledTimes(1)
+  })
+
   it.each([
     ['still waits', { approval_id: 'a6', command: 'rm -rf build' }, true],
     ['has moved on', null, false],

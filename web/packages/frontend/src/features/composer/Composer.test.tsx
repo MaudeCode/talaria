@@ -376,6 +376,28 @@ describe('Composer', () => {
     expect(api.startBackground).toHaveBeenCalledOnce()
   })
 
+  it.each([
+    ['started', true],
+    ['never started', false],
+  ] as const)('rereads background work after a lost /background answer and restores the prompt only if nothing started: %s (TAL-1384)', async (_, started) => {
+    vi.mocked(api.startBackground).mockRejectedValue(new ApiError({ kind: 'network', path: '/x', message: 'Network down' }))
+    vi.mocked(api.fetchBackgroundTasks).mockResolvedValue({ session_id: 's1', agent_available: true, tasks: [] })
+    renderComposer({ ...writable, is_streaming: false })
+    await waitFor(() => expect(api.fetchBackgroundTasks).toHaveBeenCalled())
+    const reads = vi.mocked(api.fetchBackgroundTasks).mock.calls.length
+    if (started) vi.mocked(api.fetchBackgroundTasks).mockResolvedValue({ session_id: 's1', agent_available: true, tasks: [{ task_id: 'bg9', kind: 'background_command', status: 'running', title: 'summarize repo', started_at: 1, updated_at: 1, completed_at: null, result_available: false, child_sessions: [], exit_code: null, agents: null, pinned: true, dismissible: false, active: true }] })
+    await userEvent.type(screen.getByRole('textbox'), '/background summarize repo{Enter}')
+    await waitFor(() => expect(vi.mocked(api.fetchBackgroundTasks).mock.calls.length).toBeGreaterThan(reads))
+    if (started) {
+      expect(await screen.findByRole('button', { name: 'Background work · 1' })).toBeInTheDocument()
+      expect(screen.getByRole('textbox')).toHaveValue('')
+    } else {
+      await waitFor(() => expect(screen.getByRole('textbox')).toHaveValue('/background summarize repo'))
+      expect(screen.queryByRole('button', { name: /Background work/ })).toBeNull()
+    }
+    expect(api.startBackground).toHaveBeenCalledOnce()
+  })
+
   it('adopts the started background task in place of its provisional chip, without a duplicate (TAL-1384)', async () => {
     let start!: (value: { ok: true; task_id: string; stream_id: string; session_id: string }) => void
     vi.mocked(api.startBackground).mockReturnValue(new Promise((resolve) => { start = resolve }) as never)

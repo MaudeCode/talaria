@@ -2,7 +2,7 @@
  * TAL-372: the session's background work, as the server records it. The composer's chip opens what the server pins:
  * running work, and a finished `/background` result until someone dismisses it. Every client reads the same records.
  */
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Check, CircleHelp, Clock, LoaderCircle, X } from 'lucide-react'
 import type { BackgroundLink, BackgroundTask, BackgroundReviewState } from '@maudecode/talaria-web-contracts'
@@ -11,6 +11,7 @@ import { keys } from '../../api/queryKeys'
 import { Markdown } from '../chat/render/Markdown'
 import { m } from '../../paraglide/messages.js'
 import { showErrorToast } from '../toast/errorToast'
+import { isDefiniteRefusal } from '../../contracts/common'
 import { newResource, useResourceEffects, useResourceMutation, withCreated, withEffects } from '../sessions/useResourceMutation'
 
 /** Running work changes on the Agent's side; a quiet refresh keeps the card current between server notices. */
@@ -21,18 +22,32 @@ const launchKind = (sessionId: string) => `background-launch-${sessionId}`
 
 /**
  * `/background` shows its task at once as running work with the submitted prompt; the server's task replaces it on the
- * reread, and a refusal removes it. A lost answer is never relaunched: the reread decides.
+ * reread, and a refusal removes it. A lost answer is never relaunched: the reread decides. `notStarted` runs when the
+ * server refused, or when the reread after a lost answer shows no new task.
  */
 export function useStartBackground() {
-  return useResourceMutation({
+  const qc = useQueryClient()
+  const { mutate } = useResourceMutation({
     resource: ({ resource }: { resource: string; sessionId: string; prompt: string }) => resource,
     queryKey: ['sessions', 'background'], readKeys: ({ sessionId }) => [{ queryKey: keys.background(sessionId), exact: true }], exclusive: true,
     effect: ({ resource, prompt }) => ({ fields: { task_id: resource, kind: 'background_command', status: 'running', title: prompt, started_at: null, updated_at: 0, completed_at: null, result_available: false, child_sessions: [], exit_code: null, agents: null, pinned: true, dismissible: false, active: true } satisfies BackgroundTask }),
     mutationFn: ({ sessionId, prompt }) => api.startBackground(sessionId, prompt),
     onError: (e) => showErrorToast(e),
   })
+  return useCallback((sessionId: string, prompt: string, notStarted: () => void) => {
+    const key = keys.background(sessionId)
+    type Tasks = Awaited<ReturnType<typeof api.fetchBackgroundTasks>>
+    const known = new Set(qc.getQueryData<Tasks>(key)?.tasks.map((task) => task.task_id))
+    const sent = Date.now()
+    mutate({ resource: newResource(launchKind(sessionId)), sessionId, prompt }, {
+      onError: (error) => {
+        if (isDefiniteRefusal(error)) { notStarted(); return }
+        const read = qc.getQueryState<Tasks>(key)
+        if (read?.data && read.dataUpdatedAt >= sent && !read.data.tasks.some((task) => !known.has(task.task_id))) notStarted()
+      },
+    })
+  }, [qc, mutate])
 }
-export const backgroundLaunch = (sessionId: string) => newResource(launchKind(sessionId))
 
 /** The session's background work as the user sees it: a dismissed result leaves at once. */
 export function useBackgroundTasks(sessionId: string | null | undefined) {

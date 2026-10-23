@@ -27,8 +27,7 @@ import { LiveStatusPill } from '../chat/LiveTurnView'
 import { ComposerNotices, type ComposerNotice } from './ComposerNotices'
 import { useBtw } from './useBtw'
 import { useCommandOutput } from './useCommandOutput'
-import { BackgroundWorkCard, backgroundLaunch, useBackgroundTasks, useStartBackground } from '../background/BackgroundWork'
-import { isDefiniteRefusal } from '../../contracts/common'
+import { BackgroundWorkCard, useBackgroundTasks, useStartBackground } from '../background/BackgroundWork'
 import { beginFirstSend, endFirstSend, failFirstSend, getFirstSend, ownsFirstSend, useFirstSend } from '../chat/firstSend'
 import { REST_MS, onComposerRestRequest, requestScroll } from '../chat/sendMotion'
 import { MOTION_EASE, prefersReducedMotion } from '../../lib/motion'
@@ -131,7 +130,7 @@ let handoff: { draft: { readonly current: string }; files: File[]; sessionId: st
 export const Composer = memo(function Composer(props: ComposerProps) {
   const { sessionId, session, busy, streamId, settings, onEnsureSession, onLocalCommand, terminalOpen, onToggleTerminal, onModelChange, onWorkspaceChange, onNewWorktreeChat, onRemoveWorktree, onToolsetsChange, onExecutionModeChange, onReasoningChange, reasoning, reasoningLevels, reasoningSupported = true, pendingChoices, locked = false, yolo, onToggleYolo, queued, onQueue, onQueueChange, clarify, notices = [] } = props
   const bootstrap = useBootstrap()
-  const launchBackground = useStartBackground().mutate
+  const launchBackground = useStartBackground()
   const localStateId = composerStateId(session)
   const [text, setText] = useState(() => (localStateId ? readLocalDraft(localStateId) : ''))
   const [draftIdentity, setDraftIdentity] = useState(localStateId)
@@ -471,11 +470,9 @@ export const Composer = memo(function Composer(props: ComposerProps) {
           if (!cmd.args) { showToast(m.bg_usage(), 2000); return }
           let target: { session_id: string }
           try { target = session ?? (await onEnsureSession()) } catch (e) { showErrorToast(e); return }
-          // Only the submitted draft clears; a refusal puts the prompt back beside anything typed since.
+          // Only the submitted draft clears; a launch that never started puts the prompt back beside anything typed since.
           setText((current) => current === text ? '' : current)
-          launchBackground({ resource: backgroundLaunch(target.session_id), sessionId: target.session_id, prompt: cmd.args }, {
-            onError: (e) => { if (isDefiniteRefusal(e) && commandScope === getStreamContext()) setText((current) => current.trim() ? `${current}\n\n${text}` : text) },
-          })
+          launchBackground(target.session_id, cmd.args, () => { if (commandScope === getStreamContext()) setText((current) => current.trim() ? `${current}\n\n${text}` : text) })
           return
         }
         // TAL-518: a side question never steers or sends; its answer shows behind a composer chip, running or idle.

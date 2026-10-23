@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
@@ -19,6 +19,14 @@ export function OpenRouterCost() {
   const history = useQuery({ queryKey: keys.providerCostHistory, queryFn: api.fetchOpenRouterCostHistory, staleTime: 60_000 })
   const save = useSaveSettings()
   const [draft, setDraft] = useState<string | null>(null)
+  // A budget whose save had an unknown outcome and whose reread failed: the next successful read of the history settles it.
+  const uncertain = useRef<string | null>(null)
+  useEffect(() => {
+    const submitted = uncertain.current
+    if (submitted === null || !history.dataUpdatedAt) return
+    uncertain.current = null
+    setDraft((d) => d === submitted ? null : d)
+  }, [history.dataUpdatedAt])
   const h = history.data
   if (!h || h.supported === false) return null
   const budget = h.monthly_budget ?? null
@@ -29,12 +37,15 @@ export function OpenRouterCost() {
   const saveBudget = (value: number | null, submitted: string) => {
     const settle = () => { setDraft((d) => d === submitted ? null : d) }
     const failed = () => showToast(m.provider_cost_budget_save_failed(), 4000, 'error')
-    const reread = () => qc.invalidateQueries({ queryKey: keys.providerCostHistory }).then(settle)
+    const reread = () => qc.invalidateQueries({ queryKey: keys.providerCostHistory }, { throwOnError: true }).then(settle)
     save.mutate({ provider_cost_budget: value }, {
-      onSuccess: () => { void reread() },
+      onSuccess: () => { void reread().catch(settle) },
       onError: (error) => {
         if (isDefiniteRefusal(error)) { settle(); failed(); return }
-        void reread().then(() => { if ((qc.getQueryData<typeof h>(keys.providerCostHistory)?.monthly_budget ?? null) !== value) failed() }, () => { settle(); failed() })
+        void reread().then(
+          () => { if ((qc.getQueryData<typeof h>(keys.providerCostHistory)?.monthly_budget ?? null) !== value) failed() },
+          () => { uncertain.current = submitted },
+        )
       },
     })
   }
