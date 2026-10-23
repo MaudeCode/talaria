@@ -56,16 +56,22 @@ export function useSessionUpdate(sessionId: string | null, refresh: (session?: S
     // eslint-disable-next-line react-hooks/set-state-in-effect -- synchronize an external owner decision
     presentNative(nativeOwner?.model_change)
   }, [nativeOwner?.model_change, presentNative])
+  // A pick queued behind another is sent against the owner revision the earlier pick produced, not the one it saw.
+  const latestOwner = useRef<{ sid: string; owner: OwnerAttachment } | null>(null)
   const write = useSessionWrite({
     fields: ({ body }: { sid: string; body: Update; owner: OwnerAttachment | undefined }) => chosenFields(body),
-    mutationFn: async ({ sid, body, owner }): Promise<{ native: OwnerResult | null; session: unknown }> => {
-      if (!owner) return { native: null, session: (await api.updateSession(sid, body)).session }
+    mutationFn: async ({ sid, body, owner: seen }): Promise<{ native: OwnerResult | null; session: unknown }> => {
+      if (!seen) return { native: null, session: (await api.updateSession(sid, body)).session }
+      const carried = latestOwner.current?.sid === sid ? latestOwner.current.owner : undefined
+      const owner = carried && (carried.revision ?? -1) > (seen.revision ?? -1) ? carried : seen
       if (owner.revision === null || owner.execution_generation === null) throw new Error(m.error_generic())
       const modelPick = body.workspace === undefined
       const native = await api.ownerAction({ session_id: sid, action: 'mutate', request_id: randomHex(),
         expected_revision: owner.revision, execution_generation: owner.execution_generation,
         operation: modelPick ? 'model' : 'workspace',
         payload: modelPick ? { model: body.model, ...(body.model_provider !== undefined ? { provider: body.model_provider } : {}), ...(body.confirm_token ? { confirm: body.confirm_token } : {}) } : { cwd: body.workspace } })
+      const next = native.session?.owner_attachment
+      if (next) latestOwner.current = { sid, owner: next }
       return { native, session: native.session }
     },
   })

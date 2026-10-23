@@ -19,7 +19,7 @@ export function OpenRouterCost() {
   const history = useQuery({ queryKey: keys.providerCostHistory, queryFn: api.fetchOpenRouterCostHistory, staleTime: 60_000 })
   const save = useSaveSettings()
   const [draft, setDraft] = useState<string | null>(null)
-  // A budget whose save had an unknown outcome and whose reread failed: the next successful read of the history settles it.
+  // A budget saved (or with an unknown outcome) whose reread failed: the next successful read of the history settles it.
   const uncertain = useRef<string | null>(null)
   useEffect(() => {
     const submitted = uncertain.current
@@ -39,7 +39,7 @@ export function OpenRouterCost() {
     const failed = () => showToast(m.provider_cost_budget_save_failed(), 4000, 'error')
     const reread = () => qc.invalidateQueries({ queryKey: keys.providerCostHistory }, { throwOnError: true }).then(settle)
     save.mutate({ provider_cost_budget: value }, {
-      onSuccess: () => { void reread().catch(settle) },
+      onSuccess: () => { void reread().catch(() => { uncertain.current = submitted }) },
       onError: (error) => {
         if (isDefiniteRefusal(error)) { settle(); failed(); return }
         void reread().then(

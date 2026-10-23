@@ -180,3 +180,17 @@ it('shows the picked workspace at once and rolls a refusal back with the error (
   expect(showToast).toHaveBeenCalledWith('Workspace is not allowed', 4000, 'error')
   expect(screen.queryByRole('alertdialog')).toBeNull()
 })
+
+it('sends a pick queued behind another against the owner revision the first one produced (TAL-1384)', async () => {
+  let first!: (value: unknown) => void
+  vi.mocked(api.ownerAction)
+    .mockReturnValueOnce(new Promise((resolve) => { first = resolve }) as never)
+    .mockResolvedValueOnce({ ok: true, session: sessionFixture({ session_id: 's1', owner_attachment: { ...nativeOwner, revision: 10 } }) })
+  render(<Chat owner={{ ...nativeOwner }} />)
+  await userEvent.click(screen.getByText('Pick model'))
+  await userEvent.click(screen.getByText('Pick model'))
+  expect(api.ownerAction).toHaveBeenCalledTimes(1)
+  await act(async () => { first({ ok: true, session: sessionFixture({ session_id: 's1', owner_attachment: { ...nativeOwner, revision: 9 } }) }); await Promise.resolve() })
+  await waitFor(() => expect(api.ownerAction).toHaveBeenCalledTimes(2))
+  expect(vi.mocked(api.ownerAction).mock.calls.map(([request]) => (request as { expected_revision: number }).expected_revision)).toEqual([8, 9])
+})

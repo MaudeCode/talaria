@@ -59,6 +59,21 @@ describe('file tree writes show their result at once (TAL-1384)', () => {
     expect(names()).toEqual(['docs', 'a.txt', 'aa.txt'])
   })
 
+  it('makes an action on a renamed row wait for its rename instead of racing it', async () => {
+    vi.mocked(api.renameEntry).mockReturnValue(held())
+    renderFiles()
+    await menu('b.txt', 'Rename')
+    const input = screen.getByRole('textbox', { name: 'New name:' })
+    await userEvent.clear(input)
+    await userEvent.type(input, 'aa.txt{Enter}')
+    expect(names()).toEqual(['docs', 'a.txt', 'aa.txt'])
+    await menu('aa.txt', 'Delete')
+    await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete' }))
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
+    expect(api.deleteEntry).not.toHaveBeenCalled()
+    expect(names()).toEqual(['docs', 'a.txt', 'aa.txt'])
+  })
+
   it('shows a new file at once', async () => {
     vi.mocked(api.createFile).mockReturnValue(held())
     renderFiles()
