@@ -6,6 +6,8 @@ Config edits and health probes live in the server; this namespace only reads
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 
 from ..home import profile_home_param, scoped_home
@@ -48,7 +50,60 @@ def registry_tools() -> list[dict]:
     return out
 
 
+def cost_policies(servers: dict) -> dict:
+    """Read declarations using the native parser; inspect cached packages without discovering or connecting."""
+    try:
+        from tools.mcp_tool_costs import CONFIG_KEYS, _parse_cost, config_cost_policy
+        from hermes_cli.plugins import get_plugin_manager
+
+        portable = get_plugin_manager().get_portable_mcp_servers()
+    except (ImportError, AttributeError):
+        return {"supported": False, "policies": []}
+    rows = []
+    for name in sorted(servers.keys() | portable.keys()):
+        native, package = servers.get(name), portable.get(name, {})
+        if not isinstance(package, dict):
+            package = {}
+        editable = isinstance(native, dict) and ("command" in native or "url" in native)
+        own = {k: native[k] for k in CONFIG_KEYS if isinstance(native, dict) and k in native}
+        # The native loader rejects a malformed package before it can donate inherited keys.
+        if native is not None:
+            try:
+                config_cost_policy(name, package)
+            except (ValueError, TypeError):
+                package = {}
+        inherited = {k: package[k] for k in CONFIG_KEYS if k in package}
+        effective = {**inherited, **own}
+        sources = {k: "native" if k in own else "package" if k in inherited else "default" for k in CONFIG_KEYS}
+        row = {"name": name, "source": "native_override" if native is not None and package else "native" if native is not None else "package",
+               "valid": True, "can_edit": editable, "error": None,
+               "package_revision": hashlib.sha256(json.dumps(inherited, sort_keys=True, default=str).encode()).hexdigest(),
+               "overrides": {"tool_costs": None, "spend_limit": None, "cost_unit": None},
+               "tool_costs": [], "spend_limit": 0, "cost_unit": "credits", "budget_enabled": False, "field_sources": sources}
+        try:
+            # Validate the native entry separately as the Agent does before package inheritance.
+            config_cost_policy(name, own)
+            policy = config_cost_policy(name, effective)
+            costs = effective.get("tool_costs") or {}
+            row["tool_costs"] = [{"name": tool, "low": cost.low, "high": cost.high, "note": cost.note}
+                                 for tool, value in costs.items() for cost in [_parse_cost(value, "declared cost")]]
+            row["spend_limit"] = effective.get("spend_limit") or 0
+            row["cost_unit"] = (effective.get("cost_unit") or "credits").strip()
+            row["budget_enabled"] = policy is not None and policy.limit > 0
+            row["overrides"] = {k: own.get(k) for k in CONFIG_KEYS}
+        except (ValueError, TypeError):
+            # Native errors may quote arbitrary config values, including mistakenly pasted credentials.
+            row.update(valid=False, error="Invalid declared cost policy. Check tool estimates, limit and unit.")
+        rows.append(row)
+    return {"supported": True, "policies": rows}
+
+
 def register(registry_) -> None:
+    @registry_.method("mcp.cost_policies")
+    def policies(ctx: CallContext, params: dict) -> dict:
+        with scoped_home(profile_home_param(params), load_plugins=False):
+            return cost_policies(params.get("servers") or {})
+
     @registry_.method("mcp.status")
     def status_(ctx: CallContext, params: dict) -> dict:
         with scoped_home(profile_home_param(params)):

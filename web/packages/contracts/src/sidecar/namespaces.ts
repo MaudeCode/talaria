@@ -1,4 +1,5 @@
 import { OutboundDraftRefSchema, OutboundDraftFieldsSchema, OutboundDraftResultSchema } from '../outbound-drafts.js'
+import { McpCostPolicyDataSchema } from '../mcp-cost-policy.js'
 import { ContextDetailSchema } from '../context-detail.js'
 import { z } from 'zod'
 import { ProviderPhaseSchema } from '../run-status.js'
@@ -301,6 +302,7 @@ export const SKILLS_METHODS = {
 
 // ── mcp ────────────────────────────────────────────────────────────────
 export const MCP_METHODS = {
+  'mcp.cost_policies': { params: ProfileHomeParams.extend({ servers: Loose }), result: z.object({ supported: z.boolean(), policies: z.array(McpCostPolicyDataSchema) }) },
   'mcp.status': { params: ProfileHomeParams, result: z.object({ servers: z.array(z.object({ name: z.string() }).catchall(Json)) }) },
   'mcp.registry_tools': { params: ProfileHomeParams, result: z.object({ tools: z.array(z.object({ name: z.string(), server: z.string(), schema: Loose })) }) },
   'mcp.reload': { params: ProfileHomeParams, result: z.object({ output: z.string() }) },

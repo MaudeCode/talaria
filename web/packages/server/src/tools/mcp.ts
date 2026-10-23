@@ -1,4 +1,6 @@
 /** MCP server inventory from config.yaml plus the Agent's already-known runtime status and the background health verdicts (Python MCP handlers). */
+import { createHash } from 'node:crypto'
+import { McpCostPatchSchema, type SidecarResult } from '@maudecode/talaria-web-contracts'
 import type { SidecarLike } from '../sidecar/client.js'
 import { dict, isDict, type AgentConfig, type Config, type Dict } from '../config/agent-config.js'
 import { HttpFailure } from '../sessions/service.js'
@@ -143,11 +145,39 @@ export class McpService {
     return byName
   }
 
+  private async policies(profileHome: string, config: Config): Promise<SidecarResult<'mcp.cost_policies'> | null> {
+    const sidecar = this.deps.sidecar()
+    if (!sidecar) return null
+    try { return await sidecar.call('mcp.cost_policies', { profile_home: profileHome, servers: dict(config.mcp_servers) }) }
+    catch { return null }
+  }
+
+  private policyView(profileHome: string, config: Config, policy: SidecarResult<'mcp.cost_policies'>['policies'][number]): Dict {
+    const { package_revision, ...view } = policy
+    // Bind the edit to the complete saved config, package declaration and profile, without exposing any of them.
+    const revision = createHash('sha256').update(JSON.stringify([profileHome, config, policy.name, package_revision])).digest('hex')
+    const overrides = { ...view.overrides }
+    if (overrides.tool_costs) overrides.tool_costs = Object.fromEntries(Object.entries(overrides.tool_costs).map(([name, value]) => [
+      safeText(name, 200), typeof value === 'object' && !Array.isArray(value)
+        ? { ...value, ...(value.note !== undefined ? { note: safeText(value.note, 2000) } : {}) } : value,
+    ]))
+    if (overrides.cost_unit !== null) overrides.cost_unit = safeText(overrides.cost_unit, 32)
+    return { ...view, overrides, revision, provenance: 'declared_estimate', reload_required: true, runtime_state: 'unknown',
+      cost_unit: safeText(view.cost_unit, 32), tool_costs: view.tool_costs.map((tool) => ({ ...tool, name: safeText(tool.name, 200), note: safeText(tool.note, 2000) })) }
+  }
+
   private async inventory(profileHome: string): Promise<{ servers: Dict; runtime: Map<string, Dict>; summaries: Map<string, Dict> }> {
     const config = await this.deps.config.read(profileHome)
     const servers = dict(config.mcp_servers)
     const runtime = await this.runtime(profileHome, servers)
+    const policies = await this.policies(profileHome, config)
     const summaries = new Map(Object.entries(servers).map(([name, cfg]) => [name, serverSummary(name, cfg, runtime.get(name) ?? null)]))
+    if (policies?.supported) for (const policy of policies.policies) {
+      const rt = runtime.get(policy.name) ?? null
+      const summary = summaries.get(policy.name) ?? { ...serverSummary(policy.name, { command: '', enabled: rt?.disabled !== true }, rt), transport: str(rt?.transport) || 'package', can_toggle: false }
+      summary.cost_policy = this.policyView(profileHome, config, policy)
+      summaries.set(policy.name, summary)
+    }
     return { servers, runtime, summaries }
   }
 
@@ -213,8 +243,35 @@ export class McpService {
     return { ok: true, name, enabled }
   }
 
+  private async updatePolicy(profileHome: string, name: string, body: Dict): Promise<{ ok: true; server: Dict }> {
+    const parsed = McpCostPatchSchema.safeParse(body.cost_policy)
+    if (!parsed.success || Object.keys(body).some((key) => !['cost_policy', 'config_revision'].includes(key))) throw new HttpFailure(400, 'Invalid cost policy patch')
+    let summary: Dict = {}
+    await this.deps.config.update(profileHome, async (config) => {
+      const result = await this.policies(profileHome, config)
+      const policy = result?.supported ? result.policies.find((p) => p.name === name) : null
+      if (!policy) throw new HttpFailure(503, 'Declared MCP cost policy is unavailable')
+      const current = this.policyView(profileHome, config, policy)
+      if (typeof body.config_revision !== 'string' || body.config_revision !== current.revision) throw new HttpFailure(409, 'MCP configuration changed; refresh before editing')
+      if (!policy.can_edit) throw new HttpFailure(409, 'Package policy requires a native server override in config.yaml')
+      const servers = dict(config.mcp_servers)
+      const server = { ...dict(servers[name]) }
+      for (const [key, value] of Object.entries(parsed.data)) {
+        if (value === null) Reflect.deleteProperty(server, key)
+        else server[key] = value
+      }
+      config.mcp_servers = { ...servers, [name]: server }
+      const validated = await this.policies(profileHome, config)
+      const updated = validated?.supported ? validated.policies.find((p) => p.name === name) : null
+      if (!updated?.valid) throw new HttpFailure(400, 'Invalid declared cost policy')
+      summary = { ...serverSummary(name, server, null), cost_policy: this.policyView(profileHome, config, updated) }
+    })
+    return { ok: true, server: summary }
+  }
+
   async update(profileHome: string, name: string, body: Dict): Promise<{ ok: true; server: Dict }> {
     if (!name) throw new HttpFailure(400, 'name is required')
+    if ('cost_policy' in body) return this.updatePolicy(profileHome, name, body)
     let summary: Dict = {}
     await this.deps.config.update(profileHome, (c) => {
       const servers = dict(c.mcp_servers)

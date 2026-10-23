@@ -1,3 +1,4 @@
+import { McpCostPatchSchema } from '../mcp-cost-policy.js'
 import { oc, type OpenAPI } from '@orpc/contract'
 import { z } from 'zod'
 import { SkillsSchema, SkillContentSchema, SkillsUsageSchema, MemorySchema, PromptSchema, PromptsSchema, CommandsSchema, LogsSchema, InsightsSchema, AgentHealthSchema, SystemHealthSchema, McpServerSchema, McpServersSchema, McpToolsSchema, ConnectorsPageSchema, ConnectorToolsViewSchema, ConnectorOperationViewSchema, PluginsSchema, UpdatesCheckSchema, UpdatesSummarySchema, UpdateApplySchema, UpdateNotificationsSchema, UpdateNotificationSchema, TabIdSchema, FrontendBuildIdSchema, NotesSourcesSchema, NotesSearchSchema, NoteItemSchema, WikiStatusSchema, WikiBrowseSchema, WikiPageSchema, DashboardStatusSchema, DashboardConfigSchema, GatewayStatusSchema, GatewayActionSchema, ProjectOsDashboardSchema, TranscribeCapabilitySchema, SpeechPrepareSchema, PluginSettingViewSchema, OnboardingOAuthSchema } from '../views.js'
@@ -129,7 +130,7 @@ export const toolsContract = {
     tools: oc.route({ method: 'GET', path: '/api/mcp/tools', tags, summary: '`q` keeps tools whose name, server, or description contains it (case-insensitive); `total` counts every known tool.' }).input(z.object({ q: z.string().optional() })).output(McpToolsSchema),
     action: oc.route({ method: 'POST', path: '/api/mcp/servers/{name}', tags, summary: '`{enabled}` toggles, `{delete: true}` removes, `{url|command, ...}` adds or updates the server in config.yaml.' }).input(z.object({ name: z.string() }).catchall(Json)).output(Loose),
     toggle: oc.route({ method: 'PATCH', path: '/api/mcp/servers/{name}', tags }).input(z.object({ name: z.string(), enabled: Json.optional() })).output(z.object({ ok: z.literal(true), name: z.string(), enabled: z.boolean() })),
-    update: oc.route({ method: 'PUT', path: '/api/mcp/servers/{name}', tags }).input(z.object({ name: z.string() }).catchall(Json)).output(z.object({ ok: z.literal(true), server: McpServerSchema })),
+    update: oc.route({ method: 'PUT', path: '/api/mcp/servers/{name}', tags }).input(z.object({ name: z.string(), config_revision: z.string().optional(), cost_policy: McpCostPatchSchema.optional() }).catchall(Json)).output(z.object({ ok: z.literal(true), server: McpServerSchema })),
     delete: oc.route({ method: 'DELETE', path: '/api/mcp/servers/{name}', tags }).input(z.object({ name: z.string() })).output(z.object({ ok: z.literal(true), deleted: z.string() })),
   },
   /**

@@ -18,5 +18,17 @@
         "tools": []
       }
     }
+  ],
+  "mcp.cost_policies": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "servers": {}
+      },
+      "result": {
+        "supported": true,
+        "policies": []
+      }
+    }
   ]
 }

@@ -2714,6 +2714,13 @@
       "cases": [
         ""
       ]
+    },
+    "tests/test_mcp_cost_policy.py::test_native_mcp_cost_policy_and_budget_approval": {
+      "layer": "compatibility",
+      "reason": "Installed Agent cost parser and real full-trust budget gate must agree with Talaria policy projection. Uses synthetic declarations, a cached package boundary and a denied approval; no MCP transport, provider or paid call.",
+      "cases": [
+        ""
+      ]
     }
   }
 }

@@ -1,0 +1,17 @@
+{
+  "name": "paid",
+  "source": "native_override",
+  "valid": true,
+  "can_edit": true,
+  "error": null,
+  "overrides": {"tool_costs": null, "spend_limit": 0, "cost_unit": null},
+  "tool_costs": [{"name": "search", "low": 1, "high": 3, "note": "estimate"}],
+  "spend_limit": 0,
+  "cost_unit": "credits",
+  "budget_enabled": false,
+  "field_sources": {"tool_costs": "package", "spend_limit": "native", "cost_unit": "package"},
+  "revision": "synthetic-revision",
+  "provenance": "declared_estimate",
+  "reload_required": true,
+  "runtime_state": "unknown"
+}

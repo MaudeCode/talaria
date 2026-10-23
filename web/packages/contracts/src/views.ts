@@ -1,3 +1,4 @@
+import { McpCostPolicySchema } from './mcp-cost-policy.js'
 /**
  * Pinned response shapes shared by every consumer (formerly the frontend's
  * hand-written `src/contracts/*` schemas). Known fields are typed; every
@@ -1079,7 +1080,7 @@ export const PluginSchema = z.looseObject({ key: z.string(), name: z.string().op
  * `in_process`, so Settings recommends `plugins.isolation: host`; Talaria never sets the mode.
  */
 export const PluginsSchema = z.looseObject({ plugins: z.array(PluginSchema), empty: z.boolean().optional(), read_only: z.boolean().optional(), supported_hooks: z.array(z.string()).optional(), unavailable: z.boolean().optional(), plugin_isolation_advisory: z.boolean().optional() })
-export const McpServerSchema = z.looseObject({ name: z.string(), id: z.string().optional(), transport: z.string().optional(), enabled: z.boolean().optional(), can_toggle: z.boolean().optional().describe('Whether PATCH can enable or disable this server; false for invalid config.'), active: z.boolean().optional(), status: z.string().optional(), tools: z.number().optional(), tool_count: z.number().int().nullable().optional(), health: z.string().optional(), health_detail: z.string().optional(), health_checked_at: Json.optional(), health_pending: z.boolean().optional() })
+export const McpServerSchema = z.looseObject({ cost_policy: McpCostPolicySchema.nullable().optional(), name: z.string(), id: z.string().optional(), transport: z.string().optional(), enabled: z.boolean().optional(), can_toggle: z.boolean().optional().describe('Whether PATCH can enable or disable this server; false for invalid config.'), active: z.boolean().optional(), status: z.string().optional(), tools: z.number().optional(), tool_count: z.number().int().nullable().optional(), health: z.string().optional(), health_detail: z.string().optional(), health_checked_at: Json.optional(), health_pending: z.boolean().optional() })
 export const McpServersSchema = z.looseObject({ servers: z.array(McpServerSchema), health_pending: z.boolean().optional(), reload_required: z.boolean().optional(), toggle_supported: z.boolean().optional() })
 /** TAL-818: one connected account of a Nous tool-gateway app; `name` is its alias, else the vendor label. `problem` is its gateway status while it is not active, else null. */
 export const ConnectorAccountViewSchema = z.object({ connection_id: z.string(), name: z.string(), problem: z.enum(['pending', 'failed', 'expired', 'revoked', 'inactive']).nullable(), status_reason: z.string().nullable(), active: z.boolean(), created_at: z.string() })

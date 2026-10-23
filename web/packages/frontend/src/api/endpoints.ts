@@ -311,6 +311,7 @@ export const savePluginSettings = (key: string, values: Record<string, unknown>,
 export const pluginOauthRedirect = (flowId: string, url: string) => orpc().pluginOAuthRedirect({ flow_id: flowId, url })
 export const pluginOauthLogout = (key: string, id: string) => orpc().pluginOAuthLogout({ key, id })
 export const fetchMcpServers = () => orpc().mcp.servers()
+export const saveMcpCostPolicy = (name: string, config_revision: string, cost_policy: NonNullable<Parameters<ReturnType<typeof orpc>['mcp']['update']>[0]['cost_policy']>) => orpc().mcp.update({ name, config_revision, cost_policy })
 export const fetchMcpTools = (q: string) => orpc().mcp.tools(q ? { q } : {})
 export const toggleMcpServer = (name: string, enabled: boolean) => orpc().mcp.toggle({ name, enabled })
 export const fetchConnectorsAvailable = () => orpc().connectors.available()

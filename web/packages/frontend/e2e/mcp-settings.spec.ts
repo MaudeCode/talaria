@@ -67,3 +67,69 @@ for (const width of [1280, 390]) {
     await expect(page.getByText('No MCP tools match your search.')).toBeVisible()
   })
 }
+
+for (const width of [1280, 768, 390]) {
+  test(`MCP declared policy saves and unsets through the service at ${String(width)}px`, async ({ page }, testInfo) => {
+    const { McpService } = await import('../../server/dist/tools/mcp.js')
+    const config: Record<string, unknown> = { mcp_servers: { paid: { command: 'synthetic-mcp', trust: 'full', enabled: false, spend_limit: 5, tool_costs: { search: { credits: [1, 3], note: 'Declared upper-range estimate' } }, future: 'keep' } } }
+    const service = new McpService({
+      config: {
+        read: () => Promise.resolve(structuredClone(config)),
+        update: async (_home: string, mutate: (config: Record<string, unknown>) => unknown) => { const next = structuredClone(config); await mutate(next); Object.assign(config, next); return next },
+      } as unknown as ConstructorParameters<typeof McpService>[0]['config'],
+      sidecar: () => ({ call: (method: string, params: { servers: Record<string, Record<string, unknown>> }) => {
+        if (method === 'mcp.status') return Promise.resolve({ servers: [] })
+        if (method !== 'mcp.cost_policies') throw new Error(method)
+        const native = params.servers.paid!
+        return Promise.resolve({ supported: true, policies: [{ name: 'paid', source: 'native', valid: true, can_edit: true, error: null, package_revision: 'none', overrides: { tool_costs: native.tool_costs, spend_limit: native.spend_limit ?? null, cost_unit: null }, tool_costs: [{ name: 'search', low: 1, high: 3, note: 'Declared upper-range estimate' }], spend_limit: native.spend_limit ?? 0, cost_unit: 'credits', budget_enabled: (native.spend_limit as number ?? 0) > 0, field_sources: { tool_costs: 'native', spend_limit: 'spend_limit' in native ? 'native' : 'default', cost_unit: 'default' } }] })
+      } } as unknown as NonNullable<ReturnType<ConstructorParameters<typeof McpService>[0]['sidecar']>>),
+    })
+    await page.setViewportSize({ width, height: 1100 })
+    const home = '/synthetic/profile'
+    let expose = false
+    await page.route('**/api/mcp/servers', async (route) => {
+      const data = await service.servers(home)
+      if (!expose) for (const row of data.servers as Record<string, unknown>[]) delete row.cost_policy
+      await route.fulfill({ json: data })
+    })
+    const writes: unknown[] = []
+    let release: (() => void) | undefined
+    await page.route('**/api/mcp/servers/paid', async (route) => {
+      const body = route.request().postDataJSON() as Record<string, unknown>
+      writes.push(body)
+      await new Promise<void>((resolve) => { release = resolve })
+      await route.fulfill({ json: await service.update(home, 'paid', body) })
+    })
+    await page.route('**/api/mcp/tools*', (route) => route.fulfill({ json: { tools: [], total: 0, source: 'none', unavailable_servers: [] } }))
+    await page.goto('/settings/system')
+    await settle(page)
+    const row = page.locator('[data-mcp-server="paid"]')
+    await row.scrollIntoViewIfNeeded()
+    await page.screenshot({ path: testInfo.outputPath(`policy-before-${String(width)}.png`) })
+    expose = true
+    await page.reload()
+    await settle(page)
+    await row.getByText('Cost policy', { exact: true }).click()
+    await expect(row.getByText('Declared estimate', { exact: true })).toBeVisible()
+    await expect(row).toContainText('5 credits')
+    await expect(row).toContainText('Runtime policy is unconfirmed')
+    const limit = row.getByRole('textbox', { name: 'Per-chat limit', exact: true })
+    await limit.fill('0')
+    await row.getByRole('button', { name: 'Save policy', exact: true }).click()
+    await expect(limit).toHaveValue('0')
+    await expect.poll(() => writes.length).toBe(1)
+    release!()
+    await expect(row).toContainText('0 credits')
+    await expect(limit).toHaveValue('0')
+    expect((config.mcp_servers as Record<string, unknown>).paid).toMatchObject({ spend_limit: 0, trust: 'full', enabled: false, future: 'keep' })
+    await row.scrollIntoViewIfNeeded()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await page.screenshot({ path: testInfo.outputPath(`policy-after-${String(width)}.png`) })
+    await row.getByRole('button', { name: 'Use inherited/default', exact: true }).click()
+    await expect.poll(() => writes.length).toBe(2)
+    release!()
+    await expect(limit).toHaveValue('')
+    await expect.poll(() => Object.hasOwn((config.mcp_servers as Record<string, object>).paid!, 'spend_limit')).toBe(false)
+    expect(writes).toMatchObject([{ cost_policy: { spend_limit: 0 } }, { cost_policy: { spend_limit: null } }])
+  })
+}
