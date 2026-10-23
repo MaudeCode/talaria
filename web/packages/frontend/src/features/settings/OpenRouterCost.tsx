@@ -23,11 +23,13 @@ export function OpenRouterCost() {
   const budget = h.monthly_budget ?? null
   const level = h.budget_level ?? null
   const snapshots = h.snapshots ?? []
-  const saveBudget = (value: number | null) => {
+  // The submitted budget stays shown until the cost history rereads with it, and a refusal returns to the saved one;
+  // either way a budget typed since stays.
+  const saveBudget = (value: number | null, submitted: string) => {
+    const settle = () => { setDraft((d) => d === submitted ? null : d) }
     save.mutate({ provider_cost_budget: value }, {
-      // The typed budget stays shown until the cost history rereads with it.
-      onSuccess: () => { void qc.invalidateQueries({ queryKey: keys.providerCostHistory }).then(() => setDraft(null)) },
-      onError: () => showToast(m.provider_cost_budget_save_failed(), 4000, 'error'),
+      onSuccess: () => { void qc.invalidateQueries({ queryKey: keys.providerCostHistory }).then(settle) },
+      onError: () => { settle(); showToast(m.provider_cost_budget_save_failed(), 4000, 'error') },
     })
   }
   const value = draft ?? (budget === null ? '' : budget.toFixed(2))
@@ -58,12 +60,12 @@ export function OpenRouterCost() {
       ) : (
         <div className="text-[11px] text-muted">{m.provider_cost_not_enough_data()}</div>
       )}
-      <form className="flex flex-wrap items-center gap-2" onSubmit={(e) => { e.preventDefault(); const n = Number.parseFloat(value); if (Number.isFinite(n) && n > 0) saveBudget(n) }}>
+      <form className="flex flex-wrap items-center gap-2" onSubmit={(e) => { e.preventDefault(); const n = Number.parseFloat(value); if (Number.isFinite(n) && n > 0) saveBudget(n, value) }}>
         <label htmlFor="provider-cost-budget" className="text-xs text-muted">{m.provider_cost_budget_label()}</label>
         <span className="text-xs text-muted" aria-hidden="true">$</span>
         <div className="w-28"><TextInput id="provider-cost-budget" type="number" min="0.01" step="0.01" inputMode="decimal" value={value} placeholder={m.provider_cost_budget_placeholder()} onChange={(e) => setDraft(e.target.value)} /></div>
         <Button type="submit">{m.provider_cost_budget_set()}</Button>
-        {budget !== null && <Button variant="ghost" onClick={() => { setDraft(''); saveBudget(null) }}>{m.provider_cost_budget_clear()}</Button>}
+        {budget !== null && <Button variant="ghost" onClick={() => { setDraft(''); saveBudget(null, '') }}>{m.provider_cost_budget_clear()}</Button>}
       </form>
       {budget !== null && level && h.budget_percent !== null && h.budget_percent !== undefined && (
         <div className="flex items-center gap-2" data-budget-level={level}>

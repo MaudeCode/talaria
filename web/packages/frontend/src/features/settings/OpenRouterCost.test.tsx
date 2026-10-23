@@ -10,6 +10,8 @@ vi.mock('../../api/endpoints', () => ({ fetchOpenRouterCostHistory: vi.fn(), sav
 vi.mock('../toast/toast', () => ({ showToast: vi.fn() }))
 import * as api from '../../api/endpoints'
 import { OpenRouterCost } from './OpenRouterCost'
+import { showToast } from '../toast/toast'
+import { ApiError } from '../../contracts/common'
 
 /** The server's real response for six seeded days plus today, with a $42.37 budget (pinned by the server test). */
 const fixture = ProviderCostHistorySchema.parse((JSON.parse(readFileSync(join(import.meta.dirname, '../../contracts/__fixtures__/live/provider_cost_history.json'), 'utf8')) as { body: unknown }).body)
@@ -87,5 +89,32 @@ describe('OpenRouter cost card', () => {
     await waitFor(() => expect(api.saveSettings).toHaveBeenCalledWith({ provider_cost_budget: 42 }))
     expect(input).toHaveValue(42)
     expect(screen.getByRole('button', { name: 'Set' })).toBeEnabled()
+  })
+
+  it('keeps a budget typed during the save once it confirms (TAL-1384)', async () => {
+    vi.mocked(api.fetchOpenRouterCostHistory).mockResolvedValue(fixture)
+    let answer!: (value: unknown) => void
+    vi.mocked(api.saveSettings).mockReturnValue(new Promise((resolve) => { answer = resolve }) as never)
+    renderCost()
+    const input = await screen.findByLabelText('Monthly budget')
+    await userEvent.clear(input)
+    await userEvent.type(input, '42{Enter}')
+    await waitFor(() => expect(api.saveSettings).toHaveBeenCalledWith({ provider_cost_budget: 42 }))
+    await userEvent.type(input, '5')
+    vi.mocked(api.fetchOpenRouterCostHistory).mockResolvedValue({ ...fixture, monthly_budget: 42 })
+    answer({ provider_cost_budget: 42 })
+    await waitFor(() => expect(api.fetchOpenRouterCostHistory).toHaveBeenCalledTimes(2))
+    expect(input).toHaveValue(425)
+  })
+
+  it('returns to the saved budget with the error when the save is refused (TAL-1384)', async () => {
+    vi.mocked(api.fetchOpenRouterCostHistory).mockResolvedValue(fixture)
+    vi.mocked(api.saveSettings).mockRejectedValue(new ApiError({ kind: 'http', status: 400, path: '/api/settings', message: 'Budget refused' }))
+    renderCost()
+    const input = await screen.findByLabelText('Monthly budget')
+    await userEvent.clear(input)
+    await userEvent.type(input, '7{Enter}')
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('Failed to save budget', 4000, 'error'))
+    expect(input).toHaveValue(42.37)
   })
 })
