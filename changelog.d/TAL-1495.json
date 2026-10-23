@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Sign in to a Nous account from the free tier with newer Hermes Agent releases.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
