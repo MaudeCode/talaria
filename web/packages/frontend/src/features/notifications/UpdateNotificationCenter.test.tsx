@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { useEffect } from 'react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { focusManager, notifyManager, onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { UpdateNotification, UpdateNotifications } from '../../contracts'
 
 vi.mock('../../api/endpoints', () => ({
@@ -15,7 +16,7 @@ vi.mock('@tanstack/react-router', () => ({ useNavigate: () => vi.fn() }))
 vi.mock('../toast/toast', () => ({ dismissToast: vi.fn(), removeToast: vi.fn(), showRichToast: vi.fn(), showToast: vi.fn() }))
 vi.mock('../notices/ServerStoppedOverlay', () => ({ ServerStoppedOverlay: () => null }))
 import * as api from '../../api/endpoints'
-import { UpdateNotificationCenterButton, UpdateNotificationProvider, useUpdateProgress } from './UpdateNotificationCenter'
+import { UpdateNotificationCenterButton, UpdateNotificationProvider, useUpdateProgress, type UpdateProgress } from './UpdateNotificationCenter'
 import { ApiError } from '../../contracts/common'
 
 type Step = UpdateNotification['steps'][number]
@@ -205,5 +206,155 @@ describe('notification writes show their result at once (TAL-1179)', () => {
     await act(async () => { answer({ ...list(), notifications: server.rows }); await Promise.resolve() })
     expect(await dialog.findByText('Second')).toBeInTheDocument()
     expect(dialog.queryByText('First')).toBeNull()
+  })
+})
+
+describe('adaptive notification polling (TAL-1246)', () => {
+  let progress: UpdateProgress | null
+  function Controls() {
+    const current = useUpdateProgress()
+    useEffect(() => { progress = current }, [current])
+    return <UpdateNotificationCenterButton placement="rail" />
+  }
+  async function advance(ms = 0) {
+    await act(async () => { await vi.advanceTimersByTimeAsync(ms) })
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+  }
+  async function mount() {
+    qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+    render(<QueryClientProvider client={qc}><UpdateNotificationProvider><Controls /></UpdateNotificationProvider></QueryClientProvider>)
+    await advance()
+    expect(api.fetchUpdateNotifications).toHaveBeenCalledOnce()
+  }
+  beforeEach(() => { vi.useFakeTimers(); notifyManager.setScheduler(queueMicrotask); focusManager.setFocused(true); onlineManager.setOnline(true) })
+  afterEach(() => {
+    cleanup()
+    qc?.clear()
+    focusManager.setFocused(undefined)
+    onlineManager.setOnline(true)
+    notifyManager.setScheduler((callback) => { setTimeout(callback, 0) })
+    vi.useRealTimers()
+  })
+
+  it('backs off while idle and still discovers external notifications on the fallback', async () => {
+    await mount()
+    await advance(29_999)
+    expect(api.fetchUpdateNotifications).toHaveBeenCalledOnce()
+    server.rows = [record({ active: true })]
+    await advance(1)
+    expect(api.fetchUpdateNotifications).toHaveBeenCalledTimes(2)
+    expect(updating('Hermes Agent')).toBeVisible()
+    await advance(2_000)
+    expect(api.fetchUpdateNotifications).toHaveBeenCalledTimes(3)
+  })
+
+  it.each([
+    { active: true, presents_dialog: false },
+    { active: false, presents_dialog: true },
+  ])('keeps server flags authoritative for cadence: %j', async (flags) => {
+    server.rows = [record(flags)]
+    await mount()
+    await advance(2_000)
+    expect(api.fetchUpdateNotifications).toHaveBeenCalledTimes(2)
+    expect(updating('Hermes Agent') !== null).toBe(flags.presents_dialog)
+  })
+
+  it('fetches immediately on begin and follows active, restart and terminal server states', async () => {
+    await mount()
+    act(() => { progress!.begin('agent') })
+    await advance()
+    expect(api.fetchUpdateNotifications).toHaveBeenCalledTimes(2)
+    expect(updating('Hermes Agent')).toHaveTextContent('Starting the update')
+    server.tabUpdate = record({ active: true })
+    await advance(2_000)
+    expect(api.fetchUpdateNotifications).toHaveBeenCalledTimes(3)
+    server.tabUpdate = record({ active: true, phase: 'restarting' })
+    await advance(2_000)
+    expect(api.fetchUpdateNotifications).toHaveBeenCalledTimes(4)
+    server.tabUpdate = record({ active: false, phase: 'failed', presents_dialog: false, dialog_close: 'close' })
+    await advance(2_000)
+    expect(api.fetchUpdateNotifications).toHaveBeenCalledTimes(5)
+    fireEvent.click(within(updating('Hermes Agent')!).getByRole('button', { name: 'Close' }))
+    await advance(29_999)
+    expect(api.fetchUpdateNotifications).toHaveBeenCalledTimes(5)
+    await advance(1)
+    expect(api.fetchUpdateNotifications).toHaveBeenCalledTimes(6)
+  })
+
+  it('rechecks on inbox open and uses fast polling until it closes', async () => {
+    await mount()
+    fireEvent.click(screen.getByRole('button', { name: 'Notifications' }))
+    await advance()
+    expect(api.fetchUpdateNotifications).toHaveBeenCalledTimes(2)
+    await advance(2_000)
+    expect(api.fetchUpdateNotifications).toHaveBeenCalledTimes(3)
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Notifications' })).getByRole('button', { name: 'Close' }))
+    await advance(29_999)
+    expect(api.fetchUpdateNotifications).toHaveBeenCalledTimes(3)
+    await advance(1)
+    expect(api.fetchUpdateNotifications).toHaveBeenCalledTimes(4)
+  })
+
+  it.each(['network', 'timeout', 'http'] as const)('keeps an unknown %s start fast through failed reads and recovers without replaying the write', async (kind) => {
+    await mount()
+    act(() => { progress!.begin('agent') })
+    await advance()
+    vi.mocked(api.fetchUpdateNotifications).mockRejectedValue(new Error('Server restarting'))
+    act(() => { progress!.settle('agent', { failure: new ApiError({ kind, status: kind === 'http' ? 500 : 0, path: '/x', message: 'Lost connection' }) }) })
+    await advance()
+    expect(updating('Hermes Agent')).toHaveTextContent(/reconnect/i)
+    const before = vi.mocked(api.fetchUpdateNotifications).mock.calls.length
+    await advance(2_000)
+    expect(api.fetchUpdateNotifications).toHaveBeenCalledTimes(before + 1)
+    server.tabUpdate = record({ active: true, phase: 'verifying' })
+    vi.mocked(api.fetchUpdateNotifications).mockImplementation(() => Promise.resolve(list()))
+    await advance(2_000)
+    expect(updating('Hermes Agent')).toHaveTextContent('Agent responding')
+    expect(api.performUpdateNotificationAction).not.toHaveBeenCalled()
+  })
+
+  it('returns a definite start refusal to idle polling after the immediate settle read', async () => {
+    await mount()
+    act(() => { progress!.begin('agent') })
+    await advance()
+    act(() => { progress!.settle('agent', { failure: new ApiError({ kind: 'http', status: 409, path: '/x', message: 'Update refused' }) }) })
+    await advance()
+    expect(updating('Hermes Agent')).toHaveTextContent('Update refused')
+    const before = vi.mocked(api.fetchUpdateNotifications).mock.calls.length
+    await advance(29_999)
+    expect(api.fetchUpdateNotifications).toHaveBeenCalledTimes(before)
+    await advance(1)
+    expect(api.fetchUpdateNotifications).toHaveBeenCalledTimes(before + 1)
+  })
+
+  it.each([false, true])('suppresses hidden and offline polls with active=%s and immediately refreshes on focus and reconnect', async (active) => {
+    if (active) server.tabUpdate = record({ active: true })
+    await mount()
+    act(() => { focusManager.setFocused(false) })
+    await advance(60_000)
+    expect(api.fetchUpdateNotifications).toHaveBeenCalledOnce()
+    act(() => { focusManager.setFocused(true) })
+    await advance()
+    expect(api.fetchUpdateNotifications).toHaveBeenCalledTimes(2)
+    act(() => { onlineManager.setOnline(false) })
+    await advance(60_000)
+    expect(api.fetchUpdateNotifications).toHaveBeenCalledTimes(2)
+    act(() => { onlineManager.setOnline(true) })
+    await advance()
+    expect(api.fetchUpdateNotifications).toHaveBeenCalledTimes(3)
+    act(() => { focusManager.setFocused(false); focusManager.setFocused(true) })
+    await advance()
+    expect(api.fetchUpdateNotifications).toHaveBeenCalledTimes(4)
+  })
+
+  it('immediately rechecks on service-worker takeover', async () => {
+    const worker = new EventTarget()
+    Object.defineProperty(navigator, 'serviceWorker', { configurable: true, value: worker })
+    try {
+      await mount()
+      act(() => { worker.dispatchEvent(new Event('controllerchange')) })
+      await advance()
+      expect(api.fetchUpdateNotifications).toHaveBeenCalledTimes(2)
+    } finally { cleanup(); Reflect.deleteProperty(navigator, 'serviceWorker') }
   })
 })

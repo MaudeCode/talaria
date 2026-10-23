@@ -4,7 +4,7 @@ import { expect, settle, test } from './fixtures'
 import { updatesCheckView } from '../../server/dist/tools/updates.js'
 
 // Service-worker requests bypass page routing; these fixtures own every update response and never install anything.
-test.use({ serviceWorkers: 'block' })
+test.use({ serviceWorkers: 'block', video: 'on' })
 
 type Phase = 'applying' | 'awaiting_confirmation' | 'restarting' | 'succeeded' | 'blocked' | 'failed' | 'unknown'
 const MESSAGES: Record<Phase, string> = {
@@ -146,6 +146,7 @@ test('a dropped Web update keeps the dialog reconnecting, then shows the server 
 })
 
 test('an unverifiable outcome says so and checks again without starting another update', async ({ page, errors }, testInfo) => {
+  await page.clock.install()
   const server = await serveNotifications(page)
   await serveUpdatesCheck(page, { web: 1, agent: 1 })
   let applies = 0
@@ -165,6 +166,7 @@ test('an unverifiable outcome says so and checks again without starting another 
   expect(server.reads).toBeGreaterThan(reads)
   // The server keeps the apply's own explanation on the record; the dialog shows it, line breaks included.
   server.tabUpdate = { ...record(WEB_ID, 'failed'), detail: 'npm run build failed.\nRun `npm ci` in web/ and press Update again.', updated_at: '2026-09-27T12:20:00Z' }
+  await page.clock.runFor(30_000)
   await expect(dialog).toContainText('npm run build failed.')
   await expect(dialog.getByText(/Run `npm ci` in web\//)).toBeVisible()
   expect(await dialog.getByText(/Run `npm ci` in web\//).evaluate((node) => getComputedStyle(node).whiteSpace)).toBe('pre-line')
@@ -174,6 +176,7 @@ test('an unverifiable outcome says so and checks again without starting another 
 })
 
 test('an update in progress keeps its dialog open, across a reload, until the server stops presenting it', async ({ page }) => {
+  await page.clock.install()
   const server = await serveNotifications(page)
   await serveUpdatesCheck(page, { web: 1, agent: 0 })
   await page.route('**/api/updates/apply', async (route) => {
@@ -192,17 +195,20 @@ test('an update in progress keeps its dialog open, across a reload, until the se
   await settle(page)
   await expect(dialog.locator('[aria-current="step"]')).toHaveText('Installing')
   server.tabUpdate = { ...record(WEB_ID, 'failed'), detail: 'npm run build failed.' }
+  await page.clock.runFor(30_000)
   await expect(dialog).toContainText('npm run build failed.')
   await dialog.getByRole('button', { name: 'Close', exact: true }).click()
   await expect(dialog).toBeHidden()
   await page.reload()
   await settle(page)
   const after = server.reads
+  await page.clock.runFor(60_000)
   await expect.poll(() => server.reads).toBeGreaterThan(after + 1)
   await expect(dialog).toBeHidden()
 })
 
 test('rejoining the gateway wait the tab already follows shows it even when the response is lost', async ({ page, errors }, testInfo) => {
+  await page.clock.install()
   const server = await serveNotifications(page)
   await serveUpdatesCheck(page, { web: 0, agent: 1 })
   const WAIT_ID = '00000000-0000-4000-8000-000000000120'
@@ -232,6 +238,7 @@ test('rejoining the gateway wait the tab already follows shows it even when the 
   await page.getByRole('button', { name: 'Update Agent', exact: true }).click()
   await expect(dialog.locator('[aria-current="step"]')).toHaveText('Waiting for 2 gateway tasks')
   const reads = server.reads
+  await page.clock.runFor(60_000)
   await expect.poll(() => server.reads).toBeGreaterThan(reads + 1)
   await expect(dialog.getByRole('status')).not.toContainText('could not be verified')
   await expect(dialog.getByRole('button')).toHaveText(['Restart later', 'Restart now'])
@@ -359,4 +366,55 @@ test('legacy dashboard confirmation supports cancel, retry and update continuati
   expect(await page.locator('.notification-toast').filter({ hasText: 'Active dashboard work may be interrupted' }).count()).toBe(0)
   await page.screenshot({ path: testInfo.outputPath('after-legacy-completed.png') })
   expect(applies).toHaveLength(4)
+})
+
+
+test.describe('adaptive notification cadence', () => {
+  test('idle discovery, open inbox and update progress keep the same visible outcomes (TAL-1246)', async ({ page }, testInfo) => {
+    await page.clock.install()
+    const server = await serveNotifications(page)
+    await serveUpdatesCheck(page, { web: 1, agent: 0 })
+    await page.route('**/api/updates/apply', (route) => {
+      server.tabUpdate = record(WEB_ID, 'applying')
+      return route.fulfill({ json: { ok: true, notification_id: WEB_ID } })
+    })
+    await page.goto('/settings/system')
+    await settle(page)
+    const idleReads = server.reads
+    await page.clock.runFor(20_000)
+    expect(server.reads).toBe(idleReads)
+    server.tabUpdate = { ...record(WEB_ID, 'failed'), unread: false }
+    await page.clock.runFor(10_000)
+    await expect.poll(() => server.reads).toBe(idleReads + 1)
+    const dialog = page.getByRole('dialog', { name: 'Updating Talaria Web' })
+    await expect(dialog).toBeHidden()
+    await page.getByRole('button', { name: 'Notifications', exact: true }).click()
+    const inbox = page.getByRole('dialog', { name: 'Notifications', exact: true })
+    await expect(inbox).toContainText(MESSAGES.failed)
+    await page.clock.runFor(4_500)
+    await page.screenshot({ path: testInfo.outputPath('polling-inbox.png') })
+    const openReads = server.reads
+    await page.clock.runFor(2_000)
+    await expect.poll(() => server.reads).toBeGreaterThan(openReads)
+    await inbox.getByRole('button', { name: 'Close', exact: true }).click()
+    const closedReads = server.reads
+    await page.clock.runFor(20_000)
+    expect(server.reads).toBe(closedReads)
+
+    await page.getByRole('button', { name: 'Update Web', exact: true }).click()
+    await expect(dialog.locator('[aria-current="step"]')).toHaveText('Installing')
+    await page.screenshot({ path: testInfo.outputPath('polling-active.png') })
+    server.tabUpdate = record(WEB_ID, 'restarting')
+    await page.clock.runFor(2_000)
+    await expect(dialog.locator('[aria-current="step"]')).toHaveText('Restarting Talaria Web')
+    server.tabUpdate = record(WEB_ID, 'failed')
+    await page.clock.runFor(2_000)
+    await expect(dialog).toContainText(MESSAGES.failed)
+    await page.screenshot({ path: testInfo.outputPath('polling-terminal.png') })
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+    const finishedReads = server.reads
+    await page.clock.runFor(20_000)
+    expect(server.reads).toBe(finishedReads)
+    await expect(dialog).toBeHidden()
+  })
 })

@@ -73,6 +73,7 @@ test('Agent recovery preserves failed update history in the shared notification 
 })
 
 test('server notification interactions preserve canonical read, clear, action, scope, and lifecycle behavior', async ({ page }, testInfo) => {
+  await page.clock.install()
   let scopeID = 'scope-a'
   let records: NotificationRow[] = []
   const readIDs: string[] = []
@@ -116,6 +117,7 @@ test('server notification interactions preserve canonical read, clear, action, s
   await settle(page)
 
   records = [row('00000000-0000-4000-8000-000000000001', { title: 'Dismiss me' })]
+  await page.clock.runFor(30_000)
   const dismissedPopup = page.locator('.notification-toast').filter({ hasText: 'Dismiss me' })
   await expect(dismissedPopup).toBeVisible()
   await dismissedPopup.getByRole('button', { name: 'Dismiss', exact: true }).click()
@@ -124,6 +126,7 @@ test('server notification interactions preserve canonical read, clear, action, s
   expect(records[0]?.unread).toBe(false)
 
   records = [row('00000000-0000-4000-8000-000000000002', { title: 'Expire unread' })]
+  await page.clock.runFor(30_000)
   const expiredPopup = page.locator('.notification-toast').filter({ hasText: 'Expire unread' })
   await expect(expiredPopup).toBeVisible()
   await expect(expiredPopup).toBeHidden({ timeout: 8_000 })
@@ -135,6 +138,7 @@ test('server notification interactions preserve canonical read, clear, action, s
     requires_interaction: true, can_dismiss: false,
   })
   records = [urgent]
+  await page.clock.runFor(30_000)
   const urgentPopup = page.locator('.notification-toast').filter({ hasText: 'Action required' })
   await expect(urgentPopup).toBeVisible()
   await urgentPopup.getByRole('button', { name: 'Open System settings', exact: true }).click()
@@ -170,6 +174,7 @@ test('server notification interactions preserve canonical read, clear, action, s
 
   const lifecycle = row('00000000-0000-4000-8000-000000000006', { kind: 'update', target: 'webui', phase: 'applying', active: true, title: 'Talaria Web update', message: 'Installing.' })
   records = [lifecycle]
+  await page.clock.runFor(30_000)
   const lifecyclePopup = page.locator('.notification-toast').filter({ hasText: 'Talaria Web update' })
   await expect(lifecyclePopup).toContainText('Installing.')
   records = [{ ...lifecycle, phase: 'succeeded', active: false, message: 'Talaria Web was updated successfully.', updated_at: '2026-09-26T12:02:00Z' }]
@@ -179,6 +184,7 @@ test('server notification interactions preserve canonical read, clear, action, s
     const title = target === 'webui' ? 'Talaria Web update' : 'Hermes Agent update'
     records = [{ ...lifecycle, id: target === 'webui' ? lifecycle.id : '00000000-0000-4000-8000-000000000007', target, title, phase: 'failed', active: false, severity: 'critical', destination: null,
       message: 'The update could not be completed.', detail: 'Build failed.\nTry again.', updated_at: '2026-09-26T12:03:00Z' }]
+    await page.clock.runFor(30_000)
     const popup = page.locator('.notification-toast').filter({ hasText: title })
     await expect(popup).toContainText('The update could not be completed.')
     await expect(popup.getByRole('button', { name: 'Open System settings', exact: true })).toHaveCount(0)
