@@ -1475,6 +1475,97 @@ describe('MCP health prober', () => {
     await prober.settle()
     expect(prober.refreshAndRead(servers).one).toMatchObject({ pending: true, health: 'healthy' })
   })
+
+  describe('SSE initialize replies', () => {
+    const enc = new TextEncoder()
+    const INIT_OK = '{"jsonrpc":"2.0","id":"hermes-webui-health","result":{"protocolVersion":"2025-06-18","serverInfo":{"name":"ℳcp ✓"}}}'
+    const NOTIFY = 'event: message\ndata: {"jsonrpc":"2.0","method":"notifications/message","params":{"level":"info"}}\n\n'
+    const sseServer = (chunks: (string | Uint8Array)[], opts: { open?: boolean; pull?: (c: ReadableStreamDefaultController<Uint8Array>) => void } = {}) => {
+      const state = { cancelled: false, calls: [] as { method: string; headers: Record<string, string> }[] }
+      const f: typeof fetch = (_input, init) => {
+        state.calls.push({ method: init?.method ?? 'GET', headers: (init?.headers ?? {}) as Record<string, string> })
+        if (init?.method === 'DELETE') return Promise.resolve(new Response(null, { status: 204 }))
+        const body = new ReadableStream<Uint8Array>({
+          start(c) { for (const chunk of chunks) c.enqueue(typeof chunk === 'string' ? enc.encode(chunk) : chunk); if (!opts.open && !opts.pull) c.close() },
+          ...(opts.pull ? { pull: opts.pull } : {}),
+          cancel() { state.cancelled = true },
+        })
+        return Promise.resolve(new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream', 'mcp-session-id': 'sess-sse' } }))
+      }
+      return { f, state }
+    }
+    const probeAfter = async (f: typeof fetch, ms: number) => {
+      let verdict: [string, string] | undefined
+      void probeServer({ url: 'https://synthetic.invalid/mcp' }, f).then((v) => { verdict = v })
+      await vi.advanceTimersByTimeAsync(ms)
+      return verdict
+    }
+
+    it('finishes on the matching frame without waiting for EOF and releases the body, timer, and probe slot', async () => {
+      vi.useFakeTimers()
+      try {
+        const server = sseServer([NOTIFY, `event: message\ndata: ${INIT_OK}\n\n`], { open: true })
+        expect(await probeAfter(server.f, 1)).toEqual(['healthy', 'HTTP 200'])
+        expect(server.state.cancelled).toBe(true)
+        expect(vi.getTimerCount()).toBe(0)
+        expect(server.state.calls.map((c) => c.method)).toEqual(['POST', 'DELETE'])
+        expect(server.state.calls[1]?.headers).toMatchObject({ 'Mcp-Session-Id': 'sess-sse', 'MCP-Protocol-Version': '2025-06-18' })
+
+        const prober = new McpHealthProber({ fetch: () => sseServer([`data: ${INIT_OK}\n\n`], { open: true }).f, now: () => 1000, log: () => undefined })
+        expect(prober.refreshAndRead({ one: { url: 'https://synthetic.invalid/mcp' } }).one).toEqual({ pending: true })
+        await vi.advanceTimersByTimeAsync(1)
+        expect(prober.refreshAndRead({ one: { url: 'https://synthetic.invalid/mcp' } }).one).toMatchObject({ health: 'healthy', pending: false })
+      } finally { vi.useRealTimers() }
+    })
+
+    it('skips comments, notifications, server requests, and unrelated ids before the matching reply', async () => {
+      const body = [': heartbeat\n\n', NOTIFY, 'data: {"jsonrpc":"2.0","id":7,"method":"ping"}\n\n', 'data: {"jsonrpc":"2.0","id":"other","result":{"protocolVersion":"2025-06-18"}}\n\n', 'data: {"jsonrpc":"2.0","id":"other","error":{"message":"not ours"}}\n\n', `id: 4\nevent: message\ndata: ${INIT_OK}\n\n`]
+      expect(await probeServer({ url: 'https://synthetic.invalid/mcp' }, sseServer(body).f)).toEqual(['healthy', 'HTTP 200'])
+    })
+
+    it('reassembles split UTF-8, CRLF across chunk boundaries, and multiline data', async () => {
+      const frame = enc.encode(`: ping\r\n\r\n${NOTIFY.replaceAll('\n', '\r\n')}event: message\r\ndata: {"jsonrpc":"2.0",\r\ndata:"id":"hermes-webui-health",\r\ndata: "result":{"protocolVersion":"2025-06-18","serverInfo":{"name":"ℳcp ✓"}}}\r\n\r\n`)
+      const bytes = [...frame].map((b) => Uint8Array.of(b))
+      const server = sseServer(bytes, { open: true })
+      expect(await probeServer({ url: 'https://synthetic.invalid/mcp' }, server.f)).toEqual(['healthy', 'HTTP 200'])
+      expect(server.state.cancelled).toBe(true)
+    })
+
+    it('classifies a matching JSON-RPC error frame as rejected', async () => {
+      const body = [NOTIFY, 'data: {"jsonrpc":"2.0","id":"hermes-webui-health","error":{"code":-32600,"message":"boom"}}\n\n']
+      expect(await probeServer({ url: 'https://synthetic.invalid/mcp' }, sseServer(body, { open: true }).f)).toEqual(['unhealthy', 'initialize rejected: boom'])
+    })
+
+    it('reports unknown for malformed, truncated, or reply-less streams', async () => {
+      for (const body of [['data: {not json}\n\n'], [NOTIFY, 'data: {"jsonrpc":"2.0","id":"hermes-webui-health","res'], [NOTIFY], []]) {
+        expect(await probeServer({ url: 'https://synthetic.invalid/mcp' }, sseServer(body).f)).toEqual(['unknown', 'unexpected initialize reply'])
+      }
+      // A final event without its blank-line terminator still counts once the stream closes.
+      expect(await probeServer({ url: 'https://synthetic.invalid/mcp' }, sseServer([NOTIFY, `data: ${INIT_OK}`]).f)).toEqual(['healthy', 'HTTP 200'])
+    })
+
+    it('stops at the byte budget when the stream never sends the reply', async () => {
+      const server = sseServer([], { pull: (c) => { c.enqueue(enc.encode(NOTIFY.repeat(64))) } })
+      expect(await probeServer({ url: 'https://synthetic.invalid/mcp' }, server.f)).toEqual(['unknown', 'unexpected initialize reply'])
+      expect(server.state.cancelled).toBe(true)
+    })
+
+    it('times out at the probe deadline, releases the body, and skips cleanup with no budget left', async () => {
+      vi.useFakeTimers()
+      try {
+        const server = sseServer([NOTIFY], { open: true })
+        let verdict: [string, string] | undefined
+        void probeServer({ url: 'https://synthetic.invalid/mcp' }, server.f).then((v) => { verdict = v })
+        await vi.advanceTimersByTimeAsync(7999)
+        expect(verdict).toBeUndefined()
+        await vi.advanceTimersByTimeAsync(1)
+        expect(verdict).toEqual(['unknown', 'unexpected initialize reply'])
+        expect(server.state.cancelled).toBe(true)
+        expect(vi.getTimerCount()).toBe(0)
+        expect(server.state.calls.map((c) => c.method)).toEqual(['POST'])
+      } finally { vi.useRealTimers() }
+    })
+  })
 })
 
 describe('agent health', () => {
