@@ -188,7 +188,9 @@ struct ChatTranscriptView: View {
                         guard !Task.isCancelled, let revision = readyRevision, readyScrollRevision == revision,
                               revision == nativeScrollRevision,
                               let destination = scrollDestination else { return }
-                        readyScrollRevision = nil
+                        // A ready command has a unique revision. Resetting its
+                        // own task ID adds a second change in the same frame and
+                        // can prevent SwiftUI from starting the next command.
                         performScroll(to: destination.id, anchor: destination.anchor,
                                       animation: destination.animation, using: proxy)
                     }
