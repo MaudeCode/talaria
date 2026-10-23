@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, render, fireEvent } from '@testing-library/react'
+import terminalFixture from '../../../../../../contracts/fixtures/native-captured-command.json'
 
+const webStart = { ...terminalFixture.web_target, session_id: 's1', workspace: '/w' }
 const noop = () => undefined
 vi.mock('@xterm/xterm', () => ({
   Terminal: class {
@@ -44,12 +46,12 @@ describe('TerminalPanel', () => {
     vi.mocked(post).mockImplementation((path: string) => path === 'api/terminal/start' ? new Promise((resolve) => { resolveStart = resolve }) : Promise.resolve({}))
     const { unmount } = render(<TerminalPanel sessionId="s1" workspace="/w" onClose={noop} />)
     unmount()
-    await act(async () => { resolveStart({ ok: true, running: true }); await new Promise((r) => setTimeout(r, 0)) })
+    await act(async () => { resolveStart(webStart); await new Promise((r) => setTimeout(r, 0)) })
     expect(opened).toEqual([])
   })
 
   it('opens the terminal stream once start succeeds', async () => {
-    vi.mocked(post).mockResolvedValue({ ok: true, running: true })
+    vi.mocked(post).mockResolvedValue(webStart)
     render(<TerminalPanel sessionId="s1" workspace="/w" onClose={noop} />)
     await act(async () => { await new Promise((r) => setTimeout(r, 0)) })
     expect(opened).toHaveLength(1)
@@ -58,7 +60,7 @@ describe('TerminalPanel', () => {
 })
 
 it('closes the panel at once, before the server stops the shell (TAL-1179)', async () => {
-  vi.mocked(post).mockImplementation((path: string) => path === 'api/terminal/close' ? new Promise(() => undefined) : Promise.resolve({ ok: true, running: true }))
+  vi.mocked(post).mockImplementation((path: string) => path === 'api/terminal/close' ? new Promise(() => undefined) : Promise.resolve(webStart))
   const onClose = vi.fn()
   const view = render(<TerminalPanel sessionId="s1" workspace="/w" onClose={onClose} />)
   await act(async () => { await new Promise((r) => setTimeout(r, 0)) })
@@ -70,7 +72,7 @@ it('closes the panel at once, before the server stops the shell (TAL-1179)', asy
 it('reopens the panel with the error when closing is refused, and asks again after an unknown outcome (TAL-1383)', async () => {
   const { ApiError } = await import('../../contracts/common')
   const onClose = vi.fn(), onReopen = vi.fn()
-  vi.mocked(post).mockImplementation((path: string) => path === 'api/terminal/close' ? Promise.reject(new ApiError({ kind: 'http', status: 403, path, message: 'Sign in again' })) : Promise.resolve({ ok: true, running: true }))
+  vi.mocked(post).mockImplementation((path: string) => path === 'api/terminal/close' ? Promise.reject(new ApiError({ kind: 'http', status: 403, path, message: 'Sign in again' })) : Promise.resolve(webStart))
   const view = render(<TerminalPanel sessionId="s1" workspace="/w" onClose={onClose} onReopen={onReopen} />)
   await act(async () => { await new Promise((r) => setTimeout(r, 0)) })
   await act(async () => { view.getByRole('button', { name: 'Close' }).click(); await new Promise((r) => setTimeout(r, 0)) })
@@ -79,7 +81,7 @@ it('reopens the panel with the error when closing is refused, and asks again aft
   view.unmount()
   vi.mocked(post).mockReset()
   let closes = 0
-  vi.mocked(post).mockImplementation((path: string) => path === 'api/terminal/close' ? (++closes === 1 ? Promise.reject(new ApiError({ kind: 'network', path, message: 'lost' })) : Promise.resolve({ ok: true, closed: true })) : Promise.resolve({ ok: true, running: true }))
+  vi.mocked(post).mockImplementation((path: string) => path === 'api/terminal/close' ? (++closes === 1 ? Promise.reject(new ApiError({ kind: 'network', path, message: 'lost' })) : Promise.resolve({ ok: true, closed: true })) : Promise.resolve(webStart))
   const again = render(<TerminalPanel sessionId="s1" workspace="/w" onClose={onClose} onReopen={onReopen} />)
   await act(async () => { await new Promise((r) => setTimeout(r, 0)) })
   await act(async () => { again.getByRole('button', { name: 'Close' }).click(); await new Promise((r) => setTimeout(r, 0)) })
@@ -89,7 +91,7 @@ it('reopens the panel with the error when closing is refused, and asks again aft
 
 it('requires an explicit captured command, never opens a PTY stream and never retries a lost ACK', async () => {
   vi.mocked(post).mockImplementation((path: string) => path === 'api/terminal/start'
-    ? Promise.resolve({ ok: true, running: false, mode: 'owner_command', workspace: '/frozen/native', target_key: 'owner-key' })
+    ? Promise.resolve({ ...terminalFixture.target, session_id: 'native', workspace: '/frozen/native', target_key: 'owner-key' })
     : Promise.reject(new Error('Connection lost. Outcome unknown.')))
   const view = render(<TerminalPanel sessionId="native" workspace="/w" onClose={noop} />)
   const input = await view.findByRole('textbox', { name: 'Captured command' })
@@ -106,12 +108,24 @@ it('requires an explicit captured command, never opens a PTY stream and never re
 it('uses the server-selected mode on restart without reconnecting a former host PTY', async () => {
   let starts = 0
   vi.mocked(post).mockImplementation((path: string) => Promise.resolve(path === 'api/terminal/start' && ++starts === 2
-    ? { ok: true, running: false, mode: 'owner_command', workspace: '/frozen/native', target_key: 'new-owner' }
-    : { ok: true, running: true }))
+    ? { ...terminalFixture.target, session_id: 's1', workspace: '/frozen/native', target_key: 'new-owner' }
+    : webStart))
   const view = render(<TerminalPanel sessionId="s1" workspace="/w" onClose={noop} />)
   await act(async () => { await Promise.resolve() })
   expect(opened).toHaveLength(1)
   await act(async () => { view.getByRole('button', { name: 'Restart' }).click(); await Promise.resolve() })
   expect(await view.findByRole('textbox', { name: 'Captured command' })).toBeVisible()
   expect(opened).toHaveLength(1)
+})
+
+it('refuses startup without a server-declared terminal mode instead of opening a host stream', async () => {
+  const client = await vi.importActual<typeof import('../../api/client')>('../../api/client')
+  client.configureClient({ transport: () => Promise.resolve(new Response(JSON.stringify({ ok: true, running: true }), { headers: { 'content-type': 'application/json' } })) })
+  vi.mocked(post).mockImplementation(client.post)
+  try {
+    const view = render(<TerminalPanel sessionId="s1" workspace="/w" onClose={noop} />)
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+    expect(opened).toEqual([])
+    expect(view.container.querySelector('#composerTerminalPanel')).toHaveAttribute('data-status', 'error')
+  } finally { client.resetClientForTests() }
 })

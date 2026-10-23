@@ -17,5 +17,12 @@
     "stdout": "/workspace/native\n",
     "stderr": "diagnostic\n",
     "code": 7
+  },
+  "web_target": {
+    "ok": true,
+    "mode": "web_pty",
+    "session_id": "web-terminal",
+    "workspace": "/workspace/web",
+    "running": true
   }
 }

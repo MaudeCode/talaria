@@ -254,8 +254,10 @@ it('parses the shared diagnostic execution mode fixtures the App renders (TAL-10
 
 it('pins the explicit native captured-command route and bounded result', async () => {
   const { automationContract, TerminalStartSchema, CapturedCommandResultSchema } = await import('./index.js')
-  const fixture = shared('fixtures/native-captured-command.json') as Record<'target' | 'command' | 'result', unknown>
+  const fixture = shared('fixtures/native-captured-command.json') as Record<'target' | 'web_target' | 'command' | 'result', unknown>
   expect(TerminalStartSchema.parse(fixture.target)).toEqual(fixture.target)
+  expect(TerminalStartSchema.parse(fixture.web_target)).toEqual(fixture.web_target)
+  expect(TerminalStartSchema.safeParse({ ok: true, running: true }).success).toBe(false)
   expect(automationContract.terminal.exec['~orpc'].inputSchema?.parse(fixture.command)).toEqual(fixture.command)
   expect(CapturedCommandResultSchema.parse(fixture.result)).toEqual(fixture.result)
   expect(CapturedCommandResultSchema.safeParse({ stdout: 'x'.repeat(8001), stderr: '', code: 0 }).success).toBe(false)

@@ -1,4 +1,4 @@
-import { CapturedCommandResultSchema, TerminalStartSchema } from '@maudecode/talaria-web-contracts'
+import { CapturedCommandResultSchema, TerminalStartSchema as StartSchema } from '@maudecode/talaria-web-contracts'
 import { useEffect, useRef, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
@@ -14,7 +14,6 @@ import { showErrorToast } from '../toast/errorToast'
 import { isDefiniteRefusal } from '../../contracts/common'
 import { TerminalPanelFrame } from './TerminalPanelFrame'
 
-const StartSchema = TerminalStartSchema.or(z.object({ mode: z.never().optional(), ok: z.boolean().optional(), running: z.boolean().optional(), error: z.string().optional(), message: z.string().optional() }))
 const OkSchema = z.looseObject({ ok: z.boolean().optional(), closed: z.boolean().optional(), error: z.string().optional() })
 
 /**
@@ -63,7 +62,6 @@ export function TerminalPanel({ sessionId, workspace, onClose, onReopen = () => 
       if (cancelled) return
       stream.current?.close(); stream.current = null
       mode.current = null
-      if ('error' in res && res.error) { setStatus('error'); t.writeln(res.error); return }
       if (restart) t.clear()
       if (res.mode === 'owner_command') {
         mode.current = 'owner_command'
