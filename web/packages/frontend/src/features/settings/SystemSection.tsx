@@ -28,7 +28,7 @@ import { markServerStopped } from '../notices/useRuntimeNotices'
 export function SystemSection() {
   const bootstrap = useBootstrap()
   const qc = useQueryClient()
-  const { settings, save, str, bool, set } = useSettingField()
+  const { settings, save, str, bool, set } = useSettingField(['update_channel', 'agent_update_channel', 'password_env_var', 'ignore_agent_updates', 'webui_version', 'check_for_updates', 'auto_apply_updates', 'agent_version', 'summarize_updates_automatically', 'password_auth_enabled', 'auth_enabled', 'auth_disabled_acknowledged'])
   const health = useQuery({ queryKey: keys.health.system, queryFn: api.fetchSystemHealth, staleTime: 30_000 })
   const agent = useQuery({ queryKey: keys.health.agent, queryFn: api.fetchAgentHealth, staleTime: 15_000 })
   const updates = useQuery({ queryKey: keys.updates.check, queryFn: () => api.fetchUpdatesCheck(), staleTime: 30_000, refetchInterval: 30_000 })

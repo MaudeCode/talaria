@@ -30,7 +30,7 @@ export function ProvidersSection() {
   const providers = useQuery({ queryKey: keys.providers, queryFn: api.fetchProviders, staleTime: 30_000 })
   // The server recomputes pace on every read (provider calls are cached 45 s), so a reset replaces an expired pace within a minute.
   const quotas = useQuery({ queryKey: keys.providerQuotas, queryFn: () => fetchQuotas(), staleTime: 60_000, refetchInterval: 60_000 })
-  const { str } = useSettingField()
+  const { str } = useSettingField(['default_model'])
   const setDefault = useSetDefaultModel()
   const chosenModel = useDefaultModelChoice()?.model
   const [editing, setEditing] = useState<string | null>(null)

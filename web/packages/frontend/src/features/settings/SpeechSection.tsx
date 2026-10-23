@@ -37,7 +37,7 @@ function Slider({ id, value, min, max, onChange, unit = '' }: { id: string; valu
 
 /** Read-aloud and auto-read are server settings; engine, voice, rate and pitch belong to this device. */
 export function SpeechSection() {
-  const { settings, bool, set } = useSettingField()
+  const { settings, bool, set } = useSettingField(['tts_enabled', 'tts_auto_read'])
   const engines = useTtsEngines()
   const voices = useBrowserVoices()
   const [engine, setEngine] = useDevicePref(TTS_PREF.engine, 'browser')

@@ -6,7 +6,7 @@ import * as api from '../api/endpoints'
 import { useResourceEffects, useResourceMutation } from '../features/sessions/useResourceMutation'
 import { showErrorToast } from '../features/toast/errorToast'
 
-export { useSettingsQuery, useSaveSettings } from './settings'
+export { useSettingsQuery, useSetting, useSaveSettings } from './settings'
 
 const toastError = (e: unknown) => showErrorToast(e)
 interface DefaultModel { model: string; provider?: string | null; advanced?: { service_tier: string } }

@@ -19,10 +19,9 @@ const TABS: Tab[] = [
 
 export function Tabbar() {
   useLocale()
-  const location = useLocation()
+  const active = useLocation({ select: (location) => panelForPath(location.pathname) })
   const navigate = useNavigate()
   const [open, setOpen] = useState<string | null>(null)
-  const active = panelForPath(location.pathname)
   useEffect(() => {
     if (!open) return
     const onDoc = (e: MouseEvent) => { const t = e.target as HTMLElement | null; if (!t?.closest('.tabbar-sheet') && !t?.closest('.tabbar-btn')) setOpen(null) }

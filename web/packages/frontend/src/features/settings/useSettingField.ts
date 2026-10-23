@@ -4,8 +4,8 @@ import { m } from '../../paraglide/messages.js'
 import { getStreamContext } from '../../stream/connection'
 
 /** Read confirmed settings with the shared, presentation-only pending field overlay. */
-export function useSettingField() {
-  const settings = useSettingsQuery()
+export function useSettingField(fields: readonly string[]) {
+  const settings = useSettingsQuery(fields)
   const save = useSaveSettings()
   const setAsync = (patch: Record<string, unknown>, onSuccess?: () => void) => {
     const context = getStreamContext()

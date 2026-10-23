@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { m } from '../../paraglide/messages.js'
 import { keys } from '../../api/queryKeys'
-import { useSaveSettings, useSettingsQuery } from '../../app/queries'
+import { useSaveSettings, useSetting } from '../../app/queries'
 import type { QuotaLevel, QuotaThresholds } from '../../contracts'
 import { Button } from '../../ui/Button'
 import { HelpTip, TextInput } from '../../ui/Field'
@@ -21,7 +21,7 @@ const FIELDS: [keyof QuotaThresholds, () => string, number, number, number][] = 
 /** TAL-411: the profile's `provider_quota_thresholds`; the server validates, clamps, and classifies quotas with them. Hidden on an older server. */
 export function QuotaThresholdsForm() {
   const qc = useQueryClient()
-  const stored = useSettingsQuery().data?.provider_quota_thresholds
+  const stored = useSetting('provider_quota_thresholds')
   const save = useSaveSettings()
   const [draft, setDraft] = useState<Partial<Record<keyof QuotaThresholds, string>>>({})
   if (!stored) return null

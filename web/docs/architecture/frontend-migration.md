@@ -178,6 +178,11 @@ late full responses cannot replace another field's confirmed write. Completion i
 the connection context and query-cache identity. Pending values never enter boot snapshots.
 Numeric TextInput drafts clear when their owning save settles; a newer incomplete edit stays local.
 
+Settings readers select the same fields from confirmed data and optimistic writes.
+`useSetting` reads one field; `useSettingField` declares a section's read set.
+Equal-data refetches leave data readers unchanged. Shell navigation subscribes to
+the active panel, with separate selectors for session-only controls and extension paths.
+
 Kanban uses the same resource-intent owner for card actions, both ends of a dependency,
 bulk card changes, board selection and lane preferences. Its reconciliation queue is separate
 from session/project reads. Owners on one board coalesce the union of their required board, stats

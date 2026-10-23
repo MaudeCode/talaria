@@ -14,12 +14,11 @@ export function Titlebar({ title, subtitle }: { title?: string; subtitle?: strin
   const bootstrap = useBootstrap()
   const navigate = useNavigate()
   const newChat = useNewChat()
-  const location = useLocation()
-  const panel = panelForPath(location.pathname)
+  const panel = useLocation({ select: (location) => panelForPath(location.pathname) })
   const panelLabel = NAV_ITEMS.find((n) => n.id === panel)?.label() ?? bootstrap.bot_name
   const { sidePanelOpen } = useShellState()
   // TAL-373: a chat's right panel (Files, Agents) has no edge tab on narrow screens; this opens it there.
-  const inChat = location.pathname.startsWith('/session/')
+  const inChat = useLocation({ select: (location) => location.pathname.startsWith('/session/') })
   return (
     <header className="app-titlebar relative z-20 flex h-[38px] shrink-0 items-center justify-center bg-(--titlebar-bg) [backdrop-filter:var(--chrome-backdrop)] border-b-0 px-3 pt-(--app-titlebar-safe-top) pl-[max(12px,env(safe-area-inset-left,0))] pr-[max(12px,env(safe-area-inset-right,0))] box-content text-[12px] text-muted select-none [-webkit-app-region:drag] max-[901px]:justify-between max-[769px]:bg-(--titlebar-bg) max-[769px]:border-b max-[769px]:border-b-(--titlebar-border) max-[641px]:h-[52px]" role="banner">
       <div className="app-titlebar-left flex items-center gap-1">
