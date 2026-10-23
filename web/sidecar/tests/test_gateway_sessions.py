@@ -645,6 +645,13 @@ def test_supported_owner_captured_command_policy(tmp_path):
     assert json.loads(result.stdout)["code"] == 7
 
 
+@pytest.mark.parametrize("revision", ["5b147ab036d6d19131bff8d20701b5001eab844a", "4d04303818b61bf3aa09278af48356315515965b", "bf0203a794a07aac3ff764972ab9087baa4e4f4e"])
+def test_captured_command_accepts_verified_supported_revision(native_owner_stub, revision):
+    native_owner_stub.endpoint.code_sha = revision
+    result = native_owner_stub.run(None, {"session_id": "native", "action": "terminal_info"})
+    assert result["state"] == "attached"
+
+
 @pytest.mark.parametrize("revision", [None, "unknown", "d923a5eb487a17c0a68801bba9ef0f56c81040a8"])
 def test_captured_command_refuses_unverified_native_revision(native_owner_stub, revision):
     native_owner_stub.endpoint.code_sha = revision
