@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Inspect actual task timing and dependency lineage across Kanban boards.",
+      "highlight": true,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

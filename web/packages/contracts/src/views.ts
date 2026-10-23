@@ -10,7 +10,7 @@ import { RunStatusSchema } from './run-status.js'
 import { AgentRefreshConfirmationSchema, AgentUpdateOperationSchema } from './sidecar/runtime.js'
 import { SpeedTierSchema } from './speed.js'
 import { ExecutionModeSchema, OwnerAttachmentSchema } from './gateway-session.js'
-import { CanonicalBotChatSchema, GatewayModeSchema, PluginOAuthClientSchema, PluginSettingFieldSchema, SkillCatalogIdentitySchema } from './sidecar/namespaces.js'
+import { KanbanInspectionNodeSchema, KanbanInspectionSnapshotSchema, CanonicalBotChatSchema, GatewayModeSchema, PluginOAuthClientSchema, PluginSettingFieldSchema, SkillCatalogIdentitySchema } from './sidecar/namespaces.js'
 
 export { SpeedTierSchema } from './speed.js'
 
@@ -1230,6 +1230,14 @@ export const KanbanTaskPolicyShape = { available_actions: KanbanTaskActionsSchem
 export const KanbanTaskViewSchema = z.looseObject({ id: z.union([z.string(), z.number()]), title: z.string().optional(), status: z.string().optional(), assignee: NullableString.optional(), priority: z.union([z.string(), z.number()]).nullable().optional(), description: z.string().optional(), tags: z.array(z.string()).optional(), session_id: NullableString.optional(), archived: z.boolean().optional(), created_at: Json.optional(), updated_at: Json.optional(), ...KanbanTaskPolicyShape })
 /** A board column in the Agent workflow's order (TAL-796): `name` is the status key, `label` the Agent's English label. */
 export const KanbanColumnSchema = z.looseObject({ name: z.string(), label: z.string(), tasks: z.array(KanbanTaskViewSchema) })
+/** One bounded profile-scoped read shared by timeline and relationship layouts. Null timing means unknown, never planned effort. */
+export const KanbanInspectionSchema = KanbanInspectionSnapshotSchema.extend({
+  nodes: z.array(KanbanInspectionNodeSchema.extend({ task: KanbanTaskViewSchema,
+    ancestors: z.array(z.string()), descendants: z.array(z.string()), cycle: z.boolean(), running_lineage: z.boolean(),
+    timing: z.object({ start: z.number().nullable(), end: z.number().nullable(), duration_seconds: z.number().nullable(), offset: z.number().nullable(), width: z.number().nullable() }),
+  })).max(500),
+  window: z.object({ start: z.number().nullable(), end: z.number().nullable() }),
+})
 /** One profile lane (TAL-567): an assignee's tasks (`null` = unassigned) across every board column, with its task count. */
 export const KanbanLaneSchema = z.object({ assignee: z.string().nullable(), count: z.number().int(), columns: z.array(KanbanColumnSchema) })
 export const KanbanBoardViewSchema = z.looseObject({ columns: z.array(KanbanColumnSchema).optional(), assignees: z.array(Json).optional(), filters: Json.optional(), latest_event_id: z.number().optional(), read_only: z.boolean().optional(), tenants: z.array(Json).optional(), changed: z.boolean().optional(),

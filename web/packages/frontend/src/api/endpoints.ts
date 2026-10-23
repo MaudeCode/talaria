@@ -235,8 +235,9 @@ export const fetchCronDeliveryOptions = () => orpc().crons.deliveryOptions()
 export const fetchCronStatus = () => orpc().crons.status({})
 export const fetchKanbanBoards = () => orpc().kanban.boards({})
 /** Every Kanban read and write names the board the page shows (`board`), so a switch elsewhere cannot redirect it; omitted, the server uses its active board. */
-const onBoard = (board: string | undefined) => (board ? { board } : {})
-export const fetchKanbanBoard = (board: string | undefined, params: Record<string, string | boolean | undefined> = {}) => orpc().kanban.board({ ...onBoard(board), ...Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, typeof v === 'boolean' ? (v ? '1' : '0') : v])) })
+const onBoard = (board: string | undefined, params: Record<string, string | boolean | undefined> = {}) => ({ ...(board ? { board } : {}), ...Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, typeof v === 'boolean' ? (v ? '1' : '0') : v])) })
+export const fetchKanbanBoard = (board: string | undefined, params: Record<string, string | boolean | undefined> = {}) => orpc().kanban.board(onBoard(board, params))
+export const fetchKanbanInspection = (board: string | undefined, params: Record<string, string | boolean | undefined> = {}) => orpc().kanban.inspection(onBoard(board, params))
 export const switchKanbanBoard = (slug: string) => orpc().kanban.switchBoard({ slug })
 /** The real task action set: `patch`, `comments`, `block`, `unblock`, `dispatch` (archive is `patch {status: 'archived'}`). */
 export const kanbanTaskAction = (board: string | undefined, id: string | number, action: 'patch' | 'comments' | 'block' | 'unblock' | 'dispatch', body: Record<string, unknown>) => {

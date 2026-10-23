@@ -1,0 +1,418 @@
+{
+  "snapshot": {
+    "nodes": [
+      {
+        "key": "default/plan",
+        "board": "default",
+        "board_name": "Release",
+        "task": {
+          "id": "plan",
+          "title": "Plan release",
+          "status": "done",
+          "priority": 0,
+          "assignee": "builder",
+          "claim_live": false,
+          "has_completion_evidence": true,
+          "agent_move_targets": null,
+          "current_run_started_at": null,
+          "started_at": 1792677600,
+          "completed_at": 1792678200
+        }
+      },
+      {
+        "key": "default/checks",
+        "board": "default",
+        "board_name": "Release",
+        "task": {
+          "id": "checks",
+          "title": "Run checks",
+          "status": "running",
+          "priority": 0,
+          "assignee": "builder",
+          "claim_live": false,
+          "has_completion_evidence": false,
+          "agent_move_targets": null,
+          "current_run_started_at": 1792678200,
+          "started_at": 1792678200,
+          "completed_at": null
+        }
+      },
+      {
+        "key": "default/ship",
+        "board": "default",
+        "board_name": "Release",
+        "task": {
+          "id": "ship",
+          "title": "Publish notes",
+          "status": "ready",
+          "priority": 0,
+          "assignee": "builder",
+          "claim_live": false,
+          "has_completion_evidence": false,
+          "agent_move_targets": null,
+          "current_run_started_at": null,
+          "started_at": null,
+          "completed_at": null
+        }
+      },
+      {
+        "key": "ops/plan",
+        "board": "ops",
+        "board_name": "Operations",
+        "task": {
+          "id": "plan",
+          "title": "Operations audit",
+          "status": "ready",
+          "priority": 0,
+          "assignee": "builder",
+          "claim_live": false,
+          "has_completion_evidence": false,
+          "agent_move_targets": null,
+          "current_run_started_at": null,
+          "started_at": null,
+          "completed_at": null
+        }
+      },
+      {
+        "key": "ops/cycle-a",
+        "board": "ops",
+        "board_name": "Operations",
+        "task": {
+          "id": "cycle-a",
+          "title": "Inspect cycle A",
+          "status": "todo",
+          "priority": 0,
+          "assignee": "builder",
+          "claim_live": false,
+          "has_completion_evidence": false,
+          "agent_move_targets": null,
+          "current_run_started_at": null,
+          "started_at": null,
+          "completed_at": null
+        }
+      },
+      {
+        "key": "ops/cycle-b",
+        "board": "ops",
+        "board_name": "Operations",
+        "task": {
+          "id": "cycle-b",
+          "title": "Inspect cycle B",
+          "status": "todo",
+          "priority": 0,
+          "assignee": "builder",
+          "claim_live": false,
+          "has_completion_evidence": false,
+          "agent_move_targets": null,
+          "current_run_started_at": null,
+          "started_at": null,
+          "completed_at": null
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "default/plan",
+        "target": "default/checks"
+      },
+      {
+        "source": "default/checks",
+        "target": "default/ship"
+      },
+      {
+        "source": "ops/cycle-a",
+        "target": "ops/cycle-b"
+      },
+      {
+        "source": "ops/cycle-b",
+        "target": "ops/cycle-a"
+      }
+    ],
+    "generated_at": 1792678500,
+    "truncated": false,
+    "read_only": false
+  },
+  "view": {
+    "nodes": [
+      {
+        "key": "default/checks",
+        "board": "default",
+        "board_name": "Release",
+        "task": {
+          "id": "checks",
+          "title": "Run checks",
+          "status": "running",
+          "priority": 0,
+          "assignee": "builder",
+          "claim_live": false,
+          "has_completion_evidence": false,
+          "current_run_started_at": 1792678200,
+          "started_at": 1792678200,
+          "completed_at": null,
+          "available_actions": {
+            "block": true,
+            "unblock": false,
+            "complete": false,
+            "archive": true,
+            "move_to": [
+              "triage",
+              "todo",
+              "ready"
+            ]
+          },
+          "requires_running_exit_confirmation": true
+        },
+        "ancestors": [
+          "default/plan"
+        ],
+        "descendants": [
+          "default/ship"
+        ],
+        "cycle": false,
+        "running_lineage": true,
+        "timing": {
+          "start": 1792678200,
+          "end": null,
+          "duration_seconds": 300,
+          "offset": 0.6666666666666666,
+          "width": 0.3333333333333333
+        }
+      },
+      {
+        "key": "default/plan",
+        "board": "default",
+        "board_name": "Release",
+        "task": {
+          "id": "plan",
+          "title": "Plan release",
+          "status": "done",
+          "priority": 0,
+          "assignee": "builder",
+          "claim_live": false,
+          "has_completion_evidence": true,
+          "current_run_started_at": null,
+          "started_at": 1792677600,
+          "completed_at": 1792678200,
+          "available_actions": {
+            "block": false,
+            "unblock": false,
+            "complete": false,
+            "archive": true,
+            "move_to": [
+              "triage",
+              "todo",
+              "ready"
+            ]
+          },
+          "requires_running_exit_confirmation": false
+        },
+        "ancestors": [],
+        "descendants": [
+          "default/checks",
+          "default/ship"
+        ],
+        "cycle": false,
+        "running_lineage": true,
+        "timing": {
+          "start": 1792677600,
+          "end": 1792678200,
+          "duration_seconds": 600,
+          "offset": 0,
+          "width": 0.6666666666666666
+        }
+      },
+      {
+        "key": "default/ship",
+        "board": "default",
+        "board_name": "Release",
+        "task": {
+          "id": "ship",
+          "title": "Publish notes",
+          "status": "ready",
+          "priority": 0,
+          "assignee": "builder",
+          "claim_live": false,
+          "has_completion_evidence": false,
+          "current_run_started_at": null,
+          "started_at": null,
+          "completed_at": null,
+          "available_actions": {
+            "block": true,
+            "unblock": false,
+            "complete": false,
+            "archive": true,
+            "move_to": [
+              "triage",
+              "todo"
+            ]
+          },
+          "requires_running_exit_confirmation": false
+        },
+        "ancestors": [
+          "default/checks",
+          "default/plan"
+        ],
+        "descendants": [],
+        "cycle": false,
+        "running_lineage": true,
+        "timing": {
+          "start": null,
+          "end": null,
+          "duration_seconds": null,
+          "offset": null,
+          "width": null
+        }
+      },
+      {
+        "key": "ops/cycle-a",
+        "board": "ops",
+        "board_name": "Operations",
+        "task": {
+          "id": "cycle-a",
+          "title": "Inspect cycle A",
+          "status": "todo",
+          "priority": 0,
+          "assignee": "builder",
+          "claim_live": false,
+          "has_completion_evidence": false,
+          "current_run_started_at": null,
+          "started_at": null,
+          "completed_at": null,
+          "available_actions": {
+            "block": false,
+            "unblock": false,
+            "complete": false,
+            "archive": true,
+            "move_to": [
+              "triage",
+              "ready"
+            ]
+          },
+          "requires_running_exit_confirmation": false
+        },
+        "ancestors": [
+          "ops/cycle-b"
+        ],
+        "descendants": [
+          "ops/cycle-b"
+        ],
+        "cycle": true,
+        "running_lineage": false,
+        "timing": {
+          "start": null,
+          "end": null,
+          "duration_seconds": null,
+          "offset": null,
+          "width": null
+        }
+      },
+      {
+        "key": "ops/cycle-b",
+        "board": "ops",
+        "board_name": "Operations",
+        "task": {
+          "id": "cycle-b",
+          "title": "Inspect cycle B",
+          "status": "todo",
+          "priority": 0,
+          "assignee": "builder",
+          "claim_live": false,
+          "has_completion_evidence": false,
+          "current_run_started_at": null,
+          "started_at": null,
+          "completed_at": null,
+          "available_actions": {
+            "block": false,
+            "unblock": false,
+            "complete": false,
+            "archive": true,
+            "move_to": [
+              "triage",
+              "ready"
+            ]
+          },
+          "requires_running_exit_confirmation": false
+        },
+        "ancestors": [
+          "ops/cycle-a"
+        ],
+        "descendants": [
+          "ops/cycle-a"
+        ],
+        "cycle": true,
+        "running_lineage": false,
+        "timing": {
+          "start": null,
+          "end": null,
+          "duration_seconds": null,
+          "offset": null,
+          "width": null
+        }
+      },
+      {
+        "key": "ops/plan",
+        "board": "ops",
+        "board_name": "Operations",
+        "task": {
+          "id": "plan",
+          "title": "Operations audit",
+          "status": "ready",
+          "priority": 0,
+          "assignee": "builder",
+          "claim_live": false,
+          "has_completion_evidence": false,
+          "current_run_started_at": null,
+          "started_at": null,
+          "completed_at": null,
+          "available_actions": {
+            "block": true,
+            "unblock": false,
+            "complete": false,
+            "archive": true,
+            "move_to": [
+              "triage",
+              "todo"
+            ]
+          },
+          "requires_running_exit_confirmation": false
+        },
+        "ancestors": [],
+        "descendants": [],
+        "cycle": false,
+        "running_lineage": false,
+        "timing": {
+          "start": null,
+          "end": null,
+          "duration_seconds": null,
+          "offset": null,
+          "width": null
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "default/plan",
+        "target": "default/checks"
+      },
+      {
+        "source": "default/checks",
+        "target": "default/ship"
+      },
+      {
+        "source": "ops/cycle-a",
+        "target": "ops/cycle-b"
+      },
+      {
+        "source": "ops/cycle-b",
+        "target": "ops/cycle-a"
+      }
+    ],
+    "generated_at": 1792678500,
+    "truncated": false,
+    "read_only": false,
+    "window": {
+      "start": 1792677600,
+      "end": 1792678500
+    }
+  }
+}

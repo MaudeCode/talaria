@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import { configureClient, get, post, request, resetClientForTests, type TransportRequest } from './client'
 import { createMemoryAdapter, makeSession } from '../contracts/adapters/memory'
-import { checkUpdatesNow, fetchSessions, searchSessions, fetchSession, fetchUpdatesCheck, renameSession, setReasoningEffort, startChat, newSession, saveSettings, setAuxiliaryModel } from './endpoints'
+import { checkUpdatesNow, fetchSessions, searchSessions, fetchSession, fetchUpdatesCheck, renameSession, setReasoningEffort, startChat, newSession, saveSettings, setAuxiliaryModel, switchKanbanBoard } from './endpoints'
 import { isApiError } from '../contracts/common'
 import { resetAppRootForTests } from '../lib/appRoot'
 
@@ -35,6 +35,14 @@ describe('typed client against the in-memory adapter', () => {
     expect(call.method).toBe('POST')
     expect(call.headers.get('X-Hermes-CSRF-Token')).toBe('csrf-test-token')
     expect(call.credentials).toBe('include')
+  })
+
+  it('preserves the absent body on a typed Kanban board switch', async () => {
+    const adapter = createMemoryAdapter({ routes: { 'POST /api/kanban/boards/ops/switch': () => [200, { current: 'ops', read_only: false }] } })
+    configureClient({ transport: adapter })
+    await switchKanbanBoard('ops')
+    expect(adapter.calls.at(-1)?.body).toBeNull()
+    expect(adapter.calls.at(-1)?.headers.has('content-type')).toBe(false)
   })
 
   it('keeps the ordinary new-chat deadline and never replays an unknown create outcome', async () => {

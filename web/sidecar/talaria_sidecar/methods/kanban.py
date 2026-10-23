@@ -10,8 +10,11 @@ from __future__ import annotations
 import functools
 import json
 import secrets
+import sqlite3
 import time
+from contextlib import closing
 from dataclasses import asdict, is_dataclass
+from pathlib import Path
 from typing import Any, NamedTuple
 
 from ..errors import InvalidParams, RpcError
@@ -463,6 +466,50 @@ def _bool(params: dict, key: str, default: bool = False) -> bool:
 
 # ── payload builders ──────────────────────────────────────────────────────
 
+def inspection_payload(params: dict) -> dict:
+    """Read only the selected profile's live boards, with shared global row/edge budgets."""
+    kb = _kb()
+    selected = _board(params)
+    boards = sorted((b for b in kb.list_boards(include_archived=False) if not b.get("archived")), key=lambda b: b["slug"])
+    if selected is not None:
+        boards = [b for b in boards if b["slug"] == selected]
+        if not boards:
+            raise NotFound("board not found")
+    nodes, edges = [], []
+    truncated = len(boards) > 32
+    for meta in boards[:32]:
+        slug = _normalize_existing_slug(meta["slug"])
+        if len(nodes) >= 500:
+            truncated = True
+            break
+        # An inspection must never initialize a missing database or run migrations.
+        uri = Path(kb.kanban_db_path(slug)).resolve().as_uri() + "?mode=ro"
+        with closing(sqlite3.connect(uri, uri=True)) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute("BEGIN")
+            where = "" if _bool(params, "include_archived") else "WHERE t.status != 'archived'"
+            rows = conn.execute(
+                f"SELECT t.*, r.started_at AS current_run_started_at FROM tasks t LEFT JOIN task_runs r ON r.id = t.current_run_id {where} ORDER BY t.id LIMIT ?",
+                (501 - len(nodes),),
+            ).fetchall()
+            remaining = 500 - len(nodes)
+            truncated = truncated or len(rows) > remaining
+            rows = rows[:remaining]
+            ids = [row["id"] for row in rows]
+            for row in rows:
+                task = _task_dict(dict(row), conn)
+                nodes.append({"key": f"{slug}/{row['id']}", "board": slug, "board_name": meta.get("name") or slug, "task": task})
+            if ids:
+                placeholders = ",".join("?" for _ in ids)
+                links = conn.execute(
+                    f"SELECT parent_id, child_id FROM task_links WHERE parent_id IN ({placeholders}) AND child_id IN ({placeholders}) ORDER BY parent_id, child_id LIMIT ?",
+                    [*ids, *ids, 2001 - len(edges)],
+                ).fetchall()
+                remaining_edges = 2000 - len(edges)
+                truncated = truncated or len(links) > remaining_edges
+                edges.extend({"source": f"{slug}/{r['parent_id']}", "target": f"{slug}/{r['child_id']}"} for r in links[:remaining_edges])
+    return {"nodes": nodes, "edges": edges, "generated_at": time.time(), "truncated": truncated, "read_only": False}
+
 def board_payload(params: dict) -> dict:
     board = _board(params)
     kb = _kb()
@@ -852,6 +899,7 @@ def normalize_board_payload(params: dict) -> dict:
 
 
 METHODS = {
+    "kanban.inspection": inspection_payload,
     "kanban.normalize_board": normalize_board_payload,
     "kanban.board": board_payload,
     "kanban.boards": list_boards_payload,

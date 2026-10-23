@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useMemo, useState } from 'react'
+import { useEffect, useEffectEvent, useId, useMemo, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { Archive, FolderPlus, Plus, RefreshCw, X } from 'lucide-react'
@@ -28,12 +28,29 @@ const cardResource = (board: string | undefined, id: string) => JSON.stringify([
 // Extend the existing board key: only snapshots touched by this write gate its reconciliation.
 const kanbanReads = (board: string | undefined, ids: string[] = []) => {
   const key = keys.kanban.board(board)
-  return [[...key, 'view'], [...key, 'stats'], ...ids.flatMap((id) => [[...key, 'task', id], [...key, 'task-log', id]])]
+  return [keys.kanban.inspection, [...key, 'view'], [...key, 'stats'], ...ids.flatMap((id) => [[...key, 'task', id], [...key, 'task-log', id]])]
+}
+function useKanbanMutation<V, R, T = unknown>(options: Omit<Parameters<typeof useResourceMutation<V, R, T>>[0], 'queryKey'>) {
+  return useResourceMutation({ ...options, queryKey: ['kanban'] })
 }
 const boardSelection = 'kanban:selection'
 const lanePreference = 'kanban:lanes'
 const linkResource = (board: string | undefined, parent: string, child: string) => JSON.stringify(['kanban-link', board, parent, child])
 const boardResource = (slug: string) => `kanban-board:${slug}`
+/** Overlay only the user's requested link pair; transitive traversal and classification remain server-owned. */
+function withLinkEffects(ids: string[], board: string | undefined, taskId: string, pair: (id: string) => { parent: string; child: string }, effects: Record<string, ResourceEffect>, reference = (id: string) => id): string[] {
+  const shown = new Set(ids)
+  for (const [key, effect] of Object.entries(effects)) {
+    if (!key.startsWith('["kanban-link"')) continue
+    const [, , parent, child] = JSON.parse(key) as [string, unknown, string, string]
+    const id = parent === taskId ? child : parent
+    const link = pair(id)
+    if (linkResource(board, link.parent, link.child) !== key) continue
+    if (effect.remove) shown.delete(reference(id))
+    else if (effect.value === true) shown.add(reference(id))
+  }
+  return [...shown]
+}
 // Pending creates per board, as `newResource` ids; their cards are shown but cannot be opened until the server names them.
 const createKind = (board: string | undefined) => `kanban-task-${board ?? ''}`
 
@@ -79,6 +96,7 @@ function useKanbanLiveRefresh(board: string | undefined, latestEventId: number |
 
 export function KanbanPage() {
   const qc = useQueryClient()
+  const [mode, setMode] = useState('board')
   const [includeArchived, setIncludeArchived] = useState(false)
   const [assignee, setAssignee] = useState('')
   const [tenant, setTenant] = useState('')
@@ -113,11 +131,10 @@ export function KanbanPage() {
   useKanbanLiveRefresh(current, board.isPlaceholderData ? undefined : board.data?.latest_event_id)
   const invalidate = (refetchType: 'active' | 'none' = 'active') => qc.invalidateQueries({ queryKey: ['kanban'], refetchType })
   const toastError = (e: unknown) => showErrorToast(e)
-  const switchBoard = useResourceMutation({ resource: () => boardSelection, queryKey: keys.kanban.boards, effect: (slug: string) => ({ value: slug }), mutationFn: api.switchKanbanBoard, onError: toastError })
-  const saveView = useResourceMutation({ resource: () => lanePreference, queryKey: keys.kanban.board(current), readKeys: () => kanbanReads(current), effect: (lanes: boolean) => ({ value: lanes }), mutationFn: api.updateKanbanConfig, onSuccess: () => { void invalidate('none') }, onError: (e) => { void invalidate('none'); showToast(m.kanban_view_update_failed() + (e instanceof Error ? e.message : String(e)), 4000, 'error') } })
-  const bulk = useResourceMutation({
+  const switchBoard = useKanbanMutation({ resource: () => boardSelection, effect: (slug: string) => ({ value: slug }), mutationFn: api.switchKanbanBoard, onError: toastError })
+  const saveView = useKanbanMutation({ resource: () => lanePreference, readKeys: () => kanbanReads(current), effect: (lanes: boolean) => ({ value: lanes }), mutationFn: api.updateKanbanConfig, onSuccess: () => { void invalidate('none') }, onError: (e) => { void invalidate('none'); showToast(m.kanban_view_update_failed() + (e instanceof Error ? e.message : String(e)), 4000, 'error') } })
+  const bulk = useKanbanMutation({
     resource: ({ ids, board }: { ids: string[]; status: string; board: string | undefined }) => ids.map((id) => cardResource(board, id)),
-    queryKey: keys.kanban.board(current),
     readKeys: ({ board, ids }) => kanbanReads(board, ids),
     effect: ({ status }) => ({ fields: { status } }),
     mutationFn: ({ ids, status, board }) => api.bulkKanbanStatus(board, ids, status),
@@ -131,10 +148,18 @@ export function KanbanPage() {
     },
     onError: toastError,
   })
-  const archiveBoard = useResourceMutation({ resource: boardResource, queryKey: ['kanban'], effect: () => ({ remove: true }), mutationFn: (slug: string) => api.archiveKanbanBoard(slug), onSuccess: () => showToast(m.kanban_board_archived()), onError: toastError })
-  const createTask = useResourceMutation({
+  const archiveBoard = useKanbanMutation({
+    resource: boardResource, readKeys: (slug) => [keys.kanban.boards, ...qc.getQueryCache().findAll({ queryKey: keys.kanban.inspection }).filter(q => q.queryKey[2] !== slug).map(q => q.queryKey)], effect: () => ({ remove: true }), mutationFn: (slug: string) => api.archiveKanbanBoard(slug),
+    onSuccess: (_, slug) => {
+      qc.removeQueries({ queryKey: keys.kanban.board(slug) })
+      qc.removeQueries({ queryKey: [...keys.kanban.inspection, slug] })
+      showToast(m.kanban_board_archived())
+    },
+    onError: toastError,
+  })
+  const createTask = useKanbanMutation({
     resource: ({ resource }: { resource: string; board: string | undefined; title: string; description: string; status: string }) => resource,
-    queryKey: keys.kanban.board(current), readKeys: ({ board }) => kanbanReads(board), exclusive: true,
+    readKeys: ({ board }) => kanbanReads(board), exclusive: true,
     effect: ({ resource, title, status }) => ({ fields: { id: resource, title, status, priority: 0, claim_live: false, has_completion_evidence: false, current_run_started_at: null, requires_running_exit_confirmation: false, available_actions: { block: false, unblock: false, complete: false, archive: false, move_to: [] } } }),
     mutationFn: ({ board, title, description, status }) => api.createKanbanTask(board, { title, description: description || undefined, status: status || undefined }),
     onError: toastError,
@@ -186,6 +211,9 @@ export function KanbanPage() {
               {currentBoard?.removable && <IconButton label={m.kanban_archive_board_title()} disabled={readOnly} onClick={() => setArchivingBoard(true)}><Archive size={16} aria-hidden="true" /></IconButton>}
             </div>
           )}
+          <Select value={mode} onValueChange={(v) => { setMode(v); setOpenTaskId(null); setSelected([]) }} aria-label={m.kanban_presentation()}>
+            <option value="board">{m.kanban_view_board()}</option><option value="timeline">{m.kanban_view_timeline()}</option><option value="relationships">{m.kanban_view_relationships()}</option>
+          </Select>
           <TextInput type="search" value={searchText} onChange={(e) => setSearchText(e.target.value)} placeholder={m.kanban_search_tasks()} aria-label={m.kanban_search_tasks()} className="h-8 w-44" />
           <Select value={assignee} onValueChange={setAssignee} disabled={onlyMine} aria-label={m.kanban_assignee()}>
             <option value="">{m.kanban_all_assignees()}</option>
@@ -199,7 +227,7 @@ export function KanbanPage() {
           )}
           <label className="flex items-center gap-1.5 text-xs text-muted"><Switch checked={onlyMine} onCheckedChange={(checked) => setOnlyMine(checked)} aria-label={m.kanban_only_mine()} /> {m.kanban_only_mine()}</label>
           <label className="flex items-center gap-1.5 text-xs text-muted"><Switch checked={includeArchived} onCheckedChange={(checked) => setIncludeArchived(checked)} aria-label={m.kanban_include_archived()} /> {m.kanban_include_archived()}</label>
-          {board.data && <label className="flex items-center gap-1.5 text-xs text-muted"><Switch checked={!lanesOff && board.data.lane_by_profile} disabled={lanesStarting} aria-busy={lanesStarting || undefined} onCheckedChange={(checked) => saveView.mutate(checked)} aria-label={m.kanban_lanes_by_profile()} /> {m.kanban_lanes_by_profile()}</label>}
+          {mode === 'board' && board.data && <label className="flex items-center gap-1.5 text-xs text-muted"><Switch checked={!lanesOff && board.data.lane_by_profile} disabled={lanesStarting} aria-busy={lanesStarting || undefined} onCheckedChange={(checked) => saveView.mutate(checked)} aria-label={m.kanban_lanes_by_profile()} /> {m.kanban_lanes_by_profile()}</label>}
           {serverReadOnly && <span className="text-xs text-warning">{m.kanban_read_only()}</span>}
         </>
       }
@@ -208,13 +236,13 @@ export function KanbanPage() {
       {boards.isError && <ErrorState error={boards.error} onRetry={() => { void boards.refetch() }} />}
       {board.isError && <ErrorState error={board.error} onRetry={() => { void board.refetch() }} />}
       {boards.isSuccess && boards.data.boards.length === 0 && <EmptyState>{m.kanban_no_boards()}</EmptyState>}
-      {stats.data && (
+      {mode === 'board' && stats.data && (
         <div role="group" aria-label={m.kanban_stats()} className="kanban-stats mb-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
           <span className="font-semibold text-text">{m.kanban_stats_total({ a0: stats.data.total })}</span>
           {stats.data.status_counts.map((c) => <span key={c.status}><strong className="text-text">{c.count}</strong> {statusLabel(c.status)}</span>)}
         </div>
       )}
-      {shownSelected.length > 0 && !serverReadOnly && board.data && (
+      {mode === 'board' && shownSelected.length > 0 && !serverReadOnly && board.data && (
         <div role="group" aria-label={m.kanban_bulk_action()} className="kanban-bulk-bar mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm">
           <span className="text-muted">{m.kanban_selected_count({ a0: shownSelected.length })}</span>
           <Select value={bulkStatus} onValueChange={setBulkStatus} aria-label={m.kanban_status()} placeholder={m.kanban_status()}>
@@ -224,7 +252,8 @@ export function KanbanPage() {
           <Button onClick={() => setSelected([])}>{m.kanban_clear_selection()}</Button>
         </div>
       )}
-      {board.isSuccess && (board.data.lanes && !lanesOff
+      {mode !== 'board' && boards.isSuccess && <KanbanInspection mode={mode} current={current} filters={filters} onChanged={() => { void invalidate() }} />}
+      {mode === 'board' && board.isSuccess && (board.data.lanes && !lanesOff
         ? (
           <div className="flex flex-col gap-4">
             {board.data.lanes.map((lane, laneIndex) => {
@@ -247,6 +276,77 @@ export function KanbanPage() {
   )
 }
 
+/** Shared task identity/metadata presentation; inspection adds timing or relationships beside it. */
+function KanbanTaskButton({ task, onOpen, disabled, selected, row, children }: { task: KanbanTask; onOpen: () => void; disabled?: boolean; selected?: boolean; row?: boolean; children?: ReactNode }) {
+  const id = useId()
+  return <button type="button" aria-labelledby={`${id}-title`} aria-describedby={`${id}-metadata`} disabled={disabled} onClick={onOpen} className={cn('w-full min-w-0 text-left text-sm text-text', row ? 'py-2 hover:text-accent-text' : 'kanban-card rounded-md border border-border-subtle bg-bg p-2.5 hover:border-accent-bg-strong', selected && 'selected')} data-task-id={String(task.id)}>
+    <span id={`${id}-title`} className="block font-medium">{task.title ?? String(task.id)}</span>
+    <span id={`${id}-metadata`} className="mt-1 flex flex-wrap gap-2 text-[11px] text-muted">
+      {task.assignee && <span>{task.assignee}</span>}
+      {task.priority !== undefined && task.priority !== null && <span>P{String(task.priority)}</span>}
+      {task.session_id && <span className="text-accent-text">●</span>}
+      {children}
+    </span>
+  </button>
+}
+
+function KanbanInspection({ mode, current, filters, onChanged }: { mode: string; current: string | undefined; filters: Record<string, string | boolean | undefined>; onChanged: () => void }) {
+  const [allBoards, setAllBoards] = useState(false)
+  const [runningOnly, setRunningOnly] = useState(false)
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const context = useStreamContext()
+  const [selection, setSelection] = useState<{ key: string; context: object } | null>(null)
+  const scope = allBoards ? undefined : current
+  const params = { ...filters, running_only: runningOnly }
+  const query = useQuery({ queryKey: [...keys.kanban.inspection, scope, params], queryFn: () => api.fetchKanbanInspection(scope, params), refetchInterval: 10_000 })
+  const effects = useResourceEffects()
+  const data = query.data
+  // A new task is the user's own write; actual timing and relationships remain unknown until the server read.
+  const provisional = withCreated<KanbanTask>([], createKind(current), effects).map(task => ({ key: String(task.id), board: current ?? '', board_name: current ?? '', task, ancestors: [], descendants: [], cycle: false, running_lineage: false, timing: { start: null, end: null, duration_seconds: null, offset: null, width: null } }))
+  const nodes = [...provisional, ...(data?.nodes ?? [])].filter(n => !effects[boardResource(n.board)]?.remove)
+  const selected = selection?.context === context ? nodes.find(n => n.key === selection.key) : undefined
+  const selectedTask = selected ? withEffect(selected.task, effects[cardResource(selected.board, String(selected.task.id))]) : null
+  const choose = (key: string) => setSelection({ key, context: getStreamContext() })
+  return <section aria-label={mode === 'timeline' ? m.kanban_view_timeline() : m.kanban_view_relationships()}>
+    <div className="mb-3 flex flex-wrap items-center gap-3">
+      <Select value={allBoards ? 'all' : 'current'} onValueChange={(v) => { setAllBoards(v === 'all'); setSelection(null) }} aria-label={m.kanban_inspection_scope()}>
+        <option value="current">{m.kanban_current_board()}</option><option value="all">{m.kanban_all_boards()}</option>
+      </Select>
+      <label className="flex items-center gap-2 text-xs text-muted"><Switch checked={runningOnly} onCheckedChange={setRunningOnly} aria-label={m.kanban_running_lineage()} />{m.kanban_running_lineage()}</label>
+    </div>
+    {query.isPending && <LoadingState />}
+    {query.isError && <ErrorState error={query.error} onRetry={() => { void query.refetch() }} />}
+    {data?.truncated && <p role="status" className="mb-3 text-sm text-warning">{m.kanban_inspection_truncated()}</p>}
+    {data && nodes.length === 0 && <EmptyState>{m.kanban_no_tasks()}</EmptyState>}
+    {mode === 'timeline' && data?.window.start !== null && data?.window.start !== undefined && <div className="mb-2 grid gap-x-6 text-xs text-muted sm:grid-cols-[minmax(12rem,1fr)_2fr]"><span className="hidden sm:block" aria-hidden="true" /><div className="flex flex-wrap justify-between gap-2"><span>{formatDate(data.window.start)}</span><span>{data.window.end === null ? m.kanban_timing_unknown() : formatDate(data.window.end)}</span></div></div>}
+    <ul className="divide-y divide-border">
+      {nodes.map(n => {
+        const task = withEffect(n.task, effects[cardResource(n.board, String(n.task.id))])
+        if (!task || (!filters.include_archived && effects[cardResource(n.board, String(n.task.id))]?.fields?.status === 'archived')) return null
+        const reference = (id: string) => `${n.board}/${id}`
+        const ancestors = withLinkEffects(n.ancestors, n.board, String(n.task.id), parent => ({ parent, child: String(n.task.id) }), effects, reference)
+        const descendants = withLinkEffects(n.descendants, n.board, String(n.task.id), child => ({ parent: String(n.task.id), child }), effects, reference)
+        return <li key={n.key} data-inspection-key={n.key} className="grid min-w-0 gap-x-6 py-2 sm:grid-cols-[minmax(12rem,1fr)_2fr]">
+          <KanbanTaskButton row task={task} disabled={String(task.id).includes(':new:')} onOpen={() => choose(n.key)}><span>{n.board_name}</span><span>{statusLabel(task.status ?? '')}</span>{n.cycle && <span className="text-warning">{m.kanban_cycle()}</span>}</KanbanTaskButton>
+          {mode === 'timeline' ? <div className="min-w-0 py-2 text-xs text-muted">
+            {n.timing.offset !== null && n.timing.width !== null && <div className="relative mb-2 h-2 bg-surface" aria-hidden="true"><div className="absolute h-2 min-w-px bg-accent" style={{ left: `${n.timing.offset * 100}%`, width: `${n.timing.width * 100}%` }} /></div>}
+            <span>{n.timing.start === null ? m.kanban_timing_unknown() : formatDate(n.timing.start)}</span>
+            {n.timing.end !== null && <span> → {formatDate(n.timing.end)}</span>}
+            <span className="ml-2">{n.timing.duration_seconds !== null ? m.kanban_duration_seconds({ count: Math.floor(n.timing.duration_seconds).toLocaleString() }) : n.timing.start !== null ? m.kanban_timing_unknown() : null}</span>
+          </div> : <div className="min-w-0 py-2 text-xs text-muted">
+            {ancestors.length === 0 && descendants.length === 0 && <span>{m.kanban_no_relationships()}</span>}
+            {(ancestors.length > 0 || descendants.length > 0) && <details open={expanded.has(n.key)} onToggle={(e) => { const open = e.currentTarget.open; setExpanded(prev => { if (prev.has(n.key) === open) return prev; const next = new Set(prev); if (open) next.add(n.key); else next.delete(n.key); return next }) }}>
+              <summary className="cursor-pointer py-4">{m.kanban_view_relationships()}</summary>
+              {expanded.has(n.key) && [{ label: m.kanban_ancestors(), refs: ancestors }, { label: m.kanban_descendants(), refs: descendants }].map(({ label, refs }) => refs.length > 0 && <div key={label} className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1"><span>{label}</span>{refs.map(key => <button key={key} type="button" className="min-h-11 break-all px-1 text-accent-text underline" onClick={() => choose(key)}>{key}</button>)}</div>)}
+            </details>}
+          </div>}
+        </li>
+      })}
+    </ul>
+    {selected && selectedTask && <TaskDialog key={selected.key} board={selected.board} task={selectedTask} readOnly={!!data?.read_only || query.isError} onClose={() => setSelection(null)} onChanged={onChanged} />}
+  </section>
+}
+
 function KanbanColumns({ columns, readOnly, stale, selected, onToggle, onOpen }: { columns: KanbanColumn[]; readOnly: boolean; stale: boolean; selected: string[]; onToggle: (id: string) => void; onOpen: (id: string) => void }) {
   return (
     <div className="kanban-board grid gap-3 md:grid-cols-2 xl:grid-cols-3" id="kanbanList">
@@ -264,14 +364,7 @@ function KanbanColumns({ columns, readOnly, stale, selected, onToggle, onOpen }:
                 <div key={id} className="flex items-start gap-2">
                   {!readOnly && <input type="checkbox" className="mt-3 shrink-0" checked={selected.includes(id)} disabled={stale || provisional} onChange={() => onToggle(id)} aria-label={m.kanban_select_task({ a0: task.title ?? id })} />}
                   <div className="min-w-0 flex-1">
-                    <button type="button" disabled={provisional} onClick={() => onOpen(id)} className={cn('kanban-card w-full min-w-0 flex-1 rounded-md border border-border-subtle bg-bg p-2.5 text-left text-sm text-text hover:border-accent-bg-strong', selected.includes(id) && 'selected')} data-task-id={id}>
-                      <div className="font-medium">{task.title ?? id}</div>
-                      <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-muted">
-                        {task.assignee && <span>{task.assignee}</span>}
-                        {task.priority !== undefined && task.priority !== null && <span>P{String(task.priority)}</span>}
-                        {task.session_id && <span className="text-accent-text">●</span>}
-                      </div>
-                    </button>
+                    <KanbanTaskButton task={task} disabled={provisional} selected={selected.includes(id)} onOpen={() => onOpen(id)} />
                   </div>
                 </div>
               )
@@ -292,31 +385,18 @@ function TaskDialog({ board, task, readOnly, onClose, onChanged }: { board: stri
   const taskId = String(task.id)
   const log = useQuery({ queryKey: [...keys.kanban.board(board), 'task-log', String(task.id)], queryFn: () => api.fetchKanbanTaskLog(board, task.id), staleTime: 10_000 })
   const detail = useQuery({ queryKey: [...keys.kanban.board(board), 'task', String(task.id)], queryFn: () => api.fetchKanbanTask(board, task.id), staleTime: 10_000 })
-  const link = useResourceMutation({
+  const link = useKanbanMutation({
     resource: ({ parent, child }: { parent: string; child: string; remove: boolean }) => linkResource(board, parent, child),
-    queryKey: keys.kanban.board(board),
     readKeys: ({ parent, child }) => kanbanReads(board, [parent, child]),
     effect: ({ remove }) => remove ? { remove: true } : { value: true },
     mutationFn: ({ parent, child, remove }) => remove ? api.unlinkKanbanTasks(board, parent, child) : api.linkKanbanTasks(board, parent, child),
     onError: (e) => showErrorToast(e),
   })
-  // Pending link writes show at once: removed ids drop out, added ids join the server's list.
-  const shownLinks = (ids: string[], pair: (id: string) => { parent: string; child: string }) => {
-    const pending = Object.entries(effects).flatMap(([key, effect]) => {
-      if (effect.remove || !key.startsWith('["kanban-link"')) return []
-      const [, , parent, child] = JSON.parse(key) as [string, unknown, string, string]
-      const id = parent === taskId ? child : parent
-      const link = pair(id)
-      return linkResource(board, link.parent, link.child) === key && !ids.includes(id) ? [id] : []
-    })
-    return [...ids.filter((id) => { const link = pair(id); return !effects[linkResource(board, link.parent, link.child)]?.remove }), ...pending]
-  }
   const links = detail.data?.links
   // A linked task the server could not name (since deleted) falls back to its id.
   const linked = new Map((detail.data?.link_tasks ?? []).map((t) => [t.id, t]))
-  const act = useResourceMutation({
+  const act = useKanbanMutation({
     resource: () => cardResource(board, taskId),
-    queryKey: keys.kanban.board(board),
     readKeys: () => kanbanReads(board, [taskId]),
     // Unblock lands in Ready, which the server may re-gate on parents.
     effect: ({ action, body }: { action: 'patch' | 'block' | 'unblock'; body: Record<string, unknown> }) => ({ fields: { status: action === 'block' ? 'blocked' : action === 'unblock' ? 'ready' : body.status } }),
@@ -329,9 +409,9 @@ function TaskDialog({ board, task, readOnly, onClose, onChanged }: { board: stri
   const dispatchTask = useMutation({ mutationFn: () => api.kanbanTaskAction(board, task.id, 'dispatch', {}), onSuccess: () => { showToast(m.saved()); onChanged() }, onError: (e) => { showErrorToast(e); onChanged() } })
   // A sent comment joins the log at once; a refused one stays there with Retry instead of losing its text.
   const [unsent, setUnsent] = useState<string[]>([])
-  const commentWrite = useResourceMutation({
+  const commentWrite = useKanbanMutation({
     resource: ({ resource }: { resource: string; text: string }) => resource,
-    queryKey: keys.kanban.board(board), readKeys: () => kanbanReads(board, [taskId]), exclusive: true,
+    readKeys: () => kanbanReads(board, [taskId]), exclusive: true,
     effect: ({ text }) => ({ fields: { text } }),
     mutationFn: ({ text }) => api.kanbanTaskAction(board, task.id, 'comments', { body: text, text }),
     onError: (e) => showErrorToast(e),
@@ -368,7 +448,7 @@ function TaskDialog({ board, task, readOnly, onClose, onChanged }: { board: stri
           <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted">{m.kanban_links()}</div>
           {links && (
             <div className="grid gap-2 text-xs sm:grid-cols-2">
-              {([[m.kanban_parents(), (id: string) => ({ parent: id, child: taskId }), links.parents], [m.kanban_children(), (id: string) => ({ parent: taskId, child: id }), links.children]] as const).map(([label, pair, ids]) => [label, pair, shownLinks(ids, pair)] as const).map(([label, pair, ids]) => (
+              {([[m.kanban_parents(), (id: string) => ({ parent: id, child: taskId }), links.parents], [m.kanban_children(), (id: string) => ({ parent: taskId, child: id }), links.children]] as const).map(([label, pair, ids]) => [label, pair, withLinkEffects(ids, board, taskId, pair, effects)] as const).map(([label, pair, ids]) => (
                 <div key={label}>
                   <div className="text-muted">{label}</div>
                   {ids.length === 0 && <div className="text-muted">—</div>}

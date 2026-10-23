@@ -10,7 +10,7 @@ vi.mock('../../shell/AppShell', () => ({ HubPage: ({ title, actions, toolbar, ch
 const toast = vi.hoisted(() => vi.fn())
 vi.mock('../toast/toast', () => ({ showToast: toast }))
 vi.mock('../../api/sse', () => ({ SSE_CLOSED: 2, openKanbanEventStream: vi.fn(() => ({ close: vi.fn(), readyState: () => 1 })) }))
-vi.mock('../../api/endpoints', () => ({ fetchKanbanBoards: vi.fn(), fetchKanbanBoard: vi.fn(), fetchKanbanStats: vi.fn(), fetchKanbanTask: vi.fn(), fetchKanbanTaskLog: vi.fn(), kanbanTaskAction: vi.fn(), linkKanbanTasks: vi.fn(), unlinkKanbanTasks: vi.fn(), bulkKanbanStatus: vi.fn(), switchKanbanBoard: vi.fn(), updateKanbanConfig: vi.fn(), createKanbanTask: vi.fn(), archiveKanbanBoard: vi.fn() }))
+vi.mock('../../api/endpoints', () => ({ fetchKanbanInspection: vi.fn(), fetchKanbanBoards: vi.fn(), fetchKanbanBoard: vi.fn(), fetchKanbanStats: vi.fn(), fetchKanbanTask: vi.fn(), fetchKanbanTaskLog: vi.fn(), kanbanTaskAction: vi.fn(), linkKanbanTasks: vi.fn(), unlinkKanbanTasks: vi.fn(), bulkKanbanStatus: vi.fn(), switchKanbanBoard: vi.fn(), updateKanbanConfig: vi.fn(), createKanbanTask: vi.fn(), archiveKanbanBoard: vi.fn() }))
 import * as api from '../../api/endpoints'
 import { openKanbanEventStream } from '../../api/sse'
 import { KanbanPage } from './KanbanPage'
@@ -381,4 +381,125 @@ describe('Kanban writes show their result while the server is held (TAL-1179)', 
     await userEvent.type(screen.getByRole('textbox', { name: 'Title' }), 'Fresh task{Enter}')
     expect(screen.getAllByRole('button', { name: /^Fresh task/ })).toHaveLength(1)
   })
+})
+
+
+it('shares the inspection read across modes, opens the qualified board detail, and reconciles optimistic writes', async () => {
+  const node = { key: 'other/A', board: 'other', board_name: 'Other', task: task(), ancestors: [], descendants: [], cycle: false, running_lineage: false, timing: { start: null, end: null, duration_seconds: null, offset: null, width: null } }
+  const view = { nodes: [node], edges: [], window: { start: null, end: null }, generated_at: 200, truncated: false, read_only: false }
+  vi.mocked(api.fetchKanbanInspection).mockResolvedValue(view)
+  const write = deferred<Awaited<ReturnType<typeof api.kanbanTaskAction>>>()
+  vi.mocked(api.kanbanTaskAction).mockReturnValue(write.promise)
+  const { qc } = renderPage()
+  await choose('View', 'Timeline')
+  await choose('Inspection scope', 'All boards')
+  expect(await screen.findAllByText('Actual timing unknown')).toHaveLength(1)
+  await choose('View', 'Relationships')
+  expect(screen.getByRole('button', { name: /^Task A/ })).toHaveAccessibleDescription(/Other.*Todo/)
+  await userEvent.click(screen.getByRole('button', { name: /^Task A/ }))
+  await waitFor(() => expect(api.fetchKanbanTask).toHaveBeenCalledWith('other', 'A'))
+  await choose('Column', 'done')
+  expect(screen.getByRole('dialog')).toHaveTextContent('done')
+  vi.mocked(api.fetchKanbanInspection).mockResolvedValue({ ...view, nodes: [{ ...node, task: task('A', 'done') }] })
+  await act(async () => { write.resolve({ task: task('A', 'done'), read_only: false }); await Promise.resolve() })
+  await waitFor(() => expect(qc.getQueryData(['kanban', 'inspection', undefined, { include_archived: false, assignee: '', tenant: '', only_mine: false, search: '', running_only: false }])).toMatchObject({ nodes: [{ task: { status: 'done' } }] }))
+  act(() => { teardownAll(); qc.clear() })
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+})
+
+it('shows a task created from inspection immediately and removes a refused creation', async () => {
+  vi.mocked(api.fetchKanbanInspection).mockResolvedValue({ nodes: [], edges: [], window: { start: null, end: null }, generated_at: 200, truncated: false, read_only: false })
+  const write = deferred<Awaited<ReturnType<typeof api.createKanbanTask>>>()
+  vi.mocked(api.createKanbanTask).mockReturnValue(write.promise)
+  renderPage()
+  await choose('View', 'Timeline')
+  await userEvent.click(screen.getByRole('button', { name: 'New task' }))
+  await userEvent.type(screen.getByRole('textbox', { name: 'Title' }), 'Fresh inspection task{Enter}')
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  expect(screen.getByRole('button', { name: 'Fresh inspection task' })).toBeDisabled()
+  await act(async () => { write.reject(refusal('Creation refused')); await Promise.resolve() })
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Fresh inspection task' })).toBeNull())
+})
+
+const inspectionNode = (board: string, id: string, ancestors: string[] = [], descendants: string[] = []) => ({ key: `${board}/${id}`, board, board_name: board, task: task(id), ancestors, descendants, cycle: false, running_lineage: false, timing: { start: null, end: null, duration_seconds: null, offset: null, width: null } })
+const inspectionSnapshot = (nodes: ReturnType<typeof inspectionNode>[]) => ({ nodes, edges: [], window: { start: null, end: null }, generated_at: 200, truncated: false, read_only: false })
+const inspectionRow = (key: string) => within(document.querySelector<HTMLLIElement>(`[data-inspection-key="${key}"]`)!)
+
+describe('inspection optimistic relationships and board removal', () => {
+  it.each(['add', 'remove'] as const)('reflects a held dependency %s in both relationship rows and rolls back a refusal', async (operation) => {
+    const linked = operation === 'remove'
+    vi.mocked(api.fetchKanbanInspection).mockResolvedValue(inspectionSnapshot([inspectionNode('other', 'A', linked ? ['other/B'] : []), inspectionNode('other', 'B', [], linked ? ['other/A'] : []), inspectionNode('default', 'A')]))
+    vi.mocked(api.fetchKanbanTask).mockResolvedValue({ task: task(), links: { parents: linked ? ['B'] : [], children: [] }, link_tasks: [{ id: 'B', title: 'Task B', status: 'todo' }], last_card_action: null })
+    const write = deferred<Awaited<ReturnType<typeof api.linkKanbanTasks>>>()
+    vi.mocked(api.linkKanbanTasks).mockReturnValue(write.promise)
+    vi.mocked(api.unlinkKanbanTasks).mockReturnValue(write.promise)
+    renderPage()
+    await choose('View', 'Relationships')
+    await choose('Inspection scope', 'All boards')
+    const child = inspectionRow('other/A'), parent = inspectionRow('other/B')
+    if (linked) { await userEvent.click(child.getByText('Relationships')); await userEvent.click(parent.getByText('Relationships')) }
+    await userEvent.click(child.getByRole('button', { name: 'Task A' }))
+    const dialog = within(screen.getByRole('dialog'))
+    if (linked) await userEvent.click(await dialog.findByRole('button', { name: 'Remove dependency Task B (B)' }))
+    else {
+      await userEvent.type(dialog.getByRole('textbox', { name: 'Parent task ID' }), 'B')
+      await userEvent.click(dialog.getByRole('button', { name: 'Add dependency' }))
+    }
+    await userEvent.keyboard('{Escape}')
+    if (!linked) { await userEvent.click(child.getByText('Relationships')); await userEvent.click(parent.getByText('Relationships')) }
+    if (linked) {
+      expect(child.queryByRole('button', { name: 'other/B' })).toBeNull()
+      expect(parent.queryByRole('button', { name: 'other/A' })).toBeNull()
+    } else {
+      expect(child.getByRole('button', { name: 'other/B' })).toBeVisible()
+      expect(parent.getByRole('button', { name: 'other/A' })).toBeVisible()
+    }
+    expect(inspectionRow('default/A').queryByText('other/B')).toBeNull()
+    await act(async () => { write.reject(refusal('Link refused')); await Promise.resolve() })
+    await waitFor(() => {
+      if (linked) expect(child.getByRole('button', { name: 'other/B' })).toBeVisible()
+      else expect(child.queryByRole('button', { name: 'other/B' })).toBeNull()
+    })
+  })
+
+  it('hides an archived board from a held all-board snapshot and restores it on refusal', async () => {
+    vi.mocked(api.fetchKanbanBoards).mockResolvedValue({ current: 'other', boards: [{ slug: 'default', name: 'Default', removable: false }, { slug: 'other', name: 'Other', removable: true }], read_only: false })
+    vi.mocked(api.fetchKanbanInspection).mockResolvedValue(inspectionSnapshot([inspectionNode('other', 'A'), inspectionNode('default', 'D')]))
+    const write = deferred<Awaited<ReturnType<typeof api.archiveKanbanBoard>>>()
+    vi.mocked(api.archiveKanbanBoard).mockReturnValue(write.promise)
+    renderPage()
+    await choose('View', 'Relationships')
+    await choose('Inspection scope', 'All boards')
+    await userEvent.click(screen.getByRole('button', { name: 'Archive board' }))
+    await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Archive' }))
+    expect(screen.queryByRole('button', { name: 'Task A' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Task D' })).toBeVisible()
+    expect(screen.getByRole('combobox', { name: 'Board' })).toHaveTextContent('Default')
+    await act(async () => { write.reject(refusal('Archive refused')); await Promise.resolve() })
+    expect(await screen.findByRole('button', { name: 'Task A' })).toBeVisible()
+    expect(screen.getByRole('combobox', { name: 'Board' })).toHaveTextContent('Other')
+  })
+
+  it('does not reread a deleted board detail after a confirmed archive', async () => {
+    vi.mocked(api.fetchKanbanBoards).mockResolvedValue({ current: 'other', boards: [{ slug: 'default', name: 'Default', removable: false }, { slug: 'other', name: 'Other', removable: true }], read_only: false })
+    vi.mocked(api.fetchKanbanInspection).mockResolvedValue(inspectionSnapshot([inspectionNode('other', 'A'), inspectionNode('default', 'D')]))
+    const write = deferred<Awaited<ReturnType<typeof api.archiveKanbanBoard>>>()
+    vi.mocked(api.archiveKanbanBoard).mockReturnValue(write.promise)
+    const { qc } = renderPage()
+    await choose('View', 'Relationships')
+    await choose('Inspection scope', 'All boards')
+    await userEvent.click(screen.getByRole('button', { name: 'Task A' }))
+    await waitFor(() => expect(api.fetchKanbanTask).toHaveBeenCalledWith('other', 'A'))
+    await userEvent.keyboard('{Escape}')
+    const reads = vi.mocked(api.fetchKanbanTask).mock.calls.length
+    await userEvent.click(screen.getByRole('button', { name: 'Archive board' }))
+    await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Archive' }))
+    vi.mocked(api.fetchKanbanBoards).mockResolvedValue({ current: 'default', boards: [{ slug: 'default', name: 'Default', removable: false }], read_only: false })
+    vi.mocked(api.fetchKanbanInspection).mockResolvedValue(inspectionSnapshot([inspectionNode('default', 'D')]))
+    await act(async () => { write.resolve({ current: 'default', result: {}, read_only: false }); await Promise.resolve() })
+    expect(api.fetchKanbanTask).toHaveBeenCalledTimes(reads)
+    expect(qc.getQueriesData({ queryKey: ['kanban', 'board', 'other'] })).toEqual([])
+    expect(qc.getQueriesData({ queryKey: ['kanban', 'inspection', 'other'] })).toEqual([])
+  })
+
 })

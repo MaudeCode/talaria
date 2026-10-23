@@ -355,6 +355,16 @@ describe('crons, kanban, extensions, terminal', () => {
     }
   })
 
+  it('routes inspection through the active profile and returns shared timing, lineage and card capabilities', async () => {
+    sidecar.respond('kanban.inspection', () => ({ nodes: [{ key: 'ops/a', board: 'ops', board_name: 'Operations', task: { id: 'a', title: 'Inspect', status: 'running', priority: 0, claim_live: false, has_completion_evidence: false, agent_move_targets: null, current_run_started_at: 100 } }], edges: [], generated_at: 160, truncated: false, read_only: false }))
+    const res = await s.get('/api/kanban/inspection?board=ops&running_only=1')
+    expect(res.status).toBe(200)
+    expect(((await json(res)).nodes as Json[])[0]).toMatchObject({ key: 'ops/a', running_lineage: true, timing: { start: 100, end: null, duration_seconds: 60 }, task: { available_actions: { archive: true } } })
+    const params = sidecar.calls.filter(c => c.method === 'kanban.inspection').at(-1)?.params as Json
+    expect(params.board).toBe('ops')
+    expect(typeof params.profile_home).toBe('string')
+  })
+
   it('blocks Web updates while an embedded terminal is alive and releases the blocker on exit', () => {
     const term = s.deps.terminals.start('update-blocker', s.state)
     const process = pty.spawned.at(-1)!
