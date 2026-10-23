@@ -96,7 +96,8 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   }, [qc, navigate, sessionId])
 
   const yoloSessionId = session && !session.owner_attachment ? sessionId : null
-  const yoloQuery = useQuery({ queryKey: keys.yolo(yoloSessionId ?? ''), queryFn: () => api.fetchSessionYolo(yoloSessionId ?? ''), enabled: !!yoloSessionId, retry: false })
+  // Read again on every visit: YOLO can change from the CLI or another tab.
+  const yoloQuery = useQuery({ queryKey: keys.yolo(yoloSessionId ?? ''), queryFn: () => api.fetchSessionYolo(yoloSessionId ?? ''), enabled: !!yoloSessionId, retry: false, staleTime: 0 })
   const yoloEffect = useResourceEffects<boolean>()[`yolo:${sessionId}`]
   const yoloShown = typeof yoloEffect?.value === 'boolean' ? yoloEffect.value : yoloQuery.data?.yolo_enabled ?? false
   const yoloOn = yoloSessionId ? yoloShown : false
