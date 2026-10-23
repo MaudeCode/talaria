@@ -70,6 +70,17 @@ private enum TurnDiffPresentation: Identifiable {
     }
 }
 
+/// The regular-width split view's part in a chat's Files inspector (TAL-1453): the window's presented state, which it
+/// keeps, whether it hides its sidebar column so the inspector fits beside the chat, and where the chat reports that it
+/// shows the inspector.
+struct SplitFilesInspector {
+    static let storageKey = "chat.filesInspectorPresented"
+
+    let isPresented: Binding<Bool>
+    let widensChat: Bool
+    let reportShown: (Bool) -> Void
+}
+
 struct ChatView: View {
 #if DEBUG
     @Environment(\.chatBodyEvaluation) private var recordBodyEvaluation
@@ -91,8 +102,9 @@ struct ChatView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
-    /// Device-local, per window: whether a wide chat shows Files beside it (TAL-479).
-    @SceneStorage("chat.filesInspectorPresented") private var isFilesInspectorPresented = false
+    /// Device-local, per window: whether a wide chat shows Files beside it (TAL-479). The session list keeps its own
+    /// copy, which `splitFilesInspector` carries.
+    @SceneStorage(SplitFilesInspector.storageKey) private var storedFilesInspectorPresented = false
     /// The chat's width including any Files inspector; nil until measured.
     @State private var chatAreaWidth: CGFloat?
     @AppStorage(AppHaptics.isEnabledKey) private var isHapticsEnabled = true
@@ -125,6 +137,7 @@ struct ChatView: View {
     /// load their configuration from the server and never re-apply a snapshot.
     let restoresDraftSettings: Bool
     let onConversationStarted: () -> Void
+    let splitFilesInspector: SplitFilesInspector?
 
     @State private var draftMessageStorage = ""
     @State private var draftWriteRevision = 0
@@ -239,7 +252,8 @@ struct ChatView: View {
         startSession: (() async -> ChatSessionStartResult)? = nil,
         viewModel: ChatViewModel? = nil,
         onConversationStarted: @escaping () -> Void = {},
-        sessionListOwner: SessionListViewModel? = nil
+        sessionListOwner: SessionListViewModel? = nil,
+        splitFilesInspector: SplitFilesInspector? = nil
     ) {
         _session = State(initialValue: session)
         self.startSession = startSession
@@ -253,6 +267,7 @@ struct ChatView: View {
         self.draftAttachmentStore = resolvedDraftAttachmentStore
         self.restoresDraftSettings = restoresDraftSettings
         self.onConversationStarted = onConversationStarted
+        self.splitFilesInspector = splitFilesInspector
         _draftMessageStorage = State(initialValue: initialDraft)
         _initialAttachments = State(initialValue: initialAttachments)
         _viewModel = State(initialValue: viewModel ?? ChatViewModel(
@@ -696,6 +711,7 @@ struct ChatView: View {
                 }
             }
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { chatAreaWidth = $0 }
+            .onChange(of: showsFilesInspector, initial: true) { splitFilesInspector?.reportShown(showsFilesInspector) }
             // Outside the inspector, which otherwise keeps the title from the navigation bar.
             .navigationTitle(displayTitle)
             .navigationBarTitleDisplayMode(.inline)
@@ -733,10 +749,11 @@ struct ChatView: View {
             }
     }
 
-    /// A wide chat toggles the Files inspector beside it; a narrower one pushes the browser.
+    /// A wide chat, or one the split view widens for it, toggles the Files inspector beside it; a narrower one
+    /// pushes the browser.
     @ViewBuilder
     private var filesButton: some View {
-        if fitsFilesInspector {
+        if fitsFilesInspector || splitFilesInspector?.widensChat == true {
             Button {
                 isFilesInspectorPresented.toggle()
             } label: {
@@ -757,7 +774,23 @@ struct ChatView: View {
     /// 753 pt (iPad mini, landscape); the widest overlaid, 652 pt (13-inch iPad, portrait).
     // ponytail: measured threshold, not SwiftUI's rule; revisit if SwiftUI exposes the placement.
     private var fitsFilesInspector: Bool {
-        (chatAreaWidth ?? 0) >= 740
+        (chatAreaWidth ?? 0) >= RegularSplitLayout.filesInspectorChatWidth
+    }
+
+    private var isFilesInspectorPresented: Bool {
+        get { splitFilesInspector?.isPresented.wrappedValue ?? storedFilesInspectorPresented }
+        nonmutating set {
+            if let splitFilesInspector {
+                splitFilesInspector.isPresented.wrappedValue = newValue
+            } else {
+                storedFilesInspectorPresented = newValue
+            }
+        }
+    }
+
+    /// Whether this chat shows Files beside it once it has the width.
+    private var showsFilesInspector: Bool {
+        isFilesInspectorPresented && showsFilesButton && viewModel.hasSession
     }
 
     private var filesInspectorIsPresented: Binding<Bool> {
@@ -776,7 +809,8 @@ struct ChatView: View {
         chatWithToolbar
             .environment(\.retryPendingAttachment) { id in Task { await viewModel.retryAttachment(id: id) } }
             .navigationDestination(item: $forkedSession) { session in
-                ChatView(session: session, server: server, onAPIError: onAPIError)
+                // A fork opens in the same column, so the same split view makes room for its Files.
+                ChatView(session: session, server: server, onAPIError: onAPIError, splitFilesInspector: splitFilesInspector)
             }
             .fullScreenCover(item: $selectableResponseText) { selectableText in
                 SelectableTextPresentationView(selection: selectableText)

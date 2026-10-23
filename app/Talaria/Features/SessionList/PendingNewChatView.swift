@@ -18,6 +18,7 @@ struct PendingNewChatView: View {
     let projectID: String?
     let executionMode: ExecutionMode?
     let draftStore: ChatDraftStore
+    let splitFilesInspector: SplitFilesInspector?
 
     @State private var createdSession: SessionSummary?
     @State private var createdDetail: SessionDetail?
@@ -42,7 +43,8 @@ struct PendingNewChatView: View {
         viewModel: SessionListViewModel,
         onAPIError: @escaping (Error) -> Void,
         onSessionCreated: @escaping (SessionSummary) -> Void = { _ in },
-        draftStore: ChatDraftStore? = nil
+        draftStore: ChatDraftStore? = nil,
+        splitFilesInspector: SplitFilesInspector? = nil
     ) {
         self.server = server
         self.viewModel = viewModel
@@ -55,6 +57,7 @@ struct PendingNewChatView: View {
         self.projectID = projectID
         self.executionMode = executionMode
         self.draftStore = draftStore ?? .shared
+        self.splitFilesInspector = splitFilesInspector
         _draftMessage = State(initialValue: initialDraft)
     }
 
@@ -70,7 +73,8 @@ struct PendingNewChatView: View {
             draftStore: draftStore,
             restoresDraftSettings: true,
             startSession: createSession,
-            onConversationStarted: markConversationStarted
+            onConversationStarted: markConversationStarted,
+            splitFilesInspector: splitFilesInspector
         )
         .onChange(of: scenePhase) {
             if scenePhase != .active {

@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "On the iPhone Duo inner display, the chat beside the sidebar keeps room for its messages and composer.",
+      "highlight": false,
+      "components": ["app"]
+    },
+    {
+      "category": "Changed",
+      "summary": "Files opens beside the chat on the iPhone Duo inner display in landscape and on iPad in portrait, hiding the sidebar until you close it.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

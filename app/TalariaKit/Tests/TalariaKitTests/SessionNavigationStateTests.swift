@@ -669,4 +669,43 @@ final class AppSectionLayoutTests: XCTestCase {
         state.clearDestination()
         XCTAssertEqual(state.section, .chats)
     }
+
+    /// The sidebar leaves the chat at least 320pt and otherwise keeps its 380pt width (TAL-1453).
+    func testSidebarIdealWidthLeavesTheChatItsNarrowestTestedWidth() {
+        let expected: [(CGFloat, CGFloat)] = [(669, 349), (700, 380), (951, 380), (1194, 380)]
+        for (splitWidth, ideal) in expected {
+            XCTAssertEqual(RegularSplitLayout.sidebarIdealWidth(splitWidth: splitWidth), ideal, "split \(splitWidth)")
+        }
+        for splitWidth in stride(from: CGFloat(0), through: 2000, by: 25) {
+            let ideal = RegularSplitLayout.sidebarIdealWidth(splitWidth: splitWidth)
+            XCTAssertGreaterThanOrEqual(ideal, RegularSplitLayout.sidebarMinWidth, "split \(splitWidth)")
+            XCTAssertLessThanOrEqual(ideal, RegularSplitLayout.sidebarMaxWidth, "split \(splitWidth)")
+        }
+    }
+
+    /// Files hides the sidebar only where that is what fits the inspector beside the chat (TAL-1453).
+    func testFilesInspectorHidesTheSidebarOnlyWhereThatMakesRoom() {
+        // iPhone Duo inner display, portrait: too narrow even without the sidebar, so Files pushes.
+        XCTAssertFalse(RegularSplitLayout.hidesSidebarForFilesInspector(splitWidth: 669))
+        // iPhone Duo inner display, landscape, and iPad portrait: room only without the sidebar.
+        XCTAssertTrue(RegularSplitLayout.hidesSidebarForFilesInspector(splitWidth: 951))
+        XCTAssertTrue(RegularSplitLayout.hidesSidebarForFilesInspector(splitWidth: 834))
+        // iPad landscape: room beside the sidebar already.
+        XCTAssertFalse(RegularSplitLayout.hidesSidebarForFilesInspector(splitWidth: 1194))
+    }
+
+    func testANewDestinationForgetsTheLastChatsFilesInspector() {
+        var state = SessionNavigationState()
+        state.select(SessionSummary(sessionId: "session-1"))
+        state.chatShowsFilesInspector = true
+
+        state.select(SessionSummary(sessionId: "session-2"))
+        XCTAssertFalse(state.chatShowsFilesInspector)
+
+        state.chatShowsFilesInspector = true
+        state.returnToChats()
+        XCTAssertTrue(state.chatShowsFilesInspector, "Chats keeps the open chat beside it")
+        state.select(.settings(nil))
+        XCTAssertFalse(state.chatShowsFilesInspector)
+    }
 }
