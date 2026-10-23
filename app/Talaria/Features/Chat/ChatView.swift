@@ -809,7 +809,8 @@ struct ChatView: View {
         chatWithToolbar
             .environment(\.retryPendingAttachment) { id in Task { await viewModel.retryAttachment(id: id) } }
             .navigationDestination(item: $forkedSession) { session in
-                ChatView(session: session, server: server, onAPIError: onAPIError)
+                // A fork opens in the same column, so the same split view makes room for its Files.
+                ChatView(session: session, server: server, onAPIError: onAPIError, splitFilesInspector: splitFilesInspector)
             }
             .fullScreenCover(item: $selectableResponseText) { selectableText in
                 SelectableTextPresentationView(selection: selectableText)
