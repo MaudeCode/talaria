@@ -11,6 +11,7 @@ fail-closed shapes.
 from __future__ import annotations
 
 SCENARIOS: list[tuple[str, dict]] = [
+    ('drafts.review', {'profile_home': '{home}', 'session_id': 'fixture-session', 'draft_id': 'd_1234abcd', 'card': 1, 'action': 'read'}),
     ("chat.context_detail", {"profile_home": "{home}", "session_id": "context-not-built", "model": None, "model_provider": None, "workspace": None}),
     ("chat.finalize_session", {"profile_home": "{home}", "session_id": "finalize-test", "reason": "clear"}),
     ("chat.finalize_session", {"profile_home": "{home}", "session_id": "archive-test", "reason": "archive", "lineage": ["archive-test", "archive-tip"]}),

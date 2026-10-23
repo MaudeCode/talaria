@@ -4,9 +4,21 @@
  * redacted args, so the target never shows more than the arguments it came from.
  */
 import type { ToolEditDiff, ToolKind, ToolProgress } from '@maudecode/talaria-web-contracts'
+import { OutboundDraftRefSchema, type OutboundDraftRef } from '@maudecode/talaria-web-contracts'
 import { str } from '../util.js'
 import { diffHunks, hunkTotals } from '../text/diff.js'
 import { isDict, messageText, TOOL_ARG_CONTENT_CAP, TOOL_ARG_CONTENT_KEYS } from './merge.js'
+
+/** Only a structured tool reply supplies a locator. Its content/authority still comes from the registered backend. */
+export function outboundDraftRef(name: unknown, raw: unknown): OutboundDraftRef | undefined {
+  if (name !== 'draft_card') return undefined
+  let value = Array.isArray(raw) ? messageText(raw) : raw
+  if (typeof value === 'string') { try { value = JSON.parse(value) as unknown } catch { return undefined } }
+  if (!isDict(value) || value.error || typeof value.card !== 'string') return undefined
+  const match = /^::draft-card\{id="(d_[0-9a-f]{8})" v="([1-9][0-9]*)"\}$/.exec(value.card)
+  if (!match || match[1] !== value.draft_id) return undefined
+  return OutboundDraftRefSchema.safeParse({ draft_id: value.draft_id, card: Number(match[2]) }).data
+}
 
 /** Ordered rules over whole `_`-separated name tokens (a substring match would read `merge` as `rg`). */
 const RULES: [ToolKind, (tokens: Set<string>, name: string) => boolean][] = [

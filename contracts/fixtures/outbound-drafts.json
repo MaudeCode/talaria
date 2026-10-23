@@ -1,0 +1,109 @@
+{
+  "available": {
+    "draft": {
+      "draft_id": "d_1234abcd",
+      "card": 1,
+      "producer": "draft-cards",
+      "producer_revision": "6e6ca659ece59b0ce1c28b3b188393491ee5a415",
+      "kind": "email",
+      "platform": "Mail",
+      "version": 2,
+      "revision": "synthetic-raw-revision",
+      "fields": {
+        "from": "sender@example.invalid",
+        "to": [
+          "recipient@example.invalid"
+        ],
+        "cc": [],
+        "bcc": [],
+        "subject": "Review this message",
+        "body": "Only this exact content is approved."
+      },
+      "state": "draft",
+      "can_edit": true,
+      "can_approve": true,
+      "masked": false
+    }
+  },
+  "unavailable": {
+    "draft": null
+  },
+  "approved": {
+    "draft": {
+      "draft_id": "d_1234abcd",
+      "card": 1,
+      "producer": "draft-cards",
+      "producer_revision": "6e6ca659ece59b0ce1c28b3b188393491ee5a415",
+      "kind": "email",
+      "platform": "Mail",
+      "version": 2,
+      "revision": "synthetic-raw-revision",
+      "fields": {
+        "from": "sender@example.invalid",
+        "to": [
+          "recipient@example.invalid"
+        ],
+        "cc": [],
+        "bcc": [],
+        "subject": "Review this message",
+        "body": "Only this exact content is approved."
+      },
+      "state": "approved",
+      "can_edit": true,
+      "can_approve": false,
+      "masked": false
+    }
+  },
+  "superseded": {
+    "draft": {
+      "draft_id": "d_1234abcd",
+      "card": 1,
+      "producer": "draft-cards",
+      "producer_revision": "6e6ca659ece59b0ce1c28b3b188393491ee5a415",
+      "kind": "email",
+      "platform": "Mail",
+      "version": 2,
+      "revision": "synthetic-raw-revision",
+      "fields": {
+        "from": "sender@example.invalid",
+        "to": [
+          "recipient@example.invalid"
+        ],
+        "cc": [],
+        "bcc": [],
+        "subject": "Review this message",
+        "body": "Only this exact content is approved."
+      },
+      "state": "superseded",
+      "can_edit": false,
+      "can_approve": false,
+      "masked": false
+    }
+  },
+  "masked": {
+    "draft": {
+      "draft_id": "d_1234abcd",
+      "card": 1,
+      "producer": "draft-cards",
+      "producer_revision": "6e6ca659ece59b0ce1c28b3b188393491ee5a415",
+      "kind": "email",
+      "platform": "Mail",
+      "version": 2,
+      "revision": "synthetic-raw-revision",
+      "fields": {
+        "from": "sender@example.invalid",
+        "to": [
+          "recipient@example.invalid"
+        ],
+        "cc": [],
+        "bcc": [],
+        "subject": "Review this message",
+        "body": "password=***"
+      },
+      "state": "draft",
+      "can_edit": false,
+      "can_approve": false,
+      "masked": true
+    }
+  }
+}

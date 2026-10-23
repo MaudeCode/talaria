@@ -764,3 +764,10 @@ Session views carry an opaque
 `context_detail_key` so clients discard details on context/owner replacement.
 Web mounts the query only inside the existing open ring popover or mobile context
 row, with no retained cache. Unsupported and pre-build reads are unavailable.
+
+RPC version 55 adds `drafts.review`, the profile/session-scoped outbound draft
+adapter. Its read/edit/approve variants share typed producer content and action
+fields. It does not import producer code or call its unsafe HTTP approval route.
+The reviewed source identity and explicit native plugin consent are revalidated;
+SQLite transactions serialize version checks and writes with native tool writers.
+No send or chat-start action is exposed by this method.

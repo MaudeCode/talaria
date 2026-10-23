@@ -2,6 +2,18 @@ import { describe, expect, it } from 'vitest'
 import { BODY_EXCERPT_LIMIT, assistantReplyAddedAfterCurrentTurn, extractToolCallsFromMessages, markerKind, mergeDisplayMessagesAfterAgentResult, mergeSessionMessagesAppendOnly, normalizeAssistantDisplay, sessionLacksFinalAssistantAnswer, splitDisplayText, stripToolCallXml, toolOutcome, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withToolCallOutcomes } from './merge.js'
 
 describe('toolOutcome (TAL-313)', () => {
+  it('projects a locator only from a successful draft producer tool reply, across persisted calls', () => {
+    const content = JSON.stringify({ draft_id: 'd_1234abcd', version: 1, card: '::draft-card{id="d_1234abcd" v="1"}' })
+    expect(toolOutcome(content, 'draft_card').result_view.outbound_draft).toEqual({ draft_id: 'd_1234abcd', card: 1 })
+    expect(toolOutcome(content, 'terminal').result_view.outbound_draft).toBeUndefined()
+    expect(toolOutcome(content, 'draft_card', true).result_view.outbound_draft).toBeUndefined()
+    expect(toolOutcome('::draft-card{id="d_1234abcd" v="1"}', 'draft_card').result_view.outbound_draft).toBeUndefined()
+    const messages = withToolCallOutcomes([
+      { role: 'assistant', tool_calls: [{ id: 'draft', function: { name: 'draft_card', arguments: '{}' } }] },
+      { role: 'tool', tool_call_id: 'draft', content },
+    ], [], null)
+    expect(messages[0]).toMatchObject({ tool_calls: [{ result_view: { outbound_draft: { draft_id: 'd_1234abcd', card: 1 } } }] })
+  })
   it('fails a result that reports an error, a non-zero exit code, or success false, in any persisted shape', () => {
     const failed: unknown[] = [
       { exit_code: 2, output: 'x' }, '{"exitCode": 1}', '{"error": "boom"}', { error: { code: 'E' } }, { error: true }, '{"success": false}',

@@ -153,6 +153,23 @@ Before opening or updating a PR, verify the body against the root PR template
   failures.
 - [`docs/EXTENSIONS.md`](EXTENSIONS.md): administrator-controlled extensions.
 
+Outbound draft review extends tool result views with an `outbound_draft` locator.
+It is not trusted content or authorization. `/api/session/outbound-draft` resolves
+that locator against the session's actual tool result and a consented registered
+producer. A transcript directive alone cannot open a draft. The initial adapter
+supports only the reviewed Draft Cards store revision; unsupported or disabled
+producers return `draft: null`. Native Desktop JavaScript is never executed.
+
+The producer owns draft content and versions in its profile-local database.
+Talaria's adapter checks session identity, complete raw revision and version in
+one SQLite transaction before editing or approving. Its additive
+`talaria_outbound_approvals` table records one approval per artifact/version;
+existing producer tables remain readable by Stable. Edits clear approval, stale
+or superseded actions refuse, and masked content cannot be edited or approved.
+A lost write acknowledgment requires a fresh read, never an automatic write
+retry. Approval records consent only; it neither sends nor submits a chat turn.
+Sending remains subject to the existing Agent tool permissions and admission.
+
 Chat readiness and runtime refusals share the optional `agent_runtime_reason`,
 `agent_update_state`, `retryable`, and `restart_scheduled` fields. The server
 projects typed sidecar evidence into `update_active`, `recovery_incomplete`,

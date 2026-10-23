@@ -6,6 +6,7 @@
  */
 import { orpc, timeout } from './orpc'
 import type { OwnerActionRequest } from '@maudecode/talaria-web-contracts'
+import type { OutboundDraftAction, OutboundDraftRef } from '@maudecode/talaria-web-contracts'
 import { postForm } from './client'
 import { loadedBuild, tabId } from '../app/tabBuild'
 import { UploadResponseSchema, type ChatStartRequest, type SessionId, type SessionNewRequestSchema, type SteerRequestSchema, type ApprovalRespondRequestSchema, type ClarifyRespondRequestSchema, type DraftRequestSchema } from '../contracts'
@@ -79,6 +80,8 @@ export const fetchSession = (id: SessionId, params: SessionGetParams = {}, signa
 export const fetchAnchorScene = (session_id: string, message_ref: string, message_index: number, before: number, signal: AbortSignal) => orpc().session.anchorSceneGet({ session_id, message_ref, message_index: String(message_index), before: String(before), limit: '80' }, { signal: AbortSignal.any([signal, timeout(30_000)]) })
 /** TAL-331: the whole result of a scene tool row a limited response clipped (`result_truncated`). */
 export const fetchToolResult = (session_id: string, tool_call_id: string, signal: AbortSignal) => orpc().session.toolResult({ session_id, tool_call_id }, { signal: AbortSignal.any([signal, timeout(30_000)]) })
+export const fetchOutboundDraft = (input: OutboundDraftRef & { session_id: string; tool_call_id: string }, signal?: AbortSignal) => orpc().session.outboundDraft(input, signal ? { signal } : {})
+export const actOnOutboundDraft = (input: OutboundDraftAction) => orpc().session.outboundDraftAct(input)
 export const fetchSessionStatus = (id: SessionId) => orpc().session.status({ session_id: id })
 export const fetchSessionUsage = (id: SessionId) => orpc().session.usage({ session_id: id })
 export const markSessionViewed = (session_id: SessionId) => orpc().talaria.viewed({ session_id })
