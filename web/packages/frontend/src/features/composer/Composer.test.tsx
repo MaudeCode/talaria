@@ -376,6 +376,25 @@ describe('Composer', () => {
     expect(api.startBackground).toHaveBeenCalledOnce()
   })
 
+  it('adopts the started background task in place of its provisional chip, without a duplicate (TAL-1384)', async () => {
+    let start!: (value: { ok: true; task_id: string; stream_id: string; session_id: string }) => void
+    vi.mocked(api.startBackground).mockReturnValue(new Promise((resolve) => { start = resolve }) as never)
+    vi.mocked(api.fetchBackgroundTasks).mockResolvedValue({ session_id: 's1', agent_available: true, tasks: [] })
+    renderComposer({ ...writable, is_streaming: false })
+    await waitFor(() => expect(api.fetchBackgroundTasks).toHaveBeenCalled())
+    await userEvent.type(screen.getByRole('textbox'), '/background summarize repo{Enter}')
+    expect(await screen.findByRole('button', { name: 'Background work · 1' })).toBeInTheDocument()
+    const reads = vi.mocked(api.fetchBackgroundTasks).mock.calls.length
+    vi.mocked(api.fetchBackgroundTasks).mockResolvedValue({ session_id: 's1', agent_available: true, tasks: [{ task_id: 'bg1', kind: 'background_command', status: 'running', title: 'summarize repo', started_at: 1, updated_at: 1, completed_at: null, result_available: false, child_sessions: [], exit_code: null, agents: null, pinned: true, dismissible: false, active: true }] })
+    await act(async () => { start({ ok: true, task_id: 'bg1', stream_id: 'bgs', session_id: 'hidden' }); await Promise.resolve() })
+    await waitFor(() => expect(vi.mocked(api.fetchBackgroundTasks).mock.calls.length).toBeGreaterThan(reads))
+    await userEvent.click(await screen.findByRole('button', { name: 'Background work · 1' }))
+    const card = within(await screen.findByRole('dialog', { name: 'Background work' })).getByRole('region', { name: 'Background work' })
+    expect(within(card).getAllByText('summarize repo')).toHaveLength(1)
+    expect(screen.queryByRole('button', { name: 'Background work · 2' })).toBeNull()
+    expect(api.startBackground).toHaveBeenCalledOnce()
+  })
+
   // TAL-314: the server catalog resolves a typed alias and says which client runs each command.
   it('runs a typed alias as its server catalog command and refuses a command Web cannot run', async () => {
     vi.mocked(api.fetchCommands).mockResolvedValue({ commands: [
