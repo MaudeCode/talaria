@@ -33,9 +33,9 @@ export interface RowActions {
 /** Extends the existing row footer and Menu; both message roles share these counts and actions. */
 function MessageReactions({ row, actions }: { row: VisibleMessage; actions: RowActions }) {
   const view = row.message.reaction_view
-  if (!view) return null
+  if (!view || (!view.state.items.length && !view.actions.length)) return null
   const label = (emoji: string, mine: boolean) => mine ? m.reaction_remove({ emoji }) : m.reaction_add({ emoji })
-  return <>
+  return <span className="message-reactions inline-flex flex-wrap items-center gap-1" role="group" aria-label={m.message_reaction_group({ number: String(row.index + 1) })}>
     {view.state.items.map((item) => {
       const action = view.actions.find((action) => action.emoji === item.emoji)
       return <button key={item.emoji} type="button" className="message-reaction" aria-pressed={item.mine}
@@ -49,7 +49,7 @@ function MessageReactions({ row, actions }: { row: VisibleMessage; actions: RowA
         {action.emoji === null ? m.reaction_clear() : label(action.emoji, view.state.selected === action.emoji)}
       </MenuItem>)}
     </Menu>}
-  </>
+  </span>
 }
 
 function AttachmentList({ message, sessionId }: { message: Message; sessionId: string | undefined }) {
@@ -227,6 +227,7 @@ export const DeliveryRow = memo(function DeliveryRow({ row }: { row: VisibleMess
 export const AssistantMessageRow = memo(function AssistantMessageRow({ row, name, mode, actions, tts, isLast, retainHeight = isLast, sessionId, scope, continuation }: { row: VisibleMessage; name: string; mode: ActivityMode; actions: RowActions; tts: boolean; isLast: boolean; retainHeight?: boolean; sessionId?: string | undefined; scope?: string | undefined; continuation?: LiveTurn | undefined }) {
   const activity = continuation ? continuedActivity(persistedActivity(row), continuation) : persistedActivity(row)
   const content = activityText(activity)
+  const parts = row.assistantRows ?? [row]
   const run = row.message as { _turnDuration?: number | null; _usedModel?: string | null }
   const meta = [typeof run._turnDuration === 'number' && run._turnDuration >= 0.5 ? `${run._turnDuration < 10 ? run._turnDuration.toFixed(1) : Math.round(run._turnDuration)}s` : null, run._usedModel || null].filter(Boolean).join(' · ')
   return (
@@ -234,10 +235,10 @@ export const AssistantMessageRow = memo(function AssistantMessageRow({ row, name
       <div className="msg-role assistant"><span className="msg-role-name">{name}</span>{row.message.badge && <span className="msg-badge">{row.message.badge}</span>}</div>
       <div className="assistant-turn-blocks">
         <TurnActivityView activity={activity} mode={mode} sessionId={sessionId} scope={scope} />
-        {(row.assistantRows ?? [row]).map((part) => <AttachmentList key={part.key} message={part.message} sessionId={undefined} />)}
+        {parts.map((part) => <AttachmentList key={part.key} message={part.message} sessionId={undefined} />)}
       </div>
       <div className={cn('msg-foot', isLast && 'msg-foot-latest')}>
-        <MessageReactions row={row} actions={actions} />
+        {parts.map((part) => <MessageReactions key={part.key} row={part} actions={actions} />)}
         {row.message.timestamp ? <span className="msg-time">{formatDate(row.message.timestamp)}</span> : null}
         {meta && <span className="msg-run-meta font-mono text-[11px] tabular-nums text-muted opacity-75">{meta}</span>}
         <span className="ml-auto" aria-hidden="true" />

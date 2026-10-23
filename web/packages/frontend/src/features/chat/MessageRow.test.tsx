@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { AssistantMessageRow, BackgroundUpdateRow, NoticeRow, UserMessageRow } from './MessageRow'
 import { Transcript } from './Transcript'
 import { readFileSync } from 'node:fs'
@@ -258,6 +258,22 @@ describe('server media references (TAL-186)', () => {
 
 
 describe('canonical message reactions', () => {
+  it('preserves each canonical reaction view when assistant messages share one turn', () => {
+    const fixture = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../..', 'contracts/fixtures/web-reactions.json'), 'utf8')) as { message: Message }
+    const earlier = { index: 1, key: 'earlier', message: { ...fixture.message, content: 'First canonical part', _turn_id: 'same-turn', reaction_view: { ...fixture.message.reaction_view!, row_id: 41 } } }
+    const later = { index: 2, key: 'later', message: { ...fixture.message, content: 'Final canonical part', _turn_id: 'same-turn' } }
+    const grouped = groupAssistantTurns([earlier, later])
+    const onReact = vi.fn()
+    render(<AssistantMessageRow row={grouped[0]!} name="Assistant" mode="compact_worklog" actions={{ onReact }} tts={false} isLast />)
+    expect(screen.getAllByRole('button', { name: 'Remove 👍 reaction, 1' })).toHaveLength(2)
+    const first = screen.getByRole('group', { name: 'Reactions for message 2' })
+    const last = screen.getByRole('group', { name: 'Reactions for message 3' })
+    fireEvent.click(within(first).getByRole('button', { name: 'Remove 👍 reaction, 1' }))
+    expect(onReact).toHaveBeenLastCalledWith(earlier, earlier.message.reaction_view.actions[0])
+    fireEvent.click(within(last).getByRole('button', { name: 'Remove 👍 reaction, 1' }))
+    expect(onReact).toHaveBeenLastCalledWith(later, later.message.reaction_view!.actions[0])
+  })
+
   it.each(['user', 'assistant'])('renders server counts and permitted actions on a %s row', async (role) => {
     const fixture = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../..', 'contracts/fixtures/web-reactions.json'), 'utf8')) as { message: Message }
     const row = { index: 0, key: 'reaction-row', message: { ...fixture.message, role } }

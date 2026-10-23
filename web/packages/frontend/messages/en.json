@@ -2710,5 +2710,6 @@
 	"message_reactions": "React to message",
 	"reaction_add": "React with {emoji}",
 	"reaction_remove": "Remove {emoji} reaction",
-	"reaction_clear": "Remove reaction"
+	"reaction_clear": "Remove reaction",
+	"message_reaction_group": "Reactions for message {number}"
 }

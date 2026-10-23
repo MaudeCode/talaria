@@ -212,4 +212,6 @@ textarea#msg::-webkit-scrollbar{display:var(--composer-scrollbar-display)}
 .msg-row:has(.message-reaction) .msg-foot{opacity:1}
 .msg-foot .message-reaction{width:auto;min-width:34px;min-height:28px;padding:2px 6px;border:1px solid var(--border);border-radius:999px;background:var(--surface);color:var(--text);font-size:12px;flex-shrink:0}
 .msg-foot .message-reaction[aria-pressed="true"]{background:var(--accent-bg);border-color:var(--accent);color:var(--accent-text)}
-@media (max-width:640px){.msg-foot:has(.message-reaction){flex-wrap:wrap}.msg-foot .message-reaction{min-height:44px;min-width:44px}.msg-foot > .message-reaction-trigger{width:44px;height:44px}}
+@media (max-width:640px){.msg-foot:has(.message-reaction){flex-wrap:wrap}.msg-foot .message-reaction{min-height:44px;min-width:44px}.msg-foot .message-reaction-trigger{width:44px;height:44px}}
+
+.msg-foot .message-reactions + .message-reactions{border-inline-start:1px solid var(--border);padding-inline-start:6px}
