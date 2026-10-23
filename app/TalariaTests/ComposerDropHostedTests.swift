@@ -232,4 +232,3 @@ private final class HostedDropSession: NSObject, UIDropSession {
         return progress
     }
 }
-
