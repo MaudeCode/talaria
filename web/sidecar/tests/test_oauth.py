@@ -271,10 +271,11 @@ class SignIn:
         self.kwargs: dict = {}
         self.persisted: list = []
         self.closed = False
+        self.settled_count = 0
 
-    def __call__(self, **kwargs):
-        self.kwargs = kwargs
-        return self.run(**kwargs)
+    def __call__(self, *, cancelled, cancel_wins_after_promotion, persist_guard, scope):
+        self.kwargs = dict(cancelled=cancelled, cancel_wins_after_promotion=cancel_wins_after_promotion, persist_guard=persist_guard, scope=scope)
+        return self.run(**self.kwargs)
 
     def run(self, *, cancelled, cancel_wins_after_promotion, persist_guard, scope):
         try:
@@ -295,9 +296,23 @@ class SignIn:
                 yield state("superseded", copy="A newer sign-in code replaced this one.")
                 return
             assert self.settle.wait(5)
+            self.settled_count += 1
             yield self.settled
         finally:
             self.closed = True
+
+
+class PlainSignIn(SignIn):
+    """The v0.22.5 declaration rejects the retired promotion keyword."""
+
+    def __call__(self, *, cancelled, persist_guard, scope):
+        self.kwargs = dict(cancelled=cancelled, persist_guard=persist_guard, scope=scope)
+        return self.run(cancel_wins_after_promotion=True, **self.kwargs)
+
+
+@pytest.fixture(params=[SignIn, PlainSignIn], ids=["promotion", "plain-device"])
+def sign_in_factory(request):
+    return request.param
 
 
 def stub_agent(monkeypatch, *, guest: bool, shape: str, sign_in: SignIn | None = None) -> list[tuple]:
@@ -351,12 +366,12 @@ def test_nous_over_a_guest_on_an_agent_without_run_sign_in_is_refused_with_the_u
     assert requests == []
 
 
-def test_nous_over_a_guest_signs_in_through_the_agent_and_keeps_its_connected_apps(provider, monkeypatch, tmp_path):
-    sign_in = SignIn()
+def test_nous_over_a_guest_signs_in_through_the_agent_and_keeps_its_connected_apps(sign_in_factory, provider, monkeypatch, tmp_path):
+    sign_in = sign_in_factory()
     requests = stub_agent(monkeypatch, guest=True, shape="0.22", sign_in=sign_in)
     flow = oauth.start(tmp_path, "nous")
     assert flow == {"flow_id": flow["flow_id"], "provider": "nous", "status": "pending", "user_code": "GUEST-42", "verification_url": "https://portal.example.test/claim/GUEST-42", "expires_in": 600, "interval": 2}
-    assert sign_in.kwargs["cancel_wins_after_promotion"] is True
+    assert sign_in.kwargs.get("cancel_wins_after_promotion") is (True if sign_in_factory is SignIn else None)
     sign_in.answer.set()
     wait_until(lambda: sign_in.persisted)
     assert sign_in.persisted == [tmp_path]  # under the flow's own home
@@ -367,11 +382,13 @@ def test_nous_over_a_guest_signs_in_through_the_agent_and_keeps_its_connected_ap
     sign_in.settle.set()
     assert settle(tmp_path, flow["flow_id"]) == {"flow_id": flow["flow_id"], "provider": "nous", "status": "approved", "error": None}
     assert requests == []  # neither a plain device code nor the plain save
-    assert sign_in.closed
+    assert sign_in.closed and sign_in.settled_count == 1
+    assert oauth.poll(tmp_path, flow["flow_id"])["status"] == "approved"
+    assert sign_in.settled_count == 1
 
 
-def test_a_guest_sign_in_that_fails_to_settle_after_the_save_ends_in_error(provider, monkeypatch, tmp_path):
-    sign_in = SignIn(settled=state("failed", copy="Sign-in didn't finish. Try again whenever you're ready."))
+def test_a_guest_sign_in_that_fails_to_settle_after_the_save_ends_in_error(sign_in_factory, provider, monkeypatch, tmp_path):
+    sign_in = sign_in_factory(settled=state("failed", copy="Sign-in didn't finish. Try again whenever you're ready."))
     stub_agent(monkeypatch, guest=True, shape="0.22", sign_in=sign_in)
     flow = oauth.start(tmp_path, "nous")
     sign_in.answer.set()
@@ -384,8 +401,8 @@ def test_a_guest_sign_in_that_fails_to_settle_after_the_save_ends_in_error(provi
     (state("declined", copy="No problem, you're still on the free Nous service."), "denied", "Sign-in was declined."),
     (state("timed_out", copy="That sign-in link has expired."), "expired", "The sign-in code expired before it was approved."),
 ])
-def test_a_guest_sign_in_that_ends_without_an_account_is_the_flows_ending(provider, monkeypatch, tmp_path, ending, status, error):
-    sign_in = SignIn(ending=ending)
+def test_a_guest_sign_in_that_ends_without_an_account_is_the_flows_ending(sign_in_factory, provider, monkeypatch, tmp_path, ending, status, error):
+    sign_in = sign_in_factory(ending=ending)
     requests = stub_agent(monkeypatch, guest=True, shape="0.22", sign_in=sign_in)
     flow = oauth.start(tmp_path, "nous")
     sign_in.answer.set()
@@ -393,17 +410,27 @@ def test_a_guest_sign_in_that_ends_without_an_account_is_the_flows_ending(provid
     assert sign_in.persisted == [] and requests == []
 
 
-def test_a_cancelled_guest_sign_in_persists_nothing(provider, monkeypatch, tmp_path):
-    sign_in = SignIn()
+@pytest.mark.parametrize("stop", ["cancel", "expire", "supersede"])
+def test_a_cancelled_guest_sign_in_persists_nothing(sign_in_factory, provider, monkeypatch, tmp_path, stop):
+    sign_in = sign_in_factory()
     requests = stub_agent(monkeypatch, guest=True, shape="0.22", sign_in=sign_in)
     flow = oauth.start(tmp_path, "nous")
     time.sleep(0.1)  # the worker is draining the sign-in
     assert sign_in.kwargs["cancelled"]() is False
-    assert oauth.cancel(tmp_path, flow["flow_id"])["status"] == "cancelled"
+    status = "expired" if stop == "expire" else "cancelled"
+    if stop == "cancel":
+        assert oauth.cancel(tmp_path, flow["flow_id"])["status"] == status
+    elif stop == "expire":
+        oauth._FLOWS[flow["flow_id"]].expires_at = time.time() - oauth._EXPIRY_GRACE - 1
+        assert oauth.poll(tmp_path, flow["flow_id"])["status"] == status
+    else:
+        newer = oauth.start(tmp_path, "nous", providers={"nous": provider.steps()})
+        provider.answer.set()
+        assert settle(tmp_path, newer["flow_id"])["status"] == "approved"
     assert sign_in.kwargs["cancelled"]() is True
     sign_in.answer.set()  # the transfer completes in the browser after the cancel
     wait_until(lambda: sign_in.closed)
-    assert oauth.poll(tmp_path, flow["flow_id"])["status"] == "cancelled"
+    assert oauth.poll(tmp_path, flow["flow_id"])["status"] == status
     assert sign_in.persisted == [] and requests == []
 
 
@@ -411,8 +438,8 @@ def test_a_cancelled_guest_sign_in_persists_nothing(provider, monkeypatch, tmp_p
     (state("already_signed_in", ok=True, precondition=True, copy="Already signed in."), "oauth_unsupported"),
     (state("failed", copy="The Nous service couldn't be reached."), "oauth_failed"),
 ])
-def test_a_guest_sign_in_that_cannot_start_is_refused(provider, monkeypatch, tmp_path, first, condition):
-    sign_in = SignIn(first=first)
+def test_a_guest_sign_in_that_cannot_start_is_refused(sign_in_factory, provider, monkeypatch, tmp_path, first, condition):
+    sign_in = sign_in_factory(first=first)
     stub_agent(monkeypatch, guest=True, shape="0.22", sign_in=sign_in)
     with pytest.raises(RpcError) as refused:
         oauth.start(tmp_path, "nous")

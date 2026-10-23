@@ -11,6 +11,7 @@ Flows live in this process only.
 from __future__ import annotations
 
 import contextlib
+import inspect
 import logging
 import os
 import secrets
@@ -156,7 +157,7 @@ def _nous_begin() -> tuple[dict, dict]:
     # v0.22.0 replaced ``guest_enabled`` with ``guest_allowed``; 0.21.x releases only have the former.
     guest_gate = getattr(anon_auth, "guest_allowed", None) or getattr(anon_auth, "guest_enabled")
     if guest_gate() and anon_auth.has_guest():
-        # A plain device-code sign-in here would orphan the guest's connected apps.
+        # The native sign-in owns the guest's connector handoff for its installed protocol.
         if hasattr(anon_auth, "run_sign_in"):
             return _nous_sign_in(anon_auth)
         hint = getattr(anon_auth, "UPGRADE_HINT", None) or "Sign in from Hermes with `hermes auth upgrade`."
@@ -195,8 +196,9 @@ def _nous_sign_in(anon_auth: Any) -> tuple[dict, dict]:
         flow = state.get("flow")
         return scoped_home(flow.home) if flow is not None else contextlib.nullcontext()
 
-    # A cancel after the transfer persists nothing, as on the desktop: the guest is minted again on next use.
-    sign_in = anon_auth.run_sign_in(cancelled=cancelled, cancel_wins_after_promotion=True, persist_guard=persist_guard, scope=scope)
+    # Older Agents use promotion; v0.22.5 removed its option in favor of plain device login and native handoff.
+    options = {"cancel_wins_after_promotion": True} if "cancel_wins_after_promotion" in inspect.signature(anon_auth.run_sign_in).parameters else {}
+    sign_in = anon_auth.run_sign_in(cancelled=cancelled, persist_guard=persist_guard, scope=scope, **options)
     first = next(sign_in)
     if first.kind != "code":
         sign_in.close()

@@ -648,3 +648,12 @@ existing refused attachment response. Older owners expose no extra controls.
 The v0.22.3 compatibility fixture uses a disposable native owner and loopback
 provider to verify steering execution and queued replacement, including replay
 of the same replacement identity.
+
+## Nous guest sign-in
+
+`oauth.start` delegates a guest profile's account sign-in to the installed Agent's
+`anon_auth.run_sign_in`. The sidecar passes `cancel_wins_after_promotion` only when
+the native signature declares it. Older Agents retain their claim-link promotion;
+v0.22.5 uses the native plain device-code login and owns the post-save connector
+handoff. Both paths retain the profile scope and atomic persistence guard. The
+public OAuth display, success and error fields are unchanged.
