@@ -2,6 +2,7 @@ import SwiftUI
 import UIKit
 import PhotosUI
 import TalariaKit
+import UniformTypeIdentifiers
 
 
 struct MessageComposerView: View {
@@ -105,6 +106,8 @@ struct MessageComposerView: View {
     let onPasteFileURLs: ([URL]) -> Void
     let onPasteImageProviders: ([NSItemProvider]) -> Void
     let onPasteImages: ([UIImage]) -> Void
+    /// Dropped images and files, in the drop's order (TAL-1461).
+    let onDropAttachmentProviders: ([NSItemProvider]) -> Void
     let onRemoveAttachment: (UUID) -> Void
     let onPreviewAttachment: (PendingAttachment) -> Void
     let onDismissUploadAttachmentError: () -> Void
@@ -153,6 +156,8 @@ struct MessageComposerView: View {
     @State private var voiceNoteRecorder = ComposerVoiceNoteRecorder()
     @State private var voiceNoteCancelArmed = false
     @State private var didAutoStartVoiceInput = false
+    @State private var isDropTargeted = false
+    @State private var caret = ComposerCaret()
     @AppStorage(ComposerSTTProviderPreference.storageKey) private var sttProviderPreferenceRawValue = ComposerSTTProviderPreference.defaultValue.rawValue
     @AppStorage(ComposerSendKey.storageKey) private var sendKeyRawValue = ComposerSendKey.defaultValue.rawValue
     @AppStorage(StreamingSendBehavior.storageKey) private var streamingSendBehaviorRawValue = StreamingSendBehavior.steer.rawValue
@@ -331,10 +336,14 @@ struct MessageComposerView: View {
                         in: RoundedRectangle(cornerRadius: composerCornerRadius, style: .continuous)
                     )
                     .clipShape(RoundedRectangle(cornerRadius: composerCornerRadius, style: .continuous))
-                    // Web's card: a low-contrast outline all round, a soft shadow in light mode only.
+                    // Web's card: a low-contrast outline all round, a soft shadow in light mode only. An acceptable
+                    // drop hovering over the composer draws the outline in the accent colour (TAL-1461).
                     .overlay {
                         RoundedRectangle(cornerRadius: composerCornerRadius, style: .continuous)
-                            .strokeBorder(ComposerControlStrip.borderColor(for: colorScheme), lineWidth: 1)
+                            .strokeBorder(
+                                isDropTargeted ? Color.accentColor : ComposerControlStrip.borderColor(for: colorScheme),
+                                lineWidth: isDropTargeted ? 2 : 1
+                            )
                     }
                     .shadow(color: Color.black.opacity(colorScheme == .dark ? 0 : 0.14), radius: 12, y: 8)
                     .zIndex(1)
@@ -344,6 +353,10 @@ struct MessageComposerView: View {
                     controlStrip
                         .padding(.horizontal, composerCornerRadius)
                 }
+                .onDrop(
+                    of: ComposerDropItem.types,
+                    delegate: ComposerDropDelegate(accepted: droppableItems, isTargeted: $isDropTargeted, perform: acceptDrop)
+                )
                 .padding(.horizontal)
                 .padding(.bottom, showsStripUnderCard ? 4 : 0)
                 .animation(ChatMotion.composerChrome(reduceMotion: reduceMotion), value: usesSingleLineShell)
@@ -712,6 +725,7 @@ struct MessageComposerView: View {
                         onPasteFileURLs: onPasteFileURLs,
                         onPasteImageProviders: onPasteImageProviders,
                         onPasteImages: onPasteImages,
+                        caret: caret,
                         placeholder: isAnsweringClarification ? "Type a response" : "Ask anything... /commands",
                         // One line, scrolling inside it.
                         maximumInputHeight: maximumTextInputHeight,
@@ -1432,6 +1446,38 @@ struct MessageComposerView: View {
         voiceNoteRecorder.cancel()
     }
 
+    /// A composer that cannot take input refuses a drop: offline, view-only, answering a question, or before its
+    /// session exists.
+    private var acceptsDrops: Bool {
+        !isReadOnly && !isAnsweringClarification && sessionStart == nil
+    }
+
+    /// The items of a drop this composer takes, in the drop's order; none refuses the drop. An owner-attached chat that
+    /// takes no attachments still takes dropped text.
+    private func droppableItems(_ providers: [NSItemProvider]) -> [(NSItemProvider, ComposerDropItem)] {
+        guard acceptsDrops else { return [] }
+        let canAttach = ownerAttachment?.canAttach != false
+        return providers.compactMap { provider in ComposerDropItem(provider).map { (provider, $0) } }
+            .filter { canAttach || $0.1 != .attachment }
+    }
+
+    /// One drop onto the composer (TAL-1461): its images and files stage as attachments, its links and text go into the
+    /// draft at the caret, each in the drop's order. Focus returns to the editor.
+    private func acceptDrop(_ items: [(NSItemProvider, ComposerDropItem)]) {
+        let attachments = items.filter { $0.1 == .attachment }.map(\.0)
+        if !attachments.isEmpty {
+            deferredUploadFocusPhase = .waitingForUploadStart(afterGeneration: attachmentUploadGeneration)
+            onDropAttachmentProviders(attachments)
+        }
+        Task { @MainActor in
+            for (provider, item) in items {
+                guard let text = await item.draftText(from: provider) else { continue }
+                caret.insert(text, into: $draftMessage)
+            }
+            requestTextViewFocusIfPossible()
+        }
+    }
+
     private var canFocusTextView: Bool {
         !isReadOnly && !isUploadingAttachment && uploadAttachmentErrorMessage == nil
     }
@@ -1614,5 +1660,93 @@ struct ComposerSendButton: View {
                 Button(option.title) { onOption(option.action) }
             }
         }
+    }
+}
+
+/// What one dropped item becomes in the composer (TAL-1461), judged in the paste configuration's order.
+enum ComposerDropItem: Equatable {
+    /// An image or a file, staged as an attachment.
+    case attachment
+    /// A web link, inserted as its address and a space.
+    case link
+    /// Text, rich text flattened, inserted as it is.
+    case text
+
+    static let types: [UTType] = [.image, .fileURL, .url, .text, .item]
+
+    init?(_ provider: NSItemProvider) {
+        func conforms(_ type: UTType) -> Bool { provider.hasItemConformingToTypeIdentifier(type.identifier) }
+        // Files hands a dragged file over as its contents under the file's name, so a named item is a file even when
+        // its contents are text.
+        let isNamedFile = provider.suggestedName.map { !URL(fileURLWithPath: $0).pathExtension.isEmpty } ?? false
+        if conforms(.image) || conforms(.fileURL) {
+            self = .attachment
+        } else if conforms(.url) {
+            self = .link
+        } else if !isNamedFile, provider.canLoadObject(ofClass: NSString.self) || provider.canLoadObject(ofClass: NSAttributedString.self) {
+            self = .text
+        } else if !provider.registeredTypeIdentifiers.isEmpty {
+            self = .attachment
+        } else {
+            return nil
+        }
+    }
+
+    /// The text this item adds to the draft; nil for an attachment or an item that would not load.
+    @MainActor
+    func draftText(from provider: NSItemProvider) async -> String? {
+        switch self {
+        case .attachment:
+            return nil
+        case .link:
+            return await Self.load(NSURL.self, from: provider)?.absoluteString.map { $0 + " " }
+        case .text:
+            if provider.canLoadObject(ofClass: NSString.self) {
+                return await Self.load(NSString.self, from: provider) as String?
+            }
+            return await Self.load(NSAttributedString.self, from: provider)?.string
+        }
+    }
+
+    private static func load<Object: NSObject & NSItemProviderReading>(_ type: Object.Type, from provider: NSItemProvider) async -> Object? {
+        await withCheckedContinuation { continuation in
+            _ = provider.loadObject(ofClass: type) { object, _ in continuation.resume(returning: object as? Object) }
+        }
+    }
+}
+
+/// The composer's drop destination (TAL-1461): it outlines the card while an acceptable drop hovers, and refuses a drop
+/// with nothing the composer takes.
+private struct ComposerDropDelegate: DropDelegate {
+    let accepted: ([NSItemProvider]) -> [(NSItemProvider, ComposerDropItem)]
+    @Binding var isTargeted: Bool
+    let perform: ([(NSItemProvider, ComposerDropItem)]) -> Void
+
+    private func items(_ info: DropInfo) -> [(NSItemProvider, ComposerDropItem)] {
+        accepted(info.itemProviders(for: ComposerDropItem.types))
+    }
+
+    func validateDrop(info: DropInfo) -> Bool {
+        !items(info).isEmpty
+    }
+
+    func dropEntered(info: DropInfo) {
+        isTargeted = true
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: validateDrop(info: info) ? .copy : .forbidden)
+    }
+
+    func dropExited(info: DropInfo) {
+        isTargeted = false
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        isTargeted = false
+        let items = items(info)
+        guard !items.isEmpty else { return false }
+        perform(items)
+        return true
     }
 }

@@ -3,6 +3,22 @@ import TalariaKit
 import UIKit
 import UniformTypeIdentifiers
 
+/// The composer's text view while it is on screen, so text dropped on the composer goes in at its caret (TAL-1461).
+@MainActor
+final class ComposerCaret {
+    weak var textView: UITextView?
+
+    /// Inserts `text` at the caret, over any selection, through the text view's own input path so the draft follows.
+    /// With no text view on screen, as in the one-line shell, it goes at the draft's end.
+    func insert(_ text: String, into draft: Binding<String>) {
+        if let textView, textView.window != nil, textView.isEditable {
+            textView.insertText(text)
+        } else {
+            draft.wrappedValue += text
+        }
+    }
+}
+
 struct ComposerTextView: UIViewRepresentable {
     @Binding var text: String
     let revision: Int
@@ -18,6 +34,7 @@ struct ComposerTextView: UIViewRepresentable {
     let onPasteFileURLs: ([URL]) -> Void
     let onPasteImageProviders: ([NSItemProvider]) -> Void
     let onPasteImages: ([UIImage]) -> Void
+    var caret: ComposerCaret?
 
     func makeCoordinator() -> Coordinator {
         Coordinator(text: $text, isFocused: $isFocused, onHeightChange: onHeightChange)
@@ -40,6 +57,11 @@ struct ComposerTextView: UIViewRepresentable {
                 UTType.text.identifier
             ]
         )
+        // The composer card takes every drop (TAL-1461): the text view's own would put text at the drop point and a
+        // file in as its URL.
+        if let textDropInteraction = textView.textDropInteraction {
+            textView.removeInteraction(textDropInteraction)
+        }
         applyInputHandling(to: textView)
         context.coordinator.reportHeight(for: textView)
         return textView
@@ -70,6 +92,7 @@ struct ComposerTextView: UIViewRepresentable {
     }
 
     private func applyInputHandling(to textView: PastingTextView) {
+        caret?.textView = textView
         textView.isKeyboardSendEnabled = isKeyboardSendEnabled
         textView.keyboardSendKey = keyboardSendKey
         textView.alternateSendBehavior = alternateSendBehavior

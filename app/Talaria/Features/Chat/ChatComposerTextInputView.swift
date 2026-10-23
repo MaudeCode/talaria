@@ -20,6 +20,7 @@ struct ComposerTextInputView: View {
     let onPasteFileURLs: ([URL]) -> Void
     let onPasteImageProviders: ([NSItemProvider]) -> Void
     let onPasteImages: ([UIImage]) -> Void
+    var caret: ComposerCaret?
 
     var placeholder: LocalizedStringKey = "Ask anything... /commands"
     /// Caps the text at that height; longer text scrolls inside it.
@@ -42,7 +43,8 @@ struct ComposerTextInputView: View {
                 onPasteFileProviders: onPasteFileProviders,
                 onPasteFileURLs: onPasteFileURLs,
                 onPasteImageProviders: onPasteImageProviders,
-                onPasteImages: onPasteImages
+                onPasteImages: onPasteImages,
+                caret: caret
             )
             .frame(height: min(inputHeight, maximumInputHeight))
             .padding(.vertical, verticalPadding)
