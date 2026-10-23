@@ -64,16 +64,9 @@ export function WorkspacesPage() {
           </li>
         ))}
       </ul>
-      {adding && <AddWorkspaceDialog onClose={() => setAdding(false)} onSubmit={(path, name) => { setAdding(false); add.mutate({ resource: newResource('workspace'), path, name }) }} />}
+      {adding && <WorkspaceDialog onClose={() => setAdding(false)} onSubmit={(path, name) => { setAdding(false); add.mutate({ resource: newResource('workspace'), path, name }) }} />}
       <ConfirmDialog open={removing !== null} onOpenChange={(o) => { if (!o) setRemoving(null) }} title={m.workspace_remove_confirm()} confirmLabel={m.remove()} cancelLabel={m.cancel()} danger onConfirm={() => { if (removing) remove.mutate(removing) }} />
-      {renaming && (
-        <Dialog open onOpenChange={(o) => { if (!o) setRenaming(null) }} title={m.workspace_rename_prompt()}>
-          <form onSubmit={(e) => { e.preventDefault(); rename.mutate(renaming); setRenaming(null) }} className="flex flex-col gap-3">
-            <TextInput autoFocus value={renaming.name} onChange={(e) => setRenaming({ ...renaming, name: e.target.value })} placeholder={m.workspace_name_placeholder()} aria-label={m.workspace_rename_prompt()} />
-            <div className="flex justify-end gap-2"><Button onClick={() => setRenaming(null)}>{m.cancel()}</Button><Button type="submit" variant="primary">{m.save()}</Button></div>
-          </form>
-        </Dialog>
-      )}
+      {renaming && <WorkspaceDialog workspace={renaming} onClose={() => setRenaming(null)} onSubmit={(_path, name) => { rename.mutate({ path: renaming.path, name }); setRenaming(null) }} />}
     </HubPage>
   )
 }
@@ -81,25 +74,28 @@ export function WorkspacesPage() {
 /** A space's place in a pending order; spaces the order does not name keep their place after it. */
 const rank = (order: string[], path: string) => { const i = order.indexOf(path); return i < 0 ? order.length : i }
 
-/** Closes on Add: the space shows at once while the server resolves it. */
-function AddWorkspaceDialog({ onClose, onSubmit }: { onClose: () => void; onSubmit: (path: string, name: string) => void }) {
-  const [path, setPath] = useState('')
-  const [name, setName] = useState('')
+/** Owns both workspace drafts and closes on submit, before the server resolves the write. */
+function WorkspaceDialog({ workspace, onClose, onSubmit }: { workspace?: { path: string; name: string }; onClose: () => void; onSubmit: (path: string, name: string) => void }) {
+  const [path, setPath] = useState(workspace?.path ?? '')
+  const [name, setName] = useState(workspace?.name ?? '')
   const [suggestions, setSuggestions] = useState<string[]>([])
   useEffect(() => {
+    if (workspace) return
     const t = setTimeout(() => {
       if (!path) { setSuggestions((s) => (s.length ? [] : s)); return }
       api.suggestWorkspaces(path).then((r) => setSuggestions(r.suggestions.slice(0, 8))).catch(() => setSuggestions([]))
     }, 200)
     return () => clearTimeout(t)
-  }, [path])
+  }, [path, workspace])
   return (
-    <Dialog open onOpenChange={(o) => { if (!o) onClose() }} title={m.workspace_add()}>
-      <form onSubmit={(e) => { e.preventDefault(); if (path.trim()) onSubmit(path.trim(), name.trim()) }} className="flex flex-col gap-3">
-        <TextInput autoFocus list="workspaceSuggestions" value={path} onChange={(e) => setPath(e.target.value)} placeholder={m.workspace_add_path_placeholder()} aria-label={m.workspace_add_path_placeholder()} />
-        <datalist id="workspaceSuggestions">{suggestions.map((s) => <option key={s} value={s} />)}</datalist>
-        <TextInput value={name} onChange={(e) => setName(e.target.value)} placeholder={m.workspace_name_placeholder()} aria-label={m.workspace_name_placeholder()} />
-        <div className="flex justify-end gap-2"><Button onClick={onClose}>{m.cancel()}</Button><Button type="submit" variant="primary">{m.add()}</Button></div>
+    <Dialog open onOpenChange={(o) => { if (!o) onClose() }} title={workspace ? m.workspace_rename_prompt() : m.workspace_add()}>
+      <form onSubmit={(e) => { e.preventDefault(); if (workspace) onSubmit(workspace.path, name); else if (path.trim()) onSubmit(path.trim(), name.trim()) }} className="flex flex-col gap-3">
+        {!workspace && <>
+          <TextInput autoFocus list="workspaceSuggestions" value={path} onChange={(e) => setPath(e.target.value)} placeholder={m.workspace_add_path_placeholder()} aria-label={m.workspace_add_path_placeholder()} />
+          <datalist id="workspaceSuggestions">{suggestions.map((s) => <option key={s} value={s} />)}</datalist>
+        </>}
+        <TextInput autoFocus={!!workspace} value={name} onChange={(e) => setName(e.target.value)} placeholder={m.workspace_name_placeholder()} aria-label={workspace ? m.workspace_rename_prompt() : m.workspace_name_placeholder()} />
+        <div className="flex justify-end gap-2"><Button onClick={onClose}>{m.cancel()}</Button><Button type="submit" variant="primary">{workspace ? m.save() : m.add()}</Button></div>
       </form>
     </Dialog>
   )

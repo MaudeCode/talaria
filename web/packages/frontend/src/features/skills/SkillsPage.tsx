@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { memo, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronLeft, Search } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
@@ -12,7 +12,7 @@ import { EmptyState, ErrorState, LoadingState, formatBytes } from '../../ui/Stat
 import { showToast } from '../toast/toast'
 import { showErrorToast } from '../toast/errorToast'
 import { cn } from '../../ui/cn'
-import { useResourceEffects, useResourceMutation, withEffects } from '../sessions/useResourceMutation'
+import { useResourceEffects, useResourceMutation, withEffects, type ResourceEffect } from '../sessions/useResourceMutation'
 import { ResourceSwitch } from '../sessions/ResourceSwitch'
 import { PendingWritesPanel } from '../pending-writes/PendingWritesPanel'
 
@@ -37,10 +37,7 @@ export function SkillsPage() {
       title={m.tab_skills()}
       toolbar={
         <>
-          <div className="sidebar-search hub-search">
-            <Search size={14} className="sidebar-search-icon" aria-hidden="true" />
-            <input id="skillsSearch" type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={m.search_skills()} aria-label={m.search_skills()} />
-          </div>
+          <SkillSearch initialQuery={query} onSearch={setQuery} />
           {categories.length > 0 && (
             <Select value={category} onValueChange={(v) => setCategory(v)} aria-label={m.skill_category_all()}>
               <option value="">{m.skill_category_all()}</option>
@@ -55,26 +52,44 @@ export function SkillsPage() {
       {skills.isError && <ErrorState error={skills.error} onRetry={() => { void skills.refetch() }} />}
       {skills.isSuccess && filtered.length === 0 && <EmptyState>{m.skills_no_skills()}</EmptyState>}
       <ul className="skills-list flex flex-col divide-y divide-border-subtle" id="skillsList">
-        {filtered.map((s) => {
-          const use = usage.data?.usage[s.name]?.use_count ?? 0
-          return (
-            <li key={s.name} className="flex items-center gap-3 py-2.5">
-              <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setSelected(s.name)}>
-                <div className={cn('truncate text-sm font-medium', s.disabled ? 'text-muted' : 'text-text')}>{s.name}</div>
-                {s.description && <div className="truncate text-xs text-muted">{s.description}</div>}
-              </button>
-              {s.category && <span className="rounded-full border border-border px-2 py-0.5 text-[10px] uppercase tracking-wider text-muted">{s.category}</span>}
-              {use > 0 && <span className="text-[11px] text-muted">{m.skill_uses({ n: use })}</span>}
-              <span className="flex items-center gap-1 text-xs text-muted">
-                <ResourceSwitch effect={effects[`skill:${s.name}`]} checked={!s.disabled} onCheckedChange={(checked) => toggle.mutate({ name: s.name, enabled: checked })} aria-label={s.name} />
-              </span>
-            </li>
-          )
-        })}
+        {filtered.map((s) => <SkillRow key={s.name} skill={s} uses={usage.data?.usage[s.name]?.use_count ?? 0} effect={effects[`skill:${s.name}`]} onSelect={setSelected} onToggle={toggle.mutate} />)}
       </ul>
     </HubPage>
   )
 }
+
+function SkillSearch({ initialQuery, onSearch }: { initialQuery: string; onSearch: (query: string) => void }) {
+  const [query, setQuery] = useState(initialQuery)
+  return (
+    <div className="sidebar-search hub-search">
+      <Search size={14} className="sidebar-search-icon" aria-hidden="true" />
+      <input id="skillsSearch" type="search" value={query} onChange={(e) => { setQuery(e.target.value); onSearch(e.target.value) }} placeholder={m.search_skills()} aria-label={m.search_skills()} />
+    </div>
+  )
+}
+
+// ResourceSwitch remains the shared write control; the row skips unrelated filter renders.
+const SkillRow = memo(function SkillRow({ skill: s, uses: use, effect, onSelect, onToggle }: {
+  skill: Awaited<ReturnType<typeof api.fetchSkills>>['skills'][number]
+  uses: number
+  effect: ResourceEffect<boolean> | undefined
+  onSelect: (name: string) => void
+  onToggle: (value: { name: string; enabled: boolean }) => void
+}) {
+  return (
+    <li className="flex items-center gap-3 py-2.5">
+      <button type="button" className="min-w-0 flex-1 text-left" onClick={() => onSelect(s.name)}>
+        <div className={cn('truncate text-sm font-medium', s.disabled ? 'text-muted' : 'text-text')}>{s.name}</div>
+        {s.description && <div className="truncate text-xs text-muted">{s.description}</div>}
+      </button>
+      {s.category && <span className="rounded-full border border-border px-2 py-0.5 text-[10px] uppercase tracking-wider text-muted">{s.category}</span>}
+      {use > 0 && <span className="text-[11px] text-muted">{m.skill_uses({ n: use })}</span>}
+      <span className="flex items-center gap-1 text-xs text-muted">
+        <ResourceSwitch effect={effect} checked={!s.disabled} onCheckedChange={(checked) => onToggle({ name: s.name, enabled: checked })} aria-label={s.name} />
+      </span>
+    </li>
+  )
+})
 
 function SkillDetail({ name, onBack }: { name: string; onBack: () => void }) {
   const content = useQuery({ queryKey: keys.skills.content(name), queryFn: () => api.fetchSkillContent(name) })
