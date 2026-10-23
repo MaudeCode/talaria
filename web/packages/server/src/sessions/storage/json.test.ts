@@ -2,14 +2,18 @@ import * as fs from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import * as fsp from 'node:fs/promises'
+import { setImmediate } from 'node:timers/promises'
 import { expect, it, vi } from 'vitest'
+import { RevisionConflict, type SessionChange } from './backend.js'
 import { JsonStorage } from './json.js'
+import type { Message } from '../session.js'
+import { gateFsync, onNextOpen } from '../../test/fs-handles.js'
 import { readJsonMessagePrefix, statSignature } from './json-files.js'
 import { runSessionBackendConformance } from './conformance.js'
 
 vi.mock('node:fs', async (original) => {
   const real = await original<typeof fs>()
-  return { ...real, renameSync: vi.fn(real.renameSync), readFileSync: vi.fn(real.readFileSync), readdirSync: vi.fn(real.readdirSync) }
+  return { ...real, renameSync: vi.fn(real.renameSync), readFileSync: vi.fn(real.readFileSync), readdirSync: vi.fn(real.readdirSync), writeSync: vi.fn(real.writeSync), fsyncSync: vi.fn(real.fsyncSync) }
 })
 vi.mock('node:fs/promises', async (original) => {
   const real = await original<typeof fsp>()
@@ -161,4 +165,117 @@ it('reads a message prefix equal to the full parse across chunk boundaries and f
     const signed = file('signed.json', '{"messages": [{"a": 1}]}')
     expect((await readJsonMessagePrefix(signed, 1)).signature).toBe(statSignature(signed))
   } finally { fs.rmSync(directory, { recursive: true, force: true }) }
+})
+
+const rowsOf = (n: number) => Array.from({ length: n }, (_, i) => ({ role: 'user', content: `row ${i}` }))
+const replace = (sid: string, rows: Message[], title = 'Test'): SessionChange => ({ doc: { session_id: sid, title }, messages: { kind: 'replace', rows } })
+async function withStorage(run: (storage: JsonStorage, directory: string) => Promise<void>): Promise<void> {
+  const directory = fs.mkdtempSync(join(tmpdir(), 'talaria-json-async-'))
+  const storage = new JsonStorage({ directory, now: () => Date.now() / 1000, stampingSince: () => 0 })
+  try { await run(storage, directory) } finally { vi.restoreAllMocks(); await storage.close(); fs.rmSync(directory, { recursive: true, force: true }) }
+}
+const stored = (directory: string, sid = 's') => JSON.parse(fs.readFileSync(join(directory, `${sid}.json`), 'utf8')) as { title: string; messages: unknown[] }
+
+it('stages a session write and its fsync off the event loop, then publishes the shrink backup and document together (TAL-1304)', async () => {
+  await withStorage(async (storage, directory) => {
+    const path = join(directory, 's.json')
+    const revision = await storage.sessions.write('s', replace('s', rowsOf(3)), null)
+    const previous = fs.readFileSync(path, 'utf8')
+    vi.mocked(fs.writeSync).mockClear()
+    vi.mocked(fs.fsyncSync).mockClear()
+    const gate = gateFsync((file) => file.startsWith(`${path}.tmp.`))
+    const order: string[] = []
+    let result: string | undefined
+    const pending = storage.sessions.write('s', replace('s', rowsOf(1), 'shrunk'), revision).then((rev) => { result = rev; order.push('saved') })
+    void setImmediate().then(() => order.push('tick'))
+    await Promise.race([gate.started, pending])
+    await setImmediate()
+    expect(order).toEqual(['tick'])
+    expect(fs.writeSync).not.toHaveBeenCalled()
+    expect(fs.fsyncSync).not.toHaveBeenCalled()
+    expect(fs.readFileSync(path, 'utf8')).toBe(previous)
+    expect(fs.existsSync(`${path}.bak`)).toBe(false)
+    expect(await storage.sessions.revision('s')).toBe(revision)
+    gate.release()
+    await pending
+    expect(order).toEqual(['tick', 'saved'])
+    expect(result).toBe(await storage.sessions.revision('s'))
+    expect(stored(directory)).toMatchObject({ title: 'shrunk', messages: rowsOf(1) })
+    expect(fs.readFileSync(`${path}.bak`, 'utf8')).toBe(previous)
+    expect(fs.readdirSync(directory).sort()).toEqual(['s.json', 's.json.bak'])
+  })
+})
+
+it('refuses to publish over a replacement made while the write was staging (TAL-1304)', async () => {
+  await withStorage(async (storage, directory) => {
+    const path = join(directory, 's.json')
+    const revision = await storage.sessions.write('s', replace('s', rowsOf(2)), null)
+    const gate = gateFsync((file) => file.startsWith(`${path}.tmp.`))
+    const pending = storage.sessions.write('s', replace('s', rowsOf(1), 'stale'), revision)
+    const refused = expect(pending).rejects.toBeInstanceOf(RevisionConflict)
+    await gate.started
+    fs.writeFileSync(path, JSON.stringify({ session_id: 's', title: 'external', messages: [] }))
+    gate.release()
+    await refused
+    expect(stored(directory).title).toBe('external')
+    expect(fs.readdirSync(directory)).toEqual(['s.json'])
+  })
+})
+
+it.each([
+  ['a short write', (handle: fsp.FileHandle) => { vi.spyOn(handle, 'write').mockImplementationOnce(() => Promise.resolve({ bytesWritten: 0, buffer: '' })) }],
+  ['a write error', (handle: fsp.FileHandle) => { vi.spyOn(handle, 'write').mockRejectedValueOnce(new Error('injected write failure')) }],
+  ['an fsync error', (handle: fsp.FileHandle) => { vi.spyOn(handle, 'sync').mockRejectedValueOnce(new Error('injected fsync failure')) }],
+  ['a rename error', null],
+] as const)('keeps the previous document and leaves no staged file or open handle after %s (TAL-1304)', async (_, inject) => {
+  await withStorage(async (storage, directory) => {
+    const path = join(directory, 's.json')
+    const revision = await storage.sessions.write('s', replace('s', rowsOf(3)), null)
+    const previous = fs.readFileSync(path, 'utf8')
+    const closed: boolean[] = []
+    onNextOpen((handle) => {
+      const close = handle.close.bind(handle)
+      vi.spyOn(handle, 'close').mockImplementation(async () => { closed.push(true); await close() })
+      inject?.(handle)
+    }, (file) => file.startsWith(`${path}.tmp.`))
+    const rename = vi.mocked(fs.renameSync).getMockImplementation()!
+    if (!inject) vi.mocked(fs.renameSync).mockImplementation((from, to) => { if (to === path) throw new Error('injected rename failure'); rename(from, to) })
+    await expect(storage.sessions.write('s', replace('s', rowsOf(1)), revision)).rejects.toThrow(/short write|injected/)
+    vi.mocked(fs.renameSync).mockImplementation(rename)
+    expect(closed.length).toBeGreaterThan(0)
+    expect(fs.readFileSync(path, 'utf8')).toBe(previous)
+    expect(await storage.sessions.revision('s')).toBe(revision)
+    expect(fs.readdirSync(directory).filter((name) => name.includes('.tmp.'))).toEqual([])
+    // A published backup only ever holds the still-live previous document.
+    if (fs.existsSync(`${path}.bak`)) expect(fs.readFileSync(`${path}.bak`, 'utf8')).toBe(previous)
+  })
+})
+
+it('still publishes the document when its best-effort shrink backup cannot be staged (TAL-1304)', async () => {
+  await withStorage(async (storage, directory) => {
+    const path = join(directory, 's.json')
+    const revision = await storage.sessions.write('s', replace('s', rowsOf(3)), null)
+    onNextOpen((handle) => { vi.spyOn(handle, 'sync').mockRejectedValueOnce(new Error('injected backup failure')) }, (file) => file.startsWith(`${path}.bak.tmp.`))
+    expect(await storage.sessions.write('s', replace('s', rowsOf(1)), revision)).toBe(await storage.sessions.revision('s'))
+    expect(stored(directory).messages).toEqual(rowsOf(1))
+    expect(fs.readdirSync(directory)).toEqual(['s.json'])
+  })
+})
+
+it('drains a staged session write before close completes (TAL-1304)', async () => {
+  await withStorage(async (storage, directory) => {
+    const gate = gateFsync()
+    const pending = storage.sessions.write('s', replace('s', rowsOf(2), 'drained'), null)
+    await gate.started
+    let closed = false
+    const closing = storage.close().then(() => { closed = true })
+    await setImmediate()
+    expect(closed).toBe(false)
+    gate.release()
+    await pending
+    await closing
+    await expect(storage.sessions.revision('s')).rejects.toThrow(/closed/i)
+    expect(stored(directory)).toMatchObject({ title: 'drained', messages: rowsOf(2) })
+    expect(fs.readdirSync(directory)).toEqual(['s.json'])
+  })
 })

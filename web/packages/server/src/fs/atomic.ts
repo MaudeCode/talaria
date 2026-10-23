@@ -78,14 +78,25 @@ export async function atomicWriteTextAsync(path: string, text: string, opts: { m
     try { mode = (await stat(writePath)).mode & 0o777 } catch { mode = undefined }
   }
   const tmp = tempPath(writePath)
+  await stageFileAsync(tmp, text, mode)
+  try {
+    if (opts.commit) await opts.commit(tmp, writePath)
+    else await rename(tmp, writePath)
+  } catch (error) {
+    await unlink(tmp).catch(() => undefined)
+    throw error
+  }
+}
+
+/** Create `tmp`, write every byte, fsync and close it off the event loop, then apply `mode`; a failure removes `tmp`. */
+export async function stageFileAsync(tmp: string, text: string | Uint8Array, mode?: number): Promise<void> {
+  // Same create modes as `atomicWriteText`.
   const handle = await open(tmp, 'w', mode === undefined ? 0o666 : 0o600)
   try {
     await writeFullyAsync(handle, text)
     await handle.sync()
     await handle.close()
     if (mode !== undefined) await chmod(tmp, mode)
-    if (opts.commit) await opts.commit(tmp, writePath)
-    else await rename(tmp, writePath)
   } catch (error) {
     await handle.close().catch(() => undefined)
     await unlink(tmp).catch(() => undefined)

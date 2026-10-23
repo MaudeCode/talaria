@@ -227,6 +227,8 @@ describe('worktree-backed sessions', () => {
     const created = (await json(await post(s, '/api/session/new', { workspace: ws, worktree: true }))).session as Json
     const sid = String(created.session_id)
     const dir = join(s.state, 'sessions')
+    // Let the creation's index flush commit before the directory turns read-only.
+    await s.deps.sessionStore.index()
     chmodSync(dir, 0o500)
     try {
       const res = await post(s, '/api/session/delete', { session_id: sid })

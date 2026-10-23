@@ -916,8 +916,9 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     writeFileSync(join(s.state, 'auth.json'), JSON.stringify({ credential_pool: { openrouter: [{ api_key: 'sk-rotated' }, { api_key: 'sk-new' }] } }))
     sidecar.respond('chat.start', (params) => { starts.push(str(params.user_message)); return completed('woke up') })
     await complete(sid, `${sid}_5`)
+    // The new completion wakes the session; its teardown delivers the ones held while paused once its save commits.
+    for (let i = 0; i < 100 && starts.length < 3; i += 1) await new Promise((r) => setTimeout(r, 20))
     await idle()
-    // The new completion wakes the session; its teardown delivers the ones held while paused.
     expect(starts).toHaveLength(3)
     expect(starts[1]).toContain(`Background process ${sid}_5 completed`)
     expect(starts[2]).toContain(`Background process ${sid}_2 completed`)

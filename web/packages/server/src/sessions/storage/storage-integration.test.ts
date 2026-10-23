@@ -4,20 +4,28 @@ import { expect, it, vi } from 'vitest'
 import { bootTestServer } from '../../test/harness.js'
 import { FakeSidecar } from '../../sidecar/fake.js'
 
-it('batches concurrent session saves into one index flush', async () => {
+it('batches session saves that commit during an index flush into one follow-up flush', async () => {
   const server = await bootTestServer()
   try {
     const store = server.deps.sessionStore
     const first = await store.newSession()
     const second = await store.newSession()
+    const third = await store.newSession()
     await store.writeIndex()
-    const writeIndex = vi.spyOn(store.deps.storage.sessions, 'writeIndex')
-    first.messages = [{ role: 'user', content: 'first' }]
-    second.messages = [{ role: 'user', content: 'second' }]
-    await Promise.all([store.save(first), store.save(second)])
-    expect(writeIndex).toHaveBeenCalledTimes(1)
+    const sessions = store.deps.storage.sessions
+    const persist = sessions.writeIndex.bind(sessions)
+    let release!: () => void
+    const held = new Promise<void>((resolve) => { release = resolve })
+    const writeIndex = vi.spyOn(sessions, 'writeIndex').mockImplementationOnce(async (entries) => { await held; await persist(entries) })
+    for (const session of [first, second, third]) session.messages = [{ role: 'user', content: session.session_id }]
+    await store.save(first)
+    await Promise.all([store.save(second), store.save(third)])
+    release()
+    await store.queueIndexUpdate([])
+    expect(writeIndex).toHaveBeenCalledTimes(2)
     const rows = await store.readIndexEntries()
-    expect(rows.filter((row) => row.message_count === 1).map((row) => row.session_id).sort()).toEqual([first.session_id, second.session_id].sort())
+    expect(rows.filter((row) => row.message_count === 1).map((row) => row.session_id).sort()).toEqual([first.session_id, second.session_id, third.session_id].sort())
+    await store.delete(third.session_id)
     first.messages.push({ role: 'assistant', content: 'first answer' })
     second.messages.push({ role: 'assistant', content: 'second answer' })
     writeIndex.mockRejectedValueOnce(new Error('synthetic index failure'))
@@ -25,7 +33,6 @@ it('batches concurrent session saves into one index flush', async () => {
     await Promise.all([store.save(first), store.save(second)])
     // An index read retries the queued rows instead of serving the stale file.
     expect((await store.readIndexEntries()).map((row) => row.message_count)).toEqual([2, 2])
-    expect(writeIndex).toHaveBeenCalledTimes(3)
     expect((await store.readIndexEntries()).map((row) => row.message_count)).toEqual([2, 2])
     // While the retry keeps failing, readers see an unreadable index, never a stale one.
     second.messages.push({ role: 'user', content: 'again' })
