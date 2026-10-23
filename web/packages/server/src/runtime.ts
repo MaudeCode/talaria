@@ -2,7 +2,7 @@
  * Assemble the application dependencies for one state directory. Used by the
  * launcher and by tests, which pass a temp directory and a fixed environment.
  */
-import type { PendingSteer, RuntimeDescribe, SessionGoal, SessionNotice, SidecarResult } from '@maudecode/talaria-web-contracts'
+import { SIDECAR_METHODS, type PendingSteer, type RuntimeDescribe, type SessionGoal, type SessionNotice, type SidecarResult } from '@maudecode/talaria-web-contracts'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { pinnedFetch, systemDnsLookup } from './http/pinned.js'
 import { mkdirSync, readdirSync, readFileSync } from 'node:fs'
@@ -24,7 +24,7 @@ import { McpHealthProber } from './tools/mcp-health.js'
 import { loadConfig, truthy, type Env, type LoadConfigOptions } from './config.js'
 import type { AppDeps } from './http/context.js'
 import { checkoutRevision, detectWebuiVersion, loadReleaseInfo } from './release.js'
-import { ghcrExperimental, githubJson, normalizeChannel, purgePycache, UpdateService, waitUntilRestartSafe, type RestartBlockers } from './tools/updates.js'
+import { gatewayDrainDetail, ghcrExperimental, githubJson, normalizeChannel, purgePycache, UpdateService, waitUntilRestartSafe, type RestartBlockers } from './tools/updates.js'
 import { UpdateNotificationStore } from './tools/update-notifications.js'
 import { RESTART_EXIT_CODE } from './cli/supervise.js'
 import { displayBotName, pyBool, SettingsStore } from './settings.js'
@@ -770,6 +770,10 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     return { active_streams: streams.length, active_runs: runs.length, active_terminals: terminals, active_cron_jobs: crons, blocking_stream_ids: streams.slice(0, 10), blocking_run_ids: runs.slice(0, 10), restart_blocked: streams.length > 0 || runs.length > 0 || terminals > 0 || crons > 0 }
   }
   const purgeAgentPycache = (): void => { const dir = sidecar?.describe?.agent_dir; if (dir) purgePycache(dir) }
+  const agentDrain = (frame: { event: string; data: unknown }) => {
+    const parsed = SIDECAR_METHODS['runtime.agent_mutation'].stream.safeParse({ event: frame.event, data: frame.data })
+    return parsed.success ? parsed.data.data : null
+  }
   let recoveredAgentRevision: string | null = null
   let pendingRuntimeRecovery: SidecarResult<'runtime.agent_recovery'> | null = null
   deps.updates = new UpdateService({
@@ -825,7 +829,12 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     hasPendingRecovery: () => updateNotifications.hasPendingAgentRecovery(),
     agentMutation: async (path, revision, mutate, consent) => {
       if (!sidecar) throw new Error('Hermes Agent sidecar is unavailable')
-      const begin = await sidecar.call('runtime.agent_mutation', { action: 'begin', agent_dir: path, revision, homes: agentHomes(), ...(consent?.mutationIntent ? { intent: consent.mutationIntent } : {}), ...(consent?.refreshToken ? { refresh_token: consent.refreshToken } : {}) }, { timeoutMs: 330_000 })
+      const begin = await sidecar.call('runtime.agent_mutation', { action: 'begin', agent_dir: path, revision, homes: agentHomes(), ...(consent?.mutationIntent ? { intent: consent.mutationIntent } : {}), ...(consent?.refreshToken ? { refresh_token: consent.refreshToken } : {}) }, {
+        timeoutMs: 330_000,
+        // TAL-1429: the lease declares its bounded native gateway drain; custody lasts that long plus the ordinary lease margin.
+        renewTimeout: (frame) => { const drain = agentDrain(frame); return drain ? drain.deadline_seconds * 1000 + 330_000 : undefined },
+        onStream: (frame) => { const drain = agentDrain(frame); if (drain) consent?.onProgress?.(gatewayDrainDetail(drain.services, drain.deadline_seconds)) },
+      })
       if (begin.refresh_confirmation) return { ok: false, refresh_confirmation: begin.refresh_confirmation, message: begin.detail }
       if (!begin.ok || !begin.token) throw new Error(begin.detail || 'Agent writer quiescence was not verified.')
       const token = begin.token

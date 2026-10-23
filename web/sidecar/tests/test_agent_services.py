@@ -2359,6 +2359,108 @@ def test_recovery_shares_gateway_drain_budget(gateway_successor, monkeypatch):
     assert len(json.loads(recovery.path.read_text())['entries']) == 2
 
 
+# The native default: after-turn wait 1800 s, stop envelope 60 s, observer headroom 15 s.
+NATIVE_BUDGET = 1875
+
+
+@pytest.fixture
+def native_drain(gateway_successor, monkeypatch):
+    """The original acknowledged gateway keeps finishing native work on a controlled clock."""
+    import types
+    from talaria_sidecar import agent_services as services
+    recovery, entry, calls, parents, pause, records, modules = gateway_successor
+    status, launchd = modules['gateway.status'], modules['hermes_cli.gateway']
+    parents.pop(42001); parents.pop(42002)
+    parents.update({41001: 1, 41002: 41001})
+    model = {'clock': 0, 'service': 41001, 'runtime': 41002, 'lock_free': True, 'events': [], 'cancel_at': None}
+    discovered = {key: entry[key] for key in ('kind', 'domain', 'label', 'plist', 'home')}
+    pause._discover_launchd = lambda: [{**discovered, 'pid': model['service']}] if model['service'] in parents else []
+    launchd._launchd_print_service_pid = lambda *args: (True, model['service']) if model['service'] in parents else (False, None)
+    status.get_running_pid_identity_strict = lambda path: (model['runtime'], model['runtime'] * 10) if model['runtime'] in parents else None
+    status._try_acquire_file_lock = lambda file: model['lock_free']
+    pause._disarm = lambda e: calls.append(('disarm', e['pid'])) or parents.pop(e['pid'], None)
+    pause._drain_budget = lambda: NATIVE_BUDGET
+
+    def exit_runtime():
+        parents.pop(model['runtime'], None)
+        model['lock_free'] = True
+
+    def respawn():
+        # launchd KeepAlive hands the unchanged job to a successor that holds the runtime lock.
+        parents.pop(41001, None); parents.pop(41002, None)
+        parents.update({42001: 1, 42002: 42001})
+        model.update(service=42001, runtime=42002, lock_free=False)
+
+    class Waiting:
+        def is_set(self):
+            return model['cancel_at'] is not None and model['clock'] >= model['cancel_at']
+
+        def wait(self, seconds):
+            model['clock'] += 1
+            for event in [e for e in model['events'] if model['clock'] >= e[0]]:
+                model['events'].remove(event)
+                event[1]()
+            return self.is_set()
+
+    monkeypatch.setattr(services, 'time', types.SimpleNamespace(monotonic=lambda: model['clock'], sleep=lambda s: Waiting().wait(s)))
+    model.update(exit=exit_runtime, respawn=respawn, waiting=Waiting)
+    entry.update(phase='retiring', drain_acknowledged=True)
+    recovery.save()
+    return recovery, entry, calls, parents, pause, model
+
+
+@pytest.mark.parametrize('case', ['idle', 'after-turn', 'stop-drain', 'successor', 'exceeded', 'cancelled', 'unacknowledged'])
+def test_acknowledged_drain_settles_within_the_native_budget(native_drain, case):
+    recovery, entry, calls, parents, pause, model = native_drain
+    exits = {'idle': 1, 'after-turn': 1000, 'stop-drain': NATIVE_BUDGET - 5, 'successor': 1500}
+    if case in exits:
+        model['events'].append((exits[case], model['exit']))
+    if case == 'successor':
+        model['events'].append((400, model['respawn']))
+    if case == 'cancelled':
+        model['cancel_at'] = 500
+    if case == 'unacknowledged':
+        entry['drain_acknowledged'] = False
+    deadline = recovery.gateway_deadline()
+    try:
+        recovery.settle_gateway(entry, model['waiting'](), deadline=deadline)
+        outcome = 'stopped'
+    except RuntimeError as exc:
+        outcome = str(exc)
+    saved = json.loads(recovery.path.read_text())['entries'][0]
+    if case in exits:
+        assert outcome == 'stopped', f'drain refused at {model["clock"]} s of a {NATIVE_BUDGET} s native budget: {outcome}'
+        assert model['clock'] == exits[case] and saved['phase'] == 'stopped'
+        assert calls == ([('drain', 42002), ('disarm', 42001)] if case == 'successor' else [('disarm', 41001)])
+        return
+    assert 'remains owed' in outcome
+    assert model['clock'] == {'exceeded': NATIVE_BUDGET, 'cancelled': 500, 'unacknowledged': 0}[case]
+    assert saved['phase'] == 'retiring' and calls == [] and model['runtime'] in parents
+
+
+def test_profiles_share_the_longest_bounded_native_budget(native_drain, monkeypatch):
+    import copy
+    import types
+    from talaria_sidecar import agent_services as services
+    recovery, entry, calls, parents, pause, model = native_drain
+    other = Path(entry['home']).parent / 'profiles' / 'second'
+    sibling = copy.deepcopy(entry)
+    sibling.update(label='synthetic.second', home=str(other))
+    recovery.state['entries'].append(sibling)
+    budgets = {entry['home']: 600, str(other): NATIVE_BUDGET}
+    before = os.environ.get('HERMES_HOME')
+    pause._drain_budget = lambda: budgets.get(os.environ.get('HERMES_HOME'), 45.0)
+    assert recovery.gateway_deadline() == NATIVE_BUDGET, 'one profile clipped or ignored another profile\'s native budget'
+    assert os.environ.get('HERMES_HOME') == before
+    budgets[str(other)] = float('inf')
+    assert recovery.gateway_deadline() == services.GATEWAY_DRAIN_CEILING
+    # One orphan-recovery attempt still fits its recovery RPC; the retained debt drives the next attempt.
+    monkeypatch.setattr(services, 'threading', types.SimpleNamespace(Event=model['waiting']))
+    with pytest.raises(RuntimeError, match='gateway drain remains owed'):
+        recovery.resume(lambda *args: [])
+    assert model['clock'] == services.RECOVERY_DRAIN_SECONDS and calls == []
+
+
 @pytest.mark.parametrize('manager', ['launchd', 'systemd'])
 def test_successor_configuration_is_rechecked_before_drain(gateway_successor, monkeypatch, manager):
     import threading
@@ -2552,6 +2654,7 @@ def mutation_worker(backend_stop, monkeypatch):
     import threading
     import types
     from talaria_sidecar import agent_mutation as mutation
+    from talaria_sidecar import agent_services as services
     recovery, entry, stopped, parents, modules, events, pause = backend_stop
     root, home, model = recovery.root, Path(entry['home']), pause.model
     recovery.path.unlink()
@@ -2616,11 +2719,12 @@ def mutation_worker(backend_stop, monkeypatch):
 
     monkeypatch.setattr(mutation, '_command', command)
 
-    def run(requests=(), binding=None):
+    def run(requests=(), binding=None, cancel_at=None):
         incoming, replies = queue.Queue(), []
         for request in requests: incoming.put(request)
         incoming.put({'action': 'finish'})
-        stopped = types.SimpleNamespace(is_set=lambda: False, wait=lambda seconds: pause.advance(seconds))
+        cancelled = lambda: cancel_at is not None and services.time.monotonic() >= cancel_at
+        stopped = types.SimpleNamespace(is_set=cancelled, wait=lambda seconds: pause.advance(seconds) or cancelled())
         mutation._worker(root, model['target'], {home}, incoming, stopped, replies.append, binding)
         return replies
 
@@ -2651,6 +2755,80 @@ def test_worker_holds_custody_through_selected_revision_and_dependency_result(mu
         assert not recovery.path.exists()
         assert pause.model['start_attempts'] == 1
         assert pause.ledger()
+
+
+@pytest.mark.parametrize('mode', ['normal', 'force'])
+@pytest.mark.parametrize('finish', [1000, None, 'cancelled'])
+def test_worker_lets_an_acknowledged_gateway_finish_past_the_former_cutoff(mutation_worker, monkeypatch, mode, finish):
+    """A live gateway still inside its native after-turn drain delays, never fails, the same update."""
+    from talaria_sidecar import agent_mutation as mutation
+    from talaria_sidecar import agent_services as services
+    run, model, recovery, entry, parents, events, pause = mutation_worker
+    status, launchd = sys.modules['gateway.status'], sys.modules['hermes_cli.gateway']
+    root, home = recovery.root, Path(entry['home'])
+    (root / 'synthetic.gateway.plist').write_bytes(b'original gateway supervisor configuration')
+    (home / 'gateway.lock').touch()
+    gateway = {'service': 41001, 'runtime': 41002}
+    parents.update({41001: 1, 41002: 41001})
+    discovered = {'kind': 'launchd', 'domain': 'gui/12345', 'label': 'synthetic.gateway',
+                  'plist': str(root / 'synthetic.gateway.plist'), 'home': str(home)}
+    pause._discover_launchd = lambda: [{**discovered, 'pid': gateway['service']}] if gateway['service'] in parents else []
+    status.get_running_pid_identity_strict = lambda path: (gateway['runtime'], gateway['runtime'] * 10) if gateway['runtime'] in parents else None
+    status._get_gateway_lock_path = lambda path: home / 'gateway.lock'
+    status._try_acquire_file_lock = lambda file: True
+    status._release_file_lock = lambda file: None
+    status._build_pid_record = lambda: {'pid': os.getpid(), 'start_time': os.getpid() * 10}
+    backend_service_pid, backend_disarm = services._service_pid, pause._disarm
+    monkeypatch.setattr(services, '_service_pid', lambda e: (gateway['service'] in parents, gateway['service'] if gateway['service'] in parents else None)
+                        if e.get('label') == 'synthetic.gateway' else backend_service_pid(e))
+    def disarm(e):
+        if e.get('label') != 'synthetic.gateway':
+            return backend_disarm(e)
+        events.append('gateway-disarm')
+        parents.pop(e['pid'], None)
+    pause._disarm = disarm
+    pause._alive = lambda pid, ct: pid in parents
+    pause._ask_to_drain = lambda e: events.append('gateway-drain') or True
+    pause._drain_budget = lambda: NATIVE_BUDGET
+    backend_run = subprocess.run
+    def supervisor(argv, **kwargs):
+        if argv[:2] == ['launchctl', 'kickstart'] and argv[2].endswith('/synthetic.gateway'):
+            events.append('gateway-start')
+            gateway.update(service=44001, runtime=44002)
+            parents.update({44001: 1, 44002: 44001})
+            return subprocess.CompletedProcess(argv, 0, '', '')
+        return backend_run(argv, **kwargs)
+    monkeypatch.setattr(subprocess, 'run', supervisor)
+    monkeypatch.setattr(mutation, 'time', services.time)
+    advance = pause.advance
+    def tick(seconds):
+        advance(1)
+        if isinstance(finish, int) and services.time.monotonic() >= finish:
+            parents.pop(41002, None)  # The native after-turn wait and stop drain complete.
+    pause.advance = tick
+    args = ['merge', '--ff-only', model['target']] if mode == 'normal' else ['reset', '--hard', model['target']]
+    replies = run([{'action': 'git', 'args': args}, {'action': 'sync'}], cancel_at=500 if finish == 'cancelled' else None)
+    progress = [reply for reply in replies if 'progress' in reply]
+    results = [reply for reply in replies if 'progress' not in reply]
+    if isinstance(finish, int):
+        assert results and results[0]['ok'], f'begin refused while the gateway was inside its native drain budget: {results}'
+        assert [reply['ok'] for reply in results] == [True, True, True, True], results
+        assert model['head'] == model['target']
+        assert progress == [{'progress': {'phase': 'gateway_drain', 'deadline_seconds': NATIVE_BUDGET, 'services': ['synthetic.gateway']}}]
+        assert events.index('gateway-disarm') < events.index('gateway-start')
+        assert gateway['runtime'] == 44002 and pause.model['start_attempts'] == 1 and pause.ledger()
+        assert not recovery.path.exists()
+        return
+    # An exceeded native budget or a lost lease refuses the update once; unwind spends no second budget.
+    assert [reply['ok'] for reply in results] == [False], results
+    assert 'Gateway drain has not completed' in results[0]['detail']
+    assert model['head'] != model['target'] and not any(argv[1:2] in (['merge'], ['reset']) for argv in model['commands'])
+    ended = NATIVE_BUDGET if finish is None else 500
+    assert ended <= services.time.monotonic() < ended + services.STOP_SECONDS
+    assert 'gateway-disarm' not in events and 41002 in parents
+    saved = json.loads(recovery.path.read_text())
+    assert [(e['label'], e['phase'], e['drain_acknowledged']) for e in saved['entries']] == [('synthetic.gateway', 'retiring', True)]
+    assert pause.model['start_attempts'] == 1 and pause.ledger(), 'the stopped dashboard was not resumed'
 
 
 @pytest.mark.parametrize('changed', ['revision', 'homes', 'config', 'endpoint', 'profile', 'birth', 'source'])

@@ -445,7 +445,7 @@ export class UpdateNotificationStore {
     row.updated_at = this.now().toISOString()
     if (phaseChanged) row.read_at = null
     row.expected_identity = expectedIdentity?.trim().slice(0, 160) || null
-    row.detail = phase === 'failed' || phase === 'blocked' || phase === 'succeeded' || phase === 'waiting_for_idle' || phase === 'verifying' ? safeDetail(detail) : null
+    row.detail = phase === 'applying' || phase === 'failed' || phase === 'blocked' || phase === 'succeeded' || phase === 'waiting_for_idle' || phase === 'verifying' ? safeDetail(detail) : null
     // The gateway restart is server-wide: every server owner sees the wait and can restart now, and a later update joins it.
     if (row.kind === 'update' && phase === 'waiting_for_idle' && row.visibility === 'server') row.owner = '*'
     // Only a waiting gateway restart offers an action; entering the wait offers it afresh.

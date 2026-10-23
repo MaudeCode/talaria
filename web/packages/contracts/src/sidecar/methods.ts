@@ -6,7 +6,7 @@ import {
 import {
   OkResultSchema, RpcCancelParamsSchema, RpcCancelResultSchema, RpcMethodsResultSchema, RuntimeDescribeSchema,
   RuntimeEnsureCurrentResultSchema, RuntimeEnvParamsSchema, RuntimeHandshakeParamsSchema, RuntimeShutdownParamsSchema, RuntimeSyncDependenciesParamsSchema, RuntimeSyncDependenciesResultSchema,
-  RuntimeAgentMutationParamsSchema, RuntimeAgentMutationResultSchema,
+  RuntimeAgentMutationParamsSchema, RuntimeAgentMutationResultSchema, RuntimeAgentMutationStreamSchema,
   RuntimeAgentRecoveryParamsSchema, RuntimeAgentRecoveryResultSchema,
 } from './runtime.js'
 
@@ -26,7 +26,7 @@ export const SIDECAR_METHODS = {
   'runtime.shutdown': { params: RuntimeShutdownParamsSchema, result: OkResultSchema },
   'runtime.env': { params: RuntimeEnvParamsSchema, result: OkResultSchema },
   'runtime.sync_dependencies': { params: RuntimeSyncDependenciesParamsSchema, result: RuntimeSyncDependenciesResultSchema },
-  'runtime.agent_mutation': { params: RuntimeAgentMutationParamsSchema, result: RuntimeAgentMutationResultSchema },
+  'runtime.agent_mutation': { params: RuntimeAgentMutationParamsSchema, result: RuntimeAgentMutationResultSchema, stream: RuntimeAgentMutationStreamSchema },
   'runtime.agent_recovery': { params: RuntimeAgentRecoveryParamsSchema, result: RuntimeAgentRecoveryResultSchema },
   ...GOALS_METHODS,
   ...COMMANDS_METHODS,

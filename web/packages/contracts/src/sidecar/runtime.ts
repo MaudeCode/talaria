@@ -55,3 +55,10 @@ export const RuntimeAgentMutationParamsSchema = z.discriminatedUnion('action', [
   z.object({ action: z.enum(['sync', 'finish']), agent_dir: z.string().min(1), token: z.string().regex(/^[a-f0-9]{32}$/) }),
 ])
 export const RuntimeAgentMutationResultSchema = RuntimeSyncDependenciesResultSchema.extend({ token: z.string().regex(/^[a-f0-9]{32}$/).optional(), refresh_confirmation: AgentRefreshConfirmationSchema.optional() })
+/**
+ * TAL-1429: `begin` reports the shared native gateway drain it waits for. `deadline_seconds` is the worker's
+ * bounded drain budget from this frame; the caller keeps custody until it passes plus the ordinary lease margin.
+ */
+export const RuntimeAgentMutationStreamSchema = z.discriminatedUnion('event', [
+  z.object({ event: z.literal('progress'), data: z.object({ phase: z.literal('gateway_drain'), deadline_seconds: z.number().min(0), services: z.array(z.string()) }) }),
+])

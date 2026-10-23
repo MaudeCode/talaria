@@ -222,7 +222,9 @@ async function applyWithNotification(
   // TAL-1138: the gateways running before an Agent update; the update's check needs a new process for each.
   const gatewaysBefore = target === 'agent' ? await ctx.deps.gatewayRestarts.gateways(scope.profile).catch(() => []) : []
   try {
-    const options = { agentChannel: input.agent_channel, confirmedRevision: input.confirmed_agent_revision, version: input.version, refreshToken: input.agent_refresh_token, mutationIntent: principalHash(scope.owner, scope.profile, notification.id) }
+    const options = { agentChannel: input.agent_channel, confirmedRevision: input.confirmed_agent_revision, version: input.version, refreshToken: input.agent_refresh_token, mutationIntent: principalHash(scope.owner, scope.profile, notification.id),
+      // TAL-1429: the Updating dialog shows what the running update waits for; a lost refresh only delays that wording.
+      onProgress: (detail: string) => { ctx.deps.updateNotifications.transition(notification.id, 'applying', null, undefined, detail).catch(() => undefined) } }
     const result = action === 'apply' ? await ctx.deps.updates.apply(target, bodyChannel(input.channel), () => true, options)
       : action === 'force' ? await ctx.deps.updates.force(target, bodyChannel(input.channel), options)
         : await ctx.deps.updates.clearLock(target, options)
