@@ -5,6 +5,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
 import { tmpdir } from 'node:os'
+import { getEventListeners } from 'node:events'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SIDECAR_RPC_VERSION } from '@maudecode/talaria-web-contracts'
 import { SidecarClient, SidecarError, sidecarSpawnEnv } from './client.js'
@@ -299,16 +300,24 @@ describe.skipIf(!agentAvailable)('SidecarClient against the pinned Agent', () =>
 })
 
 
+/** The real client over an in-process child boundary: every request line is recorded, and `writeError` fails the next write. */
+const transport = () => {
+  const client = new SidecarClient({ python: '', sidecarDir: '', agentDir: '', hermesHome: '', log: () => undefined })
+  const requests: { id: number; trace_id?: string; method: string; params?: { id?: number } }[] = []
+  const boundary = { writeError: null as Error | null }
+  const child = { stdin: { writable: true, write: (line: string, callback?: (error?: Error) => void) => {
+    requests.push(JSON.parse(line) as { id: number; trace_id?: string; method: string })
+    const error = boundary.writeError ?? undefined
+    boundary.writeError = null
+    callback?.(error)
+  } } } as unknown as ChildProcess
+  const internal = client as unknown as { child: ChildProcess; closed: boolean; pending: Map<number, unknown>; onLine: (line: string) => void; onExit: (child: ChildProcess, code: number | null, signal: NodeJS.Signals | null) => void }
+  internal.child = child
+  client.status = 'ready'
+  return { client, internal, child, requests, boundary }
+}
+
 describe('startup timing at the RPC transport boundary', () => {
-  const transport = () => {
-    const client = new SidecarClient({ python: '', sidecarDir: '', agentDir: '', hermesHome: '', log: () => undefined })
-    const requests: { id: number; trace_id?: string; method: string }[] = []
-    const child = { stdin: { writable: true, write: (line: string, callback?: (error?: Error) => void) => { requests.push(JSON.parse(line) as { id: number; trace_id?: string; method: string }); callback?.() } } } as unknown as ChildProcess
-    const internal = client as unknown as { child: ChildProcess; closed: boolean; onLine: (line: string) => void; onExit: (child: ChildProcess, code: number | null, signal: NodeJS.Signals | null) => void }
-    internal.child = child
-    client.status = 'ready'
-    return { client, internal, child, requests }
-  }
   afterEach(() => { vi.useRealTimers() })
 
   it.each(['before_dispatch', 'timeout', 'exit'] as const)('records %s without changing cancellation or pending-call semantics', async (scenario) => {
@@ -345,5 +354,58 @@ describe('startup timing at the RPC transport boundary', () => {
     await Promise.all(calls)
     expect(first.rpcId).toBe(requests[0]!.id)
     expect(second.rpcId).toBe(requests[1]!.id)
+  })
+})
+
+describe('abort listeners on a shared caller signal', () => {
+  afterEach(() => { vi.useRealTimers() })
+  const listeners = (signal: AbortSignal) => getEventListeners(signal, 'abort').length
+  const cancels = (requests: { method: string; params?: { id?: number } }[]) => requests.filter((r) => r.method === 'rpc.cancel').map((r) => r.params?.id)
+  const answer = (internal: ReturnType<typeof transport>['internal'], id: number) => { internal.onLine(JSON.stringify({ jsonrpc: '2.0', id, result: { ok: true } })) }
+
+  it('a dictation stream holds at most its outstanding batch, and a later abort cancels only the still-active request', async () => {
+    const { client, internal, requests } = transport()
+    const controller = new AbortController()
+    for (let batch = 0; batch < 100; batch++) {
+      const call = client.call('stt.stream_audio', { stream_id: 's', audio_b64: 'AA==' }, { signal: controller.signal })
+      expect(listeners(controller.signal)).toBe(1)
+      answer(internal, requests.at(-1)!.id)
+      await call
+    }
+    expect(internal.pending.size).toBe(0)
+    expect(listeners(controller.signal)).toBe(0)
+    const active = client.call('stt.stream_audio', { stream_id: 's', end: true }, { signal: controller.signal })
+    const activeId = requests.at(-1)!.id
+    controller.abort()
+    expect(cancels(requests)).toEqual([activeId])
+    answer(internal, activeId)
+    await active
+  })
+
+  it.each(['rpc_error', 'timeout', 'write_failure', 'exit'] as const)('a call settled by %s releases its listener and is never cancelled again', async (exit) => {
+    vi.useFakeTimers()
+    const { client, internal, child, requests, boundary } = transport()
+    const controller = new AbortController()
+    if (exit === 'write_failure') boundary.writeError = new Error('EPIPE')
+    const call = client.call('stt.stream_audio', { stream_id: 's' }, { signal: controller.signal, timeoutMs: 25 })
+    const settled = call.catch((error: unknown) => error)
+    if (exit === 'rpc_error') internal.onLine(JSON.stringify({ jsonrpc: '2.0', id: requests[0]!.id, error: { code: -32000, message: 'boom' } }))
+    if (exit === 'timeout') await vi.advanceTimersByTimeAsync(25)
+    if (exit === 'exit') { internal.closed = true; internal.onExit(child, 1, null) }
+    expect(await settled).toBeInstanceOf(SidecarError)
+    expect(listeners(controller.signal)).toBe(0)
+    const before = cancels(requests).length
+    controller.abort()
+    expect(cancels(requests)).toHaveLength(before)
+    if (exit === 'timeout') expect(before).toBe(1)
+  })
+
+  it('a pre-aborted call installs no listener and writes nothing', async () => {
+    const { client, requests } = transport()
+    const controller = new AbortController()
+    controller.abort()
+    await expect(client.call('stt.stream_audio', { stream_id: 's' }, { signal: controller.signal })).rejects.toMatchObject({ condition: 'cancelled' })
+    expect(listeners(controller.signal)).toBe(0)
+    expect(requests).toHaveLength(0)
   })
 })

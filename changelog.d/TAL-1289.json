@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Long dictation recordings no longer pile up cancellation work that runs all at once when the recording stops.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
