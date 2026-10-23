@@ -123,8 +123,9 @@ struct ChatTranscriptView: View {
     var retainedRowCache: ChatTranscriptRowCache? = nil
     /// The row to reopen at the top, for a reader who had scrolled away from the latest message before the rebuild.
     var restoredReadingRowID: String? = nil
-    /// Reports the row at the top when the reader lets go of the transcript.
-    var onReadingRowSettled: (String?) -> Void = { _ in }
+    /// Reports each move of the reader, with the row at the top computed only when asked for, so a rebuild in the
+    /// middle of a drag or deceleration, which ends no gesture, still knows where the reader was.
+    var onReaderMoved: (() -> String?) -> Void = { _ in }
 
     private var rowCache: ChatTranscriptRowCache { retainedRowCache ?? ownRowCache }
 
@@ -441,9 +442,7 @@ struct ChatTranscriptView: View {
                                 scrollDestinationNeedsMount = false
                             }
                             onFollowEvent(event)
-                            if case .userScrollEnd = event {
-                                onReadingRowSettled(scrollPositionController.readingAnchorRowID)
-                            }
+                            onReaderMoved { scrollPositionController.readingAnchorRowID }
                         }
                     ) { metrics in
                         isHistoryNearTop = scrollPositionController.shouldPrefetchHistory()

@@ -237,6 +237,28 @@ final class DuoFoldHostedTests: XCTestCase {
         scroll.contentOffset.y + scroll.bounds.height - scroll.adjustedContentInset.bottom >= scroll.contentSize.height - 2
     }
 
+    /// Folding mid-drag detaches the scroll observer without a gesture end, so the row comes from the scrolling itself.
+    func testAReaderStillDraggingKeepsTheRowAcrossClosing() async throws {
+        let folding = try await openChatOnInnerDisplay()
+        let window = folding.window
+        _ = try await requireElement(in: window, "The transcript never loaded", where: FixtureApp.isLoadedTranscriptRow)
+        settle(0.5)
+        let scroll = try transcriptScrollView(in: window)
+        let coordinator = try XCTUnwrap(window.firstView(ofType: ChatScrollObserver.ObserverView.self)?.coordinator)
+        coordinator.scrollPositionController?.userDidBeginDragging()
+        coordinator.onFollowEvent(.userScrollBegin)
+        scroll.contentOffset.y = max(0, scroll.contentSize.height / 2)
+        _ = await awaitCondition { coordinator.scrollPositionController?.isRealizingRows == false }
+        // The finger is still down: the drag's frames report it, and no `.userScrollEnd` comes before the Duo closes.
+        // A raw offset is not a drag to UIKit, so the frame is sent as the observer sends one.
+        coordinator.onFollowEvent(.contentScrolled(isAtBottom: false, isUserScrolling: true))
+        let reading = try XCTUnwrap(readingRow(in: window), "No row at the top of the transcript")
+
+        fold(folding, closed: true)
+        let kept = await awaitCondition { self.readingRow(in: window) == reading }
+        XCTAssertTrue(kept, "Closing the Duo mid-drag moved the reader from \(reading) to \(readingRow(in: window) ?? "nothing")")
+    }
+
     /// The window once the transcript has built the rows around the reader. Row building runs on the main actor, which
     /// `settle()` keeps busy, so this waits by sleeping.
     private func attachRealizedTranscript(_ window: UIWindow, name: String) async {

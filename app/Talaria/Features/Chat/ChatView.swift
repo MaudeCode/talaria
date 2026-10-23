@@ -1586,7 +1586,7 @@ struct ChatView: View {
                 },
                 retainedRowCache: chat.retained?.rows,
                 restoredReadingRowID: chat.restoredReadingRowID,
-                onReadingRowSettled: chat.recordReadingRow
+                onReaderMoved: chat.recordReadingRow
             )
             .environment(\.openURL, OpenURLAction(handler: chat.handleTranscriptLink))
             .environment(\.chatFullToolResultLoader) { toolCallID in
@@ -3233,9 +3233,10 @@ struct ChatView: View {
         }
     }
 
-    /// Keeps where a reader let go of the transcript, for the view the navigation may rebuild around it (TAL-1477).
-    private func recordReadingRow(_ rowID: String?) {
-        retained?.readingRowID = followLatch.isFollowing ? nil : rowID
+    /// Keeps where the reader is, for the view the navigation may rebuild around it (TAL-1477).
+    private func recordReadingRow(_ rowID: () -> String?) {
+        guard let retained else { return }
+        retained.readingRowID = followLatch.isFollowing ? nil : rowID()
     }
 
     /// The transcript ends this suspension when its position hold actually
