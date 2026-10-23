@@ -306,7 +306,7 @@ reaction actions, and direct chats have no reaction writer. The existing shared
 viewer watch reads reaction metadata on its observation tick because the native
 owner emits no reaction event. Reaction-only snapshots invalidate display data;
 they cannot start or settle a turn. Detaching the last viewer releases this
-readback with its existing subscription. This extends sidecar RPC version 56.
+readback with its existing subscription. This extends sidecar RPC version 57.
 
 Loaded Web history reconciles reactions through bounded transcript windows in the
 same Query invalidation family as the tail. Server window offsets delimit the
