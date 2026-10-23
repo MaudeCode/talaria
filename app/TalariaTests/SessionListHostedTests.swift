@@ -48,7 +48,10 @@ final class ToolbarPriorityHostedTests: XCTestCase {
         _ = try await landscapeScene()
         let fixture = try FixtureApp(["--ui-test-goal"], for: self)
         let session = try await fixture.session()
-        let model = ChatViewModel(session: session, server: UITestFixtureEnvironment.serverURL, client: fixture.client)
+        let model = ChatViewModel(
+            session: session, server: UITestFixtureEnvironment.serverURL, client: fixture.client,
+            liveActivityManager: SpyChatLiveActivityManager()
+        )
         let activated = await model.submitGoal(args: "status")
         XCTAssertTrue(activated)
         let window = try hostWindow(fixture.chat(session, viewModel: model), size: HostedSize.duoOuterLandscape)
