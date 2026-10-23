@@ -1,0 +1,19 @@
+{
+  "checkpoint": "earliest-retained",
+  "workspace": "",
+  "diff": "diff --git a/notes.txt b/notes.txt\n--- a/notes.txt\n+++ b/notes.txt\n@@ -1 +1 @@\n-before\n+after",
+  "files_changed": [
+    {
+      "file": "notes.txt",
+      "status": "modified"
+    }
+  ],
+  "total_changes": 1,
+  "comparison": {
+    "provenance": "native_owner",
+    "baseline": "earliest_retained_project_checkpoint",
+    "available": true,
+    "reason": null,
+    "truncated": false
+  }
+}

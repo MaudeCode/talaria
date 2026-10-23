@@ -36,6 +36,18 @@ the sidecar being killed closes that pipe, so the supervisor stops the
 writer's process tree and reaps the writer before releasing the lock. A concurrent repair fails
 without starting another writer.
 
+RPC v54 adds the read-only `gateway.session` action `checkpoint_diff`. It calls the authenticated
+owner's `rollback.session_diff` without resuming or subscribing, so compression/restart and the
+frozen checkpoint/terminal policy remain owner decisions. No host checkpoint manager or native
+restore is used. The optional `rollback.list` read distinguishes an empty diff from no retained
+baseline. The diff and stat together must fit 4 MiB of JSON-escaped UTF-8 content. The result's
+`comparison` declares native provenance, the earliest retained **project** baseline, availability,
+refusal reason and native line truncation. This baseline can predate the chat, or follow its start
+after pruning. It is not a per-session edit ledger. Direct workspace diffs retain their selected
+checkpoint baseline. The existing rollback HTTP list adds `session_diff` for native targets;
+its empty workspace field does not authorize host filesystem access. Diff reads use the same
+server parser and the existing Checkpoints dialog. Native restore remains refused.
+
 RPC v53 adds the closed `gateway.session` action `export` with `json`, `markdown`
 or `html` and a server-selected `redact` policy. It calls the already-running
 profile owner's read-only `session.export` once, translating Markdown to native

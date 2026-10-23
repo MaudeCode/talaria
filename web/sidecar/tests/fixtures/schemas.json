@@ -7322,6 +7322,76 @@
         ],
         "additionalProperties": false
       },
+      "checkpoint_diff": {
+        "type": "object",
+        "properties": {
+          "diff": {
+            "type": "string",
+            "maxLength": 4194304
+          },
+          "stat": {
+            "type": "string",
+            "maxLength": 4194304
+          },
+          "comparison": {
+            "type": "object",
+            "properties": {
+              "provenance": {
+                "type": "string",
+                "enum": [
+                  "native_owner",
+                  "direct_workspace"
+                ]
+              },
+              "baseline": {
+                "type": "string",
+                "enum": [
+                  "earliest_retained_project_checkpoint",
+                  "selected_checkpoint"
+                ]
+              },
+              "available": {
+                "type": "boolean"
+              },
+              "reason": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "checkpoints_disabled",
+                      "no_baseline",
+                      "checkpoint_unavailable",
+                      "payload_too_large",
+                      "invalid_payload",
+                      "owner_unavailable"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "truncated": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "provenance",
+              "baseline",
+              "available",
+              "reason",
+              "truncated"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "diff",
+          "stat",
+          "comparison"
+        ],
+        "additionalProperties": false
+      },
       "restarting": {
         "description": "The owner is in a restart's after-turn wait: parked prompts stay answerable, new work is refused.",
         "type": "boolean"
@@ -7967,6 +8037,76 @@
           "format",
           "filename",
           "content"
+        ],
+        "additionalProperties": false
+      },
+      "checkpoint_diff": {
+        "type": "object",
+        "properties": {
+          "diff": {
+            "type": "string",
+            "maxLength": 4194304
+          },
+          "stat": {
+            "type": "string",
+            "maxLength": 4194304
+          },
+          "comparison": {
+            "type": "object",
+            "properties": {
+              "provenance": {
+                "type": "string",
+                "enum": [
+                  "native_owner",
+                  "direct_workspace"
+                ]
+              },
+              "baseline": {
+                "type": "string",
+                "enum": [
+                  "earliest_retained_project_checkpoint",
+                  "selected_checkpoint"
+                ]
+              },
+              "available": {
+                "type": "boolean"
+              },
+              "reason": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "checkpoints_disabled",
+                      "no_baseline",
+                      "checkpoint_unavailable",
+                      "payload_too_large",
+                      "invalid_payload",
+                      "owner_unavailable"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "truncated": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "provenance",
+              "baseline",
+              "available",
+              "reason",
+              "truncated"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "diff",
+          "stat",
+          "comparison"
         ],
         "additionalProperties": false
       },

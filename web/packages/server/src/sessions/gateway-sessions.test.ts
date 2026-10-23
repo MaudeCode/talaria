@@ -336,6 +336,35 @@ describe('canonical owner attachment', () => {
     for (const connection of connections.values()) expect(connection.signal.aborted).toBe(true)
   })
 
+  it('reads native checkpoint diffs through the owner without touching host checkpoints', async () => {
+    const comparison = { provenance: 'native_owner', baseline: 'earliest_retained_project_checkpoint', available: true, reason: null, truncated: false } as const
+    sidecar.respond('gateway.session', () => ({ state: 'attached', reason: null, snapshot: null, receipt: null,
+      checkpoint_diff: { comparison, stat: '1 file changed', diff: 'diff --git a/old.txt b/old.txt\n--- a/old.txt\n+++ b/old.txt\n@@ -1 +1 @@\n-before\n+after\n' } }))
+    for (const path of ['list', 'diff']) {
+      const res = await s.get(`/api/rollback/${path}?session_id=${sid}`)
+      expect(res.status).toBe(200)
+      const body = await res.json() as Record<string, unknown>
+      const diff = path === 'list' ? body.session_diff : body
+      expect(diff).toMatchObject({ comparison, files_changed: [{ file: 'old.txt', status: 'modified' }], total_changes: 1 })
+    }
+    expect(sidecar.calls.filter((c) => c.method.startsWith('checkpoints.'))).toEqual([])
+    expect(sidecar.calls.filter((c) => c.method === 'gateway.session').every((c) => (c.params as Record<string, unknown>).action === 'checkpoint_diff')).toBe(true)
+    expect((await post('/api/rollback/restore', { session_id: sid, checkpoint: 'earliest-retained' })).status).toBe(409)
+    expect((await s.get(`/api/rollback/diff?session_id=${sid}`, { headers: { cookie: 'hermes_profile=work' } })).status).toBe(404)
+  })
+
+  it.each(['stopped', 'refused', 'oversized'] as const)('keeps a native checkpoint read unavailable on %s without host fallback', async (failure) => {
+    sidecar.respond('gateway.session', () => failure === 'oversized'
+      ? { state: 'attached', reason: null, snapshot: null, receipt: null, checkpoint_diff: {
+        diff: '\u0001'.repeat(700_000), stat: '', comparison: { provenance: 'native_owner', baseline: 'earliest_retained_project_checkpoint', available: true, reason: null, truncated: false },
+      } }
+      : { state: failure, reason: 'owner refused', snapshot: null, receipt: null })
+    const res = await s.get(`/api/rollback/diff?session_id=${sid}&workspace=${encodeURIComponent(s.state)}&checkpoint=unrelated-host-hash`)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ diff: '', files_changed: [], comparison: { available: false, reason: failure === 'oversized' ? 'payload_too_large' : 'owner_unavailable' } })
+    expect(sidecar.calls.filter((c) => c.method.startsWith('checkpoints.'))).toEqual([])
+  })
+
   it.each(['json', 'markdown', 'html'] as const)('exports a canonical owner without a local session as %s', async (format) => {
     const content = format === 'json' ? JSON.stringify({ messages: [{ role: 'user', content: 'Current owner transcript' }] })
       : format === 'html' ? '<h1>Current owner transcript</h1>' : '# Current owner transcript'

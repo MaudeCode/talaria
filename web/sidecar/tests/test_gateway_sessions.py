@@ -151,7 +151,7 @@ def native_owner_stub(tmp_path, monkeypatch):
     from talaria_sidecar.methods import gateway_sessions as adapter
 
     owner = SimpleNamespace(receipt=None, replay=[], events=[], frames=[], info={}, payload=None, calls=[], config_failure=None,
-                            export=None, export_failure=None,
+                            export=None, export_failure=None, checkpoint_diff=None, checkpoint_failure=None, checkpoints=[],
                             described={"instance_id": "owner", "profile_id": "profile", "authority_epoch": 1,
                                        "capabilities": ["durable-admission-v1", "event-replay-v1"]})
     async def rpc(method, **params):
@@ -161,6 +161,12 @@ def native_owner_stub(tmp_path, monkeypatch):
         if method == "session.resume":
             return {"session_id": params["session_id"], "subscription_id": "viewer", "messages": [], "info": owner.info,
                     "replay_epoch": "epoch", "last_sequence": 4, "execution_generation": 1, **getattr(owner, "snapshot_extra", {})}
+        if method == "rollback.list":
+            return {"enabled": True, "checkpoints": owner.checkpoints}
+        if method == "rollback.session_diff":
+            if owner.checkpoint_failure:
+                raise RuntimeError(owner.checkpoint_failure)
+            return owner.checkpoint_diff
         if method == "session.export":
             if owner.export_failure == "timeout":
                 raise TimeoutError()
@@ -520,3 +526,70 @@ def test_late_old_epoch_notice_does_not_clear_current_replay(native_owner_stub):
     owner.run(ctx, {"session_id": "native", "action": "watch"})
     assert [data["payload"]["text"] for kind, data in frames if kind == "event"] == ["Current post", "Current edit"]
     assert not any(kind == "snapshot" and data.get("replay_gap") for kind, data in frames)
+
+
+def test_checkpoint_diff_uses_frozen_owner_read_without_ambient_manager(native_owner_stub, tmp_path, monkeypatch):
+    from talaria_sidecar.methods import checkpoints
+    monkeypatch.setattr(checkpoints, "_manager", lambda: pytest.fail("ambient checkpoint manager used"))
+    native_owner_stub.checkpoint_diff = {"enabled": True, "success": True, "stat": "old project changes", "diff": "older than session\n", "diff_lines": 1, "empty": False}
+    result = native_owner_stub.run(None, {"session_id": "logical-before-compression", "action": "checkpoint_diff"})
+    assert result.get("checkpoint_diff") == {"diff": "older than session\n", "stat": "old project changes", "comparison": {
+        "provenance": "native_owner", "baseline": "earliest_retained_project_checkpoint", "available": True, "reason": None, "truncated": False}}
+    assert native_owner_stub.calls == [("runtime.describe", {}), ("rollback.session_diff", {"session_id": "logical-before-compression", "_timeout": 25})]
+
+
+@pytest.mark.parametrize("payload,reason", [
+    ({"enabled": False}, "checkpoints_disabled"),
+    ({"enabled": True, "success": True, "stat": "", "diff": "", "diff_lines": 0, "empty": True}, "no_baseline"),
+    ({"enabled": True, "success": False, "error": "container host workspace is unrelated"}, "checkpoint_unavailable"),
+    ({"enabled": True, "success": True, "stat": "", "diff": "\x01" * 700000, "diff_lines": 1, "empty": False}, "payload_too_large"),
+    ({"enabled": True, "success": True, "stat": "", "diff": "abc", "diff_lines": -1, "empty": False}, "invalid_payload"),
+])
+def test_checkpoint_diff_refuses_missing_baseline_sandbox_and_escaped_wire_overflow(native_owner_stub, payload, reason):
+    native_owner_stub.checkpoint_diff = payload
+    result = native_owner_stub.run(None, {"session_id": "native", "action": "checkpoint_diff"})
+    assert result["checkpoint_diff"]["comparison"]["reason"] == reason
+    assert result["checkpoint_diff"]["comparison"]["available"] is False
+    assert result["checkpoint_diff"]["diff"] == ""
+
+
+def test_checkpoint_diff_reports_native_line_truncation(native_owner_stub):
+    native_owner_stub.checkpoint_diff = {"enabled": True, "success": True, "stat": "", "diff": "kept\n", "diff_lines": 99, "empty": False}
+    result = native_owner_stub.run(None, {"session_id": "native", "action": "checkpoint_diff"})
+    assert result["checkpoint_diff"]["comparison"]["truncated"] is True
+
+
+@pytest.mark.parametrize("boundary", ["restart", "profile", "unsupported"])
+def test_checkpoint_diff_never_falls_back_on_owner_refusal(native_owner_stub, boundary):
+    if boundary == "restart":
+        native_owner_stub.discovery.state = "restart_wait"
+    elif boundary == "profile":
+        native_owner_stub.described["profile_id"] = "foreign"
+    else:
+        native_owner_stub.checkpoint_failure = "method_not_found"
+    result = native_owner_stub.run(None, {"session_id": "native", "action": "checkpoint_diff"})
+    assert result["state"] != "attached"
+    assert not any(method in {"session.resume", "session.mutate"} for method, _ in native_owner_stub.calls)
+
+
+@pytest.mark.parametrize('wire', ['ascii', 'escaped'])
+def test_checkpoint_diff_accepts_exact_wire_bound(native_owner_stub, wire):
+    diff = 'x' * (4 * 1024 * 1024) if wire == 'ascii' else '\x01' * 699050 + 'xxxx'
+    native_owner_stub.checkpoint_diff = {'enabled': True, 'success': True, 'stat': '', 'diff': diff, 'diff_lines': 1, 'empty': False}
+    result = native_owner_stub.run(None, {'session_id': 'native', 'action': 'checkpoint_diff'})
+    assert result['checkpoint_diff']['comparison']['available'] is True
+    assert result['checkpoint_diff']['diff'] == diff
+
+
+def test_checkpoint_diff_empty_retained_baseline_is_not_unavailable(native_owner_stub):
+    native_owner_stub.checkpoints = [{'hash': 'predates-chat'}]
+    native_owner_stub.checkpoint_diff = {'enabled': True, 'success': True, 'stat': '', 'diff': '', 'diff_lines': 0, 'empty': True}
+    result = native_owner_stub.run(None, {'session_id': 'native', 'action': 'checkpoint_diff'})
+    assert result['checkpoint_diff']['comparison']['available'] is True
+    assert [method for method, _ in native_owner_stub.calls] == ['runtime.describe', 'rollback.session_diff', 'rollback.list']
+
+
+def test_checkpoint_diff_is_exposed_as_a_closed_session_read(native_owner_stub, tmp_path):
+    native_owner_stub.checkpoint_diff = {'enabled': False}
+    result = native_owner_stub.session(None, {'profile_home': str(tmp_path), 'session_id': 'native', 'action': 'checkpoint_diff'})
+    assert result['checkpoint_diff']['comparison']['reason'] == 'checkpoints_disabled'

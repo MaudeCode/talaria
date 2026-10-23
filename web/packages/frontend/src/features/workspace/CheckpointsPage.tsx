@@ -10,6 +10,7 @@ import { FileDiff, RotateCcw } from 'lucide-react'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { m } from '../../paraglide/messages.js'
+import { HelpTip } from '../../ui/Field'
 import { Button, IconButton } from '../../ui/Button'
 import { ConfirmDialog, Dialog } from '../../ui/Dialog'
 import { ErrorState, LoadingState } from '../../ui/States'
@@ -21,15 +22,14 @@ const listed = (files: string[], message: (inputs: { files: string }) => string)
 
 /** `onRestored` gets the files a restore rewrote, so another page can drop its unsaved edits of them. */
 export function CheckpointsPage({ workspace, sessionId, active, onRestored }: { workspace: string | null | undefined; sessionId: string; active: boolean; onRestored: (paths: string[]) => void }) {
-  if (!workspace) return <div className="p-3 text-xs text-muted" role="status">{m.panel_files_unavailable()}</div>
-  return <WorkspaceCheckpoints key={workspace} workspace={workspace} sessionId={sessionId} active={active} onRestored={onRestored} />
+  return <WorkspaceCheckpoints key={sessionId} workspace={workspace ?? sessionId} sessionId={sessionId} active={active} onRestored={onRestored} />
 }
 
 function WorkspaceCheckpoints({ workspace, sessionId, active, onRestored }: { workspace: string; sessionId: string; active: boolean; onRestored: (paths: string[]) => void }) {
   const qc = useQueryClient()
   const [viewing, setViewing] = useState<Picked | null>(null)
   const [restoring, setRestoring] = useState<Picked | null>(null)
-  const list = useQuery({ queryKey: keys.checkpoints.list(workspace), queryFn: () => api.fetchCheckpoints(sessionId), enabled: active, staleTime: 0 })
+  const list = useQuery({ queryKey: keys.checkpoints.list(sessionId), queryFn: () => api.fetchCheckpoints(sessionId), enabled: active, staleTime: 0 })
   const restore = useMutation({
     mutationFn: ({ id, all }: { id: string; all: boolean }) => api.restoreCheckpoint(sessionId, id, all),
     onSuccess: (res) => {
@@ -43,7 +43,7 @@ function WorkspaceCheckpoints({ workspace, sessionId, active, onRestored }: { wo
       onRestored(res.files_restored)
       // The restore rewrote workspace files: drop every view of them.
       void Promise.all([
-        qc.invalidateQueries({ queryKey: keys.checkpoints.all(workspace) }),
+        qc.invalidateQueries({ queryKey: keys.checkpoints.all(sessionId) }),
         qc.invalidateQueries({ queryKey: keys.files.lists(workspace) }),
         qc.invalidateQueries({ queryKey: keys.files.contents(workspace) }),
         qc.invalidateQueries({ queryKey: keys.files.git(sessionId) }),
@@ -53,10 +53,15 @@ function WorkspaceCheckpoints({ workspace, sessionId, active, onRestored }: { wo
   })
   if (list.isPending) return <LoadingState label={m.checkpoint_loading()} />
   if (list.isError) return <ErrorState error={list.error} onRetry={() => { void list.refetch() }} />
-  const { checkpoints } = list.data
+  const { checkpoints, session_diff: native } = list.data
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-      {checkpoints.length === 0 ? (
+      {native ? (
+        <div className="flex items-center gap-2 border-b border-border-subtle p-3">
+          <Button onClick={() => setViewing({ id: native.checkpoint, message: '' })}>{m.checkpoint_view_diff()}</Button>
+          <HelpTip label={m.checkpoint_project_baseline()}>{m.checkpoint_project_baseline_help()}</HelpTip>
+        </div>
+      ) : checkpoints.length === 0 ? (
         <div className="p-3 text-xs text-muted" role="status">{m.checkpoint_empty()}</div>
       ) : (
         <ul className="flex flex-col" aria-label={m.checkpoint_title()}>
@@ -76,7 +81,7 @@ function WorkspaceCheckpoints({ workspace, sessionId, active, onRestored }: { wo
           ))}
         </ul>
       )}
-      {viewing && <CheckpointDiff workspace={workspace} sessionId={sessionId} checkpoint={viewing} onClose={() => setViewing(null)} />}
+      {viewing && <CheckpointDiff sessionId={sessionId} checkpoint={viewing} onClose={() => setViewing(null)} />}
       <ConfirmDialog
         open={restoring !== null}
         onOpenChange={(o) => { if (!o) setRestoring(null) }}
@@ -91,13 +96,17 @@ function WorkspaceCheckpoints({ workspace, sessionId, active, onRestored }: { wo
   )
 }
 
-function CheckpointDiff({ workspace, sessionId, checkpoint, onClose }: { workspace: string; sessionId: string; checkpoint: Picked; onClose: () => void }) {
-  const diff = useQuery({ queryKey: keys.checkpoints.diff(workspace, checkpoint.id), queryFn: () => api.fetchCheckpointDiff(sessionId, checkpoint.id), staleTime: 0, gcTime: 0 })
+function CheckpointDiff({ sessionId, checkpoint, onClose }: { sessionId: string; checkpoint: Picked; onClose: () => void }) {
+  const diff = useQuery({ queryKey: keys.checkpoints.diff(sessionId, checkpoint.id), queryFn: () => api.fetchCheckpointDiff(sessionId, checkpoint.id), staleTime: 0, gcTime: 0 })
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }} title={m.checkpoint_diff_title()} description={checkpoint.message} className="flex max-h-[80vh] w-[min(92vw,800px)] flex-col">
       {diff.isPending && <LoadingState label={m.checkpoint_loading()} />}
       {diff.isError && <ErrorState error={diff.error} onRetry={() => { void diff.refetch() }} />}
-      {diff.isSuccess && (diff.data.total_changes === 0 ? (
+      {diff.isSuccess && diff.data.comparison?.provenance === 'native_owner' && <div className="mb-2 text-xs text-muted">{m.checkpoint_project_baseline()} <HelpTip label={m.checkpoint_project_baseline()}>{m.checkpoint_project_baseline_help()}</HelpTip></div>}
+      {diff.isSuccess && diff.data.comparison?.truncated && <div role="status" className="mb-2 text-xs text-warning">{m.checkpoint_diff_truncated()}</div>}
+      {diff.isSuccess && (diff.data.comparison?.available === false ? (
+        <div className="text-sm text-muted" role="status">{checkpointUnavailable(diff.data.comparison.reason)}</div>
+      ) : diff.data.total_changes === 0 && !diff.data.comparison?.truncated ? (
         <div className="text-sm text-muted" role="status">{m.checkpoint_diff_no_changes()}</div>
       ) : (
         <div className="flex min-h-0 flex-col gap-2">
@@ -116,4 +125,10 @@ function CheckpointDiff({ workspace, sessionId, checkpoint, onClose }: { workspa
       <div className="mt-3 flex justify-end"><Button onClick={onClose}>{m.close()}</Button></div>
     </Dialog>
   )
+}
+
+function checkpointUnavailable(reason: string | null): string {
+  if (reason === 'checkpoints_disabled') return m.checkpoint_owner_disabled()
+  if (reason === 'no_baseline') return m.checkpoint_no_baseline()
+  return m.checkpoint_owner_unavailable()
 }

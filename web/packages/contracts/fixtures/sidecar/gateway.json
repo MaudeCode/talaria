@@ -183,6 +183,30 @@
           "content": "# Native export\n\nCurrent owner transcript\n"
         }
       }
+    },
+    {
+      "params": {
+        "profile_home": "<home>",
+        "session_id": "native-checkpoints",
+        "action": "checkpoint_diff"
+      },
+      "result": {
+        "state": "attached",
+        "reason": null,
+        "snapshot": null,
+        "receipt": null,
+        "checkpoint_diff": {
+          "diff": "diff --git a/notes.txt b/notes.txt\n--- a/notes.txt\n+++ b/notes.txt\n@@ -1 +1 @@\n-before\n+after\n",
+          "stat": "1 file changed",
+          "comparison": {
+            "provenance": "native_owner",
+            "baseline": "earliest_retained_project_checkpoint",
+            "available": true,
+            "reason": null,
+            "truncated": false
+          }
+        }
+      }
     }
   ],
   "gateway.create": [

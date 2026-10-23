@@ -44423,6 +44423,100 @@
                     },
                     "checkpoint_dir": {
                       "type": "string"
+                    },
+                    "session_diff": {
+                      "type": "object",
+                      "properties": {
+                        "checkpoint": {
+                          "type": "string"
+                        },
+                        "workspace": {
+                          "type": "string"
+                        },
+                        "diff": {
+                          "type": "string"
+                        },
+                        "files_changed": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "file": {
+                                "type": "string"
+                              },
+                              "status": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "file",
+                              "status"
+                            ]
+                          }
+                        },
+                        "total_changes": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "comparison": {
+                          "type": "object",
+                          "properties": {
+                            "provenance": {
+                              "enum": [
+                                "native_owner",
+                                "direct_workspace"
+                              ],
+                              "type": "string"
+                            },
+                            "baseline": {
+                              "enum": [
+                                "earliest_retained_project_checkpoint",
+                                "selected_checkpoint"
+                              ],
+                              "type": "string"
+                            },
+                            "available": {
+                              "type": "boolean"
+                            },
+                            "reason": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "checkpoints_disabled",
+                                    "no_baseline",
+                                    "checkpoint_unavailable",
+                                    "payload_too_large",
+                                    "invalid_payload",
+                                    "owner_unavailable"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "truncated": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "provenance",
+                            "baseline",
+                            "available",
+                            "reason",
+                            "truncated"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "checkpoint",
+                        "workspace",
+                        "diff",
+                        "files_changed",
+                        "total_changes"
+                      ]
                     }
                   },
                   "required": [
@@ -44520,6 +44614,56 @@
                       "type": "integer",
                       "minimum": -9007199254740991,
                       "maximum": 9007199254740991
+                    },
+                    "comparison": {
+                      "type": "object",
+                      "properties": {
+                        "provenance": {
+                          "enum": [
+                            "native_owner",
+                            "direct_workspace"
+                          ],
+                          "type": "string"
+                        },
+                        "baseline": {
+                          "enum": [
+                            "earliest_retained_project_checkpoint",
+                            "selected_checkpoint"
+                          ],
+                          "type": "string"
+                        },
+                        "available": {
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "checkpoints_disabled",
+                                "no_baseline",
+                                "checkpoint_unavailable",
+                                "payload_too_large",
+                                "invalid_payload",
+                                "owner_unavailable"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "truncated": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "provenance",
+                        "baseline",
+                        "available",
+                        "reason",
+                        "truncated"
+                      ]
                     }
                   },
                   "required": [

@@ -1,3 +1,4 @@
+import { CheckpointDiffSchema } from '../checkpoint.js'
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
 import { DiffHunkSchema, GitInfoSchema } from '../views.js'
@@ -68,8 +69,8 @@ export const gitContract = {
     stashCheckout: oc.route({ method: 'POST', path: '/api/git/stash-checkout', tags }).input(CheckoutBody.omit({ dirty_mode: true })).output(CheckoutResult.extend({ stash_name: z.string(), stashed: z.boolean(), restored_stash: Loose.nullable(), restore_failed: z.boolean(), restore_error: z.string(), restore_stash: Loose.nullable() })),
   },
   rollback: {
-    list: oc.route({ method: 'GET', path: '/api/rollback/list', tags: ['rollback'] }).input(RollbackTarget).output(z.object({ checkpoints: z.array(CheckpointSchema), workspace: z.string(), checkpoint_dir: z.string() })),
-    diff: oc.route({ method: 'GET', path: '/api/rollback/diff', tags: ['rollback'] }).input(RollbackTarget.extend({ checkpoint: z.string().optional(), id: z.string().optional() })).output(z.object({ checkpoint: z.string(), workspace: z.string(), diff: z.string(), files_changed: z.array(z.object({ file: z.string(), status: z.string() })), total_changes: z.number().int() })),
+    list: oc.route({ method: 'GET', path: '/api/rollback/list', tags: ['rollback'] }).input(RollbackTarget).output(z.object({ checkpoints: z.array(CheckpointSchema), workspace: z.string(), checkpoint_dir: z.string(), session_diff: CheckpointDiffSchema.optional() })),
+    diff: oc.route({ method: 'GET', path: '/api/rollback/diff', tags: ['rollback'] }).input(RollbackTarget.extend({ checkpoint: z.string().optional(), id: z.string().optional() })).output(CheckpointDiffSchema),
     /**
      * Keeps the user's hand-edits unless `all` (TAL-1260). `kept_user_edits` are files left as the user edited them,
      * `skipped_oversize` files the checkpoint size cap kept out, `failed_deletes` Agent-created files that could not be removed

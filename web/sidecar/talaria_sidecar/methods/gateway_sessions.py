@@ -17,8 +17,8 @@ from ..errors import InvalidParams
 from ..home import profile_home_param, scoped_home
 
 _ACTIONS = {"snapshot", "watch", "context_detail", "submit", "receipt", "cancel", "steer_queued", "replace_queued", "interrupt", "approval", "clarify",
-            "clarify_lock", "discard", "mutate", "export"}
-_EXPORT_MAX_BYTES = 4 * 1024 * 1024
+            "clarify_lock", "discard", "mutate", "export", "checkpoint_diff"}
+_OWNER_READ_MAX_BYTES = 4 * 1024 * 1024
 # A restart's after-turn wait keeps the owner reachable only to finish its parked turn (the owner's
 # RESTART_WAIT_WS_METHODS); new work waits for the next owner.
 _RESTART_ACTIONS = {"snapshot", "watch", "receipt", "approval", "clarify", "clarify_lock", "interrupt"}
@@ -145,6 +145,33 @@ def _owner_refusal(described: dict, endpoint) -> dict | None:
     return None
 
 
+def _checkpoint_read(value, *, no_baseline=False):
+    comparison = {"provenance": "native_owner", "baseline": "earliest_retained_project_checkpoint",
+                  "available": False, "reason": None, "truncated": False}
+    result = {"diff": "", "stat": "", "comparison": comparison}
+    reason = None
+    if not isinstance(value, dict) or type(value.get("enabled")) is not bool:
+        reason = "invalid_payload"
+    elif not value["enabled"]:
+        reason = "checkpoints_disabled"
+    elif value.get("success") is not True:
+        reason = "checkpoint_unavailable"
+    elif (not isinstance(value.get("diff"), str) or not isinstance(value.get("stat"), str)
+          or type(value.get("diff_lines")) is not int or value["diff_lines"] < 0
+          or type(value.get("empty")) is not bool):
+        reason = "invalid_payload"
+    elif sum(len(json.dumps(value[key], ensure_ascii=False).encode("utf-8", "surrogatepass")) - 2
+             for key in ("stat", "diff")) > _OWNER_READ_MAX_BYTES:
+        reason = "payload_too_large"
+    elif no_baseline:
+        reason = "no_baseline"
+    else:
+        result.update(diff=value["diff"], stat=value["stat"])
+        comparison.update(available=True, truncated=value["diff_lines"] > len(value["diff"].splitlines()))
+    comparison["reason"] = reason
+    return result
+
+
 async def _run(ctx, params: dict, home: Path, discovery) -> dict:
     from hermes_cli.gateway_client import GatewayRPCError
 
@@ -174,6 +201,18 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
 
         receipt = lock = None
         try:
+            if params["action"] == "checkpoint_diff":
+                # The owner resolves the physical target and frozen policy. Never resume or read host files.
+                value = await asyncio.wait_for(client.rpc("rollback.session_diff", session_id=sid, _timeout=25), timeout=30)
+                read = _checkpoint_read(value)
+                if read["comparison"]["available"] and value["empty"] and not value["diff"] and not value["stat"]:
+                    listed = await asyncio.wait_for(client.rpc("rollback.list", session_id=sid, _timeout=3), timeout=3)
+                    if (not isinstance(listed, dict) or listed.get("enabled") is not True
+                            or not isinstance(listed.get("checkpoints"), list)):
+                        read = _checkpoint_read(None)
+                    elif not listed["checkpoints"]:
+                        read = _checkpoint_read(value, no_baseline=True)
+                return {"state": "attached", "reason": None, "snapshot": None, "receipt": None, "checkpoint_diff": read}
             if params["action"] == "export":
                 # No resume/subscription or mutation: the owner selects its current physical target.
                 fmt = "md" if params["format"] == "markdown" else params["format"]
@@ -183,7 +222,7 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                         or not isinstance(value.get("filename"), str) or not 0 < len(value["filename"]) <= 255
                         or not isinstance(value.get("content"), str)):
                     return _refused("refused", "owner_export_invalid")
-                if len(value["content"]) > _EXPORT_MAX_BYTES or len(value["content"].encode("utf-8")) > _EXPORT_MAX_BYTES:
+                if len(value["content"]) > _OWNER_READ_MAX_BYTES or len(value["content"].encode("utf-8")) > _OWNER_READ_MAX_BYTES:
                     return _refused("refused", "export_too_large")
                 return {"state": "attached", "reason": None, "snapshot": None, "receipt": None,
                         "export": {"format": params["format"], "filename": value["filename"], "content": value["content"]}}

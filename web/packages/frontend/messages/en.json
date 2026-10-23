@@ -1,4 +1,10 @@
 {
+  "checkpoint_project_baseline": "Earliest retained project checkpoint",
+  "checkpoint_project_baseline_help": "Compares the owner's frozen workspace with the earliest retained project checkpoint. It may predate this chat and includes changes from other chats or manual edits.",
+  "checkpoint_diff_truncated": "Partial diff. The owner's output limit was reached.",
+  "checkpoint_owner_disabled": "Checkpoints are disabled for this chat.",
+  "checkpoint_no_baseline": "No retained project checkpoint is available.",
+  "checkpoint_owner_unavailable": "The owner cannot read this checkpoint diff. Reconnect to a supported owner and retry.",
   "plugins_catalog_no_installed": "No installed plugins",
   "plugins_catalog_empty": "No matching plugins",
   "plugins_catalog": "Catalog",
