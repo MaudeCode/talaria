@@ -78,14 +78,18 @@ test('native checkpoint reads show project provenance and partial output without
     db.exec(fixture.schema.join('\n'))
     for (const sql of fixture.inserts) db.exec(sql)
     await server.deps.settings.save({ show_cli_sessions: true })
+    // Start on Checkpoints; the native chat has no local document for the separate Files panel.
+    await page.addInitScript((origin) => {
+      if (location.origin === origin) localStorage.setItem('talaria-right-panel-page', 'checkpoints')
+    }, server.base)
     // Before evidence reproduces the original 404 at the HTTP boundary with the built panel.
     await page.route('**/api/rollback/list?**', (route) => route.fulfill({ status: 404, json: { error: 'Session not found' } }))
     await page.goto(`${server.base}/session/${sid}`)
+    await expect(page.locator('#topbarTitle')).toHaveText('Native checkpoints')
     if (testInfo.project.name === 'mobile') await page.locator('#btnTitlebarSidePanel').click()
     else await page.getByRole('button', { name: 'Show workspace panel' }).click()
     await page.getByRole('tab', { name: 'Checkpoints', exact: true }).click()
     await expect(page.getByText('Session not found', { exact: true })).toBeVisible()
-    await expect(page.locator('#topbarTitle')).toHaveText('Native checkpoints')
     await page.screenshot({ path: testInfo.outputPath(`native-before-${testInfo.project.name}.png`) })
     const expected404 = `404 GET ${server.base}/api/rollback/list?session_id=${sid}`
     expect(errors).toEqual([expected404])

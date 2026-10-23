@@ -22,14 +22,14 @@ const listed = (files: string[], message: (inputs: { files: string }) => string)
 
 /** `onRestored` gets the files a restore rewrote, so another page can drop its unsaved edits of them. */
 export function CheckpointsPage({ workspace, sessionId, active, onRestored }: { workspace: string | null | undefined; sessionId: string; active: boolean; onRestored: (paths: string[]) => void }) {
-  return <WorkspaceCheckpoints key={sessionId} workspace={workspace ?? sessionId} sessionId={sessionId} active={active} onRestored={onRestored} />
+  return <WorkspaceCheckpoints key={JSON.stringify(keys.checkpoints.all(sessionId, workspace ?? ''))} workspace={workspace ?? ''} sessionId={sessionId} active={active} onRestored={onRestored} />
 }
 
 function WorkspaceCheckpoints({ workspace, sessionId, active, onRestored }: { workspace: string; sessionId: string; active: boolean; onRestored: (paths: string[]) => void }) {
   const qc = useQueryClient()
   const [viewing, setViewing] = useState<Picked | null>(null)
   const [restoring, setRestoring] = useState<Picked | null>(null)
-  const list = useQuery({ queryKey: keys.checkpoints.list(sessionId), queryFn: () => api.fetchCheckpoints(sessionId), enabled: active, staleTime: 0 })
+  const list = useQuery({ queryKey: keys.checkpoints.list(sessionId, workspace), queryFn: () => api.fetchCheckpoints(sessionId), enabled: active, staleTime: 0 })
   const restore = useMutation({
     mutationFn: ({ id, all }: { id: string; all: boolean }) => api.restoreCheckpoint(sessionId, id, all),
     onSuccess: (res) => {
@@ -43,7 +43,7 @@ function WorkspaceCheckpoints({ workspace, sessionId, active, onRestored }: { wo
       onRestored(res.files_restored)
       // The restore rewrote workspace files: drop every view of them.
       void Promise.all([
-        qc.invalidateQueries({ queryKey: keys.checkpoints.all(sessionId) }),
+        qc.invalidateQueries({ queryKey: keys.checkpoints.all(sessionId, workspace) }),
         qc.invalidateQueries({ queryKey: keys.files.lists(workspace) }),
         qc.invalidateQueries({ queryKey: keys.files.contents(workspace) }),
         qc.invalidateQueries({ queryKey: keys.files.git(sessionId) }),
@@ -81,7 +81,7 @@ function WorkspaceCheckpoints({ workspace, sessionId, active, onRestored }: { wo
           ))}
         </ul>
       )}
-      {viewing && <CheckpointDiff sessionId={sessionId} checkpoint={viewing} onClose={() => setViewing(null)} />}
+      {viewing && <CheckpointDiff workspace={workspace} sessionId={sessionId} checkpoint={viewing} onClose={() => setViewing(null)} />}
       <ConfirmDialog
         open={restoring !== null}
         onOpenChange={(o) => { if (!o) setRestoring(null) }}
@@ -96,8 +96,8 @@ function WorkspaceCheckpoints({ workspace, sessionId, active, onRestored }: { wo
   )
 }
 
-function CheckpointDiff({ sessionId, checkpoint, onClose }: { sessionId: string; checkpoint: Picked; onClose: () => void }) {
-  const diff = useQuery({ queryKey: keys.checkpoints.diff(sessionId, checkpoint.id), queryFn: () => api.fetchCheckpointDiff(sessionId, checkpoint.id), staleTime: 0, gcTime: 0 })
+function CheckpointDiff({ workspace, sessionId, checkpoint, onClose }: { workspace: string; sessionId: string; checkpoint: Picked; onClose: () => void }) {
+  const diff = useQuery({ queryKey: keys.checkpoints.diff(sessionId, workspace, checkpoint.id), queryFn: () => api.fetchCheckpointDiff(sessionId, checkpoint.id), staleTime: 0, gcTime: 0 })
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }} title={m.checkpoint_diff_title()} description={checkpoint.message} className="flex max-h-[80vh] w-[min(92vw,800px)] flex-col">
       {diff.isPending && <LoadingState label={m.checkpoint_loading()} />}

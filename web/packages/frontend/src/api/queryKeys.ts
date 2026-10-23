@@ -1,3 +1,5 @@
+const checkpointTargetKey = (sessionId: string, workspace: string) => ['checkpoints', sessionId, workspace] as const
+
 /** Query key families. Session refreshes use `invalidateSessionQueries` to preserve unrelated transcripts. */
 export const keys = {
   toolsets: (sessionId: string | undefined, value: string[] | null) => ['toolsets', sessionId, value] as const,
@@ -38,9 +40,9 @@ export const keys = {
     git: (workspace: string) => ['files', 'git', workspace] as const,
   },
   checkpoints: {
-    all: (workspace: string) => ['checkpoints', workspace] as const,
-    list: (workspace: string) => ['checkpoints', workspace, 'list'] as const,
-    diff: (workspace: string, id: string) => ['checkpoints', workspace, 'diff', id] as const,
+    all: checkpointTargetKey,
+    list: (sessionId: string, workspace: string) => [...checkpointTargetKey(sessionId, workspace), 'list'] as const,
+    diff: (sessionId: string, workspace: string, id: string) => [...checkpointTargetKey(sessionId, workspace), 'diff', id] as const,
   },
   skills: { all: ['skills'] as const, content: (name: string, file?: string) => ['skills', 'content', name, file ?? null] as const, usage: ['skills', 'usage'] as const },
   memory: ['memory'] as const,
