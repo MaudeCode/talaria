@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { X, FileText, Image as ImageIcon, RotateCw } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import type { UploadResponse } from '../../contracts'
@@ -5,7 +6,7 @@ import { IconButton } from '../../ui/Button'
 
 export interface PendingFile { key: string; file: File; status: 'uploading' | 'done' | 'error'; upload?: UploadResponse | undefined; error?: string | undefined }
 
-export function AttachmentTray({ files, onRemove, onRetry }: { files: PendingFile[]; onRemove: (key: string) => void; onRetry: (key: string) => void }) {
+export const AttachmentTray = memo(function AttachmentTray({ files, onRemove, onRetry }: { files: PendingFile[]; onRemove: (key: string) => void; onRetry: (key: string) => void }) {
   if (files.length === 0) return null
   return (
     <ul className="attach-tray flex flex-wrap gap-2 px-3 pt-2" aria-label={m.attachments_label()}>
@@ -21,4 +22,4 @@ export function AttachmentTray({ files, onRemove, onRetry }: { files: PendingFil
       ))}
     </ul>
   )
-}
+})

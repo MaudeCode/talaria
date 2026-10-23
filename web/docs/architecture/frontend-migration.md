@@ -151,6 +151,16 @@ only renders what the server allows.
 | Extension channels | `extensions/host.ts` | one `MessageChannel` per iframe, nonce and version handshake, capability table from the sanitized manifest |
 | Service worker state | `sw.ts` | precache list injected by the build; runtime caches for hashed assets only |
 
+Composer draft keystrokes stay in `Composer`. Its memoized `ComposerControls` groups,
+attachment tray, context ring and notices retain their props while typing. Clarification
+answer text is also composer-local, keyed by session, prompt, step and choice revision;
+`useClarify` owns step progression and selected choices. A refused final answer restores
+the same local text, while choosing an option or advancing a step replaces it. Model
+picker rows mount only while the menu is open and surviving search results retain their
+memoized labels. Search menus use `Menu`'s initial-focus target so a delayed popup
+focus cannot interrupt typing; Escape still returns focus to the trigger. The auxiliary-model
+custom id input owns its own draft.
+
 Session and project writes keep submitted values in a separate, ephemeral resource-intent query.
 `useResourceMutation` owns that intent across row menus, the sidebar and the chat header, and fences
 completion against the current connection context. Reconciliations coalesce per query client and context;

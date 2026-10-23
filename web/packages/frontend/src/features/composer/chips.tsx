@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { memo, useCallback, useMemo, useRef, useState } from 'react'
 import { Popover } from '@base-ui/react/popover'
 import { ChevronDown, Cpu, Brain, Wrench, FolderOpen, GitBranch, Shield } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
@@ -61,26 +61,27 @@ function GroupLimitBadge({ group, locale }: { group: Models['groups'][number]; l
 export function ModelChip({ model, optionId, onChange, row }: { model: string | null; optionId: string | null; onChange: (model: string, provider: string | null) => void; row?: boolean }) {
   const models = useModelsQuery()
   const locale = useLocale()
+  const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
+  const searchInput = useRef<HTMLInputElement>(null)
   const groups = useMemo(() => {
     const q = query.trim().toLowerCase()
+    if (!open) return []
     return (models.data?.groups ?? []).map((g) => ({ ...g, models: g.models.filter((mm) => !q || mm.id.toLowerCase().includes(q) || (mm.label ?? '').toLowerCase().includes(q)) })).filter((g) => g.models.length > 0)
-  }, [models.data, query])
+  }, [models.data, query, open])
+  const onSelect = useCallback((id: string) => onChange(id, catalogEntryById(models.data, id)?.provider_id ?? null), [onChange, models.data])
   const selected = catalogEntryById(models.data, model ? optionId : models.data?.default_option_id)
   const label = selected ? selected.label ?? selected.id : (model ?? models.data?.default_model) || '—'
   return (
     // TAL-807: opening the picker reads the catalog again, so a rate limit or quota level reflects the server now.
-    <Menu label={m.composer_control_model()} side="top" className="max-h-[60vh] min-w-72" onOpenChange={(open) => { if (open) void models.refetch() }} trigger={<Chip id={row ? undefined : "composerModelChip"} icon={<Cpu size={16} aria-hidden="true" />} label={label} title={m.composer_control_model()} row={row} className="composer-model-chip" />}>
-      <div className="p-1"><input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={m.model_search_placeholder()} aria-label={m.model_search_placeholder()} className="h-8 w-full rounded-md border border-border bg-input px-2 text-sm text-text" onKeyDown={(e) => e.stopPropagation()} /></div>
-      <MenuRadioGroup value={selected?.id ?? ''} onValueChange={(v: string) => onChange(v, catalogEntryById(models.data, v)?.provider_id ?? null)}>
+    <Menu open={open} initialFocus={searchInput} label={m.composer_control_model()} side="top" className="max-h-[60vh] min-w-72" onOpenChange={(open) => { setOpen(open); if (open) void models.refetch() }} trigger={<Chip id={row ? undefined : "composerModelChip"} icon={<Cpu size={16} aria-hidden="true" />} label={label} title={m.composer_control_model()} row={row} className="composer-model-chip" />}>
+      <div className="p-1"><input ref={searchInput} type="search" autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder={m.model_search_placeholder()} aria-label={m.model_search_placeholder()} className="h-8 w-full rounded-md border border-border bg-input px-2 text-sm text-text" onKeyDown={(e) => { if (e.key !== 'Escape') e.stopPropagation() }} /></div>
+      <MenuRadioGroup value={selected?.id ?? ''} onValueChange={onSelect}>
         {groups.map((g) => (
           <MenuGroup key={g.provider}>
             <MenuGroupLabel><span className="flex items-center justify-between gap-2"><span className="truncate">{catalogGroupLabel(g)}</span><GroupLimitBadge group={g} locale={locale} /></span></MenuGroupLabel>
             {g.models.map((mm) => (
-              <MenuRadioItem key={mm.id} value={mm.id} className={RADIO_CLASS}>
-                <span className="truncate">{mm.label ?? mm.id}</span>
-                {mm.limit && <span data-model-limit="model" className="ms-auto shrink-0 text-xs text-warning">{m.model_limited_until({ time: resetTime(locale, mm.limit.resets_at) })}</span>}
-              </MenuRadioItem>
+              <ModelMenuRow key={mm.id} id={mm.id} label={mm.label ?? mm.id} resetsAt={mm.limit?.resets_at} locale={locale} />
             ))}
           </MenuGroup>
         ))}
@@ -94,6 +95,14 @@ export function ModelChip({ model, optionId, onChange, row }: { model: string | 
     </Menu>
   )
 }
+
+/** Search changes membership; surviving catalog rows keep their rendered label and cooldown. */
+const ModelMenuRow = memo(function ModelMenuRow({ id, label, resetsAt, locale }: { id: string; label: string; resetsAt: string | undefined; locale: string }) {
+  return <MenuRadioItem value={id} className={RADIO_CLASS}>
+    <span className="truncate">{label}</span>
+    {resetsAt && <span data-model-limit="model" className="ms-auto shrink-0 text-xs text-warning">{m.model_limited_until({ time: resetTime(locale, resetsAt) })}</span>}
+  </MenuRadioItem>
+})
 
 const EFFORTS = ['default', 'minimal', 'low', 'medium', 'high', 'xhigh'] as const
 export function ReasoningChip({ value, levels, onChange, row }: { value: string | null; levels: string[] | undefined; onChange: (level: string | null) => void; row?: boolean }) {
@@ -227,7 +236,7 @@ function contextStats({ percent, used, window, thresholdPercent, input, output, 
 const COMPRESS_CLASS = 'self-start rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-fg outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring) disabled:opacity-60'
 
 /** The footer ring; a click opens the usage figures and Compress now, as legacy's ring did. */
-export function ContextRing(figures: ContextFigures) {
+export const ContextRing = memo(function ContextRing(figures: ContextFigures) {
   const [open, setOpen] = useState(false)
   const st = contextStats(figures)
   if (!st) return null
@@ -258,7 +267,7 @@ export function ContextRing(figures: ContextFigures) {
       </Popover.Root>
     </div>
   )
-}
+})
 
 /** Context readout row for the overflow panel on phones, where the footer ring is hidden. */
 export function ContextRow(figures: ContextFigures) {

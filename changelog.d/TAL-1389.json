@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Keep chat typing, clarification answers, and model searches responsive without rebuilding unrelated controls.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

@@ -34,7 +34,9 @@ const onQueue = vi.fn()
 let qc: QueryClient
 
 /** ChatView's clarify wiring: the flyout card above the composer, both driven by one `useClarify`. */
+let chatRenders = 0
 function Chat({ live = streaming }: { live?: LiveTurn }) {
+  chatRenders++
   const clarify = useClarify('s1', live)
   return (
     <>
@@ -75,6 +77,19 @@ describe('clarification through the composer (TAL-362)', () => {
     vi.mocked(api.steerChat).mockClear()
     vi.mocked(connection.startTurn).mockClear()
     onQueue.mockClear()
+  })
+
+  it('keeps clarification typing local to the composer instead of re-rendering ChatView wiring', async () => {
+    head = single
+    renderChat()
+    await screen.findByRole('dialog')
+    const box = screen.getByRole('textbox')
+    await userEvent.click(box)
+    const before = chatRenders
+    await userEvent.type(box, 'abcdefghij', { skipClick: true })
+    expect(chatRenders - before).toBe(0)
+    await userEvent.keyboard('{Enter}')
+    expect(api.respondClarify).toHaveBeenCalledWith({ session_id: 's1', clarify_id: 'single-1', answers: { q0: 'abcdefghij' } })
   })
 
   it('keeps the how-to-answer explanation behind the heading help button', async () => {

@@ -97,7 +97,6 @@ function AuxiliaryModelPicker({ task, onDone }: { task: AuxTask; onDone: () => v
   const models = useModelsQuery()
   const save = useSetAuxiliaryModel()
   const [query, setQuery] = useState('')
-  const [custom, setCustom] = useState('')
   // The list shows the pick at once with the labels the user chose from; the server's state replaces them.
   const pick = (model: string, provider?: string, labels: { provider_label?: string; value_label?: string } = {}): void => {
     save.mutate({ task: task.task, model, provider: provider ?? null, shown: provider === 'auto' ? AUTO : { is_auto: false, in_catalog: true, selected_option_id: model, provider_label: labels.provider_label ?? '', value_label: labels.value_label ?? model } })
@@ -135,13 +134,21 @@ function AuxiliaryModelPicker({ task, onDone }: { task: AuxTask; onDone: () => v
           </section>
         ))}
       </div>
-      <form className="flex flex-col gap-1" onSubmit={(e) => { e.preventDefault(); if (custom.trim()) pick(custom.trim()) }}>
-        <label htmlFor="auxCustomModel" className="text-xs text-muted">{m.auxiliary_models_custom_label()}</label>
-        <div className="flex gap-2">
-          <TextInput id="auxCustomModel" value={custom} onChange={(e) => setCustom(e.target.value)} placeholder="@provider:model" autoCapitalize="off" autoCorrect="off" spellCheck={false} />
-          <Button type="submit" disabled={!custom.trim()}>{m.save()}</Button>
-        </div>
-      </form>
+      <CustomModelInput onPick={pick} />
     </div>
+  )
+}
+
+/** The custom id draft is local to its input, independent of catalog search and rows. */
+function CustomModelInput({ onPick }: { onPick: (model: string) => void }) {
+  const [custom, setCustom] = useState('')
+  return (
+    <form className="flex flex-col gap-1" onSubmit={(e) => { e.preventDefault(); if (custom.trim()) onPick(custom.trim()) }}>
+      <label htmlFor="auxCustomModel" className="text-xs text-muted">{m.auxiliary_models_custom_label()}</label>
+      <div className="flex gap-2">
+        <TextInput id="auxCustomModel" value={custom} onChange={(e) => setCustom(e.target.value)} placeholder="@provider:model" autoCapitalize="off" autoCorrect="off" spellCheck={false} />
+        <Button type="submit" disabled={!custom.trim()}>{m.save()}</Button>
+      </div>
+    </form>
   )
 }

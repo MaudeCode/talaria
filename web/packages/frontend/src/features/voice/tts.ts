@@ -25,7 +25,7 @@ export async function claimAutomaticSpeech(identity: string): Promise<boolean> {
 export function stopSpeaking(): void {
   generation += 1
   if (current) { current.pause(); current = null }
-  if ('speechSynthesis' in window) window.speechSynthesis.cancel()
+  if ('speechSynthesis' in window && (window.speechSynthesis.speaking || window.speechSynthesis.pending)) window.speechSynthesis.cancel()
 }
 
 export async function speak(text: string): Promise<void> {

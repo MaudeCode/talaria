@@ -22,6 +22,27 @@ vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await im
 vi.mock(import('../toast/toast'), async (importOriginal) => ({ ...(await importOriginal()), showToast: vi.fn() }))
 vi.mock(import('../../api/sse'), async (importOriginal) => ({ ...(await importOriginal()), openChatStream: vi.fn(() => ({ close: () => undefined, readyState: () => 0 })) }))
 vi.mock(import('../voice/liveDictation'), async (importOriginal) => ({ ...(await importOriginal()), dictateLive: vi.fn(), liveDictationSupported: vi.fn(() => true) }))
+const renders = vi.hoisted(() => ({ controls: 0, model: 0, attachments: 0, notices: 0 }))
+vi.mock('./ComposerControls', async (original) => {
+  const controls = await original<typeof import('./ComposerControls')>()
+  const { countRenders } = await import('../../test/countRenders')
+  return { ...controls, ComposerControls: countRenders(controls.ComposerControls, () => renders.controls++) }
+})
+vi.mock('./chips', async (original) => {
+  const chips = await original<typeof import('./chips')>()
+  const { countRenders } = await import('../../test/countRenders')
+  return { ...chips, ModelChip: countRenders(chips.ModelChip, () => renders.model++) }
+})
+vi.mock('./Attachments', async (original) => {
+  const attachments = await original<typeof import('./Attachments')>()
+  const { countRenders } = await import('../../test/countRenders')
+  return { ...attachments, AttachmentTray: countRenders(attachments.AttachmentTray, () => renders.attachments++) }
+})
+vi.mock('./ComposerNotices', async (original) => {
+  const notices = await original<typeof import('./ComposerNotices')>()
+  const { countRenders } = await import('../../test/countRenders')
+  return { ...notices, ComposerNotices: countRenders(notices.ComposerNotices, () => renders.notices++) }
+})
 import { Composer, type ComposerProps } from './Composer'
 import type { ExecutionModes } from '@maudecode/talaria-web-contracts'
 import { dictateLive } from '../voice/liveDictation'
@@ -45,6 +66,17 @@ function renderComposer(session: Session | null, live: LiveTurn | null = null, o
 }
 
 describe('Composer', () => {
+  it.each([false, true])('does not render unrelated controls, attachments or notices while typing ten characters, busy: %s', async (busy) => {
+    renderComposer(writable, busy ? running() : null)
+    const box = screen.getByRole('textbox')
+    await userEvent.click(box)
+    await act(() => Promise.resolve())
+    const before = { ...renders }
+    await userEvent.type(box, 'abcdefghij', { skipClick: true })
+    expect(Object.fromEntries(Object.keys(before).map((key) => [key, renders[key as keyof typeof renders] - before[key as keyof typeof before]]))).toEqual({ controls: 0, model: 0, attachments: 0, notices: 0 })
+    expect(box).toHaveValue('abcdefghij')
+  })
+
   it('offers no attachment before a fresh chat starts in a mode the server says cannot attach (TAL-1040)', async () => {
     const onEnsureSession = vi.fn(() => Promise.reject(new Error('must not create')))
     const view = renderComposer(null, null, noop, undefined, onEnsureSession, undefined, { onExecutionModeChange: vi.fn(), pendingChoices: { execution_mode: 'safe' } })

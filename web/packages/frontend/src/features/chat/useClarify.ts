@@ -9,7 +9,7 @@ import { usePromptAnswer } from './usePromptAnswer'
 type Answer = string | string[]
 /** One clarify prompt as its answer owner tracks it; the vault card answers the same prompts. */
 export const clarifyResource = (sessionId: string, clarifyId: string) => `clarify:${sessionId}:${clarifyId}`
-interface Progress { id: string; index: number; answers: Record<string, Answer>; text: string; selected: string[] }
+interface Progress { id: string; index: number; answers: Record<string, Answer>; inputRevision: number; selected: string[] }
 
 /** The active clarification and the composer's temporary answer for its current step. */
 export interface Clarify {
@@ -17,14 +17,14 @@ export interface Clarify {
   step: ClarifyStep
   index: number
   total: number
-  text: string
-  setText: (text: string) => void
+  /** Changes only when a choice or step replaces the composer's local typed answer. */
+  inputRevision: number
+  clearSelection: () => void
   selected: string[]
-  canSend: boolean
   /** A choice button: answers a single-select step, toggles a multi-select one. */
   choose: (choice: string) => void
   /** The composer's send: answers the current step with the typed text, else the pressed choices. */
-  send: () => void
+  send: (text: string) => void
 }
 
 /** The session's clarify queue head while its turn runs; every reader shares one query, which `useClarify` re-reads on frames. */
@@ -61,7 +61,7 @@ export function useClarify(sessionId: string | null, live: LiveTurn | null): Cla
 
   const id = pending?.clarify_id ?? ''
   const steps = pending?.steps ?? []
-  const current: Progress = progress?.id === id ? progress : { id, index: 0, answers: {}, text: '', selected: [] }
+  const current: Progress = progress?.id === id ? progress : { id, index: 0, answers: {}, inputRevision: 0, selected: [] }
   const step = steps[current.index]
 
   // The card leaves on the last answer; a refused relay brings it back with the answers kept for a retry.
@@ -77,14 +77,9 @@ export function useClarify(sessionId: string | null, live: LiveTurn | null): Cla
   const answer = (value: Answer, picked = false) => {
     if (!step) return
     const answers = { ...current.answers, [step.qid]: value }
-    if (current.index < steps.length - 1) setProgress({ id, index: current.index + 1, answers, text: '', selected: [] })
-    else { setProgress({ ...current, answers, ...(picked ? { text: '', selected: [value as string] } : {}) }); submit(answers) }
+    if (current.index < steps.length - 1) setProgress({ id, index: current.index + 1, answers, inputRevision: current.inputRevision + 1, selected: [] })
+    else { setProgress({ ...current, answers, ...(picked ? { inputRevision: current.inputRevision + 1, selected: [value as string] } : {}) }); submit(answers) }
   }
-
-  // Typed text wins over pressed choices (docs/ui-ux clarify-progress): what is submitted is what is on screen.
-  const typed = current.text.trim()
-  const value: Answer = step?.multi_select && !typed ? current.selected : typed
-  const canSend = value.length > 0
 
   if (!pending || !step || answered(clarifyResource(sessionId ?? '', id))) return null
   return {
@@ -92,15 +87,19 @@ export function useClarify(sessionId: string | null, live: LiveTurn | null): Cla
     step,
     index: current.index,
     total: steps.length,
-    text: current.text,
-    setText: (text) => setProgress({ ...current, text, selected: text.trim() ? [] : current.selected }),
+    inputRevision: current.inputRevision,
+    clearSelection: () => { if (current.selected.length) setProgress({ ...current, selected: [] }) },
     selected: current.selected,
-    canSend,
     choose: (choice) => {
       if (!step.multi_select) { answer(choice, true); return }
       const selected = current.selected.includes(choice) ? current.selected.filter((c) => c !== choice) : [...current.selected, choice]
-      setProgress({ ...current, selected, text: '' })
+      setProgress({ ...current, selected, inputRevision: current.inputRevision + 1 })
     },
-    send: () => { if (canSend) answer(value) },
+    send: (text) => {
+      // Typed text wins over pressed choices; typing itself belongs to the composer.
+      const typed = text.trim()
+      const value: Answer = step.multi_select && !typed ? current.selected : typed || current.selected[0] || ''
+      if (value.length) answer(value)
+    },
   }
 }
