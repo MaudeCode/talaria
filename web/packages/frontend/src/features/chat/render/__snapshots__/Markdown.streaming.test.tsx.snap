@@ -1,0 +1,332 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`converges to the static DOM and snapshot for fences 1`] = `
+[
+  {
+    "tag": "P",
+    "text": "Intro.",
+  },
+  {
+    "tag": "PRE",
+    "text": "const text = "\`\`\`"
+const answer = 42",
+  },
+  {
+    "tag": "P",
+    "text": "After.",
+  },
+  {
+    "tag": "P",
+    "text": "More.",
+  },
+]
+`;
+
+exports[`converges to the static DOM and snapshot for footnotes 1`] = `
+[
+  {
+    "tag": "P",
+    "text": "Intro.",
+  },
+  {
+    "tag": "P",
+    "text": "A note1.",
+  },
+  {
+    "tag": "P",
+    "text": "After.",
+  },
+  {
+    "tag": "LI",
+    "text": "
+Footnote text. ↩
+",
+  },
+  {
+    "tag": "P",
+    "text": "Footnote text. ↩",
+  },
+]
+`;
+
+exports[`converges to the static DOM and snapshot for html 1`] = `
+[
+  {
+    "tag": "P",
+    "text": "Intro.",
+  },
+  {
+    "tag": "P",
+    "text": "First",
+  },
+  {
+    "tag": "P",
+    "text": "Second",
+  },
+  {
+    "tag": "P",
+    "text": "After.",
+  },
+  {
+    "tag": "P",
+    "text": "More.",
+  },
+]
+`;
+
+exports[`converges to the static DOM and snapshot for inlineAcrossBlocks 1`] = `
+[
+  {
+    "tag": "P",
+    "text": "Intro.",
+  },
+  {
+    "tag": "P",
+    "text": "*First",
+  },
+  {
+    "tag": "P",
+    "text": "Second*",
+  },
+  {
+    "tag": "P",
+    "text": "After.",
+  },
+]
+`;
+
+exports[`converges to the static DOM and snapshot for lists 1`] = `
+[
+  {
+    "tag": "P",
+    "text": "Intro.",
+  },
+  {
+    "tag": "LI",
+    "text": "
+First
+Continued paragraph.
+",
+  },
+  {
+    "tag": "P",
+    "text": "First",
+  },
+  {
+    "tag": "P",
+    "text": "Continued paragraph.",
+  },
+  {
+    "tag": "LI",
+    "text": "
+Second
+",
+  },
+  {
+    "tag": "P",
+    "text": "Second",
+  },
+  {
+    "tag": "P",
+    "text": "After.",
+  },
+  {
+    "tag": "P",
+    "text": "More.",
+  },
+]
+`;
+
+exports[`converges to the static DOM and snapshot for math 1`] = `
+[
+  {
+    "tag": "P",
+    "text": "Intro.",
+  },
+  {
+    "tag": "P",
+    "text": "After.",
+  },
+  {
+    "tag": "P",
+    "text": "More.",
+  },
+]
+`;
+
+exports[`converges to the static DOM and snapshot for multilineReference 1`] = `
+[
+  {
+    "tag": "P",
+    "text": "Intro.",
+  },
+  {
+    "tag": "P",
+    "text": "Link.",
+  },
+  {
+    "tag": "P",
+    "text": "After.",
+  },
+]
+`;
+
+exports[`converges to the static DOM and snapshot for nested 1`] = `
+[
+  {
+    "tag": "P",
+    "text": "Intro.",
+  },
+  {
+    "tag": "LI",
+    "text": "First
+
+
+Nested
+Continued
+
+
+",
+  },
+  {
+    "tag": "LI",
+    "text": "
+Nested
+Continued
+",
+  },
+  {
+    "tag": "P",
+    "text": "Nested",
+  },
+  {
+    "tag": "P",
+    "text": "Continued",
+  },
+  {
+    "tag": "LI",
+    "text": "Second",
+  },
+  {
+    "tag": "P",
+    "text": "After.",
+  },
+]
+`;
+
+exports[`converges to the static DOM and snapshot for partialMarkers 1`] = `
+[
+  {
+    "tag": "LI",
+    "text": "First",
+  },
+  {
+    "tag": "LI",
+    "text": "
+Ordered
+",
+  },
+  {
+    "tag": "P",
+    "text": "Ordered",
+  },
+  {
+    "tag": "LI",
+    "text": "
+Continued
+",
+  },
+  {
+    "tag": "P",
+    "text": "Continued",
+  },
+  {
+    "tag": "P",
+    "text": "After.",
+  },
+]
+`;
+
+exports[`converges to the static DOM and snapshot for quotes 1`] = `
+[
+  {
+    "tag": "P",
+    "text": "Intro.",
+  },
+  {
+    "tag": "P",
+    "text": "Quoted",
+  },
+  {
+    "tag": "P",
+    "text": "paragraph",
+  },
+  {
+    "tag": "P",
+    "text": "After.",
+  },
+  {
+    "tag": "P",
+    "text": "More.",
+  },
+]
+`;
+
+exports[`converges to the static DOM and snapshot for references 1`] = `
+[
+  {
+    "tag": "P",
+    "text": "Intro.",
+  },
+  {
+    "tag": "P",
+    "text": "Link.",
+  },
+  {
+    "tag": "P",
+    "text": "After.",
+  },
+]
+`;
+
+exports[`converges to the static DOM and snapshot for separators 1`] = `
+[
+  {
+    "tag": "P",
+    "text": "Intro.",
+  },
+  {
+    "tag": "P",
+    "text": "Second.",
+  },
+  {
+    "tag": "P",
+    "text": "After.",
+  },
+  {
+    "tag": "P",
+    "text": "More.",
+  },
+]
+`;
+
+exports[`converges to the static DOM and snapshot for tables 1`] = `
+[
+  {
+    "tag": "P",
+    "text": "Intro.",
+  },
+  {
+    "tag": "TABLE",
+    "text": "AB12",
+  },
+  {
+    "tag": "P",
+    "text": "After.",
+  },
+  {
+    "tag": "P",
+    "text": "More.",
+  },
+]
+`;

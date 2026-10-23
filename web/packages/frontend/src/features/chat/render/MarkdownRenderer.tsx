@@ -5,7 +5,7 @@
  * elsewhere and are never passed through here as HTML.
  */
 import { memo, use, useEffect, useMemo, useRef, useState } from 'react'
-import { Streamdown, type LinkSafetyConfig, type LinkSafetyModalProps } from 'streamdown'
+import { Streamdown, parseMarkdownIntoBlocks, type LinkSafetyConfig, type LinkSafetyModalProps } from 'streamdown'
 import { cjk } from '@streamdown/cjk'
 import { appUrl } from '../../../lib/appRoot'
 import { CodeBlock, LineEndedContext } from './CodeBlock'
@@ -13,6 +13,7 @@ import { code, HIGHLIGHTED_LANGUAGES } from './codeHighlight'
 import { JsonCodeBlock } from './JsonCodeBlock'
 import { LinkCheckContext, type LinkCheck } from './LinkCheckContext'
 import type { MarkdownProps } from './Markdown'
+import { createIncrementalMarkdownParser } from './incrementalMarkdown'
 import 'streamdown/styles.css'
 import { Dialog } from '../../../ui/Dialog'
 import { Button } from '../../../ui/Button'
@@ -69,6 +70,7 @@ function LinkSafetyDialog({ isOpen, onClose, onConfirm, url, host }: LinkSafetyM
 
 export default memo(function MarkdownRenderer({ text, streaming = false, className, dir = 'auto' }: MarkdownProps) {
   const check = use(LinkCheckContext)
+  const parseBlocks = useMemo(() => streaming ? createIncrementalMarkdownParser() : parseMarkdownIntoBlocks, [streaming])
   // Syntax detection selects display assets only; transcript state and link decisions remain server-owned.
   const mermaid = useLazyPlugin(/(?:`{3,}|~{3,})mermaid\b/.test(text), loadMermaid)
   // The existing plugin parses double-dollar math; ordinary prices must not load KaTeX.
@@ -93,6 +95,7 @@ export default memo(function MarkdownRenderer({ text, streaming = false, classNa
         mode={streaming ? 'streaming' : 'static'}
         parseIncompleteMarkdown={streaming}
         isAnimating={streaming}
+        parseMarkdownIntoBlocksFn={parseBlocks}
         className={className ?? 'hermes-prose'}
         plugins={plugins}
         shikiTheme={SHIKI_THEMES}

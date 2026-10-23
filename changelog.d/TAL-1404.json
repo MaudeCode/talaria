@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Long streaming replies spend less work rendering completed paragraphs.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
