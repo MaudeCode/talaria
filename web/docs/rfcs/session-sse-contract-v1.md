@@ -30,9 +30,11 @@ The global sidebar feed remains independent. Reconnection refreshes detail even
 when no change was retained while the client was absent.
 
 The global sidebar feed sends `initial {stream: "sessions"}` first on every
-connection, including `?gateway=1`. Web uses it to resync list and search queries
-once per connection. The visible-tab 60-second fallback polls only when this
-EventSource is not OPEN; a healthy stream needs no periodic list rebuild.
+connection, including `?gateway=1`. Web subscribes to that merged feed so external
+Agent session changes also invalidate the sidebar. It uses `initial` to resync
+list and search queries once per connection. The visible-tab 60-second fallback
+polls only when this EventSource is not OPEN; a healthy stream needs no periodic
+list rebuild.
 
 Web installs a terminal chat frame's complete session directly into its query
 cache, cancelling older detail reads. Terminal snapshots and initial transcript

@@ -61,7 +61,7 @@ function openSessionFeed<T>(path: string, names: readonly string[], parse: (valu
 }
 
 export function openSessionListStream(cb: SessionFeedCallbacks<SessionListEvent>): SseHandle {
-  return openSessionFeed('api/sessions/events', ['initial', 'sessions_changed', 'gateway_status', 'hello'], (value) => SessionListEventSchema.safeParse(value), cb)
+  return openSessionFeed('api/sessions/events?gateway=1', ['initial', 'sessions_changed', 'gateway_status', 'hello'], (value) => SessionListEventSchema.safeParse(value), cb)
 }
 
 export function openSessionStream(sessionId: string, cb: SessionFeedCallbacks<SessionStreamEvent>, knownCount?: number): SseHandle {

@@ -74,7 +74,7 @@ test('background work the Agent starts during a turn shows on the chip when the 
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: sid, title: 'Delegate', messages: [{ role: 'user', id: 1, content: 'Split it' }], active_stream_id: streamId, is_streaming: true } } }))
   await page.route('**/api/chat/stream/status?**', (route) => route.fulfill({ json: { active: true, stream_id: streamId, replay_available: false } }))
   await page.route('**/api/chat/stream?**', (route) => route.continue({ url: `${base}/chat${new URL(route.request().url()).search}` }))
-  await page.route('**/api/sessions/events', (route) => route.continue({ url: `${base}/sessions` }))
+  await page.route('**/api/sessions/events*', (route) => route.continue({ url: `${base}/sessions` }))
   await page.route('**/api/session/draft', (route) => route.fulfill({ json: { ok: true } }))
   await page.route('**/api/background/tasks?**', (route) => route.fulfill({ json: { session_id: sid, agent_available: true, tasks: started ? [task({ task_id: 'call_d', kind: 'delegation', title: 'Check logs' })] : [] } }))
   try {

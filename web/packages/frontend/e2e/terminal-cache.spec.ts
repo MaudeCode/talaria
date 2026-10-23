@@ -26,7 +26,7 @@ for (const order of ['before', 'after'] as const) {
       return route.fulfill({ json: { session: done ? settled : session } })
     })
     await page.route('**/api/chat/stream/status?**', (route) => route.fulfill({ json: { active: true, stream_id: run, replay_available: true, blocking_stream_id: null } }))
-    for (const [pattern, path] of [['**/api/chat/stream?**', '/chat'], ['**/api/sessions/events', '/sidebar'], ['**/api/session/stream?**', '/session']] as const) {
+    for (const [pattern, path] of [['**/api/chat/stream?**', '/chat'], ['**/api/sessions/events*', '/sidebar'], ['**/api/session/stream?**', '/session']] as const) {
       await page.route(pattern, (route) => route.continue({ url: `http://127.0.0.1:${address.port}${path}` }))
     }
     const emit = (path: string, event: string, data: unknown) => feeds.get(path)!.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
