@@ -684,6 +684,56 @@ describe('Composer', () => {
     expect(screen.getByRole('textbox')).toHaveValue('Draft so far\n\nCheck b too')
   })
 
+  it('quotes multi-line selected text after the exact draft and preserves its cursor and attachments', async () => {
+    vi.mocked(api.uploadFile).mockResolvedValue({ filename: 'notes.txt', path: '/synthetic/notes.txt', size: 1, mime: 'text/plain' })
+    const view = renderComposer(writable)
+    const box = screen.getByRole<HTMLTextAreaElement>('textbox')
+    fireEvent.change(box, { target: { value: 'Draft  ' } })
+    const input = view.container.querySelector<HTMLInputElement>('input[type="file"]')!
+    fireEvent.change(input, { target: { files: [new File(['x'], 'notes.txt', { type: 'text/plain' })] } })
+    await screen.findByText('notes.txt')
+    box.setSelectionRange(2, 4, 'backward')
+    act(() => { returnToComposer('s1', '**Markdown**\n\n```ts\nconst café = "🦜"\n```', 'quote') })
+    expect(box).toHaveValue('Draft  \n\n> **Markdown**\n> \n> ```ts\n> const café = "🦜"\n> ```\n\n')
+    expect([box.selectionStart, box.selectionEnd, box.selectionDirection]).toEqual([2, 4, 'backward'])
+    expect(screen.getByText('notes.txt')).toBeInTheDocument()
+    expect(api.startChat).not.toHaveBeenCalled()
+    expect(api.steerChat).not.toHaveBeenCalled()
+  })
+
+  it('ignores empty, oversized, wrong-chat and unmounted selection quotes without buffering them', () => {
+    const view = renderComposer(writable)
+    const box = screen.getByRole('textbox')
+    for (const selected of ['', '  \n', 'x'.repeat(16_001)]) act(() => { returnToComposer('s1', selected, 'quote') })
+    act(() => { returnToComposer('other-session', 'wrong chat', 'quote') })
+    expect(box).toHaveValue('')
+    view.unmount()
+    act(() => { returnToComposer('s1', 'after unmount', 'quote') })
+    renderComposer(writable)
+    expect(screen.getByRole('textbox')).toHaveValue('')
+  })
+
+  it('does not deliver a quote across a chat switch', () => {
+    const view = renderComposer(writable)
+    view.rerenderSession({ ...writable, session_id: 'other-session' })
+    act(() => { returnToComposer('s1', 'old selection', 'quote') })
+    view.rerenderSession(writable)
+    expect(screen.getByRole('textbox')).toHaveValue('')
+  })
+
+  it('preserves the last composer cursor when browser selection resets the inactive textarea', () => {
+    renderComposer(writable, null, noop, undefined, undefined, undefined, { locked: true })
+    const box = screen.getByRole<HTMLTextAreaElement>('textbox')
+    fireEvent.change(box, { target: { value: 'My draft' } })
+    act(() => { box.focus(); box.setSelectionRange(2, 4, 'backward') })
+    fireEvent.select(box)
+    act(() => { box.blur(); box.setSelectionRange(0, 0) })
+    act(() => { returnToComposer('s1', 'Selected', 'quote') })
+    expect(box).toHaveValue('My draft\n\n> Selected\n\n')
+    expect([box.selectionStart, box.selectionEnd, box.selectionDirection]).toEqual([2, 4, 'backward'])
+    expect(api.startChat).not.toHaveBeenCalled()
+  })
+
   it('keeps the composer for a writable session', () => {
     renderComposer({ session_id: 'mine', title: 'Mine', is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, source_kind: 'webui', is_messaging_session: false, sort_ts: 0 })
     expect(screen.getByRole('textbox')).toBeInTheDocument()

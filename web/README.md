@@ -208,6 +208,10 @@ Desktop contributions are unverified and do not run in Talaria. A lost acknowled
 the installed identity without replaying the install. Agents without this native boundary show an
 update requirement.
 
+Select text within a chat message, then choose **Quote selection** to append it as a Markdown quote
+to the current draft. The action keeps the draft, attachments and cursor, and never sends a message.
+Selections over 16,000 characters are left to the browser selection menu.
+
 Automatic read-aloud claims each watched reply once across tabs on the same browser origin and app mount,
 account, profile, and session. The browser retains the last 1024 automatic attempts, including interrupted
 attempts. If coordination storage is unavailable, automatic playback stays quiet; **Read aloud** remains

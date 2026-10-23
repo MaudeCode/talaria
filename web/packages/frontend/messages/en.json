@@ -65,6 +65,7 @@
 	"show_full_message_visually": "Show full message visually",
 	"show_less_message_visually": "Show less of message visually",
 	"regenerate": "Regenerate response",
+	"quote_selection": "Quote selection",
 	"copy": "Copy",
 	"copied": "Copied!",
 	"copy_failed": "Copy failed",

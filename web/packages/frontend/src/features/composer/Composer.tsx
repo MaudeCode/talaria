@@ -428,14 +428,32 @@ export const Composer = memo(function Composer(props: ComposerProps) {
   // Snapshot of what a send would post right now, for the queue.
   const queueEntry = useCallback((text: string): QueuedTurn => ({ id: randomHex(), text, attachments: files.flatMap((f) => (f.status === 'done' && f.upload ? [f.upload] : [])), request: session ? turnRequest(session, bootstrap.profile?.name ?? 'default') : { profile: bootstrap.profile?.name ?? 'default' } }), [files, session, bootstrap.profile])
 
-  // TAL-425: a steer taken back (Edit, or a Stop of this tab's steer) returns after the draft, with a blank line between.
-  useEffect(() => {
+  const quoteCursor = useRef<{ start: number; end: number; direction: 'forward' | 'backward' | 'none' } | null>(null)
+  const lastCursor = useRef<{ sessionId: string | null; cursor: NonNullable<typeof quoteCursor.current> } | null>(null)
+  useLayoutEffect(() => {
+    const cursor = quoteCursor.current
+    if (!cursor) return
+    quoteCursor.current = null
+    textarea.current?.focus({ preventScroll: true })
+    textarea.current?.setSelectionRange(cursor.start, cursor.end, cursor.direction)
+  }, [text])
+
+  // Returned turns keep their existing behavior; selection quotes preserve the exact draft and cursor.
+  useLayoutEffect(() => {
     if (!sessionId) return
-    return onReturnToComposer(sessionId, (returned) => {
-      setText((prev) => (prev.trim() ? `${prev.replace(/\s+$/, '')}\n\n${returned}` : returned))
-      textarea.current?.focus()
+    const scope = getStreamContext()
+    return onReturnToComposer(sessionId, (returned, kind) => {
+      if (kind === 'quote') {
+        const el = textarea.current
+        if (!el || readOnly || clarify || draftIdentity !== localStateId || scope !== getStreamContext()) return
+        quoteCursor.current = lastCursor.current?.sessionId === sessionId ? lastCursor.current.cursor : { start: el.selectionStart, end: el.selectionEnd, direction: el.selectionDirection }
+        setText((prev) => `${prev}${prev ? '\n\n' : ''}${returned}`)
+      } else {
+        setText((prev) => (prev.trim() ? `${prev.replace(/\s+$/, '')}\n\n${returned}` : returned))
+        textarea.current?.focus()
+      }
     })
-  }, [sessionId])
+  }, [sessionId, readOnly, clarify, draftIdentity, localStateId])
 
   const { ask: askBtw, notice: btwNotice } = useBtw(sessionId)
   const { run: runCommand, notice: commandNotice } = useCommandOutput(sessionId)
@@ -709,6 +727,10 @@ export const Composer = memo(function Composer(props: ComposerProps) {
           value={value}
           // Typing silences a reply being read aloud (Settings > Speech).
           onChange={(e) => { stopSpeaking(); setValue(e.target.value) }}
+          onSelect={(event) => {
+            const el = event.currentTarget
+            if (document.activeElement === el) lastCursor.current = { sessionId, cursor: { start: el.selectionStart, end: el.selectionEnd, direction: el.selectionDirection } }
+          }}
           onKeyDown={onKeyDown}
           onPaste={onPaste}
           placeholder={placeholder}

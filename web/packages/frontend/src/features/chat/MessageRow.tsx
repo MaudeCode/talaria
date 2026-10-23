@@ -21,6 +21,7 @@ import { speak } from '../voice/tts'
 import { ImageLightbox, type LightboxImage } from './ImageLightbox'
 
 export interface RowActions {
+  onQuoteSelection?: (text: string) => void
   onEdit?: (row: VisibleMessage, text: string) => void
   onRegenerate?: (row: VisibleMessage) => void
   onBranch?: (row: VisibleMessage) => void
