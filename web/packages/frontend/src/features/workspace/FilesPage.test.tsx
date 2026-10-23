@@ -82,6 +82,42 @@ describe('file tree writes show their result at once (TAL-1384)', () => {
   })
 })
 
+describe('file tree writes roll back only themselves on refusal (TAL-1384)', () => {
+  const refusal = (message: string) => new ApiError({ kind: 'http', status: 409, path: '/x', message })
+
+  it('restores a refused rename with the error inline', async () => {
+    vi.mocked(api.renameEntry).mockRejectedValue(refusal('Name is taken'))
+    renderFiles()
+    await menu('b.txt', 'Rename')
+    const input = screen.getByRole('textbox', { name: 'New name:' })
+    await userEvent.clear(input)
+    await userEvent.type(input, 'aa.txt{Enter}')
+    await waitFor(() => expect(names()).toEqual(['docs', 'a.txt', 'b.txt']))
+    expect(screen.getByRole('alert')).toHaveTextContent('Name is taken')
+  })
+
+  it('drops a refused new file with the error inline', async () => {
+    vi.mocked(api.createFile).mockRejectedValue(refusal('File already exists'))
+    renderFiles()
+    await screen.findByRole('treeitem', { name: 'a.txt' })
+    await userEvent.click(screen.getByRole('button', { name: 'New File' }))
+    await userEvent.type(screen.getByRole('textbox', { name: 'New file name (e.g. notes.md):' }), 'notes.md{Enter}')
+    await waitFor(() => expect(names()).toEqual(['docs', 'a.txt', 'b.txt']))
+    expect(screen.getByRole('alert')).toHaveTextContent('File already exists')
+  })
+
+  it('puts a refused move back with the error inline', async () => {
+    vi.mocked(api.moveEntry).mockRejectedValue(refusal('Target is read-only'))
+    renderFiles()
+    const folder = (await screen.findByRole('treeitem', { name: 'docs' })).parentElement!
+    const dataTransfer = { types: ['application/x-talaria-workspace-path'], getData: () => 'a.txt', dropEffect: 'move' }
+    fireEvent.dragOver(folder, { dataTransfer })
+    fireEvent.drop(folder, { dataTransfer })
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Target is read-only'))
+    expect(names()).toEqual(['docs', 'a.txt', 'b.txt'])
+  })
+})
+
 describe('file save keeps the user\'s edits (TAL-1384)', () => {
   async function openFile(name: string) {
     await userEvent.click(await screen.findByRole('treeitem', { name }))
@@ -103,6 +139,36 @@ describe('file save keeps the user\'s edits (TAL-1384)', () => {
     await act(async () => { answer({ ok: true }); await Promise.resolve() })
     await waitFor(() => expect(toast).toHaveBeenCalledWith('File saved'))
     expect(editor).toHaveValue('Submitted A and newer')
+  })
+
+  it('keeps the draft and shows the error when the save is refused', async () => {
+    vi.mocked(api.saveFile).mockRejectedValue(new ApiError({ kind: 'http', status: 413, path: '/x', message: 'File too large' }))
+    renderFiles()
+    const editor = await openFile('a.txt')
+    await waitFor(() => expect(editor).toHaveValue('Original A'))
+    await userEvent.type(editor, ' edited')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(toast).toHaveBeenCalledWith('File too large', 4000, 'error'))
+    expect(editor).toHaveValue('Original A edited')
+    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
+  })
+
+  it('rereads the saved file, not the one open when the save answers', async () => {
+    let answer!: (value: unknown) => void
+    vi.mocked(api.saveFile).mockReturnValue(new Promise((resolve) => { answer = resolve }) as never)
+    renderFiles()
+    const first = await openFile('a.txt')
+    await waitFor(() => expect(first).toHaveValue('Original A'))
+    await userEvent.type(first, '!')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Back' }))
+    const second = await openFile('b.txt')
+    await waitFor(() => expect(second).toHaveValue('Original B'))
+    const reads = (path: string) => vi.mocked(api.readFile).mock.calls.filter(([, p]) => p === path).length
+    const [readsA, readsB] = [reads('a.txt'), reads('b.txt')]
+    await act(async () => { answer({ ok: true }); await Promise.resolve() })
+    await waitFor(() => expect(reads('a.txt')).toBeGreaterThan(readsA))
+    expect(reads('b.txt')).toBe(readsB)
   })
 
   it('never clears another file\'s draft when an earlier save finishes', async () => {
