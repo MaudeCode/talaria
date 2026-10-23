@@ -49,6 +49,8 @@ struct UITestFixtureEnvironment {
     nonisolated static let sessionNoticesArgument = "--ui-test-session-notices"
     /// Serves the fixture chat with a standing `/goal` parked on CI for ten minutes (TAL-833).
     nonisolated static let goalArgument = "--ui-test-goal"
+    /// Serves the fixture chat's workspace as a clean git repository, so the chat shows its Git menu (TAL-1528).
+    nonisolated static let gitRepositoryArgument = "--ui-test-git-repository"
     /// Opens the Chats list with its update notifications sheet up.
     nonisolated static let updateNotificationsArgument = "--ui-test-update-notifications"
     /// Reports the Agent's session storage as corrupt on `/api/sessions` (TAL-830).
@@ -815,6 +817,12 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             return json(["commands": []])
         case "/api/goal" where ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.goalArgument):
             return json(["ok": true, "action": "status", "goal": ["goal": "Ship the release notes", "status": "active"]])
+        case "/api/git-info" where ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.gitRepositoryArgument):
+            return json(["git": ["is_git": true, "branch": "main", "dirty": 0, "ahead": 0, "behind": 0]])
+        case "/api/git/status" where ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.gitRepositoryArgument):
+            return json(["git": ["is_git": true, "branch": "main", "ahead": 0, "behind": 0, "files": [], "truncated": false]])
+        case "/api/git/branches" where ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.gitRepositoryArgument):
+            return json(["branches": ["is_git": true, "current": "main", "detached": false, "local": [["name": "main"]], "remote": []]])
         case "/api/personalities":
             return json(["personalities": []])
         case "/api/skills":

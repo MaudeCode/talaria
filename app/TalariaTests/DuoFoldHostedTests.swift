@@ -50,17 +50,8 @@ final class DuoFoldHostedTests: XCTestCase {
         folding.display.sizeClass = closed ? .compact : .regular
         folding.window.layoutIfNeeded()
         settle(0.3)
-        let showsSplit = splitViewController(under: folding.window.rootViewController) != nil
+        let showsSplit = HostedAccessibility.splitViewController(under: folding.window.rootViewController) != nil
         XCTAssertEqual(showsSplit, !closed, closed ? "Closing the Duo kept the split view" : "Opening the Duo kept the stack")
-    }
-
-    private func splitViewController(under controller: UIViewController?) -> UISplitViewController? {
-        guard let controller else { return nil }
-        // The chat's inspector is a split view controller of its own.
-        if let split = controller as? UISplitViewController, !NSStringFromClass(type(of: split)).contains("Inspector") {
-            return split
-        }
-        return controller.children.lazy.compactMap { self.splitViewController(under: $0) }.first
     }
 
     private func chatRequests() -> [String] {

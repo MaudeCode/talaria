@@ -31,6 +31,9 @@ public final class TasksViewModel {
     public private(set) var errorMessage: String?
     public private(set) var actionErrorMessage: String?
     public private(set) var lastError: Error?
+    /// Whether the new-task editor is up. Kept here so the list presents it while its New Task button sits in either
+    /// split view column (TAL-1528).
+    public var isPresentingCreateTask = false
 
     private var recentCompletionsGeneration = 0
     /// A pre-TAL-601 server omits `ordered`, so its jobs are sorted here. Delete the fallback once every supported server ships the field.
