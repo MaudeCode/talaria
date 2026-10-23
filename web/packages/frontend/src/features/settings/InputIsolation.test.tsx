@@ -37,11 +37,12 @@ vi.mock('../../api/endpoints', async (original) => ({
   passkeysList: vi.fn(() => Promise.resolve({ credentials: [{ id: 'one', label: 'Laptop' }, { id: 'two', label: 'Phone' }] })),
   fetchSkills: vi.fn(() => Promise.resolve({ skills })),
   fetchSkillsUsage: vi.fn(() => Promise.resolve({ usage: Object.fromEntries(skills.map((s, i) => [s.name, { use_count: i + 1 }])) })),
+  fetchPendingWrites: vi.fn(() => Promise.resolve({ kind: 'skills', visible: false, enabled: false, items: [] })),
   fetchMcpServers: vi.fn(() => Promise.resolve({ toggle_supported: true, servers: [{ name: 'test', status: 'configured', enabled: true, can_toggle: true, tool_count: 3 }] })),
   fetchMcpTools: vi.fn((q: string) => Promise.resolve({ tools: tools.filter((t) => t.name.includes(q)).map((t) => ({ ...t })), total: 3 })),
 }))
 import * as api from '../../api/endpoints'
-import { post } from '../../api/client'
+import { configureClient, post, resetClientForTests, type Transport } from '../../api/client'
 import { ApiError } from '../../contracts/common'
 import { WorkspacesPage } from '../workspaces/WorkspacesPage'
 import { ProvidersSection } from './ProvidersSection'
@@ -50,14 +51,20 @@ import { SkillsPage } from '../skills/SkillsPage'
 import { McpSection } from './McpSection'
 
 const clients: QueryClient[] = []
+const unexpectedRequest = vi.fn<Transport>(() => Promise.reject(new Error('Unexpected HTTP request in input isolation test')))
 function mount(children: ReactNode) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   clients.push(qc)
   const bootstrap = { ...DEFAULT_BOOTSTRAP, auth: { ...DEFAULT_BOOTSTRAP.auth, can_manage_server: true, passkey_feature_flag: true } }
   return render(<QueryClientProvider client={qc}><BootstrapContext.Provider value={bootstrap}>{children}</BootstrapContext.Provider></QueryClientProvider>)
 }
-beforeEach(() => { vi.clearAllMocks() })
-afterEach(() => { for (const qc of clients.splice(0)) qc.clear(); vi.useRealTimers() })
+beforeEach(() => { vi.clearAllMocks(); configureClient({ transport: unexpectedRequest }) })
+afterEach(() => {
+  for (const qc of clients.splice(0)) qc.clear()
+  vi.useRealTimers()
+  resetClientForTests()
+  expect(unexpectedRequest).not.toHaveBeenCalled()
+})
 const reset = (counter: typeof renders.workspace) => { expect(counter).toHaveBeenCalled(); counter.mockClear() }
 
 describe('input render isolation (TAL-1405)', () => {
