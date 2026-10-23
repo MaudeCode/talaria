@@ -83313,7 +83313,7 @@
             "name": "since",
             "in": "query",
             "required": false,
-            "description": "Resume after this event id (else `Last-Event-ID`, else 0).",
+            "description": "Start after this event id when no valid `Last-Event-ID` header is sent; a nonnegative integer `Last-Event-ID` wins so an automatic reconnect resumes where it stopped. To rewind, open a new stream without the header. With neither valid, the stream starts at 0.",
             "schema": {
               "type": "string"
             }

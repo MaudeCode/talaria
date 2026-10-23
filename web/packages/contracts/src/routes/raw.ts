@@ -89,7 +89,7 @@ export const RAW_ROUTES: readonly RawRoute[] = [
   },
   {
     method: 'GET', path: '/api/kanban/events/stream', summary: 'Kanban task-event feed (SSE): `hello` then `events` batches with `id: <cursor>`; 15 s keepalive.', tags: ['automation'],
-    query: { since: { description: 'Resume after this event id (else `Last-Event-ID`, else 0).' }, board: { description: 'Pin the stream to one board slug; omit to follow the active board.' } },
+    query: { since: { description: 'Start after this event id when no valid `Last-Event-ID` header is sent; a nonnegative integer `Last-Event-ID` wins so an automatic reconnect resumes where it stopped. To rewind, open a new stream without the header. With neither valid, the stream starts at 0.' }, board: { description: 'Pin the stream to one board slug; omit to follow the active board.' } },
     responses: { 200: { description: 'Event stream.', contentType: 'text/event-stream' }, 400: { description: 'Invalid board slug.', contentType: 'application/json' }, 503: { description: 'Client stream limit reached.', contentType: 'application/json' } },
   },
   {
