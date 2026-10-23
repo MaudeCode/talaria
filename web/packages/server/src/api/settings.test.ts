@@ -94,6 +94,32 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     expect(configs.get(s.state)).not.toHaveProperty('max_tokens')
   })
 
+  it('managed YAML refusals preserve confirmed settings and auxiliary values with a non-auth conflict', async () => {
+    const before = structuredClone(configs.get(s.state))
+    const settingsBefore = await json(await s.get('/api/settings'))
+    const auxBefore = await json(await s.get('/api/model/auxiliary'))
+    const original = sidecar.responderFor('config.set')
+    const message = 'config.yaml is package-managed. Update the declarative configuration instead.'
+    sidecar.respond('config.set', () => { throw new SidecarError(message, { condition: 'config_write_refused' }) })
+    try {
+      for (const [path, input] of [
+        ['/api/settings', { max_tokens: 1234 }],
+        ['/api/model/set', { scope: 'auxiliary', task: 'compression', provider: 'anthropic', model: 'claude-opus-4-7' }],
+        ['/api/model/set', { scope: 'auxiliary', task: 'delegation', provider: 'anthropic', model: 'claude-opus-4-7' }],
+      ] as const) {
+        const res = await post(s, path, input)
+        expect(res.status).toBe(409)
+        expect(await json(res)).toMatchObject({ error: message, condition: 'config_write_refused' })
+        expect(res.headers.get('set-cookie')).toBeNull()
+        expect(configs.get(s.state)).toEqual(before)
+        expect((await json(await s.get('/api/settings'))).max_tokens).toEqual(settingsBefore.max_tokens)
+        expect(await json(await s.get('/api/model/auxiliary'))).toEqual(auxBefore)
+      }
+    } finally {
+      if (original) sidecar.respond('config.set', original)
+    }
+  })
+
   it('POST /api/settings/link-check answers the saved link preferences per clicked URL (TAL-279)', async () => {
     const check = async (url: string) => (await json(await post(s, '/api/settings/link-check', { url }))).opens_directly
     expect(await json(await post(s, '/api/settings/link-check', { url: 'https://Docs.Example.com:8443/guide' }))).toEqual({ opens_directly: false, host: 'docs.example.com' })

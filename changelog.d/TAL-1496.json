@@ -1,0 +1,8 @@
+{
+  "entries": [{
+    "category": "Fixed",
+    "summary": "Settings preserve package-managed Agent configuration and explain where to change it.",
+    "highlight": false,
+    "components": ["web"]
+  }]
+}

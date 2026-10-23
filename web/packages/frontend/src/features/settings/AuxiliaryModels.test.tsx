@@ -32,6 +32,7 @@ vi.mock(import('../../app/queries'), async (original) => {
 })
 import * as api from '../../api/endpoints'
 import { AuxiliaryModelsSetting } from './AuxiliaryModels'
+import { ApiError } from '../../contracts/common'
 
 function renderSetting() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
@@ -106,7 +107,10 @@ describe('Auxiliary models settings', () => {
     expect(within(dialog).getByRole('button', { name: /^Auto/ })).toHaveAttribute('aria-pressed', 'false')
   })
 
-  it('returns the slot to its prior value and shows the error when a write is refused', async () => {
+  it.each([
+    new Error('provider-qualified auxiliary model must match the selected provider'),
+    new ApiError({ kind: 'http', status: 409, path: 'api/model/set', message: 'config.yaml is package-managed. Update the declarative configuration instead.', body: { condition: 'config_write_refused' } }),
+  ])('returns the slot to its prior value and shows the refusal: %s', async (error) => {
     let refuse!: (error: unknown) => void
     vi.mocked(api.setAuxiliaryModel).mockReturnValue(new Promise((_, reject) => { refuse = reject }))
     renderSetting()
@@ -117,9 +121,9 @@ describe('Auxiliary models settings', () => {
     expect(api.setAuxiliaryModel).toHaveBeenCalledWith('title_generation', '@openai:', null)
     const list = await screen.findByRole('list', { name: 'Auxiliary Models' })
     expect(within(list).getByRole('button', { name: /Title generation/ })).toHaveTextContent('@openai:')
-    refuse(new Error('provider-qualified auxiliary model must match the selected provider'))
+    refuse(error)
     await waitFor(() => expect(within(list).getByRole('button', { name: /Title generation/ })).toHaveTextContent('Auto · Anthropic · Claude Sonnet 4.6'))
-    expect(toast).toHaveBeenCalledWith('provider-qualified auxiliary model must match the selected provider', 4000, 'error')
+    expect(toast).toHaveBeenCalledWith(error.message, 4000, 'error')
   })
 
   it('resets every task only after confirmation', async () => {

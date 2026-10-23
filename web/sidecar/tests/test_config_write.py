@@ -151,7 +151,7 @@ def test_config_retarget_during_serialization_leaves_both_targets_untouched(tmp_
             args[0].write_text("value: changed\n")
         return "value: changed\n"
 
-    module = SimpleNamespace(atomic_config_replace=retarget) if modern else SimpleNamespace()
+    module = SimpleNamespace(get_managed_system=lambda home: None, atomic_config_replace=retarget) if modern else SimpleNamespace(get_managed_system=lambda home: None)
     monkeypatch.setattr(config.importlib, "import_module", lambda name: module)
     monkeypatch.setattr(config, "yaml_parser", lambda: SimpleNamespace(safe_dump=retarget, safe_load=lambda text: {"value": "changed"}))
     with pytest.raises(RpcError) as error:
@@ -175,7 +175,7 @@ def test_agent_writer_failure_does_not_fall_back_or_modify_target(tmp_path: path
         staged.write_text("partial write")
         raise OSError("writer failed")
 
-    monkeypatch.setattr(config.importlib, "import_module", lambda name: SimpleNamespace(atomic_config_replace=fail))
+    monkeypatch.setattr(config.importlib, "import_module", lambda name: SimpleNamespace(get_managed_system=lambda home: None, atomic_config_replace=fail))
     with pytest.raises(OSError, match="writer failed"):
         config.write_config(path, {"value": "changed"})
     assert path.read_text() == "value: original\n"
@@ -194,7 +194,7 @@ def test_config_staged_value_mismatch_leaves_original_untouched(tmp_path: pathli
     original = '{"value": "original"}'
     path.write_text(original)
     path.chmod(0o640)
-    module = SimpleNamespace(atomic_config_replace=lambda path, desired: path.write_text(staged)) if modern else SimpleNamespace()
+    module = SimpleNamespace(get_managed_system=lambda home: None, atomic_config_replace=lambda path, desired: path.write_text(staged)) if modern else SimpleNamespace(get_managed_system=lambda home: None)
     monkeypatch.setattr(config.importlib, "import_module", lambda name: module)
     monkeypatch.setattr(config, "yaml_parser", lambda: SimpleNamespace(safe_load=json.loads, safe_dump=lambda *a, **kw: staged))
     with pytest.raises(RpcError) as error:
@@ -203,3 +203,126 @@ def test_config_staged_value_mismatch_leaves_original_untouched(tmp_path: pathli
     assert path.read_text() == original
     assert path.stat().st_mode & 0o777 == 0o640
     assert not list(tmp_path.glob(".config_*.tmp"))
+
+
+@pytest.mark.parametrize("managed", ["nixos", "home-manager", "guix"])
+@pytest.mark.parametrize("shape", ["file", "symlink", "missing"])
+def test_managed_config_set_refuses_before_any_write(tmp_path, monkeypatch, managed, shape):
+    from types import SimpleNamespace
+
+    from talaria_sidecar.errors import RpcError
+    from talaria_sidecar.methods import Registry, config
+
+    home = tmp_path / "profile"
+    home.mkdir()
+    target = tmp_path / "external" / "config.yaml"
+    path = home / "config.yaml" if shape == "symlink" else target
+    original = b'{"delegation": {"backend": "default"}}'
+    if shape != "missing":
+        target.parent.mkdir()
+        target.write_bytes(original)
+        target.chmod(0o640)
+    if shape == "symlink":
+        path.symlink_to(target)
+    detected = []
+
+    def detector(owning_home):
+        detected.append(owning_home)
+        return managed
+
+    def native_import(name):
+        if name == "hermes_constants":
+            return SimpleNamespace(get_managed_system=detector)
+        raise ImportError("heavy Agent config imports are broken")
+
+    monkeypatch.setattr(config.importlib, "import_module", native_import)
+    monkeypatch.setattr(config, "yaml_parser", lambda: SimpleNamespace(safe_load=json.loads, safe_dump=lambda value, **kw: json.dumps(value)))
+    registry = Registry(None)
+    config.register(registry)
+    params = {"profile_home": str(home), "config_path": str(path)}
+    if shape != "missing":
+        assert registry.methods["config.get"](None, params)["config"]["delegation"]["backend"] == "default"
+    error = None
+    try:
+        registry.methods["config.set"](None, {**params, "config": {"delegation": {"backend": "synthetic"}}})
+    except RpcError as exc:
+        error = exc
+    if shape == "missing":
+        assert not target.parent.exists()
+    else:
+        assert target.read_bytes() == original
+        assert target.stat().st_mode & 0o777 == 0o640
+    if shape == "symlink":
+        assert path.is_symlink() and path.readlink() == target
+    assert not list(tmp_path.rglob(".config_*.tmp"))
+    assert detected == [home]
+    assert error is not None and error.data["condition"] == "config_write_refused"
+    assert "managed" in str(error) and "declarative" in str(error)
+
+
+@pytest.mark.parametrize("failure", [ImportError("detector unavailable"), OSError("marker unreadable")])
+def test_config_policy_failure_refuses_before_creating_directories(tmp_path, monkeypatch, failure):
+    from talaria_sidecar.errors import RpcError
+    from talaria_sidecar.methods import config
+
+    def unavailable(name):
+        raise failure
+
+    monkeypatch.setattr(config.importlib, "import_module", unavailable)
+    path = tmp_path / "absent" / "config.yaml"
+    with pytest.raises(RpcError) as error:
+        config.write_config(path, {"value": "changed"})
+    assert error.value.data["condition"] == "config_policy_unavailable"
+    assert not path.parent.exists()
+
+
+@requires_agent
+def test_native_managed_config_policy(hermes_home):
+    agent_script(hermes_home, '''
+import os
+from pathlib import Path
+from unittest.mock import patch
+from hermes_constants import get_managed_system
+from talaria_sidecar.errors import RpcError
+from talaria_sidecar.methods import Registry, config
+
+home = Path(os.environ["HERMES_HOME"])
+other = home / "profiles" / "managed"
+other.mkdir(parents=True)
+path = home / "external.yaml"
+path.write_text("value: original\\n")
+path.chmod(0o640)
+original = path.read_bytes()
+registry = Registry(None)
+config.register(registry)
+params = {"profile_home": str(other), "config_path": str(path)}
+# One exact native contract covers environment, legacy/empty and named markers,
+# explicit owning-profile resolution, reads, and broken heavy imports.
+for env, marker, expected in [("nixos", None, "nixos"), ("1", None, "nixos"), ("", "", "nixos"), ("", "home-manager", "home-manager"), ("", "false", None), ("", None, None)]:
+    os.environ["HERMES_MANAGED"] = env
+    marker_path = other / ".managed"
+    marker_path.unlink(missing_ok=True)
+    if marker is not None:
+        marker_path.write_text(marker)
+    assert get_managed_system(other) == expected
+    original_import = config.importlib.import_module
+    def without_heavy(name):
+        if name == "hermes_cli.config":
+            raise ImportError("broken heavy Agent import")
+        return original_import(name)
+    with patch.object(config.importlib, "import_module", side_effect=without_heavy):
+        if expected:
+            try:
+                registry.methods["config.set"](None, {**params, "config": {"value": "changed"}})
+            except RpcError as error:
+                assert error.data["condition"] == "config_write_refused"
+            else:
+                raise AssertionError("managed config write succeeded")
+            assert path.read_bytes() == original
+        else:
+            assert registry.methods["config.set"](None, {**params, "config": {"value": "changed"}})["ok"]
+            assert config.read_config(path)["config"] == {"value": "changed"}
+            path.write_bytes(original)
+        assert registry.methods["config.get"](None, params)["config"] == {"value": "original"}
+    assert path.stat().st_mode & 0o777 == 0o640
+''')

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import { configureClient, get, post, request, resetClientForTests, type TransportRequest } from './client'
 import { createMemoryAdapter, makeSession } from '../contracts/adapters/memory'
-import { checkUpdatesNow, fetchSessions, searchSessions, fetchSession, fetchUpdatesCheck, renameSession, setReasoningEffort, startChat, newSession } from './endpoints'
+import { checkUpdatesNow, fetchSessions, searchSessions, fetchSession, fetchUpdatesCheck, renameSession, setReasoningEffort, startChat, newSession, saveSettings, setAuxiliaryModel } from './endpoints'
 import { isApiError } from '../contracts/common'
 import { resetAppRootForTests } from '../lib/appRoot'
 
@@ -245,3 +245,19 @@ for (const endpoint of ['detail', 'list', 'search'] as const) {
     }
   })
 }
+
+
+it('propagates managed config conflicts without retrying or requesting re-login', async () => {
+  const message = 'config.yaml is package-managed. Update the declarative configuration instead.'
+  const body = { error: message, condition: 'config_write_refused' }
+  const adapter = createMemoryAdapter({ routes: {
+    'POST /api/settings': () => [409, body],
+    'POST /api/model/set': () => [409, body],
+  } })
+  const onUnauthorized = vi.fn()
+  configureClient({ transport: adapter, authEnabled: true, onUnauthorized })
+  await expect(saveSettings({ max_tokens: 1234 })).rejects.toMatchObject({ kind: 'http', status: 409, message, body, retryable: false })
+  await expect(setAuxiliaryModel('delegation', 'claude-opus-4-7', 'anthropic')).rejects.toMatchObject({ kind: 'http', status: 409, message, body, retryable: false })
+  expect(adapter.calls).toHaveLength(2)
+  expect(onUnauthorized).not.toHaveBeenCalled()
+})
