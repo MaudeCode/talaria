@@ -78,5 +78,9 @@ test('builds, edits, explicitly starts and pauses a real cross-chat queue across
     await page.reload()
     await expect(rows.nth(1)).toContainText('Completed')
     expect(started).toHaveLength(2)
-  } finally { release(); await server.close() }
+  } finally {
+    release()
+    await page.goto('about:blank')
+    await server.close()
+  }
 })
