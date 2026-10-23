@@ -1518,6 +1518,15 @@ describe('MCP health prober', () => {
       } finally { vi.useRealTimers() }
     })
 
+    it('dispatches a CR-terminated reply on an open stream without awaiting another chunk', async () => {
+      vi.useFakeTimers()
+      try {
+        const server = sseServer([`: ping\r\r`, `data: ${INIT_OK}\r\r`], { open: true })
+        expect(await probeAfter(server.f, 1)).toEqual(['healthy', 'HTTP 200'])
+        expect(server.state.cancelled).toBe(true)
+      } finally { vi.useRealTimers() }
+    })
+
     it('skips comments, notifications, server requests, and unrelated ids before the matching reply', async () => {
       const body = [': heartbeat\n\n', NOTIFY, 'data: {"jsonrpc":"2.0","id":7,"method":"ping"}\n\n', 'data: {"jsonrpc":"2.0","id":"other","result":{"protocolVersion":"2025-06-18"}}\n\n', 'data: {"jsonrpc":"2.0","id":"other","error":{"message":"not ours"}}\n\n', `id: 4\nevent: message\ndata: ${INIT_OK}\n\n`]
       expect(await probeServer({ url: 'https://synthetic.invalid/mcp' }, sseServer(body).f)).toEqual(['healthy', 'HTTP 200'])

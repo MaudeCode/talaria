@@ -27,13 +27,16 @@ const parseObject = (s: string): Dict | null => { try { const v: unknown = JSON.
 function sseFramer(): (text: string) => string[] {
   let buffer = ''
   let data: string[] = []
-  return (text) => {
+  let endedOnCr = false
+  return (chunk) => {
+    // A chunk-final CR ends its line at once; drop the LF that completes it as a CRLF in the next chunk.
+    const text = endedOnCr && chunk.startsWith('\n') ? chunk.slice(1) : chunk
+    if (chunk) endedOnCr = text.endsWith('\r')
     buffer += text
     const events: string[] = []
     const lineEnd = /\r\n|\r|\n/g
     let start = 0
     for (let m = lineEnd.exec(buffer); m; m = lineEnd.exec(buffer)) {
-      if (m[0] === '\r' && lineEnd.lastIndex === buffer.length) break // may be the first half of a CRLF split across chunks
       const line = buffer.slice(start, m.index)
       start = lineEnd.lastIndex
       if (!line) { if (data.length) events.push(data.join('\n')); data = [] }
