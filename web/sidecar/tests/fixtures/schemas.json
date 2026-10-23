@@ -1106,6 +1106,64 @@
     ],
     "additionalProperties": false
   },
+  "plugins.buffers": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "supported": {
+        "type": "boolean"
+      },
+      "buffers": {
+        "maxItems": 200,
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+            },
+            "size": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 262144
+            },
+            "read_only": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "name",
+            "size",
+            "read_only"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "content": {
+        "type": "string",
+        "maxLength": 262144
+      },
+      "size": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 262144
+      },
+      "read_only": {
+        "type": "boolean"
+      },
+      "write_semantics": {
+        "type": "string",
+        "const": "unconditional"
+      }
+    },
+    "required": [
+      "supported",
+      "buffers",
+      "write_semantics"
+    ],
+    "additionalProperties": false
+  },
   "plugins.dashboard_list": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

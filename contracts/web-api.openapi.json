@@ -41049,6 +41049,20 @@
             },
             "allowEmptyValue": true,
             "allowReserved": true
+          },
+          {
+            "name": "source",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "workspace",
+                "managed"
+              ],
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
           }
         ],
         "responses": {
@@ -41059,6 +41073,22 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "source": {
+                      "enum": [
+                        "workspace",
+                        "managed"
+                      ],
+                      "type": "string"
+                    },
+                    "read_only": {
+                      "type": "boolean"
+                    },
+                    "write_semantics": {
+                      "const": "unconditional"
+                    },
+                    "unavailable": {
+                      "type": "boolean"
+                    },
                     "path": {
                       "type": "string"
                     },
@@ -41067,6 +41097,9 @@
                       "items": {
                         "type": "object",
                         "properties": {
+                          "read_only": {
+                            "type": "boolean"
+                          },
                           "name": {
                             "type": "string"
                           },
@@ -41204,6 +41237,20 @@
             },
             "allowEmptyValue": true,
             "allowReserved": true
+          },
+          {
+            "name": "source",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "workspace",
+                "managed"
+              ],
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
           }
         ],
         "responses": {
@@ -41214,6 +41261,22 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "source": {
+                      "enum": [
+                        "workspace",
+                        "managed"
+                      ],
+                      "type": "string"
+                    },
+                    "read_only": {
+                      "type": "boolean"
+                    },
+                    "write_semantics": {
+                      "const": "unconditional"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
                     "path": {
                       "type": "string"
                     },
@@ -41292,6 +41355,13 @@
                   "path": {
                     "type": "string"
                   },
+                  "source": {
+                    "enum": [
+                      "workspace",
+                      "managed"
+                    ],
+                    "type": "string"
+                  },
                   "content": {
                     "type": "string"
                   }
@@ -41322,6 +41392,13 @@
                       "type": "integer",
                       "minimum": -9007199254740991,
                       "maximum": 9007199254740991
+                    },
+                    "source": {
+                      "enum": [
+                        "workspace",
+                        "managed"
+                      ],
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -41905,6 +41982,22 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "source": {
+                      "enum": [
+                        "workspace",
+                        "managed"
+                      ],
+                      "type": "string"
+                    },
+                    "read_only": {
+                      "const": true
+                    },
+                    "write_semantics": {
+                      "const": "unconditional"
+                    },
+                    "unavailable": {
+                      "type": "boolean"
+                    },
                     "path": {
                       "type": "string"
                     },
@@ -41913,6 +42006,9 @@
                       "items": {
                         "type": "object",
                         "properties": {
+                          "read_only": {
+                            "type": "boolean"
+                          },
                           "name": {
                             "type": "string"
                           },
@@ -42019,16 +42115,13 @@
                     },
                     "virtual_root": {
                       "type": "string"
-                    },
-                    "read_only": {
-                      "const": true
                     }
                   },
                   "required": [
+                    "read_only",
                     "path",
                     "entries",
-                    "virtual_root",
-                    "read_only"
+                    "virtual_root"
                   ],
                   "additionalProperties": {}
                 }
@@ -42081,6 +42174,22 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "source": {
+                      "enum": [
+                        "workspace",
+                        "managed"
+                      ],
+                      "type": "string"
+                    },
+                    "read_only": {
+                      "type": "boolean"
+                    },
+                    "write_semantics": {
+                      "const": "unconditional"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
                     "path": {
                       "type": "string"
                     },
@@ -70287,6 +70396,22 @@
                             {
                               "type": "object",
                               "properties": {
+                                "source": {
+                                  "enum": [
+                                    "workspace",
+                                    "managed"
+                                  ],
+                                  "type": "string"
+                                },
+                                "read_only": {
+                                  "type": "boolean"
+                                },
+                                "write_semantics": {
+                                  "const": "unconditional"
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
                                 "path": {
                                   "type": "string"
                                 },
@@ -70350,6 +70475,22 @@
                             {
                               "type": "object",
                               "properties": {
+                                "source": {
+                                  "enum": [
+                                    "workspace",
+                                    "managed"
+                                  ],
+                                  "type": "string"
+                                },
+                                "read_only": {
+                                  "type": "boolean"
+                                },
+                                "write_semantics": {
+                                  "const": "unconditional"
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
                                 "path": {
                                   "type": "string"
                                 },
@@ -70413,6 +70554,22 @@
                             {
                               "type": "object",
                               "properties": {
+                                "source": {
+                                  "enum": [
+                                    "workspace",
+                                    "managed"
+                                  ],
+                                  "type": "string"
+                                },
+                                "read_only": {
+                                  "type": "boolean"
+                                },
+                                "write_semantics": {
+                                  "const": "unconditional"
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
                                 "path": {
                                   "type": "string"
                                 },
@@ -70476,6 +70633,22 @@
                             {
                               "type": "object",
                               "properties": {
+                                "source": {
+                                  "enum": [
+                                    "workspace",
+                                    "managed"
+                                  ],
+                                  "type": "string"
+                                },
+                                "read_only": {
+                                  "type": "boolean"
+                                },
+                                "write_semantics": {
+                                  "const": "unconditional"
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
                                 "path": {
                                   "type": "string"
                                 },

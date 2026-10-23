@@ -1,0 +1,5 @@
+{
+  "listing": {"source": "managed", "entries": [{"name": "draft.txt", "path": "buffer-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size": 8, "is_dir": false, "type": "file", "read_only": false}], "unavailable": false, "read_only": false, "write_semantics": "unconditional"},
+  "content": {"source": "managed", "path": "buffer-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "name": "draft.txt", "content": "original", "size": 8, "preview": "text", "read_only": false, "write_semantics": "unconditional"},
+  "unavailable": {"source": "managed", "entries": [], "unavailable": true, "read_only": true, "write_semantics": "unconditional"}
+}

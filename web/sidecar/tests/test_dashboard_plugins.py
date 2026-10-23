@@ -278,3 +278,169 @@ def test_native_load_trace_does_not_expand_the_entire_snapshot_source(dashboards
     trace = ''.join(traceback.format_exception(type(failure.value), failure.value, failure.value.__traceback__))
     assert 'fixture load failure' in trace
     assert 'fixture_source_not_for_trace' not in trace
+
+
+def _managed(d, monkeypatch):
+    """Native boundary fake; real admission, routing and validation still run."""
+    from talaria_sidecar.methods import managed_buffers
+    d.plugins[str(d.homes[0])][0]['name'] = 'devkit'
+    (d.homes[0] / 'plugins/board/dashboard/manifest.json').write_text('{"name":"devkit","api":"api.py"}')
+    d.consent[str(d.homes[0])] = {'devkit'}
+    state = NS(text='original', exists=True, present=True, calls=[], bad=None)
+    def native(name, root, api, method, path, query, headers, body, *, timeout, authenticated):
+        assert name == 'devkit' and authenticated and not query
+        state.calls.append((method, path))
+        if path == '/sessions':
+            value = {'sessions': [{'session_id': 'one', 'dir': 'native-one', 'exists': state.exists,
+                                  'buffers': [{'name': 'draft.txt', 'bytes': len(state.text.encode())}]}] if state.present else []}
+        else:
+            assert path == '/sessions/native-one/buffers/draft.txt'
+            if method == 'PUT':
+                state.text = json.loads(body)['content']
+            value = {'name': 'draft.txt', 'bytes': len(state.text.encode()), 'path': '/private/plugin-data/devkit/draft.txt'}
+            if method == 'GET':
+                value.update(session_id='one', content=state.text)
+        if state.bad is not None:
+            value = state.bad
+        return {'status': 200, 'body': json.dumps(value).encode(), 'headers': [('content-type', 'application/json')]}
+    monkeypatch.setitem(sys.modules, 'hermes_cli.plugins', NS(get_plugin_manager=lambda: NS(_plugin_host=lambda: NS(asgi_request=native))))
+    def call(action='list', **kwargs):
+        return d.methods['plugins.buffers'](d.ctx, dict(profile_home=str(d.homes[0]), session_id='one', action=action, **kwargs))
+    state.call = call
+    state.limit = managed_buffers.MAX_BYTES
+    return state
+
+
+def test_managed_buffers_use_enabled_backend_without_a_web_panel_and_strip_native_paths(dashboards, monkeypatch):
+    s = _managed(dashboards, monkeypatch)
+    assert s.call()['buffers'] == [{'name': 'draft.txt', 'size': 8, 'read_only': False}]
+    assert s.call('read', name='draft.txt')['content'] == 'original'
+    assert s.call('save', name='draft.txt', content='edited')['size'] == 6
+    result = s.call('read', name='draft.txt')
+    assert result['content'] == 'edited'
+    assert result['write_semantics'] == 'unconditional'
+    assert '/private' not in json.dumps(result)
+    assert all(method in ('GET', 'PUT') and not path.endswith('/clear') for method, path in s.calls)
+
+
+@pytest.mark.parametrize('exists', [False, None, 'true'])
+def test_managed_deleted_or_unknown_sessions_are_read_only(dashboards, monkeypatch, exists):
+    from talaria_sidecar.errors import RpcError
+    s = _managed(dashboards, monkeypatch)
+    s.exists = exists
+    assert s.call('read', name='draft.txt')['read_only'] is True
+    with pytest.raises(RpcError, match='deleted or cannot be verified'):
+        s.call('save', name='draft.txt', content='refused')
+    assert s.text == 'original'
+    assert not any(method == 'PUT' for method, _ in s.calls)
+
+
+def test_managed_foreign_profile_disabled_and_cleanup_disappearance_do_not_fall_back(dashboards, monkeypatch):
+    from talaria_sidecar.errors import RpcError
+    d = dashboards
+    s = _managed(d, monkeypatch)
+    foreign = d.methods['plugins.buffers'](d.ctx, dict(profile_home=str(d.homes[1]), session_id='one', action='list'))
+    assert foreign['supported'] is False
+    d.consent[str(d.homes[0])].clear()
+    assert s.call()['supported'] is False
+    assert s.calls == []
+    d.consent[str(d.homes[0])].add('devkit')
+    s.present = False
+    assert s.call()['buffers'] == []
+    with pytest.raises(RpcError, match='no longer exists'):
+        s.call('save', name='draft.txt', content='cannot recreate')
+    assert not any(method == 'PUT' for method, _ in s.calls)
+
+
+@pytest.mark.parametrize('bad', [{}, {'sessions': 'wrong'}, {'sessions': [None]}, {'sessions': [{'session_id': 'one', 'dir': '../escape', 'buffers': []}]}])
+def test_managed_malformed_inventory_is_refused(dashboards, monkeypatch, bad):
+    from talaria_sidecar.errors import RpcError
+    s = _managed(dashboards, monkeypatch)
+    s.bad = bad
+    with pytest.raises(RpcError, match='invalid or too large'):
+        s.call()
+
+
+def test_managed_content_bounds_and_unknown_save_never_replay(dashboards, monkeypatch):
+    from talaria_sidecar.errors import InvalidParams, RpcError
+    s = _managed(dashboards, monkeypatch)
+    for content in [None, {}, '\ud800', 'é' * (s.limit // 2 + 1)]:
+        with pytest.raises(InvalidParams):
+            s.call('save', name='draft.txt', content=content)
+    s.text = 'x' * (s.limit + 1)
+    with pytest.raises(RpcError, match='invalid or too large'):
+        s.call()
+    s.text = 'original'
+    from talaria_sidecar.methods import managed_buffers
+    real = managed_buffers.host._request
+    def lost(ctx, plugin, params, **kwargs):
+        reply = real(ctx, plugin, params, **kwargs)
+        if params['method'] == 'PUT':
+            reply['status'] = 504
+        return reply
+    monkeypatch.setattr(managed_buffers.host, '_request', lost)
+    with pytest.raises(RpcError, match='outcome is unknown'):
+        s.call('save', name='draft.txt', content='committed')
+    assert s.call('read', name='draft.txt')['content'] == 'committed'
+    assert sum(method == 'PUT' for method, _ in s.calls) == 1
+
+
+@pytest.mark.parametrize('field,value', [('content', None), ('content', '\ud800'), ('content', 'x' * (256 * 1024 + 1)), ('session_id', 'foreign'), ('name', '../other')])
+def test_managed_invalid_content_or_foreign_identity_never_reaches_the_editor(dashboards, monkeypatch, field, value):
+    import base64
+    from talaria_sidecar.errors import RpcError
+    from talaria_sidecar.methods import managed_buffers
+    s = _managed(dashboards, monkeypatch)
+    real = managed_buffers.host._request
+    def malformed(ctx, plugin, params, **kwargs):
+        reply = real(ctx, plugin, params, **kwargs)
+        if '/buffers/' in params['path']:
+            body = json.loads(base64.b64decode(reply['body']))
+            body[field] = value
+            reply['body'] = base64.b64encode(json.dumps(body).encode()).decode()
+        return reply
+    monkeypatch.setattr(managed_buffers.host, '_request', malformed)
+    with pytest.raises(RpcError, match='invalid or too large'):
+        s.call('read', name='draft.txt')
+
+
+def test_managed_revoked_consent_between_inventory_and_save_prevents_dispatch(dashboards, monkeypatch):
+    from talaria_sidecar.errors import RpcError
+    from talaria_sidecar.methods import managed_buffers
+    d = dashboards
+    s = _managed(d, monkeypatch)
+    real = managed_buffers.host._request
+    def revoke(ctx, plugin, params, **kwargs):
+        reply = real(ctx, plugin, params, **kwargs)
+        if params['path'] == '/sessions':
+            d.consent[str(d.homes[0])].clear()
+        return reply
+    monkeypatch.setattr(managed_buffers.host, '_request', revoke)
+    with pytest.raises(RpcError, match='changed or was disabled'):
+        s.call('save', name='draft.txt', content='refused')
+    assert s.text == 'original'
+    assert not any(method == 'PUT' for method, _ in s.calls)
+
+
+@pytest.mark.parametrize('identity', ['absent', 'one', 'foreign', None, 7])
+def test_managed_save_acknowledgement_rejects_explicit_foreign_session(dashboards, monkeypatch, identity):
+    import base64
+    from talaria_sidecar.errors import RpcError
+    from talaria_sidecar.methods import managed_buffers
+    s = _managed(dashboards, monkeypatch)
+    real = managed_buffers.host._request
+    def acknowledgement(ctx, plugin, params, **kwargs):
+        reply = real(ctx, plugin, params, **kwargs)
+        if params['method'] == 'PUT' and identity != 'absent':
+            body = json.loads(base64.b64decode(reply['body']))
+            body['session_id'] = identity
+            reply['body'] = base64.b64encode(json.dumps(body).encode()).decode()
+        return reply
+    monkeypatch.setattr(managed_buffers.host, '_request', acknowledgement)
+    if identity in ('absent', 'one'):
+        assert s.call('save', name='draft.txt', content='saved')['size'] == 5
+    else:
+        with pytest.raises(RpcError, match='outcome is unknown') as refused:
+            s.call('save', name='draft.txt', content='uncertain')
+        assert refused.value.data['condition'] == 'buffer_save_unconfirmed'
+    assert sum(method == 'PUT' for method, _ in s.calls) == 1

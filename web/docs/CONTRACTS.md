@@ -235,6 +235,26 @@ explicit Resume. Failed or refused steps stop the run. No schedule or recurring
 execution is created. App adoption is tracked separately in TAL-1356.
 
 
+## Managed session buffers
+
+The Files list/read/save procedures accept `source: "managed"` for the fixed
+Agent devkit backend. Omitting it keeps workspace behavior. Managed operations
+resolve the visible session and active profile before using the existing admitted
+Agent plugin host, with no workspace resolution or native path supplied by the
+client. An opaque `buffer-…` identity from the list is the only read/save target.
+The existing Files editor renders server metadata and read-only decisions.
+
+`plugins.buffers` admits only an already enabled and consented devkit API, even
+when its manifest has no compatible Web panel. It never loads the Desktop UI,
+installs, enables, promotes, clears, or recreates missing buffers. Deleted or
+unverifiable native sessions are read-only. Inventory and text are bounded to
+200 buffers and 256 KiB per buffer; malformed or oversized replies fail closed.
+Native paths are discarded. The API explicitly advertises
+`write_semantics: "unconditional"`: this backend has no conditional revision
+operation. A save can replace concurrent native edits. Unknown outcomes retain
+the editor draft and reconcile by reading; they never trigger an automatic PUT
+retry. Cleanup continues to belong to the plugin.
+
 ## Memory compaction
 
 `POST /api/memory/compaction/preview` accepts `section` (`memory` or `user`) and the

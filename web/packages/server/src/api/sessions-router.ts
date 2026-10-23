@@ -1,6 +1,5 @@
 /** Session, project, share, workspace, and file procedures. */
 import { implement } from '@orpc/server'
-import { stateDbSessionReadAsync } from '../sessions/state-db.js'
 import { sessionsContract, workspacesContract, type Attachment, type SessionDeleteRefused, type SessionsListQuery } from '@maudecode/talaria-web-contracts'
 import { mkdirSync } from 'node:fs'
 import { closeSync, existsSync, lstatSync, statSync } from 'node:fs'
@@ -16,9 +15,10 @@ import { requestSessionIdGuard } from './session-visibility.js'
 import { HttpFailure, sanitizePaths } from '../sessions/service.js'
 import { compressionStatusPayload } from '../sessions/compress.js'
 import { SessionNotFound } from '../sessions/store.js'
-import { isSafeSessionId, type Session } from '../sessions/session.js'
+import { type Session } from '../sessions/session.js'
 import { isBlockedSystemPath, REMOTE_WORKSPACE_UNSUPPORTED_CODE, REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE, stripSurroundingQuotes } from '../workspace/workspaces.js'
 import { isWithin, resolvePathLikePython } from '../workspace/paths.js'
+import { fileSourceSession, managedBuffers } from '../workspace/managed-buffers.js'
 import { previewUrl, readFilePreview } from '../workspace/preview.js'
 import { dirSignature, FileExistsError, listDir, makeAnchoredDir, NotFoundError, openAnchoredCreateFd, openAnchoredWriteFd, PathTraversalError, renameAnchored, rmtreeAnchored, safeResolve, serializeEntriesForBrowser, unlinkAnchored, FileTooLargeError } from '../workspace/fs.js'
 import { randomUUID } from 'node:crypto'
@@ -570,6 +570,7 @@ export const sessionsRouter = os.router({
   },
   files: {
     list: os.files.list.handler(({ input, context: { ctx } }) => run(async () => {
+      if (input.source === 'managed') { await guardVisibility(ctx, input.session_id); return managedBuffers(ctx, input, 'list') }
       if (!input.session_id) throw new HttpError(400, 'session_id is required')
       await guardVisibility(ctx, input.session_id)
       // Python `_handle_list` resolved the workspace directly and answered 404 with the trust error; the POST file ops
@@ -584,6 +585,7 @@ export const sessionsRouter = os.router({
       }
     })),
     read: os.files.read.handler(({ input, context: { ctx } }) => run(async () => {
+      if (input.source === 'managed') { await guardVisibility(ctx, input.session_id); return managedBuffers(ctx, input, 'read') }
       if (!input.session_id) throw new HttpError(400, 'session_id is required')
       await guardVisibility(ctx, input.session_id)
       const s = (await fileOpsSession(ctx, input.session_id))
@@ -596,6 +598,7 @@ export const sessionsRouter = os.router({
       }
     })),
     save: os.files.save.handler(({ input, context: { ctx } }) => run(async () => {
+      if (input.source === 'managed') { await guardVisibility(ctx, input.session_id); return managedBuffers(ctx, input, 'save') }
       requireFields(input, 'session_id', 'path')
       const s = (await fileOpsSession(ctx, input.session_id))
       try {
@@ -824,16 +827,11 @@ export interface FileOpsSession { workspace: string; profile: string | null; rec
  * workspace, as the sidebar already lists it (issue #3280).
  */
 export async function fileOpsSession(ctx: RequestContext, sid: string, opts: { strictWorkspace?: boolean } = {}): Promise<FileOpsSession> {
-  let session: Session
-  try {
-    session = (await ctx.deps.sessionStore.get(sid, { metadataOnly: true }))
-  } catch {
-    const profile = ctx.deps.activeProfile()
-    if (!isSafeSessionId(sid) || !(await stateDbSessionReadAsync(false, 'stateDbHasSession', ctx.deps.cliSessions.dbPath(profile), sid))) throw new HttpError(404, 'Session not found')
+  const { session, profile } = await fileSourceSession(ctx, sid)
+  if (!session) {
     if (!ctx.deps.workspaces.profileSupportsLocalIo(profile)) throw new HttpError(400, REMOTE_WORKSPACE_UNSUPPORTED_CODE, { message: REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE })
     return { workspace: (await ctx.deps.workspaces.lastWorkspace(profile)), profile, recovered: false, session: null }
   }
-  if (!ctx.deps.profilesMatch(session.profile, ctx.deps.activeProfile())) throw new HttpError(404, 'Session not found')
   if (!ctx.deps.workspaces.profileSupportsLocalIo(session.profile)) throw new HttpError(400, REMOTE_WORKSPACE_UNSUPPORTED_CODE, { message: REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE })
   let workspace = session.workspace
   let recovered = false

@@ -294,6 +294,27 @@ def test_catalog_reads_keep_agent_recovery_admission(method):
         registry.methods[method](None, {})
 
 
+@pytest.mark.parametrize('peer_version', [54, 55])
+def test_handshake_rejects_pre_managed_buffer_protocol(peer_version):
+    from types import SimpleNamespace
+    from talaria_sidecar.methods import Registry
+    from talaria_sidecar.methods import runtime as runtime_methods
+    from talaria_sidecar.errors import RpcError
+
+    loaded, stopped = [], []
+    runtime = SimpleNamespace(load=lambda: loaded.append(True), describe=lambda: {'compatible': True})
+    registry = Registry(runtime)
+    runtime_methods.register(registry)
+    ctx = SimpleNamespace(server=SimpleNamespace(request_shutdown=lambda **kwargs: stopped.append(kwargs)))
+    with pytest.raises(RpcError, match='version mismatch') as refusal:
+        registry.methods['runtime.handshake'](ctx, {'rpc_version': peer_version})
+    assert refusal.value.data['condition'] == 'sidecar_rpc_version_mismatch'
+    assert loaded == []
+    assert stopped == [{'exit_code': 3}]
+    assert registry.methods['runtime.handshake'](ctx, {'rpc_version': SIDECAR_RPC_VERSION}) == {'compatible': True}
+    assert loaded == [True]
+
+
 @requires_agent
 def test_handshake_reports_the_pinned_agent(sidecar: SidecarProcess) -> None:
     result = sidecar.result("runtime.handshake", {"rpc_version": SIDECAR_RPC_VERSION})

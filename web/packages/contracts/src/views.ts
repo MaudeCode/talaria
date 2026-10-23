@@ -790,16 +790,18 @@ export type Workspace = z.infer<typeof WorkspaceEntrySchema>
 export const WorkspacesSchema = z.looseObject({ workspaces: z.array(WorkspaceEntrySchema), last: NullableString.optional(), terminal_remote_backend: z.boolean().optional() })
 export type Workspaces = z.infer<typeof WorkspacesSchema>
 export const FileEntrySchema = z.looseObject({
-  name: z.string(), path: z.string().optional(), is_dir: z.boolean().optional(), type: z.string().optional(), size: z.number().nullable().optional(), mtime: z.number().nullable().optional(), mtime_ns: z.union([z.number(), z.string()]).nullable().optional(),
+  read_only: z.boolean().optional(), name: z.string(), path: z.string().optional(), is_dir: z.boolean().optional(), type: z.string().optional(), size: z.number().nullable().optional(), mtime: z.number().nullable().optional(), mtime_ns: z.union([z.number(), z.string()]).nullable().optional(),
   birthtime_ns: z.union([z.number(), z.string()]).nullable().optional(), hidden: z.boolean().optional(), workspace_sort_rank: z.number().int().optional(), target: z.string().optional(), target_outside_workspace: z.boolean().optional(),
 })
-export const DirListingSchema = z.looseObject({ path: z.string().optional(), entries: z.array(FileEntrySchema), signature: z.string().optional(), workspace: z.string().optional(), workspace_recovered: z.boolean().optional(), is_git: z.boolean().optional() })
+export const FileSourceSchema = z.enum(['workspace', 'managed'])
+const ManagedFileFields = { source: FileSourceSchema.optional(), read_only: z.boolean().optional(), write_semantics: z.literal('unconditional').optional() }
+export const DirListingSchema = z.looseObject({ ...ManagedFileFields, unavailable: z.boolean().optional(), path: z.string().optional(), entries: z.array(FileEntrySchema), signature: z.string().optional(), workspace: z.string().optional(), workspace_recovered: z.boolean().optional(), is_git: z.boolean().optional() })
 /** How a workspace file renders (TAL-566): media streams from `/api/file/raw`; text kinds carry `content`. */
 export const FilePreviewKindSchema = z.enum(['text', 'markdown', 'csv', 'html', 'image', 'pdf', 'audio', 'video', 'binary'])
 export type FilePreviewKind = z.infer<typeof FilePreviewKindSchema>
 /** `table` is a `csv` preview's leading rows (header first); `table_truncated` says the file has more. `preview_url` is an
  * `html` preview's app-relative frame URL, under which the page's relative assets also resolve. */
-export const FileContentSchema = z.looseObject({
+export const FileContentSchema = z.looseObject({ ...ManagedFileFields, name: z.string().optional(),
   path: z.string().optional(), content: z.string().optional(), lines: z.number().optional(), size: z.number().optional(), truncated: z.boolean().optional(), binary: z.boolean().optional(), mime: z.string().optional(),
   preview: FilePreviewKindSchema.optional(), table: z.array(z.array(z.string())).optional(), table_truncated: z.boolean().optional(),
   preview_url: z.string().optional(),

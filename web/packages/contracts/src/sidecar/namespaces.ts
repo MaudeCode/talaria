@@ -119,6 +119,10 @@ const DashboardNameParams = ProfileHomeParams.extend({ name: z.string() })
 export const CommandBundleSchema = z.object({ name: z.string(), description: z.string(), skill_count: z.number().int(), source: z.literal('bundle') })
 /** `message` is the user message that loads the bundle's skills; members not installed or disabled are in `missing_skills` or left out. */
 export const CommandBundleInvocationSchema = z.object({ name: z.string(), source: z.literal('bundle'), message: z.string(), loaded_skills: z.array(z.string()), missing_skills: z.array(z.string()) })
+export const MAX_MANAGED_BUFFER_BYTES = 256 * 1024
+const ManagedBufferName = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/)
+const ManagedBufferSize = z.number().int().min(0).max(MAX_MANAGED_BUFFER_BYTES)
+
 export const COMMANDS_METHODS = {
   'drafts.review': { params: OutboundDraftRefSchema.extend({ profile_home: z.string().min(1), session_id: z.string().min(1), action: z.enum(['read', 'edit', 'approve']), version: z.number().int().positive().optional(), revision: z.string().optional(), fields: OutboundDraftFieldsSchema.optional() }), result: OutboundDraftResultSchema },
   'commands.registry': { params: ProfileHomeParams, result: z.object({ commands: z.array(CommandSchema) }) },
@@ -136,6 +140,11 @@ export const COMMANDS_METHODS = {
   'commands.bundles': { params: ProfileHomeParams, result: z.object({ bundles: z.array(CommandBundleSchema) }) },
   'commands.bundle_resolve': { params: ProfileHomeParams.extend({ command: z.string().min(1) }), result: CommandBundleInvocationSchema },
   'commands.moa_preset': { params: ProfileHomeParams.extend({ preset: z.string().nullable().optional() }), result: z.object({ moa: Loose }) },
+  /** Fixed devkit buffer adapter. No arbitrary HTTP paths, promotion or cleanup. Native saves are unconditional. */
+  'plugins.buffers': {
+    params: ProfileHomeParams.extend({ action: z.enum(['list', 'read', 'save']), session_id: z.string().min(1).max(200), name: ManagedBufferName.optional(), content: z.string().max(MAX_MANAGED_BUFFER_BYTES).optional() }),
+    result: z.object({ supported: z.boolean(), buffers: z.array(z.object({ name: ManagedBufferName, size: ManagedBufferSize, read_only: z.boolean() })).max(200), content: z.string().max(MAX_MANAGED_BUFFER_BYTES).optional(), size: ManagedBufferSize.optional(), read_only: z.boolean().optional(), write_semantics: z.literal('unconditional') }),
+  },
   'plugins.dashboard_list': { params: ProfileHomeParams, result: z.object({ supported: z.boolean(), plugins: z.array(AgentDashboardPluginSchema) }) },
   'plugins.dashboard_toggle': { params: DashboardNameParams.extend({ enabled: z.boolean() }), result: z.object({ ok: z.literal(true) }) },
   'plugins.dashboard_asset': { params: DashboardNameParams.extend({ path: z.string() }), result: AgentDashboardResponseSchema },

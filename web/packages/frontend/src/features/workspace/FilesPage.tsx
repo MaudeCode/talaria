@@ -1,4 +1,4 @@
-import { useState, type DragEvent } from 'react'
+import { useState, type DragEvent, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowUp, Download, Eye, EyeOff, File as FileIcon, FilePlus, Folder, FolderPlus, MoreHorizontal, RefreshCw, X } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
@@ -7,7 +7,8 @@ import { keys } from '../../api/queryKeys'
 import { appUrl } from '../../lib/appRoot'
 import { Button, IconButton } from '../../ui/Button'
 import { ConfirmDialog, Dialog } from '../../ui/Dialog'
-import { TextInput } from '../../ui/Field'
+import { Select } from '../../ui/Select'
+import { HelpTip, TextInput } from '../../ui/Field'
 import { Menu, MenuItem, MenuSeparator } from '../../ui/Menu'
 import { ErrorState, LoadingState, formatBytes } from '../../ui/States'
 import { showToast } from '../toast/toast'
@@ -41,11 +42,25 @@ type Pending = { kind: 'new-file' } | { kind: 'new-folder' } | { kind: 'rename';
 export interface RestoredFiles { seq: number; paths: string[] }
 
 export function FilesPage({ workspace, sessionId, active, restored = null }: { workspace: string | null | undefined; sessionId: string; active: boolean; restored?: RestoredFiles | null }) {
-  if (!workspace) return <div className="p-3 text-xs text-muted" role="status">{m.panel_files_unavailable()}</div>
-  return <WorkspaceFiles key={workspace} workspace={workspace} sessionId={sessionId} active={active} restored={restored} />
+  const [source, setSource] = useState<'workspace' | 'managed'>('workspace')
+  const [managedOpened, setManagedOpened] = useState(false)
+  const sources: ('workspace' | 'managed')[] = managedOpened ? ['workspace', 'managed'] : ['workspace']
+  const sourceControl = <Select aria-label={m.ws_panel_source()} value={source} onValueChange={(value) => { setSource(value as 'workspace' | 'managed'); if (value === 'managed') setManagedOpened(true) }}>
+    <option value="workspace">{m.ws_panel_workspace_source()}</option>
+    <option value="managed">{m.ws_panel_managed_source()}</option>
+  </Select>
+  return <>
+    {sources.map((owner) => <div key={owner} hidden={source !== owner} className={cn('min-h-0 flex-1 flex-col', source === owner && 'flex')}>
+      {owner === 'workspace' && !workspace
+        ? <><div className="border-b border-border-subtle px-3 py-1">{sourceControl}</div><div className="p-3 text-xs text-muted" role="status">{m.panel_files_unavailable()}</div></>
+        : <WorkspaceFiles key={owner === 'managed' ? sessionId : workspace} workspace={owner === 'managed' ? JSON.stringify(['managed', sessionId]) : workspace ?? ''} sessionId={sessionId} source={owner} sourceControl={sourceControl} active={active && source === owner} restored={owner === 'workspace' ? restored : null} />}
+    </div>)}
+  </>
 }
 
-function WorkspaceFiles({ workspace, sessionId, active, restored }: { workspace: string; sessionId: string; active: boolean; restored: RestoredFiles | null }) {
+function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, restored }: { workspace: string; sessionId: string; sourceControl: ReactNode; source: 'workspace' | 'managed'; active: boolean; restored: RestoredFiles | null }) {
+  const managed = source === 'managed'
+  const sourceArgs: [] | ['managed'] = managed ? ['managed'] : []
   const qc = useQueryClient()
   const [dir, setDir] = useState('.')
   const [showHidden, setShowHidden] = useState(false)
@@ -64,16 +79,16 @@ function WorkspaceFiles({ workspace, sessionId, active, restored }: { workspace:
     setSeenRestore(restored.seq)
     if (file && restored.paths.includes(file)) setDraft(null)
   }
-  const listing = useQuery({ queryKey: keys.files.list(workspace, dir, showHidden), queryFn: () => api.listDir(sessionId, dir, showHidden), staleTime: 10_000, enabled: active })
-  const git = useQuery({ queryKey: keys.files.git(sessionId), queryFn: () => api.fetchGitInfo(sessionId), staleTime: 30_000, retry: false, enabled: active })
-  const content = useQuery({ queryKey: keys.files.content(workspace, file ?? ''), queryFn: () => api.readFile(sessionId, file ?? ''), enabled: !!file && active, staleTime: 5_000 })
+  const listing = useQuery({ queryKey: keys.files.list(workspace, dir, showHidden), queryFn: () => api.listDir(sessionId, dir, showHidden, ...sourceArgs), staleTime: 10_000, enabled: active })
+  const git = useQuery({ queryKey: keys.files.git(sessionId), queryFn: () => api.fetchGitInfo(sessionId), staleTime: 30_000, retry: false, enabled: active && !managed })
+  const content = useQuery({ queryKey: keys.files.content(workspace, file ?? ''), queryFn: () => api.readFile(sessionId, file ?? '', ...sourceArgs), enabled: !!file && active, staleTime: 5_000 })
   const effects = useResourceEffects()
   // The saved text shows until the reread of that same file confirms it; edits typed meanwhile stay as the draft.
   const save = useResourceMutation({
     resource: ({ path }: { path: string; text: string }) => contentResource(workspace, path),
     queryKey: keys.files.contents(workspace), readKeys: ({ path }) => [{ queryKey: keys.files.content(workspace, path), exact: true }],
     effect: ({ text }) => ({ value: text }),
-    mutationFn: ({ path, text }) => api.saveFile(sessionId, path, text),
+    mutationFn: ({ path, text }) => api.saveFile(sessionId, path, text, ...sourceArgs),
     onSuccess: (_, { path, text }) => { showToast(m.ws_panel_saved()); setDraftOf((d) => d?.path === path && d.text === text ? null : d) },
     onError: (e) => showErrorToast(e),
   })
@@ -112,8 +127,10 @@ function WorkspaceFiles({ workspace, sessionId, active, restored }: { workspace:
     },
   })
   const listed = withCreated(withEffects(listing.data?.entries ?? [], (e) => entryResource(workspace, e.path ?? joinPath(dir, e.name)), effects), createKind(workspace, dir), effects)
-  const entries = listed.slice().sort((a, b) => Number(!!b.is_dir) - Number(!!a.is_dir) || a.name.localeCompare(b.name))
+  const entries = managed ? listed : listed.slice().sort((a, b) => Number(!!b.is_dir) - Number(!!a.is_dir) || a.name.localeCompare(b.name))
   const g = git.data?.git
+  const readOnly = managed && (content.data?.read_only !== false || content.isError)
+  const fileName = content.data?.name ?? listing.data?.entries.find((entry) => entry.path === file)?.name ?? file
   // An older server sends no `preview`: its replies are always text, Markdown by extension. Delete once Stable sends it.
   const kind = content.data ? (content.data.preview ?? (/\.(md|markdown)$/i.test(file ?? '') ? 'markdown' : 'text')) : undefined
   // Markdown, CSV and HTML show their rendered form until Edit opens the text.
@@ -124,16 +141,17 @@ function WorkspaceFiles({ workspace, sessionId, active, restored }: { workspace:
   return (
     <>
       <div className="flex items-center gap-1 border-b border-border-subtle px-3 py-1" data-files-toolbar>
-        <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-muted" title={workspace}>{`${workspace}${g?.is_git && g.branch ? ` · ${g.branch}${g.dirty ? ` (${g.dirty}±)` : ''}` : ''}`}</span>
-        <IconButton label={m.ws_panel_hidden()} active={showHidden} className="h-7 w-7" onClick={() => setShowHidden((h) => !h)}>{showHidden ? <Eye size={14} aria-hidden="true" /> : <EyeOff size={14} aria-hidden="true" />}</IconButton>
-        <IconButton label={m.refresh()} className="h-7 w-7" onClick={() => { void listing.refetch(); void git.refetch() }}><RefreshCw size={14} aria-hidden="true" /></IconButton>
+        {sourceControl}
+        <span data-files-workspace={managed ? undefined : ''} className="min-w-0 flex-1 truncate font-mono text-[10px] text-muted" title={managed ? undefined : workspace}>{managed ? '' : `${workspace}${g?.is_git && g.branch ? ` · ${g.branch}${g.dirty ? ` (${g.dirty}±)` : ''}` : ''}`}</span>
+        {!managed && <IconButton label={m.ws_panel_hidden()} active={showHidden} className="h-7 w-7" onClick={() => setShowHidden((h) => !h)}>{showHidden ? <Eye size={14} aria-hidden="true" /> : <EyeOff size={14} aria-hidden="true" />}</IconButton>}
+        <IconButton label={m.refresh()} className="h-7 w-7" onClick={() => { void listing.refetch(); if (!managed) void git.refetch(); if (file) void content.refetch() }}><RefreshCw size={14} aria-hidden="true" /></IconButton>
       </div>
       {file ? (
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="flex items-center gap-1 border-b border-border-subtle px-2 py-1 text-xs">
             <Button variant="ghost" onClick={() => { setFile(null); setDraft(null) }}><ArrowUp size={12} aria-hidden="true" /> {m.back()}</Button>
-            <span className="min-w-0 flex-1 truncate font-mono text-muted">{file}</span>
-            <a className="text-muted hover:text-text" href={rawUrl()} download aria-label={m.download_folder()}><Download size={14} aria-hidden="true" /></a>
+            <span className="min-w-0 flex-1 truncate font-mono text-muted">{fileName}</span>
+            {!managed && <a className="text-muted hover:text-text" href={rawUrl()} download aria-label={m.download_folder()}><Download size={14} aria-hidden="true" /></a>}
           </div>
           {content.isPending && <LoadingState />}
           {content.isError && <ErrorState error={content.error} onRetry={() => { void content.refetch() }} />}
@@ -155,26 +173,28 @@ function WorkspaceFiles({ workspace, sessionId, active, restored }: { workspace:
                 <iframe src={content.data.preview_url ? appUrl(content.data.preview_url).href : rawUrl(true)} title={file} sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox" className="min-h-0 w-full flex-1 border-0 bg-white" />
               )}
               {!rendered && (
-                <textarea value={text} onChange={(e) => setDraft(e.target.value)} spellCheck={false} aria-label={m.ws_panel_preview()} className="min-h-0 flex-1 resize-none bg-code-bg p-3 font-mono text-[12px] text-pre-text outline-none" />
+                <textarea readOnly={readOnly} value={text} onChange={(e) => setDraft(e.target.value)} spellCheck={false} aria-label={m.ws_panel_preview()} className="min-h-0 flex-1 resize-none bg-code-bg p-3 font-mono text-[12px] text-pre-text outline-none" />
               )}
               <div className="flex items-center gap-2 border-t border-border-subtle px-2 py-1.5">
-                {rendered && <Button variant="ghost" onClick={() => setDraft(text)}>{m.edit()}</Button>}
-                <Button variant="primary" disabled={draft === null} onClick={() => { if (draft !== null && file) save.mutate({ path: file, text: draft }) }}>{m.save()}</Button>
+                {rendered && !readOnly && <Button variant="ghost" onClick={() => setDraft(text)}>{m.edit()}</Button>}
+                <Button variant="primary" disabled={draft === null || readOnly} onClick={() => { if (draft !== null && file) save.mutate({ path: file, text: draft }) }}>{m.save()}</Button>
                 {draft !== null && <Button variant="ghost" onClick={() => setDraft(null)}>{m.cancel()}</Button>}
-                <span className="ml-auto text-[11px] text-muted">{content.data.truncated ? m.logs_truncated({ n: content.data.lines ?? 0 }) : formatBytes(content.data.size)}</span>
+                <span className="ml-auto text-[11px] text-muted">{readOnly ? m.ws_panel_read_only() : ''}</span>
+                {managed && <HelpTip label={m.ws_panel_write_semantics()}>{m.ws_panel_unconditional_save()}</HelpTip>}
+                <span className="text-[11px] text-muted">{content.data.truncated ? m.logs_truncated({ n: content.data.lines ?? 0 }) : formatBytes(content.data.size)}</span>
               </div>
             </div>
           )}
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col">
-          <div className="flex items-center gap-1 border-b border-border-subtle px-2 py-1 text-xs">
+          {!managed && <div className="flex items-center gap-1 border-b border-border-subtle px-2 py-1 text-xs">
             <IconButton label={m.ws_panel_up()} className={cn('h-7 w-7', dropTarget === parentOf(dir) && dir !== '.' && 'bg-accent-bg')} disabled={dir === '.'} onClick={() => go(parentOf(dir))} {...(dir !== '.' ? dropProps(parentOf(dir)) : {})}><ArrowUp size={14} aria-hidden="true" /></IconButton>
             <span className="min-w-0 flex-1 truncate font-mono text-muted">{dir}</span>
             <IconButton label={m.new_file()} className="h-7 w-7" onClick={() => setPending({ kind: 'new-file' })}><FilePlus size={14} aria-hidden="true" /></IconButton>
             <IconButton label={m.new_folder()} className="h-7 w-7" onClick={() => setPending({ kind: 'new-folder' })}><FolderPlus size={14} aria-hidden="true" /></IconButton>
             <a className="text-muted hover:text-text" href={appUrl(api.folderDownloadUrl(sessionId, dir)).href} aria-label={m.ws_panel_download()}><Download size={14} aria-hidden="true" /></a>
-          </div>
+          </div>}
           {notice && (
             <div role="alert" className="flex items-center gap-2 border-b border-border-subtle px-3 py-1.5 text-xs text-error">
               <span className="min-w-0 flex-1 break-words">{notice}</span>
@@ -184,7 +204,7 @@ function WorkspaceFiles({ workspace, sessionId, active, restored }: { workspace:
           <div className="file-tree min-h-0 flex-1 overflow-y-auto p-1" role="tree" aria-label={m.ws_panel_files()}>
             {listing.isPending && <LoadingState />}
             {listing.isError && <ErrorState error={listing.error} onRetry={() => { void listing.refetch() }} />}
-            {listing.isSuccess && entries.length === 0 && <div className="p-3 text-xs text-muted">{m.ws_panel_empty()}</div>}
+            {listing.isSuccess && entries.length === 0 && <div role="status" className="p-3 text-xs text-muted">{listing.data.unavailable ? m.ws_panel_managed_unavailable() : m.ws_panel_empty()}</div>}
             {entries.map((e) => {
               const path = e.path ?? joinPath(dir, e.name)
               const isDir = !!e.is_dir || e.type === 'dir' || e.type === 'directory'
@@ -195,10 +215,10 @@ function WorkspaceFiles({ workspace, sessionId, active, restored }: { workspace:
                     type="button"
                     role="treeitem"
                     aria-label={e.name}
-                    draggable
+                    draggable={!managed}
                     onDragStart={(ev) => { ev.dataTransfer.setData(DRAG_TYPE, path); ev.dataTransfer.effectAllowed = 'move' }}
                     onDragEnd={() => setDropTarget(null)}
-                    onContextMenu={(ev) => { ev.preventDefault(); setMenuFor(path) }}
+                    onContextMenu={(ev) => { if (!managed) { ev.preventDefault(); setMenuFor(path) } }}
                     onClick={() => (isDir ? go(path) : setFile(path))}
                     className="file-item flex min-w-0 flex-1 items-center gap-2 px-2 py-1 text-left text-[12.5px] text-text"
                     title={path}
@@ -207,7 +227,7 @@ function WorkspaceFiles({ workspace, sessionId, active, restored }: { workspace:
                     <span className="min-w-0 flex-1 truncate">{e.name}</span>
                     {!isDir && e.size !== undefined && e.size !== null && <span className="text-[10px] text-muted">{formatBytes(e.size)}</span>}
                   </button>
-                  <Menu
+                  {!managed && <Menu
                     label={m.more_actions()}
                     align="end"
                     open={menuFor === path}
@@ -219,7 +239,7 @@ function WorkspaceFiles({ workspace, sessionId, active, restored }: { workspace:
                     <MenuItem onClick={() => op.mutate(() => api.openInVsCode(sessionId, path))}>{m.ws_panel_open_vscode()}</MenuItem>
                     <MenuSeparator />
                     <MenuItem className="text-error" onClick={() => setPending({ kind: 'delete', entry })}>{m.delete()}</MenuItem>
-                  </Menu>
+                  </Menu>}
                 </div>
               )
             })}

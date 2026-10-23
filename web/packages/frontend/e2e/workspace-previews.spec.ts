@@ -61,7 +61,7 @@ test('the Files page previews images, PDF, audio, video, HTML, CSV, Markdown and
   else await page.getByRole('button', { name: 'Show workspace panel' }).click()
   await page.getByRole('tablist', { name: 'Side panel' }).getByRole('tab', { name: 'Files' }).click()
   // Until the session record loads the panel shows the default workspace, then remounts on the session's own.
-  await expect(page.locator('[data-files-toolbar] span')).toHaveAttribute('title', workspace)
+  await expect(page.locator('[data-files-workspace]')).toHaveAttribute('title', workspace)
   const tree = page.getByRole('tree', { name: 'Files' })
   const shot = async (name: string) => { if (process.env.TAL566_SHOTS) await page.screenshot({ path: `${process.env.TAL566_SHOTS}/${name}-${testInfo.project.name}.png` }) }
   const open = async (name: string) => {
