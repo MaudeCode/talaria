@@ -175,9 +175,14 @@ Tool subprocesses below the attested gateway remain part of its cooperative
 drain; unrelated siblings below a wrapper do not gain custody.
 Successor drains wait for work to finish, with one shared absolute deadline for
 the original requests, every profile, successor settling and the same worker's
-failure recovery. Orphan recovery starts one fresh deadline per recovery attempt,
-shared by all gateways. There are at most eight successor requests. There is no
-signal escalation.
+failure recovery. That deadline is the longest native drain budget among the
+selected homes (the Agent's after-turn wait, stop-drain envelope and headroom,
+resolved with each home's own configuration), bounded at four hours for a native
+drain configured to wait indefinitely. Cancellation or a lost lease pipe ends the
+wait at once and retains the debt. Orphan recovery starts one fresh deadline per
+recovery attempt, shared by all gateways and capped at 300 seconds so it fits its
+recovery RPC. There are at most eight successor requests. There is no signal
+escalation.
 
 After all recorded writers exit, the settling path takes the Agent's native
 per-home runtime file lock and records its own live native birth and custody
@@ -353,6 +358,14 @@ and child-reaping design across the existing Web updater's operations:
 | `git` | Execute the existing updater's command under that custody and the native checkout journal gate. |
 | `sync` | Repair dependencies while writers remain paused. |
 | `finish` | Verify the tree and repair, resume the recorded owners, then release custody. |
+
+While `begin` waits for gateway drains, the lease streams one `progress` frame
+with the remaining shared deadline and the waiting services. Each exchange
+otherwise has a 330-second lease deadline; that frame extends the sidecar exchange
+and the server call to the declared deadline plus that margin, so custody outlives
+the drain and its unwind. The server reports the wait as the `applying` update
+notification's detail. A drain that exceeds its budget returns a refusal before
+any source change, with the gateway obligation retained.
 
 The supervisor owns every Git/dependency child. Cancellation or a lost sidecar
 pipe stops and reaps an active writer before recovery is judged. A killed

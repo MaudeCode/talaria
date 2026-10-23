@@ -11,6 +11,7 @@ import hashlib
 import http.client
 import ipaddress
 import json
+import math
 import os
 from pathlib import Path
 import plistlib
@@ -27,6 +28,42 @@ import time
 STOP_SECONDS = 30.0
 READY_SECONDS = 30.0
 SNAPSHOT_ATTEMPTS = 4
+# Bounds a native drain configured to wait indefinitely; the retained debt outlives it.
+GATEWAY_DRAIN_CEILING = 4 * 3600.0
+# One orphan-recovery attempt must fit its 660-second recovery RPC; its debt drives the next attempt.
+RECOVERY_DRAIN_SECONDS = 300.0
+
+
+@contextlib.contextmanager
+def _native_home(home):
+    """Resolve native per-profile configuration for one home in this single-purpose worker."""
+    previous = os.environ.get('HERMES_HOME')
+    os.environ['HERMES_HOME'] = str(home)
+    try:
+        from hermes_constants import reset_hermes_home_override, set_hermes_home_override
+    except ImportError:  # Older Agents resolve the home from the environment alone.
+        set_hermes_home_override = None
+    token = set_hermes_home_override(home) if set_hermes_home_override else None
+    try:
+        yield
+    finally:
+        if token is not None:
+            reset_hermes_home_override(token)
+        if previous is None:
+            os.environ.pop('HERMES_HOME', None)
+        else:
+            os.environ['HERMES_HOME'] = previous
+
+
+def drain_budget(pause, homes, ceiling=GATEWAY_DRAIN_CEILING):
+    """One shared drain budget: the longest native after-turn + stop-drain budget among the homes, bounded."""
+    budget = 0.0
+    for home in sorted({str(home) for home in homes}):
+        with _native_home(home):
+            native = float(pause._drain_budget())
+        # A native wait-indefinitely budget (inf or NaN) takes the ceiling before any comparison.
+        budget = max(budget, native if math.isfinite(native) else ceiling)
+    return min(budget, ceiling)
 
 
 @contextlib.contextmanager
@@ -864,8 +901,10 @@ class ServiceRecovery:
                    for pid, p in processes.items()
                    if int(pid) != entry['service_pid'] or int(pid) == entry['pid'])
 
-    def gateway_deadline(self):
-        return time.monotonic() + min(self.pause._drain_budget(), 300)
+    def gateway_deadline(self, homes=None, ceiling=GATEWAY_DRAIN_CEILING):
+        if homes is None:
+            homes = [e['home'] for e in self.state['entries'] if e['purpose'] == 'gateway']
+        return time.monotonic() + drain_budget(self.pause, homes, ceiling)
 
     def settle_gateway(self, entry, stopped, *, deadline=None):
         owed = next(e for e in self.state['entries'] if _service_key(e) == _service_key(entry))
@@ -880,7 +919,7 @@ class ServiceRecovery:
             return
         stopped = stopped or threading.Event()
         if deadline is None:
-            deadline = self.gateway_deadline()
+            deadline = self.gateway_deadline([entry['home']], RECOVERY_DRAIN_SECONDS)
         while True:
             if stopped.is_set() or time.monotonic() >= deadline:
                 raise RuntimeError(f'{_name(entry)} gateway drain remains owed; retry Agent update recovery.')
@@ -963,7 +1002,7 @@ class ServiceRecovery:
                     continue
                 if entry['purpose'] == 'gateway':
                     if gateway_deadline is None:
-                        gateway_deadline = self.gateway_deadline()
+                        gateway_deadline = self.gateway_deadline(ceiling=RECOVERY_DRAIN_SECONDS)
                     self._settle_gateway(entry, deadline=gateway_deadline)
                     if not _service_pid(entry)[1]:
                         _start(entry, self.pause)

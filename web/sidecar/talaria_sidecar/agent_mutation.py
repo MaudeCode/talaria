@@ -29,6 +29,8 @@ _SESSIONS = {}
 _SESSIONS_LOCK = threading.Lock()
 _CONSENTS = {}
 CONSENT_SECONDS = 300
+# One lease exchange, including the worker's unwind after a refused drain.
+LEASE_SECONDS = 330
 
 
 def _close(session):
@@ -270,12 +272,22 @@ def recover_retained(runtime, ctx, *, probe=False, complete_revision=None):
         _ACTION_LOCK.release()
 
 
+def _drain_progress(result):
+    progress = result.get("progress") if isinstance(result, dict) and result.keys() == {"progress"} else None
+    if (not isinstance(progress, dict) or progress.get("phase") != "gateway_drain"
+            or not isinstance(progress.get("deadline_seconds"), (int, float)) or isinstance(progress["deadline_seconds"], bool)
+            or not 0 <= progress["deadline_seconds"] <= services.GATEWAY_DRAIN_CEILING
+            or not isinstance(progress.get("services"), list) or not all(isinstance(name, str) for name in progress["services"])):
+        return None
+    return {"phase": "gateway_drain", "deadline_seconds": progress["deadline_seconds"], "services": progress["services"]}
+
+
 def _exchange(session, request, ctx):
     with session["lock"]:
         if request is not None:
             session["proc"].stdin.write(json.dumps(request) + "\n")
             session["proc"].stdin.flush()
-        deadline = time.monotonic() + 330
+        deadline = time.monotonic() + LEASE_SECONDS
         while True:
             ctx.check_cancelled()
             if time.monotonic() >= deadline:
@@ -287,6 +299,14 @@ def _exchange(session, request, ctx):
             if line is None:
                 raise RpcError("Agent writer lease exited; its pause journal retains recovery.", condition="agent_update_unsafe")
             result = json.loads(line)
+            if isinstance(result, dict) and "progress" in result:
+                progress = _drain_progress(result)
+                if progress is None:
+                    raise RpcError("Invalid Agent writer lease response.", condition="agent_update_unsafe")
+                # The worker's own drain deadline is bounded; unwind keeps the ordinary lease margin.
+                deadline = max(deadline, time.monotonic() + progress["deadline_seconds"] + LEASE_SECONDS)
+                ctx.emit("progress", progress)
+                continue
             if not isinstance(result, dict) or not isinstance(result.get("ok"), bool):
                 raise RpcError("Invalid Agent writer lease response.", condition="agent_update_unsafe")
             return {"ok": result["ok"], "skipped": result.get("skipped") is True, "detail": str(result.get("detail") or ""),
@@ -616,7 +636,11 @@ def _worker(root, revision, homes, requests, stopped, send, refresh_binding=None
         records.mark_stop_requested(token, sorted({pid for e in gateway_entries for pid in (e['pid'], e.get('service_pid', e['pid']))}))
         for entry in backend_entries:
             recovery.stop(entry, stopped)
-        gateway_deadline = recovery.gateway_deadline()
+        # Every profile shares the longest native drain; the lease reports it so its RPC keeps custody.
+        gateway_deadline = recovery.gateway_deadline(homes)
+        if gateway_entries:
+            send({'progress': {'phase': 'gateway_drain', 'deadline_seconds': round(max(gateway_deadline - time.monotonic(), 0), 3),
+                               'services': sorted({services._name(e) for e in gateway_entries})}})
         for entry in gateway_entries:
             if stopped.is_set() or time.monotonic() >= gateway_deadline:
                 raise RuntimeError('Gateway drain has not completed; its durable resume obligation is retained.')
@@ -741,6 +765,8 @@ def _worker(root, revision, homes, requests, stopped, send, refresh_binding=None
         error = str(exc)
     finally:
         try:
+            # Cancellation or a lost lease pipe ends the drain wait; the retained debt keeps the gateway owed.
+            unwind_deadline = time.monotonic() if stopped.is_set() else gateway_deadline
             if token:
                 live = any(records.identity_is_live({"pid": int(pid), "ct": ct}) for pid, ct in token.get("identities", {}).items())
                 found = _command(modules["update_custody"].git_argv(["git"], ["rev-parse", "HEAD"]), root, 10, threading.Event(), modules["update_custody"])
@@ -753,7 +779,7 @@ def _worker(root, revision, homes, requests, stopped, send, refresh_binding=None
                 if live and not changed and not sync_failed and records.tree_is_whole(token, root)[0]:
                     # An untouched gateway must not strand a backend stopped earlier in a partial pause.
                     recovery.save(token)
-                    recovery.resume(_writer_ledger, gateway_deadline=gateway_deadline)
+                    recovery.resume(_writer_ledger, gateway_deadline=unwind_deadline)
                 if live or sync_failed or (changed and needs_sync and not locals().get("response", {}).get("ok")):
                     raise RuntimeError("Gateway resume remains owed until writer drain and dependency repair complete.")
                 whole, why = records.tree_is_whole(token, root)
@@ -775,7 +801,7 @@ def _worker(root, revision, homes, requests, stopped, send, refresh_binding=None
                 if token.get("resume_needed") or token.get("resume_deferred"):
                     raise RuntimeError("Gateway resume could not be verified; its obligation is retained.")
                 recovery.save(token)
-                recovery.resume(_writer_ledger, gateway_deadline=gateway_deadline)
+                recovery.resume(_writer_ledger, gateway_deadline=unwind_deadline)
             if token and not handed_off:
                 records.discharge(token)
                 from .runtime import AgentRuntime

@@ -772,3 +772,42 @@ def test_systemd_backend_wrapper_uses_native_unit_and_profile_ownership(supervis
     scope.systemd_unit_hermes_home = lambda command, unit: str(root / 'foreign')
     with pytest.raises(RuntimeError, match='ownership of this backend profile'):
         _owners(root, {home}, pause, identity)
+
+
+@pytest.mark.parametrize('case', ['draining', 'silent', 'overdue', 'invalid'])
+def test_lease_custody_follows_the_worker_declared_drain_deadline(monkeypatch, case):
+    """The RPC keeps custody for the worker's bounded drain instead of timing out before it."""
+    import queue
+    import threading
+    from talaria_sidecar import agent_mutation as mutation
+    from talaria_sidecar.errors import RpcError
+    budget = 1875
+    progress = {'progress': {'phase': 'gateway_drain', 'deadline_seconds': budget, 'services': ['synthetic.gateway']}}
+    script = {
+        'draining': [(10, progress), (1500, {'ok': True})],
+        'silent': [(1500, {'ok': True})],
+        'overdue': [(10, progress), (10 + budget + 340, {'ok': True})],
+        'invalid': [(10, {'progress': {**progress['progress'], 'deadline_seconds': 10 ** 9}})],
+    }[case]
+    clock = [0]
+
+    class Output:
+        def get(self, timeout):
+            clock[0] += 5
+            if script and clock[0] >= script[0][0]:
+                return json.dumps(script.pop(0)[1]) + '\n'
+            raise queue.Empty
+
+    monkeypatch.setattr(mutation, 'time', types.SimpleNamespace(monotonic=lambda: clock[0]))
+    frames = []
+    ctx = types.SimpleNamespace(check_cancelled=lambda: None, emit=lambda event, data: frames.append((event, data)))
+    try:
+        outcome = mutation._exchange({'lock': threading.RLock(), 'output': Output()}, None, ctx)
+    except RpcError as exc:
+        outcome = str(exc)
+    if case == 'draining':
+        assert outcome == {'ok': True, 'skipped': False, 'detail': ''}, f'custody ended at {clock[0]} s: {outcome}'
+        assert frames == [('progress', progress['progress'])]
+        return
+    assert outcome == ('Invalid Agent writer lease response.' if case == 'invalid' else 'Agent writer lease timed out; recovery remains recorded.')
+    assert clock[0] == {'silent': 330, 'overdue': 10 + budget + 330, 'invalid': 10}[case]

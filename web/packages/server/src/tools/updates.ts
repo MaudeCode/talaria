@@ -794,7 +794,14 @@ export interface AgentUpdatePolicy {
   beforeMutation?: (path: string, revision: string) => Promise<void>
 }
 /** `version` (TAL-946) names a listed Stable release `ref` for either target; omitted, an update takes the newest. */
-export interface UpdateOptions { skipFailedVersion?: boolean | undefined; agentChannel?: Channel | undefined; confirmedRevision?: string | undefined; version?: string | undefined; refreshToken?: string | undefined; mutationIntent?: string | undefined }
+export interface UpdateOptions {
+  skipFailedVersion?: boolean | undefined; agentChannel?: Channel | undefined; confirmedRevision?: string | undefined; version?: string | undefined; refreshToken?: string | undefined; mutationIntent?: string | undefined
+  /** TAL-1429: the server's wording for what a running Agent update is waiting for, before it changes source. */
+  onProgress?: ((detail: string) => void) | undefined
+}
+/** TAL-1429: the Agent update waits for the gateways' own native drain instead of interrupting their work. */
+export const gatewayDrainDetail = (services: string[], seconds: number): string =>
+  `Waiting for ${services.length ? services.join(', ') : 'the gateway'} to finish in-flight work before installing (up to ${String(Math.max(1, Math.ceil(seconds / 60)))} min).`
 type AgentSupport = 'supported' | 'unchecked'
 /** Only an exact verified revision is supported: a moved tag, a non-tag HEAD, Experimental `main` and a missing record are all unchecked. */
 const agentSupport = (sha: unknown, policy: AgentUpdatePolicy): AgentSupport =>
@@ -1301,7 +1308,7 @@ export interface UpdateServiceDeps {
   refreshWebuiVersion?: () => string
   agentDir: () => string | null
   agentHomes?: () => readonly string[]
-  agentMutation?: (path: string, revision: string, mutate: (git: GitRun, sync: UpdateServiceDeps['agentSync']) => Promise<Dict>, consent?: Pick<UpdateOptions, 'mutationIntent' | 'refreshToken'>) => Promise<Dict>
+  agentMutation?: (path: string, revision: string, mutate: (git: GitRun, sync: UpdateServiceDeps['agentSync']) => Promise<Dict>, consent?: Pick<UpdateOptions, 'mutationIntent' | 'refreshToken' | 'onProgress'>) => Promise<Dict>
   /** Repair dependencies through the sidecar even while its imported Agent is stale. */
   agentSync?: (agentDir: string) => Promise<SidecarResult<'runtime.sync_dependencies'>>
   channel: () => Channel
@@ -1431,7 +1438,7 @@ export class UpdateService {
         const result = await this.deps.agentMutation!(path, revision, async (git, sync) => {
           const applied = await mutate(git)
           return applied.ok ? this.finishAgent(applied, path, sync, false) : applied
-        }, { refreshToken: options.refreshToken, mutationIntent: options.mutationIntent ? JSON.stringify([options.mutationIntent, force, options.agentChannel ?? this.agentChannel(), options.version ?? '', options.confirmedRevision ?? '']) : undefined })
+        }, { refreshToken: options.refreshToken, onProgress: options.onProgress, mutationIntent: options.mutationIntent ? JSON.stringify([options.mutationIntent, force, options.agentChannel ?? this.agentChannel(), options.version ?? '', options.confirmedRevision ?? '']) : undefined })
         if (result.ok && !retainRuntimeIntent) {
           const intent = agentSyncMarker(path, this.deps.stateDir)
           try { if (intent) rmSync(intent, { force: true }) }

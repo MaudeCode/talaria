@@ -341,6 +341,37 @@ describe('startup timing at the RPC transport boundary', () => {
     if (scenario === 'timeout') expect(requests.map((r) => r.method)).toEqual(['runtime.ensure_current', 'rpc.cancel'])
   })
 
+  it.each(['draining', 'overdue'] as const)('TAL-1429: a declared gateway drain keeps a %s Agent mutation lease only until its bounded deadline', async (scenario) => {
+    vi.useFakeTimers()
+    const { client, internal, requests } = transport()
+    const progress = { phase: 'gateway_drain', deadline_seconds: 1875, services: ['ai.hermes.gateway'] }
+    const frames: unknown[] = []
+    let outcome: { value?: unknown; error?: unknown } | null = null
+    void client.call('runtime.agent_mutation', { action: 'begin', agent_dir: '/agent', revision: 'a'.repeat(40), homes: ['/home'] }, {
+      timeoutMs: 330_000,
+      onStream: (frame) => frames.push(frame.data),
+      renewTimeout: (frame) => frame.event === 'progress' ? ((frame.data as typeof progress).deadline_seconds + 330) * 1000 : undefined,
+    }).then((value) => { outcome = { value } }, (error: unknown) => { outcome = { error } })
+    const id = requests[0]!.id
+    await vi.advanceTimersByTimeAsync(10_000)
+    internal.onLine(JSON.stringify({ jsonrpc: '2.0', method: 'stream', params: { id, seq: 1, event: 'progress', data: progress } }))
+    expect(frames).toEqual([progress])
+    if (scenario === 'draining') {
+      await vi.advanceTimersByTimeAsync(1_000_000)
+      expect(outcome, 'the lease timed out inside the declared native drain').toBeNull()
+      const result = { ok: true, skipped: false, detail: '', token: 'b'.repeat(32) }
+      internal.onLine(JSON.stringify({ jsonrpc: '2.0', id, result }))
+      await vi.advanceTimersByTimeAsync(0)
+      expect(outcome).toEqual({ value: result })
+      return
+    }
+    await vi.advanceTimersByTimeAsync((1875 + 330) * 1000 - 1)
+    expect(outcome).toBeNull()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(outcome).toMatchObject({ error: { condition: 'sidecar_timeout' } })
+    expect(requests.map((r) => r.method)).toEqual(['runtime.agent_mutation', 'rpc.cancel'])
+  })
+
   it('binds interleaved pending calls to their own trace and first output', async () => {
     const { client, internal, requests } = transport()
     const first = new StartupTiming(() => undefined)

@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Hermes Agent updates wait for a gateway to finish its running chat instead of failing after five minutes, and the Updating dialog says what they are waiting for.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

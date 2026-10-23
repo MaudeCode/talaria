@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it } from 'vitest'
 import { UpdateNotificationStore, type UpdateNotificationScope } from './update-notifications.js'
+import { gatewayDrainDetail } from './updates.js'
 
 const roots: string[] = []
 const temp = () => { const path = mkdtempSync(join(tmpdir(), 'talaria-notifications-')); roots.push(path); return path }
@@ -206,6 +207,16 @@ describe('UpdateNotificationStore', () => {
     expect((await store.transition(web.id, 'succeeded'))?.detail).toBeNull()
     expect((await store.transition(web.id, 'succeeded', null, undefined, 'Local edits were set aside in the git stash.'))?.detail).toBe('Local edits were set aside in the git stash.')
     expect((await store.transition(web.id, 'restarting', null, undefined, 'ignored'))?.detail).toBeNull()
+  })
+
+  it('TAL-1429: an applying Agent update shows what it waits for, keeps the step and phase, and drops it on the outcome', async () => {
+    const store = (await initializeStore(new UpdateNotificationStore(new JsonDocuments(temp()))))
+    const agent = (await store.begin(alice, 'agent'))
+    const detail = gatewayDrainDetail(['ai.hermes.gateway'], 1875)
+    expect(detail).toBe('Waiting for ai.hermes.gateway to finish in-flight work before installing (up to 32 min).')
+    const waiting = (await store.transition(agent.id, 'applying', null, undefined, detail))
+    expect(waiting).toMatchObject({ phase: 'applying', detail, title: agent.title, message: agent.message, steps: agent.steps })
+    expect((await store.transition(agent.id, 'verifying'))?.detail).toBeNull()
   })
 
   it('follows the operation a tab rejoined most recently, not the newest one', async () => {

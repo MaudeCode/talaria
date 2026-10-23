@@ -48,6 +48,8 @@ export interface CallOptions {
   signal?: AbortSignal
   /** Milliseconds before the call fails with `sidecar_timeout`; 0 disables. */
   timeoutMs?: number
+  /** Milliseconds from a stream frame until the call fails, when that is later than its current deadline; undefined keeps it. */
+  renewTimeout?: (frame: StreamFrame) => number | undefined
 }
 
 export interface SidecarSpawnOptions {
@@ -92,7 +94,10 @@ interface Pending {
   resolve: (value: unknown) => void
   reject: (error: Error) => void
   onStream?: ((frame: StreamFrame) => void) | undefined
+  renewTimeout?: ((frame: StreamFrame) => number | undefined) | undefined
   timer?: ReturnType<typeof setTimeout> | undefined
+  deadline?: number | undefined
+  expire?: (() => void) | undefined
 }
 
 /** Normalize typed sidecar evidence once for health, preflight, and journalled turn errors. */
@@ -271,7 +276,15 @@ export class SidecarClient implements SidecarLike {
         const frame = message.params as { id: number; seq: number; event: string; data: unknown }
         const pending = this.pending.get(frame.id)
         pending?.timing?.observe('first_sidecar_output')
-        pending?.onStream?.({ seq: frame.seq, event: frame.event, data: frame.data })
+        const stream = { seq: frame.seq, event: frame.event, data: frame.data }
+        const renewed = pending?.timer ? pending.renewTimeout?.(stream) : undefined
+        if (pending?.expire && pending.deadline !== undefined && renewed !== undefined && Date.now() + renewed > pending.deadline) {
+          clearTimeout(pending.timer)
+          pending.deadline = Date.now() + renewed
+          pending.timer = setTimeout(pending.expire, renewed)
+          pending.timer.unref()
+        }
+        pending?.onStream?.(stream)
       }
       return
     }
@@ -373,13 +386,15 @@ export class SidecarClient implements SidecarLike {
       // A settled call drops its cancellation subscription on every exit: dictation reuses one signal for every batch.
       const onAbort = () => { this.sendCancel(id) }
       const raw = await new Promise<unknown>((resolve, reject) => {
-        const pending: Pending = { method, resolve, reject, onStream: opts.onStream, timing: opts.timing }
+        const pending: Pending = { method, resolve, reject, onStream: opts.onStream, renewTimeout: opts.renewTimeout, timing: opts.timing }
         if (opts.timeoutMs !== 0) {
-          pending.timer = setTimeout(() => {
+          pending.expire = () => {
             this.pending.delete(id)
             this.sendCancel(id)
             reject(new SidecarError(`sidecar call ${method} timed out`, { condition: 'sidecar_timeout' }))
-          }, opts.timeoutMs ?? 120_000)
+          }
+          pending.deadline = Date.now() + (opts.timeoutMs ?? 120_000)
+          pending.timer = setTimeout(pending.expire, opts.timeoutMs ?? 120_000)
           pending.timer.unref()
         }
         this.pending.set(id, pending)
