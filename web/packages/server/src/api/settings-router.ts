@@ -165,7 +165,11 @@ async function saveSettings(ctx: RequestContext, input: Dict): Promise<Dict> {
   if (requestedPasswordless) {
     if (!auth.passkeyFeatureFlagEnabled()) throw new HttpError(409, 'Passkey support is disabled. Enable HERMES_WEBUI_PASSKEY before going passwordless.')
     if (!await auth.passkeysEnabled()) throw new HttpError(409, 'Register a passkey before going passwordless.')
-  } else if (requestedClear) await deps.clearPasskeys()
+  }
+  const cfgHome = home(ctx)
+  // A definite YAML refusal must precede every sibling settings or credential mutation.
+  const maxTokens = maxTokensProvided ? await setMaxTokens(deps.agentConfig, cfgHome, maxTokensValue) : null
+  if (!requestedPasswordless && requestedClear) await deps.clearPasskeys()
   const ack = body._auth_disabled_acknowledged
   Reflect.deleteProperty(body, '_auth_disabled_acknowledged')
   if (ack !== undefined && ack !== null && !(await auth.isAuthEnabled())) body.auth_disabled_acknowledged = pyBool(ack)
@@ -175,9 +179,8 @@ async function saveSettings(ctx: RequestContext, input: Dict): Promise<Dict> {
   const raw = await deps.settings.readRaw()
   saved.persisted_speech_keys = [...SETTINGS_SPEECH_KEYS].filter((k) => k in raw).sort()
   Reflect.deleteProperty(saved, 'password_hash')
-  const cfgHome = home(ctx)
   try {
-    Object.assign(saved, maxTokensProvided ? await setMaxTokens(deps.agentConfig, cfgHome, maxTokensValue) : maxTokensStatus(await deps.agentConfig.read(cfgHome)))
+    Object.assign(saved, maxTokens ?? maxTokensStatus(await deps.agentConfig.read(cfgHome)))
   } catch (error) {
     if (maxTokensProvided) failure(error)
     Object.assign(saved, { max_tokens: null, max_tokens_effective: null, max_tokens_fallback: null })

@@ -65,8 +65,10 @@ Before creating directories or staging YAML, `config.set` checks the native ligh
 `hermes_constants.get_managed_system` detector with the resolved owning profile home,
 including when `HERMES_CONFIG_PATH` points elsewhere. Package-managed writes refuse
 with `config_write_refused`; settings and model routes return HTTP 409 with the
-instruction to update declarative configuration. An unavailable detector fails closed
-with `config_policy_unavailable` and HTTP 503. Reads remain available.
+instruction to update declarative configuration. Mixed settings requests perform the
+YAML write before persisting sibling preferences or changing credentials, so a
+managed-config conflict leaves the whole rejected patch unchanged. An unavailable
+detector fails closed with `config_policy_unavailable` and HTTP 503. Reads remain available.
 Config saves use the Agent's comment-preserving full-state replacement writer when available,
 including deliberate key removals. The sidecar stages the resolved file's document and checks
 the original symlink again before replacing its target, retaining the target's permissions.
