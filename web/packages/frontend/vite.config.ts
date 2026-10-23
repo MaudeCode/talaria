@@ -4,6 +4,7 @@ import { tanstackStart } from '@tanstack/react-start/plugin/vite'
 import viteReact from '@vitejs/plugin-react'
 import { defineConfig, type Plugin } from 'vite'
 import { renderThemeCss } from './src/theme/skins'
+import { paraglideLocaleSplit } from './src/i18n/localeSplit'
 
 /** Serves the token stylesheet rendered from src/theme/skins.ts as `virtual:hermes-theme.css`. */
 function hermesTheme(): Plugin {
@@ -48,6 +49,7 @@ export default defineConfig({
       disableAsyncLocalStorage: true,
       isServer: 'false',
     }),
+    paraglideLocaleSplit('./src/paraglide'),
     hermesTheme(),
     tailwindcss(),
     tanstackStart({

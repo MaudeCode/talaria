@@ -9,17 +9,33 @@
 import { getLocale as paraglideGetLocale, setLocale as paraglideSetLocale, isLocale, baseLocale } from '../paraglide/runtime.js'
 import { LOCALE_CODES, localeInfo, resolveLocale } from './locales'
 import { readPersisted, writePersisted } from '../lib/persisted'
+import { loadLocaleMessages } from 'virtual:talaria-locales'
+import { cacheLocaleChunk } from '../app/pwa'
 
 const listeners = new Set<() => void>()
+let requested = 0
 
 export function currentLocale(): string {
   return paraglideGetLocale()
 }
 
-/** Apply a resolved locale: Paraglide state, `hermes-lang`, `<html lang>`, `dir`. */
-export function applyLocale(code: string, opts: { persist?: boolean } = {}): string {
+/**
+ * Apply a resolved locale: its strings (TAL-1403), Paraglide state, `hermes-lang`, `<html lang>`, `dir`.
+ * The locale switches only once its strings are installed, so no message renders in English first;
+ * a newer request supersedes one still loading.
+ */
+export async function applyLocale(code: string, opts: { persist?: boolean } = {}): Promise<string> {
   const resolved = resolveLocale(code) ?? baseLocale
   if (!isLocale(resolved)) return currentLocale()
+  const request = ++requested
+  try {
+    const chunk = await loadLocaleMessages(resolved)
+    if (chunk) cacheLocaleChunk(chunk)
+  } catch (error) {
+    // Messages fall back to English; the next switch retries the chunk.
+    console.warn('[i18n] locale strings failed to load', error)
+  }
+  if (request !== requested) return currentLocale()
   // globalVariable strategy: in-memory switch, no page reload.
   void paraglideSetLocale(resolved, { reload: false })
   const info = localeInfo(resolved)
@@ -30,7 +46,7 @@ export function applyLocale(code: string, opts: { persist?: boolean } = {}): str
 }
 
 /** Boot resolution: server language (authoritative) then persisted choice then English. */
-export function bootLocale(serverLanguage: string | null | undefined): string {
+export function bootLocale(serverLanguage: string | null | undefined): Promise<string> {
   const fromServer = resolveLocale(serverLanguage)
   const fromStorage = resolveLocale(readPersisted('hermes-lang'))
   return applyLocale(fromServer ?? fromStorage ?? baseLocale, { persist: fromServer !== null })

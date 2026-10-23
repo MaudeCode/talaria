@@ -17,3 +17,9 @@ export function registerServiceWorker(appRoot: URL): void {
     }).catch((err: unknown) => { console.warn('[pwa] service worker registration failed', err) })
   })
 }
+
+/** Asks the service worker to keep the active locale's message chunk beside the shell precache (TAL-1403). */
+export function cacheLocaleChunk(url: string): void {
+  if (import.meta.env.DEV || !('serviceWorker' in navigator)) return
+  void navigator.serviceWorker.ready.then((reg) => reg.active?.postMessage({ type: 'CACHE_LOCALE', url }))
+}

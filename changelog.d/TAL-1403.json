@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria Web starts faster: it downloads only the language you use instead of all 15 translations.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

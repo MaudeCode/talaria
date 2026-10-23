@@ -320,6 +320,11 @@ the sandboxed extension platform (`docs/architecture/extension-protocol-v1.md`),
 the in-memory contract server used by Vitest (`src/adapters/memory.ts`). `npm run build:fast` produces
 `static/dist/`, which is not committed: CI builds it for tests, the npm package and the container image.
 
+i18n: Paraglide compiles one module per message. `src/i18n/localeSplit.ts` keeps only the English function in
+each module and builds one lazily imported chunk per other locale (entries identical to English are left out
+and fall back to it). `applyLocale` installs the active locale's chunk before switching, so boot and runtime
+switches render translated from the first frame; the service worker keeps the active chunk beside the shell.
+
 ## 6. Runtime and startup
 
 ```
