@@ -386,6 +386,7 @@
 		C166A0000000000000000001 /* TaskRunHistoryViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C166A0000000000000000101 /* TaskRunHistoryViews.swift */; };
 		8618A9261B8047CEA6084798 /* SlashCommandAutocompleteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC2A37872AC842629FBDDFA4 /* SlashCommandAutocompleteView.swift */; };
 		8B71DA2AAC521382F54A841C /* InsightsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57B5FD09B6B5937573B5F9A4 /* InsightsView.swift */; };
+		D1461A000000000000000001 /* ComposerDropHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1461A000000000000000002 /* ComposerDropHostedTests.swift */; };
 		A710739233F64F4FA4C2B701 /* ComposerVoiceDraftComposerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A710739233F64F4FA4C2B711 /* ComposerVoiceDraftComposerTests.swift */; };
 		C0CAM000000000000000B001 /* CameraPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0CAM000000000000000B002 /* CameraPickerView.swift */; };
 		C0DEC0DE0000000000000001 /* ChatComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DEC0DE0000000000000002 /* ChatComposerView.swift */; };
@@ -805,6 +806,7 @@
 		26AB000000000000000000F4 /* ProvidersViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProvidersViewModelTests.swift; sourceTree = "<group>"; };
 		759A00000000000000000004 /* UpdateSummaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateSummaryTests.swift; sourceTree = "<group>"; };
 		26AB0000000000000000B402 /* AppIconAlternateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconAlternateTests.swift; sourceTree = "<group>"; };
+		D1461A000000000000000002 /* ComposerDropHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerDropHostedTests.swift; sourceTree = "<group>"; };
 		A710739233F64F4FA4C2B711 /* ComposerVoiceDraftComposerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerVoiceDraftComposerTests.swift; sourceTree = "<group>"; };
 		B5A100000000000000000011 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
 		B5A100000000000000000012 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -975,6 +977,7 @@
 				C22600000000000000000106 /* PerformanceBudgetTests.swift */,
 				C22600000000000000000104 /* ReplayCatchUpPerformanceTests.swift */,
 				C107Z0000000000000000101 /* KanbanFeatureStateLoadTests.swift */,
+				D1461A000000000000000002 /* ComposerDropHostedTests.swift */,
 				A710739233F64F4FA4C2B711 /* ComposerVoiceDraftComposerTests.swift */,
 				A06100000000000000000004 /* ProviderQuotaWidgetTests.swift */,
 				26AB000000000000000000F4 /* ProvidersViewModelTests.swift */,
@@ -2027,6 +2030,7 @@
 				C22600000000000000000105 /* PerformanceBudgetTests.swift in Sources */,
 				C22600000000000000000103 /* ReplayCatchUpPerformanceTests.swift in Sources */,
 				C107Z0000000000000000001 /* KanbanFeatureStateLoadTests.swift in Sources */,
+				D1461A000000000000000001 /* ComposerDropHostedTests.swift in Sources */,
 				A710739233F64F4FA4C2B701 /* ComposerVoiceDraftComposerTests.swift in Sources */,
 				A06100000000000000000003 /* ProviderQuotaWidgetTests.swift in Sources */,
 				26AB000000000000000000B4 /* ProvidersViewModelTests.swift in Sources */,

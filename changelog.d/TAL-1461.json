@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Drag text, links, images and files from the app beside Talaria onto the message box to add them to your draft.",
+      "highlight": true,
+      "components": ["app"]
+    }
+  ]
+}

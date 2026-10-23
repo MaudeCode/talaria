@@ -475,6 +475,9 @@ struct ChatView: View {
             onPasteImages: { images in
                 Task { await handlePastedImages(images) }
             },
+            onDropAttachmentProviders: { providers in
+                Task { await handleDroppedAttachmentProviders(providers) }
+            },
             onRemoveAttachment: { id in
                 // The receipt also fences a restore response that is still in flight.
                 lastSyncedDraftAttachments.removeAll { $0.id == id }
@@ -2787,10 +2790,28 @@ struct ChatView: View {
             return
         }
 
-        await stageAttachments(imageProviders) { provider in
+        await stageAttachments(imageProviders, load: loadAttachment)
+    }
+
+    /// Dropped images stage like pasted ones, and everything else like a pasted file, in the drop's order (TAL-1461).
+    private func handleDroppedAttachmentProviders(_ providers: [NSItemProvider]) async {
+        await stageAttachments(providers, load: loadAttachment)
+    }
+
+    /// An image provider loads as a pasted image. Any other loads its contents when it carries them, as Files hands a
+    /// dragged file over, and otherwise the file at its URL.
+    private func loadAttachment(from provider: NSItemProvider) async throws -> (data: Data, filename: String, preview: Data?) {
+        if provider.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
             let image = try await loadPastedImage(from: provider)
             return (image.data, image.filename, image.data)
         }
+        let contentType = provider.registeredTypeIdentifiers.first { UTType($0)?.conforms(to: .url) != true }
+        let file = if let contentType {
+            try await loadFileRepresentation(from: provider, typeIdentifier: contentType)
+        } else {
+            try await loadPastedFile(from: provider)
+        }
+        return (file.data, file.filename, nil)
     }
 
     private func handlePastedImages(_ images: [UIImage]) async {
@@ -2827,6 +2848,29 @@ struct ChatView: View {
                 } catch {
                     continuation.resume(throwing: error)
                 }
+            }
+        }
+    }
+
+    /// A copy of the provider's file, read before the provider removes it (TAL-1461).
+    private func loadFileRepresentation(from provider: NSItemProvider, typeIdentifier: String) async throws -> PastedFile {
+        let suggestedName = provider.suggestedName
+
+        return try await withCheckedThrowingContinuation { continuation in
+            _ = provider.loadFileRepresentation(forTypeIdentifier: typeIdentifier) { url, error in
+                guard let url else {
+                    continuation.resume(throwing: error ?? PastedFileError.unreadableURL)
+                    return
+                }
+                // The copy has a generic name; the item's own is its suggested name, which may lack the extension.
+                continuation.resume(with: Result {
+                    let file = try loadPastedFile(from: url, suggestedName: nil)
+                    guard let suggestedName, !suggestedName.isEmpty else { return file }
+                    let filename = URL(fileURLWithPath: suggestedName).pathExtension.isEmpty && !url.pathExtension.isEmpty
+                        ? "\(suggestedName).\(url.pathExtension)"
+                        : suggestedName
+                    return PastedFile(data: file.data, filename: filename)
+                })
             }
         }
     }
