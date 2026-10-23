@@ -210,6 +210,23 @@ class CheckerTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     checker.supported_releases(self.root)
 
+    def test_reaction_contract_keeps_all_release_tags_listable(self):
+        path = self.root / "web/sidecar/agent_support.json"
+        record = json.loads(path.read_text())
+        record["nativeContracts"] = {"served-local-policy-v1": ["f" * 40], "message-reactions-v1": ["e" * 40]}
+        path.write_text(json.dumps(record))
+        try:
+            self.main("--list")
+        except ValueError as error:
+            self.fail(f"registered reaction contract must keep the release matrix listable: {error}")
+        self.assertEqual(json.loads(self.stdout.getvalue()), [release["releaseTag"] for release in RELEASES])
+        for invalid in (None, [], ["v0.22.4"], [None], ["e" * 40, "e" * 40]):
+            with self.subTest(invalid=invalid):
+                record["nativeContracts"]["message-reactions-v1"] = invalid
+                path.write_text(json.dumps(record))
+                with self.assertRaises(ValueError):
+                    checker.supported_releases(self.root)
+
     def test_worker_policy_reaches_the_shared_test_entry_point(self):
         original = self.tools.run
         environments = []
