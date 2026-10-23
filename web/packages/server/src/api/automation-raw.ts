@@ -29,12 +29,18 @@ const sleep = (ms: number, signal: AbortSignal): Promise<void> => new Promise((r
   signal.addEventListener('abort', onAbort, { once: true })
 })
 
+/** A nonnegative safe-integer event cursor, or null for a missing, empty, or malformed one. */
+function eventCursor(raw: string | null | undefined): number | null {
+  const text = (raw ?? '').trim()
+  const n = /^\d+$/.test(text) ? Number(text) : Number.NaN
+  return Number.isSafeInteger(n) ? n : null
+}
+
 /** Python `_handle_events_sse_stream`: `hello`, then `events` batches with `id: <cursor>`, 1 s poll, 15 s keepalive. */
 export async function handleKanbanEventsStream(ctx: RequestContext): Promise<void> {
   const board = str(ctx.query.get('board')).trim() || null
-  const sinceRaw = ctx.query.get('since') ?? ctx.header('last-event-id') ?? null
-  let cursor = sinceRaw === null ? 0 : Number.parseInt(sinceRaw, 10)
-  if (!Number.isFinite(cursor) || cursor < 0) cursor = 0
+  // An EventSource reconnect keeps its original `?since=` URL; its `Last-Event-ID` is the newer resume point.
+  let cursor = eventCursor(ctx.header('last-event-id')) ?? eventCursor(ctx.query.get('since')) ?? 0
   const home = ctx.deps.profileHome(activeProfileName(ctx))
   // Python `_resolve_board` normalised the slug before the `hello` frame carried it.
   let helloBoard = board
