@@ -1,4 +1,5 @@
-import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
+import { useMemo } from 'react'
+import { replaceEqualDeep, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { keys } from '../api/queryKeys'
 import * as api from '../api/endpoints'
 import { getStreamContext } from '../stream/connection'
@@ -23,20 +24,44 @@ function makeOwner(qc: QueryClient) {
   }
 }
 
-function useIntent() {
-  return useQuery<Intent | null>({ queryKey: intentKey, queryFn: () => null, initialData: null, enabled: false, gcTime: Infinity, structuralSharing: false })
+function pickFields<T extends Record<string, unknown>>(data: T, fields?: readonly string[]): T {
+  return fields ? Object.fromEntries(fields.filter((key) => key in data).map((key) => [key, data[key]])) as T : data
 }
 
-export function useSettingsQuery() {
-  const settings = useQuery({ queryKey: keys.settings, queryFn: api.fetchSettings, staleTime: 30_000 })
-  const intent = useIntent().data
-  const data = settings.data && intent?.context === getStreamContext() ? { ...settings.data, ...intent.fields } : settings.data
-  return { ...settings, data } as typeof settings
+function useIntent(fields?: readonly string[]) {
+  return useQuery<Intent | null>({
+    queryKey: intentKey, queryFn: () => null, initialData: null, enabled: false, gcTime: Infinity,
+    notifyOnChangeProps: fields?.length === 0 ? [] : undefined,
+    // Context identity is a write fence, while unchanged selected fields retain their references.
+    structuralSharing: (previous, next) => (previous as Intent | null | undefined)?.context !== (next as Intent | null)?.context ? next : replaceEqualDeep(previous, next),
+    select: (intent) => {
+      if (intent?.context !== getStreamContext()) return null
+      const selected = pickFields(intent.fields, fields)
+      return Object.keys(selected).length ? { context: intent.context, fields: selected } : null
+    },
+  })
+}
+
+export function useSettingsQuery(fields?: readonly string[]) {
+  const settings = useQuery({ queryKey: keys.settings, queryFn: api.fetchSettings, staleTime: 30_000, select: (data) => pickFields(data, fields) })
+  const intent = useIntent(fields).data
+  const confirmed = settings.data
+  const overlay = useMemo(() => confirmed && intent ? { ...confirmed, ...intent.fields } : undefined, [confirmed, intent])
+  const isError = overlay ? settings.isError : false
+  const error = overlay ? settings.error : null
+  const refetch = settings.refetch
+  const result = useMemo(() => overlay ? { data: overlay, isPending: false as const, isError, error, refetch } : undefined, [overlay, isError, error, refetch])
+  return result ?? settings
+}
+
+export function useSetting<K extends keyof Settings>(key: K): Settings[K] | undefined {
+  return useSettingsQuery([key]).data?.[key]
 }
 
 export function useSaveSettings() {
   const qc = useQueryClient()
-  useIntent()
+  // Register the owner without subscribing a write-only control to other fields' optimistic edits.
+  useIntent([])
   return useMutation({
     mutationKey: keys.settings,
     mutationFn: async (patch: Record<string, unknown>) => {

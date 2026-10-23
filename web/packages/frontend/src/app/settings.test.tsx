@@ -8,6 +8,7 @@ import { teardownAll } from '../stream/connection'
 import { useSaveSettings, useSettingsQuery } from './queries'
 import * as api from '../api/endpoints'
 import { ApiError } from '../contracts/common'
+import { useSettingField } from '../features/settings/useSettingField'
 
 vi.mock('../api/endpoints', () => ({ fetchSettings: vi.fn(), saveSettings: vi.fn() }))
 const initial = { bot_name: 'Hermes', send_key: 'enter', sidebar_density: 'compact', sound_enabled: false, agent_version: 'fixture', password_enabled: true }
@@ -29,6 +30,48 @@ beforeEach(() => {
 })
 
 describe('shared optimistic settings', () => {
+  it('does not render data readers for an equal refetch', async () => {
+    const { qc } = setup()
+    let renders = 0
+    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    renderHook(() => { renders++; return useSettingsQuery().data }, { wrapper })
+    const fetching = renderHook(() => useSettingsQuery().isPending, { wrapper })
+    const held = deferred<Settings>()
+    vi.mocked(api.fetchSettings).mockReturnValue(held.promise)
+    const before = renders
+    const refetch = qc.refetchQueries({ queryKey: keys.settings })
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)) })
+    expect(fetching.result.current).toBe(false)
+    expect(renders).toBe(before)
+    held.resolve(initial)
+    await act(async () => { await refetch })
+    expect(renders).toBe(before)
+  })
+
+  it('renders only readers of the saved field through optimism, confirmation and equal refetch', async () => {
+    const held = deferred<Settings>()
+    vi.mocked(api.saveSettings).mockReturnValue(held.promise)
+    const { result, qc } = setup()
+    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    let soundRenders = 0, sendRenders = 0
+    const sound = renderHook(() => { soundRenders++; return useSettingField(['sound_enabled']).bool('sound_enabled') }, { wrapper })
+    const send = renderHook(() => { sendRenders++; return useSettingField(['send_key']).str('send_key') }, { wrapper })
+    const before = { sound: soundRenders, send: sendRenders }
+    act(() => result.current.save.mutate({ sound_enabled: true }))
+    await waitFor(() => expect(sound.result.current).toBe(true))
+    expect(soundRenders).toBeGreaterThan(before.sound)
+    expect(send.result.current).toBe('enter')
+    expect(sendRenders).toBe(before.send)
+    vi.mocked(api.fetchSettings).mockResolvedValue({ ...initial, sound_enabled: true })
+    held.resolve({ ...initial, sound_enabled: true })
+    await waitFor(() => expect(result.current.save.isPending).toBe(false))
+    expect(sendRenders).toBe(before.send)
+    const settled = soundRenders
+    await act(async () => { await qc.refetchQueries({ queryKey: keys.settings }) })
+    expect(soundRenders).toBe(settled)
+    expect(sendRenders).toBe(before.send)
+  })
+
   it('shows requested fields to every reader while the confirmed cache stays unchanged', async () => {
     const held = deferred<Settings>()
     vi.mocked(api.saveSettings).mockReturnValue(held.promise)

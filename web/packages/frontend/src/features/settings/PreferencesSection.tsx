@@ -12,7 +12,7 @@ import { useBootstrap } from '../../app/bootstrap'
 import { catalogEntryById, catalogGroupLabel } from '../../lib/modelEntry'
 
 function Toggle({ label, hint, settingKey, fallback = false, disabled }: { label: string; hint?: string; settingKey: string; fallback?: boolean; disabled?: boolean }) {
-  const { bool, set } = useSettingField()
+  const { bool, set } = useSettingField([settingKey])
   const id = `settings-${settingKey}`
   return (
     <FieldRow label={label} htmlFor={id} {...(hint ? { hint } : {})} inline>
@@ -22,7 +22,7 @@ function Toggle({ label, hint, settingKey, fallback = false, disabled }: { label
 }
 
 export function PreferencesSection() {
-  const { settings, str, set, setAsync, bool, num } = useSettingField()
+  const { settings, str, set, setAsync, bool, num } = useSettingField(['default_model', 'send_key', 'bot_name', 'sidebar_density', 'pinned_sessions_limit', 'show_cli_sessions', 'trusted_link_hosts', 'hidden_tabs'])
   const models = useModelsQuery()
   const setDefault = useSetDefaultModel()
   const chosen = useDefaultModelChoice()

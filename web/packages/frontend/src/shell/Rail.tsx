@@ -1,7 +1,7 @@
 import { Link, useLocation } from '@tanstack/react-router'
 import { m } from '../paraglide/messages.js'
 import { useBootstrap } from '../app/bootstrap'
-import { useDashboardStatusQuery, useSettingsQuery } from '../app/queries'
+import { useDashboardStatusQuery, useSetting } from '../app/queries'
 import { cn } from '../ui/cn'
 import { DASHBOARD_ICON, orderedNav, panelForPath } from './nav'
 import { readHiddenTabs, readTabOrder, toggleSidebarCollapsed, useIsDesktop } from './useShellState'
@@ -23,16 +23,16 @@ const RAIL_BTN = 'rail-btn has-tooltip relative flex w-[54px] h-auto min-h-12 fl
 
 export function Rail() {
   useLocale()
-  const location = useLocation()
-  const settings = useSettingsQuery()
+  const current = useLocation({ select: (location) => panelForPath(location.pathname) })
+  const extensionPath = useLocation({ select: (location) => location.pathname.startsWith('/ext/') ? location.pathname : null })
+  const hiddenTabs = useSetting('hidden_tabs')
   const bootstrap = useBootstrap()
   const dashboard = useDashboardStatusQuery(bootstrap.features.dashboard)
   const newChat = useNewChat()
   const manifests = useExtensionManifests(bootstrap.features.extensions || true)
   const extNav = (manifests.data?.manifests ?? []).filter((e) => e.enabled && e.panel && e.nav)
-  const hidden = settings.data?.hidden_tabs ?? readHiddenTabs()
+  const hidden = hiddenTabs ?? readHiddenTabs()
   const { visible } = orderedNav(readTabOrder(), hidden)
-  const current = panelForPath(location.pathname)
   const isDesktop = useIsDesktop()
   // Clicking the tab that is already active toggles the sidebar instead of re-navigating (desktop only; phones use the drawer).
   const onActiveClick = (e: React.MouseEvent) => { if (isDesktop) { e.preventDefault(); toggleSidebarCollapsed() } }
@@ -54,7 +54,7 @@ export function Rail() {
         )
       })}
       {extNav.map((e) => {
-        const active = location.pathname.startsWith(`/ext/${e.id}`)
+        const active = extensionPath?.startsWith(`/ext/${e.id}`)
         const label = e.nav?.label ?? e.name
         return (
           <Link key={e.id} to="/ext/$extensionId" params={{ extensionId: e.id }} className={cn(RAIL_BTN, active && 'active')} data-tooltip={label} aria-label={label} aria-current={active ? 'page' : undefined} data-extension={e.id}>

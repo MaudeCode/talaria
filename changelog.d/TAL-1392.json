@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Reduce unnecessary screen updates when saving settings or switching chats.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

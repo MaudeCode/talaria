@@ -5,7 +5,7 @@ import { useSettingField } from './useSettingField'
 import { LoadingState, ErrorState } from '../../ui/States'
 
 function Toggle({ label, hint, settingKey, fallback = false }: { label: string; hint?: string; settingKey: string; fallback?: boolean }) {
-  const { bool, set } = useSettingField()
+  const { bool, set } = useSettingField([settingKey])
   const id = `settings-${settingKey}`
   return (
     <FieldRow label={label} htmlFor={id} {...(hint ? { hint } : {})} inline>
@@ -15,7 +15,7 @@ function Toggle({ label, hint, settingKey, fallback = false }: { label: string; 
 }
 
 export function ConversationSection() {
-  const { settings, str, set, setAsync, num } = useSettingField()
+  const { settings, str, set, setAsync, num } = useSettingField(['chat_activity_display_mode', 'default_message_mode', 'structured_code_default_view', 'structured_code_auto_tree_lines', 'max_tokens', 'auto_title_refresh_every'])
   if (settings.isPending) return <LoadingState />
   if (settings.isError) return <ErrorState error={settings.error} onRetry={() => { void settings.refetch() }} />
   return (
