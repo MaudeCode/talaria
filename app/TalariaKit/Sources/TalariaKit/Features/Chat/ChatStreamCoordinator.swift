@@ -107,6 +107,7 @@ public final class ChatStreamCoordinator {
     }
     var sessionActivityGeneration: Int { responseGeneration }
     private var sessionActivityPhase: String?
+    private var sessionActivityStreamID: String?
     private let timing: ChatStreamCoordinatorTiming
     private let now: () -> Date
     // Nil reads as always online.
@@ -195,6 +196,7 @@ public final class ChatStreamCoordinator {
         self.client = client
         self.streamClient = streamClient
         self.configuredLiveActivityManager = liveActivityManager
+        self.sessionActivityStreamID = liveActivityManager.currentStreamID
         self.showsLiveActivityResponseExcerpts = showsLiveActivityResponseExcerpts
         self.timing = timing
         self.now = now
@@ -1004,13 +1006,15 @@ public final class ChatStreamCoordinator {
     public func applySessionActivityPhase(_ phase: String?) {
         sessionActivityPhase = phase
         if let phase, let liveActivityManager {
-            LiveActivityReconciler.applySessionPhase(phase, manager: liveActivityManager)
+            LiveActivityReconciler.applySessionPhase(phase, sessionID: delegate?.streamCoordinatorSessionID, streamID: sessionActivityStreamID, manager: liveActivityManager)
         }
     }
 
     private func finishLiveActivity(status: AgentRunActivityStatus, activity: String, errorSummary: String?) {
-        guard let liveActivityManager else { return }
-        if !LiveActivityReconciler.applySessionPhase(sessionActivityPhase, manager: liveActivityManager) {
+        guard let liveActivityManager,
+              liveActivityManager.currentSessionID == delegate?.streamCoordinatorSessionID,
+              liveActivityManager.currentStreamID == sessionActivityStreamID else { return }
+        if !LiveActivityReconciler.applySessionPhase(sessionActivityPhase, sessionID: delegate?.streamCoordinatorSessionID, streamID: sessionActivityStreamID, manager: liveActivityManager) {
             liveActivityManager.end(status: status, activity: activity, errorSummary: errorSummary)
         }
     }
@@ -1139,6 +1143,7 @@ public final class ChatStreamCoordinator {
             )
         }
 
+        sessionActivityStreamID = streamID
         liveActivityManager?.start(
             sessionID: sessionID,
             sessionTitle: sessionTitle,

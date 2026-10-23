@@ -5,6 +5,19 @@ import XCTest
 // The members of LiveActivityTests that need the App host; the rest run in TalariaKitTests (TAL-399).
 @MainActor
 final class LiveActivityTests: XCTestCase {
+    func testSessionPhaseCannotChangeAnotherSessionOrANewerStream() throws {
+        let manager = AgentLiveActivityManager(updateActivity: { _ in })
+        manager.start(sessionID: "session-a", sessionTitle: "Running", streamID: "new-run", publisherURL: URL(string: "https://fixture.example")!, startedAt: Date())
+        let before = try XCTUnwrap(manager.currentState)
+        for phase in ["completed", "running", "stale", "waiting_for_approval"] {
+            LiveActivityReconciler.applySessionPhase(phase, sessionID: "session-b", streamID: "new-run", manager: manager)
+            LiveActivityReconciler.applySessionPhase(phase, sessionID: "session-a", streamID: "old-run", manager: manager)
+            XCTAssertEqual(manager.currentState, before)
+        }
+        LiveActivityReconciler.applySessionPhase("completed", sessionID: "session-a", streamID: "new-run", manager: manager)
+        XCTAssertEqual(manager.currentState?.isFinal, true)
+    }
+
     func testFullExcerptSkipsNormalizationAndActivityUpdatesForTwoThousandTokens() async throws {
         try await assertFullExcerptSkipsFurtherTokens(
             initialToken: String(repeating: "a", count: 141), tailToken: " more",

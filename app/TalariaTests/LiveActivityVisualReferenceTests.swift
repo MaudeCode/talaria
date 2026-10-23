@@ -17,12 +17,12 @@ final class LiveActivityVisualReferenceTests: XCTestCase {
         try attachStateScreenshot(previous, named: "TAL-1520-before-parent-done")
         let manager = AgentLiveActivityManager(updateActivity: { _ in })
         manager.start(sessionID: "background-visual", sessionTitle: "Review project changes", streamID: "parent", publisherURL: URL(string: "https://fixture.example")!, startedAt: AgentRunScenario.startedAt)
-        LiveActivityReconciler.applySessionPhase("running", manager: manager)
+        LiveActivityReconciler.applySessionPhase("running", sessionID: "background-visual", streamID: "parent", manager: manager)
         let continuing = try XCTUnwrap(manager.currentState)
         XCTAssertFalse(continuing.isFinal)
         XCTAssertEqual(continuing.currentActivity, "Working")
         try attachStateScreenshot(continuing, named: "TAL-1520-after-background-working")
-        LiveActivityReconciler.applySessionPhase("completed", manager: manager)
+        LiveActivityReconciler.applySessionPhase("completed", sessionID: "background-visual", streamID: "parent", manager: manager)
     }
 
     func testInputWaitLiveActivityScreenshots() throws {

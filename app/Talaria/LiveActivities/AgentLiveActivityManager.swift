@@ -12,8 +12,8 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
     private let setInterimAssistant: (String, AgentRunActivityAttributes.ContentState) -> AgentRunActivityAttributes.ContentState
     private var activity: Activity<AgentRunActivityAttributes>?
     private(set) var currentState: AgentRunActivityAttributes.ContentState?
-    private var currentSessionID: String?
-    private var currentStreamID: String?
+    private(set) var currentSessionID: String?
+    private(set) var currentStreamID: String?
     private var currentPublisherURL: URL?
     // StreamID of the run whose SSE is live in THIS process right now: set when the
     // coordinator (re)connects (`start`), cleared the moment it suspends/hits trouble

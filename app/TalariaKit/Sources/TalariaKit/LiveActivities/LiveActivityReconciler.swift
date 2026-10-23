@@ -62,8 +62,9 @@ public enum LiveActivityReconciler {
 
     /// Render the server's session decision, independently of the foreground turn's outcome.
     @discardableResult
-    public static func applySessionPhase(_ phase: String?, manager: any AgentLiveActivityManaging) -> Bool {
+    public static func applySessionPhase(_ phase: String?, sessionID: String?, streamID: String?, manager: any AgentLiveActivityManaging) -> Bool {
         guard let phase else { return false }
+        guard let sessionID, manager.currentSessionID == sessionID, manager.currentStreamID == streamID else { return true }
         switch phase {
         case "starting", "running": manager.update(.promptSettled)
         case "waiting_for_approval": manager.update(.waitingForApproval)

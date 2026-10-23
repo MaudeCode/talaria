@@ -2426,6 +2426,8 @@ final class LiveActivityTests: XCTestCase {
 
 @MainActor
 private final class SpyAgentLiveActivityManager: AgentLiveActivityManaging {
+    var currentSessionID: String? { starts.last?.sessionID }
+    var currentStreamID: String? { starts.last?.streamID }
     struct Start: Equatable {
         let sessionID: String
         let sessionTitle: String
