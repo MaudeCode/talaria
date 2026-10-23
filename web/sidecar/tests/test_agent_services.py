@@ -994,6 +994,8 @@ def run_git(command,args,**kw):
     if runtime_importable:
         (root / 'run_agent.py').write_text('class AIAgent: pass\n')
         (modules / 'auth.py').write_text('')
+        # This workerless double must not borrow optional modules from the installed Agent's editable finder.
+        (modules / 'guest_handoff.py').write_text('raise ModuleNotFoundError(name=__name__)\n')
     if local_edit_file: (root / 'local.txt').write_text('baseline local content\n')
     git(root, 'add', '.')
     git(root, 'commit', '-qm', 'supervised native baseline')
