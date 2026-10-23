@@ -53,6 +53,7 @@ export const automationContract = {
     resume: oc.route({ method: 'POST', path: '/api/crons/resume', tags }).input(JobId).output(CronMutationSchema),
   },
   kanban: {
+    inspection: oc.route({ method: 'GET', path: '/api/kanban/inspection', tags }).input(z.object({ board: z.string().optional(), search: z.string().optional(), assignee: z.string().optional(), tenant: z.string().optional(), only_mine: z.string().optional(), include_archived: z.string().optional(), running_only: z.string().optional() })).output(KanbanInspectionSchema),
     boards: oc.route({ method: 'GET', path: '/api/kanban/boards', tags }).input(z.object({ include_archived: z.string().optional() })).output(KanbanBoardsViewSchema),
     board: oc.route({ method: 'GET', path: '/api/kanban/board', tags }).input(z.object({ board: z.string().optional(), tenant: z.string().optional(), assignee: z.string().optional(), include_archived: z.string().optional(), only_mine: z.string().optional(), since: z.string().optional(),
       /** Case-insensitive text match on id, title, body, assignee and tenant (TAL-567). */
