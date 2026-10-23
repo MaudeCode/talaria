@@ -64,6 +64,36 @@ def test_catalog_accounts_and_remove_round_trip(connected, hermes_home, portal):
     assert condition(call(connected, "connectors.remove", hermes_home, connection_id="conn-notion")) == "connection_not_found"
 
 
+def test_page_reads_leave_native_identity_state_unchanged(connected, hermes_home, portal):
+    auth = hermes_home / "auth.json"
+    config = hermes_home / "config.yaml"
+    original = auth.read_bytes()
+    original_config = config.read_bytes() if config.exists() else None
+    for identity in ("absent", "opted_out", "expired_guest", "signed_in"):
+        auth.write_bytes(original)
+        if identity == "absent":
+            auth.unlink()
+        elif identity in {"opted_out", "expired_guest"}:
+            document = json.loads(original)
+            document["providers"]["nous"].update(auth_method="anonymous", anon_token="synthetic-retired-guest", expires_at="2000-01-01T00:00:00Z")
+            auth.write_text(json.dumps(document))
+        config.write_text("nous:\n  guest: false\n" if identity == "opted_out" else "{}\n")
+        before = auth.read_bytes() if auth.exists() else None
+        for _ in range(3):
+            for method in ("connectors.catalog", "connectors.accounts", "connectors.policy.get"):
+                answer = call(connected, method, hermes_home)
+                if "error" in answer:
+                    assert identity != "signed_in", answer
+                    assert condition(answer) in {"connectors_sign_in", "connectors_unavailable"}, answer
+                elif method == "connectors.accounts":
+                    assert bool(answer["result"]["accounts"]) == (identity in {"expired_guest", "signed_in"})
+        assert (auth.read_bytes() if auth.exists() else None) == before
+    if original_config is None:
+        config.unlink()
+    else:
+        config.write_bytes(original_config)
+
+
 def test_tools_list_and_unknown_connector(connected, hermes_home):
     listing = result(connected, "connectors.tools", hermes_home, connector="gmail")
     assert [tool["slug"] for tool in listing["tools"]] == ["gmail_read", "gmail_send"]

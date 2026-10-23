@@ -47,7 +47,8 @@
       }
     ],
     "policy_revision": "rev-7",
-    "rules_error": null
+    "rules_error": null,
+    "sign_in_required": false
   },
   "tools": {
     "connector": "notion",
@@ -145,5 +146,12 @@
         ]
       }
     ]
+  },
+  "sign_in_page": {
+    "available": true,
+    "sign_in_required": true,
+    "connectors": [],
+    "policy_revision": null,
+    "rules_error": "Sign in to Nous Portal to use connectors."
   }
 }

@@ -31,7 +31,7 @@ describe('TAL-818: the Connectors page and connect card', () => {
   it('hides the page for a profile without connectors (server flag)', async () => {
     sidecar.respond('connectors.available', () => ({ available: false }))
     expect(await json(await s.get('/api/connectors/available'))).toEqual({ available: false })
-    expect(await json(await s.get('/api/connectors'))).toEqual({ available: false, connectors: [], policy_revision: null, rules_error: null })
+    expect(await json(await s.get('/api/connectors'))).toEqual({ available: false, sign_in_required: false, connectors: [], policy_revision: null, rules_error: null })
     expect(sidecar.calls.some((c) => c.method === 'connectors.catalog')).toBe(false)
     // A sidecar that cannot answer fails closed.
     sidecar.respond('connectors.available', () => { throw new SidecarError('down', { condition: 'sidecar_unavailable' }) })
@@ -96,6 +96,42 @@ describe('TAL-818: the Connectors page and connect card', () => {
     const toolsUnread = await json(await s.get('/api/connectors/notion/tools'))
     expect((toolsUnread.tools as Json[]).every((t) => t.enabled === false && t.editable === false)).toBe(true)
     for (const method of ['connectors.accounts', 'connectors.policy.get', 'connectors.tools'] as const) sidecar.respond(method, undefined)
+  })
+
+  it.each([false, true])('keeps an unsigned page readable, public catalog %s, then adopts external sign-in', async (publicCatalog) => {
+    sidecar.respond('connectors.catalog', () => {
+      if (!publicCatalog) throw new SidecarError('Sign in to Nous Portal to use connectors.', { condition: 'connectors_sign_in' })
+      return { connectors: [{ slug: 'gmail', name: 'Gmail', description: '', category: '', logo_url: null }] }
+    })
+    sidecar.respond('connectors.accounts', () => ({ accounts: [] }))
+    sidecar.respond('connectors.policy.get', () => { throw new SidecarError('Sign in to Nous Portal to use connectors.', { condition: 'connectors_sign_in' }) })
+    try {
+      for (let read = 0; read < 3; read++) {
+        const response = await s.get('/api/connectors')
+        expect(response.status).toBe(200)
+        expect(await json(response)).toMatchObject({ available: true, sign_in_required: true, policy_revision: null,
+          connectors: publicCatalog ? [expect.objectContaining({ connected: false, enabled: false, rules_editable: false })] : [] })
+      }
+      for (const method of ['connectors.catalog', 'connectors.accounts', 'connectors.policy.get'] as const) sidecar.respond(method, undefined)
+      const refreshed = await json(await s.get('/api/connectors'))
+      expect(refreshed).toMatchObject({ sign_in_required: false, policy_revision: 'rev-1' })
+      expect((refreshed.connectors as Json[]).some((row) => row.connected)).toBe(true)
+    } finally {
+      for (const method of ['connectors.catalog', 'connectors.accounts', 'connectors.policy.get'] as const) sidecar.respond(method, undefined)
+    }
+  })
+
+  it('shows sign-in for expired account credentials and preserves portal failures as errors', async () => {
+    sidecar.respond('connectors.accounts', () => { throw new SidecarError('Sign in again.', { condition: 'connectors_sign_in' }) })
+    try {
+      const response = await s.get('/api/connectors')
+      expect(response.status).toBe(200)
+      expect(await json(response)).toMatchObject({ sign_in_required: true })
+      sidecar.respond('connectors.accounts', () => { throw new SidecarError('Connector request failed.', { condition: 'connectors_failed' }) })
+      expect((await s.get('/api/connectors')).status).toBe(502)
+    } finally {
+      sidecar.respond('connectors.accounts', undefined)
+    }
   })
 
   it('writes one member rule from the page revision; a stale revision is a 409 conflict', async () => {

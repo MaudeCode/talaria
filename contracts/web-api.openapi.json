@@ -69136,6 +69136,10 @@
                     "available": {
                       "type": "boolean"
                     },
+                    "sign_in_required": {
+                      "type": "boolean",
+                      "default": false
+                    },
                     "connectors": {
                       "type": "array",
                       "items": {

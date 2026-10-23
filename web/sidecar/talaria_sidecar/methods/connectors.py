@@ -38,11 +38,12 @@ def available() -> bool:
     return bool(connectors_available())
 
 
-def _open() -> None:
-    """The gate every page action passes: connectors available, and on an Agent with guest identities, one created
-    for a user who has none (the page asking for apps is the user asking, as on the Agent's desktop)."""
+def _open(*, creates_guest: bool = False) -> None:
+    """Only explicit Connect may provision; every other page action is noncreating."""
     if not available():
         raise RpcError("Connectors are not available.", condition="connectors_unavailable")
+    if not creates_guest:
+        return
     try:
         from tools.connectors import ensure_guest_identity
     except Exception:  # noqa: BLE001 - an Agent before guest identities
@@ -53,8 +54,26 @@ def _open() -> None:
 
 def _portal():
     from tools.connectors.portal.client import PortalConnectorClient
+    from tools.managed_tool_gateway import peek_nous_access_token
 
-    return PortalConnectorClient()
+    # The normal token reader may refresh and replace a dead guest. Page reads must never own auth writes.
+    def headers(_url):
+        token = peek_nous_access_token()
+        return {"Authorization": f"Bearer {token}"} if token else {}
+
+    return PortalConnectorClient(header_provider=headers)
+
+
+def _authenticated(client) -> bool:
+    from tools.connectors.gateway.errors import GatewayAuthError
+
+    try:
+        client.require_authentication()
+    except GatewayAuthError as exc:
+        if getattr(exc, "code", None) == "NO_TOKEN":
+            return False
+        raise
+    return True
 
 
 def _failure(exc: Exception) -> RpcError:
@@ -76,7 +95,7 @@ def _failure(exc: Exception) -> RpcError:
         return RpcError("Connector rule change is invalid.", condition="policy_invalid")
     if code == "connection_not_found":
         return RpcError("Connector account not found.", condition="connection_not_found")
-    log.warning("connector request failed: %s", exc)
+    log.warning("connector request failed: %s", type(exc).__name__)
     return RpcError("Connector request failed.", condition="connectors_failed")
 
 
@@ -93,16 +112,25 @@ def _slug(params: dict, key: str = "connector") -> str:
 
 
 def catalog() -> dict:
-    rows = _portal().catalog().connectors
+    client = _portal()
+    if _authenticated(client):
+        rows = client.catalog().connectors
+    elif callable(public_catalog := getattr(client, "public_catalog", None)):
+        rows = public_catalog().connectors
+    else:
+        raise RpcError("Sign in to Nous Portal to use connectors.", condition="connectors_sign_in")
     return {"connectors": [row.model_dump(mode="json") for row in rows]}
 
 
 def accounts() -> dict:
+    client = _portal()
+    if not _authenticated(client):
+        return {"accounts": []}
     return {"accounts": [{
         "connection_id": row["connectionId"], "connector": row["connector"], "status": row["status"],
         "status_reason": row.get("statusReason"), "label": row["label"], "alias": row.get("alias"),
         "active": bool(row["active"]), "disabled": bool(row.get("disabled")), "created_at": row["createdAt"],
-    } for row in _portal().list_accounts()]}
+    } for row in client.list_accounts()]}
 
 
 def remove(connection_id: str) -> dict:
@@ -256,9 +284,9 @@ def remember_chat_operation(home: Path, payload: dict) -> dict | None:
 
 
 def register(registry_) -> None:
-    def page(params: dict, read):
+    def page(params: dict, read, *, creates_guest: bool = False):
         with scoped_home(profile_home_param(params)):
-            _open()
+            _open(creates_guest=creates_guest)
             try:
                 return read()
             except RpcError:
@@ -314,7 +342,7 @@ def register(registry_) -> None:
     def connect_(ctx: CallContext, params: dict) -> dict:
         slug = _slug(params)
         home = profile_home_param(params)
-        return page(params, lambda: connect(home, slug))
+        return page(params, lambda: connect(home, slug), creates_guest=True)
 
     def gated() -> None:
         # Reads and moves on an operation pass the availability gate too, without creating an identity.

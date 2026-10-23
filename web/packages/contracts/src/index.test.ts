@@ -2,7 +2,7 @@ import { settingsContract, ReasoningUnsupportedSchema } from './routes/settings.
 import { SessionStreamEventSchema } from './sse.js'
 import { RpcRequestSchema } from './sidecar/rpc.js'
 import { ModelConfirmationRequiredSchema, sessionsContract } from './routes/sessions.js'
-import { ChatStartResponseSchema, MessageSchema, SessionSchema, ToolCallSchema } from './views.js'
+import { ConnectorsPageSchema, ChatStartResponseSchema, MessageSchema, SessionSchema, ToolCallSchema } from './views.js'
 import { ExecutionModesSchema, OwnerAttachmentSchema, OwnerActionRequestSchema, GatewaySessionResultSchema } from './gateway-session.js'
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
@@ -13,6 +13,12 @@ import { CronBlueprintsSchema, CronBlueprintFillSchema, AgentHealthSchema, Error
 const shared = (path: string): unknown => JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../contracts', path), 'utf8'))
 
 describe('contracts package', () => {
+  it('preserves the Web connector sign-in state and accepts older page responses', () => {
+    const fixture = shared('fixtures/connectors.json') as { page: unknown; sign_in_page: unknown }
+    expect(ConnectorsPageSchema.parse(fixture.page)).toEqual(fixture.page)
+    expect(ConnectorsPageSchema.parse(fixture.sign_in_page)).toEqual(fixture.sign_in_page)
+    expect(ConnectorsPageSchema.parse({ available: false, connectors: [], policy_revision: null, rules_error: null }).sign_in_required).toBe(false)
+  })
   it('preserves the scheduled-chat refusal and nonretryable recovery instruction', () => {
     const fixture = shared('fixtures/native-cron-refusal.json') as { event: unknown }
     expect(ChatEventSchema.parse(fixture.event)).toEqual(fixture.event)

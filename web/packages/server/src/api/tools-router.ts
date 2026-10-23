@@ -133,9 +133,14 @@ async function connectorNames(ctx: RequestContext): Promise<Record<string, strin
 /** An operation as the contract shows it, with the apps' catalog names. */
 const operationView = async (ctx: RequestContext, snapshot: SidecarResult<'connectors.operation'>) => connectorOperation(snapshot, await connectorNames(ctx))
 
-/** The rules, or why they cannot be read (a portal refusal or failure): the page then fails closed and says why. */
-const connectorPolicy = (ctx: RequestContext): Promise<{ policy: SidecarResult<'connectors.policy.get'> | null; error: string | null }> =>
-  connectorCall(ctx, 'connectors.policy.get', {}).then((policy) => ({ policy, error: null }), (error: unknown) => { if (error instanceof HttpError) return { policy: null, error: error.message }; throw error })
+/** Read failures never create an identity. Auth refusals become a page sign-in state; unreadable rules fail closed. */
+const connectorRead = <M extends 'connectors.catalog' | 'connectors.accounts' | 'connectors.policy.get'>(ctx: RequestContext, method: M): Promise<{ value: SidecarResult<M> | null; error: string | null; signInRequired: boolean }> =>
+  connectorCall(ctx, method, {} as Omit<SidecarParams<M>, 'profile_home'>).then((value) => ({ value, error: null, signInRequired: false }), (error: unknown) => {
+    if (error instanceof HttpError && (method === 'connectors.policy.get' || error.data?.code === 'connectors_sign_in')) {
+      return { value: null, error: error.message, signInRequired: error.data?.code === 'connectors_sign_in' }
+    }
+    throw error
+  })
 
 const health = (ctx: RequestContext): Promise<Dict> => agentHealth({ env: ctx.deps.config.env, hermesHome: ctx.deps.config.hermesHome, profileHome: () => home(ctx), fetch: () => ctx.deps.fetch, now: ctx.deps.nowSeconds })
 
@@ -578,14 +583,17 @@ export const toolsRouter = os.router({
     // Fails closed: no sidecar, or one that cannot answer, hides the page.
     available: os.connectors.available.handler(({ context: { ctx } }) => run(async () => ({ available: ctx.deps.sidecar() ? await connectorCall(ctx, 'connectors.available', {}).then((r) => r.available, () => false) : false }))),
     page: os.connectors.page.handler(({ context: { ctx } }) => run(async () => {
-      if (!ctx.deps.sidecar() || !(await connectorCall(ctx, 'connectors.available', {})).available) return { available: false, connectors: [], policy_revision: null, rules_error: null }
-      const [catalog, accounts, policy] = await Promise.all([connectorCall(ctx, 'connectors.catalog', {}), connectorCall(ctx, 'connectors.accounts', {}), connectorPolicy(ctx)])
-      rememberCatalogNames(home(ctx), catalog.connectors)
-      return connectorsPage(catalog.connectors, accounts.accounts, policy.policy, policy.error)
+      if (!ctx.deps.sidecar() || !(await connectorCall(ctx, 'connectors.available', {})).available) return { available: false, connectors: [], policy_revision: null, rules_error: null, sign_in_required: false }
+      const [catalog, accounts, policy] = await Promise.all([
+        connectorRead(ctx, 'connectors.catalog'), connectorRead(ctx, 'connectors.accounts'), connectorRead(ctx, 'connectors.policy.get'),
+      ])
+      rememberCatalogNames(home(ctx), catalog.value?.connectors ?? [])
+      return connectorsPage(catalog.value?.connectors ?? [], accounts.value?.accounts ?? [], policy.value, policy.error,
+        catalog.signInRequired || accounts.signInRequired || policy.signInRequired)
     })),
     tools: os.connectors.tools.handler(({ input, context: { ctx } }) => run(async () => {
-      const [listing, policy] = await Promise.all([connectorCall(ctx, 'connectors.tools', { connector: input.connector }), connectorPolicy(ctx)])
-      return connectorTools(listing, policy.policy)
+      const [listing, policy] = await Promise.all([connectorCall(ctx, 'connectors.tools', { connector: input.connector }), connectorRead(ctx, 'connectors.policy.get')])
+      return connectorTools(listing, policy.value)
     })),
     setPolicy: os.connectors.setPolicy.handler(({ input, context: { ctx } }) => run(async () => {
       const change = input.tool === undefined ? (typeof input.enabled === 'boolean' ? { enabled: input.enabled } : null)

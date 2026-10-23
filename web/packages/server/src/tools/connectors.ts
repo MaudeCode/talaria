@@ -60,7 +60,7 @@ const tagBlocks = (rules: Rules, hints: string[]): boolean =>
  * `available: false` hides the page. Rules that cannot be read (`policy` null) fail closed: every app reads off and
  * read-only, and `rules_error` says why, instead of showing apps the rules may keep off as on.
  */
-export function connectorsPage(catalog: Catalog, accounts: Accounts, policy: Policy | null, rulesError: string | null = null): ConnectorsPage {
+export function connectorsPage(catalog: Catalog, accounts: Accounts, policy: Policy | null, rulesError: string | null = null, signInRequired = false): ConnectorsPage {
   const { member, others } = layers(policy)
   const slugs = [...new Set([...catalog.map((row) => row.slug), ...accounts.map((row) => row.connector)])]
   const connectors = slugs.map((slug) => {
@@ -80,7 +80,7 @@ export function connectorsPage(catalog: Catalog, accounts: Accounts, policy: Pol
       tools_off: member?.tools[slug]?.length ?? 0,
     }
   })
-  return { available: true, connectors, policy_revision: member?.revision ?? null, rules_error: policy === null ? rulesError ?? 'Connector rules are unavailable.' : null }
+  return { available: true, sign_in_required: signInRequired, connectors, policy_revision: member?.revision ?? null, rules_error: policy === null ? rulesError ?? 'Connector rules are unavailable.' : null }
 }
 
 /**

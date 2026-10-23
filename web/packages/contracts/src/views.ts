@@ -1057,9 +1057,10 @@ export const ConnectorViewSchema = z.object({
 /**
  * TAL-818: the Connectors page. `available` is the Agent's connectors gate; false hides the page. `policy_revision` is the
  * member rules' revision every rule change sends back; null when the rules are read-only (no member layer, or unreadable),
- * so no switch changes them. `rules_error`: why the rules could not be read; every app then reads off (fails closed).
+ * so no switch changes them. `sign_in_required` offers Nous sign-in without creating a guest on reads.
+ * `rules_error`: why the rules could not be read; every app then reads off (fails closed).
  */
-export const ConnectorsPageSchema = z.object({ available: z.boolean(), connectors: z.array(ConnectorViewSchema), policy_revision: z.string().nullable(), rules_error: z.string().nullable() })
+export const ConnectorsPageSchema = z.object({ available: z.boolean(), sign_in_required: z.boolean().default(false), connectors: z.array(ConnectorViewSchema), policy_revision: z.string().nullable(), rules_error: z.string().nullable() })
 /**
  * TAL-818: one app's tools: `enabled`: Hermes may use it (the member rules leave it on and nothing locks it); `locked`: an
  * organization or role rule (by name or tag) keeps it off. `editable`: its switch may change the member rule (readable rules, the app on in them, and no lock).

@@ -819,6 +819,13 @@
         ""
       ]
     },
+    "tests/test_connectors.py::test_page_reads_leave_native_identity_state_unchanged": {
+      "layer": "compatibility",
+      "reason": "Real supported-Agent availability, cached-token header injection and auth-store/profile reads must preserve absent, opted-out and expired guest identity bytes without provisioning or refresh.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_connectors.py::test_catalog_accounts_and_remove_round_trip": {
       "layer": "compatibility",
       "reason": "Supported-Agent API compatibility: catalog accounts and remove round trip. Uses the real installed release, not a fabricated API response.",
