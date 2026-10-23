@@ -54,12 +54,12 @@ export function createIncrementalHighlighter(limit = CACHE_LIMIT) {
       cache.set(key, hit)
       return hit.result
     }
-    // A CR may still become CRLF in the next chunk, so such code is always tokenized whole.
-    const stream = code.includes('\r') ? { scope, prefix: '', lines: [], state: undefined, style: {} } : resume(code, scope)
+    const stream = resume(code, scope)
+    // A line completes at `\n`; a lone trailing `\r` may still become CRLF, so it stays in the tail.
     const end = code.lastIndexOf('\n') + 1
     if (end > stream.prefix.length) {
-      // Omit the final newline, or Shiki tokenizes an extra empty line and advances the grammar state past it.
-      const { tokens, grammarState, ...style } = tokenize(code.slice(stream.prefix.length, end - 1), stream.state)
+      // Omit the final line ending, or Shiki tokenizes an extra empty line and advances the grammar state past it.
+      const { tokens, grammarState, ...style } = tokenize(code.slice(stream.prefix.length, code[end - 2] === '\r' ? end - 2 : end - 1), stream.state)
       stream.lines = [...stream.lines, ...shift(tokens, stream.prefix.length)]
       stream.prefix = code.slice(0, end)
       stream.state = grammarState

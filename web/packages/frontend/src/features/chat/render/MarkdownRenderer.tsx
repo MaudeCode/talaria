@@ -8,7 +8,7 @@ import { memo, use, useEffect, useMemo, useRef, useState } from 'react'
 import { Streamdown, type LinkSafetyConfig, type LinkSafetyModalProps } from 'streamdown'
 import { cjk } from '@streamdown/cjk'
 import { appUrl } from '../../../lib/appRoot'
-import { CodeBlock } from './CodeBlock'
+import { CodeBlock, LineEndedContext } from './CodeBlock'
 import { code, HIGHLIGHTED_LANGUAGES } from './codeHighlight'
 import { JsonCodeBlock } from './JsonCodeBlock'
 import { LinkCheckContext, type LinkCheck } from './LinkCheckContext'
@@ -88,19 +88,21 @@ export default memo(function MarkdownRenderer({ text, streaming = false, classNa
     renderModal: (props) => <LinkSafetyDialog {...props} host={hosts.current.get(props.url)} />,
   }), [check])
   return (
-    <Streamdown
-      mode={streaming ? 'streaming' : 'static'}
-      parseIncompleteMarkdown={streaming}
-      isAnimating={streaming}
-      className={className ?? 'hermes-prose'}
-      plugins={plugins}
-      shikiTheme={SHIKI_THEMES}
-      dir={dir}
-      controls={CONTROLS}
-      linkSafety={linkSafety}
-      urlTransform={urlTransform}
-    >
-      {text}
-    </Streamdown>
+    <LineEndedContext value={streaming && text.endsWith('\n')}>
+      <Streamdown
+        mode={streaming ? 'streaming' : 'static'}
+        parseIncompleteMarkdown={streaming}
+        isAnimating={streaming}
+        className={className ?? 'hermes-prose'}
+        plugins={plugins}
+        shikiTheme={SHIKI_THEMES}
+        dir={dir}
+        controls={CONTROLS}
+        linkSafety={linkSafety}
+        urlTransform={urlTransform}
+      >
+        {text}
+      </Streamdown>
+    </LineEndedContext>
   )
 })

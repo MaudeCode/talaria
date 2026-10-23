@@ -65,6 +65,22 @@ describe('incremental code highlighting (TAL-1402)', () => {
     expect(done.tokens[5]).not.toEqual(shiki.codeToTokens('${a} line', options).tokens[0])
   })
 
+  it('resumes across CRLF line endings, including a chunk that ends between CR and LF', async () => {
+    const shiki = await createHighlighter({ themes: ['github-light', 'github-dark'], langs: ['typescript'], engine: createJavaScriptRegexEngine({ forgiving: true }) })
+    const options = { lang: 'typescript', themes: { light: 'github-light', dark: 'github-dark' } } as const
+    const seen: string[] = []
+    const tokenize: Tokenize = (part, grammarState) => { seen.push(...part.split(/\r?\n/)); return shiki.codeToTokens(part, grammarState ? { ...options, grammarState } : options) }
+    const lines = ['const a = 1', '/* a comment', 'that spans lines */', 'const b = 2']
+    const code = lines.join('\r\n')
+    const highlighter = createIncrementalHighlighter()
+    for (const end of [12, 13, 27, 40, 47, code.length]) highlighter.highlight(code.slice(0, end), 'ts', true, tokenize)
+    const done = highlighter.highlight(code, 'ts', false, tokenize)
+
+    expect(code[11]).toBe('\r')
+    expect(seen).toEqual(lines)
+    expect(done.tokens).toEqual(shiki.codeToTokens(code, options).tokens)
+  })
+
   it('never holds more than its bound of complete blocks', () => {
     const { tokenize } = recordingTokenizer()
     const highlighter = createIncrementalHighlighter(500)

@@ -40,3 +40,14 @@ it('highlights each line of a streaming code block once (TAL-1402)', async () =>
 
   expect(tokenized.filter(Boolean)).toEqual(lines)
 }, 30_000)
+
+const colored = () => [...document.querySelectorAll('[data-streamdown="code-block-body"] code > span')].map((line) => line.querySelector('[style*="--sdm-c"]') !== null)
+
+it('highlights a streamed line as soon as its line break arrives', async () => {
+  Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: vi.fn() })
+  const view = render(<Markdown text={'```ts\nconst a = 1\nconst b'} streaming />)
+  await waitFor(() => { expect(colored()).toEqual([true, false]) })
+  // Streamdown hands the fence's code over with the same trailing newline either way; only the stream knows.
+  view.rerender(<Markdown text={'```ts\nconst a = 1\nconst b = 2\n'} streaming />)
+  await waitFor(() => { expect(colored()).toEqual([true, true]) })
+})
