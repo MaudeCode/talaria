@@ -18,8 +18,11 @@ export interface CronDeps {
   log: (line: string) => void
   /** Python `_publish_session_list_changed("cron_complete", profile=...)` once a manual run finishes. */
   publishSessionsChanged?: (reason: string, profile: string | null) => void
-  /** TAL-301: the catalog entry id a job's stored `(model, provider)` selects in a profile home's picker catalog. */
-  modelOptionFor?: (home: string, model: string | null, provider: string | null) => Promise<string | null>
+  /**
+   * TAL-301: prepares the lookup of the catalog entry id a job's stored `(model, provider)` selects in a profile home's
+   * picker catalog. TAL-1381: prepared once per projected batch, so a list revalidates the catalog once, not per row.
+   */
+  modelOptions?: (home: string) => Promise<(model: string | null, provider: string | null) => string | null>
   /** Python `_RUNNING_CRON_JOBS`: job id → start time, read by the session list's `cron_running` stamp. */
   runningJobs?: Map<string, number>
   updateInProgress?: () => boolean
@@ -315,11 +318,19 @@ export class CronService {
     return rows
   }
 
-  /** `pickerHome` is the profile whose `/api/models` catalog the requesting client shows. */
+  /** `pickerHome` is the profile whose `/api/models` catalog the requesting client shows; an empty batch prepares nothing. */
+  private async views(rows: StoredJob[], pickerHome: string): Promise<Dict[]> {
+    if (!rows.length) return []
+    const optionFor = await this.deps.modelOptions?.(pickerHome)
+    return rows.map((row) => {
+      const payload: Dict = { ...jobForApi(row.job, this.deps.runningJobs?.has(str(row.job.id)) ?? false), profile: str(row.job.profile).trim() || row.profile, owner_profile: row.profile, read_only: !row.managed }
+      payload.model_option_id = optionFor?.(str(payload.model) || null, str(payload.provider) || null) ?? null
+      return payload
+    })
+  }
+
   private async view(row: StoredJob, pickerHome: string): Promise<Dict> {
-    const payload: Dict = { ...jobForApi(row.job, this.deps.runningJobs?.has(str(row.job.id)) ?? false), profile: str(row.job.profile).trim() || row.profile, owner_profile: row.profile, read_only: !row.managed }
-    payload.model_option_id = (await this.deps.modelOptionFor?.(pickerHome, str(payload.model) || null, str(payload.provider) || null)) ?? null
-    return payload
+    return (await this.views([row], pickerHome))[0]!
   }
 
   private requireExecutionStore(row: StoredJob): void {
@@ -378,20 +389,18 @@ export class CronService {
 
   /** Python `/api/crons`: the active profile's rows plus foreign rows (hidden unless `all_profiles`). */
   async list(active: string, allProfiles: boolean): Promise<Dict> {
-    const activeJobs: Dict[] = []
-    const otherJobs: Dict[] = []
     const pickerHome = this.deps.profileHome(active)
     const unwritable: CronStoreHealth[] = []
     const all = allProfiles && !this.deps.isolatedProfileMode()
+    let rows: StoredJob[]
+    try { rows = await this.storedJobs(active, unwritable) } catch (error) { if (error instanceof SidecarError && error.condition === 'cron_unavailable') return { jobs: [], cron_unavailable: true, unwritable_stores: [] }; throw error }
+    // TAL-1381: hidden foreign rows are only counted, so they cost no projection.
+    const managed = rows.filter((row) => row.managed)
+    const others = rows.filter((row) => !row.managed)
+    const shown = all ? [...managed, ...others] : managed
     // TAL-810: a failing store is reported for the active profile and for every store whose jobs this list shows.
-    const shownStores = new Set([active])
-    try {
-      for (const row of await this.storedJobs(active, unwritable)) {
-        (row.managed ? activeJobs : otherJobs).push(await this.view(row, pickerHome))
-        if (row.managed || all) shownStores.add(row.profile)
-      }
-    } catch (error) { if (error instanceof SidecarError && error.condition === 'cron_unavailable') return { jobs: [], cron_unavailable: true, unwritable_stores: [] }; throw error }
-    return { jobs: (all ? [...activeJobs, ...otherJobs] : activeJobs).sort(compareListedJobs), ordered: true, all_profiles: all, active_profile: active, other_profile_count: all ? 0 : otherJobs.length, unwritable_stores: unwritable.filter((store) => shownStores.has(store.profile)) }
+    const shownStores = new Set([active, ...shown.map((row) => row.profile)])
+    return { jobs: (await this.views(shown, pickerHome)).sort(compareListedJobs), ordered: true, all_profiles: all, active_profile: active, other_profile_count: all ? 0 : others.length, unwritable_stores: unwritable.filter((store) => shownStores.has(store.profile)) }
   }
 
   /**

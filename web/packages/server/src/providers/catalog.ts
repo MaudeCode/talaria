@@ -629,6 +629,12 @@ export class ProviderCatalog {
     }
   }
 
+  /** TAL-1381: warms this home's catalog once, then answers `modelOptionFor` synchronously for every row of a batch. */
+  async modelOptionResolver(profileHome: string): Promise<(model: string | null, provider: string | null) => string | null> {
+    await this.warmModelOptions(profileHome)
+    return (model, provider) => this.modelOptionFor(profileHome, model, provider)
+  }
+
   /** Builds the catalog `modelOptionFor` reads once per home, again after config.yaml or `.env` changes; an unavailable catalog leaves every option id null. */
   async warmModelOptions(profileHome: string): Promise<void> {
     await this.poolProviders(profileHome)
