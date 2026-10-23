@@ -1308,6 +1308,53 @@ final class ChatHostedTests: XCTestCase {
         }
     }
 
+    func testWorkToolbarBadgesOpenTheExistingSheetsOnPhoneAndPad() async throws {
+        guard #available(iOS 26, *) else { throw XCTSkip("Requires toolbar badges") }
+        for size in [HostedSize.phone, HostedSize.padLandscape] {
+            let fixture = try FixtureApp(["--ui-test-background-updates", "--ui-test-chat-controls"], for: self)
+            let session = try await fixture.session()
+            let model = ChatViewModel(session: session, server: UITestFixtureEnvironment.serverURL,
+                                      client: fixture.client, liveActivityManager: SpyChatLiveActivityManager())
+            await model.refreshBackgroundTasks()
+            await model.dismissBackgroundTask(taskID: "bg-ui")
+            XCTAssertEqual(model.pinnedBackgroundTasks.count, 1)
+            let window = try hostWindow(fixture.chat(session, viewModel: model), size: size)
+            _ = try await requireElement(in: window, label: "Background tasks · 1")
+            let started = await model.sendMessage("Run the deterministic fixture")
+            XCTAssertTrue(started)
+            _ = try await requireElement(in: window, label: "Waiting for control input.")
+            try await sendFromComposer("/queue First queued message", in: window)
+            try await sendFromComposer("/queue Second queued message", in: window)
+            _ = try await requireElement(in: window, label: "2 queued")
+            settle(0.3)
+            attachHostedScreenshot(window, name: size == HostedSize.phone ? "work-toolbar-phone" : "work-toolbar-pad")
+
+            let background = try XCTUnwrap(HostedAccessibility.toolbarItem("Background tasks", in: window),
+                                          "Missing Background tasks toolbar item")
+            let queued = try XCTUnwrap(HostedAccessibility.toolbarItem("Queued messages", in: window),
+                                      "Missing Queued messages toolbar item")
+            XCTAssertEqual(background.badge?.stringValue, "1")
+            XCTAssertEqual(queued.badge?.stringValue, "2")
+            for (item, sheetText) in [(background, "Fix CI"), (queued, "First queued message")] {
+                XCTAssertTrue(UIApplication.shared.sendAction(try XCTUnwrap(item.action), to: item.target, from: item, for: nil))
+                _ = try await requireElement(in: window) { $0.accessibilityLabel?.contains(sheetText) == true }
+                HostedAccessibility.activate(try await requireElement(in: window, label: "Done"))
+                let closed = await awaitCondition { window.rootViewController?.presentedViewController == nil }
+                XCTAssertTrue(closed)
+            }
+            _ = await model.cancelActiveStream()
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+    }
+
+    func testEmptyWorkHasNoToolbarEntries() async throws {
+        let window = try await hostFixtureChat()
+        _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
+        XCTAssertNil(HostedAccessibility.toolbarItem("Background tasks", in: window))
+        XCTAssertNil(HostedAccessibility.toolbarItem("Queued messages", in: window))
+    }
+
     /// Background work shows as one count chip above the composer (TAL-1001); its sheet lists the server's records, a
     /// delegation its subagents' progress, the full result on request, and a Dismiss that removes only finished work
     /// (TAL-372).

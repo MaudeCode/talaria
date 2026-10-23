@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Open background tasks and queued messages from badged chat toolbar buttons as well as the composer chips.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}
