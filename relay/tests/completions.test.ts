@@ -28,12 +28,12 @@ async function fixture() {
     await ctx.db.insert("liveActivities", { userId: "user", deviceId: "device", activityId: "activity", mode: "all_running", attributesType: "TalariaAggregateActivityAttributes", schemaVersion: 1, activityPushToken: "synthetic", createdAt: now, updatedAt: now });
   });
   let revision = 0;
-  const publish = async (phase: "running" | "completed" | "failed", streamId = "run-1", sessionId = "session") => {
+  const publish = async (phase: "running" | "completed" | "failed", streamId = "run-1", sessionId = "session", activityPhase?: "running" | "stale" | "completed" | "failed") => {
     revision++;
     await backend.mutation(internal.publishers.acceptSnapshot, {
       publisherOwnerUserId: "owner", publisherId: "https://hermes.example", profileId: "profile", keyId: "key",
       nonce: `nonce-${revision}`, nonceExpiresAt: Date.now() + 60_000, receivedAt: Date.now(), snapshotId: `snapshot-${revision}`,
-      states: [{ sessionId, streamId, eventId: `event-${revision}`, revision, title: "Synthetic task", phase, updatedAt: Date.now(), deepLink: `/sessions/${sessionId}` }],
+      states: [{ sessionId, streamId, eventId: `event-${revision}`, revision, title: "Synthetic task", phase, ...(activityPhase ? { activityPhase } : {}), updatedAt: Date.now(), deepLink: `/sessions/${sessionId}` }],
     });
   };
   const list = () => backend.query(internal.completions.list, { userId: "user", deviceId: "device", paginationOpts: { numItems: 100, cursor: null } });
@@ -352,4 +352,23 @@ it("deletes a revoked publisher's completions", async () => {
   expect(await backend.run((ctx) => ctx.db.query("completions").collect())).toHaveLength(1);
   expect(await backend.mutation(internal.subscriptions.revokePublisher, { userId: "user", publisherId: "https://hermes.example", now: Date.now() })).toEqual({ ok: true });
   expect(await backend.run((ctx) => ctx.db.query("completions").collect())).toEqual([]);
+});
+
+it("keeps terminal history and acknowledgement while the session activity still works (TAL-1520)", async () => {
+  const { backend, publish, list } = await fixture();
+  await publish("running");
+  await publish("completed", "run-1", "session", "running");
+  let states = await backend.query(internal.publishers.listCurrentStates, { userId: "user", now: Date.now() });
+  expect(states).toContainEqual(expect.objectContaining({ phase: "completed", activityPhase: "running" }));
+  const inbox = (await list())!;
+  expect(inbox.completions[0]?.row.phase).toBe("completed");
+  await backend.mutation(internal.completions.acknowledge, { userId: "user", deviceId: "device", ids: inbox.completions.map((row) => row.id) });
+  states = await backend.query(internal.publishers.listCurrentStates, { userId: "user", now: Date.now() });
+  expect(states).toHaveLength(1);
+  expect(states[0]?.activityPhase).toBe("running");
+  await publish("completed", "run-1", "session", "stale");
+  await publish("completed", "run-1", "session", "running");
+  await publish("completed", "run-1", "session", "completed");
+  expect((await list())?.completions).toEqual([]);
+  await backend.finishAllScheduledFunctions(vi.runAllTimers);
 });

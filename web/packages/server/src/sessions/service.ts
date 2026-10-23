@@ -1,4 +1,4 @@
-import { unavailableContextDetail, type ContextDetail } from '@maudecode/talaria-web-contracts'
+import { unavailableContextDetail, type SessionActivityPhase, type ContextDetail } from '@maudecode/talaria-web-contracts'
 import { filterAsync } from '../util.js'
 import { statSignature } from '../fs/stat.js'
 import { SessionPrefixIndex } from './prefix-index.js'
@@ -116,6 +116,7 @@ export interface SessionServiceDeps {
   /** A profile whose deletion has started takes no new detached work. */
   profileDeleting?: (profile: string | null) => boolean
   /** TAL-372: the session's background work receipts, for the delegation rows that started them. */
+  sessionActivity?: (sid: string, profile: string | null, opts?: { excludeStreamId?: string; terminalPhase?: SessionActivityPhase }) => Promise<SessionActivityPhase>
   backgroundReceipts?: (sid: string) => Receipt[] | Promise<Receipt[]>
   backgroundPending?: (sid: string) => Promise<Set<string>>
   store: SessionStore
@@ -855,9 +856,13 @@ export class SessionService {
     return createHash('sha256').update(JSON.stringify([s.session_id, s.profile, s.model, s.model_provider, s.workspace, s.updated_at, s.messages.length, s.context_messages, s.post_compression_context_tokens_estimate, s.active_stream_id])).digest('hex')
   }
 
+  async activityPhase(s: Session, opts?: { excludeStreamId?: string; terminalPhase?: SessionActivityPhase }): Promise<SessionActivityPhase | undefined> {
+    return this.deps.sessionActivity?.(s.session_id, s.profile, opts)
+  }
+
   /** `compact()` with the wire streaming/read-only flags (TAL-312), for replies that return the session row. */
   async wireRow(s: Session): Promise<Record<string, unknown>> {
-    return withSessionWireFlags((await this.ownerLocked([{ ...s.compact({ contextLengthFor: this.deps.contextLengthFor, modelOptionFor: this.deps.modelOptionFor }), context_detail_key: this.contextDetailKey(s), assistant_name: this.assistantName(s), workspace_name: (await this.workspaceNames([s]))(s) }]))[0]!, this.deps.runtime.activeStreamIds)
+    return withSessionWireFlags((await this.ownerLocked([{ ...s.compact({ contextLengthFor: this.deps.contextLengthFor, modelOptionFor: this.deps.modelOptionFor }), activity_phase: await this.activityPhase(s), context_detail_key: this.contextDetailKey(s), assistant_name: this.assistantName(s), workspace_name: (await this.workspaceNames([s]))(s) }]))[0]!, this.deps.runtime.activeStreamIds)
   }
 
   /**
@@ -1147,6 +1152,7 @@ export class SessionService {
     const revisionAfter = (await this.loadRevision(s))
     raw._load_revision = revisionBefore !== null && revisionBefore === revisionAfter ? hashRevision(revisionBefore) : `unstable-${randomUUID().replace(/-/g, '')}`
     Object.assign(raw, (await this.ownerLocked([raw], limited?.sources))[0])
+    raw.activity_phase = await this.activityPhase(s)
     raw.assistant_name = this.assistantName(s)
     raw.workspace_name = (await this.workspaceNames([s]))(s)
     raw.branched_from = (await this.branchedFrom(s))
@@ -1443,9 +1449,9 @@ export class SessionService {
     const profile = full.profile || 'default'
     let hermesHome = ''
     try { hermesHome = this.deps.workspaces.deps.profileHome(profile) } catch { hermesHome = '' }
-    const { is_streaming: streaming, active_stream_id: live, read_only: readOnly, read_only_reason: readOnlyReason, active_turn_origin: origin } = (await this.wireRow(full))
+    const { is_streaming: streaming, active_stream_id: live, read_only: readOnly, read_only_reason: readOnlyReason, active_turn_origin: origin, activity_phase } = (await this.wireRow(full))
     return {
-      session_id: full.session_id, title: full.title, model: full.model, profile, hermes_home: hermesHome, workspace: full.workspace, personality: full.personality,
+      activity_phase, session_id: full.session_id, title: full.title, model: full.model, profile, hermes_home: hermesHome, workspace: full.workspace, personality: full.personality,
       message_count: full.messages.length, created_at: full.created_at, updated_at: full.updated_at, agent_running: streaming, is_streaming: streaming, active_stream_id: live, active_turn_origin: origin, read_only: readOnly, read_only_reason: readOnlyReason,
       input_tokens: inp, output_tokens: out, total_tokens: inp + out, estimated_cost: full.estimated_cost,
     }

@@ -293,6 +293,7 @@ function parseState(
   const revision = numberField(value, "revision") ?? envelope?.revision ?? null;
   const title = stringField(value, "title", 120);
   const phase = value.phase;
+  const activityPhase = value.activityPhase;
   const updatedAt = numberField(value, "updatedAt");
   const deepLink = stringField(value, "deepLink", 512);
   const alertEligible = value.alertEligible;
@@ -306,6 +307,7 @@ function parseState(
     revision < 0 ||
     !title ||
     !isSessionPhase(phase) ||
+    (activityPhase !== undefined && !isSessionPhase(activityPhase)) ||
     updatedAt === null ||
     !deepLink ||
     !safePath(deepLink)
@@ -319,6 +321,7 @@ function parseState(
     revision,
     title,
     phase,
+    ...(isSessionPhase(activityPhase) ? { activityPhase } : {}),
     updatedAt,
     deepLink,
     alertEligible,
@@ -529,6 +532,7 @@ http.route({
               streamId: state.streamId,
               title: state.title,
               phase: state.phase,
+              activityPhase: state.activityPhase,
               updatedAt: state.updatedAt,
               deepLink: state.deepLink,
               alertEligible: state.alertEligible,

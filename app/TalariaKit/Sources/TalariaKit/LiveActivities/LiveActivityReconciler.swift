@@ -60,6 +60,27 @@ public enum LiveActivityReconciler {
         }
     }
 
+    /// Render the server's session decision, independently of the foreground turn's outcome.
+    @discardableResult
+    public static func applySessionPhase(_ phase: String?, manager: any AgentLiveActivityManaging) -> Bool {
+        guard let phase else { return false }
+        switch phase {
+        case "starting", "running": manager.update(.promptSettled)
+        case "waiting_for_approval": manager.update(.waitingForApproval)
+        case "waiting_for_input": manager.update(.waitingForClarification)
+        case "completed", "failed", "cancelled":
+            let outcome = outcome(forTurnTerminalState: phase == "failed" ? "error" : phase)
+            manager.end(status: outcome.status, activity: outcome.activity, errorSummary: nil)
+        default: manager.markStale()
+        }
+        return true
+    }
+
+    nonisolated static func sessionIsSettled(_ phase: String?) -> Bool {
+        guard let phase else { return true }
+        return ["completed", "failed", "cancelled"].contains(phase)
+    }
+
     /// Testable core. For each orphaned stream, fetch its server status; only a
     /// definitive inactive status (the run is over) ends the activity, finalized
     /// with the outcome mapped from the journal's `terminal_state` (#267). A failed
@@ -85,8 +106,8 @@ public enum LiveActivityReconciler {
             // `active == false` is the only signal that ends the orphan: a `nil`
             // response (check failed) or a missing/`true` `active` flag falls
             // through the guard and leaves the activity untouched.
-            guard let status = await streamStatus(orphan.streamID), status.active == false else { continue }
-            let outcome = reconciledOutcome(forTerminalState: status.journal?.terminalState)
+            guard let status = await streamStatus(orphan.streamID), status.active == false, sessionIsSettled(status.activityPhase) else { continue }
+            let outcome = status.activityPhase.map { outcome(forTurnTerminalState: $0 == "failed" ? "error" : $0) } ?? reconciledOutcome(forTerminalState: status.journal?.terminalState)
             let didEnd = await endOrphan(orphan, outcome)
             guard notifiesOnCompletion, didEnd,
                   let notifiedOutcome = ResponseCompletionOutcome(status: outcome.status) else { continue }

@@ -162,6 +162,7 @@ export default defineSchema({
     revision: v.number(),
     title: v.string(),
     phase: sessionPhaseValidator,
+    activityPhase: v.optional(sessionPhaseValidator),
     updatedAt: v.number(),
     deepLink: v.string(),
     expiresAt: v.number(),

@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Live Activities stay Working while a chat's background tasks continue and show waiting when their status cannot be confirmed.",
+      "highlight": false,
+      "components": ["app", "web", "relay"]
+    }
+  ]
+}

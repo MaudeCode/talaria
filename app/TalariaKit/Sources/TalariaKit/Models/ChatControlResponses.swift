@@ -35,6 +35,7 @@ public struct ChatStartResponse: Decodable, Equatable {
 }
 
 public struct ChatCancelResponse: Decodable, Equatable {
+    public var activityPhase: String? = nil
     public let ok: Bool?
     let cancelled: Bool?
     let streamId: String?
@@ -44,6 +45,7 @@ public struct ChatCancelResponse: Decodable, Equatable {
 }
 
 public struct ChatStreamStatusResponse: Decodable, Equatable {
+    public var activityPhase: String? = nil
     public let active: Bool?
     let streamId: String?
     let replayAvailable: Bool?

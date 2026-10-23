@@ -23,13 +23,13 @@ export async function recordCompletion(
     // A corrected result keeps the same run identity and acknowledgement.
     await ctx.db.patch(existing._id, {
       revision: state.revision,
-      ...(changed ? { row: rowForState(state) } : {}),
+      ...(changed ? { row: rowForState(state, state.phase) } : {}),
     });
     return;
   }
   await ctx.db.insert("completions", {
     userId: grant.userId, grantId: grant._id, profileId: grant.profileId, publisherOwnerUserId: grant.publisherOwnerUserId,
-    runKey: key, revision: state.revision, acknowledged: false, row: rowForState(state),
+    runKey: key, revision: state.revision, acknowledged: false, row: rowForState(state, state.phase),
   });
 }
 

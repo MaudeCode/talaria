@@ -212,7 +212,7 @@ async function syncChat(ctx: RequestContext, body: Record<string, unknown>): Pro
   const streamId = str(started.stream_id)
   if (streamId) await ctx.deps.turns.finished(streamId)
   const s = (await getSession(ctx, str(body.session_id)))
-  const session = (await ctx.deps.turns.publicTerminalSession(s)) as never
+  const session = (await ctx.deps.turns.publicTerminalSession(s, streamId)) as never
   const ended = outcome as { answer: string } | TurnFailure | null
   // A `[SILENT]` control message starts no turn.
   if (!streamId || (ended && 'answer' in ended)) {
@@ -281,20 +281,26 @@ export const chatRouter = os.router({
       const streamId = str(input.stream_id)
       if (!streamId) throw new HttpError(400, 'stream_id required')
       if (!(await streamVisibleToRequest(ctx, streamId))) throw new HttpError(404, 'Session not found')
+      const sid = await streamOwnerSessionId(ctx, streamId)
       const { cancelled, withdrawn } = await ctx.deps.turns.cancel(streamId)
-      return { ok: true, cancelled, stream_id: streamId, withdrawn_steers: withdrawn }
+      const activity_phase = sid ? await ctx.deps.background.activityPhase(sid, ctx.deps.activeProfile(), cancelled ? { excludeStreamId: streamId, terminalPhase: 'cancelled' } : {}) : undefined
+      return { ok: true, cancelled, stream_id: streamId, withdrawn_steers: withdrawn, ...(activity_phase ? { activity_phase } : {}) }
     })),
     streamStatus: os.chat.streamStatus.handler(({ input, context: { ctx } }) => run(async () => {
       const streamId = str(input.stream_id)
       if (!(await streamVisibleToRequest(ctx, streamId))) throw new HttpError(404, 'Session not found')
       const active = ctx.deps.registry.liveIds.has(streamId)
       const owner = (await streamOwnerSessionId(ctx, streamId))
-      const payload: { active: boolean; stream_id: string; replay_available: boolean; journal?: Record<string, unknown>; blocking_stream_id: string | null } = { active, stream_id: streamId, replay_available: false, blocking_stream_id: owner ? (await ctx.deps.sessions.activeRunBlocking(owner)) : null }
+      const payload: { active: boolean; stream_id: string; replay_available: boolean; journal?: Record<string, unknown>; activity_phase?: string | undefined; blocking_stream_id: string | null } = { active, stream_id: streamId, replay_available: false, blocking_stream_id: owner ? (await ctx.deps.sessions.activeRunBlocking(owner)) : null }
       const summary = streamId ? (await ctx.deps.journal.findRunSummary(streamId)) : null
       if (summary) {
         payload.replay_available = true
         const terminal = summary.terminal
         payload.journal = { session_id: summary.session_id, run_id: summary.run_id, last_seq: summary.last_seq, last_event_id: summary.last_event_id, last_event: summary.last_event, terminal, terminal_state: !active && !terminal ? 'lost-worker-bookkeeping' : summary.terminal_state }
+      }
+      const sid = owner ?? summary?.session_id
+      if (sid) {
+        try { payload.activity_phase = await ctx.deps.sessions.activityPhase(await ctx.deps.sessionStore.get(sid), active ? undefined : { excludeStreamId: streamId }) } catch { payload.activity_phase = 'stale' }
       }
       return payload
     })),

@@ -24,6 +24,7 @@ export interface SessionState {
   revision: number;
   title: string;
   phase: SessionPhase;
+  activityPhase?: SessionPhase;
   updatedAt: number;
   deepLink: string;
   expiresAt: number;
@@ -38,6 +39,7 @@ export interface PublishedSessionState {
   revision: number;
   title: string;
   phase: SessionPhase;
+  activityPhase?: SessionPhase;
   updatedAt: number;
   deepLink: string;
   alertEligible?: boolean;
@@ -57,6 +59,7 @@ export interface AggregateRow {
 }
 
 export interface ActivityAggregate {
+  isFinal?: boolean;
   schemaVersion: 1;
   activeCount: number;
   title: string;
@@ -94,4 +97,13 @@ export function isSessionPhase(value: unknown): value is SessionPhase {
 
 export function isTerminalPhase(phase: SessionPhase): boolean {
   return phase === "completed" || phase === "failed" || phase === "cancelled";
+}
+
+export function activityPhase(state: { phase: SessionPhase; activityPhase?: SessionPhase }): SessionPhase {
+  return state.activityPhase ?? state.phase;
+}
+
+/** Current activity survives a completed or acknowledged foreground turn; retained history stays separate. */
+export function isCurrentActivityState(state: SessionState & { runKey?: string }): boolean {
+  return !state.deleted && (!isTerminalPhase(activityPhase(state)) || activityPhase(state) !== state.phase || state.runKey === undefined);
 }

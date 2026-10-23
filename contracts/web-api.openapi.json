@@ -3834,6 +3834,19 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "activity_phase": {
+                          "enum": [
+                            "starting",
+                            "running",
+                            "waiting_for_approval",
+                            "waiting_for_input",
+                            "completed",
+                            "failed",
+                            "cancelled",
+                            "stale"
+                          ],
+                          "type": "string"
+                        },
                         "context_detail_key": {
                           "anyOf": [
                             {
@@ -6641,6 +6654,19 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "activity_phase": {
+                      "enum": [
+                        "starting",
+                        "running",
+                        "waiting_for_approval",
+                        "waiting_for_input",
+                        "completed",
+                        "failed",
+                        "cancelled",
+                        "stale"
+                      ],
+                      "type": "string"
+                    },
                     "session_id": {
                       "type": "string",
                       "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
@@ -7506,6 +7532,19 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "activity_phase": {
+                          "enum": [
+                            "starting",
+                            "running",
+                            "waiting_for_approval",
+                            "waiting_for_input",
+                            "completed",
+                            "failed",
+                            "cancelled",
+                            "stale"
+                          ],
+                          "type": "string"
+                        },
                         "context_detail_key": {
                           "anyOf": [
                             {
@@ -10402,6 +10441,19 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "activity_phase": {
+                          "enum": [
+                            "starting",
+                            "running",
+                            "waiting_for_approval",
+                            "waiting_for_input",
+                            "completed",
+                            "failed",
+                            "cancelled",
+                            "stale"
+                          ],
+                          "type": "string"
+                        },
                         "context_detail_key": {
                           "anyOf": [
                             {
@@ -15289,6 +15341,19 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "activity_phase": {
+                          "enum": [
+                            "starting",
+                            "running",
+                            "waiting_for_approval",
+                            "waiting_for_input",
+                            "completed",
+                            "failed",
+                            "cancelled",
+                            "stale"
+                          ],
+                          "type": "string"
+                        },
                         "context_detail_key": {
                           "anyOf": [
                             {
@@ -19766,6 +19831,19 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "activity_phase": {
+                          "enum": [
+                            "starting",
+                            "running",
+                            "waiting_for_approval",
+                            "waiting_for_input",
+                            "completed",
+                            "failed",
+                            "cancelled",
+                            "stale"
+                          ],
+                          "type": "string"
+                        },
                         "context_detail_key": {
                           "anyOf": [
                             {
@@ -24966,6 +25044,19 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "activity_phase": {
+                          "enum": [
+                            "starting",
+                            "running",
+                            "waiting_for_approval",
+                            "waiting_for_input",
+                            "completed",
+                            "failed",
+                            "cancelled",
+                            "stale"
+                          ],
+                          "type": "string"
+                        },
                         "context_detail_key": {
                           "anyOf": [
                             {
@@ -27815,6 +27906,19 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "activity_phase": {
+                          "enum": [
+                            "starting",
+                            "running",
+                            "waiting_for_approval",
+                            "waiting_for_input",
+                            "completed",
+                            "failed",
+                            "cancelled",
+                            "stale"
+                          ],
+                          "type": "string"
+                        },
                         "context_detail_key": {
                           "anyOf": [
                             {
@@ -30726,6 +30830,19 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "activity_phase": {
+                          "enum": [
+                            "starting",
+                            "running",
+                            "waiting_for_approval",
+                            "waiting_for_input",
+                            "completed",
+                            "failed",
+                            "cancelled",
+                            "stale"
+                          ],
+                          "type": "string"
+                        },
                         "context_detail_key": {
                           "anyOf": [
                             {
@@ -33635,6 +33752,19 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "activity_phase": {
+                          "enum": [
+                            "starting",
+                            "running",
+                            "waiting_for_approval",
+                            "waiting_for_input",
+                            "completed",
+                            "failed",
+                            "cancelled",
+                            "stale"
+                          ],
+                          "type": "string"
+                        },
                         "context_detail_key": {
                           "anyOf": [
                             {
@@ -45245,6 +45375,19 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "activity_phase": {
+                          "enum": [
+                            "starting",
+                            "running",
+                            "waiting_for_approval",
+                            "waiting_for_input",
+                            "completed",
+                            "failed",
+                            "cancelled",
+                            "stale"
+                          ],
+                          "type": "string"
+                        },
                         "context_detail_key": {
                           "anyOf": [
                             {
@@ -48142,6 +48285,19 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "activity_phase": {
+                          "enum": [
+                            "starting",
+                            "running",
+                            "waiting_for_approval",
+                            "waiting_for_input",
+                            "completed",
+                            "failed",
+                            "cancelled",
+                            "stale"
+                          ],
+                          "type": "string"
+                        },
                         "context_detail_key": {
                           "anyOf": [
                             {
@@ -51427,6 +51583,19 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "activity_phase": {
+                          "enum": [
+                            "starting",
+                            "running",
+                            "waiting_for_approval",
+                            "waiting_for_input",
+                            "completed",
+                            "failed",
+                            "cancelled",
+                            "stale"
+                          ],
+                          "type": "string"
+                        },
                         "context_detail_key": {
                           "anyOf": [
                             {
@@ -54614,6 +54783,19 @@
                         "session": {
                           "type": "object",
                           "properties": {
+                            "activity_phase": {
+                              "enum": [
+                                "starting",
+                                "running",
+                                "waiting_for_approval",
+                                "waiting_for_input",
+                                "completed",
+                                "failed",
+                                "cancelled",
+                                "stale"
+                              ],
+                              "type": "string"
+                            },
                             "context_detail_key": {
                               "anyOf": [
                                 {
@@ -57529,6 +57711,19 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "activity_phase": {
+                      "enum": [
+                        "starting",
+                        "running",
+                        "waiting_for_approval",
+                        "waiting_for_input",
+                        "completed",
+                        "failed",
+                        "cancelled",
+                        "stale"
+                      ],
+                      "type": "string"
+                    },
                     "ok": {
                       "type": "boolean"
                     },
@@ -57614,6 +57809,19 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "activity_phase": {
+                      "enum": [
+                        "starting",
+                        "running",
+                        "waiting_for_approval",
+                        "waiting_for_input",
+                        "completed",
+                        "failed",
+                        "cancelled",
+                        "stale"
+                      ],
+                      "type": "string"
+                    },
                     "active": {
                       "type": "boolean"
                     },
@@ -58460,6 +58668,19 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "activity_phase": {
+                      "enum": [
+                        "starting",
+                        "running",
+                        "waiting_for_approval",
+                        "waiting_for_input",
+                        "completed",
+                        "failed",
+                        "cancelled",
+                        "stale"
+                      ],
+                      "type": "string"
+                    },
                     "session_id": {
                       "type": "string"
                     },

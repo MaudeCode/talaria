@@ -27,7 +27,8 @@ it('publishes exactly the shared publisher-snapshot fixture', async () => {
     const deps = {
       documents: new JsonDocuments(home, () => home), registry, presence, now: () => now, log: vi.fn(),
       pending: { approvalPending: () => ({ pending: null, pending_count: 0 }), clarifyPending: () => ({ pending: null, pending_count: 0 }) },
-      store: { get: () => ({ title: 'Contract fixture', profile: 'default' }) },
+      store: { sessions: new Map(), exists: () => Promise.resolve(true), get: () => ({ title: 'Contract fixture', profile: 'default' }) },
+      background: { sessionIds: () => Promise.resolve([]), snapshot: () => Promise.resolve({ activity_phase: 'running' }) },
       profileHome: () => home,
       profilesMatch: (row: string | null | undefined, active: string | null | undefined) => row === active,
       fetch: () => (url: string, init: { body: string }) => { requests.push({ url, body: init.body }); return Promise.resolve(new Response('{}')) },

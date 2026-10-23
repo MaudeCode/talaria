@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  nativeSessionRequest,
   fitActivityAggregate,
   makeLiveActivityEnd,
   makeLiveActivityStart,
   makeLiveActivityUpdate,
   makeNotification,
 } from "../convex/lib/apnsPayload";
+import { makeAggregate } from "../convex/lib/aggregate";
 import type { ActivityAggregate } from "../convex/lib/model";
 
 const aggregate: ActivityAggregate = {
@@ -204,4 +206,17 @@ describe("ActivityKit payloads", () => {
     expect(fitted.rows.length).toBeLessThan(oversized.rows.length);
     expect(new TextEncoder().encode(JSON.stringify(fitted)).byteLength).toBeLessThanOrEqual(3_500);
   });
+});
+
+
+it("keeps all-running and native per-session payloads non-final after the foreground turn ends", () => {
+  const parent = { publisherId: "publisher", publisherLabel: "Test", sessionId: "session", streamId: "parent", eventId: "done", revision: 2, title: "Test", phase: "completed" as const, activityPhase: "running" as const, updatedAt: 100, deepLink: "/sessions/session", expiresAt: 10_000 };
+  for (const phase of ["running", "stale"] as const) {
+    const content = makeAggregate([{ ...parent, activityPhase: phase }], 100)!;
+    expect(content.activeCount).toBe(phase === "running" ? 1 : 0);
+    expect(content.isFinal).toBe(false);
+    const request = makeLiveActivityUpdate({ token: "synthetic", bundleId: "dev.kil.talaria", environment: "sandbox", aggregate: content, nowEpochSeconds: 1 });
+    expect(request.payload.aps).toMatchObject({ event: "update", "content-state": { isFinal: false } });
+    expect(nativeSessionRequest(request, 0).payload.aps).toMatchObject({ event: "update", "content-state": { isFinal: false, isStale: phase === "stale", currentActivity: phase === "running" ? "Working" : "Waiting" } });
+  }
 });

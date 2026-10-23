@@ -897,6 +897,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
     public let inputTokens: Int?
     public let outputTokens: Int?
     public let estimatedCost: Double?
+    public let activityPhase: String?
     public let activeStreamId: String?
     let isStreaming: Bool?
     /// Who started the running turn (TAL-460): `background` when a background result did; nil while idle or on older servers.
@@ -982,7 +983,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
         case inputTokens
         case outputTokens
         case estimatedCost
-        case activeStreamId
+        case activityPhase, activeStreamId
         case isStreaming
         case activeTurnOrigin
         case pendingSteers
@@ -1051,6 +1052,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
         inputTokens = container.decodeLossyIntIfPresent(forKey: .inputTokens)
         outputTokens = container.decodeLossyIntIfPresent(forKey: .outputTokens)
         estimatedCost = container.decodeLossyDoubleIfPresent(forKey: .estimatedCost)
+        activityPhase = container.decodeLossyStringIfPresent(forKey: .activityPhase)
         activeStreamId = container.decodeLossyStringIfPresent(forKey: .activeStreamId)
         isStreaming = container.decodeLossyBoolIfPresent(forKey: .isStreaming)
         activeTurnOrigin = container.decodeLossyStringIfPresent(forKey: .activeTurnOrigin)

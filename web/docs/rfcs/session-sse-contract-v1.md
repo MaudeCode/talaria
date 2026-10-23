@@ -314,3 +314,22 @@ using `progress/total` when no percent is supplied, and caps the redacted messag
 in the live turn and channel reconnect snapshot, never in the journal or transcript.
 Session detail includes the current values on its live `tool_calls`, including a
 mid-turn reload. Older Agents that do not emit progress retain their existing rows.
+
+## Session activity across foreground completion
+
+Session detail, status, replay-gap snapshots, terminal-frame `session` data,
+`/api/chat/stream/status`, and `/api/background/tasks` carry optional
+`activity_phase`. It uses `starting`, `running`, `waiting_for_approval`,
+`waiting_for_input`, `completed`, `failed`, `cancelled`, or `stale` independently
+of the turn's unchanged `terminal_state`. The existing background owner confirms
+its durable receipts against current Agent registries or local command streams.
+Prompts and a live foreground turn retain priority. Remaining confirmed work
+keeps the session running; unconfirmed work makes it stale. Settled background
+failures and cancellations cannot become success. Old servers omit the additive
+field and clients retain their existing turn-outcome fallback.
+
+The Relay publisher reconciles background receipts on its existing event-driven
+and heartbeat publication, including sessions after foreground retention and a
+publisher restart. It signs the same decision as `activityPhase`, while `phase`
+and `streamId` retain the turn outcome and completion identity. No viewer or
+widget polling owns this lifecycle.

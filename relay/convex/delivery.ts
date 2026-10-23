@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 
 import { retainedStates } from "./completions";
-import { isTerminalPhase } from "./lib/model";
+import { activityPhase, isCurrentActivityState, isTerminalPhase } from "./lib/model";
 import { internal } from "./_generated/api";
 import type { DataModel, Doc } from "./_generated/dataModel";
 import { internalMutation, internalQuery, type MutationCtx } from "./_generated/server";
@@ -87,6 +87,7 @@ function asSessionState(state: DataModel["sessionStates"]["document"]): SessionS
     revision: state.revision,
     title: state.title,
     phase: state.phase,
+    activityPhase: state.activityPhase,
     updatedAt: state.updatedAt,
     deepLink: state.deepLink,
     expiresAt: state.expiresAt,
@@ -103,7 +104,7 @@ async function currentStates(ctx: MutationCtx, userId: string, now: number): Pro
     )
     .take(MAX_STATE_ROWS);
   return [
-    ...states.filter((state) => !state.deleted && (!isTerminalPhase(state.phase) || state.runKey === undefined)).map(asSessionState),
+    ...states.filter(isCurrentActivityState).map(asSessionState),
     ...await retainedStates(ctx, userId),
   ];
 }
@@ -362,9 +363,9 @@ export const recompute = internalMutation({
       const visibleChanges = changed.filter(({ state }) => !exclusionsByDevice.get(device.deviceId)?.has(state.publisherId));
       const ineligibleChange = visibleChanges.some(({ state }) => state.alertEligible === false);
       const eligibleTransition = visibleChanges.some(({ state, previousPhase }) =>
-        previousPhase !== state.phase && state.alertEligible !== false,
+        previousPhase !== activityPhase(state) && state.alertEligible !== false,
       );
-      const ineligibleRow = deviceStates.some((state) => state.alertEligible === false && !isTerminalPhase(state.phase));
+      const ineligibleRow = deviceStates.some((state) => state.alertEligible === false && !isTerminalPhase(activityPhase(state)));
       const deferred = ineligibleChange || ineligibleRow
         || (device.pushToStartDeferredAt !== undefined && !eligibleTransition);
       if ((ineligibleChange || ineligibleRow) && device.pushToStartDeferredAt === undefined) {
@@ -386,7 +387,7 @@ export const recompute = internalMutation({
       const transitionAlert = changed.flatMap(({ state, previousPhase }) => {
         if (exclusionsByDevice.get(device.deviceId)?.has(state.publisherId)) return [];
         const value = alertForTransition(
-          previousPhase === undefined ? null : { ...state, phase: previousPhase },
+          previousPhase ?? null,
           state,
           device.preferences,
         );
@@ -444,7 +445,7 @@ export const recompute = internalMutation({
           (activity.publisherId !== state.publisherId || activity.sessionId !== state.sessionId)
         ) return [];
         const value = alertForTransition(
-          previousPhase === undefined ? null : { ...state, phase: previousPhase },
+          previousPhase ?? null,
           state,
           device.preferences,
         );
@@ -567,7 +568,7 @@ export const recompute = internalMutation({
           const changedAlert = changed.flatMap(({ state, previousPhase }) => {
             if (exclusionsByDevice.get(device.deviceId)?.has(state.publisherId)) return [];
             const value = alertForTransition(
-              previousPhase === undefined ? null : { ...state, phase: previousPhase },
+              previousPhase ?? null,
               state,
               device.preferences,
             );

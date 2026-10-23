@@ -1755,6 +1755,7 @@ public final class ChatViewModel {
                 isConfirmingRunState = false
                 return
             }
+            streamCoordinator.applySessionActivityPhase(session?.activityPhase)
             // After load arbitration only: a superseded response must not leave its
             // read-only flag behind once its transcript has been rejected.
             applyReadOnlyState(from: session, noticesChangesAtFetch: noticesChangesAtFetch)
@@ -5590,8 +5591,10 @@ public final class ChatViewModel {
     public func refreshBackgroundTasks() async {
         guard let sessionID, !isViewingCachedData else { return }
         do {
+            let generation = streamCoordinator.sessionActivityGeneration
             let response = try await client.backgroundTasks(sessionID: sessionID)
-            guard self.sessionID == sessionID else { return }
+            guard streamCoordinator.sessionActivityGeneration == generation, self.sessionID == sessionID else { return }
+            streamCoordinator.applySessionActivityPhase(response.activityPhase)
             backgroundTasks = response.tasks
         } catch {
             return
@@ -5630,6 +5633,7 @@ public final class ChatViewModel {
                 try? await sleep(pollingInterval)
                 guard !Task.isCancelled, let self else { break pollingLoop }
                 guard let sessionID = self.sessionID else { continue }
+                let generation = self.streamCoordinator.sessionActivityGeneration
                 let response: BackgroundTasksResponse
                 do {
                     response = try await self.client.backgroundTasks(sessionID: sessionID)
@@ -5640,6 +5644,8 @@ public final class ChatViewModel {
                     continue
                 }
                 guard !Task.isCancelled, self.sessionID == sessionID else { break pollingLoop }
+                guard self.streamCoordinator.sessionActivityGeneration == generation else { continue }
+                self.streamCoordinator.applySessionActivityPhase(response.activityPhase)
                 self.backgroundTasks = response.tasks
                 guard self.backgroundTasks.contains(where: { $0.active }) else { break pollingLoop }
             }
@@ -5684,6 +5690,7 @@ public final class ChatViewModel {
             return
         }
 
+        streamCoordinator.applySessionActivityPhase(completedSession.activityPhase)
         applyReadOnlyState(from: completedSession)
         applyCompressionReference(from: completedSession)
 

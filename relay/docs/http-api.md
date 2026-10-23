@@ -104,7 +104,8 @@ BASE64URL_SHA256_OF_EXACT_BODY
       "eventId": "stable-event-id",
       "revision": 42,
       "title": "Bounded session title",
-      "phase": "running",
+      "phase": "completed",
+      "activityPhase": "running",
       "updatedAt": 1787845600000,
       "deepLink": "/sessions/session-id"
     }
@@ -113,6 +114,17 @@ BASE64URL_SHA256_OF_EXACT_BODY
 ```
 
 Allowed phases are `starting`, `running`, `waiting_for_approval`, `waiting_for_input`, `completed`, `failed`, `cancelled`, and `stale`. A snapshot contains at most 500 states. Non-terminal rows are three-minute leases refreshed by the WebUI heartbeat. Missing rows expire instead of being immediately tombstoned, so a WebUI restart cannot incorrectly end Gateway-owned work before reconciliation.
+
+`phase` remains the foreground turn's outcome. Optional `activityPhase` uses the
+same vocabulary and is the server's session-wide decision, including confirmed
+delegations, notified/watched processes, and `/background` commands. Activities,
+aggregate rows, transition alerts and leases use `activityPhase` when present;
+older publishers fall back to `phase`. Completion history and acknowledgements
+continue to use `phase` and the original `streamId`. A completed turn with
+`activityPhase: "running"` therefore renders Working without ending its activity.
+Unconfirmed work publishes `stale`; it never counts as confirmed active work.
+Aggregates include additive `isFinal`, true only when all session work is settled,
+so zero confirmed active sessions with stale work cannot render success.
 
 Each state may carry an optional `alertEligible` boolean. Omitting it means `true`. `alertEligible: false` applies only to the exact event carrying it, including a session's first publication: the relay still persists the transition and delivers the Live Activity state silently, but produces no ordinary notification and no `alert` or sound on a Live Activity update or end. Because APNs requires an alert on push-to-start, an ineligible transition on a device with no running Live Activity defers the start, and the deferral persists on that device while the suppressed state is visible and otherwise until an eligible phase transition, an activity registration, or idle work releases it. The stored value carries forward across same-phase updates of the same run (same `streamId`) until the next phase transition or a new run, so a later heartbeat or eligibility change in the same phase never alerts or starts an activity for the already-consumed transition.
 

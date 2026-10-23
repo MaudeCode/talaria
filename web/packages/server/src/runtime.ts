@@ -17,6 +17,8 @@ import { GatewayWatcherRegistry } from './sessions/gateway-watcher.js'
 import { GatewaySessions, gatewayStreamVisible } from './sessions/gateway-sessions.js'
 import { readImportableAgentSessionRowsAsync } from './sessions/state-db.js'
 import { CompletionDrain } from './sessions/completions.js'
+import { str } from './util.js'
+import { turnTerminalState } from './sessions/anchor.js'
 import { BackgroundActivity, BackgroundTaskStore } from './sessions/background-tasks.js'
 import { HygieneTicker } from './tools/hygiene.js'
 import { PruneAdvice } from './tools/prune-advice.js'
@@ -312,6 +314,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     media: { access: mediaAccess, localIo: (profile) => workspaces.profileSupportsLocalIo(profile) },
     profileActivity,
     profileDeleting: (profile) => profiles.isDeleting(profile),
+    sessionActivity: async (sid, profile, opts) => background.activityPhase(sid, profile, opts),
     backgroundReceipts: async (sid) => (await background.receipts(sid)),
     backgroundPending: async (sid) => (await completions.pendingDelegations(sid)),
     journal,
@@ -458,13 +461,32 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     try { profile = (await store.get(sid, { metadataOnly: true, promote: false, cacheOnMiss: false })).profile } catch { profile = null }
     events.publish('background_task', { profile, sessionId: sid })
   })
-  const background = new BackgroundActivity({ store: backgroundStore, sidecar: () => sidecar, profileHome: (p) => profileHome(p ?? activeProfile()), liveStream: (id) => registry.liveIds.has(id), now, log })
+  const background = new BackgroundActivity({ store: backgroundStore, sidecar: () => sidecar, profileHome: (p) => profileHome(p ?? 'default'), liveStream: (id) => registry.liveIds.has(id), now, log,
+    validateSession: async (sid, profile) => {
+      const session = await store.get(sid, { metadataOnly: true }).catch(() => null)
+      if (!session && (await sessions.stateDbSources([sid], profile ?? 'default'))?.has(sid)) return
+      if (!session || !profilesMatch(session.profile, profile)) throw new Error('Background session profile changed during reconciliation')
+    },
+    sessionState: async (sid, excludeStreamId, profile) => {
+      const session = await store.get(sid).catch(() => null)
+      const ownerPhase = await sessions.owner?.activityPhase(sid, profile ?? 'default')
+      if (!session) return { foreground: ownerPhase ?? null, settled: 'stale', since: 0 }
+      const run = [...registry.activeRuns.values()].filter((run) => run.session_id === sid && run.stream_id !== excludeStreamId && !('health_only' in run && run.health_only)).sort((a, b) => b.started_at - a.started_at)[0]
+      const latest = [...session.messages].reverse().find((message) => message._turn_id)
+      const terminal = latest ? turnTerminalState(session.messages, str(latest._turn_id)) : 'completed'
+      return {
+        foreground: ownerPhase ?? (pending.approvalPending(sid).pending ? 'waiting_for_approval' : pending.clarifyPending(sid).pending ? 'waiting_for_input' : run ? run.phase.endsWith('starting') ? 'starting' : 'running' : null),
+        settled: terminal === 'completed' || terminal === 'tool_limit_reached' ? 'completed' : terminal === 'cancelled' ? 'cancelled' : 'failed',
+        since: Number(latest?.timestamp) || 0,
+      }
+    },
+  })
   // Python `_MAX_SSE_CLIENTS_PER_IDENTITY`: eight concurrent streams per client identity unless overridden.
   const streamSlots = new StreamSlots(() => { const raw = Number.parseInt((env.HERMES_WEBUI_MAX_SSE_CLIENTS ?? '').trim(), 10); return Number.isFinite(raw) && raw > 0 ? raw : 8 })
   // eslint-disable-next-line prefer-const -- assigned after the turn runner exists
   let completions: CompletionDrain
   const relay = new RelayService({
-    registry, pending, store, presence: new PresenceLeases(now), profileHome, profilesMatch, fetch: () => lazyFetch, now, log,
+    registry, pending, store, background, presence: new PresenceLeases(now), profileHome, profilesMatch, fetch: () => lazyFetch, now, log,
     agentSessions: (profile) => readImportableAgentSessionRowsAsync(join(profileHome(profile), 'state.db')),
     documents: storage.documents, env, canonicalProfile: (p) => (isRootProfile(p) ? 'default' : p), addListener: (listener) => events.addListener(listener),
   })
