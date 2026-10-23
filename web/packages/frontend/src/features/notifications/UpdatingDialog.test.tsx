@@ -49,6 +49,17 @@ describe('UpdatingDialog', () => {
     expect(screen.getByRole('dialog', { name: 'Updating Hermes Agent' })).toBeVisible()
   })
 
+  it('renders the server recovery step and diagnostic cause without offering dismissal', async () => {
+    const onClose = vi.fn()
+    dialog({ ...waiting, phase: 'recovering', active: true, actions: [], presents_dialog: true, dialog_close: 'none', message: 'Attempting recovery', detail: 'Synthetic gateway resume failed.',
+      steps: [{ id: 'install', label: 'Installing', state: 'done' }, { id: 'recovery', label: 'Attempting recovery', state: 'active' }, { id: 'agent_ready', label: 'Agent responding', state: 'pending' }] }, { onClose })
+    expect(screen.getByRole('status')).toHaveTextContent('Attempting recovery')
+    expect(screen.getByRole('status')).toHaveTextContent('Synthetic gateway resume failed.')
+    expect(screen.queryByRole('button')).toBeNull()
+    await userEvent.keyboard('{Escape}')
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
   it('shows the failure under the failed step and gains Close', async () => {
     const onClose = vi.fn()
     dialog({

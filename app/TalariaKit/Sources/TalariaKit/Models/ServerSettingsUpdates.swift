@@ -193,6 +193,7 @@ public struct UpdatesApplyResponse: Decodable, Equatable {
     let diverged: Bool?
     let restartBlocked: Bool?
     let restartScheduled: Bool?
+    let recoveryPending: Bool?
     let stashConflict: Bool?
     let activeStreams: Int?
     let activeRuns: Int?
@@ -270,7 +271,7 @@ public enum UpdateNotificationTimestamp {
 extension UpdatesApplyResponse {
     /// How the Settings screen should react to an apply attempt.
     public enum Outcome: Equatable {
-        /// Server accepted the update and is restarting; poll until it returns.
+        /// The server is updating or recovering; follow its notification until it finishes.
         case applying
         /// Active chat/agent work blocked the restart. Not a failure — surface
         /// the server's message and let the user retry once work finishes.
@@ -281,6 +282,8 @@ extension UpdatesApplyResponse {
     }
 
     public var outcome: Outcome {
+        if recoveryPending == true { return .applying }
+
         // A restart-blocked response always carries `ok: false`, so check the
         // blocked flag first to avoid mislabelling it as a hard failure.
         if restartBlocked == true {

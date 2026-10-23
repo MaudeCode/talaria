@@ -2849,13 +2849,13 @@ def mutation_worker(backend_stop, monkeypatch):
 
     monkeypatch.setattr(mutation, '_command', command)
 
-    def run(requests=(), binding=None, cancel_at=None):
+    def run(requests=(), binding=None, cancel_at=None, operation=None):
         incoming, replies = queue.Queue(), []
         for request in requests: incoming.put(request)
         incoming.put({'action': 'finish'})
         cancelled = lambda: cancel_at is not None and services.time.monotonic() >= cancel_at
         stopped = types.SimpleNamespace(is_set=cancelled, wait=lambda seconds: pause.advance(seconds) or cancelled())
-        mutation._worker(root, model['target'], {home}, incoming, stopped, replies.append, binding)
+        mutation._worker(root, model['target'], {home}, incoming, stopped, replies.append, binding, operation)
         return replies
 
     return run, model, recovery, entry, parents, events, pause
@@ -3503,3 +3503,63 @@ def test_readiness_tree_switch_requires_every_previous_writer_to_exit(gateway_su
         assert fresh.path.read_bytes() == before
         assert {42001, 42002, 42005} <= parents.keys()
     assert calls == []
+
+
+def test_completed_update_correlation_survives_restart_without_keeping_admission_closed(tmp_path):
+    import types
+    from talaria_sidecar import agent_mutation, agent_services
+    from talaria_sidecar.runtime import AgentRuntime
+    root, home = tmp_path / 'agent', tmp_path / 'home'
+    root.mkdir(); home.mkdir()
+    operation = {'operation_id': '00000000-0000-4000-8000-000000001523', 'baseline_revision': 'a' * 40,
+                 'target_revision': 'b' * 40, 'stage': 'agent_ready', 'recovered_revision': 'b' * 40}
+    recovery = agent_services.ServiceRecovery(root, home, None, None, None)
+    recovery.state['update_operation'] = operation
+    recovery.save()
+    assert recovery.path.exists(), 'verified transaction outcome vanished before the server could read it'
+    restarted = agent_services.ServiceRecovery(root, home, None, None, None)
+    assert restarted.state['update_operation'] == operation
+    runtime = AgentRuntime(home, root)
+    result = agent_mutation.recover_retained(runtime, types.SimpleNamespace(), probe=True)
+    assert result['ok'] and not result['owed'], 'completed history must not close admission'
+    assert result['operation'] == operation and result['revision'] == 'b' * 40
+    # Unrelated orphan debt must not inherit this completed operation.
+    (root / '.update-incomplete').touch()
+    orphan = agent_mutation.recover_retained(runtime, types.SimpleNamespace(), probe=True)
+    assert orphan['owed'] and 'operation' not in orphan
+
+
+@pytest.mark.parametrize('mode', ['merge', 'reset'])
+def test_worker_persists_operation_and_exact_target_before_mutation(mutation_worker, monkeypatch, mode):
+    from talaria_sidecar import agent_mutation as mutation
+    run, model, recovery, entry, parents, events, pause = mutation_worker
+    operation = {'operation_id': '00000000-0000-4000-8000-000000001523', 'baseline_revision': model['head']}
+    original = mutation._command
+    observed = []
+    def command(argv, *args):
+        if argv[1:2] == [mode]:
+            evidence = json.loads(recovery.path.read_text())
+            observed.append(evidence['update_operation'])
+            assert evidence['transaction']['operation_id'] == operation['operation_id']
+        return original(argv, *args)
+    monkeypatch.setattr(mutation, '_command', command)
+    replies = run([{'action': 'git', 'args': [mode, '--hard' if mode == 'reset' else '--ff-only', model['target']]}, {'action': 'sync'}], operation=operation)
+    assert all(reply['ok'] for reply in replies), replies
+    assert observed == [{**operation, 'target_revision': model['target'], 'stage': 'install'}]
+    saved = json.loads(recovery.path.read_text())
+    assert saved['update_operation']['recovered_revision'] == model['target']
+    assert 'transaction' not in saved and not saved['entries']
+
+
+def test_local_repair_preserves_the_original_operation_after_dependency_failure(mutation_worker):
+    run, model, recovery, entry, parents, events, pause = mutation_worker
+    operation = {'operation_id': '00000000-0000-4000-8000-000000001523', 'baseline_revision': model['head']}
+    model['fail_sync'] = True
+    replies = run([{'action': 'git', 'args': ['merge', '--ff-only', model['target']]}, {'action': 'sync'}], operation=operation)
+    assert not replies[-1]['ok']
+    saved = json.loads(recovery.path.read_text())
+    assert saved['update_operation'] == {**operation, 'target_revision': model['target'], 'stage': 'install', 'failed_stage': 'install', 'attempt_error': 'synthetic dependency result', 'source_moved': True}
+    model['fail_sync'] = False
+    repaired = run([{'action': 'sync'}])
+    assert all(reply['ok'] for reply in repaired), repaired
+    assert json.loads(recovery.path.read_text())['update_operation'] == {**saved['update_operation'], 'stage': 'agent_ready', 'recovered_revision': model['target']}

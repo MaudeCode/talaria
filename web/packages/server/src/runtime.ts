@@ -25,7 +25,7 @@ import { McpHealthProber } from './tools/mcp-health.js'
 import { loadConfig, truthy, type Env, type LoadConfigOptions } from './config.js'
 import type { AppDeps } from './http/context.js'
 import { checkoutRevision, detectWebuiVersion, loadReleaseInfo } from './release.js'
-import { gatewayDrainDetail, ghcrExperimental, githubJson, normalizeChannel, purgePycache, UpdateService, waitUntilRestartSafe, type RestartBlockers } from './tools/updates.js'
+import { gatewayDrainDetail, ghcrExperimental, githubJson, normalizeChannel, purgePycache, sanitizeGitDiagnostic, UpdateService, waitUntilRestartSafe, type RestartBlockers } from './tools/updates.js'
 import { UpdateNotificationStore } from './tools/update-notifications.js'
 import { RESTART_EXIT_CODE } from './cli/supervise.js'
 import { displayBotName, pyBool, SettingsStore } from './settings.js'
@@ -856,20 +856,21 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       catalog.invalidate(undefined, undefined, { preserveConfirmed: true })
       recoveredAgentRevision = null
       pendingRuntimeRecovery = null
-      return result
+      return { ...result, runtime_revision: runtime.agent_revision ?? undefined, verified_version: runtime.agent_version ?? null }
     },
     recoveryChanged: (state) => updateNotifications.agentRecovery(state),
     hasPendingRecovery: () => updateNotifications.hasPendingAgentRecovery(),
+    pendingRecoveryOperation: () => updateNotifications.pendingAgentOperation(),
     agentMutation: async (path, revision, mutate, consent) => {
       if (!sidecar) throw new Error('Hermes Agent sidecar is unavailable')
-      const begin = await sidecar.call('runtime.agent_mutation', { action: 'begin', agent_dir: path, revision, homes: agentHomes(), ...(consent?.mutationIntent ? { intent: consent.mutationIntent } : {}), ...(consent?.refreshToken ? { refresh_token: consent.refreshToken } : {}) }, {
+      const begin = await sidecar.call('runtime.agent_mutation', { action: 'begin', agent_dir: path, revision, homes: agentHomes(), ...(consent?.operationId && consent.baseline ? { operation_id: consent.operationId, baseline_revision: consent.baseline } : {}), ...(consent?.mutationIntent ? { intent: consent.mutationIntent } : {}), ...(consent?.refreshToken ? { refresh_token: consent.refreshToken } : {}) }, {
         timeoutMs: 330_000,
         // TAL-1429: the lease declares its bounded native gateway drain; custody lasts that long plus the ordinary lease margin.
         renewTimeout: (frame) => { const drain = agentDrain(frame); return drain ? drain.deadline_seconds * 1000 + 330_000 : undefined },
         onStream: (frame) => { const drain = agentDrain(frame); if (drain) consent?.onProgress?.(gatewayDrainDetail(drain.services, drain.deadline_seconds)) },
       })
       if (begin.refresh_confirmation) return { ok: false, refresh_confirmation: begin.refresh_confirmation, message: begin.detail }
-      if (!begin.ok || !begin.token) throw new Error(begin.detail || 'Agent writer quiescence was not verified.')
+      if (!begin.ok || !begin.token) return { ok: false, recovery_required: begin.recovery_required, message: `Agent update could not safely quiesce or resume its writers: ${sanitizeGitDiagnostic(begin.detail || 'Agent writer quiescence was not verified.', 1000)}` }
       const token = begin.token
       const leasedGit: import('./tools/updates.js').GitRun = async (args, cwd, timeoutMs = 10_000) => {
         if (resolve(cwd) !== resolve(path)) throw new Error('Agent writer lease cannot mutate another checkout.')

@@ -215,7 +215,7 @@ visible across the same owner's profiles because the installation being updated 
 for another authenticated owner remain isolated. Automatic Web updates produce server-wide owner notices.
 
 The notification lifecycle is `applying`, `awaiting_confirmation`, `waiting_for_idle`, `restarting`,
-`verifying`, then `succeeded`, `blocked`, `failed`, or `unknown`. A failed or blocked record, and a succeeded Agent update that kept conflicting local edits in the git stash (`stash_conflict`), keeps the apply's own explanation as `detail` (line breaks kept, bounded, cleared by the next phase); the notification center and the Updating dialog show it under the message. A restarted server marks an interrupted `applying` operation unknown.
+`verifying`, `recovering`, then `succeeded`, `blocked`, `failed`, or `unknown`. A failed or blocked record, and a succeeded Agent update that kept conflicting local edits in the git stash (`stash_conflict`), keeps the apply's own explanation as `detail` (line breaks kept, bounded, cleared by the next phase); the notification center and the Updating dialog show it under the message. A restarted server marks an interrupted `applying` operation unknown unless it carries a durable Agent transaction association; that operation resumes recovery.
 A `restarting` Web operation becomes succeeded only when the running release identity exactly matches the
 persisted expected identity; otherwise it becomes unknown. A dropped connection never proves success.
 Failed updates show a factual failure message and their available detail in the notification itself,
@@ -249,12 +249,25 @@ The server owns everything the dialog shows. Each update record carries `steps`,
 Agent update lists Installing, Restarting Talaria Web, Waiting for N gateway tasks (only once the gateway was busy),
 Restarting gateway, Agent responding. An update that finished without a restart lists only the steps it ran, and a
 failure marks the step it stopped at. `presents_dialog` is true while an operation a tab started is in `applying`,
-`restarting`, or `verifying`, or waits for its Web restart. Every tab that can see such a record opens the dialog,
+`restarting`, `verifying`, or `recovering`, or waits for its Web restart. Every tab that can see such a record opens the dialog,
 so a deferred gateway restart reopens it in each open tab. `dialog_close` says how an open dialog closes: `none`
 (the update is still running), `close` (failures), `restart_later` (the gateway wait: **Restart now** or
 **Restart later**, which closes the dialog while the wait goes on in the notification center), or `auto` (a
 success shows briefly, then the dialog closes). A dialog opens only for a presenting record or a Settings click,
 so a closed or finished operation never reopens after a reload.
+
+When an Agent mutation fails, the same operation stays active and non-dismissible at **Attempting recovery**
+through the existing coordinator's bounded retries and loaded-readiness checks. Its notification ID, baseline,
+exact selected target, failed stage and original error remain durable across reconnects and server/sidecar
+restarts. Native recovery receipts bind those identities under the existing checkout lock before source changes.
+A completed recovery retains its outcome until the server can read it, without keeping admission closed.
+
+Only transaction-bound evidence of the selected target, settled dependencies/local edits, ready services and
+matching loaded runtime completes the requested update successfully. Restoring the baseline reports a failed
+update with the recovered version and explicit rollback wording. Another whole revision, missing target
+proof or a mismatched runtime never becomes update success. Exhausted recovery allows **Close** while debt
+and admission restrictions remain. Old terminal attempts are immutable; orphan receipts keep their standalone
+recovery notice. No second updater, process stop policy or automatic update replay is introduced.
 
 A dropped apply response is an unknown outcome. While the read endpoint fails or the browser is offline, the
 dialog keeps the last verified phase and says it is reconnecting; the 2-second poll retries, and focus or a

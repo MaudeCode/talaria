@@ -738,8 +738,20 @@ class ServiceRecovery:
                 or ('runtime_revision' in transaction and not re.fullmatch(r'[a-f0-9]{40}', str(transaction['runtime_revision'])))):
             raise RuntimeError('Service recovery transaction has an unknown identity or format; its evidence is retained.')
 
+        operation = self.state.get('update_operation')
+        if operation is not None and (
+                not isinstance(operation, dict)
+                or not re.fullmatch(r'[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}', str(operation.get('operation_id', '')))
+                or any(not re.fullmatch(r'[a-f0-9]{40}', str(operation.get(key, ''))) for key in ('baseline_revision', 'target_revision'))
+                or ('attempt_error' in operation and (not isinstance(operation['attempt_error'], str) or len(operation['attempt_error']) > 2000))
+                or ('source_moved' in operation and not isinstance(operation['source_moved'], bool))
+                or ('failed_stage' in operation and operation['failed_stage'] not in {'install', 'gateway_restart', 'agent_ready'})
+                or operation.get('stage') not in {'install', 'gateway_restart', 'agent_ready'}
+                or ('recovered_revision' in operation and not re.fullmatch(r'[a-f0-9]{40}', str(operation['recovered_revision'])))):
+            raise RuntimeError('Update operation correlation is malformed; its evidence is retained.')
+
     def save(self, token=None):
-        if not self.state['entries'] and not self.state.get('sync_failed') and not self.state.get('transaction'):
+        if not self.state['entries'] and not self.state.get('sync_failed') and not self.state.get('transaction') and not self.state.get('update_operation'):
             if self.path.exists():
                 self.path.unlink()
                 self._sync_directory()

@@ -7,7 +7,7 @@
 import { z } from 'zod'
 import { OutboundDraftRefSchema } from './outbound-drafts.js'
 import { RunStatusSchema } from './run-status.js'
-import { AgentRefreshConfirmationSchema } from './sidecar/runtime.js'
+import { AgentRefreshConfirmationSchema, AgentUpdateOperationSchema } from './sidecar/runtime.js'
 import { SpeedTierSchema } from './speed.js'
 import { ExecutionModeSchema, OwnerAttachmentSchema } from './gateway-session.js'
 import { CanonicalBotChatSchema, GatewayModeSchema, PluginOAuthClientSchema, PluginSettingFieldSchema, SkillCatalogIdentitySchema } from './sidecar/namespaces.js'
@@ -934,7 +934,7 @@ export const UpdateTargetSchema = z.looseObject({
   versions: z.array(UpdateVersionSchema).describe('TAL-946: every installable Stable release newer than the installed one, newest first; empty unless `release_ready` can apply.'),
   folded_count: z.number().int().nonnegative().describe('How many `versions` are `folded`.'),
 })
-export const AgentRecoveryStateSchema = z.object({ phase: z.enum(['idle', 'running', 'waiting', 'complete', 'blocked']), attempt: z.number().int().nonnegative(), detail: z.string(), retry_at: z.string().nullable() })
+export const AgentRecoveryStateSchema = z.object({ phase: z.enum(['idle', 'running', 'waiting', 'complete', 'blocked']), attempt: z.number().int().nonnegative(), detail: z.string(), retry_at: z.string().nullable(), operation_id: z.uuid().optional(), operation: AgentUpdateOperationSchema.optional(), verified_revision: z.string().regex(/^[a-f0-9]{40}$/).optional(), runtime_revision: z.string().regex(/^[a-f0-9]{40}$/).optional(), verified_version: z.string().nullable().optional() })
 export type AgentRecoveryState = z.infer<typeof AgentRecoveryStateSchema>
 export const UpdatesCheckSchema = z.looseObject({ agent_recovery: AgentRecoveryStateSchema.optional(), disabled: z.boolean().optional(), cached: z.boolean().optional(), channel: z.string().optional(), agent_channel: z.enum(['stable', 'experimental']).optional(), checked_at: z.number().optional(), include_agent: z.boolean().optional(), webui: UpdateTargetSchema.nullable().optional(), agent: UpdateTargetSchema.nullable().optional() })
 export const UpdatesSummarySchema = z.object({
@@ -948,11 +948,14 @@ export const UpdatesSummarySchema = z.object({
 })
 export type UpdatesSummary = z.infer<typeof UpdatesSummarySchema>
 export const UpdateApplySchema = z.looseObject({
+  recovery_only: z.boolean().optional().describe('Only a retained transaction was repaired; the selected update outcome remains unverified.'),
+  recovery_pending: z.boolean().optional().describe('The initiating operation remains active through automatic recovery; follow its notification_id without replaying the update.'),
+  verified_revision: z.string().regex(/^[a-f0-9]{40}$/).optional(), verified_version: z.string().nullable().optional(),
   recovery_compatibility: z.object({ manual_execution: z.boolean(), bot_chat_delivery: z.boolean() }).optional()
     .describe('Whether the target Agent can reconcile retained manual execution and pending Bot Chat records. A false value blocks the update before any source or repair-intent change.'),
   ok: z.boolean().optional(), status: z.string().optional(), error: z.string().optional(), message: z.string().optional(), lock: Json.optional(), confirmation_required: z.boolean().optional(), refresh_confirmation: AgentRefreshConfirmationSchema.optional(), candidate_revision: z.string().optional(), supported_revision: z.string().optional(), supported_version: z.string().optional(), agent_channel: z.enum(['stable', 'experimental']).optional(), notification_id: z.uuid().optional(), channel_switch: z.boolean().optional(), backup_dir: z.string().nullable().optional(), backup_failed: z.boolean().optional(), stash_conflict: z.boolean().optional(), gateway_restart: z.string().optional().describe('TAL-953: `waiting_for_idle` when an Agent update left the gateway restart to wait for the gateway\'s running work; the update notification reports its outcome.') })
 /** `verifying` (TAL-1138): the gateway restarted, and the server is checking that the new gateway process and the Agent runtime answer. */
-export const UpdateNotificationPhaseSchema = z.enum(['applying', 'awaiting_confirmation', 'waiting_for_idle', 'restarting', 'verifying', 'succeeded', 'blocked', 'failed', 'unknown'])
+export const UpdateNotificationPhaseSchema = z.enum(['applying', 'awaiting_confirmation', 'waiting_for_idle', 'restarting', 'verifying', 'recovering', 'succeeded', 'blocked', 'failed', 'unknown'])
 export const UpdateNotificationActionSchema = z.object({
   id: z.string().min(1).max(64).regex(/^[a-z0-9][a-z0-9_-]*$/),
   label: z.string().min(1).max(80),
@@ -965,9 +968,14 @@ export const UpdateNotificationDestinationSchema = z.object({
 })
 /** TAL-1138: one step of an update as its Updating dialog lists it; the server derives every label and state. */
 export const UpdateStepSchema = z.object({
-  id: z.enum(['install', 'web_restart', 'ready', 'gateway_wait', 'gateway_restart', 'agent_ready']),
+  id: z.enum(['install', 'web_restart', 'ready', 'gateway_wait', 'gateway_restart', 'agent_ready', 'recovery']),
   label: z.string().min(1).max(80),
   state: z.enum(['done', 'active', 'pending', 'failed']),
+})
+export const AgentUpdateRecoverySchema = z.object({
+  operation: AgentUpdateOperationSchema, attempt_error: z.string().max(2000).nullable(), runtime_revision: z.string().regex(/^[a-f0-9]{40}$/).nullable(),
+  rollback: z.boolean().nullable().optional(),
+  outcome: z.enum(['recovering', 'target_installed', 'baseline_restored', 'other_revision', 'blocked', 'unknown']),
 })
 export const UpdateNotificationSchema = z.object({
   id: z.uuid(),
@@ -990,6 +998,7 @@ export const UpdateNotificationSchema = z.object({
   verified_version: z.string().min(1).max(80).nullable(),
   /** The apply's own explanation of a failed or blocked attempt, or of a success that needs attention (an Agent update that kept local edits in the git stash), line breaks kept; null otherwise. */
   detail: z.string().max(2000).nullable(),
+  recovery: AgentUpdateRecoverySchema.optional(),
   unread: z.boolean(),
   active: z.boolean(),
   requires_interaction: z.boolean(),

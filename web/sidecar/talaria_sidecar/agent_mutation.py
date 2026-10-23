@@ -201,6 +201,15 @@ def recovery_receipts(runtime, *, watch=False, discovery_cache=None):
         for path in sorted(set(candidates)):
             try:
                 stat = path.lstat()
+                if path == services.recovery_path(root, home):
+                    # Completed correlation is history, not admission debt. Malformed evidence fails closed.
+                    try:
+                        state = services.ServiceRecovery(root, home, None, None, None).state
+                    except RuntimeError:
+                        state = {}
+                    if (state.get('update_operation', {}).get('recovered_revision') and not state.get('transaction')
+                            and not state['entries'] and not state.get('sync_failed')):
+                        continue
                 result.append((str(path), stat.st_ino, stat.st_mtime_ns, stat.st_size))
             except FileNotFoundError:
                 pass
@@ -244,6 +253,19 @@ def recover_retained(runtime, ctx, *, probe=False, complete_revision=None):
     receipts, _ = recovery_receipts(runtime, watch=True)
     fingerprint = hashlib.sha256(json.dumps(receipts).encode()).hexdigest() if receipts else ''
     result = {'ok': not receipts, 'owed': bool(receipts), 'fingerprint': fingerprint, 'detail': ''}
+    def correlated():
+        if runtime.agent_dir is None:
+            return {}
+        try:
+            state = services.ServiceRecovery(runtime.agent_dir.resolve(), runtime.hermes_home, None, None, None).state
+        except RuntimeError:
+            return {}  # Discovery retains malformed debt; the leased worker reports its refusal.
+        operation = state.get('update_operation')
+        if operation and ((state.get('transaction') or {}).get('operation_id') == operation['operation_id'] or (not recovery_receipts(runtime)[0] and operation.get('recovered_revision'))):
+            return {'operation': operation, **({'revision': operation['recovered_revision']} if operation.get('recovered_revision') else {})}
+        return {}
+    association = correlated()
+    result.update(association)
     if complete_revision is not None:
         if not isinstance(complete_revision, str) or not re.fullmatch(r'[a-f0-9]{40}', complete_revision):
             raise InvalidParams('A verified loaded revision is required to complete recovery.')
@@ -291,7 +313,7 @@ def recover_retained(runtime, ctx, *, probe=False, complete_revision=None):
                     child.kill()
                     child.wait()
         remaining, _ = recovery_receipts(runtime, watch=True)
-        return {**result, **reply, 'owed': bool(remaining),
+        return {**result, **reply, **(correlated() if association else {}), 'owed': bool(remaining),
                 'fingerprint': hashlib.sha256(json.dumps(remaining).encode()).hexdigest() if remaining else ''}
     finally:
         _ACTION_LOCK.release()
@@ -356,6 +378,11 @@ def call(runtime, ctx, params):
             raise InvalidParams("resolved profile homes are required")
         if any(Path(home).resolve().is_relative_to(root.resolve()) for home in homes):
             raise InvalidParams("Agent profile homes must stay outside the source checkout to survive update cleanup")
+        operation_id = params.get('operation_id')
+        baseline = params.get('baseline_revision')
+        if operation_id is not None and (not isinstance(operation_id, str) or not re.fullmatch(r'[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}', operation_id)
+                or not isinstance(baseline, str) or not re.fullmatch(r'[a-f0-9]{40}', baseline)):
+            raise InvalidParams('An operation requires its immutable baseline revision.')
         intent = params.get('intent', '')
         refresh_token = params.get('refresh_token')
         if not isinstance(intent, str) or len(intent) > 1024:
@@ -384,7 +411,7 @@ def call(runtime, ctx, params):
                 stderr.close()
                 return {"ok": False, "skipped": False, "detail": "A gateway lifecycle action is still running."}
             try:
-                proc = subprocess.Popen([sys.executable, "-m", "talaria_sidecar.agent_mutation", str(root), revision, json.dumps(homes), binding or ""],
+                proc = subprocess.Popen([sys.executable, "-m", "talaria_sidecar.agent_mutation", str(root), revision, json.dumps(homes), binding or "", json.dumps({"operation_id": operation_id, "baseline_revision": baseline}) if operation_id else ""],
                                         cwd=root, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=stderr, text=True)
             except BaseException:
                 stderr.close()
@@ -435,6 +462,10 @@ def call(runtime, ctx, params):
                 _CONSENTS[nonce] = {key: session[key] for key in ('root', 'revision', 'homes', 'intent')}
                 _CONSENTS[nonce].update(binding=confirmation['binding'], expires=time.monotonic() + CONSENT_SECONDS)
             result['refresh_confirmation'] = {'token': nonce, 'services': confirmation['services']}
+        if action == 'begin' and not result['ok'] and 'refresh_confirmation' not in result:
+            probe = recover_retained(runtime, ctx, probe=True)
+            correlation = probe.get('operation')
+            result['recovery_required'] = bool(correlation and correlation['operation_id'] == params.get('operation_id')) if params.get('operation_id') else probe['owed']
         if action == "begin" and result["ok"]:
             runtime.retire()
             return {**result, "token": token}
@@ -528,7 +559,7 @@ def _writer_ledger(root, identity):
     return found
 
 
-def _worker(root, revision, homes, requests, stopped, send, refresh_binding=None):
+def _worker(root, revision, homes, requests, stopped, send, refresh_binding=None, operation=None):
     if os.name not in {"posix", "nt"}:
         raise RuntimeError("A cooperative Agent writer lease is unavailable on this platform; source was not changed.")
     sys.path.insert(0, str(root))
@@ -557,6 +588,11 @@ def _worker(root, revision, homes, requests, stopped, send, refresh_binding=None
         if not found["ok"]:
             raise RuntimeError("The installed Agent revision could not be verified before quiescence.")
         initial = found["detail"]
+        if operation and operation['baseline_revision'] != initial:
+            raise RuntimeError('The Agent baseline changed before the operation acquired its native lease.')
+        previous = recovery.state.get('update_operation')
+        if operation and previous and previous['operation_id'] == operation['operation_id'] and (previous['target_revision'] != revision or previous['baseline_revision'] != operation['baseline_revision']):
+            raise RuntimeError('The immutable target or baseline changed within the same update operation.')
         initial_tree = records.tree_state(root)
         if initial_tree is None or initial_tree.get("pre_sha") != initial or initial_tree.get("dirty_at_pause") is None:
             raise RuntimeError("The Agent source baseline could not be proved before quiescence.")
@@ -641,7 +677,10 @@ def _worker(root, revision, homes, requests, stopped, send, refresh_binding=None
                      unmapped_pids=[e["pid"] for e in gateway_entries if not e.get("kind")],
                      identities=owner_identities, resume_needed=bool(gateway_entries))
         records.record_pause(token, adopted, claims)
-        recovery.state.setdefault('transaction', {'revision': revision, 'homes': sorted(map(str, homes))})
+        transaction = recovery.state.setdefault('transaction', {'revision': revision, 'homes': sorted(map(str, homes))})
+        if operation:
+            recovery.state['update_operation'] = {**operation, 'target_revision': revision, 'stage': 'install', 'source_moved': False}
+            transaction['operation_id'] = operation['operation_id']
         recovery.save(token)
         if legacy:
             whole, why = records.tree_is_whole(token, root)
@@ -753,6 +792,8 @@ def _worker(root, revision, homes, requests, stopped, send, refresh_binding=None
                 gate = modules["update_cmd_pause_gate"]._checkout_move(token, revision, paths=paths, revert=True) if mutating else contextlib.nullcontext({})
                 if mutating:
                     recovery.state['transaction']['dependencies_verified'] = False
+                    if args[0] in {'merge', 'reset', 'checkout'} and recovery.state.get('update_operation'):
+                        recovery.state['update_operation'].pop('source_moved', None)
                 move_marker = None
                 if args[0] == 'merge' and '--ff-only' in args or args[0] == 'reset' and '--hard' in args:
                     commit = modules['update_cmd_commit']
@@ -776,6 +817,8 @@ def _worker(root, revision, homes, requests, stopped, send, refresh_binding=None
                             recovery.state['transaction']['dependencies_verified'] = True
                     else:
                         result = {'ok': False, 'detail': 'The source move did not leave a verified whole target; native rollback remains owed.'}
+                if result['ok'] and move_marker is not None and recovery.state.get('update_operation'):
+                    recovery.state['update_operation']['source_moved'] = revision != recovery.state['update_operation']['baseline_revision']
                 if result["ok"] and applying and whole_before:
                     after = records.tree_state(root)
                     if before is None or after is None or before["pre_sha"] != after["pre_sha"]:
@@ -785,6 +828,10 @@ def _worker(root, revision, homes, requests, stopped, send, refresh_binding=None
                         if baseline.get("pre_sha") == after["pre_sha"]:
                             baseline.update(after)
                     records.write(token)
+                recovery.save(token)
+            if not result['ok'] and recovery.state.get('update_operation'):
+                recovery.state['update_operation'].setdefault('attempt_error', result.get('detail', '')[:2000])
+                recovery.state['update_operation'].setdefault('failed_stage', recovery.state['update_operation']['stage'])
                 recovery.save(token)
             send(result)
     except BaseException as exc:
@@ -814,6 +861,9 @@ def _worker(root, revision, homes, requests, stopped, send, refresh_binding=None
                 pending = _command(modules['update_custody'].git_argv(['git'], ['for-each-ref', '--format=%(objectname)', 'refs/talaria/autostash/pending/']), root, 10, threading.Event(), modules['update_custody'])
                 if not pending['ok'] or pending['detail']:
                     raise RuntimeError('Gateway resume remains owed until retained local Agent edits are restored.')
+                if recovery.state.get('update_operation'):
+                    recovery.state['update_operation']['stage'] = 'gateway_restart'
+                    recovery.save(token)
                 if token.get("resume_needed"):
                     if bootstrap_repair:
                         records.write({**token, "resume_needed": True}, owner=records.UNOWNED)
@@ -836,6 +886,8 @@ def _worker(root, revision, homes, requests, stopped, send, refresh_binding=None
                     recovery.state['transaction']['runtime_revision'] = found['detail']
                     recovery.save(token)
                 else:
+                    if recovery.state.get('update_operation'):
+                        recovery.state['update_operation'].update(stage='agent_ready', recovered_revision=found['detail'])
                     recovery.state.pop('transaction', None)
                     recovery.save()
         except BaseException as exc:
@@ -843,7 +895,14 @@ def _worker(root, revision, homes, requests, stopped, send, refresh_binding=None
             if token and not handed_off:
                 records.write({**token, "resume_needed": True}, owner=records.UNOWNED)
         finally:
-            lock.release()
+            try:
+                if error and token and recovery and recovery.state.get('update_operation') and (recovery.state.get('transaction') or {}).get('operation_id') == recovery.state['update_operation']['operation_id']:
+                    operation = recovery.state['update_operation']
+                    operation.setdefault('attempt_error', error[:2000])
+                    operation.setdefault('failed_stage', operation['stage'])
+                    recovery.save(token)
+            finally:
+                lock.release()
     send({"ok": error is None, "detail": error or ""})
 
 
@@ -948,7 +1007,13 @@ def _resume_worker(root, stopped=None, complete_revision=None):
         if revision not in {r for b in tree.get('baselines', []) for r in [b.get('pre_sha'), *b.get('move_targets', []), *b.get('landed', {})]}:
             return {'ok': False, 'detail': 'Installed revision is outside the retained transaction; recovery was refused.'}
         moved = any(b.get('pre_sha') != revision for b in tree.get('baselines', []))
+        operation = recovery.state.get('update_operation')
+        if operation and any(sha != operation['baseline_revision'] for b in tree.get('baselines', []) for sha in b.get('landed', {})):
+            operation['source_moved'] = True
         transaction = recovery.state.get('transaction') or {}
+        operation = recovery.state.get('update_operation')
+        if operation and transaction.get('operation_id') != operation['operation_id']:
+            recovery.state.pop('update_operation', None)
         if recovery.state.get('sync_failed') or (moved and not transaction.get('dependencies_verified')) or (marker and marker.exists() and not transaction):
             if _writer_ledger(root, process_identity):
                 return {'ok': False, 'detail': 'Recorded dependency repair is waiting for the existing writer drain; no additional stop was sent.'}
@@ -979,10 +1044,16 @@ def _resume_worker(root, stopped=None, complete_revision=None):
         if not Path(main_module.__file__).resolve().is_relative_to(root):
             raise RuntimeError("Gateway recovery loaded another Agent runtime.")
         records.recover(argv=[])
+        if recovery.state.get('update_operation'):
+            recovery.state['update_operation']['stage'] = 'gateway_restart'
+            recovery.save(tree)
         try:
             recovery.resume(_writer_ledger)
         except services.GatewayDraining as exc:
             return {'ok': False, 'draining': True, 'detail': str(exc)}
+        final_head = _command(custody.git_argv(['git'], ['rev-parse', 'HEAD']), root, 10, stopped, custody)
+        if not final_head['ok'] or final_head['detail'] != revision or not records.tree_is_whole(tree, root)[0]:
+            return {'ok': False, 'detail': 'Recovered source identity changed before readiness was verified; its evidence is retained.'}
         owed = records.record_path().exists() or bool(records._claims(records.record_path())) or bool(recovery.state['entries'])
         runtime_pending = bool((marker and marker.exists()) or (recovery.state.get('transaction') or {}).get('runtime_revision'))
         if not owed and runtime_pending:
@@ -993,6 +1064,8 @@ def _resume_worker(root, stopped=None, complete_revision=None):
                 transaction['runtime_revision'] = revision
                 recovery.save(tree)
         if not owed and not runtime_pending:
+            if recovery.state.get('update_operation'):
+                recovery.state['update_operation'].update(stage='agent_ready', recovered_revision=revision)
             recovery.state.pop('transaction', None)
             recovery.state['sync_failed'] = False
             recovery.save()
@@ -1102,7 +1175,7 @@ def main():
             send(reply)
             return
         with contextlib.redirect_stdout(sys.stderr):
-            _worker(Path(sys.argv[1]).resolve(), sys.argv[2], {Path(h).resolve() for h in json.loads(sys.argv[3])}, requests, stopped, send, sys.argv[4] if len(sys.argv) > 4 else None)
+            _worker(Path(sys.argv[1]).resolve(), sys.argv[2], {Path(h).resolve() for h in json.loads(sys.argv[3])}, requests, stopped, send, sys.argv[4] if len(sys.argv) > 4 else None, json.loads(sys.argv[5]) if len(sys.argv) > 5 and sys.argv[5] else None)
     except BaseException as exc:
         send({"ok": False, "detail": str(exc)})
 

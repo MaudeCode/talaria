@@ -424,6 +424,22 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     } finally { svc.stopAutoApply(); vi.useRealTimers() }
   })
 
+  it('bounds a persisted operation when its Agent cannot be rediscovered after restart', async () => {
+    vi.useFakeTimers()
+    const { svc } = service(sourceInstall(), { checkEnabled: () => false, agentDir: null })
+    const id = '00000000-0000-4000-8000-000000001523'
+    Object.assign((svc as unknown as { deps: object }).deps, {
+      hasPendingRecovery: () => true,
+      pendingRecoveryOperation: () => id,
+      recoverAgent: () => Promise.reject(new Error('Synthetic Agent connection is unavailable.')),
+    })
+    try {
+      svc.startAutoApply(24 * 3600_000)
+      await vi.advanceTimersByTimeAsync(300_000)
+      expect(svc.cachedStatus().agent_recovery).toMatchObject({ phase: 'blocked', attempt: 6, operation_id: id, detail: 'Synthetic Agent connection is unavailable.' })
+    } finally { svc.stopAutoApply(); vi.useRealTimers() }
+  })
+
   it('verifies loaded readiness for a persisted recovery notice after its debt disappeared', async () => {
     vi.useFakeTimers()
     const { svc } = service(sourceInstall(), { checkEnabled: () => false, agentDir: '/synthetic' })
@@ -1118,7 +1134,7 @@ describe('Agent checkout updates', () => {
     const sidecar = new FakeSidecar()
     sidecar.describe = { ...sidecar.describe!, agent_dir: a.agent }
     const detail = 'synthetic.dashboard running backend lifecycle APIs are unsupported for safe Agent update custody. Backend listener identity remains unverified. Finish active work, then have the owner gracefully refresh this service through its original supervisor. Verify the successor lifecycle APIs and intended installation/profile/PID, then retry the Agent update. Any retained service recovery remains owed.'
-    sidecar.respond('runtime.agent_mutation', () => ({ ok: false, skipped: false, detail }))
+    sidecar.respond('runtime.agent_mutation', () => ({ ok: false, skipped: false, detail, recovery_required: false }))
     writeFileSync(join(a.agent, 'README'), 'local edit\n')
     writeFileSync(join(a.agent, 'untracked'), 'local work\n')
     const before = git(a.agent, 'status', '--porcelain')
@@ -1153,9 +1169,11 @@ describe('Agent checkout updates', () => {
     let recoveries = 0
     let loaded = a.v1
     const begins: string[] = []
+    let operation: import('@maudecode/talaria-web-contracts').AgentUpdateOperation | undefined
     sidecar.respond('runtime.agent_mutation', async (params) => {
       if (params.action === 'begin') {
         begins.push(params.revision)
+        if (params.operation_id && params.baseline_revision) operation = { operation_id: params.operation_id, baseline_revision: params.baseline_revision, target_revision: params.revision, stage: 'install', source_moved: failure !== 'before-source' }
         if (failure === 'before-source' && !injected) {
           injected = owed = true
           return { ok: false, skipped: false, detail: 'synthetic supervisor disarm failure' }
@@ -1181,11 +1199,12 @@ describe('Agent checkout updates', () => {
     })
     const recovered = failure === 'before-source' || failure === 'local-restore' ? a.v1 : a.v2
     sidecar.respond('runtime.agent_recovery', (params) => {
-      if (params.probe) return { ok: !owed, owed, fingerprint: owed ? 'retained' : '', detail: '' }
+      if (params.probe) return { ok: !owed, owed, fingerprint: owed ? 'retained' : '', detail: '', ...(operation ? { operation } : {}) }
       if (params.complete_revision) {
         expect(params.complete_revision).toBe(recovered)
         owed = false
-        return { ok: true, owed: false, fingerprint: '', detail: '', revision: recovered }
+        if (operation) operation = { ...operation, stage: 'agent_ready', recovered_revision: recovered }
+        return { ok: true, owed: false, fingerprint: '', detail: '', revision: recovered, ...(operation ? { operation } : {}) }
       }
       recoveries += 1
       if (recoveries === 1) return { ok: false, owed: true, fingerprint: 'retained', detail: 'synthetic repair is not ready' }
@@ -1194,8 +1213,8 @@ describe('Agent checkout updates', () => {
         git(a.agent, 'reset', '--hard', a.v1)
         return { ok: true, owed: true, fingerprint: 'retained', detail: '', local_restore: true, revision: a.v1 }
       }
-      if (recovered === loaded) owed = false
-      return { ok: true, owed, fingerprint: owed ? 'retained' : '', detail: '', revision: recovered, runtime_pending: owed }
+      if (recovered === loaded) { owed = false; if (operation) operation = { ...operation, stage: 'agent_ready', recovered_revision: recovered } }
+      return { ok: true, owed, fingerprint: owed ? 'retained' : '', detail: '', revision: recovered, runtime_pending: owed, ...(operation ? { operation } : {}) }
     })
     sidecar.respond('runtime.status', () => ({ ...sidecar.describe!, agent_revision: loaded }))
     sidecar.respond('runtime.ensure_current', () => {
@@ -1223,6 +1242,8 @@ describe('Agent checkout updates', () => {
     wire.recoveryChanged = async (state) => {
       phases.push(state.phase)
       await notify(state)
+      const row = (await server.deps.updateNotifications.list({ owner: 'local-owner', profile: 'default', serverOwner: true, tab: 'tab-recovery' })).tab_update
+      if (row && ['running', 'waiting'].includes(state.phase)) expect(row).toMatchObject({ phase: 'recovering', active: true, presents_dialog: true, dialog_close: 'none' })
       if (['waiting', 'complete', 'blocked'].includes(state.phase)) {
         if (wake) { const resolve = wake; wake = undefined; resolve(state) }
         else transitions.push(state)
@@ -1237,8 +1258,15 @@ describe('Agent checkout updates', () => {
     try {
       svc.startAutoApply()
       await vi.advanceTimersByTimeAsync(1)
-      const options = { agentChannel: channel, confirmedRevision: a.v2 }
-      const failed = action === 'apply' ? await svc.apply('agent', null, () => true, options) : await svc.force('agent', null, options)
+      const response = await server.get(`/api/updates/${action}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ target: 'agent', agent_channel: channel, confirmed_agent_revision: a.v2, tab_id: 'tab-recovery' }) })
+      expect(response.status).toBe(200)
+      const failed = await response.json() as Dict
+      const initial = await (await server.get('/api/update-notifications?tab_id=tab-recovery')).json() as { tab_update: Dict }
+      expect(initial.tab_update).toMatchObject({ id: failed.notification_id, phase: 'recovering', active: true, dialog_close: 'none' })
+      expect(failed.notification_id).toBe(operation?.operation_id)
+      const joined = await (await server.get(`/api/updates/${action}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ target: 'agent', tab_id: 'tab-secondclient' }) })).json() as Dict
+      expect(joined).toMatchObject({ status: 'already_in_progress', notification_id: failed.notification_id })
+      expect(begins).toHaveLength(1)
       expect(failed.ok).toBe(false)
       expect(injected).toBe(true)
       channel = 'stable'
@@ -1267,7 +1295,12 @@ describe('Agent checkout updates', () => {
       svc.stopAutoApply()
       vi.useRealTimers()
       const history = await (await server.get('/api/update-notifications')).json() as { notifications: Dict[] }
-      expect(history.notifications.find((row) => row.kind === 'agent_recovery')).toMatchObject({ phase: 'succeeded' })
+      expect(history.notifications.find((row) => row.id === failed.notification_id)).toMatchObject({ phase: recovered === a.v2 ? 'succeeded' : 'failed', verified_revision: recovered, active: false, recovery: { outcome: recovered === a.v2 ? 'target_installed' : 'baseline_restored' } })
+      const final = history.notifications.find((row) => row.id === failed.notification_id)!
+      expect(final).toMatchObject({ recovery: { rollback: failure === 'local-restore' } })
+      if (failure === 'before-source') expect(final.message).toContain('no rollback occurred')
+      if (failure === 'local-restore') expect(final.message).toContain('rolled back to the previous revision')
+      expect(history.notifications.some((row) => row.kind === 'agent_recovery')).toBe(false)
     } finally { svc.stopAutoApply(); vi.useRealTimers(); await server.close() }
   })
 
@@ -2182,6 +2215,29 @@ describe('Agent checkout updates', () => {
     const result = await svc.apply('agent', null, () => true, { confirmedRevision: next })
     expect(result).toMatchObject({ ok: true, verified_revision: a.v2, restart_scheduled: true })
     expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v2)
+  })
+
+  it('does not report orphan repair as installation of a newly selected update', async () => {
+    const a = agentInstall(true)
+    let fail = true
+    const svc = agentService(a.agent, runGit, [], () => Promise.resolve({ ok: !fail, skipped: false, detail: fail ? 'repair interrupted' : '' }))
+    expect((await svc.apply('agent', null, () => true, { confirmedRevision: a.v2 })).ok).toBe(false)
+    git(a.origin, 'commit', '--allow-empty', '-m', 'new selected release')
+    git(a.origin, 'tag', 'v3.0.0')
+    const next = git(a.origin, 'rev-parse', 'HEAD')
+    fail = false
+    const server = await bootTestServer()
+    server.deps.updates = svc
+    try {
+      const response = await server.get('/api/updates/apply', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ target: 'agent', confirmed_agent_revision: next, tab_id: 'tab-orphanrepair' }) })
+      const result = await response.json() as Dict
+      expect(result).toMatchObject({ ok: false, recovery_only: true, verified_revision: a.v2 })
+      const list = await (await server.get('/api/update-notifications?tab_id=tab-orphanrepair')).json() as { tab_update: Dict }
+      expect(list.tab_update).toMatchObject({ phase: 'unknown', active: false, dialog_close: 'close', verified_revision: a.v2 })
+      expect(list.tab_update.detail).toContain('requested update outcome is unverified')
+      expect(list.tab_update.recovery).toBeUndefined()
+      expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v2)
+    } finally { await server.close() }
   })
 
   it.each([false, true])('refuses sync intent inside the Agent checkout before force-clean (symlink=%s)', async (symlink) => {

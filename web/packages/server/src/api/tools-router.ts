@@ -219,7 +219,7 @@ async function applyWithNotification(
   const scope = await updateNotificationScope(ctx, input.tab_id)
   const active = ctx.deps.updateNotifications.activeUpdate(scope, target)
   if (active) (await ctx.deps.updateNotifications.watch(scope, active.id))
-  if (active && (active.phase === 'applying' || active.phase === 'restarting' || active.phase === 'verifying')) {
+  if (active && (active.phase === 'applying' || active.phase === 'restarting' || active.phase === 'verifying' || active.phase === 'recovering')) {
     return { ok: false, status: 'already_in_progress', message: 'Update already in progress', notification_id: active.id }
   }
   const notification = active ?? (await ctx.deps.updateNotifications.begin(scope, target))
@@ -227,7 +227,10 @@ async function applyWithNotification(
   // TAL-1138: the gateways running before an Agent update; the update's check needs a new process for each.
   const gatewaysBefore = target === 'agent' ? await ctx.deps.gatewayRestarts.gateways(scope.profile).catch(() => []) : []
   try {
-    const options = { agentChannel: input.agent_channel, confirmedRevision: input.confirmed_agent_revision, version: input.version, refreshToken: input.agent_refresh_token, mutationIntent: principalHash(scope.owner, scope.profile, notification.id),
+    const options = { operationId: notification.id,
+      onTransaction: (baseline: string, selected: string) => ctx.deps.updateNotifications.bindAgentOperation(notification.id, baseline, selected),
+      onFailure: (detail: unknown, identity?: { revision: string | null; version: string | null }) => ctx.deps.updateNotifications.handoffAgentRecovery(notification.id, detail, identity),
+      agentChannel: input.agent_channel, confirmedRevision: input.confirmed_agent_revision, version: input.version, refreshToken: input.agent_refresh_token, mutationIntent: principalHash(scope.owner, scope.profile, notification.id),
       // TAL-1429: the Updating dialog shows what the running update waits for; a lost refresh only delays that wording.
       onProgress: (detail: string) => { ctx.deps.updateNotifications.transition(notification.id, 'applying', null, undefined, detail).catch(() => undefined) } }
     const result = action === 'apply' ? await ctx.deps.updates.apply(target, bodyChannel(input.channel), () => true, options)
@@ -236,6 +239,11 @@ async function applyWithNotification(
     const verifiedIdentity = typeof result.verified_revision === 'string'
       ? { revision: result.verified_revision, version: typeof result.verified_version === 'string' ? result.verified_version : null }
       : undefined
+    if (result.recovery_only === true) {
+      await ctx.deps.updateNotifications.transition(notification.id, 'unknown', null, verifiedIdentity, `Retained Agent recovery was attempted. The requested update outcome is unverified. ${str(result.message)}`)
+      return { ...result, ok: false, notification_id: notification.id }
+    }
+    if (result.recovery_pending === true) return { ...result, notification_id: notification.id }
     if (result.confirmation_required === true) (await ctx.deps.updateNotifications.transition(notification.id, 'awaiting_confirmation', null, verifiedIdentity, result.message))
     else if (result.restart_blocked === true) (await ctx.deps.updateNotifications.transition(notification.id, 'blocked', null, verifiedIdentity, result.message))
     else if (result.ok !== true) (await ctx.deps.updateNotifications.transition(notification.id, 'failed', null, verifiedIdentity, result.message || result.error))
@@ -268,7 +276,8 @@ async function applyWithNotification(
     }
     return { ...result, notification_id: notification.id }
   } catch (error) {
-    await ctx.deps.updateNotifications.transition(notification.id, 'failed', null, undefined, error instanceof Error ? error.message : null)
+    const detail = error instanceof Error ? error.message : null
+    if (!await ctx.deps.updateNotifications.handoffAgentRecovery(notification.id, detail)) await ctx.deps.updateNotifications.transition(notification.id, 'failed', null, undefined, detail)
     throw error
   }
 }

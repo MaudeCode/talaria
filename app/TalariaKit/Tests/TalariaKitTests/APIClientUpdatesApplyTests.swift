@@ -32,6 +32,15 @@ final class APIClientUpdatesApplyTests: APIClientTestCase {
         XCTAssertEqual(response.outcome, .applying)
     }
 
+    func testServerRecoveryHandoffContinuesFollowingTheSameNotification() throws {
+        let response = try decodeApply("""
+        { "ok": false, "target": "agent", "recovery_pending": true,
+          "notification_id": "00000000-0000-4000-8000-000000001523" }
+        """)
+        XCTAssertEqual(response.outcome, .applying)
+        XCTAssertEqual(response.notificationId, "00000000-0000-4000-8000-000000001523")
+    }
+
     func testRestartBlockedResponseIsNotTreatedAsFailure() throws {
         let response = try decodeApply("""
         {
@@ -213,6 +222,18 @@ final class APIClientUpdatesApplyTests: APIClientTestCase {
         XCTAssertNil(warning.destination)
     }
 
+    func testSharedRecoveringNotificationDecodesWithoutEndingTheUpdate() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let response = try decoder.decode(UpdateNotificationsResponse.self, from: sharedContractFixture("update-notifications"))
+        let recovering = try XCTUnwrap(response.notifications.first { $0.phase == "recovering" })
+        XCTAssertEqual(recovering.phase, "recovering")
+        XCTAssertTrue(recovering.active)
+        XCTAssertFalse(recovering.canDismiss)
+        XCTAssertEqual(recovering.message, "Attempting recovery")
+        XCTAssertTrue(recovering.detail?.contains("gateway resume failed") == true)
+    }
+
     func testUpdateNotificationTimestampAcceptsServerFractionalSeconds() {
         XCTAssertNotNil(UpdateNotificationTimestamp.date(from: "2026-09-26T12:00:00.123Z"))
         XCTAssertNotNil(UpdateNotificationTimestamp.date(from: "2026-09-26T12:00:00Z"))
@@ -268,6 +289,22 @@ final class APIClientUpdatesApplyTests: APIClientTestCase {
 
         XCTAssertEqual(completion, .succeeded)
         XCTAssertEqual(polls * 2, 90)
+    }
+
+    func testFollowUpdateKeepsRecoveringActiveAcrossReconnectUntilVerifiedOutcome() async throws {
+        var polls = 0
+        let client = makeClient { request in
+            polls += 1
+            switch polls {
+            case 1: return self.updateNotificationList(phase: "recovering", active: true, message: "Attempting recovery", for: request)
+            case 2: throw URLError(.networkConnectionLost)
+            case 3: return self.updateNotificationList(phase: "recovering", active: true, message: "Attempting recovery", for: request)
+            default: return self.updateNotificationList(phase: "succeeded", active: false, message: "Hermes Agent v2.0.0 is running after automatic recovery.", for: request)
+            }
+        }
+        let completion = await client.followUpdate(notificationID: Self.updateNotificationID, sleep: { _ in })
+        XCTAssertEqual(completion, .succeeded)
+        XCTAssertEqual(polls, 4)
     }
 
     func testFollowUpdateShowsTheServerExplanationOfAFailedPhase() async throws {

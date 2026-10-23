@@ -69,6 +69,83 @@ describe('UpdateNotificationStore', () => {
     expect((await store.list(alice)).notifications).toMatchObject([{ id: original.id, unread: true }])
   })
 
+  it('keeps the initiating dialog active and non-dismissible throughout automatic recovery', async () => {
+    const root = temp()
+    const scope = { ...alice, tab: 'tab-recovery' }
+    const store = await initializeStore(new UpdateNotificationStore(new JsonDocuments(root)))
+    const original = await store.begin(scope, 'agent')
+    await store.transition(original.id, 'recovering', null, { revision: 'b'.repeat(40), version: '2.0.0' }, 'Synthetic service resume failed.')
+    await store.watch({ ...scope, tab: 'tab-secondclient' }, original.id)
+    const expected = { id: original.id, phase: 'recovering', active: true, presents_dialog: true, dialog_close: 'none', can_dismiss: false }
+    expect((await store.list(scope)).tab_update).toMatchObject(expected)
+    expect((await store.list(scope)).tab_update?.steps).toContainEqual({ id: 'recovery', label: 'Attempting recovery', state: 'active' })
+    expect(await store.dismiss(scope, original.id)).toBe('acknowledgement_required')
+    const restarted = await initializeStore(new UpdateNotificationStore(new JsonDocuments(root)))
+    await restarted.reconcileInterruptedUpdates(null)
+    expect((await restarted.list(scope)).tab_update).toMatchObject(expected)
+    expect((await restarted.list({ ...scope, tab: 'tab-secondclient' })).tab_update).toMatchObject(expected)
+    await restarted.transition(original.id, 'applying', null, undefined, 'Late progress frame')
+    expect((await restarted.list(scope)).tab_update).toMatchObject(expected)
+  })
+
+  it.each(['target', 'baseline', 'other', 'wrong-runtime', 'missing-target', 'blocked'] as const)('reports transaction-bound recovery truthfully: %s', async (outcome) => {
+    const root = temp()
+    const scope = { ...alice, tab: 'tab-recovery' }
+    let store = await initializeStore(new UpdateNotificationStore(new JsonDocuments(root)))
+    if (outcome === 'target') await store.agentRecovery({ phase: 'waiting', attempt: 1, detail: 'Earlier standalone recovery.', retry_at: null })
+    const original = await store.begin(scope, 'agent')
+    const baseline = 'a'.repeat(40), target = 'b'.repeat(40)
+    await store.bindAgentOperation(original.id, baseline, target)
+    await store.handoffAgentRecovery(original.id, 'Synthetic resume failed.')
+    store = await initializeStore(new UpdateNotificationStore(new JsonDocuments(root)))
+    await store.reconcileInterruptedUpdates(null)
+    const revision = outcome === 'baseline' ? baseline : outcome === 'other' ? 'c'.repeat(40) : target
+    const operation = { operation_id: original.id, baseline_revision: baseline, target_revision: target, stage: 'gateway_restart' as const, failed_stage: 'gateway_restart' as const, source_moved: true, recovered_revision: revision }
+    for (const phase of ['running', 'waiting'] as const) {
+      await store.agentRecovery({ phase, attempt: 1, retry_at: null, detail: 'Synthetic bounded retry.', operation_id: original.id, operation })
+      expect((await store.list(scope)).tab_update).toMatchObject({ id: original.id, phase: 'recovering', active: true, dialog_close: 'none', recovery: { attempt_error: 'Synthetic resume failed.', operation: { failed_stage: 'gateway_restart' } } })
+      expect((await store.list(scope)).tab_update?.steps).toContainEqual({ id: 'gateway_restart', label: 'Restarting gateway', state: 'failed' })
+    }
+    await store.agentRecovery({ phase: outcome === 'blocked' ? 'blocked' : 'complete', attempt: 3, retry_at: null, detail: 'Synthetic supervisor is unavailable.', operation_id: original.id,
+      ...(outcome === 'missing-target' ? {} : { operation }), verified_revision: revision, runtime_revision: outcome === 'wrong-runtime' ? baseline : revision, verified_version: 'v2.0.0' })
+    const final = (await store.list(scope)).tab_update!
+    expect(final).toMatchObject({ phase: outcome === 'target' ? 'succeeded' : outcome === 'blocked' ? 'blocked' : ['wrong-runtime', 'missing-target'].includes(outcome) ? 'unknown' : 'failed', active: false, presents_dialog: false, dialog_close: outcome === 'target' ? 'auto' : 'close', verified_revision: revision })
+    expect(final.message).toContain(outcome === 'target' ? 'after automatic recovery' : outcome === 'baseline' ? 'rolled back to the previous revision' : outcome === 'other' ? 'selected target was not installed' : outcome === 'blocked' ? 'could not finish' : 'could not be verified')
+    expect(final.detail).toContain('Synthetic resume failed.')
+    if (outcome === 'target') expect((await store.list(scope)).notifications.find((row) => row.kind === 'agent_recovery')).toMatchObject({ phase: 'succeeded', message: 'Hermes Agent is usable again. The original update result is unchanged.' })
+    const newer = await store.begin(scope, 'agent')
+    await store.bindAgentOperation(newer.id, target, 'd'.repeat(40))
+    await store.handoffAgentRecovery(newer.id, 'New operation failed.')
+    await store.agentRecovery({ phase: 'complete', attempt: 4, retry_at: null, detail: '', operation_id: original.id, operation, verified_revision: target, runtime_revision: target })
+    expect((await store.list(scope)).tab_update).toMatchObject({ id: newer.id, phase: 'recovering', active: true })
+    expect((await store.list(scope)).notifications.find((row) => row.id === original.id)).toEqual(final)
+  })
+
+  it('resumes a bound apply whose response was lost at server restart', async () => {
+    const root = temp()
+    const scope = { ...alice, tab: 'tab-recovery' }
+    const store = await initializeStore(new UpdateNotificationStore(new JsonDocuments(root)))
+    const original = await store.begin(scope, 'agent')
+    await store.bindAgentOperation(original.id, 'a'.repeat(40), 'b'.repeat(40))
+    const restarted = await initializeStore(new UpdateNotificationStore(new JsonDocuments(root)))
+    await restarted.reconcileInterruptedUpdates(null)
+    expect((await restarted.list(scope)).tab_update).toMatchObject({ id: original.id, phase: 'recovering', message: 'Attempting recovery', active: true, dialog_close: 'none' })
+    await restarted.agentRecovery({ phase: 'complete', attempt: 1, detail: '', retry_at: null,
+      operation: { operation_id: original.id, baseline_revision: 'a'.repeat(40), target_revision: 'b'.repeat(40), stage: 'agent_ready', recovered_revision: 'b'.repeat(40) },
+      verified_revision: 'b'.repeat(40), runtime_revision: 'b'.repeat(40), verified_version: 'v2.0.0' })
+    expect((await restarted.list(scope)).tab_update).toMatchObject({ id: original.id, phase: 'succeeded', dialog_close: 'auto' })
+  })
+
+  it('clears an old installed identity when recovery can prove only the loaded runtime', async () => {
+    const scope = { ...alice, tab: 'tab-recovery' }
+    const store = await initializeStore(new UpdateNotificationStore(new JsonDocuments(temp())))
+    const original = await store.begin(scope, 'agent')
+    await store.bindAgentOperation(original.id, 'a'.repeat(40), 'b'.repeat(40))
+    await store.handoffAgentRecovery(original.id, 'Synthetic lost response.', { revision: 'b'.repeat(40), version: 'v2.0.0' })
+    await store.agentRecovery({ phase: 'complete', attempt: 1, retry_at: null, detail: '', operation_id: original.id, runtime_revision: 'a'.repeat(40), verified_version: 'v1.0.0' })
+    expect((await store.list(scope)).tab_update).toMatchObject({ phase: 'unknown', verified_revision: null, verified_version: null })
+  })
+
   it('reconciles an interrupted recovery notice without changing the failed update history', async () => {
     const root = temp()
     const store = await initializeStore(new UpdateNotificationStore(new JsonDocuments(root)))
