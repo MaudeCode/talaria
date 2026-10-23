@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Other open chats no longer stall while a reply finishes saving on a slow disk.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

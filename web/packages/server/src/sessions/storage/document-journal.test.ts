@@ -5,7 +5,7 @@ import { expect, it, vi } from 'vitest'
 import { JsonStorage } from './json.js'
 import { runDocumentBackendConformance, runJournalBackendConformance } from './conformance.js'
 
-vi.mock('node:fs', async (original) => ({ ...await original<typeof fs>(), renameSync: vi.fn((await original<typeof fs>()).renameSync), fsyncSync: vi.fn((await original<typeof fs>()).fsyncSync) }))
+vi.mock('node:fs', async (original) => ({ ...await original<typeof fs>(), renameSync: vi.fn((await original<typeof fs>()).renameSync), fsync: vi.fn((await original<typeof fs>()).fsync) }))
 
 function fixture() {
   const stateDir = fs.mkdtempSync(join(tmpdir(), 'talaria-state-conformance-'))
@@ -23,11 +23,11 @@ it.each(['eager', 'terminal-only'] as const)('fsyncs terminal rows before acknow
   const test = fixture()
   try {
     const writer = await test.storage.journals.open('session', 'stream', { durability })
-    vi.mocked(fs.fsyncSync).mockClear()
+    vi.mocked(fs.fsync).mockClear()
     await writer.append({ event: 'token', payload: { text: 'first' } }, { terminal: false })
-    expect(fs.fsyncSync).toHaveBeenCalledTimes(durability === 'eager' ? 1 : 0)
+    expect(fs.fsync).toHaveBeenCalledTimes(durability === 'eager' ? 1 : 0)
     await writer.append({ event: 'done', payload: {} }, { terminal: true })
-    expect(fs.fsyncSync).toHaveBeenCalledTimes(durability === 'eager' ? 2 : 1)
+    expect(fs.fsync).toHaveBeenCalledTimes(durability === 'eager' ? 2 : 1)
     await writer.close()
   } finally { await test.cleanup() }
 })

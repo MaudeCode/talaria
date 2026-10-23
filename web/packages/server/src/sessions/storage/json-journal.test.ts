@@ -6,7 +6,7 @@ import { JsonJournal } from './json-journal.js'
 
 vi.mock('node:fs', async (original) => {
   const real = await original<typeof fs>()
-  return { ...real, readdirSync: vi.fn(real.readdirSync), existsSync: vi.fn(real.existsSync) }
+  return { ...real, readdirSync: vi.fn(real.readdirSync), existsSync: vi.fn(real.existsSync), mkdirSync: vi.fn(real.mkdirSync), fsync: vi.fn(real.fsync), closeSync: vi.fn(real.closeSync) }
 })
 
 const journals: JsonJournal[] = []
@@ -211,4 +211,36 @@ it('evicts the least recently used owner above 1000 entries and releases ownersh
   for (let i = 0; i < 2; i++) expect(await journal.findRunSummary('run0')).toMatchObject({ run_id: 'run0' })
   expect(fs.readdirSync).toHaveBeenCalledTimes(2)
   await expect(journal.writer('session', 'another')).rejects.toThrow('Storage is closed')
+})
+
+it('creates the run directory once across 100 appends', async () => {
+  const journal = fixture()
+  const writer = await journal.writer('session', 'run')
+  vi.clearAllMocks()
+  for (let i = 0; i < 100; i++) await writer.appendSseEvent('token', { text: String(i) })
+  expect(fs.mkdirSync).toHaveBeenCalledTimes(1)
+  expect(await journal.readRunEvents('session', 'run')).toHaveLength(100)
+  await writer.close()
+})
+
+it('settles a terminal append only after its fsync completes, before closing the file or settling later frames', async () => {
+  const journal = fixture()
+  const writer = await journal.writer('session', 'run')
+  await writer.appendSseEvent('token', { text: 'first' })
+  expect(fs.fsync).not.toHaveBeenCalled()
+  let finish: (() => void) | undefined
+  vi.mocked(fs.fsync).mockImplementationOnce((fd: number, cb: (err: NodeJS.ErrnoException | null) => void) => { finish = () => { fs.fsyncSync(fd); cb(null) } })
+  const order: string[] = []
+  const terminal = writer.appendSseEvent('cancel', {}).then(() => order.push('published'))
+  const later = writer.appendSseEvent('token', { text: 'late' }).then(() => order.push('later'))
+  await new Promise((resolve) => setImmediate(resolve))
+  expect(fs.fsync).toHaveBeenCalledTimes(1)
+  expect(order).toEqual([])
+  expect(fs.closeSync).not.toHaveBeenCalled()
+  order.push('synced')
+  finish!()
+  await Promise.all([terminal, later])
+  expect(order).toEqual(['synced', 'published', 'later'])
+  expect(fs.closeSync).toHaveBeenCalledTimes(1)
+  await writer.close()
 })
