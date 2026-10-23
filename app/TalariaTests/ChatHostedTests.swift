@@ -9,6 +9,101 @@ import XCTest
 /// The fixture chat's media, long bodies, background work and pending steers, hosted in process (TAL-856).
 @MainActor
 final class ChatHostedTests: XCTestCase {
+    private struct FoldHost: View {
+        let content: AnyView
+        var division = CGRect(x: 430, y: -100, width: 40, height: 2000)
+        @State private var folded = false
+        var body: some View {
+            content
+                .environment(\.chatDivisionFramesForTesting, folded
+                    ? [division] : [])
+                .overlay(alignment: .topLeading) {
+                    Button("Toggle fixture fold") { folded.toggle() }
+                }
+        }
+    }
+
+    func testBookFoldMovesComposerAndUnfoldingRetainsItsEditorAndDraft() async throws {
+        let fixture = try FixtureApp(for: self)
+        let session = try await fixture.session()
+        let window = try hostWindow(FoldHost(content: AnyView(fixture.chat(session))),
+                                    size: CGSize(width: 900, height: 700))
+        _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
+        try await typeIntoComposer("Retained fold draft", in: window)
+        let loadedEditor = await composerTextView(in: window)
+        let editor = try XCTUnwrap(loadedEditor)
+        let initialFrame = editor.convert(editor.bounds, to: window)
+        XCTAssertLessThan(initialFrame.minX, 430)
+        XCTAssertTrue(editor.isFirstResponder)
+        settle(0.3)
+        attachHostedScreenshot(window, name: "composer-before-book-fold")
+
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Toggle fixture fold"))
+        let displaced = await awaitCondition { editor.convert(editor.bounds, to: window).minX >= 470 }
+        XCTAssertTrue(displaced, "The composer editor still crosses the book fold")
+        XCTAssertEqual(editor.text, "Retained fold draft")
+        let foldedEditor = await composerTextView(in: window)
+        XCTAssertTrue(foldedEditor === editor, "Folding must retain the text input instance")
+        XCTAssertTrue(editor.isFirstResponder, "Folding must retain keyboard focus")
+        let send = try await requireElement(in: window, label: "Send")
+        XCTAssertGreaterThanOrEqual(window.convert(send.accessibilityFrame, from: nil).minX, 470)
+        let transcript = try transcriptScrollView(in: window)
+        XCTAssertGreaterThan(transcript.bounds.width, 800, "The transcript must remain full width")
+        settle(0.3)
+        attachHostedScreenshot(window, name: "composer-after-book-fold")
+
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Toggle fixture fold"))
+        let restored = await awaitCondition { editor.convert(editor.bounds, to: window).minX < 430 }
+        XCTAssertTrue(restored)
+        let restoredEditor = await composerTextView(in: window)
+        XCTAssertTrue(restoredEditor === editor)
+        XCTAssertEqual(editor.text, "Retained fold draft")
+        XCTAssertTrue(editor.isFirstResponder)
+    }
+
+    func testBookFoldMovesTheClarificationCardAndItsChoices() async throws {
+        let fixture = try FixtureApp(["--ui-test-chat-clarification"], for: self)
+        let session = try await fixture.session()
+        let window = try hostWindow(FoldHost(content: AnyView(fixture.chat(session))),
+                                    size: CGSize(width: 900, height: 700))
+        _ = try await requireElement(in: window, label: "Clarification Required")
+        settle(0.3)
+        attachHostedScreenshot(window, name: "clarification-before-book-fold")
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Toggle fixture fold"))
+        let choice = try await requireElement(in: window, label: "Use the deterministic path")
+        let displaced = await awaitCondition { window.convert(choice.accessibilityFrame, from: nil).minX >= 470 }
+        XCTAssertTrue(displaced, "The clarification choice still crosses the book fold")
+        let header = try await requireElement(in: window, label: "Clarification Required")
+        XCTAssertGreaterThanOrEqual(window.convert(header.accessibilityFrame, from: nil).minX, 470)
+        XCTAssertGreaterThan(try transcriptScrollView(in: window).bounds.width, 800)
+        settle(0.3)
+        attachHostedScreenshot(window, name: "clarification-after-book-fold")
+    }
+
+    func testOffCenterBookFoldUsesThePhysicalTrailingRegionInRTL() async throws {
+        let fixture = try FixtureApp(for: self)
+        let session = try await fixture.session()
+        // Both overlays request fixed physical frames, so RTL must choose the left pane.
+        let chat = fixture.chat(session).environment(\.layoutDirection, .rightToLeft)
+        let window = try hostWindow(FoldHost(content: AnyView(chat),
+            division: CGRect(x: 300, y: -100, width: 40, height: 2000)),
+            size: CGSize(width: 900, height: 700))
+        _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
+        try await typeIntoComposer("Retained RTL draft", in: window)
+        let loadedEditor = await composerTextView(in: window)
+        let editor = try XCTUnwrap(loadedEditor)
+        XCTAssertGreaterThan(editor.convert(editor.bounds, to: window).maxX, 340)
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Toggle fixture fold"))
+        let displaced = await awaitCondition { editor.convert(editor.bounds, to: window).maxX <= 300 }
+        XCTAssertTrue(displaced, "The RTL composer must fit left of the physical division")
+        let send = try await requireElement(in: window, label: "Send")
+        XCTAssertLessThanOrEqual(window.convert(send.accessibilityFrame, from: nil).maxX, 300)
+        XCTAssertEqual(editor.text, "Retained RTL draft")
+        XCTAssertGreaterThan(try transcriptScrollView(in: window).bounds.width, 800)
+        settle(0.3)
+        attachHostedScreenshot(window, name: "composer-off-center-rtl-book-fold")
+    }
+
     func testNativeReasoningRefusalIsVisibleWithoutChangingEffort() async throws {
         try await checkReasoningRefusal(scopeSupported: true)
     }
