@@ -175,4 +175,20 @@ test.describe('shell', () => {
     await settle(page)
     expect(await composerMax()).toBe('none')
   })
+
+  test('switching the language re-translates the open settings page', async ({ page, errors }) => {
+    try {
+      await page.goto('/settings/appearance')
+      await settle(page)
+      await expect(page.getByText('Language', { exact: true })).toBeVisible()
+      await page.locator('#settingsLanguage').click()
+      await page.getByRole('option', { name: 'Deutsch' }).click()
+      await expect(page.locator('html')).toHaveAttribute('lang', 'de-DE')
+      await expect(page.getByText('Sprache', { exact: true })).toBeVisible()
+      await expect(page.getByText('Language', { exact: true })).toHaveCount(0)
+      expect(errors).toEqual([])
+    } finally {
+      expect((await page.request.post('/api/settings', { data: { language: 'en' } })).ok()).toBe(true)
+    }
+  })
 })

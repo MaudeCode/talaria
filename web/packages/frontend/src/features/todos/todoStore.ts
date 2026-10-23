@@ -4,8 +4,7 @@ import { TodoStateSchema, type TodoState } from '../../contracts/resources'
 
 const bySession = new Map<string, TodoState>()
 const listeners = new Set<() => void>()
-let version = 0
-const emit = () => { version += 1; for (const l of listeners) l() }
+const emit = () => { for (const l of listeners) l() }
 
 export function setTodoState(sessionId: string, raw: unknown): void {
   const parsed = TodoStateSchema.safeParse(raw)
@@ -21,8 +20,8 @@ export function clearTodoState(sessionId: string): void {
 }
 
 export function useTodoState(sessionId: string | null): TodoState | null {
-  useSyncExternalStore((l) => { listeners.add(l); return () => listeners.delete(l) }, () => version, () => version)
-  return sessionId ? bySession.get(sessionId) ?? null : null
+  const read = () => sessionId ? bySession.get(sessionId) ?? null : null
+  return useSyncExternalStore((l) => { listeners.add(l); return () => listeners.delete(l) }, read, read)
 }
 
 export function resetTodoStoreForTests(): void {

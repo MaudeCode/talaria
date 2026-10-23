@@ -3,6 +3,7 @@ import type { QueryClient } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import type { Bootstrap } from '../contracts/bootstrap'
 import { NotFound, PendingView, RouteError } from '../features/shell/ErrorBoundary'
+import { LocaleBoundary } from '../i18n/LocaleBoundary'
 import interWoff2 from '../theme/fonts/InterVariable.woff2?url'
 import prepaintUrl from '../theme/prepaint.js?url'
 // Stylesheets belong to the root route, not the client entry: the route's CSS is linked in <head> of the
@@ -74,5 +75,5 @@ function RootShell({ children }: { children: ReactNode }) {
 }
 
 function RootComponent() {
-  return <Outlet />
+  return <LocaleBoundary><Outlet /></LocaleBoundary>
 }

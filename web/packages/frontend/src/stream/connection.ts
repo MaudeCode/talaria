@@ -3,6 +3,7 @@
  * owns the projected state. Side effects that cross module boundaries (Query
  * cache, todo store, toasts) are applied here from typed events only.
  */
+import { useSyncExternalStore } from 'react'
 import type { QueryClient } from '@tanstack/react-query'
 import * as api from '../api/endpoints'
 import { openChatStream, SSE_CLOSED, type SseHandle } from '../api/sse'
@@ -34,9 +35,11 @@ interface Live {
 
 let context = {}
 const contextListeners = new Set<() => void>()
-export const subscribeStreamContext = (listener: () => void): (() => void) => { contextListeners.add(listener); return () => { contextListeners.delete(listener) } }
+const subscribeStreamContext = (listener: () => void): (() => void) => { contextListeners.add(listener); return () => { contextListeners.delete(listener) } }
 /** Changes whenever auth, profile or server context is discarded. */
 export const getStreamContext = (): object => context
+/** The stream context for render: re-renders on change, where a render-time `getStreamContext()` read would go stale under the React Compiler. */
+export const useStreamContext = (): object => useSyncExternalStore(subscribeStreamContext, getStreamContext, getStreamContext)
 const starts = new Map<string, { owner: object; promise: Promise<ChatStartResponse> }>()
 const stops = new Map<string, { owner: object; promise: Promise<boolean> }>()
 

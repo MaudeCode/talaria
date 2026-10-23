@@ -11,14 +11,9 @@ import { LOCALE_CODES, localeInfo, resolveLocale } from './locales'
 import { readPersisted, writePersisted } from '../lib/persisted'
 
 const listeners = new Set<() => void>()
-let version = 0
 
 export function currentLocale(): string {
   return paraglideGetLocale()
-}
-
-export function localeVersion(): number {
-  return version
 }
 
 /** Apply a resolved locale: Paraglide state, `hermes-lang`, `<html lang>`, `dir`. */
@@ -30,7 +25,6 @@ export function applyLocale(code: string, opts: { persist?: boolean } = {}): str
   const info = localeInfo(resolved)
   document.documentElement.lang = info.speech
   if (opts.persist !== false) writePersisted('hermes-lang', resolved)
-  version += 1
   for (const l of listeners) l()
   return resolved
 }

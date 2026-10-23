@@ -20,19 +20,18 @@ export function useExtensionManifests(enabled = true) {
 // ── Declarative skins ────────────────────────────────────────────────────────
 const skins = new Map<string, ThemeDeclaration & { extensionId: string }>()
 const skinListeners = new Set<() => void>()
-let skinVersion = 0
+let skinList: (ThemeDeclaration & { extensionId: string })[] = []
 export function registerExtensionSkins(manifests: ExtensionManifest[]): void {
   skins.clear()
   for (const mf of manifests) if (mf.enabled && mf.theme) skins.set(mf.theme.key, { ...mf.theme, extensionId: mf.id })
-  skinVersion += 1
+  skinList = [...skins.values()]
   for (const l of skinListeners) l()
 }
 export function extensionSkin(key: string): (ThemeDeclaration & { extensionId: string }) | undefined {
   return skins.get(key)
 }
 export function useExtensionSkins(): (ThemeDeclaration & { extensionId: string })[] {
-  useSyncExternalStore((l) => { skinListeners.add(l); return () => skinListeners.delete(l) }, () => skinVersion, () => skinVersion)
-  return [...skins.values()]
+  return useSyncExternalStore((l) => { skinListeners.add(l); return () => skinListeners.delete(l) }, () => skinList, () => skinList)
 }
 /** Apply a validated token map to the document root (no stylesheet injection). */
 export function applyExtensionSkin(decl: ThemeDeclaration | null, root: HTMLElement = document.documentElement): void {
@@ -50,9 +49,9 @@ export interface TtsEngine { id: string; label: string; extensionId: string; syn
 /** Per engine id, every live registration: an extension's background host and its open panel both register, and the newest answers. */
 const engines = new Map<string, TtsEngine[]>()
 const engineListeners = new Set<() => void>()
-let engineVersion = 0
+let engineList: TtsEngine[] = []
 function enginesChanged(): void {
-  engineVersion += 1
+  engineList = [...engines.values()].flatMap((list) => list.slice(-1))
   for (const l of engineListeners) l()
 }
 export function registerTtsEngine(engine: TtsEngine): () => void {
@@ -71,8 +70,7 @@ export function ttsEngine(id: string): TtsEngine | undefined {
   return engines.get(id)?.at(-1)
 }
 export function useTtsEngines(): TtsEngine[] {
-  useSyncExternalStore((l) => { engineListeners.add(l); return () => engineListeners.delete(l) }, () => engineVersion, () => engineVersion)
-  return [...engines.values()].flatMap((list) => list.slice(-1))
+  return useSyncExternalStore((l) => { engineListeners.add(l); return () => engineListeners.delete(l) }, () => engineList, () => engineList)
 }
 
 // ── Lifecycle bridge ─────────────────────────────────────────────────────────

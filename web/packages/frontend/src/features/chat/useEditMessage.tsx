@@ -4,7 +4,7 @@ import * as api from '../../api/endpoints'
 import { ConfirmDialog } from '../../ui/Dialog'
 import { returnToComposer } from '../composer/composerReturn'
 import { showErrorToast } from '../toast/errorToast'
-import { getStreamContext } from '../../stream/connection'
+import { getStreamContext, useStreamContext } from '../../stream/connection'
 import { getTurnIntent } from '../../stream/store'
 import type { VisibleMessage } from './useTranscript'
 import { keys } from '../../api/queryKeys'
@@ -28,6 +28,7 @@ export function useEditMessage(sessionId: string | null, refresh: (accepted?: un
   const active = useRef<object | null>(null)
   const [operation, setOperation] = useState<string | null>(null)
   const [pending, setPending] = useState<Pending | null>(null)
+  const context = useStreamContext()
   const lifecycle = useRef<object | null>(null)
   useEffect(() => {
     lifecycle.current = {}
@@ -67,7 +68,7 @@ export function useEditMessage(sessionId: string | null, refresh: (accepted?: un
     }, row.index)
   }, [refresh, runHistory])
   const onEdit = useCallback((row: VisibleMessage, text: string) => (sessionId ? edit(sessionId, row, text) : Promise.resolve()), [sessionId, edit])
-  const shown = pending?.sessionId === sessionId && pending.scope === getStreamContext() ? pending : null
+  const shown = pending?.sessionId === sessionId && pending.scope === context ? pending : null
   const dialog = (
     <ConfirmDialog
       // Closing clears only the question it showed: a Discard the server asks again about leaves the new one open.

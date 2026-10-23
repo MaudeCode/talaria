@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { replaceEqualDeep, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { keys } from '../api/queryKeys'
 import * as api from '../api/endpoints'
-import { getStreamContext } from '../stream/connection'
+import { getStreamContext, useStreamContext } from '../stream/connection'
 import { isDefiniteRefusal } from '../contracts/common'
 import { settleOnNextRead } from '../features/sessions/useResourceMutation'
 import { m } from '../paraglide/messages.js'
@@ -29,13 +29,14 @@ function pickFields<T extends Record<string, unknown>>(data: T, fields?: readonl
 }
 
 function useIntent(fields?: readonly string[]) {
+  const context = useStreamContext()
   return useQuery<Intent | null>({
     queryKey: intentKey, queryFn: () => null, initialData: null, enabled: false, gcTime: Infinity,
     notifyOnChangeProps: fields?.length === 0 ? [] : undefined,
     // Context identity is a write fence, while unchanged selected fields retain their references.
     structuralSharing: (previous, next) => (previous as Intent | null | undefined)?.context !== (next as Intent | null)?.context ? next : replaceEqualDeep(previous, next),
     select: (intent) => {
-      if (intent?.context !== getStreamContext()) return null
+      if (intent?.context !== context) return null
       const selected = pickFields(intent.fields, fields)
       return Object.keys(selected).length ? { context: intent.context, fields: selected } : null
     },

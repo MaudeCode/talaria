@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { matchQuery, useMutation, useQuery, useQueryClient, type QueryKey, type QueryClient, type Query } from '@tanstack/react-query'
-import { getStreamContext } from '../../stream/connection'
+import { getStreamContext, useStreamContext } from '../../stream/connection'
 import { keys } from '../../api/queryKeys'
 import * as api from '../../api/endpoints'
 import { isDefiniteRefusal } from '../../contracts/common'
@@ -33,7 +33,7 @@ const reconciliations = new WeakMap<QueryClient, Map<string, Reconciliation>>()
 
 export function useResourceEffects<T = unknown>(): Record<string, ResourceEffect<T>> {
   const { data } = useQuery({ queryKey: effectKey, queryFn: () => empty, initialData: empty, enabled: false, gcTime: Infinity, structuralSharing: false })
-  const context = getStreamContext()
+  const context = useStreamContext()
   return useMemo(() => Object.fromEntries(Object.entries(data).filter(([, effect]) => effect.context === context)) as Record<string, ResourceEffect<T>>, [data, context])
 }
 
