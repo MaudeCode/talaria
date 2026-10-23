@@ -109,6 +109,16 @@ describe('background completion drain', () => {
     expect(s.deps.completions.deferredCount(sid)).toBe(0)
   })
 
+  it('wakes the drain when a turn starts (TAL-1395)', async () => {
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    sidecar.respond('chat.start', () => completed('ok'))
+    const wake = vi.spyOn(s.deps.completions, 'wake')
+    try {
+      expect((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'hello' }))).stream_id).toBeTruthy()
+      expect(wake).toHaveBeenCalled()
+    } finally { wake.mockRestore() }
+  })
+
   it('requeues async delegations it cannot route and drops orphan completions', async () => {
     const requeued: unknown[] = []
     sidecar.respond('process.drain', () => ({ events: [{ process_id: 'd1', type: 'async_delegation', session_key: 'nope', consumed: false }, { process_id: 'x', type: 'completion', session_key: 'nope', consumed: false }] }))
@@ -191,6 +201,38 @@ describe('async delegation delivery claims (TAL-459)', () => {
     await vi.waitFor(() => { expect(drains).toBeGreaterThanOrEqual(4) })
     drain.stop()
     expect(logged.filter((l) => l.includes('drain failed'))).toHaveLength(1)
+  })
+
+  it('backs empty drains off to 10 s and resets on routed events and wake() (TAL-1395)', async () => {
+    vi.useFakeTimers()
+    const drain = new CompletionDrain({ documents: new JsonDocuments(s.state),
+      sidecar: () => null, baseHome: '/base', profileHome: () => '/base', activeProfile: () => 'default', store: s.deps.sessionStore, channels: s.deps.channels,
+      registry: s.deps.registry, startTurn: () => ({}), now: () => 0, log: () => undefined,
+    })
+    const t0 = Date.now(), at: number[] = []
+    let routed = 0
+    vi.spyOn(drain, 'drainOnce').mockImplementation(() => { at.push(Date.now() - t0); return Promise.resolve(routed) })
+    const gaps = (): number[] => at.slice(1).map((t, i) => t - at[i]!)
+    try {
+      drain.start()
+      await vi.advanceTimersByTimeAsync(35_000)
+      expect(gaps(), 'consecutive empty drains space out').toEqual([1000, 2000, 4000, 8000, 10_000, 10_000])
+      routed = 1
+      await vi.advanceTimersByTimeAsync(10_000)
+      routed = 0
+      await vi.advanceTimersByTimeAsync(4000)
+      expect(gaps().slice(6), 'a routed drain resets the delay to 1 s').toEqual([10_000, 1000, 1000, 2000])
+      await vi.advanceTimersByTimeAsync(1000)
+      at.length = 0
+      drain.wake()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(at, 'wake() drains within one tick').toEqual([50_000])
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(gaps(), 'wake() resets the delay').toEqual([1000])
+    } finally {
+      drain.stop()
+      vi.useRealTimers()
+    }
   })
 
   it('a restarted server does not deliver a delegation the previous one already delivered', async () => {

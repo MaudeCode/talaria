@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "An idle Web server checks for finished background work less often, leaving more room for chat requests.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

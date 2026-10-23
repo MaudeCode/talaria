@@ -483,6 +483,9 @@ reader thread: `process.drain` probes it on every pass, so a process in a
 profile nobody has used since the restart still reports its exit. That
 completion has an unknown exit code and no output history. A process that
 exited while no sidecar was running is not adopted and reports nothing.
+The server drains every second while passes route events. Each pass that routes
+nothing doubles the delay, up to 10 s. A turn start or a tool call that starts
+background work drains on the next tick and resets the delay (TAL-1395).
 
 Durable async-delegation results use a separate replay path (TAL-780). Before
 popping events, `process.drain` calls the Agent's `restore_completions()` when

@@ -24,6 +24,8 @@ import { HeldWakeups, deliveredPerProcess, heldKey, mergeWakeups, poolRecovery, 
 
 type Dict = Record<string, unknown>
 export const COMPLETION_POLL_MS = 1000
+/** TAL-1395: each empty drain doubles the poll delay up to this cap; a routed event or `wake()` resets it to `pollMs`. */
+const COMPLETION_IDLE_POLL_MS = 10_000
 const EMIT_COALESCE_WINDOW_S = 1
 const WAKEUP_RETRY_SECONDS = 30
 const WAKEUP_RETRY_MAX_ATTEMPTS = 5
@@ -100,6 +102,10 @@ const isCompletion = (e: Deferred): boolean => Boolean(e.process_id) && str(e.ev
 export class CompletionDrain {
   private timer: NodeJS.Timeout | null = null
   private stopped = false
+  private draining = false
+  /** Consecutive drains that routed nothing; a `wake()` during a drain resets the count when it settles. */
+  private idleDrains = 0
+  private woken = false
   private readonly seen = new Map<string, Set<string>>()
   private readonly pendingSessions = new Set<string>()
   private readonly deferred = new Map<string, Deferred[]>()
@@ -134,21 +140,43 @@ export class CompletionDrain {
   }
 
   start(): void {
-    if (this.timer || this.stopped) return
-    const tick = (): void => {
+    if (this.timer || this.draining || this.stopped) return
+    this.tick()
+  }
+
+  /** TAL-1395: a turn started or background work spawned; drain now and poll at the base interval again. */
+  wake(): void {
+    if (this.stopped) return
+    this.idleDrains = 0
+    if (this.draining) { this.woken = true; return }
+    if (!this.timer) return
+    clearTimeout(this.timer)
+    this.schedule(0)
+  }
+
+  private schedule(delay: number): void {
+    this.timer = setTimeout(this.tick, delay)
+    this.timer.unref()
+  }
+
+  private readonly tick = (): void => {
+    if (this.stopped) return
+    this.timer = null
+    this.draining = true
+    this.woken = false
+    // A lasting failure (an unrecoverable checkpoint fails every call in its home, TAL-533) is logged once, not every poll.
+    void this.drainOnce().then((routed) => { this.lastDrainError = null; return routed }, (error: unknown) => {
+      const message = (error as Error).message
+      if (message !== this.lastDrainError) this.deps.log(`[webui] WARNING: bg_task_complete drain failed: ${message}`)
+      this.lastDrainError = message
+      return 0
+    }).catch(() => 0).then((routed) => {
+      this.draining = false
       if (this.stopped) return
-      // A lasting failure (an unrecoverable checkpoint fails every call in its home, TAL-533) is logged once, not every poll.
-      void this.drainOnce().then(() => { this.lastDrainError = null }, (error: unknown) => {
-        const message = (error as Error).message
-        if (message !== this.lastDrainError) this.deps.log(`[webui] WARNING: bg_task_complete drain failed: ${message}`)
-        this.lastDrainError = message
-      }).finally(() => {
-        if (this.stopped) return
-        this.timer = setTimeout(tick, this.deps.pollMs ?? COMPLETION_POLL_MS)
-        this.timer.unref()
-      })
-    }
-    tick()
+      this.idleDrains = routed > 0 || this.woken ? 0 : this.idleDrains + 1
+      const base = this.deps.pollMs ?? COMPLETION_POLL_MS
+      this.schedule(Math.min(base * 2 ** Math.max(0, this.idleDrains - 1), Math.max(base, COMPLETION_IDLE_POLL_MS)))
+    })
   }
 
   stop(): void {
