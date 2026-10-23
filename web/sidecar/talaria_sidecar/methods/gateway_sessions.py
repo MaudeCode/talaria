@@ -390,6 +390,8 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                 ctx.emit("event", event)
             return result
         except GatewayRPCError as exc:
+            if params["action"] == "react" and str(exc) not in {"invalid_params", "not_found", "permission_denied", "profile_mismatch"}:
+                return _refused("unavailable", "reaction_outcome_unknown")
             if params["action"] == "export":
                 return _refused("refused", "export_too_large" if str(exc) == "export_too_large" else "owner_export_unsupported")
             return {**_refused("incompatible" if str(exc) in _CONTROL_REFUSALS else "refused", str(exc)), "receipt": receipt}

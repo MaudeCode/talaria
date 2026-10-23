@@ -179,6 +179,8 @@ def native_owner_stub(tmp_path, monkeypatch):
             if owner.export_failure:
                 raise RuntimeError(owner.export_failure)
             return owner.export
+        if method == "message.react" and getattr(owner, "reaction_failure", None):
+            raise RuntimeError(owner.reaction_failure)
         if method in {"session.mutate", "prompt.steer_queued", "prompt.replace_queued", "message.react"}:
             owner.payload = params.get("payload")
             return owner.receipt
@@ -723,3 +725,15 @@ def test_reaction_vocabulary_matches_the_public_contract():
     from talaria_sidecar.methods.gateway_sessions import _REACTION_EMOJIS
     fixture = json.loads((Path(__file__).resolve().parents[3] / "contracts/fixtures/web-reactions.json").read_text())
     assert _REACTION_EMOJIS == {a["emoji"] for a in fixture["message"]["reaction_view"]["actions"] if a["emoji"]}
+
+
+@pytest.mark.parametrize("reason,state", [("permission_denied", "refused"), ("not_found", "refused"),
+                                         ("request_failed", "unavailable"), ("storage_failed", "unavailable")])
+def test_reaction_rpc_failures_preserve_unknown_outcomes(native_owner_stub, reason, state):
+    owner = native_owner_stub
+    owner.endpoint.code_sha = "4d04303818b61bf3aa09278af48356315515965b"
+    owner.snapshot_extra = {"messages": [{"role": "assistant", "row_id": 42}]}
+    owner.reaction_failure = reason
+    result = owner.run(None, {"session_id": "native", "action": "react", "row_id": 42, "emoji": "👍"})
+    assert result["state"] == state
+    assert len([call for call in owner.calls if call[0] == "message.react"]) == 1
