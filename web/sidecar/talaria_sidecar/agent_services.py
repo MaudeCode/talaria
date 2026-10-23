@@ -677,6 +677,10 @@ def _start(entry, pause):
         raise RuntimeError(f'{_name(entry)} supervisor failed to start its backend.')
 
 
+class GatewayDraining(RuntimeError):
+    """An acknowledged native drain is still within its native budget: progress, not a recovery failure."""
+
+
 class ServiceRecovery:
     """Companion to the native pause token; all calls hold its existing checkout lock."""
     def __init__(self, root, home, records, identity, pause):
@@ -862,7 +866,7 @@ class ServiceRecovery:
         owed = next(e for e in self.state['entries'] if _service_key(e) == _service_key(entry))
         owed['phase'] = 'retiring'
         if acknowledged:
-            owed['drain_acknowledged'] = True
+            owed.update(drain_acknowledged=True, drain_acknowledged_at=time.time())
         self.save()
 
     def _gateway_candidate(self, entry):
@@ -906,11 +910,22 @@ class ServiceRecovery:
             homes = [e['home'] for e in self.state['entries'] if e['purpose'] == 'gateway']
         return time.monotonic() + drain_budget(self.pause, homes, ceiling)
 
+    def _drain_progressing(self, entry):
+        """Live recorded writers still finishing an acknowledged drain within the native budget."""
+        if not entry.get('drain_acknowledged') or not self._gateway_writers_live(entry):
+            return False
+        now = time.time()
+        if not isinstance(entry.get('drain_acknowledged_at'), (int, float)):
+            entry['drain_acknowledged_at'] = now  # Older custody has no time; its native budget starts when first observed.
+            self.save()
+        return 0 <= now - entry['drain_acknowledged_at'] < drain_budget(self.pause, [entry['home']])
+
     def settle_gateway(self, entry, stopped, *, deadline=None):
         owed = next(e for e in self.state['entries'] if _service_key(e) == _service_key(entry))
         self._settle_gateway(owed, stopped, deadline=deadline)
 
-    def _settle_gateway(self, entry, stopped=None, *, deadline=None):
+    def _settle_gateway(self, entry, stopped=None, *, deadline=None, ready=None):
+        """Stop the recorded gateway; True when ``ready`` adopts a verified successor after the drain instead."""
         if not self._gateway_writers_live(entry) and not any(_service_pid(entry)):
             if _config_stamp(entry) != entry['config_stamp']:
                 raise RuntimeError(f'{_name(entry)} service configuration changed; recovery remains owed.')
@@ -922,6 +937,8 @@ class ServiceRecovery:
             deadline = self.gateway_deadline([entry['home']], RECOVERY_DRAIN_SECONDS)
         while True:
             if stopped.is_set() or time.monotonic() >= deadline:
+                if not stopped.is_set() and self._drain_progressing(entry):
+                    raise GatewayDraining(f'{_name(entry)} gateway drain remains owed while its acknowledged native drain finishes; recovery will retry.')
                 raise RuntimeError(f'{_name(entry)} gateway drain remains owed; retry Agent update recovery.')
             if _config_stamp(entry) != entry['config_stamp']:
                 raise RuntimeError(f'{_name(entry)} service configuration changed; recovery remains owed.')
@@ -930,6 +947,8 @@ class ServiceRecovery:
                     raise RuntimeError(f'{_name(entry)} gateway drain remains owed; retry Agent update recovery.')
                 stopped.wait(.05)
                 continue
+            if ready is not None and ready():
+                return True  # The original drain finished under its supervisor; never drain or stop a ready successor.
             entry['runtime_fence_requested'] = True
             self.save()
             with gateway_fence(entry) as fence:
@@ -968,14 +987,14 @@ class ServiceRecovery:
                     raise RuntimeError(f'{_name(entry)} repeatedly respawned during drain; recovery remains owed.')
                 retired = {**entry.get('retired_processes', {}), **entry['processes']}
                 entry.update(candidate, retired_processes=retired, phase='retiring',
-                             drain_acknowledged=False, settle_attempts=attempts)
+                             drain_acknowledged=False, drain_acknowledged_at=None, settle_attempts=attempts)
                 self.save()  # Successor custody precedes its cooperative lifecycle request.
                 verify_processes(entry, self.records)
                 if _config_stamp(entry) != entry['config_stamp']:
                     raise RuntimeError(f'{_name(entry)} service configuration changed; recovery remains owed.')
                 if not self.pause._ask_to_drain(entry):
                     raise RuntimeError(f'{_name(entry)} successor did not acknowledge cooperative drain; recovery remains owed.')
-                entry['drain_acknowledged'] = True
+                entry.update(drain_acknowledged=True, drain_acknowledged_at=time.time())
                 self.save()
             stopped.wait(.05)
 
@@ -985,7 +1004,7 @@ class ServiceRecovery:
         whole, why = self.records.tree_is_whole(self.state['tree'], self.root)
         if not whole or self.state.get('sync_failed'):
             raise RuntimeError('Backend recovery remains owed until source/dependency repair completes: ' + why)
-        failures = []
+        failures, draining = [], True
         for entry in list(self.state['entries']):
             try:
                 if self._ready(entry, ledger):
@@ -1003,7 +1022,10 @@ class ServiceRecovery:
                 if entry['purpose'] == 'gateway':
                     if gateway_deadline is None:
                         gateway_deadline = self.gateway_deadline(ceiling=RECOVERY_DRAIN_SECONDS)
-                    self._settle_gateway(entry, deadline=gateway_deadline)
+                    if self._settle_gateway(entry, deadline=gateway_deadline, ready=lambda entry=entry: self._ready(entry, ledger)):
+                        self.state['entries'].remove(entry)
+                        self.save()
+                        continue
                     if not _service_pid(entry)[1]:
                         _start(entry, self.pause)
                     self._wait_ready(entry, ledger)
@@ -1023,9 +1045,11 @@ class ServiceRecovery:
                     _start(entry, self.pause)
                 self._wait_ready(entry, ledger)
             except Exception as exc:
+                draining = draining and isinstance(exc, GatewayDraining)
                 failures.append(str(exc))
         if failures:
-            raise RuntimeError('; '.join(failures))
+            # Sibling obligations recover independently; only an all-draining remainder is progress.
+            raise (GatewayDraining if draining else RuntimeError)('; '.join(failures))
 
     def _wait_ready(self, entry, ledger):
         deadline = time.monotonic() + READY_SECONDS

@@ -43,6 +43,8 @@ export const RuntimeAgentRecoveryResultSchema = z.object({
   ok: z.boolean(), owed: z.boolean(), fingerprint: z.string(), detail: z.string(),
   local_restore: z.boolean().optional(), revision: z.string().regex(/^[a-f0-9]{40}$/).optional(),
   runtime_pending: z.boolean().optional(),
+  /** An acknowledged native gateway drain is still within its native budget: progress, not a failed attempt. */
+  draining: z.boolean().optional(),
 })
 
 /** A single-use interruption consent; the sidecar binds it to the operator intent and attested services. */

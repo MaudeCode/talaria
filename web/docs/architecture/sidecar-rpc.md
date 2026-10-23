@@ -67,9 +67,20 @@ It starts recovery at startup and after an update releases its lease, regardless
 of update-check preferences and subscribes to validated sidecar reconnects.
 One sequence owns its timer, cancellation signal, handshake subscription and
 `runtime.agent_recovery` calls. Six failed attempts use bounded backoff. Waiting
-for active Web work uses a positive delay without spending that budget. Exhausted
-debt stays blocked with the actual failure; the existing update lifecycle
-rearms it when the retained receipts change or a healthy runtime reconnects.
+for active Web work uses a positive delay without spending that budget. So does
+a `draining` result: recorded gateway writers still finishing an acknowledged
+native drain within its profile's bounded native drain budget, counted from the recorded
+acknowledgement (or first observation for older custody). A drain past that
+budget, an unacknowledged or cancelled drain, and every identity or
+configuration refusal still spend the budget. Exhausted debt stays blocked with
+the actual failure and keeps a lightweight probe. The probe's fingerprint
+covers the retained receipts and their watched source and interpreter paths. It
+also covers each retained gateway's `gateway.pid` stamp and stdlib presence of
+its recorded processes. A change in that fingerprint, a healthy runtime
+reconnect, or the update lifecycle rearms the sequence. A changed fingerprint
+only triggers revalidation and never discharges debt. While a step waits out a
+drain, it adopts a verified successor through the same readiness check once
+the recorded writers exit; it never asks that successor to drain.
 An interrupted recovery notice loses its active state at startup, then reaches
 verified completion only after the coordinator checks current loaded readiness.
 
