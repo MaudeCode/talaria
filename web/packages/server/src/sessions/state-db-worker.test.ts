@@ -12,6 +12,7 @@ import { str } from '../util.js'
 import { CliSessionSource } from './cli-sessions.js'
 import { GatewayWatcher } from './gateway-watcher.js'
 import { Session } from './session.js'
+import { StartupTiming, startupTimingScope, timingKey } from '../startup-timing.js'
 import { agentSessionRowsExistingAsync, crashStateDbWorkerForTests, readImportableAgentSessionRowsAsync, setStateDbReadDelayForTests, stateDbSessionReadAsync, stateDbSessionSourcesAsync, stopStateDbWorker, type StateDbWorkerReply, type StateDbWorkerRequest } from './state-db.js'
 
 type Json = Record<string, unknown>
@@ -100,8 +101,8 @@ describe('independent state.db worker lanes (TAL-1189)', () => {
     }
   })
 
-  it.each(['listing', 'session'] as const)('keeps FIFO order within the %s lane', async (lane) => {
-    const read = (): Promise<unknown> => lane === 'listing' ? readImportableAgentSessionRowsAsync(dbPath) : sessionRow()
+  it.each(['listing', 'authority', 'session'] as const)('keeps FIFO order within the %s lane', async (lane) => {
+    const read = (): Promise<unknown> => lane === 'listing' ? readImportableAgentSessionRowsAsync(dbPath) : lane === 'authority' ? sessionRow() : stateDbSessionReadAsync([], 'stateDbSessionMessages', dbPath, 'lane-session')
     await read()
     setStateDbReadDelayForTests(300)
     const first = read().then(() => 'first')
@@ -111,9 +112,10 @@ describe('independent state.db worker lanes (TAL-1189)', () => {
     await second
   })
 
-  it.each(['listing', 'session'] as const)('isolates a %s crash and restarts only the crashed lane', async (lane) => {
+  it.each(['listing', 'authority', 'session'] as const)('isolates a %s crash and restarts only the crashed lane', async (lane) => {
     const listingRow = (): Promise<Json | null> => readImportableAgentSessionRowsAsync(dbPath).then((rows) => rows[0] ?? null).catch(() => null)
-    const affected = lane === 'listing' ? listingRow : sessionRow
+    const transcript = (): Promise<Json | null> => stateDbSessionReadAsync([], 'stateDbSessionMessages', dbPath, 'lane-session').then((rows) => rows.length ? { id: 'lane-session' } : null)
+    const affected = lane === 'listing' ? listingRow : lane === 'authority' ? sessionRow : transcript
     const unaffected = lane === 'listing' ? sessionRow : listingRow
     await Promise.all([affected(), unaffected()])
     setStateDbReadDelayForTests(1500)
@@ -127,28 +129,183 @@ describe('independent state.db worker lanes (TAL-1189)', () => {
     expect(await pending).toMatchObject({ id: 'lane-session' })
   })
 
-  it('terminates both blocked workers, settles their reads and restarts both lanes after shutdown', async () => {
-    await Promise.all([readImportableAgentSessionRowsAsync(dbPath), sessionRow()])
+  it('terminates every blocked worker, settles their reads and restarts every lane after shutdown', async () => {
+    await Promise.all([readImportableAgentSessionRowsAsync(dbPath), sessionRow(), stateDbSessionReadAsync([], 'stateDbSessionMessages', dbPath, 'lane-session')])
     const terminate = vi.spyOn(Worker.prototype, 'terminate')
     setStateDbReadDelayForTests(1500)
     const listing = readImportableAgentSessionRowsAsync(dbPath).catch((error: unknown) => error as Error)
     const session = sessionRow()
+    const transcript = stateDbSessionReadAsync([], 'stateDbSessionMessages', dbPath, 'lane-session')
     setStateDbReadDelayForTests(0)
     try {
       const stop = stopStateDbWorker()
-      // Neither lane may restart while shutdown is draining the old workers.
+      // No lane may restart while shutdown is draining the old workers.
       await expect(readImportableAgentSessionRowsAsync(dbPath)).rejects.toThrow('state.db worker stopped')
       expect(await sessionRow()).toBeNull()
       await stop
       expect(((await listing) as Error).message).toBe('state.db worker stopped')
       expect(await session).toBeNull()
-      expect(terminate).toHaveBeenCalledTimes(2)
-      expect(terminate.mock.contexts.map((worker) => (worker as Worker).threadId)).toEqual([-1, -1])
+      expect(await transcript).toEqual([])
+      expect(terminate).toHaveBeenCalledTimes(3)
+      expect(terminate.mock.contexts.map((worker) => (worker as Worker).threadId)).toEqual([-1, -1, -1])
     } finally {
       terminate.mockRestore()
     }
     expect((await readImportableAgentSessionRowsAsync(dbPath))[0]?.id).toBe('lane-session')
     expect(await sessionRow()).toMatchObject({ id: 'lane-session' })
+    expect(await stateDbSessionReadAsync([], 'stateDbSessionMessages', dbPath, 'lane-session')).toHaveLength(2)
+  })
+})
+
+/** Hold one real worker inside its handler and report a later read queued on that worker. */
+function holdWorkerRead(matches: (request: StateDbWorkerRequest) => boolean) {
+  const barrier = new Int32Array(new SharedArrayBuffer(8))
+  const heldWorkers = new Set<Worker>()
+  let queued!: () => void
+  const blocked = new Promise<'blocked'>((resolve) => { queued = () => { resolve('blocked') } })
+  // eslint-disable-next-line @typescript-eslint/unbound-method -- Forward with the original Worker receiver.
+  const post = Worker.prototype.postMessage
+  const spy = vi.spyOn(Worker.prototype, 'postMessage').mockImplementation(function (this: Worker, value, transferList) {
+    const request = value as StateDbWorkerRequest
+    if (!heldWorkers.size && matches(request)) {
+      heldWorkers.add(this)
+      post.call(this, { ...request, testBarrier: barrier.buffer }, transferList)
+    } else {
+      if (heldWorkers.has(this) && request.op !== 'stop') queued()
+      post.call(this, value, transferList)
+    }
+  })
+  return {
+    entered: async () => { await vi.waitFor(() => { expect(Atomics.load(barrier, 0)).toBe(1) }, { timeout: 10_000, interval: 10 }) },
+    blocked,
+    release: () => { Atomics.store(barrier, 1, 1); Atomics.notify(barrier, 1) },
+    restore: () => { spy.mockRestore() },
+  }
+}
+
+describe('admission authority queue isolation (TAL-1437)', () => {
+  let s: TestServer
+  let dbPath: string
+  beforeAll(async () => {
+    s = await bootTestServer({ sidecar: new FakeSidecar() })
+    dbPath = join(s.state, 'state.db')
+    seedStateDb(dbPath, [{ id: 'authority-web', source: 'webui', at: 1000 }])
+    await s.deps.sessionStore.save(new Session({ session_id: 'authority-web', source_tag: 'webui' }, { workspace: join(s.state, 'workspace'), model: 'fixture' }))
+  })
+  afterEach(async () => { await stopStateDbWorker() })
+  afterAll(async () => { await s.close() })
+  const post = (path: string, body: Json) => s.get(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+
+  it('admits a real chat start before releasing an unrelated sidebar batch', async () => {
+    const hold = holdWorkerRead((r) => r.op === 'rowBatches')
+    const listing = s.deps.cliSessions.read('default')
+    let response: Promise<Response> | undefined
+    try {
+      await hold.entered()
+      response = post('/api/chat/start', { session_id: 'authority-web', message: 'hello' })
+      expect(await Promise.race([response.then(() => 'admitted'), hold.blocked])).toBe('admitted')
+      const res = await response
+      expect(res.status, await res.clone().text()).toBe(200)
+      const body = await res.json() as Json
+      hold.release()
+      await s.deps.turns.finished(String(body.stream_id))
+      const records = s.logs.filter((line) => line.includes('\"event\":\"chat_start_timing\"')).map((line) => JSON.parse(line.slice(line.indexOf('{'))) as Json)
+      const terminal = records.find((record) => record.stage === 'terminal' && record.session_key === timingKey('authority-web'))!
+      expect((terminal.state_db_reads as Record<string, { count: number }>)['authority.sources']!.count).toBeGreaterThan(0)
+      expect(JSON.stringify(terminal)).not.toMatch(/authority-web|hello/)
+    } finally { hold.release(); try { await Promise.all([listing, response]) } finally { hold.restore() } }
+  })
+
+  it.each(['stateDbSessionMessages', 'stateDbSettlementRead'] as const)('answers source, existence and local-target probes before releasing %s', async (read) => {
+    const hold = holdWorkerRead((r) => r.op === 'session' && r.read === read)
+    const transcript = read === 'stateDbSessionMessages'
+      ? stateDbSessionReadAsync([], read, dbPath, 'authority-web')
+      : stateDbSessionReadAsync({ rows: [], idCapable: false, ok: false, reason: null, generation: null, lineage: [], rotated: null }, read, dbPath, 'authority-web', null)
+    let probes: Promise<unknown> | undefined
+    try {
+      await hold.entered()
+      probes = Promise.all([
+        stateDbSessionSourcesAsync(dbPath, ['authority-web']),
+        agentSessionRowsExistingAsync(dbPath, ['authority-web']),
+        stateDbSessionReadAsync({ target: 'authority-web', read: false }, 'stateDbLocalTargetRead', dbPath, 'authority-web'),
+      ]).then(([sources, existing, target]) => {
+        expect(sources?.get('authority-web')).toBe('webui')
+        expect(existing.has('authority-web')).toBe(true)
+        expect(target).toEqual({ target: 'authority-web', read: true })
+        return 'authority'
+      })
+      expect(await Promise.race([probes, hold.blocked])).toBe('authority')
+    } finally { hold.release(); try { await Promise.all([transcript, probes]) } finally { hold.restore() } }
+  })
+
+  it.each(['webui', 'cli', 'subagent', 'tool', 'kanban'])('classifies %s through fresh authority without sidebar metadata', async (source) => {
+    const sid = `authority-${source}-classification`
+    seedStateDb(dbPath, [{ id: sid, source, at: 1100 }])
+    const sidebar = vi.spyOn(s.deps.sessions.deps, 'cliSessions')
+    try {
+      expect(await s.deps.sessions.isSubagentViewOnly(sid)).toBe(source === 'subagent')
+      expect(sidebar).not.toHaveBeenCalled()
+      const db = new DatabaseSync(dbPath)
+      try { db.prepare('UPDATE sessions SET source = ? WHERE id = ?').run(source === 'subagent' ? 'cli' : 'subagent', sid) } finally { db.close() }
+      expect(await s.deps.sessions.isSubagentViewOnly(sid)).toBe(source !== 'subagent')
+    } finally { sidebar.mockRestore() }
+  })
+
+  it('keeps concurrent profile authority separate and fails closed on unreadable authority', async () => {
+    const sid = 'profile-authority'
+    const foreignPath = join(s.deps.profileHome('work'), 'state.db')
+    seedStateDb(dbPath, [{ id: sid, source: 'cli', at: 1200 }])
+    seedStateDb(foreignPath, [{ id: sid, source: 'subagent', at: 1200 }])
+    expect(await Promise.all(['default', 'work'].map((requestProfile) => s.deps.requestScope.run({ requestProfile }, () => s.deps.sessions.isSubagentViewOnly(sid))))).toEqual([false, true])
+    writeFileSync(foreignPath, 'unreadable authority')
+    await expect(s.deps.requestScope.run({ requestProfile: 'work' }, () => s.deps.sessions.isSubagentViewOnly(sid))).rejects.toMatchObject({ status: 403 })
+    expect(await s.deps.sessions.isSubagentViewOnly('missing-authority-row')).toBe(false)
+  })
+
+  it('records queue wait and execution separately on the requesting trace without payloads', async () => {
+    const timing = new StartupTiming(() => undefined)
+    const other = new StartupTiming(() => undefined)
+    const hold = holdWorkerRead((r) => r.op === 'session' && r.read === 'stateDbSessionRead')
+    const transcript = startupTimingScope.run(timing, () => stateDbSessionReadAsync({ rows: [], idCapable: false, ok: false, reason: null, generation: null }, 'stateDbSessionRead', dbPath, 'authority-web'))
+    let queued: Promise<unknown> | undefined
+    let independent: Promise<unknown> | undefined
+    try {
+      await hold.entered()
+      queued = startupTimingScope.run(timing, () => stateDbSessionReadAsync([], 'stateDbSessionMessages', dbPath, 'authority-web'))
+      await hold.blocked
+      independent = startupTimingScope.run(other, () => stateDbSessionSourcesAsync(dbPath, ['authority-web']))
+      hold.release()
+      await Promise.all([transcript, queued, independent])
+      expect(timing.snapshot()).toHaveProperty('state_db_reads')
+      const reads = timing.snapshot().state_db_reads
+      expect(reads['session.stateDbSessionRead']).toMatchObject({ count: 1, queue_wait_ms: expect.any(Number) as unknown, execution_ms: expect.any(Number) as unknown })
+      expect(reads['session.stateDbSessionMessages']!.queue_wait_ms).toBeGreaterThan(0)
+      expect(reads['session.stateDbSessionRead']!.execution_ms).toBeGreaterThan(0)
+      expect(other.snapshot().state_db_reads).toEqual({ 'authority.sources': { count: 1, queue_wait_ms: expect.any(Number) as unknown, execution_ms: expect.any(Number) as unknown } })
+      expect(JSON.stringify(reads)).not.toMatch(/authority-web|state\.db|hello/)
+    } finally { hold.release(); try { await Promise.all([transcript, queued, independent]) } finally { hold.restore() } }
+  })
+
+  it('publishes a normal fresh chat before releasing an unrelated transcript read', async () => {
+    const hold = holdWorkerRead((r) => r.op === 'session' && r.read === 'stateDbSessionRead')
+    const transcript = stateDbSessionReadAsync({ rows: [], idCapable: false, ok: false, reason: null, generation: null }, 'stateDbSessionRead', dbPath, 'authority-web')
+    let response: Promise<Response> | undefined
+    try {
+      await hold.entered()
+      response = post('/api/session/new', {})
+      expect(await Promise.race([response.then(() => 'created'), hold.blocked])).toBe('created')
+      const res = await response
+      expect(res.status).toBe(200)
+      const session = (await res.json() as { session: Json }).session
+      expect(session.read_only).toBe(false)
+      expect(await s.deps.sessionStore.get(String(session.session_id))).toBeDefined()
+      expect((await s.deps.sessionStore.readIndexEntries()).some((r) => r.session_id === session.session_id)).toBe(false)
+      hold.release()
+      const send = await post('/api/chat/start', { session_id: session.session_id, message: 'first message' })
+      expect(send.status, await send.clone().text()).toBe(200)
+      await s.deps.turns.finished(String((await send.json() as Json).stream_id))
+      expect((await s.deps.sessionStore.readIndexEntries()).some((r) => r.session_id === session.session_id)).toBe(true)
+    } finally { hold.release(); try { await Promise.all([transcript, response]) } finally { hold.restore() } }
   })
 })
 

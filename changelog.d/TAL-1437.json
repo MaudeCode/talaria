@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "New chats and send permission checks no longer wait behind unrelated sidebar or transcript reads.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

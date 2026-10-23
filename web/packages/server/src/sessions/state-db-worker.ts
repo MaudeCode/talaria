@@ -13,7 +13,14 @@ const { SESSION_READS, agentSessionRowsExisting, cheapChangeFingerprint, readImp
 
 parentPort?.on('message', (request: StateDbWorkerRequest) => {
   if (request.op === 'stop') process.exit(0)
+  const started = process.hrtime.bigint()
   const reply: StateDbWorkerReply = { id: request.id, logs: [], failures: [] }
+  if (request.testBarrier) {
+    const barrier = new Int32Array(request.testBarrier)
+    Atomics.store(barrier, 0, 1)
+    Atomics.notify(barrier, 0)
+    Atomics.wait(barrier, 1, 0)
+  }
   // The test read delay holds every request here, standing in for a slow state.db.
   if (request.delayMs > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, request.delayMs)
   try {
@@ -29,5 +36,6 @@ parentPort?.on('message', (request: StateDbWorkerRequest) => {
   } catch (error) {
     reply.error = (error as Error).message
   }
+  reply.timing = { queue_wait_ms: Math.max(0, Number(started - (request.queuedAtNs ?? started)) / 1e6), execution_ms: Number(process.hrtime.bigint() - started) / 1e6 }
   parentPort?.postMessage(reply)
 })

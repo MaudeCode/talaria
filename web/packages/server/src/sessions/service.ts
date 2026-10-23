@@ -338,12 +338,17 @@ export class SessionService {
 
   /** Python `_session_is_subagent_view_only`: a delegated child by any signal — the persisted sidecar or the state.db row. */
   async isSubagentViewOnly(sid: string, reads = this.sessionGateReads(sid)): Promise<boolean> {
+    let profile = this.deps.activeProfile()
     try {
       const s = (await this.store.get(sid, { metadataOnly: true, cacheOnMiss: false, promote: false }))
+      profile = s.profile || 'default'
       if (str(s.source_tag || s.raw_source || s.session_source).trim().toLowerCase() === 'subagent') return true
     } catch { /* no sidecar */ }
-    const meta = await reads.meta()
-    return meta !== null && str(meta.source_tag || meta.raw_source || meta.source).trim().toLowerCase() === 'subagent'
+    // Admission needs authority, not the sidebar's visibility, message counts or enrichment.
+    const owners = await reads.owners(profile)
+    if (!owners) throw new HttpFailure(403, OWNERSHIP_UNAVAILABLE_REASON)
+    const owner = owners.get(sid)
+    return str(typeof owner === 'object' ? owner.source : owner).trim().toLowerCase() === 'subagent'
   }
 
   /** TAL-358: batched `sessions.source` owners from the active profile's state.db, read on the state.db worker (TAL-923). */
