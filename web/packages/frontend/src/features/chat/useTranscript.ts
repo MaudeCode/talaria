@@ -152,7 +152,14 @@ export function useTranscript(sessionId: string | null, equalLive?: (previous: L
       const twin = event === 'process_complete' && completion === backgroundCompletion
       // The server emits the same completion under the current and legacy names, in that order.
       backgroundCompletion = event === 'bg_task_complete' ? completion : null
-      if (!twin) void qc.invalidateQueries({ queryKey: keys.sessions.detail(sessionId) })
+      if (!twin) {
+        const filter = { queryKey: keys.sessions.detail(sessionId) }
+        // Query invalidation alone reuses an in-flight first read when no data is cached.
+        // Retire that pre-event snapshot before reading current owner metadata, including reactions.
+        void qc.cancelQueries(filter).then(() => {
+          if (!retired && scope === getStreamContext()) return qc.invalidateQueries(filter)
+        })
+      }
     } }, cached?.session.message_count)
     return () => { retired = true; stream.close() }
   }, [qc, sessionId, streamContext])

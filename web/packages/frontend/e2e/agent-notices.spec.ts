@@ -101,6 +101,19 @@ test('idle native plugin notices refresh both viewers through one observation', 
     return new Promise((resolve) => { opts.signal!.addEventListener('abort', () => { aborted = true; resolve(attached()) }, { once: true }) })
   })
   const second = await context.newPage()
+  let releaseDetail!: () => void
+  let detailCaptured!: () => void
+  const heldDetail = new Promise<void>((resolve) => { releaseDetail = resolve })
+  const capturedDetail = new Promise<void>((resolve) => { detailCaptured = resolve })
+  let firstDetail = true
+  await second.route('**/api/session?**', async (route) => {
+    if (!firstDetail) { await route.continue(); return }
+    firstDetail = false
+    const response = await route.fetch()
+    detailCaptured()
+    await heldDetail
+    await route.fulfill({ response })
+  })
   const shot = async (name: string) => {
     await page.screenshot({ path: process.env.TAL1329_SHOTS ? `${process.env.TAL1329_SHOTS}/${name}-${testInfo.project.name}.png` : testInfo.outputPath(`${name}-${testInfo.project.name}.png`) })
   }
@@ -114,7 +127,9 @@ test('idle native plugin notices refresh both viewers through one observation', 
     await shot('idle-before')
     await second.goto(`${server.base}/session/${sid}`)
     await expect.poll(() => server.deps.channels.subscriberCount(sid)).toBe(2)
+    await capturedDetail
     for (const event of notices.events) emit!({ event: 'event', data: event })
+    releaseDetail()
     for (const viewer of [page, second]) {
       await expect(viewer.locator('#composerWrap').getByText('Plugin finished', { exact: true })).toHaveCount(1)
       await expect(viewer.locator('#composerWrap').getByText('Plugin started', { exact: true })).toHaveCount(0)
@@ -131,6 +146,7 @@ test('idle native plugin notices refresh both viewers through one observation', 
     await expect.poll(() => aborted).toBe(true)
     expect(sidecar.calls.some((call) => call.method === 'chat.start')).toBe(false)
   } finally {
+    releaseDetail()
     await second.close()
     await page.goto('about:blank')
     db.close()

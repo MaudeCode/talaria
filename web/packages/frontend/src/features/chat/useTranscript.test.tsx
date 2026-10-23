@@ -322,6 +322,30 @@ it('aborts an in-flight transcript fetch when invalidation replaces it', async (
   expect(aborted).toHaveBeenCalledTimes(1)
 })
 
+it('reconciles owner metadata invalidation before the first detail read finishes', async () => {
+  const feeds = await import('../../api/sse')
+  const stale = deferred<Awaited<ReturnType<typeof api.fetchSession>>>()
+  const session = sessionFixture({ session_id: 'initial-owner', notices: [], messages: [{
+    id: 42, role: 'assistant', content: 'Owner answer',
+    reaction_view: { row_id: 42, state: { selected: '👍', items: [{ emoji: '👍', count: 1, mine: true }] }, actions: [] },
+  }] })
+  const current = sessionFixture({ ...session, notices: [{ key: 'plugin', level: 'info', text: 'Plugin finished', expires_at: null }], messages: [{
+    ...session.messages![0]!, reaction_view: { row_id: 42, state: { selected: '🎉', items: [{ emoji: '🎉', count: 1, mine: true }] }, actions: [] },
+  }] })
+  vi.mocked(api.fetchSession).mockReturnValueOnce(stale.promise).mockResolvedValue({ session: current })
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+  const { result } = renderHook(() => useTranscript(session.session_id), { wrapper })
+  await waitFor(() => expect(api.fetchSession).toHaveBeenCalledTimes(1))
+  const feed = vi.mocked(feeds.openSessionStream).mock.calls[0]![1]
+  act(() => {
+    feed.onEvent({ event: 'session-updated', data: { session_id: session.session_id } })
+    stale.resolve({ session })
+  })
+  await waitFor(() => expect(result.current.rows[0]?.message.reaction_view?.state.selected).toBe('🎉'))
+  expect(result.current.session?.notices?.[0]?.text).toBe('Plugin finished')
+})
+
 it('fetches once for a background completion and its legacy twin, then refreshes later updates', async () => {
   const feeds = await import('../../api/sse')
   vi.mocked(api.fetchSession).mockResolvedValue({ session: sessionFixture({ session_id: 'history' }) })
