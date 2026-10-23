@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { PromptQueueAction, PromptQueueCard, PromptQueueCardInput, PromptQueueRun } from '@maudecode/talaria-web-contracts'
 import { isDefiniteRefusal } from '../../contracts/common'
@@ -27,6 +27,16 @@ const queued = (card: PromptQueueCard, profile: string): QueuedTurn => ({ id: ca
 export function usePromptQueues(selectedId: string | null, select: (id: string | null) => void): { runs: PromptQueueRun[]; body: ReactNode } {
   const context = useStreamContext()
   const effects = useResourceEffects()
+  const confirmedRevisions = useRef(new WeakMap<object, Map<string, number>>())
+  const writeQueue = async (run: PromptQueueRun, owner: object, write: (revision: number) => Promise<PromptQueueRun>) => {
+    if (owner !== getStreamContext()) throw new Error(m.error_generic())
+    let revisions = confirmedRevisions.current.get(owner)
+    if (!revisions) { revisions = new Map(); confirmedRevisions.current.set(owner, revisions) }
+    const updated = await write(Math.max(run.revision, revisions.get(run.id) ?? run.revision))
+    // A superseded display effect still confirms the revision for the next serialized write.
+    revisions.set(run.id, updated.revision)
+    return updated
+  }
   const [draft, setDraft] = useState<{ owner: object; cards: Draft[]; requestId: string } | null>(null)
   const query = useQuery({ queryKey: promptQueuesKey, queryFn: async () => ({ ...await api.fetchPromptQueues(), context }), structuralSharing: false, refetchInterval: 2000 })
   const runs = withCreated(withEffects(query.data?.context === context ? query.data.runs : [], resource, effects), 'prompt-queue', effects)
@@ -37,7 +47,7 @@ export function usePromptQueues(selectedId: string | null, select: (id: string |
     },
     queryKey: promptQueuesKey,
     effect: ({ action }) => ({ fields: { ...(action === 'reconcile' ? {} : { phase: action === 'start' || action === 'resume' ? 'running' : action === 'pause' ? 'paused' : 'cancelled' }), actions: [], editable: false } }),
-    mutationFn: ({ run, action }) => api.promptQueueAction({ id: run.id, revision: run.revision, action }),
+    mutationFn: ({ run, action, owner }) => writeQueue(run, owner, (revision) => api.promptQueueAction({ id: run.id, revision, action })),
     onError: showErrorToast,
   })
   const edit = useResourceMutation({
@@ -46,8 +56,8 @@ export function usePromptQueues(selectedId: string | null, select: (id: string |
       return resource(run)
     },
     queryKey: promptQueuesKey,
-    effect: ({ cards }) => ({ fields: { cards } }),
-    mutationFn: ({ run, cards }) => api.editPromptQueue({ id: run.id, revision: run.revision, cards }),
+    effect: ({ cards }) => ({ fields: { cards, actions: [] } }),
+    mutationFn: ({ run, cards, owner }) => writeQueue(run, owner, (revision) => api.editPromptQueue({ id: run.id, revision, cards })),
     onError: showErrorToast,
   })
   const create = useResourceMutation({

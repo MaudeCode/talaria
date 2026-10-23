@@ -77,3 +77,33 @@ it('fences a stale rendered action after the server/profile context changes', as
   await userEvent.click(button)
   expect(api.promptQueueAction).not.toHaveBeenCalled()
 })
+
+it('keeps two rapid saved-draft removals by carrying the first confirmed revision into the serialized edit', async () => {
+  const third = { ...run.cards[1], session_id: 'synthetic-chat-c', request_id: 'synthetic-step-c', text: 'Publish the checks', title: 'Publish checks', status: 'waiting' as const }
+  let saved = PromptQueueRunSchema.parse({ ...run, phase: 'draft', editable: true, actions: ['start', 'cancel'], cards: [...run.cards, third].map((card) => ({ ...card, status: 'waiting', stream_id: null, admission_id: null, outcome: null })) })
+  vi.mocked(api.fetchPromptQueues).mockImplementation(() => Promise.resolve({ runs: [saved] }))
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => { release = resolve })
+  let writes = 0
+  vi.mocked(api.editPromptQueue).mockImplementation(async (input) => {
+    writes += 1
+    if (writes === 1) await gate
+    if (input.revision !== saved.revision) throw new ApiError({ kind: 'http', status: 409, path: '/api/prompt-queues', message: 'Stale revision' })
+    saved = { ...saved, revision: saved.revision + 1, cards: saved.cards.filter((card) => input.cards.some((next) => next.session_id === card.session_id)) }
+    return saved
+  })
+  mount()
+  const rows = () => within(screen.getByTestId('main')).getAllByRole('listitem')
+  await screen.findByRole('heading', { name: run.title })
+  await userEvent.click(screen.getAllByRole('button', { name: 'Cancel queued message' })[0]!)
+  await waitFor(() => expect(api.editPromptQueue).toHaveBeenCalledTimes(1))
+  expect(screen.queryByRole('button', { name: 'Start' })).toBeNull()
+  await userEvent.click(screen.getAllByRole('button', { name: 'Cancel queued message' })[0]!)
+  expect(rows()).toHaveLength(1)
+  act(() => { release() })
+  await waitFor(() => expect(api.editPromptQueue).toHaveBeenCalledTimes(2))
+  expect(vi.mocked(api.editPromptQueue).mock.calls[1]?.[0].revision).toBe(run.revision + 1)
+  await waitFor(() => expect(saved.cards).toHaveLength(1))
+  expect(rows()).toHaveLength(1)
+  expect(rows()[0]).toHaveTextContent('Publish the checks')
+})
