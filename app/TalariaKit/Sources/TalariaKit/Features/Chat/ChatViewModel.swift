@@ -553,6 +553,9 @@ public final class ChatViewModel {
     private(set) var listenPlaybackScrubTime: TimeInterval?
     public private(set) var listenPlaybackSpeed: ListenPlaybackSpeed
     @ObservationIgnored private var listenPlaybackTicker: Timer?
+    /// Dictation into this chat's composer. It lives as long as the chat rather than its composer, so a composer the
+    /// navigation rebuilds keeps dictating (TAL-1477). Lazy: SwiftUI builds a view model on every `ChatView` init.
+    @ObservationIgnored public private(set) lazy var voiceInput = ComposerVoiceInputController()
     private var showsLiveActivityResponseExcerpts: Bool
     private var hasCompletedCurrentResponse: Bool { streamCoordinator.hasCompletedCurrentResponse }
     private var isStreamConnectionSuspended: Bool { streamCoordinator.isConnectionSuspended }

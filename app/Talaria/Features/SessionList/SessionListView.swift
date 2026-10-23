@@ -28,12 +28,16 @@ struct SessionListView: View {
     @State private var quotaViewModel: ProvidersViewModel
     @State private var updateNotificationViewModel: UpdateNotificationCenterViewModel
     @State private var sectionViewModels: SectionViewModels
+    /// The open chat, kept above both width layouts so opening or closing an iPhone Duo hands it over (TAL-1477).
+    @State private var chats: ChatViewModelCache
     @State private var navigationState: SessionNavigationState
     /// The detail root a page was pushed over (TAL-643).
     @State private var coveredRegularDetail: RegularDetailIdentity?
     @State private var regularSplitRevision = 0
     /// The regular-width split view's own width, which sizes its columns (TAL-1453).
     @State private var regularSplitWidth: CGFloat = 0
+    /// Read live by the chat being replaced, whose own environment still says regular (TAL-1477).
+    @State private var isCompactWidth = false
     /// Persists `navigationState.filesInspectorPresented` for the window (TAL-479).
     @SceneStorage(SplitFilesInspector.storageKey) private var storedFilesInspectorPresented = false
     @State private var sessionPendingRename: SessionSummary?
@@ -102,7 +106,8 @@ struct SessionListView: View {
         pendingQuotaSourceID: Binding<String?> = .constant(nil),
         opensProviderQuotaWidgetSettings: Binding<Bool> = .constant(false),
         requestedNewChat: Binding<NewChatRequest?> = .constant(nil),
-        draftStore: ChatDraftStore? = nil
+        draftStore: ChatDraftStore? = nil,
+        chats: ChatViewModelCache? = nil
     ) {
         self.authManager = authManager
         self.server = server
@@ -129,6 +134,7 @@ struct SessionListView: View {
         _quotaViewModel = State(initialValue: ProvidersViewModel(server: server))
         _updateNotificationViewModel = State(initialValue: UpdateNotificationCenterViewModel(server: server))
         _sectionViewModels = State(initialValue: SectionViewModels(server: server))
+        _chats = State(initialValue: chats ?? ChatViewModelCache())
         #if DEBUG
         _isPresentingUpdateNotifications = State(
             initialValue: ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.updateNotificationsArgument)
@@ -168,6 +174,12 @@ struct SessionListView: View {
             ZStack {
                 Color(.systemBackground)
                 navigationContainer
+            }
+            .onChange(of: navigationState.destination?.selectedSessionID) { _, sessionID in
+                chats.keepOnly(sessionID: sessionID)
+            }
+            .onChange(of: horizontalSizeClass, initial: true) { _, sizeClass in
+                isCompactWidth = sizeClass == .compact
             }
             .onChange(of: horizontalSizeClass) { _, sizeClass in
                 // Closing an iPhone Duo or narrowing an iPad window keeps the open page (TAL-643).
@@ -505,9 +517,12 @@ struct SessionListView: View {
             .navigationSplitViewStyle(.balanced)
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { regularSplitWidth = $0 }
             // Starts fresh when its columns change, since showing the sidebar column again after a
-            // full-width section left it without its navigation bar, and to drop covered pages.
+            // full-width section left it without its navigation bar, and to drop covered pages. A split
+            // built before its width was measured, as opening an iPhone Duo builds one, keeps the sidebar
+            // it started with, so it also starts fresh once its width decides where Files goes (TAL-1477).
             .id(RegularSplitIdentity(
                 isFullWidth: navigationState.section.isFullWidth,
+                widensForFilesInspector: widensForFilesInspector,
                 revision: regularSplitRevision
             ))
             .environment(\.openArchivedSession) { session in
@@ -580,7 +595,14 @@ struct SessionListView: View {
 
     private var splitFilesInspector: SplitFilesInspector {
         SplitFilesInspector(
-            isPresented: $navigationState.filesInspectorPresented,
+            isPresented: Binding {
+                navigationState.filesInspectorPresented
+            } set: { presented in
+                // Closing an iPhone Duo collapses the inspector without the reader closing Files; it shows again once
+                // there is room (TAL-1477).
+                guard presented || !isCompactWidth else { return }
+                navigationState.filesInspectorPresented = presented
+            },
             widensChat: widensForFilesInspector,
             reportShown: { navigationState.chatShowsFilesInspector = $0 }
         )
@@ -786,7 +808,10 @@ struct SessionListView: View {
                 onAPIError: { authManager.handleAPIError($0, server: server) },
                 draftStore: draftStore,
                 sessionListOwner: viewModel,
-                splitFilesInspector: splitFilesInspector
+                splitFilesInspector: splitFilesInspector,
+                retained: chats.chat(for: session, server: server) {
+                    ChatView.makeViewModel(session: session, server: server, sessionListOwner: viewModel)
+                }
             )
                 .id(session.id)
         case .newChat(let route):
@@ -2051,5 +2076,6 @@ private struct RegularDetailIdentity: Hashable {
 
 private struct RegularSplitIdentity: Hashable {
     let isFullWidth: Bool
+    let widensForFilesInspector: Bool
     let revision: Int
 }

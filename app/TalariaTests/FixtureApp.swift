@@ -98,11 +98,12 @@ final class FixtureApp {
         .modelContainer(cache)
     }
 
-    func sessionList(scenePhase: ScenePhase = .active) -> some View {
+    func sessionList(scenePhase: ScenePhase = .active, chats: ChatViewModelCache? = nil) -> some View {
         SessionListView(
             authManager: environment.authManager,
             server: UITestFixtureEnvironment.serverURL,
-            draftStore: environment.draftStore
+            draftStore: environment.draftStore,
+            chats: chats
         )
         .environment(\.scenePhase, scenePhase)
         .modelContainer(cache)

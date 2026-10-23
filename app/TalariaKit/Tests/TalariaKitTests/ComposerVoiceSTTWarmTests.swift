@@ -9,7 +9,7 @@ final class ComposerVoiceSTTWarmTests: APIClientTestCase {
         let warmed = expectation(description: "POST /api/transcribe/warm")
         let controller = try makeController(capability: "warmable") { warmed.fulfill() }
 
-        await controller.toggle(currentDraft: "") { _ in }
+        await controller.toggle(currentDraft: "")
 
         await fulfillment(of: [warmed], timeout: 2)
     }
@@ -20,7 +20,7 @@ final class ComposerVoiceSTTWarmTests: APIClientTestCase {
         let checked = expectation(description: "GET /api/transcribe/capability")
         let controller = try makeController(capability: "unwarmable", onCapability: { checked.fulfill() }) { warmed.fulfill() }
 
-        await controller.toggle(currentDraft: "") { _ in }
+        await controller.toggle(currentDraft: "")
 
         await fulfillment(of: [checked], timeout: 2)
         await fulfillment(of: [warmed], timeout: 0.3)

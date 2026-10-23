@@ -1446,6 +1446,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     private func startScriptedChatStream(url: URL) {
+        Self.answeredPaths.withLock { $0.append(url.path) }
         let response = HTTPURLResponse(
             url: url,
             statusCode: 200,

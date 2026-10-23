@@ -79,6 +79,8 @@ struct MessageComposerView: View {
     /// the "New Chat with Voice" App Intent (#338). Defaults to false for normal composers.
     let autoStartsVoiceInput: Bool
     let voiceInputRequestID: Int
+    /// The chat's dictation, which outlives this composer (TAL-1477).
+    let voiceInput: ComposerVoiceInputController
     let apiClient: APIClient?
     let uploadAttachmentErrorMessage: String?
     /// The behavior override for a send during a reply; nil uses the stored setting.
@@ -147,7 +149,6 @@ struct MessageComposerView: View {
     @State private var showPhotoPicker = false
     @State private var showCameraPicker = false
     @State private var showFileImporter = false
-    @State private var voiceInput = ComposerVoiceInputController()
     @State private var voiceNoteRecorder = ComposerVoiceNoteRecorder()
     @State private var voiceNoteCancelArmed = false
     @State private var didAutoStartVoiceInput = false
@@ -378,6 +379,10 @@ struct MessageComposerView: View {
         .onAppear {
             onExpandedPresentationRequirementChange(requiresExpandedPresentation)
         }
+        .onChange(of: voiceInput.dictatedDraft) { _, dictated in
+            // Dictation can outlive the composer that started it (TAL-1477).
+            if let dictated { draftMessage = dictated.text }
+        }
         .onChange(of: requiresExpandedPresentation) { _, isRequired in
             onExpandedPresentationRequirementChange(isRequired)
         }
@@ -558,7 +563,6 @@ struct MessageComposerView: View {
             keyboardIsVisible = false
         }
         .onDisappear {
-            voiceInput.stopBeforeSubmittingDraft()
             cancelVoiceNote()
             onExpandedPresentationRequirementChange(false)
         }
@@ -1380,9 +1384,7 @@ struct MessageComposerView: View {
         voiceInput.apiClient = apiClient
         voiceInput.providerPreference = ComposerSTTProviderPreference.storedValue(sttProviderPreferenceRawValue)
         voiceInput.locale = .current
-        await voiceInput.toggle(currentDraft: draftMessage) { newDraft in
-            draftMessage = newDraft
-        }
+        await voiceInput.toggle(currentDraft: draftMessage)
     }
 
     /// Hold recognized → start recording a voice note. Gated by the recording
