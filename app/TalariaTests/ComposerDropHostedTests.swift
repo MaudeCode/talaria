@@ -47,6 +47,20 @@ final class ComposerDropHostedTests: XCTestCase {
         XCTAssertTrue(HostedAccessibility.elements(in: window, labelContaining: "refused.png").isEmpty)
     }
 
+    func testAnOwnerChatThatTakesNoAttachmentsRefusesAnAttachmentDropButTakesText() async throws {
+        let window = try await hostFixtureChat([UITestFixtureURLProtocol.nativeNoticesArgument], size: HostedSize.duoInnerLandscape)
+        try await typeIntoComposer("Owner:", in: window)
+
+        let refused = try await drop([imageProvider(named: "owner-photo.png")], in: window)
+        XCTAssertNotEqual(refused, .copy, "An owner chat that takes no attachments accepted an image drop")
+
+        let mixed = try await drop([imageProvider(named: "owner-mixed.png"), textProvider(" kept")], in: window)
+        XCTAssertEqual(mixed, .copy)
+        let landed = await awaitCondition { self.composerDraftText(in: window) == "Owner: kept" }
+        XCTAssertTrue(landed, "Draft was \(String(describing: composerDraftText(in: window)))")
+        XCTAssertTrue(HostedAccessibility.elements(in: window, labelContaining: "owner-").isEmpty, "An attachment was staged")
+    }
+
     private func assertDropsLand(size: CGSize) async throws {
         let window = try await hostFixtureChat(size: size)
         try await typeIntoComposer("Hello world", in: window)

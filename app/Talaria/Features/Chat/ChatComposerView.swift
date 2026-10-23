@@ -355,7 +355,7 @@ struct MessageComposerView: View {
                 }
                 .onDrop(
                     of: ComposerDropItem.types,
-                    delegate: ComposerDropDelegate(isEnabled: acceptsDrops, isTargeted: $isDropTargeted, perform: acceptDrop)
+                    delegate: ComposerDropDelegate(accepted: droppableItems, isTargeted: $isDropTargeted, perform: acceptDrop)
                 )
                 .padding(.horizontal)
                 .padding(.bottom, showsStripUnderCard ? 4 : 0)
@@ -1452,15 +1452,18 @@ struct MessageComposerView: View {
         !isReadOnly && !isAnsweringClarification && sessionStart == nil
     }
 
+    /// The items of a drop this composer takes, in the drop's order; none refuses the drop. An owner-attached chat that
+    /// takes no attachments still takes dropped text.
+    private func droppableItems(_ providers: [NSItemProvider]) -> [(NSItemProvider, ComposerDropItem)] {
+        guard acceptsDrops else { return [] }
+        let canAttach = ownerAttachment?.canAttach != false
+        return providers.compactMap { provider in ComposerDropItem(provider).map { (provider, $0) } }
+            .filter { canAttach || $0.1 != .attachment }
+    }
+
     /// One drop onto the composer (TAL-1461): its images and files stage as attachments, its links and text go into the
     /// draft at the caret, each in the drop's order. Focus returns to the editor.
-    private func acceptDrop(_ providers: [NSItemProvider]) -> Bool {
-        // An owner-attached chat that takes no attachments still takes dropped text.
-        let canAttach = ownerAttachment?.canAttach != false
-        let items = providers.compactMap { provider in ComposerDropItem(provider).map { (provider, $0) } }
-            .filter { canAttach || $0.1 != .attachment }
-        guard acceptsDrops, !items.isEmpty else { return false }
-
+    private func acceptDrop(_ items: [(NSItemProvider, ComposerDropItem)]) {
         let attachments = items.filter { $0.1 == .attachment }.map(\.0)
         if !attachments.isEmpty {
             deferredUploadFocusPhase = .waitingForUploadStart(afterGeneration: attachmentUploadGeneration)
@@ -1473,7 +1476,6 @@ struct MessageComposerView: View {
             }
             requestTextViewFocusIfPossible()
         }
-        return true
     }
 
     private var canFocusTextView: Bool {
@@ -1713,15 +1715,19 @@ enum ComposerDropItem: Equatable {
     }
 }
 
-/// The composer's drop destination (TAL-1461): it outlines the card while an acceptable drop hovers, and refuses one
-/// while the composer cannot take input.
+/// The composer's drop destination (TAL-1461): it outlines the card while an acceptable drop hovers, and refuses a drop
+/// with nothing the composer takes.
 private struct ComposerDropDelegate: DropDelegate {
-    let isEnabled: Bool
+    let accepted: ([NSItemProvider]) -> [(NSItemProvider, ComposerDropItem)]
     @Binding var isTargeted: Bool
-    let perform: ([NSItemProvider]) -> Bool
+    let perform: ([(NSItemProvider, ComposerDropItem)]) -> Void
+
+    private func items(_ info: DropInfo) -> [(NSItemProvider, ComposerDropItem)] {
+        accepted(info.itemProviders(for: ComposerDropItem.types))
+    }
 
     func validateDrop(info: DropInfo) -> Bool {
-        isEnabled && info.hasItemsConforming(to: ComposerDropItem.types)
+        !items(info).isEmpty
     }
 
     func dropEntered(info: DropInfo) {
@@ -1729,7 +1735,7 @@ private struct ComposerDropDelegate: DropDelegate {
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
-        DropProposal(operation: isEnabled ? .copy : .forbidden)
+        DropProposal(operation: validateDrop(info: info) ? .copy : .forbidden)
     }
 
     func dropExited(info: DropInfo) {
@@ -1738,6 +1744,9 @@ private struct ComposerDropDelegate: DropDelegate {
 
     func performDrop(info: DropInfo) -> Bool {
         isTargeted = false
-        return perform(info.itemProviders(for: ComposerDropItem.types))
+        let items = items(info)
+        guard !items.isEmpty else { return false }
+        perform(items)
+        return true
     }
 }
