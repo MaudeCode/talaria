@@ -23,6 +23,7 @@ struct GitTurnDiffSheet: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } }
+                    .overflowPriority(.done)
                 }
         }
         .presentationDetents([.medium, .large])

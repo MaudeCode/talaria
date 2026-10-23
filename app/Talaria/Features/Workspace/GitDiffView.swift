@@ -29,6 +29,7 @@ struct GitDiffView: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } }
+                        .overflowPriority(.done)
                 }
                 .task {
                     guard !hasLoaded else { return }

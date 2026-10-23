@@ -82,14 +82,15 @@ final class FixtureApp {
     }
 
     /// The chat pushed the way the session list pushes it: it starts its loads once its push has finished.
-    func chat(_ session: SessionSummary) -> some View {
+    func chat(_ session: SessionSummary, viewModel: ChatViewModel? = nil) -> some View {
         NavigationStack {
             Color.clear.navigationDestination(isPresented: .constant(true)) {
                 ChatView(
                     session: session,
                     server: UITestFixtureEnvironment.serverURL,
                     onAPIError: { _ in },
-                    draftStore: self.environment.draftStore
+                    draftStore: self.environment.draftStore,
+                    viewModel: viewModel
                 )
             }
         }

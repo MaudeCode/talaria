@@ -97,8 +97,8 @@ struct MemoryFileView: View {
         }
         .navigationTitle(title)
         .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                if case .section(let section) = file {
+            if case .section(let section) = file {
+                ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         viewModel.clearActionError()
                         viewModel.editingSection = section
@@ -108,7 +108,10 @@ struct MemoryFileView: View {
                     // Saves carry no version check, so cached notes are not editable (TAL-437).
                     .disabled(viewModel.isSaving || viewModel.isShowingCachedContent)
                 }
+                .overflowPriority(.secondary)
+            }
 
+            ToolbarItem(placement: .topBarTrailing) {
                 RefreshToolbarButton(isLoading: viewModel.isLoading) {
                     Task { await loadMemory(viewModel, onAPIError: onAPIError) }
                 }

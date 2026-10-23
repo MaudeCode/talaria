@@ -799,6 +799,7 @@ struct ChatView: View {
                     ToolbarItem(placement: .topBarTrailing) {
                         goalControlMenu
                     }
+                    .overflowPriority(.chatGoal)
                 }
 
                 // The workspace browser needs the session; a new chat gains it once created (TAL-636).
@@ -808,6 +809,7 @@ struct ChatView: View {
                             .disabled(viewModel.isViewingCachedData)
                             .accessibilityLabel("Files")
                     }
+                    .overflowPriority(.chatFiles)
                 }
 
                 if showsGitControls, gitAvailabilityViewModel.hasRepository {

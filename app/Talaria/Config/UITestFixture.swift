@@ -792,6 +792,8 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             return json(["suggestions": ["/fixture"], "prefix": "/fixture"])
         case "/api/commands":
             return json(["commands": []])
+        case "/api/goal" where ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.goalArgument):
+            return json(["ok": true, "action": "status", "goal": ["goal": "Ship the release notes", "status": "active"]])
         case "/api/personalities":
             return json(["personalities": []])
         case "/api/skills":

@@ -1217,16 +1217,22 @@ struct KanbanStatusFocusView: View {
             if !toolbarLayout.usesOverflowMenu {
                 selectCardsButton
             }
+        }
+        .overflowPriority(.secondary)
 
+        ToolbarItem(placement: .topBarTrailing) {
             Button {
                 cardEditor = model.makeCreateCardEditorState()
             } label: {
-                Image(systemName: "plus")
+                Label("New Card", systemImage: "plus")
             }
             .disabled(!model.canCreateCards)
             .frame(minWidth: 44, minHeight: 44)
             .accessibilityLabel(Text("New Card"))
+        }
+        .overflowPriority(.create)
 
+        ToolbarItemGroup(placement: .topBarTrailing) {
             Button {
                 showsDispatcher = true
             } label: {
@@ -1249,6 +1255,7 @@ struct KanbanStatusFocusView: View {
                 filtersButton
             }
         }
+        .overflowPriority(.secondary)
     }
 
     private var selectCardsButton: some View {

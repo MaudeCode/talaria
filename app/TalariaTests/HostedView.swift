@@ -18,6 +18,32 @@ enum HostedSize {
     static let duoInnerLandscape = CGSize(width: 951, height: 669)
 }
 
+/// Reads the public UIKit items SwiftUI emits, including grouped and bottom-bar actions.
+extension HostedAccessibility {
+    static func toolbarItems(in window: UIWindow) -> [UIBarButtonItem] {
+        var result: [UIBarButtonItem] = []
+        var visited: Set<ObjectIdentifier> = []
+        func visit(_ controller: UIViewController) {
+            guard visited.insert(ObjectIdentifier(controller)).inserted else { return }
+            let navigationItems = [controller.navigationItem] + ((controller as? UINavigationController)?.navigationBar.items ?? [])
+            result += controller.toolbarItems ?? []
+            for item in navigationItems {
+                result += (item.leftBarButtonItems ?? []) + (item.rightBarButtonItems ?? [])
+                result += (item.leadingItemGroups + item.trailingItemGroups).flatMap(\.barButtonItems)
+            }
+            controller.children.forEach(visit)
+            if let presented = controller.presentedViewController { visit(presented) }
+        }
+        if let root = window.rootViewController { visit(root) }
+        var seen: Set<ObjectIdentifier> = []
+        return result.filter { seen.insert(ObjectIdentifier($0)).inserted }
+    }
+
+    static func toolbarItem(_ title: String, in window: UIWindow) -> UIBarButtonItem? {
+        toolbarItems(in: window).first { $0.title == title || $0.accessibilityLabel == title }
+    }
+}
+
 extension XCTestCase {
     @MainActor
     func attachHostedScreenshot(_ window: UIWindow, name: String, lifetime: XCTAttachment.Lifetime = .keepAlways) {
