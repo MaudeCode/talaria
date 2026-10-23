@@ -59,7 +59,10 @@ export type ToolEditDiff = z.infer<typeof ToolEditDiffSchema>
 export const ToolProgressSchema = z.object({ percent: z.number().min(0).max(100).nullable(), message: z.string().nullable() })
 export type ToolProgress = z.infer<typeof ToolProgressSchema>
 /** Shared tool display fields. Progress is ephemeral, absent on older servers and null after completion. */
-export const ToolDisplayFields = { progress: ToolProgressSchema.nullable().optional(), kind: ToolKindSchema.optional(), target: z.string().optional(), edit_diff: ToolEditDiffSchema.optional() }
+export const ToolDisplayFields = {
+  progress: ToolProgressSchema.nullable().optional(), kind: ToolKindSchema.optional(), target: z.string().optional(), edit_diff: ToolEditDiffSchema.optional(),
+  focus_path: NullableString.optional().describe('TAL-1458: a read or write call\'s file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path.'),
+}
 
 /**
  * TAL-315: a tool result's display sections, decided by the server's one rule for live, replayed and persisted results
@@ -380,6 +383,7 @@ export const SessionSchema = z.looseObject({
   assistant_name: z.string().optional(),
   workspace_name: WorkspaceNameSchema,
   compression_reference: CompressionReferenceSchema.nullable().optional(),
+  focus_path: NullableString.optional().describe('TAL-1458: the last non-null `focus_path` of the session\'s persisted tool calls, so a reopened chat shows its file before any stream event; null when none.'),
   branched_from: BranchedFromSchema.nullable().optional().describe('TAL-454: the chat this one was branched from while it still loads (archived included); null for a compression continuation, a deleted or missing parent, and every other chat.'),
 })
 export type Session = z.infer<typeof SessionSchema>

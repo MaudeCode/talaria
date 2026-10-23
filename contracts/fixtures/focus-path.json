@@ -1,0 +1,42 @@
+{
+  "tool_a": {
+    "event": "tool",
+    "data": {
+      "id": "call-alpha",
+      "name": "write_file",
+      "args": { "path": "Sources/Demo/Alpha.swift", "content": "struct Alpha {}" },
+      "kind": "write",
+      "target": "Sources/Demo/Alpha.swift",
+      "focus_path": "Sources/Demo/Alpha.swift"
+    }
+  },
+  "tool_b": {
+    "event": "tool",
+    "data": {
+      "id": "call-beta",
+      "name": "patch",
+      "args": { "path": "./Sources/Demo/Beta.swift", "old_string": "a", "new_string": "b" },
+      "kind": "write",
+      "target": "./Sources/Demo/Beta.swift",
+      "focus_path": "Sources/Demo/Beta.swift"
+    }
+  },
+  "shell": {
+    "event": "tool",
+    "data": {
+      "id": "call-build",
+      "name": "terminal",
+      "args": { "command": "swift build" },
+      "kind": "shell",
+      "target": "swift build"
+    }
+  },
+  "stored_tool_calls": [
+    { "name": "write_file", "tid": "call-1", "assistant_msg_idx": 1, "args": { "path": "Sources/Demo/Alpha.swift", "content": "a" } },
+    { "name": "write_file", "tid": "call-2", "assistant_msg_idx": 1, "args": { "path": "Sources/Demo/Beta.swift", "content": "b" } },
+    { "name": "write_file", "tid": "call-3", "assistant_msg_idx": 1, "args": { "path": "Sources/Demo/Gamma.swift", "content": "c" } },
+    { "name": "terminal", "tid": "call-4", "assistant_msg_idx": 1, "args": { "command": "swift build" } },
+    { "name": "read_file", "tid": "call-5", "assistant_msg_idx": 1, "args": { "path": "/etc/hosts" } }
+  ],
+  "session": { "focus_path": "Sources/Demo/Gamma.swift" }
+}

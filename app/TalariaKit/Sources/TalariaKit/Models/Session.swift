@@ -956,6 +956,8 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
     public let compressionReference: CompressionReference?
     /// The chat this one was branched from, while it still loads (TAL-454); nil shows no link.
     public let branchedFrom: SessionBranchLink?
+    /// TAL-1458: the file the session's last persisted file call named; nil when none, or from an older server.
+    public let focusPath: String?
     /// Where `messages` end in the active run's journal (TAL-316); nil means attach live without replay.
     public let transcriptSeq: TranscriptSeq?
     /// The session's toolset override (TAL-631); nil means the profile's defaults.
@@ -1027,6 +1029,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
         case transformedMessagesOffset = "_messagesOffset"
         case compressionReference
         case branchedFrom
+        case focusPath
         case enabledToolsets
         case transcriptSeq
     }
@@ -1100,6 +1103,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
             ?? container.decodeLossyIntIfPresent(forKey: .messagesOffset)
         compressionReference = try? container.decodeIfPresent(CompressionReference.self, forKey: .compressionReference)
         branchedFrom = try? container.decodeIfPresent(SessionBranchLink.self, forKey: .branchedFrom)
+        focusPath = container.decodeLossyStringIfPresent(forKey: .focusPath)
         transcriptSeq = try? container.decodeIfPresent(TranscriptSeq.self, forKey: .transcriptSeq)
         enabledToolsets = try? container.decodeIfPresent([String].self, forKey: .enabledToolsets)
         statesEnabledToolsets = container.contains(.enabledToolsets)

@@ -825,8 +825,8 @@ final class RegularSplitHostedTests: XCTestCase {
         return found
     }
 
-    private func element(_ label: String, in window: UIWindow) async -> NSObject? {
-        await barButton(label, in: window)
+    private func element(_ label: String, in window: UIWindow, timeout: TimeInterval = 10) async -> NSObject? {
+        await barButton(label, in: window, timeout: timeout)
     }
 
     /// Taps a bar button the way a finger does; its accessibility activation does nothing in a hosted window.
@@ -846,9 +846,14 @@ final class RegularSplitHostedTests: XCTestCase {
         (object as? UIView)?.subviews.forEach { collectElements($0, into: &found) }
     }
 
-    private func barButton(_ label: String, in window: UIWindow, where match: @escaping (CGRect) -> Bool = { _ in true }) async -> NSObject? {
+    private func barButton(
+        _ label: String,
+        in window: UIWindow,
+        timeout: TimeInterval = 10,
+        where match: @escaping (CGRect) -> Bool = { _ in true }
+    ) async -> NSObject? {
         var found: NSObject?
-        _ = await awaitCondition {
+        _ = await awaitCondition(timeout: timeout) {
             found = self.elements(in: window).first { $0.accessibilityLabel == label && match($0.accessibilityFrame) }
             return found != nil
         }
@@ -948,6 +953,163 @@ final class RegularSplitHostedTests: XCTestCase {
         press(try await filesButton(in: split.window))
         let closed = await awaitCondition(timeout: 5) { !self.elements(in: split.window).contains { $0.accessibilityLabel == "Search files" } }
         XCTAssertTrue(closed, "Files did not close")
+    }
+}
+
+/// TAL-1458: the companion page, the file the agent is working on, beside the chat where iOS 27.1's arrangement can
+/// split: iPhone Duo inner display and iPad in landscape. Elsewhere only the chat shows.
+extension RegularSplitHostedTests {
+    private func requireArrangement() throws {
+        guard #available(iOS 27.1, *) else { throw XCTSkip("The companion page needs iOS 27.1's ArrangementView") }
+    }
+
+    /// The fixture chat opened from the sidebar in a window of `size`, with the companion run started when `writes`.
+    private func openCompanionChat(_ scenario: [String], size: CGSize, compact: Bool = false, writes: Bool = true) async throws -> UIWindow {
+        let fixture = try FixtureApp(scenario, for: self)
+        let window = try hostWindow(fixture.sessionList(), size: size) {
+            $0.horizontalSizeClass = compact ? .compact : .regular
+            $0.verticalSizeClass = .regular
+        }
+        let row = try await requireElement(in: window, "Missing deterministic session fixture") {
+            $0.accessibilityLabel?.hasPrefix(UITestFixtureURLProtocol.sessionTitle) == true
+        }
+        HostedAccessibility.activate(row)
+        if writes {
+            try await sendFromComposer("Write the demo files", in: window)
+            _ = try await requireElement(in: window, "The run never streamed") { $0.accessibilityLabel?.contains("Writing Alpha.swift.") == true }
+        }
+        return window
+    }
+
+    /// The companion page's title naming `file`, on the page's own bar right of the chat.
+    private func companionTitle(_ file: String, in window: UIWindow, timeout: TimeInterval = 10) async -> NSObject? {
+        var found: NSObject?
+        _ = await awaitCondition(timeout: timeout) {
+            found = self.elements(in: window).first {
+                $0.accessibilityLabel == file && !($0 is UIControl) && $0.accessibilityFrame.minX > window.bounds.width / 3
+            }
+            return found != nil
+        }
+        return found
+    }
+
+    private func transcriptText(_ text: String, in window: UIWindow) async -> NSObject? {
+        await awaitElement(in: window) { $0.accessibilityLabel?.contains(text) == true }
+    }
+
+    func testDuoInnerLandscapeShowsTheFileTheAgentWritesBesideTheChat() async throws {
+        try requireArrangement()
+        let window = try await openCompanionChat(["--ui-test-chat-companion"], size: HostedSize.duoInnerLandscape)
+        let alpha = frame(await companionTitle("Alpha.swift", in: window))
+        let transcript = frame(await transcriptText("Writing Alpha.swift.", in: window))
+        XCTAssertFalse(alpha.isEmpty, "The companion page never showed the first file")
+        XCTAssertFalse(transcript.isEmpty, "The page covered the chat")
+        XCTAssertLessThanOrEqual(transcript.maxX, alpha.minX + 1, "The companion page overlaps the chat")
+        attachHostedScreenshot(window, name: "duo-inner-landscape-companion-alpha")
+
+        UITestFixtureURLProtocol.advanceCompanionRun()
+        let beta = frame(await companionTitle("Beta.swift", in: window))
+        XCTAssertFalse(beta.isEmpty, "The page did not turn to the next file")
+        let streamed = frame(await transcriptText("Writing Beta.swift.", in: window))
+        XCTAssertFalse(streamed.isEmpty, "The transcript stopped streaming")
+        XCTAssertLessThanOrEqual(streamed.maxX, beta.minX + 1, "The companion page overlaps the chat")
+        attachHostedScreenshot(window, name: "duo-inner-landscape-companion-beta")
+        UITestFixtureURLProtocol.advanceCompanionRun()
+        UITestFixtureURLProtocol.advanceCompanionRun()
+    }
+
+    func testAFileChosenInTheBrowserHoldsUntilFollowResumes() async throws {
+        try requireArrangement()
+        let window = try await openCompanionChat(["--ui-test-chat-companion"], size: HostedSize.duoInnerLandscape)
+        _ = await companionTitle("Alpha.swift", in: window)
+        UITestFixtureURLProtocol.advanceCompanionRun()
+        let beta = await companionTitle("Beta.swift", in: window)
+        XCTAssertNotNil(beta)
+
+        // Files opens inside the companion page, not as a third column over it. The keyboard the send left up would
+        // keep the browser's lower rows out of view.
+        window.endEditing(true)
+        press(try await filesButton(in: window))
+        let search = frame(await element("Search files", in: window))
+        XCTAssertGreaterThan(search.minX, window.bounds.width / 3, "Files did not open in the companion page")
+        let transcript = await transcriptText("Writing Beta.swift.", in: window)
+        XCTAssertNotNil(transcript, "Files covered the chat")
+        let gamma = try await requireElement(in: window, "The browser does not list the fixture file") {
+            $0.accessibilityLabel?.contains("Gamma.swift") == true
+        }
+        HostedAccessibility.activate(gamma)
+        let pinned = await companionTitle("Gamma.swift", in: window)
+        XCTAssertNotNil(pinned, "Choosing a file did not show it")
+
+        UITestFixtureURLProtocol.advanceCompanionRun()
+        _ = try await requireElement(in: window, "The run stopped") { $0.accessibilityLabel?.contains("Writing Delta.swift.") == true }
+        settle(0.3)
+        let found1 = await companionTitle("Gamma.swift", in: window, timeout: 1)
+        XCTAssertNotNil(found1, "A write moved the pinned page")
+        let found2 = await companionTitle("Delta.swift", in: window, timeout: 1)
+        XCTAssertNil(found2, "A write moved the pinned page")
+        attachHostedScreenshot(window, name: "duo-inner-landscape-companion-pinned")
+
+        let follow = await element("Follow", in: window)
+        press(try XCTUnwrap(follow, "The pinned page has no Follow toggle"))
+        let followed = await companionTitle("Delta.swift", in: window)
+        XCTAssertNotNil(followed, "Follow did not show the agent's latest file")
+        UITestFixtureURLProtocol.advanceCompanionRun()
+    }
+
+    func testDuoInnerPortraitShowsOnlyTheChatAndPushesFiles() async throws {
+        try requireArrangement()
+        let window = try await openCompanionChat(["--ui-test-chat-companion"], size: HostedSize.duoInner)
+        settle(0.5)
+        let found3 = await companionTitle("Alpha.swift", in: window, timeout: 1)
+        XCTAssertNil(found3, "A portrait chat split for its companion page")
+        press(try await filesButton(in: window))
+        let found4 = await element("Search files", in: window)
+        XCTAssertNotNil(found4, "Files did not open")
+        let covered = await awaitNoElement(in: window, timeout: 5) { $0.accessibilityLabel?.contains("Writing Alpha.swift.") == true }
+        XCTAssertTrue(covered, "Files did not push over the chat")
+        UITestFixtureURLProtocol.advanceCompanionRun()
+        UITestFixtureURLProtocol.advanceCompanionRun()
+        UITestFixtureURLProtocol.advanceCompanionRun()
+    }
+
+    func testPhoneShowsOnlyTheChat() async throws {
+        try requireArrangement()
+        let window = try await openCompanionChat(["--ui-test-chat-companion"], size: HostedSize.phone, compact: true)
+        settle(0.5)
+        let found5 = await element("Follow", in: window, timeout: 1)
+        XCTAssertNil(found5, "A phone chat offered a companion page")
+        let found6 = await companionTitle("Alpha.swift", in: window, timeout: 1)
+        XCTAssertNil(found6, "A phone chat showed a companion page")
+        UITestFixtureURLProtocol.advanceCompanionRun()
+        UITestFixtureURLProtocol.advanceCompanionRun()
+        UITestFixtureURLProtocol.advanceCompanionRun()
+    }
+
+    func testPadLandscapeShowsTheCompanionPageBesideTheChat() async throws {
+        try requireArrangement()
+        let window = try await openCompanionChat(["--ui-test-chat-companion"], size: HostedSize.padLandscape)
+        let alpha = frame(await companionTitle("Alpha.swift", in: window))
+        let transcript = frame(await transcriptText("Writing Alpha.swift.", in: window))
+        XCTAssertFalse(alpha.isEmpty, "The companion page never showed the file")
+        XCTAssertLessThanOrEqual(transcript.maxX, alpha.minX + 1, "The companion page overlaps the chat")
+        attachHostedScreenshot(window, name: "pad-landscape-companion")
+        UITestFixtureURLProtocol.advanceCompanionRun()
+        UITestFixtureURLProtocol.advanceCompanionRun()
+        UITestFixtureURLProtocol.advanceCompanionRun()
+    }
+
+    func testAReopenedChatShowsItsLastFileBeforeAnyStreamEvent() async throws {
+        try requireArrangement()
+        let window = try await openCompanionChat([UITestFixtureEnvironment.companionFocusArgument], size: HostedSize.duoInnerLandscape, writes: false)
+        let gamma = await companionTitle("Gamma.swift", in: window)
+        XCTAssertNotNil(gamma, "The session's last file did not show on open")
+        attachHostedScreenshot(window, name: "duo-inner-landscape-companion-reopened")
+
+        // The composer takes the keyboard beside the page.
+        try await sendFromComposer("Keep going", in: window)
+        let sent = await transcriptText("Keep going", in: window)
+        XCTAssertNotNil(sent, "Typing beside the companion page did not send")
     }
 }
 

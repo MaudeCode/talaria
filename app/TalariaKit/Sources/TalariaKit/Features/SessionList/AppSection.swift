@@ -76,6 +76,20 @@ public enum RegularSplitLayout {
         splitWidth >= filesInspectorChatWidth
             && splitWidth - sidebarIdealWidth(splitWidth: splitWidth) < filesInspectorChatWidth
     }
+
+    /// TAL-1458: an `ArrangementView` split puts the companion page beside the chat only while it is at least as wide as
+    /// it is tall. Measured on iOS 27.1: 700×700 pt splits, 700×720 pt does not.
+    // ponytail: measured rule, not a documented one; revisit if SwiftUI exposes whether the arrangement can split.
+    public static func splitsCompanionPage(width: CGFloat, height: CGFloat) -> Bool {
+        width > 0 && width >= height
+    }
+
+    /// Whether the chat's companion page fits beside it only with the sidebar column hidden: the iPhone Duo inner
+    /// display and iPad in landscape.
+    public static func hidesSidebarForCompanionPage(splitWidth: CGFloat, splitHeight: CGFloat) -> Bool {
+        splitsCompanionPage(width: splitWidth, height: splitHeight)
+            && !splitsCompanionPage(width: splitWidth - sidebarIdealWidth(splitWidth: splitWidth), height: splitHeight)
+    }
 }
 
 /// An item a section's list selects. Its page shows beside the list at regular width and is

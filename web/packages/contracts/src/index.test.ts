@@ -61,6 +61,11 @@ describe('contracts package', () => {
     expect(ToolCallSchema.parse(fixture.tool)).toEqual(fixture.tool)
     expect(ToolCallSchema.parse({ id: 'old-agent', name: 'tool' }).progress).toBeUndefined()
   })
+  it('validates the companion page focus path frames and session field (TAL-1458)', () => {
+    const fixture = shared('fixtures/focus-path.json') as { tool_a: unknown; tool_b: unknown; shell: unknown; session: { focus_path: string } }
+    for (const frame of [fixture.tool_a, fixture.tool_b, fixture.shell]) expect(ChatEventSchema.parse(frame)).toEqual(frame)
+    expect(SessionSchema.shape.focus_path.parse(fixture.session.focus_path)).toBe(fixture.session.focus_path)
+  })
   it('accepts optional opaque startup correlation without requiring it from older peers', () => {
     const request = { jsonrpc: '2.0', id: 1, method: 'chat.start', params: {} }
     expect(RpcRequestSchema.parse(request)).toEqual(request)

@@ -44,6 +44,7 @@
                 "name": "read_file",
                 "kind": "read",
                 "target": "notes.md",
+                "focus_path": "notes.md",
                 "args": {
                   "path": "notes.md"
                 },

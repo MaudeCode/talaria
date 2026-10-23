@@ -50,6 +50,7 @@ final class FixtureApp {
         UITestFixtureURLProtocol.resetForHostedTest()
         // A relaunch empties what a process keeps in memory per session; hosted tests share one process.
         ActiveChatStreamSnapshotStore.shared.removeAll(for: UITestFixtureEnvironment.serverURL)
+        ChatViewModel.forgetCompanionPages()
         environment = UITestFixtureEnvironment.make()
         cache = try ModelContainer(
             for: CachedSession.self, CachedMessage.self,

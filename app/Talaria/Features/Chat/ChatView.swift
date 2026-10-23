@@ -75,13 +75,16 @@ private enum TurnDiffPresentation: Identifiable {
 
 /// The regular-width split view's part in a chat's Files inspector (TAL-1453): the window's presented state, which it
 /// keeps, whether it hides its sidebar column so the inspector fits beside the chat, and where the chat reports that it
-/// shows the inspector.
+/// shows the inspector. TAL-1458: also whether the chat may show its companion page beside it, and where it reports
+/// that it has one, which can hide the sidebar column the same way.
 struct SplitFilesInspector {
     static let storageKey = "chat.filesInspectorPresented"
 
     let isPresented: Binding<Bool>
     let widensChat: Bool
     let reportShown: (Bool) -> Void
+    var offersCompanionPage = false
+    var reportCompanionPage: (Bool) -> Void = { _ in }
 }
 
 struct ChatView: View {
@@ -110,6 +113,8 @@ struct ChatView: View {
     @SceneStorage(SplitFilesInspector.storageKey) private var storedFilesInspectorPresented = false
     /// The chat's width including any Files inspector; nil until measured.
     @State private var chatAreaWidth: CGFloat?
+    /// The chat's frame, bars included: the size the companion page's split rule reads (TAL-1458).
+    @State private var arrangementSize: CGSize = .zero
     @AppStorage(AppHaptics.isEnabledKey) private var isHapticsEnabled = true
     @AppStorage(StreamingSendBehavior.storageKey) private var streamingSendBehaviorRawValue = StreamingSendBehavior.steer.rawValue
     @AppStorage(ResponseCompletionNotifications.isEnabledKey) private var isResponseCompletionNotificationsEnabled = false
@@ -784,6 +789,7 @@ struct ChatView: View {
             }
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { chatAreaWidth = $0 }
             .onChange(of: showsFilesInspector, initial: true) { splitFilesInspector?.reportShown(showsFilesInspector) }
+            .onChange(of: showsCompanionPage, initial: true) { splitFilesInspector?.reportCompanionPage(showsCompanionPage) }
             // Outside the inspector, which otherwise keeps the title from the navigation bar.
             .navigationTitle(displayTitle)
             .navigationBarTitleDisplayMode(.inline)
@@ -805,8 +811,9 @@ struct ChatView: View {
                     .overflowPriority(.chatGoal)
                 }
 
-                // The workspace browser needs the session; a new chat gains it once created (TAL-636).
-                if showsFilesButton, viewModel.hasSession {
+                // The workspace browser needs the session; a new chat gains it once created (TAL-636). Beside the chat,
+                // the companion page has its own (TAL-1458).
+                if showsFilesButton, viewModel.hasSession, !companionPageIsBeside {
                     ToolbarItem(placement: .topBarTrailing) {
                         filesButton
                             .disabled(viewModel.isViewingCachedData)
@@ -862,16 +869,53 @@ struct ChatView: View {
         }
     }
 
-    /// Whether this chat shows Files beside it once it has the width.
+    /// Whether this chat shows Files beside it once it has the width. The companion page takes its place.
     private var showsFilesInspector: Bool {
-        isFilesInspectorPresented && showsFilesButton && viewModel.hasSession
+        isFilesInspectorPresented && showsFilesButton && viewModel.hasSession && !companionPageIsBeside
     }
 
     private var filesInspectorIsPresented: Binding<Bool> {
         Binding(
-            get: { isFilesInspectorPresented && showsFilesButton && fitsFilesInspector },
+            get: { isFilesInspectorPresented && showsFilesButton && fitsFilesInspector && !companionPageIsBeside },
             set: { isFilesInspectorPresented = $0 }
         )
+    }
+
+    /// Whether the chat has a companion page to show beside it (TAL-1458): an iOS 27.1 arrangement at regular width,
+    /// a session with a workspace, and a file the agent named.
+    private var showsCompanionPage: Bool {
+        guard #available(iOS 27.1, *), splitFilesInspector?.offersCompanionPage == true else { return false }
+        return viewModel.hasSession && viewModel.selectedWorkspacePath != nil && viewModel.companionFocus.path != nil
+    }
+
+    /// Whether the companion page shows beside the chat: where the arrangement splits, as wide as tall. A page it could
+    /// not split for would still narrow the chat's column, so it shows only there.
+    private var companionPageIsBeside: Bool {
+        showsCompanionPage && RegularSplitLayout.splitsCompanionPage(width: arrangementSize.width, height: arrangementSize.height)
+    }
+
+    /// The chat with its companion page beside it where the arrangement can split, and alone where it cannot (portrait,
+    /// or closed to the iPhone Duo's outer display). The arrangement wraps the chat only while it splits: one in a split
+    /// view's column, even one allowing no split, reloads the keyboard on every layout pass once the composer has focus.
+    @ViewBuilder
+    private func withCompanionPage(_ chat: some View) -> some View {
+        if #available(iOS 27.1, *), splitFilesInspector?.offersCompanionPage == true {
+            Group {
+                if companionPageIsBeside {
+                    ArrangementView {
+                        chat
+                    } secondary: {
+                        ChatCompanionPage(viewModel: viewModel, session: session, server: server, onAPIError: onAPIError)
+                    }
+                    .arrangementViewStyle(.split.axes(.horizontal))
+                } else {
+                    chat
+                }
+            }
+            .onGeometryChange(for: CGSize.self) { $0.sizeIncludingSafeArea } action: { arrangementSize = $0 }
+        } else {
+            chat
+        }
     }
 
     var body: some View {
@@ -880,7 +924,7 @@ struct ChatView: View {
         // Keep invalidation reasons in XCTest's console when this test-only probe is installed.
         let _ = recordBodyEvaluation == nil ? () : Self._printChanges()
 #endif
-        chatWithToolbar
+        withCompanionPage(chatWithToolbar)
             .environment(\.retryPendingAttachment) { id in Task { await viewModel.retryAttachment(id: id) } }
             .navigationDestination(item: $forkedSession) { session in
                 // A fork opens in the same column, so the same split view makes room for its Files.

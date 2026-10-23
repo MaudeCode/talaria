@@ -256,6 +256,8 @@ public struct ToolStreamEvent: Decodable, Equatable {
     public let resultView: ToolResultView?
     /// TAL-448: a file edit's change, on a completion.
     public let editDiff: ToolEditDiff?
+    /// TAL-1458: the workspace-relative file a read or write call names; nil for any other call.
+    public let focusPath: String?
 
     enum CodingKeys: String, CodingKey {
         case eventType = "event_type"
@@ -267,6 +269,7 @@ public struct ToolStreamEvent: Decodable, Equatable {
         case progress
         case resultView = "result_view"
         case editDiff = "edit_diff"
+        case focusPath = "focus_path"
         case duration
         case isError = "is_error"
         case stableID = "id"
@@ -284,7 +287,8 @@ public struct ToolStreamEvent: Decodable, Equatable {
         target: String? = nil,
         resultView: ToolResultView? = nil,
         editDiff: ToolEditDiff? = nil,
-        progress: ToolProgress? = nil
+        progress: ToolProgress? = nil,
+        focusPath: String? = nil
     ) {
         self.eventType = eventType
         self.name = name
@@ -298,6 +302,7 @@ public struct ToolStreamEvent: Decodable, Equatable {
         self.resultView = resultView
         self.editDiff = editDiff
         self.progress = progress
+        self.focusPath = focusPath
     }
 
     public init(from decoder: Decoder) throws {
@@ -313,6 +318,7 @@ public struct ToolStreamEvent: Decodable, Equatable {
         resultView = try? container.decodeIfPresent(ToolResultView.self, forKey: .resultView)
         editDiff = try? container.decodeIfPresent(ToolEditDiff.self, forKey: .editDiff)
         progress = try? container.decodeIfPresent(ToolProgress.self, forKey: .progress)
+        focusPath = container.decodeLossyStringIfPresent(forKey: .focusPath)
         stableID = container.decodeLossyStringIfPresent(forKey: .stableID)?.nonEmptyToolStreamID
     }
 }
@@ -570,6 +576,7 @@ private extension ToolStreamEvent {
         resultView = nil
         editDiff = nil
         progress = nil
+        focusPath = nil
     }
 }
 

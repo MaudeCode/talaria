@@ -2,6 +2,14 @@ import SwiftUI
 import TalariaKit
 
 /// A single root measurement, shared in physical window coordinates across navigation columns.
+extension GeometryProxy {
+    /// The size with the bars and keyboard it insets: what an `ArrangementView` reads when it decides to split, so a
+    /// keyboard showing does not change whether a chat's companion page fits (TAL-1458).
+    var sizeIncludingSafeArea: CGSize {
+        CGSize(width: size.width, height: size.height + safeAreaInsets.top + safeAreaInsets.bottom)
+    }
+}
+
 struct DivisionRegionGeometry: Equatable {
     var frame: CGRect = .zero
     var divisions: [CGRect] = []
