@@ -28,6 +28,8 @@ function QueueCancelButton({ disabled, onClick }: { disabled: boolean; onClick: 
  */
 export function QueueCard({ sessionId, queued, onChange, pendingId, admissions = [], onAdmissionAction }: { sessionId: string; queued: QueuedTurn[]; onChange: (queued: QueuedTurn[]) => void; pendingId?: string | undefined; admissions?: OwnerAttachment['admissions'] | undefined; onAdmissionAction?: ((request: OwnerActionRequest) => Promise<void>) | undefined }) {
   const [editing, setEditing] = useState<string | null>(null)
+  // Retry is executed by the server, so its own button stays busy until the server answers.
+  const [retrying, setRetrying] = useState<ReadonlySet<string>>(new Set())
   const replacements = useRef(new Map<string, { text: string; submission_id: string }>())
   const discard = useRef(false)
   const dragging = useRef<string | null>(null)
@@ -102,8 +104,13 @@ export function QueueCard({ sessionId, queued, onChange, pendingId, admissions =
             {q.status === 'unknown' && <span className="text-muted text-xs">{m.owner_outcome_unknown()}</span>}
             {q.actions.includes('steer') && <button type="button" className="steer-action min-h-11 min-w-11 shrink-0" aria-label={m.composer_steer()} title={m.composer_steer()} onClick={() => { void runAdmission({ session_id: sessionId, action: 'steer_queued', admission_id: q.admission_id }) }}><ArrowUp size={14} aria-hidden="true" /></button>}
             {q.actions.includes('cancel') && <QueueCancelButton disabled={false} onClick={() => { void runAdmission({ session_id: sessionId, action: 'cancel', admission_id: q.admission_id }) }} />}
-            {q.actions.map((action) => action === 'edit' || action === 'steer' || action === 'cancel' ? null : <Button key={action} variant="ghost" className="min-h-11 min-w-11 shrink-0" title={action === 'retry' ? m.owner_retry_help() : undefined} onClick={() => {
-              if (q.execution_generation !== null) void runAdmission({ session_id: sessionId, action, admission_id: q.admission_id, execution_generation: q.execution_generation })
+            {q.actions.map((action) => action === 'edit' || action === 'steer' || action === 'cancel' ? null : <Button key={action} variant="ghost" className="min-h-11 min-w-11 shrink-0" title={action === 'retry' ? m.owner_retry_help() : undefined} disabled={action === 'retry' && retrying.has(q.admission_id)} aria-busy={action === 'retry' && retrying.has(q.admission_id) || undefined} onClick={() => {
+              if (q.execution_generation === null) return
+              const request = { session_id: sessionId, action, admission_id: q.admission_id, execution_generation: q.execution_generation }
+              if (action !== 'retry') { void runAdmission(request); return }
+              const id = q.admission_id
+              setRetrying((ids) => new Set(ids).add(id))
+              void runAdmission(request).finally(() => { setRetrying((ids) => { const next = new Set(ids); next.delete(id); return next }) })
             }}>{action === 'retry' ? m.retry() : m.discard()}</Button>)}
           </li>
         ))}
