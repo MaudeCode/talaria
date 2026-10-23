@@ -68,6 +68,29 @@ final class SessionListHostedTests: XCTestCase {
         }
     }
 
+    func testCenteredStatesUseTheTrailingAndBottomPanes() throws {
+        let size = CGSize(width: 900, height: 900)
+        for (name, fold, center) in [
+            ("book", CGRect(x: 430, y: 0, width: 40, height: 900), CGPoint(x: 685, y: 450)),
+            ("tabletop", CGRect(x: 0, y: 330, width: 900, height: 40), CGPoint(x: 450, y: 635))
+        ] {
+            var geometry = DivisionRegionGeometry()
+            geometry.frame = CGRect(origin: .zero, size: size)
+            geometry.divisions = [fold]
+            let window = try hostWindow(
+                Button("Try Again") {}.foldAvoidingPlacement().ignoresSafeArea()
+                    .environment(\.divisionRegionGeometry, geometry), size: size)
+            let button = try XCTUnwrap(HostedAccessibility.element(in: window, label: "Try Again"))
+            let frame = window.convert(button.accessibilityFrame, from: nil)
+            XCTAssertEqual(frame.midX, center.x, accuracy: 1)
+            XCTAssertEqual(frame.midY, center.y, accuracy: 1)
+            XCTAssertFalse(frame.intersects(fold))
+            attachHostedScreenshot(window, name: "centered-state-\(name)")
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+    }
+
     func testSettingsAvatarOpensSettings() async throws {
         let fixture = try FixtureApp(for: self)
         let window = try hostWindow(fixture.sessionList())
@@ -657,9 +680,9 @@ final class RegularSplitHostedTests: XCTestCase {
     }
 
     /// The fixture chat opened from the Chats sidebar in a regular-width window of `size`.
-    private func openChat(size: CGSize) async throws -> Split {
+    private func openChat(size: CGSize, divisions: [CGRect]? = nil) async throws -> Split {
         let fixture = try FixtureApp(for: self)
-        let window = try hostWindow(fixture.sessionList(), size: size) {
+        let window = try hostWindow(fixture.sessionList().environment(\.chatDivisionFramesForTesting, divisions), size: size) {
             $0.horizontalSizeClass = .regular
             $0.verticalSizeClass = .regular
         }
@@ -739,6 +762,16 @@ final class RegularSplitHostedTests: XCTestCase {
             XCTAssertLessThanOrEqual(control.maxX, HostedSize.duoInner.width + 1, "\(name) runs off the screen")
         }
         attachHostedScreenshot(split.window, name: "duo-inner-chats")
+    }
+
+    func testBookFoldAlignsTheSharedSidebarToTheDivision() async throws {
+        let split = try await openChat(size: HostedSize.duoInnerLandscape,
+            divisions: [CGRect(x: 470, y: -100, width: 10, height: 2000)])
+        XCTAssertEqual(split.controller.primaryColumnWidth, 470, accuracy: 1,
+            "The shared sidebar boundary must align to the book division")
+        let send = try await requireElement(in: split.window, label: "Send")
+        XCTAssertGreaterThanOrEqual(split.window.convert(send.accessibilityFrame, from: nil).minX, 480)
+        attachHostedScreenshot(split.window, name: "book-shared-sidebar")
     }
 
     func testDuoInnerLandscapeHidesTheSidebarToShowFilesBesideTheChat() async throws {

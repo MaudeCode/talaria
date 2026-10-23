@@ -49,4 +49,42 @@ final class DivisionRegionLayoutTests: XCTestCase {
         XCTAssertEqual(DivisionRegionLayout.availableFrame(in: bounds, divisions: [fold]),
                        CGRect(x: 0, y: 0, width: 900, height: 330))
     }
+
+    func testSidebarUsesTheLeadingBookPaneAndIgnoresTabletopAndFlat() {
+        let book = CGRect(x: 430, y: 0, width: 40, height: 700)
+        XCTAssertEqual(DivisionRegionLayout.sidebarWidth(in: bounds, divisions: [book]), 430)
+        XCTAssertEqual(DivisionRegionLayout.sidebarWidth(in: bounds,
+            divisions: [CGRect(x: 300, y: 0, width: 40, height: 700)], layoutDirection: .rightToLeft), 560)
+        for divisions in [[], [CGRect(x: 0, y: 330, width: 900, height: 40)],
+                          [CGRect(x: 950, y: 0, width: 40, height: 700)]] {
+            XCTAssertNil(DivisionRegionLayout.sidebarWidth(in: bounds, divisions: divisions))
+        }
+    }
+
+    func testTabletopPartitionsContentAndTouchControlsIncludingContainerOffset() {
+        let pane = CGRect(x: 480, y: 80, width: 420, height: 620)
+        let fold = CGRect(x: 0, y: 330, width: 900, height: 40)
+        let frames = DivisionRegionLayout.chatFrames(in: pane, divisions: [fold], keyboardIsVisible: false)
+        XCTAssertEqual(frames.transcript, CGRect(x: 480, y: 80, width: 420, height: 250))
+        XCTAssertEqual(frames.composer, CGRect(x: 480, y: 370, width: 420, height: 330))
+        XCTAssertTrue(frames.isTabletop)
+        XCTAssertEqual(DivisionRegionLayout.availableFrame(in: pane, divisions: [fold], horizontalPlacement: .bottom), frames.composer)
+
+        let keyboard = DivisionRegionLayout.chatFrames(in: pane, divisions: [fold], keyboardIsVisible: true)
+        XCTAssertEqual(keyboard.transcript, pane)
+        XCTAssertEqual(keyboard.composer, pane)
+        XCTAssertFalse(keyboard.isTabletop)
+    }
+
+    func testBookAndFlatKeepTheTranscriptFullWidthAndTheComposerInItsPane() {
+        let book = CGRect(x: 430, y: 0, width: 40, height: 700)
+        let frames = DivisionRegionLayout.chatFrames(in: bounds, divisions: [book], keyboardIsVisible: false)
+        XCTAssertEqual(frames.transcript, bounds)
+        XCTAssertEqual(frames.composer, CGRect(x: 470, y: 0, width: 430, height: 700))
+        XCTAssertFalse(frames.isTabletop)
+        let flat = DivisionRegionLayout.chatFrames(in: bounds, divisions: [], keyboardIsVisible: false)
+        XCTAssertEqual(flat.transcript, bounds)
+        XCTAssertEqual(flat.composer, bounds)
+        XCTAssertFalse(flat.isTabletop)
+    }
 }

@@ -9,6 +9,7 @@ struct InsightsView: View {
     let quotaViewModel: ProvidersViewModel
 
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.divisionRegionGeometry) private var divisionGeometry
     @State private var viewModel: InsightsViewModel
     @State private var quotaScrollPosition: String?
     @State private var isShowingQuotaNotice = false
@@ -82,7 +83,29 @@ struct InsightsView: View {
             }
     }
 
+    @ViewBuilder
     private var content: some View {
+        if !viewModel.hasLoadedAnalytics, visibleQuotaSources.isEmpty,
+           divisionGeometry?.divisions.isEmpty == false {
+            ViewThatFits(in: .vertical) {
+                insightStatusSections
+                ScrollView { insightStatusSections }
+            }
+            .foldAvoidingPlacement()
+        } else {
+            analyticsList
+        }
+    }
+
+    private var insightStatusSections: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            providerQuotaSection
+            analyticsSections
+        }
+        .padding()
+    }
+
+    private var analyticsList: some View {
         List {
             providerQuotaSection
             analyticsSections

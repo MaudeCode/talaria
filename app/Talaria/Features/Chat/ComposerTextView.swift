@@ -13,6 +13,7 @@ struct ComposerTextView: UIViewRepresentable {
     let alternateSendBehavior: StreamingSendBehavior
     let onKeyboardSend: (StreamingSendBehavior?) -> Void
     let onHeightChange: (CGFloat) -> Void
+    var maximumHeight: CGFloat = 96
     let onPasteFileProviders: ([NSItemProvider]) -> Void
     let onPasteFileURLs: ([URL]) -> Void
     let onPasteImageProviders: ([NSItemProvider]) -> Void
@@ -51,6 +52,7 @@ struct ComposerTextView: UIViewRepresentable {
 
     func updateUIView(_ textView: PastingTextView, context: Context) {
         context.coordinator.onHeightChange = onHeightChange
+        context.coordinator.maximumHeight = maximumHeight
         context.coordinator.applyBoundText(text, revision: revision, to: textView)
         // Mirror the chat RTL toggle onto the text view itself (#259): SwiftUI's
         // layoutDirection environment does not propagate into a wrapped UITextView,
@@ -83,6 +85,7 @@ struct ComposerTextView: UIViewRepresentable {
         @Binding var text: String
         @Binding var isFocused: Bool
         var onHeightChange: (CGFloat) -> Void
+        var maximumHeight: CGFloat = 96
         private var pendingFocusTarget: Bool?
         // The newest draft revision this coordinator has acted on. An update carrying
         // an older one has been superseded, so applying it would replay a draft the
@@ -245,7 +248,7 @@ struct ComposerTextView: UIViewRepresentable {
 
             let fittingSize = CGSize(width: textView.bounds.width, height: .greatestFiniteMagnitude)
             let height = ceil(textView.sizeThatFits(fittingSize).height)
-            onHeightChange(min(96, max(22, height)))
+            onHeightChange(min(maximumHeight, max(22, height)))
         }
     }
 
