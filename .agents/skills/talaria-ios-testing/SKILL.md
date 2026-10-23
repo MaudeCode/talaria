@@ -1,6 +1,6 @@
 ---
 name: talaria-ios-testing
-description: Run Talaria XCTest and simulator validation for compiled App changes, explicit test requests, and simulator runtime checks. Use targeted tooling checks for CI scripts, documentation, and release-note edits.
+description: Run Talaria XCTest and simulator validation, including iPhone Duo posture and panel screenshots, for compiled App changes, explicit test requests, and simulator runtime checks. Use targeted tooling checks for CI scripts, documentation, and release-note edits.
 ---
 
 Run app commands from `app/`; unqualified source and tooling paths are relative
@@ -42,6 +42,7 @@ worktrees. Let the current run finish instead of starting an overlapping run.
 
 ## Simulator validation
 
+- For iPhone Duo layout, posture, or panel screenshots, read the [Duo posture workflow](../../../app/docs/ios-simulator-pool.md#set-a-duo-posture) before selecting a device. Use the shared `scripts/duo-pose` command inside the simulator lease.
 - Validate app UI through hosted XCTest and simulator tooling. Use those
   tools instead of Computer Use.
 - Build and launch the app for UI or runtime changes, then provide a short manual

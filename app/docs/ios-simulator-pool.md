@@ -53,6 +53,13 @@ The command reads the running hub's port from
 set `DUO_POSE_HUB_URL=http://127.0.0.1:<port>`. Remote origins, credentials,
 query strings, and redirects are refused. The command never starts or restarts T3.
 
+Agents with T3 device tools first call `device_list`, acquire the shared simulator
+lease, then call `device_open` for that exact leased UDID so the user can watch.
+Keep the lease through posture changes, app checks, and screenshots. Use the
+shared command for posture control and the returned device CLI's config/session
+flags for other interaction. A nonzero posture exit means the requested state
+is unverified; resolve that failure before collecting layout evidence.
+
 Use it inside the shared lease, selecting the leased UDID explicitly when another
 Duo is already booted:
 
