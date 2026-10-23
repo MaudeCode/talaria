@@ -12,12 +12,32 @@ test('timeline and accessible relationships share the server projection and exis
   const snapshot = structuredClone(fixture.snapshot)
   const sidecar = new FakeSidecar()
   const server = await bootTestServer({ sidecar, env: { HERMES_WEBUI_SKIP_ONBOARDING: '1' } })
-  const shown = (board: string | null | undefined) => snapshot.nodes.filter(n => !board || n.board === board)
+  const archived = new Set<string>()
+  let currentBoard = 'default'
+  const heldLink = Promise.withResolvers<undefined>(), heldUnlink = Promise.withResolvers<undefined>(), heldArchive = Promise.withResolvers<undefined>()
+  const shown = (board: string | null | undefined) => snapshot.nodes.filter(n => !archived.has(n.board) && (!board || n.board === board))
   sidecar.respond('kanban.inspection', p => ({ ...snapshot, nodes: shown(p.board), edges: snapshot.edges.filter(e => shown(p.board).some(n => n.key === e.source)) }))
-  sidecar.respond('kanban.boards', () => ({ current: 'default', read_only: false, boards: ['default', 'ops'].map(slug => ({ slug, name: slug === 'default' ? 'Release' : 'Operations', is_current: slug === 'default', counts: {}, total: shown(slug).length })) }))
+  sidecar.respond('kanban.boards', () => ({ current: currentBoard, read_only: false, boards: ['default', 'ops'].filter(slug => !archived.has(slug)).map(slug => ({ slug, name: slug === 'default' ? 'Release' : 'Operations', is_current: slug === currentBoard, counts: {}, total: shown(slug).length })) }))
   sidecar.respond('kanban.board', p => ({ changed: true, columns: ['todo', 'ready', 'running', 'done'].map(name => ({ name, label: name, tasks: shown(p.board ?? 'default').filter(n => n.task.status === name).map(n => n.task) })), latest_event_id: 4, read_only: false, tenants: [], assignees: ['builder'], filters: { tenant: null, assignee: null, include_archived: false, only_mine: false, profile: null } }))
   sidecar.respond('kanban.stats', p => ({ by_status: Object.fromEntries(['todo', 'ready', 'running', 'done'].map(status => [status, shown(p.board ?? 'default').filter(n => n.task.status === status).length])), column_order: ['todo', 'ready', 'running', 'done'] }))
-  sidecar.respond('kanban.task', p => ({ task: shown(p.board).find(n => n.task.id === p.task_id)!.task, comments: [], events: [], links: { parents: [], children: [] }, link_tasks: [], runs: [], read_only: false }))
+  sidecar.respond('kanban.task', p => {
+    const key = `${p.board ?? 'default'}/${p.task_id}`
+    const parents = snapshot.edges.filter(e => e.target === key).map(e => e.source)
+    const children = snapshot.edges.filter(e => e.source === key).map(e => e.target)
+    return { task: shown(p.board).find(n => n.key === key)!.task, comments: [], events: [], links: { parents: parents.map(k => k.split('/')[1]!), children: children.map(k => k.split('/')[1]!) }, link_tasks: snapshot.nodes.filter(n => [...parents, ...children].includes(n.key)).map(n => ({ id: n.task.id, title: n.task.title, status: n.task.status })), runs: [], read_only: false }
+  })
+  sidecar.respond('kanban.link', async p => {
+    await heldLink.promise
+    snapshot.edges.push({ source: `${p.board}/${p.parent_id}`, target: `${p.board}/${p.child_id}` })
+    return { ok: true, parent_id: p.parent_id, child_id: p.child_id, read_only: false }
+  })
+  sidecar.respond('kanban.unlink', async p => {
+    await heldUnlink.promise
+    snapshot.edges = snapshot.edges.filter(e => e.source !== `${p.board}/${p.parent_id}` || e.target !== `${p.board}/${p.child_id}`)
+    return { ok: true, changed: true, parent_id: p.parent_id, child_id: p.child_id, read_only: false }
+  })
+  sidecar.respond('kanban.switch_board', p => { currentBoard = p.slug; return { current: currentBoard, read_only: false } })
+  sidecar.respond('kanban.delete_board', async p => { await heldArchive.promise; archived.add(p.slug); currentBoard = 'default'; return { current: currentBoard, result: {}, read_only: false } })
   sidecar.respond('kanban.task_log', p => ({ task_id: p.task_id, path: '', exists: false, size_bytes: 0, content: '', truncated: false }))
   const held = Promise.withResolvers<undefined>()
   sidecar.respond('kanban.patch_task', async p => {
@@ -74,10 +94,42 @@ test('timeline and accessible relationships share the server projection and exis
     await expect(relationships.locator('[data-inspection-key]')).toHaveCount(3)
     await expect(relationships.getByRole('button', { name: 'Publish notes', exact: true })).toBeVisible()
     await expect(relationships.getByRole('button', { name: 'Operations refreshed', exact: true })).toHaveCount(0)
+    await page.getByRole('switch', { name: 'Running + lineage' }).click()
+    const audit = relationships.locator('[data-inspection-key="ops/plan"]')
+    const prerequisite = relationships.locator('[data-inspection-key="ops/cycle-a"]')
+    await audit.getByRole('button', { name: 'Operations refreshed', exact: true }).click()
+    await page.getByRole('textbox', { name: 'Parent task ID' }).fill('cycle-a')
+    await page.getByRole('button', { name: 'Add dependency', exact: true }).click()
+    await page.keyboard.press('Escape')
+    await audit.locator('summary').click()
+    await prerequisite.locator('summary').click()
+    await expect(audit.getByRole('button', { name: 'ops/cycle-a', exact: true })).toBeVisible()
+    await expect(prerequisite.getByRole('button', { name: 'ops/plan', exact: true })).toBeVisible()
+    await audit.scrollIntoViewIfNeeded()
+    await page.screenshot({ path: testInfo.outputPath(`links-added-${testInfo.project.name}.png`), fullPage: true })
+    const added = page.waitForResponse(r => r.url().includes('/api/kanban/inspection') && r.request().method() === 'GET')
+    heldLink.resolve(undefined)
+    await (await added).finished()
+    await audit.getByRole('button', { name: 'Operations refreshed', exact: true }).click()
+    await page.getByRole('button', { name: 'Remove dependency Inspect cycle A (cycle-a)', exact: true }).click()
+    await page.keyboard.press('Escape')
+    await expect(audit.getByRole('button', { name: 'ops/cycle-a', exact: true })).toHaveCount(0)
+    await expect(prerequisite.getByRole('button', { name: 'ops/plan', exact: true })).toHaveCount(0)
+    await page.screenshot({ path: testInfo.outputPath(`links-removed-${testInfo.project.name}.png`), fullPage: true })
+    const removed = page.waitForResponse(r => r.url().includes('/api/kanban/inspection') && r.request().method() === 'GET')
+    heldUnlink.resolve(undefined)
+    await (await removed).finished()
+    await choose('Board', 'Operations (3)')
+    await page.getByRole('button', { name: 'Archive board', exact: true }).click()
+    await page.getByRole('alertdialog').getByRole('button', { name: 'Archive', exact: true }).click()
+    await expect(relationships.locator('[data-inspection-key^="ops/"]')).toHaveCount(0)
+    await expect(relationships.locator('[data-inspection-key]')).toHaveCount(3)
+    await page.screenshot({ path: testInfo.outputPath(`board-archived-${testInfo.project.name}.png`), fullPage: true })
+    heldArchive.resolve(undefined)
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   } finally {
+    heldLink.resolve(undefined); heldUnlink.resolve(undefined); heldArchive.resolve(undefined)
     held.resolve(undefined)
-    await page.goto('about:blank')
-    await server.close()
+    try { if (!page.isClosed()) await page.goto('about:blank') } finally { await server.close() }
   }
 })

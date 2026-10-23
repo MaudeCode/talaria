@@ -48,7 +48,7 @@ export const keys = {
   memory: ['memory'] as const,
   pendingWrites: (kind: 'skills' | 'memory') => ['pending-writes', kind] as const,
   crons: { blueprints: ['crons', 'blueprints'] as const, contextSources: (profile: string, editingId: string, excludeId: string, refs: string[]) => ['crons', 'context-sources', profile, editingId, excludeId, refs] as const, all: ['crons'] as const, list: (allProfiles: boolean) => ['crons', 'list', allProfiles] as const, status: ['crons', 'status'] as const, history: (id: string) => ['crons', 'history', id] as const, run: (id: string, filename: string) => ['crons', 'history', id, filename] as const, output: (id: string) => ['crons', 'output', id] as const, deliveryOptions: ['crons', 'delivery-options'] as const },
-  kanban: { boards: ['kanban', 'boards'] as const, board: (slug: string | undefined) => ['kanban', 'board', slug ?? ''] as const },
+  kanban: { boards: ['kanban', 'boards'] as const, inspection: ['kanban', 'inspection'] as const, board: (slug: string | undefined) => ['kanban', 'board', slug ?? ''] as const },
   insights: (days: number) => ['insights', days] as const,
   logs: (file: string, tail: number) => ['logs', file, tail] as const,
   onboarding: ['onboarding'] as const,
