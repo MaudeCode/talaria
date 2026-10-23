@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2, MessageCircleQuestionMark } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
@@ -55,7 +55,7 @@ export function useBtw(sessionId: string | null): { ask: (question: string) => P
     })
   }, [sessionId, stop])
 
-  const notice: ComposerNotice | null = side?.sessionId === sessionId ? {
+  const notice = useMemo<ComposerNotice | null>(() => side?.sessionId === sessionId ? {
     id: 'btw',
     tone: side.state === 'failed' ? 'error' : undefined,
     content: (
@@ -80,6 +80,6 @@ export function useBtw(sessionId: string | null): { ask: (question: string) => P
     // The answer once it settles, not every streamed token.
     announcement: side.state === 'asking' ? m.btw_asking() : side.text,
     onDismiss: () => { stop(); setSide(null) },
-  } : null
+  } : null, [side, sessionId, stop])
   return { ask, notice }
 }

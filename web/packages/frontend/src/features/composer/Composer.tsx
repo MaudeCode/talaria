@@ -1,5 +1,5 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react'
-import { Mic, Paperclip, Square, ArrowUp, TerminalSquare, SlidersHorizontal, ListPlus, Layers } from 'lucide-react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react'
+import { Mic, Paperclip, Square, ArrowUp, ListPlus, Layers } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import type { Session, Settings } from '../../contracts'
@@ -14,12 +14,12 @@ import { showErrorToast } from '../toast/errorToast'
 import { AttachmentTray, type PendingFile } from './Attachments'
 import { CommandPaletteList, useCommandPalette } from './CommandPalette'
 import { parseCommand, resolveCommand, runsOnServer, type CommandSuggestion } from './commands'
-import { ContextRing, ContextRow, type ContextFigures, ExecutionModeChip, ModelChip, ReasoningChip, ToolsetsChip, WorkspaceChip } from './chips'
+import { ContextRing, type ContextFigures } from './chips'
+import { ComposerControls, hideComposerControl } from './ComposerControls'
 import { clearDraft, readLocalDraft, useDraftPersistence, useServerDraft } from './useDraft'
 import { createRecognition, dictationSupported, classifyDictationError, type DictationErrorKind } from '../voice/dictation'
 import { dictateLive, liveDictationErrorKind, liveDictationSupported, type LiveDictationHandle } from '../voice/liveDictation'
 import { useExecutionModesQuery, useTranscribeCapabilityQuery } from '../../app/queries'
-import { ProfileMenu } from '../../shell/ProfileMenu'
 import { setTheme } from '../../app/appearance'
 import { ThemeSchema } from '../../contracts/persisted'
 import type { Clarify } from '../chat/useClarify'
@@ -79,7 +79,9 @@ export interface ComposerProps {
 }
 
 const PHONE = '(max-width: 640px)'
-const MESSAGE_ONLY_CONTROLS = new Set(['hide_composer_attach', 'hide_composer_mic', 'hide_composer_profile', 'hide_composer_workspace', 'hide_composer_model', 'hide_composer_reasoning'])
+const EMPTY_NOTICES: ComposerNotice[] = []
+const EMPTY_TASKS: NonNullable<ReturnType<typeof useBackgroundTasks>['data']>['tasks'] = []
+const EMPTY_ADMISSIONS: NonNullable<Session['owner_attachment']>['admissions'] = []
 /** Phone-width viewport: the footer runs the icon/burger stage and collapses when idle (legacy _isPhoneWidthViewport). */
 function usePhone(): boolean {
   const [phone, setPhone] = useState(() => typeof window !== 'undefined' && window.matchMedia(PHONE).matches)
@@ -128,7 +130,7 @@ function fileKey(f: File): string {
 let handoff: { draft: { readonly current: string }; files: File[]; sessionId: string | null } | null = null
 
 export const Composer = memo(function Composer(props: ComposerProps) {
-  const { sessionId, session, busy, streamId, settings, onEnsureSession, onLocalCommand, terminalOpen, onToggleTerminal, onModelChange, onWorkspaceChange, onNewWorktreeChat, onRemoveWorktree, onToolsetsChange, onExecutionModeChange, onReasoningChange, reasoning, reasoningLevels, reasoningSupported = true, pendingChoices, locked = false, yolo, onToggleYolo, queued, onQueue, onQueueChange, clarify, notices = [] } = props
+  const { sessionId, session, busy, streamId, settings, onEnsureSession, onLocalCommand, terminalOpen, onToggleTerminal, onModelChange, onWorkspaceChange, onNewWorktreeChat, onRemoveWorktree, onToolsetsChange, onExecutionModeChange, onReasoningChange, reasoning, reasoningLevels, reasoningSupported = true, pendingChoices, locked = false, yolo, onToggleYolo, queued, onQueue, onQueueChange, clarify, notices = EMPTY_NOTICES } = props
   const bootstrap = useBootstrap()
   const launchBackground = useStartBackground()
   const localStateId = composerStateId(session)
@@ -222,8 +224,15 @@ export const Composer = memo(function Composer(props: ComposerProps) {
   const busyMode: BusyMode = (settings?.default_message_mode as BusyMode | undefined) ?? 'steer'
   const sendKey = settings?.send_key ?? 'enter'
   // While a clarification is pending the box edits its answer; the chat draft keeps its own state.
-  const value = clarify ? clarify.text : text
-  const setValue = clarify ? clarify.setText : setText
+  const [answerDraft, setAnswerDraft] = useState({ key: '', text: '' })
+  const answerKey = clarify ? JSON.stringify([sessionId, clarify.pending.clarify_id, clarify.step.qid, clarify.inputRevision]) : ''
+  const value = clarify ? (answerDraft.key === answerKey ? answerDraft.text : '') : text
+  const setValue = (next: string) => {
+    if (!clarify) { setText(next); return }
+    setAnswerDraft({ key: answerKey, text: next })
+    if (next.trim()) clarify.clearSelection()
+  }
+  const canAnswer = !!value.trim() || !!clarify?.selected.length
   const palette = useCommandPalette(clarify ? '' : text)
   const catalog = palette.catalog
   // A newly resolved identity first adopts its text. Persisting the previous render would erase
@@ -373,22 +382,22 @@ export const Composer = memo(function Composer(props: ComposerProps) {
     setFiles((current) => [...current, ...restored.filter((file) => !current.some((f) => f.key === file.key))])
   }, [intent.send, sessionId, files])
 
-  const removeFile = (key: string) => {
+  const removeFile = useCallback((key: string) => {
     const f = files.find((p) => p.key === key)
     setFiles((prev) => prev.filter((p) => p.key !== key))
     inflight.current.delete(key)
     // Removed before the new chat exists: the file must not ride the hand-off into it.
     if (handoff) handoff.files = handoff.files.filter((file) => fileKey(file) !== key)
     if (f?.upload?.rollback_token && sessionId) void api.rollbackUpload(sessionId, [f.upload.rollback_token]).catch(() => undefined)
-  }
+  }, [files, sessionId])
   // A failed upload runs again; without a session yet, the file goes back through the hand-off.
-  const retryFile = (key: string) => {
+  const retryFile = useCallback((key: string) => {
     const f = files.find((p) => p.key === key)
     if (!f) return
     if (!sessionId) { setFiles((prev) => prev.filter((p) => p.key !== key)); addFiles([f.file]); return }
     setFiles((prev) => prev.map((p) => (p.key === key ? { ...p, status: 'uploading', error: undefined } : p)))
     upload(key, f.file)
-  }
+  }, [files, sessionId, addFiles, upload])
 
   // Steer: deliver mid-run, shown in the turn as a pending user message. The box empties at once like any send (TAL-743);
   // a steer the server did not accept returns after whatever was typed meanwhile.
@@ -545,7 +554,7 @@ export const Composer = memo(function Composer(props: ComposerProps) {
     if (palette.handleKey(e, applySuggestion)) return
     if (e.key !== 'Enter') return
     // A clarification answer is short: Enter answers on every width, whatever the chat send-key rule.
-    if (clarify) { if (!e.shiftKey) { e.preventDefault(); clarify.send() } return }
+    if (clarify) { if (!e.shiftKey) { e.preventDefault(); clarify.send(value) } return }
     const isNumpad = e.code === 'NumpadEnter'
     const mobile = window.matchMedia('(max-width: 640px)').matches
     if (sendKey === 'ctrl+enter' || mobile) {
@@ -600,16 +609,16 @@ export const Composer = memo(function Composer(props: ComposerProps) {
   }
 
   // While a clarification owns the box, the message-only controls leave the footer (docs/ui-ux clarify-card).
-  const hide = (k: string) => (!!clarify && MESSAGE_ONLY_CONTROLS.has(k)) || !!(settings as Record<string, unknown> | undefined)?.[k]
-  const modelChoice = session?.model ? { model: session.model, optionId: session.model_option_id ?? null } : { model: pendingChoices?.model ?? null, optionId: pendingChoices?.model ?? null }
+  const hide = (key: string) => hideComposerControl(settings, answering, key)
   const placeholder = clarify ? (clarify.step.choices.length ? m.clarify_composer_placeholder_choices() : m.clarify_composer_placeholder()) : busy && !nativeOwner ? (busyMode === 'queue' ? m.composer_placeholder_busy_queue() : busyMode === 'interrupt' ? m.composer_placeholder_busy_interrupt() : m.composer_placeholder_busy_steer()) : m.composer_placeholder()
-  const context: ContextFigures = {
+  const onCompress = useCallback(() => { void onLocalCommand('compress', '') }, [onLocalCommand])
+  const context = useMemo<ContextFigures>(() => ({
     sessionId: sessionId ?? undefined, detailKey: session?.context_detail_key,
     percent: session?.context_usage_percent, used: session?.context_used_tokens, window: session?.context_window_tokens, thresholdPercent: session?.context_threshold_percent,
     input: session?.input_tokens, output: session?.output_tokens, cacheRead: session?.cache_read_tokens, cacheWrite: session?.cache_write_tokens, cacheHitPercent: session?.cache_hit_percent, cost: session?.estimated_cost,
     // The same manual compression `/compress` runs, offered only when the server says it would start.
-    onCompress: sessionId && session?.can_compress ? () => { void onLocalCommand('compress', '') } : undefined, compressing: locked,
-  }
+    onCompress: sessionId && session?.can_compress ? onCompress : undefined, compressing: locked,
+  }), [sessionId, session, onCompress, locked])
   const canSend = (text.trim() !== '' || files.some((f) => f.status === 'done')) && !sending && !locked
   // Phone composer at rest: one prompt row (UIUX guide), and the strip under it folds away too.
   const collapsed = phone && !text && files.length === 0 && !busy && !focusWithin && !configOpen && !dragOver
@@ -650,13 +659,13 @@ export const Composer = memo(function Composer(props: ComposerProps) {
     animation.onfinish = () => { if (restAnimation.current === animation) restAnimation.current = null }
   }, [resting])
   const showYolo = yolo && !hide('hide_composer_yolo')
-  const backgroundTasks = useBackgroundTasks(session && !session.owner_attachment ? sessionId : null).data?.tasks ?? []
-  const admissions = session?.owner_attachment?.admissions ?? []
+  const backgroundTasks = useBackgroundTasks(session && !session.owner_attachment ? sessionId : null).data?.tasks ?? EMPTY_TASKS
+  const admissions = session?.owner_attachment?.admissions ?? EMPTY_ADMISSIONS
   // TAL-1043: an owner input with an unknown outcome blocks sending until it is retried or discarded, so its chip says so.
   const outcomeUnknown = admissions.some((a) => a.status === 'unknown')
-  const pinnedTasks = backgroundTasks.filter((t) => t.pinned)
+  const pinnedCount = backgroundTasks.filter((t) => t.pinned).length
   // The chips over the card: the running turn first, then runtime notices and this message's state.
-  const chipNotices: ComposerNotice[] = [
+  const chipNotices = useMemo<ComposerNotice[]>(() => [
     ...(busy ? [{ id: 'live', content: <LiveStatusPill sessionId={sessionId} background={session?.active_turn_origin === 'background' && session.active_stream_id === streamId} /> }] : []),
     ...notices,
     ...(intent.send ? [{ id: 'send', tone: intent.send.error ? 'error' as const : 'neutral' as const, content: <span role="status">{intent.send.uncertain ? m.composer_send_uncertain() : intent.send.error ?? m.composer_sending()}</span>, ...(intent.send.error && !intent.send.uncertain && !intent.send.files && sessionId ? { action: { label: m.retry(), run: () => { void retryPendingTurn(sessionId)?.catch(() => undefined) } } } : {}) }] : []),
@@ -665,18 +674,16 @@ export const Composer = memo(function Composer(props: ComposerProps) {
     ...(commandNotice ? [commandNotice] : []),
     ...(dictating ? [{ id: 'dictation', content: <span className="inline-flex items-center gap-1.5" role="status"><span className="mic-dot" aria-hidden="true" />{m.voice_listening()}</span> }] : []),
     ...(showYolo ? [{ id: 'yolo', tone: 'warning' as const, content: <><span aria-hidden="true">⚡</span><span className="truncate">{m.yolo_tab_active()}</span></>, action: { label: m.yolo_turn_off(), run: onToggleYolo } }] : []),
-    ...(sessionId && pinnedTasks.length ? [{ id: 'background', content: <><Layers size={13} className="shrink-0" aria-hidden="true" /><span className="truncate">{m.bg_card_count({ n: pinnedTasks.length })}</span></>, detail: { title: m.bg_card_title(), content: <BackgroundWorkCard sessionId={sessionId} tasks={backgroundTasks} /> } }] : []),
+    ...(sessionId && pinnedCount ? [{ id: 'background', content: <><Layers size={13} className="shrink-0" aria-hidden="true" /><span className="truncate">{m.bg_card_count({ n: pinnedCount })}</span></>, detail: { title: m.bg_card_title(), content: <BackgroundWorkCard sessionId={sessionId} tasks={backgroundTasks} /> } }] : []),
     ...(sessionId && (queued.length > 0 || admissions.length) ? [{ id: 'queue', tone: outcomeUnknown ? 'warning' as const : undefined, content: <><ListPlus size={13} className="shrink-0" aria-hidden="true" /><span className="truncate">{outcomeUnknown ? m.owner_outcome_unknown() : m.queued_count({ n: queued.length + admissions.length })}</span></>, detail: { title: admissions.length ? m.owner_inputs() : m.queued_count({ n: queued.length }), content: <QueueCard sessionId={sessionId} queued={queued} onChange={onQueueChange} pendingId={intent.send?.queueId} admissions={admissions} onAdmissionAction={props.onOwnerAction} /> } }] : []),
-  ]
+  ], [busy, sessionId, session, streamId, notices, intent.send, intent.stop, btwNotice, commandNotice, dictating, showYolo, onToggleYolo, pinnedCount, backgroundTasks, queued, admissions, outcomeUnknown, onQueueChange, props.onOwnerAction])
   // A `/btw` draft asks beside the turn instead of steering, queueing or interrupting it (TAL-518).
   const busyLabel = nativeOwner ? m.composer_send() : intent.stop ? m.composer_queue() : parseCommand(text)?.name === 'btw' ? m.composer_send() : busyMode === 'queue' ? m.composer_queue() : busyMode === 'interrupt' ? m.composer_interrupt() : m.composer_steer()
 
   // The server marks sessions Web may not continue (TAL-312); it would refuse every send, so none is offered.
   if (readOnly) return <div className="composer-wrap" id="composerWrap"><div className="mx-auto max-w-(--msg-max) px-3 py-2 text-center text-xs text-muted" role="note">{session?.owner_attachment?.reason === 'native_clarify_batch_unavailable' ? m.owner_batch_unavailable() : session?.owner_attachment?.reason === 'served_profile_sessions_unavailable' ? m.owner_profile_unverified() : m.session_read_only_notice()}</div></div>
 
-  // A fresh chat picks its Agent mode; a started one shows a frozen non-normal mode. No hide preference covers it.
-  const modeChip = !sessionId && onExecutionModeChange ? <ExecutionModeChip value={pendingChoices?.execution_mode ?? 'normal'} onChange={onExecutionModeChange} />
-    : session?.execution_mode && session.execution_mode !== 'normal' ? <ExecutionModeChip value={session.execution_mode} /> : null
+  const controls = { sessionId, session, settings, pendingChoices, onExecutionModeChange, onModelChange, onReasoningChange, reasoning, reasoningLevels, reasoningSupported, onWorkspaceChange, onNewWorktreeChat, onRemoveWorktree, onToolsetsChange, terminalOpen, onToggleTerminal, answering, stage, phone, collapsed, configOpen, setConfigOpen, context }
 
   return (
     <div className="composer-wrap" id="composerWrap">
@@ -713,13 +720,7 @@ export const Composer = memo(function Composer(props: ComposerProps) {
           aria-expanded={palette.open ? true : undefined}
         />
         <div ref={footer} className={cn('composer-footer', stage !== 'full' && 'cf-icons', stage === 'burger' && 'cf-burger', collapsed && 'cf-collapsed')}>
-          <div className="composer-left flex items-center gap-1 min-w-0 flex-1 overflow-x-auto overflow-y-hidden [scrollbar-width:none] max-[641px]:flex-[1_1_auto] max-[641px]:w-auto max-[641px]:flex-nowrap max-[641px]:items-center max-[641px]:gap-x-2.5 max-[641px]:gap-y-0 max-[641px]:max-h-none max-[641px]:[-webkit-overflow-scrolling:touch] max-[341px]:gap-x-0.5">
-            {!hide('hide_composer_model') && <div className="composer-model-wrap"><ModelChip {...modelChoice} onChange={onModelChange} /></div>}
-            {!session?.read_only && !hide('hide_composer_reasoning') && reasoningSupported && <div className="composer-reasoning-wrap"><ReasoningChip value={reasoning} levels={reasoningLevels} onChange={onReasoningChange} /></div>}
-            <button className="icon-btn composer-mobile-config-btn has-tooltip" id="composerMobileConfigBtn" type="button" data-tooltip={m.composer_config_title()} aria-label={m.composer_config_title()} aria-expanded={configOpen} aria-controls="composerMobileConfigPanel" onClick={() => setConfigOpen((o) => !o)}>
-              <SlidersHorizontal size={16} aria-hidden="true" />
-            </button>
-          </div>
+          <ComposerControls {...controls} placement="footer" />
           <div className="composer-right flex gap-1.5 items-center shrink-0 max-[641px]:flex-none max-[641px]:w-auto max-[641px]:justify-end max-[641px]:min-w-0">
             <div className="composer-tools flex items-center gap-0.5">
               {attachmentsSupported && !hide('hide_composer_attach') && (
@@ -732,7 +733,7 @@ export const Composer = memo(function Composer(props: ComposerProps) {
             </div>
             {!hide('hide_composer_context') && <ContextRing {...context} />}
             {clarify && (
-              <button type="button" onClick={clarify.send} disabled={!clarify.canSend} className="send-btn has-tooltip has-tooltip--left" id="btnClarifySend" data-tooltip={clarify.index < clarify.total - 1 ? m.composer_clarify_next() : m.composer_clarify()} aria-label={clarify.index < clarify.total - 1 ? m.composer_clarify_next() : m.composer_clarify()}>
+              <button type="button" onClick={() => clarify.send(value)} disabled={!canAnswer} className="send-btn has-tooltip has-tooltip--left" id="btnClarifySend" data-tooltip={clarify.index < clarify.total - 1 ? m.composer_clarify_next() : m.composer_clarify()} aria-label={clarify.index < clarify.total - 1 ? m.composer_clarify_next() : m.composer_clarify()}>
                 <ArrowUp size={14} aria-hidden="true" />
               </button>
             )}
@@ -754,24 +755,11 @@ export const Composer = memo(function Composer(props: ComposerProps) {
               </button>
             )}
           </div>
-          <div className={cn('composer-mobile-config-panel', configOpen && 'open')} id="composerMobileConfigPanel" role="group" aria-label={m.composer_config_title()}>
-            {stage === 'burger' && !hide('hide_composer_model') && <ModelChip row {...modelChoice} onChange={onModelChange} />}
-            {stage === 'burger' && !session?.read_only && !hide('hide_composer_reasoning') && reasoningSupported && <ReasoningChip row value={reasoning} levels={reasoningLevels} onChange={onReasoningChange} />}
-            {/* The chat header carries the terminal toggle above phone width. */}
-            {stage === 'burger' && phone && <button type="button" className={cn('icon-btn', terminalOpen && 'active')} id="btnTerminal" title={m.composer_terminal_toggle()} aria-label={m.composer_terminal_toggle()} aria-pressed={terminalOpen} onClick={() => { setConfigOpen(false); onToggleTerminal() }}><TerminalSquare size={16} aria-hidden="true" /><span className="composer-mobile-config-value">{m.composer_terminal_toggle()}</span></button>}
-            {configOpen && stage === 'burger' && !hide('hide_composer_context') && <ContextRow {...context} />}
-          </div>
+          <ComposerControls {...controls} placement="panel" />
         </div>
       </div>
       {/* T3 Code's context strip: where the message runs (workspace, toolsets, profile), tucked under the card. */}
-      {!collapsed && (!hide('hide_composer_workspace') || !hide('hide_composer_toolsets') || !hide('hide_composer_profile') || modeChip) && (
-        <div className="composer-strip" role="group" aria-label={m.composer_config_title()}>
-          {!hide('hide_composer_workspace') && <WorkspaceChip value={session?.workspace ?? pendingChoices?.workspace ?? settings?.default_workspace} name={session ? session.workspace_name ?? null : undefined} onChange={onWorkspaceChange} onNewWorktree={onNewWorktreeChat} onRemoveWorktree={onRemoveWorktree} />}
-          {!session?.read_only && !hide('hide_composer_toolsets') && <ToolsetsChip sessionId={sessionId ?? undefined} value={session?.enabled_toolsets ?? pendingChoices?.enabled_toolsets ?? null} onChange={onToolsetsChange} />}
-          {modeChip}
-          {!hide('hide_composer_profile') && <ProfileMenu />}
-        </div>
-      )}
+      <ComposerControls {...controls} placement="strip" />
     </div>
   )
 })

@@ -36,6 +36,15 @@ const WORKSPACES = { workspaces: [{ path: '/src/talaria-main', name: 'Talaria' }
 
 let modes: unknown = { modes: [{ mode: 'normal', available: true, reason: null }, { mode: 'ignore_config', available: true, reason: null }, { mode: 'safe', available: true, reason: null }] }
 vi.mock('../../api/endpoints', () => ({ fetchExecutionModes: vi.fn(() => Promise.resolve(modes)), fetchToolsetsCatalog: vi.fn(() => Promise.resolve({ toolsets: [{ name: 'file', description: 'Files', available: true, selected: true, unavailable_reason: null }, { name: 'todo', description: 'Tasks', available: false, selected: false, unavailable_reason: 'disabled' }], selected_toolsets: ['file'], using_defaults: true })), fetchModels: vi.fn(() => Promise.resolve(catalog)), fetchWorkspaces: vi.fn(() => Promise.resolve(WORKSPACES)) }))
+const rowRenders = vi.hoisted(() => new Map<string, number>())
+vi.mock('../../ui/Menu', async (original) => {
+  const menu = await original<typeof import('../../ui/Menu')>()
+  const { countRenders } = await import('../../test/countRenders')
+  return { ...menu, MenuRadioItem: countRenders(menu.MenuRadioItem, (props) => {
+    const id = String(props.value)
+    rowRenders.set(id, (rowRenders.get(id) ?? 0) + 1)
+  }) }
+})
 import { ExecutionModeChip, ModelChip, ToolsetsChip, WorkspaceChip } from './chips'
 import { fetchModels } from '../../api/endpoints'
 
@@ -45,6 +54,21 @@ function renderChip(props: { model: string | null; optionId: string | null }, on
 }
 
 describe('ModelChip', () => {
+  it('keeps surviving model rows out of search renders and mounts returning rows once', async () => {
+    catalog = COLON_CATALOG
+    renderChip({ model: null, optionId: null })
+    await userEvent.click(screen.getByRole('button'))
+    await screen.findAllByRole('menuitemradio')
+    const search = screen.getByRole('searchbox')
+    const before = new Map(rowRenders)
+    await userEvent.type(search, 'gemini')
+    for (const id of ['@gemini:gemini-2.5-flash', '@google:gemini-2.5-flash']) expect(rowRenders.get(id)).toBe(before.get(id))
+    expect(screen.getAllByRole('menuitemradio')).toHaveLength(2)
+    await userEvent.clear(search)
+    expect(rowRenders.get('claude-opus-4.7')).toBe((before.get('claude-opus-4.7') ?? 0) + 1)
+    expect(rowRenders.get('@gemini:gemini-2.5-flash')).toBe(before.get('@gemini:gemini-2.5-flash'))
+  })
+
   it('labels a fallback model group unavailable while keeping the configured model selected', async () => {
     catalog = { ...PLUGIN_CATALOG, default_model: 'gpt-6.1-sol', default_option_id: 'gpt-6.1-sol', groups: [{ provider: 'OpenAI Codex', provider_id: 'openai-codex', availability: { status: 'unavailable', authoritative: false, generation: 'test', unavailable_reason: 'Agent recovery is incomplete.' }, models: [{ id: 'gpt-6.1-sol', label: 'GPT-6.1 Sol', bare_id: 'gpt-6.1-sol', provider_id: 'openai-codex' }] }] }
     renderChip({ model: null, optionId: null })

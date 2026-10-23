@@ -25,6 +25,11 @@ vi.mock('../../api/endpoints', () => ({
   setAuxiliaryModel: vi.fn(),
   fetchModels: vi.fn(),
 }))
+const catalogRenders = vi.hoisted(() => ({ count: 0 }))
+vi.mock(import('../../app/queries'), async (original) => {
+  const queries = await original()
+  return { ...queries, useModelsQuery: () => { catalogRenders.count++; return queries.useModelsQuery() } }
+})
 import * as api from '../../api/endpoints'
 import { AuxiliaryModelsSetting } from './AuxiliaryModels'
 
@@ -45,6 +50,17 @@ beforeEach(() => {
 })
 
 describe('Auxiliary models settings', () => {
+  it('keeps custom-model typing out of catalog renders and saves the typed id', async () => {
+    renderSetting()
+    await userEvent.click((await openList()).getByRole('button', { name: /Title generation/ }))
+    await screen.findByRole('region', { name: 'Anthropic' })
+    const before = catalogRenders.count
+    await userEvent.type(screen.getByRole('textbox', { name: /Custom model ID/ }), 'custom-model')
+    expect(catalogRenders.count).toBe(before)
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(api.setAuxiliaryModel).toHaveBeenCalledWith('title_generation', 'custom-model', null)
+  })
+
   it('lists every server task in server order with Auto, pinned, and off-catalog values', async () => {
     renderSetting()
     const list = await openList()

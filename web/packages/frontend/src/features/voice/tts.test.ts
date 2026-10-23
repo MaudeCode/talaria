@@ -14,9 +14,11 @@ vi.mock(import('./autoReadClaim'), () => ({ claimAutoRead: vi.fn() }))
 const exchange = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../../contracts/fixtures/speech-prepare.json'), 'utf8')) as { request: { text: string }; response: { spoken_text: string } }
 
 const spoken: string[] = []
+const browserCancel = vi.fn()
 beforeEach(() => {
+  browserCancel.mockClear()
   vi.stubGlobal('SpeechSynthesisUtterance', class { constructor(readonly text: string) {} })
-  vi.stubGlobal('speechSynthesis', { speak: (utter: { text: string }) => { spoken.push(utter.text) }, cancel: vi.fn(), getVoices: () => [] })
+  vi.stubGlobal('speechSynthesis', { speak: (utter: { text: string }) => { spoken.push(utter.text) }, cancel: browserCancel, getVoices: () => [] })
 })
 afterEach(() => {
   spoken.length = 0
@@ -25,6 +27,17 @@ afterEach(() => {
 })
 
 describe('speak (TAL-906)', () => {
+  it('does not cancel the browser speech engine when it is idle', () => {
+    stopSpeaking()
+    expect(browserCancel).not.toHaveBeenCalled()
+  })
+
+  it.each(['speaking', 'pending'])('cancels browser speech when %s', (state) => {
+    Object.assign(window.speechSynthesis, { [state]: true })
+    stopSpeaking()
+    expect(browserCancel).toHaveBeenCalledOnce()
+  })
+
   it('speaks the server spoken_text for the message, not the message itself', async () => {
     vi.mocked(api.prepareSpeech).mockResolvedValue(exchange.response)
     await speak(exchange.request.text)
