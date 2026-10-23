@@ -10,6 +10,12 @@ enum HostedSize {
     static let phone = CGSize(width: 390, height: 844)
     static let phoneLandscape = CGSize(width: 844, height: 390)
     static let padLandscape = CGSize(width: 1194, height: 834)
+    /// The iPhone Duo's displays, measured on its simulator (TAL-1453). The inner display is regular in both
+    /// dimensions, so it takes the split view.
+    static let duoOuter = CGSize(width: 466, height: 678)
+    static let duoOuterLandscape = CGSize(width: 678, height: 466)
+    static let duoInner = CGSize(width: 669, height: 951)
+    static let duoInnerLandscape = CGSize(width: 951, height: 669)
 }
 
 extension XCTestCase {

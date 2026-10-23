@@ -581,6 +581,171 @@ final class SessionListHostedTests: XCTestCase {
 }
 
 
+/// The regular-width split view at the iPhone Duo inner display's sizes and at iPad landscape (TAL-1453): the sidebar
+/// leaves the chat at least 320 pt, and Files hides the sidebar when that is what puts the browser beside the chat.
+@MainActor
+final class RegularSplitHostedTests: XCTestCase {
+    private struct Split {
+        let fixture: FixtureApp
+        let window: UIWindow
+        let controller: UISplitViewController
+
+        var showsSidebar: Bool { controller.displayMode == .oneBesideSecondary }
+        var detailWidth: CGFloat { controller.view.bounds.width - controller.primaryColumnWidth }
+    }
+
+    /// The fixture chat opened from the Chats sidebar in a regular-width window of `size`.
+    private func openChat(size: CGSize) async throws -> Split {
+        let fixture = try FixtureApp(for: self)
+        let window = try hostWindow(fixture.sessionList(), size: size) {
+            $0.horizontalSizeClass = .regular
+            $0.verticalSizeClass = .regular
+        }
+        let row = try await requireElement(in: window, "Missing deterministic session fixture") {
+            $0.accessibilityLabel?.hasPrefix(UITestFixtureURLProtocol.sessionTitle) == true
+        }
+        HostedAccessibility.activate(row)
+        _ = try await requireElement(in: window, "The chat never opened beside the list", where: FixtureApp.isLoadedTranscriptRow)
+        let controller = try XCTUnwrap(window.rootViewController?.firstDescendant(ofType: UISplitViewController.self))
+        let split = Split(fixture: fixture, window: window, controller: controller)
+        XCTAssertTrue(split.showsSidebar, "Chats did not show the list beside the chat")
+        return split
+    }
+
+    /// Every element in the window, including the bar buttons and inspector each split-view column keeps out of the
+    /// window's own element list.
+    private func elements(in window: UIWindow) -> [NSObject] {
+        var found: [NSObject] = []
+        collectElements(window, into: &found)
+        return found
+    }
+
+    private func element(_ label: String, in window: UIWindow) async -> NSObject? {
+        await barButton(label, in: window)
+    }
+
+    /// Taps a bar button the way a finger does; its accessibility activation does nothing in a hosted window.
+    private func press(_ element: NSObject) {
+        if let control = element as? UIControl {
+            control.sendActions(for: .touchUpInside)
+        } else {
+            element.accessibilityActivate()
+        }
+        settle()
+    }
+
+    /// Both an object's accessibility children and its subviews: a column's element list leaves out its bar buttons.
+    private func collectElements(_ object: NSObject, into found: inout [NSObject]) {
+        if object.isAccessibilityElement { found.append(object) }
+        (object.accessibilityElements as? [NSObject])?.forEach { collectElements($0, into: &found) }
+        (object as? UIView)?.subviews.forEach { collectElements($0, into: &found) }
+    }
+
+    private func barButton(_ label: String, in window: UIWindow, where match: @escaping (CGRect) -> Bool = { _ in true }) async -> NSObject? {
+        var found: NSObject?
+        _ = await awaitCondition {
+            found = self.elements(in: window).first { $0.accessibilityLabel == label && match($0.accessibilityFrame) }
+            return found != nil
+        }
+        return found
+    }
+
+    private func filesButton(in window: UIWindow) async throws -> NSObject {
+        // The open inspector's "Files" title matches too.
+        var found: NSObject?
+        _ = await awaitCondition {
+            found = self.elements(in: window).first {
+                $0.accessibilityLabel == "Files" && $0 is UIControl && window.bounds.contains($0.accessibilityFrame)
+            }
+            return found != nil
+        }
+        return try XCTUnwrap(found, "The chat has no Files button")
+    }
+
+    private func frame(_ element: NSObject?) -> CGRect { element?.accessibilityFrame ?? .null }
+
+    func testDuoInnerPortraitKeepsTheChatAtItsNarrowestTestedWidth() async throws {
+        let split = try await openChat(size: HostedSize.duoInner)
+        XCTAssertEqual(split.controller.primaryColumnWidth, 349, accuracy: 1)
+        XCTAssertEqual(split.detailWidth, 320, accuracy: 1)
+
+        let send = frame(try await requireElement(in: split.window, label: "Send"))
+        let transcript = frame(HostedAccessibility.elements(in: split.window).first(where: FixtureApp.isLoadedTranscriptRow))
+        for (name, control) in [("Send", send), ("transcript", transcript)] {
+            XCTAssertFalse(control.isEmpty, "\(name) has no frame")
+            XCTAssertGreaterThanOrEqual(control.minX, split.controller.primaryColumnWidth - 1, "\(name) sits under the sidebar")
+            XCTAssertLessThanOrEqual(control.maxX, HostedSize.duoInner.width + 1, "\(name) runs off the screen")
+        }
+        attachHostedScreenshot(split.window, name: "duo-inner-chats")
+    }
+
+    func testDuoInnerLandscapeHidesTheSidebarToShowFilesBesideTheChat() async throws {
+        let split = try await openChat(size: HostedSize.duoInnerLandscape)
+        XCTAssertEqual(split.controller.primaryColumnWidth, 380, accuracy: 1)
+
+        press(try await filesButton(in: split.window))
+        let hidden = await awaitCondition { !split.showsSidebar }
+        XCTAssertTrue(hidden, "Files did not hide the sidebar column")
+        let browser = frame(await element("Search files", in: split.window))
+        let transcript = frame(await awaitElement(in: split.window, where: FixtureApp.isLoadedTranscriptRow))
+        XCTAssertFalse(browser.isEmpty, "The file browser has no frame")
+        XCTAssertFalse(transcript.isEmpty, "Files covered the chat instead of opening beside it")
+        XCTAssertLessThanOrEqual(transcript.maxX, browser.minX + 1, "The file browser overlaps the chat")
+        let drawer = await barButton("Open navigation", in: split.window) { split.window.bounds.contains($0) }
+        XCTAssertNotNil(drawer, "The chat lost the drawer button with the sidebar hidden")
+        attachHostedScreenshot(split.window, name: "duo-inner-landscape-files")
+
+        press(try await filesButton(in: split.window))
+        let restored = await awaitCondition { split.showsSidebar }
+        XCTAssertTrue(restored, "Closing Files did not bring the sidebar back")
+        XCTAssertEqual(split.controller.primaryColumnWidth, 380, accuracy: 1)
+        let row = await awaitElement(in: split.window) {
+            $0.accessibilityLabel?.hasPrefix(UITestFixtureURLProtocol.sessionTitle) == true && $0.accessibilityFrame.maxX <= 381
+        }
+        XCTAssertNotNil(row, "The restored sidebar shows no chats")
+        let sidebarDrawer = await barButton("Open navigation", in: split.window) { $0.minX >= 0 && $0.maxX <= 381 }
+        XCTAssertNotNil(sidebarDrawer, "The restored sidebar lost its navigation bar")
+    }
+
+    func testDuoInnerPortraitPushesFiles() async throws {
+        let split = try await openChat(size: HostedSize.duoInner)
+        press(try await filesButton(in: split.window))
+        let browser = await element("Search files", in: split.window)
+        XCTAssertNotNil(browser, "Files did not open")
+        let covered = await awaitNoElement(in: split.window, timeout: 5, where: FixtureApp.isLoadedTranscriptRow)
+        XCTAssertTrue(covered, "Files did not push over the chat")
+        XCTAssertTrue(split.showsSidebar, "Files changed the sidebar column")
+        XCTAssertEqual(split.controller.primaryColumnWidth, 349, accuracy: 1)
+    }
+
+    func testPadLandscapeShowsFilesBesideTheChatWithTheSidebar() async throws {
+        let split = try await openChat(size: HostedSize.padLandscape)
+        XCTAssertEqual(split.controller.primaryColumnWidth, 380, accuracy: 1)
+
+        press(try await filesButton(in: split.window))
+        let browser = frame(await element("Search files", in: split.window))
+        let transcript = frame(await awaitElement(in: split.window, where: FixtureApp.isLoadedTranscriptRow))
+        XCTAssertFalse(transcript.isEmpty, "Files covered the chat instead of opening beside it")
+        XCTAssertLessThanOrEqual(transcript.maxX, browser.minX + 1, "The file browser overlaps the chat")
+        XCTAssertTrue(split.showsSidebar, "Files hid the sidebar where the chat already had room")
+        XCTAssertEqual(split.controller.primaryColumnWidth, 380, accuracy: 1)
+
+        press(try await filesButton(in: split.window))
+        let closed = await awaitCondition(timeout: 5) { !self.elements(in: split.window).contains { $0.accessibilityLabel == "Search files" } }
+        XCTAssertTrue(closed, "Files did not close")
+    }
+}
+
+private extension UIViewController {
+    func firstDescendant<Controller: UIViewController>(ofType type: Controller.Type) -> Controller? {
+        if let match = self as? Controller { return match }
+        for child in children + [presentedViewController].compactMap({ $0 }) {
+            if let match = child.firstDescendant(ofType: type) { return match }
+        }
+        return nil
+    }
+}
+
 private final class HeldRowMutationProtocol: URLProtocol {
     final class State: @unchecked Sendable {
         var onPin: (() -> Void)?
