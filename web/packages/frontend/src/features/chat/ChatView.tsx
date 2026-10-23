@@ -19,7 +19,7 @@ import { configureStream, cancelTurn, getStreamContext, startTurn } from '../../
 import { dispatch, useTurnIntent } from '../../stream/store'
 import { isTerminal, runStart, type LiveTurn } from '../../stream/reducer'
 import { useTranscript, type VisibleMessage } from './useTranscript'
-import { chosenFields, useSessionUpdate } from './useSessionUpdate'
+import { chosenFields, useSessionUpdate, useSessionWrite } from './useSessionUpdate'
 import { transcriptCut, useEditMessage } from './useEditMessage'
 import { Transcript } from './Transcript'
 import { TranscriptSkeleton } from './TranscriptSkeleton'
@@ -178,12 +178,10 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
 
   const { updateSession, dialog: modelDialog, notice: modelNotice, confirming } = useSessionUpdate(sessionId, refresh, session?.owner_attachment)
   // Session controls (toolsets, personality) show the choice at once; the reread of the session confirms it.
-  const sessionWrite = useResourceMutation({
-    resource: ({ sid }: { sid: string; fields: Record<string, unknown>; run: () => Promise<unknown> }) => `session:${sid}`,
-    queryKey: keys.sessions.all, readKeys: ({ sid }) => [{ queryKey: keys.sessions.detail(sid), exact: true }],
-    effect: ({ fields }) => ({ fields }),
+  const sessionWrite = useSessionWrite({
+    fields: ({ fields }: { sid: string; fields: Record<string, unknown>; run: () => Promise<unknown> }) => fields,
     mutationFn: ({ run }) => run(),
-    onError: (e) => showErrorToast(e),
+    onError: showErrorToast,
   })
   const sendSessionWrite = sessionWrite.mutate
 

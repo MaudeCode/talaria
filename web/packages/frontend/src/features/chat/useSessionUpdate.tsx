@@ -20,6 +20,17 @@ export function chosenFields(body: Update): Record<string, unknown> {
   return body.workspace !== undefined ? { workspace: body.workspace, workspace_name: null } : { model: body.model, model_option_id: body.model, model_provider: body.model_provider ?? null }
 }
 
+/** A write to one session's fields: shown at once on `session:{sid}`, confirmed by the reread of that session. */
+export function useSessionWrite<V extends { sid: string }, R>(options: { fields: (variables: V) => Record<string, unknown>; mutationFn: (variables: V) => Promise<R>; onError?: (error: unknown) => void }) {
+  return useResourceMutation({
+    resource: ({ sid }: V) => `session:${sid}`,
+    queryKey: keys.sessions.all, readKeys: ({ sid }) => [{ queryKey: keys.sessions.detail(sid), exact: true }],
+    effect: (variables) => ({ fields: options.fields(variables) }),
+    mutationFn: options.mutationFn,
+    ...(options.onError ? { onError: options.onError } : {}),
+  })
+}
+
 /** Session metadata updates share one confirmation flow; transcript Edit owns its separate cut-and-return operation. */
 export function useSessionUpdate(sessionId: string | null, refresh: (session?: Session) => Promise<unknown>, nativeOwner?: OwnerAttachment) {
   const lifecycle = useRef<object | null>(null)
@@ -45,10 +56,8 @@ export function useSessionUpdate(sessionId: string | null, refresh: (session?: S
     // eslint-disable-next-line react-hooks/set-state-in-effect -- synchronize an external owner decision
     presentNative(nativeOwner?.model_change)
   }, [nativeOwner?.model_change, presentNative])
-  const write = useResourceMutation({
-    resource: ({ sid }: { sid: string; body: Update; owner: OwnerAttachment | undefined }) => `session:${sid}`,
-    queryKey: keys.sessions.all, readKeys: ({ sid }) => [{ queryKey: keys.sessions.detail(sid), exact: true }],
-    effect: ({ body }) => ({ fields: chosenFields(body) }),
+  const write = useSessionWrite({
+    fields: ({ body }: { sid: string; body: Update; owner: OwnerAttachment | undefined }) => chosenFields(body),
     mutationFn: async ({ sid, body, owner }): Promise<{ native: OwnerResult | null; session: unknown }> => {
       if (!owner) return { native: null, session: (await api.updateSession(sid, body)).session }
       if (owner.revision === null || owner.execution_generation === null) throw new Error(m.error_generic())
