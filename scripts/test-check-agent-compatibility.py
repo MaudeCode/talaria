@@ -562,6 +562,29 @@ class CheckerTests(unittest.TestCase):
 
 
 class CommittedRecordTests(unittest.TestCase):
+    def test_release_list_step_propagates_selector_failure(self):
+        lines = (REPOSITORY / ".github/workflows/web-verify.yml").read_text().splitlines()
+        step = lines.index("      - name: Validate the support record and list its releases")
+        run = next(index for index in range(step + 1, len(lines)) if lines[index].startswith("        run:"))
+        command = lines[run].split("run:", 1)[1].strip()
+        if command == "|":
+            body = []
+            for line in lines[run + 1:]:
+                if not line.startswith("          "):
+                    break
+                body.append(line[10:])
+            command = "\n".join(body)
+        with tempfile.TemporaryDirectory(prefix="talaria-agent-matrix-") as directory:
+            root = Path(directory)
+            selector = root / "python3"
+            selector.write_text("#!/bin/sh\nexit 17\n")
+            selector.chmod(0o755)
+            output = root / "output"
+            result = subprocess.run(["/bin/bash", "--noprofile", "--norc", "-e", "-o", "pipefail", "-c", command],
+                                    env={"PATH": str(root), "GITHUB_OUTPUT": str(output)}, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 17, result.stderr)
+            self.assertFalse(output.exists())
+
     def test_committed_record_claims_three_version_support(self):
         releases = checker.supported_releases(REPOSITORY)
         self.assertEqual(len(releases), 3)
