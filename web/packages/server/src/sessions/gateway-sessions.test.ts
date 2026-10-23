@@ -9,6 +9,7 @@ import { bootTestServer, type TestServer } from '../test/harness.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { CANONICAL_READ_ONLY_REASON, type StateDbWorkerRequest } from './state-db.js'
 import { GatewaySessions } from './gateway-sessions.js'
+import { TerminalSession } from '../tools/terminal.js'
 
 const fixture = JSON.parse(readFileSync(new URL('../test/fixtures/canonical-ownership.json', import.meta.url), 'utf8')) as { sessions: Record<string, string>; diagnostic: Record<'safe' | 'ignore_config' | 'fresh', string>; schema: string[]; inserts: string[] }
 const nativeNotices = JSON.parse(readFileSync(new URL('../../../../../contracts/fixtures/web-native-notices.json', import.meta.url), 'utf8')) as { events: Record<string, unknown>[] }
@@ -120,6 +121,24 @@ describe('canonical owner attachment', () => {
     const sources = vi.spyOn(s.deps.sessions, 'stateDbSources').mockResolvedValue(boundary === 'unreadable' ? null : new Map([[sid, { source: 'cli', canonical: true, reason: 'owner unverified' }]]))
     try { await expect(s.deps.sessions.owner!.terminal(sid)).rejects.toMatchObject({ status: boundary === 'unreadable' ? 503 : 403 }) }
     finally { sources.mockRestore() }
+  })
+
+  it.each([false, true])('releases the previous Web PTY when selecting native mode (restart=%s)', async (restart) => {
+    sidecar.respond('gateway.session', () => attached(snapshot({ info: { cwd: '/frozen/native' } })))
+    for (const id of [sid, 'other-host']) {
+      const proc = { pid: 4242, write: vi.fn(), resize: vi.fn(), kill: vi.fn(), onData: vi.fn(), onExit: vi.fn() }
+      s.deps.terminals.terminals.set(id, new TerminalSession(id, s.state, proc, () => 100))
+    }
+    const previous = s.deps.terminals.get(sid)!
+    const other = s.deps.terminals.get('other-host')!
+    const response = await post('/api/terminal/start', { session_id: sid, restart })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ mode: 'owner_command', running: false })
+    expect(s.deps.terminals.get(sid)).toBeNull()
+    expect(previous.proc.kill).toHaveBeenCalledWith('SIGHUP')
+    expect(previous.closed).toBe(true)
+    expect(s.deps.terminals.get('other-host')).toBe(other)
+    expect(other.proc.kill).not.toHaveBeenCalled()
   })
 
   it('offers captured commands for native owners without spawning a Web PTY, and fences execution', async () => {

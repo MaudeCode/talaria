@@ -167,7 +167,10 @@ export const automationRouter = os.router({
       const sid = str(input.session_id).trim()
       if (!ctx.deps.sessions.owner) throw new HttpError(503, 'Native owner connection unavailable')
       const native = await ctx.deps.sessions.owner.terminal(sid)
-      if (native) return { ok: true as const, mode: 'owner_command' as const, session_id: sid, workspace: str(native.snap.info.cwd), running: false as const, target_key: native.key }
+      if (native) {
+        ctx.deps.terminals.close(sid)
+        return { ok: true as const, mode: 'owner_command' as const, session_id: sid, workspace: str(native.snap.info.cwd), running: false as const, target_key: native.key }
+      }
       const { workspace, profile } = (await terminalSession(ctx, sid))
       let cwd: string
       // Python answered `resolve_trusted_workspace`'s ValueError text unsanitised.
