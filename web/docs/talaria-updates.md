@@ -228,6 +228,12 @@ preserves unresolved required acknowledgements. Opening a notification is distin
 only its explicit acknowledging action satisfies that requirement. Semantic destinations such as
 `settings.system` are mapped by each client to its native route and never carry arbitrary URLs or code.
 
+The browser polls this list every 2 seconds while an update is active or presents a dialog, a local update
+start is unresolved, or the notification center is open. Otherwise it uses a 30-second fallback, including
+when the history is empty, so externally created notices and new builds remain discoverable. Opening the
+center, beginning or settling an update, notification writes, focus, reconnect, and service-worker takeover
+recheck immediately. Hidden tabs do not poll in the background, and offline reads wait for reconnect.
+
 ### Updating dialog
 
 **Update Web** and **Update Agent** in Settings > System open an **Updating** dialog for the clicked target

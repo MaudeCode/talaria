@@ -52,8 +52,8 @@ interface Tracking {
 }
 /** The tab's server record as of now; a rejoin of the same record changes only its join time. */
 const recordKey = (row: UpdateNotification | null, joinedAt: string | null) => row ? `${row.id}@${row.updated_at}@${joinedAt ?? ''}` : null
-/** A lost connection leaves the apply outcome unknown; any other answer came from the server. */
-const lostServer = (error: unknown) => isApiError(error) ? error.kind === 'network' || error.kind === 'timeout' || [502, 503, 504].includes(error.status) : true
+/** A lost connection or server failure leaves the apply outcome unknown until a notification read reconciles it. */
+const lostServer = (error: unknown) => isApiError(error) ? error.kind === 'network' || error.kind === 'timeout' || (error.status >= 500 && error.status < 600) : true
 /** How long an outcome that closes by itself (`dialog_close: 'auto'`) stays readable. */
 const AUTO_CLOSE_MS = 2_500
 
@@ -67,8 +67,18 @@ export function UpdateNotificationProvider({ children }: { children: ReactNode }
   const visiblePersistent = useRef(new Set<string>())
   const visibleServerToasts = useRef(new Set<string>())
   const persistentVersions = useRef(new Map<string, string>())
-  const notifications = useQuery({ queryKey: keys.updateNotifications, queryFn: api.fetchUpdateNotifications, staleTime: 1_000, refetchInterval: 2_000 })
   const [tracking, setTracking] = useState<Tracking | null>(null)
+  const notifications = useQuery({
+    queryKey: keys.updateNotifications, queryFn: api.fetchUpdateNotifications, staleTime: 1_000,
+    refetchOnWindowFocus: 'always', refetchOnReconnect: 'always',
+    refetchInterval: (query) => {
+      const data = query.state.data
+      // Only transport cadence is local; the server owns whether an operation is active or presents a dialog.
+      const active = data?.tab_update?.active || data?.tab_update?.presents_dialog
+        || data?.notifications.some((row) => row.active || row.presents_dialog)
+      return open || (tracking !== null && tracking.message === null) || active ? 2_000 : 30_000
+    },
+  })
   // The record whose dialog is open. The server opens it (`presents_dialog`); it stays open on that record until the
   // record's `dialog_close` lets the user close it, or closes it by itself.
   const [following, setFollowing] = useState<string | null>(null)
@@ -93,7 +103,11 @@ export function UpdateNotificationProvider({ children }: { children: ReactNode }
   // The dialog replaces this record's phase toasts while it shows them.
   const shownRowId = dialogRowId
   const progress = useMemo<UpdateProgress>(() => ({
-    begin: (target) => { setFollowing(null); setTracking({ target, baseline: recordKey(tabUpdate, tabJoinedAt), notificationId: null, lostAt: null, message: null }) },
+    begin: (target) => {
+      setFollowing(null)
+      setTracking({ target, baseline: recordKey(tabUpdate, tabJoinedAt), notificationId: null, lostAt: null, message: null })
+      void qc.invalidateQueries({ queryKey: keys.updateNotifications })
+    },
     settle: (target, outcome) => {
       setTracking((current) => {
         if (current?.target !== target) return current
@@ -238,6 +252,7 @@ export function UpdateNotificationProvider({ children }: { children: ReactNode }
 
   const show = () => {
     setOpen(true)
+    void qc.invalidateQueries({ queryKey: keys.updateNotifications })
     for (const row of rows) if (row.unread) markRead(row)
   }
 

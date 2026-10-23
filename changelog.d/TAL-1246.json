@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Reduce background notification requests while idle, with prompt update progress and reconnection checks.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
