@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Update Web request handling with upstream security fixes.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
