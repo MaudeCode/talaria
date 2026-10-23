@@ -231,7 +231,7 @@ export async function contractFetch(req: Request, dedupe: boolean): Promise<Resp
     headers.set('X-Hermes-CSRF-Token', state.csrfToken)
   }
   const idempotent = req.method === 'GET' || req.method === 'HEAD'
-  const body = idempotent ? null : await req.text()
+  const body = idempotent || req.body === null ? null : await req.text()
   // Identical in-flight GETs share one transport call until the next mutation (legacy HWEB-43 coalescing).
   const dedupeKey = idempotent && dedupe ? `${req.method} ${url.href} @${state.mutationSeq} contract` : null
   // Followers share the leader's *processed* outcome (401 redirect, ApiError envelope), never the raw transport promise.
