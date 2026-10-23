@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Typing in settings, workspace names, and catalog searches stays responsive without refreshing unchanged rows.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
