@@ -6,9 +6,10 @@
  */
 import { memo, use, useEffect, useMemo, useRef, useState } from 'react'
 import { Streamdown, type LinkSafetyConfig, type LinkSafetyModalProps } from 'streamdown'
-import { code } from '@streamdown/code'
 import { cjk } from '@streamdown/cjk'
 import { appUrl } from '../../../lib/appRoot'
+import { CodeBlock } from './CodeBlock'
+import { code, HIGHLIGHTED_LANGUAGES } from './codeHighlight'
 import { JsonCodeBlock } from './JsonCodeBlock'
 import { LinkCheckContext, type LinkCheck } from './LinkCheckContext'
 import type { MarkdownProps } from './Markdown'
@@ -17,7 +18,10 @@ import { Dialog } from '../../../ui/Dialog'
 import { Button } from '../../../ui/Button'
 import { m } from '../../../paraglide/messages.js'
 
-const PLUGINS = { code, cjk, renderers: [{ language: 'json', component: JsonCodeBlock }] }
+// Streamdown checks renderers before Mermaid, so `mermaid` keeps its diagram; unlabeled fences fall back to `code`.
+const OWN_RENDERERS = new Set(['json', 'mermaid', 'mmd'])
+const CODE_LANGUAGES = HIGHLIGHTED_LANGUAGES.filter((language) => !OWN_RENDERERS.has(language))
+const PLUGINS = { code, cjk, renderers: [{ language: 'json', component: JsonCodeBlock }, { language: CODE_LANGUAGES, component: CodeBlock }] }
 const loadMermaid = () => import('@streamdown/mermaid').then(({ mermaid }) => mermaid)
 const loadMath = () => Promise.all([import('@streamdown/math'), import('katex/dist/katex.min.css')]).then(([{ math }]) => math)
 
