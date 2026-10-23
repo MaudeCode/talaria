@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Chat refresh indicators stay visible for their minimum display duration.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

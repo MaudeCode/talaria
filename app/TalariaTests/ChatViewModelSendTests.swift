@@ -187,15 +187,36 @@ extension ChatViewModelSendTests {
 @MainActor
 extension ChatViewModelSendTests {
     func testOrdinarySyncPillKeepsItsMinimumVisibleHold() async throws {
-        let (viewModel, _, window, requests) = try await makeHeldSyncChat(host: "ordinary-sync-hold.test")
+        let clock = DelayedStatusTestClock()
+        let (viewModel, _, window, requests) = try await makeHeldSyncChat(
+            host: "ordinary-sync-hold.test", timing: clock.timing)
         let reload = Task { await viewModel.loadMessages() }
+        let waitingToShow = await awaitCondition { clock.nextDeadline != nil }
+        XCTAssertTrue(waitingToShow)
+        XCTAssertNil(HostedAccessibility.element(in: window, label: "Syncing messages with the server"))
+        let showDeadline = try XCTUnwrap(clock.nextDeadline)
+        clock.advance(to: showDeadline.addingTimeInterval(-0.01))
+        settle(0.05)
+        XCTAssertNil(HostedAccessibility.element(in: window, label: "Syncing messages with the server"))
+        clock.advance(to: showDeadline)
         _ = try await requireElement(in: window, label: "Syncing messages with the server")
+        // A slow response may arrive after the original visible hold has elapsed.
+        try await Task.sleep(for: .milliseconds(500))
         requests.request(at: 1).complete(withJSON: Self.hostedSyncTranscript)
         await reload.value
         XCTAssertFalse(viewModel.isSyncingTranscript)
         settle(0.05)
         XCTAssertNotNil(HostedAccessibility.element(in: window, label: "Syncing messages with the server"),
                         "Ordinary completion must honor the minimum-visible hold instead of flashing the sync pill.")
+        let waitingToHide = await awaitCondition { clock.nextDeadline != nil }
+        XCTAssertTrue(waitingToHide)
+        let holdDeadline = try XCTUnwrap(clock.nextDeadline)
+        XCTAssertEqual(holdDeadline.timeIntervalSince(showDeadline), DelayedStatusVisibility.minimumVisibleDuration,
+                       accuracy: 0.0001)
+        clock.advance(to: holdDeadline.addingTimeInterval(-0.01))
+        settle(0.05)
+        XCTAssertNotNil(HostedAccessibility.element(in: window, label: "Syncing messages with the server"))
+        clock.advance(to: holdDeadline)
         let cleared = await awaitNoElement(in: window) { $0.accessibilityLabel == "Syncing messages with the server" }
         XCTAssertTrue(cleared)
     }
@@ -242,7 +263,7 @@ extension ChatViewModelSendTests {
 
     private static let hostedSyncTranscript = #"{"session":{"session_id":"session-abc","messages":[{"role":"user","content":"Earlier question","message_id":"earlier-user"},{"role":"assistant","content":"Earlier answer","message_id":"earlier-answer"}]}}"#
 
-    private func makeHeldSyncChat(host: String) async throws -> (ChatViewModel, SpySSEStreamingClient, UIWindow, DeferredRequests) {
+    private func makeHeldSyncChat(host: String, timing: DelayedStatusTiming = .live) async throws -> (ChatViewModel, SpySSEStreamingClient, UIWindow, DeferredRequests) {
         let fixture = try FixtureApp(for: self)
         let requests = DeferredRequests()
         DeferredMockURLProtocol.setOnRequest({ request in
@@ -270,7 +291,43 @@ extension ChatViewModelSendTests {
         let window = try hostWindow(NavigationStack {
             ChatView(session: summary, server: URL(string: "https://\(host)")!, onAPIError: { _ in },
                      loadsInitialMessages: false, viewModel: viewModel)
-        }.modelContainer(fixture.cache))
+        }.modelContainer(fixture.cache).environment(\.delayedStatusTiming, timing))
         return (viewModel, stream, window, requests)
+    }
+}
+
+/// Extends the fixture's controlled-response approach to the status clock.
+/// Cancellation removes sleepers when SwiftUI replaces an operation or view.
+@MainActor
+private final class DelayedStatusTestClock {
+    private var now = Date(timeIntervalSince1970: 1_770_000_000)
+    private var sleepers: [UUID: (Date, CheckedContinuation<Void, Error>)] = [:]
+    var nextDeadline: Date? { sleepers.values.map { $0.0 }.min() }
+    var timing: DelayedStatusTiming {
+        DelayedStatusTiming(now: { self.now }, sleepUntil: { try await self.sleep(until: $0) })
+    }
+
+    func advance(to date: Date) {
+        precondition(date >= now)
+        now = date
+        let ready = sleepers.filter { $0.value.0 <= now }
+        for (id, _) in ready {
+            sleepers.removeValue(forKey: id)?.1.resume()
+        }
+    }
+
+    private func sleep(until deadline: Date) async throws {
+        try Task.checkCancellation()
+        guard deadline > now else { return }
+        let id = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                sleepers[id] = (deadline, continuation)
+            }
+        } onCancel: {
+            Task { @MainActor in
+                self.sleepers.removeValue(forKey: id)?.1.resume(throwing: CancellationError())
+            }
+        }
     }
 }

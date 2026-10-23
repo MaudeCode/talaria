@@ -1,6 +1,21 @@
 import SwiftUI
 import TalariaKit
 
+/// Keeps policy time and its wake-up on the same clock. Hosted tests can hold
+/// that clock while transport and SwiftUI finish work on their own schedules.
+struct DelayedStatusTiming {
+    var now: @MainActor () -> Date
+    var sleepUntil: @MainActor (Date) async throws -> Void
+
+    static let live = Self(now: Date.init, sleepUntil: { deadline in
+        try await Task.sleep(for: .seconds(max(0, deadline.timeIntervalSinceNow)))
+    })
+}
+
+extension EnvironmentValues {
+    @Entry var delayedStatusTiming = DelayedStatusTiming.live
+}
+
 extension View {
     /// Mirrors `isActive` into `isVisible` through `DelayedStatusVisibility`, so a loading indicator
     /// shows only after the work has run for 400 ms and then stays at least 400 ms (TAL-436).
@@ -25,6 +40,7 @@ extension View {
 }
 
 private struct DelayedStatusModifier: ViewModifier {
+    @Environment(\.delayedStatusTiming) private var timing
     let isActive: Bool
     let resetGeneration: Int
     @Binding var isVisible: Bool
@@ -36,7 +52,8 @@ private struct DelayedStatusModifier: ViewModifier {
                 guard !Task.isCancelled else { return }
                 update()
                 while let deadline = status.nextDeadline {
-                    try? await Task.sleep(for: .seconds(max(0, deadline.timeIntervalSinceNow)))
+                    do { try await timing.sleepUntil(deadline) }
+                    catch { return }
                     guard !Task.isCancelled else { return }
                     update()
                 }
@@ -48,7 +65,7 @@ private struct DelayedStatusModifier: ViewModifier {
     }
 
     private func update() {
-        status.update(isActive: isActive, now: Date(), resetGeneration: resetGeneration)
+        status.update(isActive: isActive, now: timing.now(), resetGeneration: resetGeneration)
         if isVisible != status.isVisible {
             isVisible = status.isVisible
         }
