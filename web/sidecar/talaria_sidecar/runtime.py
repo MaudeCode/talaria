@@ -333,6 +333,8 @@ class AgentRuntime:
     def retire(self) -> None:
         """Release native background writes; only a fresh process may own them again."""
         with self._lock:
+            if self._handoff is None:
+                return
             self._retired = True
             self.loaded = False
             self._stop_handoff()

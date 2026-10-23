@@ -316,7 +316,8 @@ Agent provides it. It runs without a Nous chat or auth keepalive, including reta
 other profiles. The Agent owns account proof, locks, backoff and credential cleanup. Sidecar
 shutdown, source drift and dependency/source mutation retirement join the worker before releasing
 custody; retained work remains resumable by a fresh process. Missing modules on older Agents are
-supported, while a present worker that fails startup makes the Agent import incompatible.
+supported and skip worker retirement. Recovery acknowledges a matching ready runtime after reconnect
+before starting another repair. A present worker that fails startup makes the Agent import incompatible.
 OAuth and connector status reads do not dispatch retries.
 
 ## 5. Frontend

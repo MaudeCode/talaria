@@ -389,8 +389,6 @@ def test_importable_agent_is_not_rejected_for_an_unpinned_or_unknown_version(tmp
     runtime = AgentRuntime(tmp_path / "home", None)
     runtime.loaded = True
     runtime.revision = None
-    # Vary pin identity while the loaded and on-disk source stay in agreement.
-    monkeypatch.setattr("talaria_sidecar.runtime.read_agent_revision", lambda *_: runtime.revision)
     monkeypatch.setattr(type(runtime), "agent_version", property(lambda self: runtime.pin["version"]))
     assert runtime.describe()["compatible"] is True
     monkeypatch.setattr(type(runtime), "agent_version", property(lambda self: "0.0.0-other"))

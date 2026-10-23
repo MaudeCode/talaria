@@ -45,6 +45,8 @@ def test_older_agent_without_worker_still_loads(native, monkeypatch):
     runtime.load()
     assert runtime.loaded
     runtime.retire()
+    assert runtime.loaded
+    runtime.load()
     assert events == []
 
 

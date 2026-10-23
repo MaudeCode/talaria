@@ -1868,7 +1868,7 @@
     },
     "tests/test_recovery_environment.py::test_server_retry_refreshes_runtime_and_restores_agent_rpcs": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: server retry refreshes runtime and restores agent rpcs. Uses the real installed release, not a fabricated API response.",
+      "reason": "Real supported-Agent environment selection and stdio reconnect must complete server recovery and restore Agent RPCs. A synthetic optional-worker API exercises runtime retirement across the reconnect; source/dependency recovery and the server coordinator remain real.",
       "cases": [
         ""
       ]
