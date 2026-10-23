@@ -407,11 +407,37 @@ test('final-only mode retains recovered user steering', async ({ page }) => {
   await expect(page.getByText('Done.', { exact: true })).toBeVisible()
 })
 
-test('live label box covers its glyphs so the shimmer never clips descenders', async ({ page }) => {
+test('transcript loading sheen uses stepped timing in the built cascade', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  const gate = Promise.withResolvers<undefined>()
+  await page.route('**/api/session?**', async (route) => {
+    await gate.promise
+    await route.fulfill({ json: { session: { session_id: 'loading-sheen', title: 'Loading', messages: [{ role: 'user', id: 1, content: 'Hello' }] } } })
+  })
+  try {
+    await page.goto('/session/loading-sheen')
+    const sheen = page.locator('.skeleton-bar:not(.skeleton-role)').first()
+    await expect(sheen).toBeVisible()
+    await expect(sheen).toHaveCSS('animation-name', 'skeletonSheen')
+    await expect(sheen).toHaveCSS('animation-timing-function', 'steps(30)')
+    const properties = await sheen.evaluate((el) => el.getAnimations().flatMap((animation) => animation.effect instanceof KeyframeEffect ? animation.effect.getKeyframes().flatMap(Object.keys) : []))
+    expect(properties).toContain('backgroundPositionX')
+    expect(properties).not.toContain('boxShadow')
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await expect(sheen).toHaveCSS('animation-iteration-count', '1')
+  } finally {
+    gate.resolve(undefined)
+  }
+  await expect(page.getByTestId('transcript-skeleton')).toHaveCount(0)
+})
+
+test('live status animations use the built cascade and keep readable glyphs', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' })
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'live-label', title: 'Live label', messages: [{ role: 'user', id: 1, content: 'Hello' }], active_stream_id: 'label-run', pending_started_at: Date.now() / 1000 - 75 } } }))
   await page.route('**/api/chat/stream/status?**', (route) => route.fulfill({ json: { active: true, stream_id: 'label-run', replay_available: true } }))
+  let stream: ServerResponse | undefined
   const server = createServer((_request, response) => {
+    stream = response
     response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Access-Control-Allow-Origin': process.env.HERMES_E2E_BASE_URL!, 'Access-Control-Allow-Credentials': 'true' })
     response.write(`id: label-run:1\nevent: server_turn_started\ndata: ${JSON.stringify({ session_id: 'live-label', stream_id: 'label-run', user_message_id: 1 })}\n\n`)
   })
@@ -435,6 +461,30 @@ test('live label box covers its glyphs so the shimmer never clips descenders', a
       return { box: el.getBoundingClientRect().height, glyphs: m.fontBoundingBoxAscent + m.fontBoundingBoxDescent }
     })
     expect(box).toBeGreaterThanOrEqual(glyphs)
+    await expect(label).toHaveCSS('animation-timing-function', 'steps(30)')
+    stream!.write(`id: label-run:2\nevent: reasoning\ndata: ${JSON.stringify({ text: 'Checking files.' })}\n\n`)
+    const thinking = page.locator('.thinking-card-label')
+    await expect(thinking).toBeVisible()
+    await expect(thinking).toHaveCSS('animation-timing-function', 'steps(30)')
+    stream!.write(`id: label-run:3\nevent: tool\ndata: ${JSON.stringify({ id: 'inspect', name: 'terminal', args: { command: 'ls' } })}\n\n`)
+    await page.getByRole('button', { name: 'Running a tool', exact: true }).click()
+    const dot = page.locator('.tool-card-running-dot')
+    await expect(dot).toBeVisible()
+    await expect(page.locator('.tool-card-running .tool-card-name-label')).toHaveCSS('animation-timing-function', 'steps(30)')
+    await expect(dot).toHaveCSS('animation-name', 'none')
+    expect(await dot.evaluate((el) => getComputedStyle(el, '::after').animationName)).toBe('wlpulse')
+    // Inspect the browser's resolved animation effects, including the pseudo-element, after bundling and cascade.
+    const animations = await page.evaluate(() => document.getAnimations().filter((animation): animation is CSSAnimation => animation instanceof CSSAnimation && ['reasoning-title-glow', 'laurel-leaf', 'wlpulse'].includes(animation.animationName))
+      .map((animation) => ({ name: animation.animationName, properties: animation.effect instanceof KeyframeEffect ? [...new Set(animation.effect.getKeyframes().flatMap(Object.keys))] : [] })))
+    for (const name of ['reasoning-title-glow', 'laurel-leaf', 'wlpulse']) expect(animations.some((animation) => animation.name === name)).toBe(true)
+    for (const animation of animations) expect(animation.properties).not.toContain('boxShadow')
+    const pulse = animations.filter((animation) => animation.name === 'wlpulse')
+    expect(pulse).toHaveLength(1)
+    expect(pulse[0]!.properties.filter((property) => !['offset', 'computedOffset', 'easing', 'composite'].includes(property)).sort()).toEqual(['opacity', 'transform'])
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await expect(label).toHaveCSS('animation-name', 'none')
+    await expect(page.locator('.laurel-leaf').first()).toHaveCSS('animation-name', 'none')
+    expect(await dot.evaluate((el) => ({ animation: getComputedStyle(el, '::after').animationName, opacity: getComputedStyle(el, '::after').opacity }))).toEqual({ animation: 'none', opacity: '0' })
   } finally {
     server.closeAllConnections()
     await new Promise<void>((resolve) => server.close(() => resolve()))
