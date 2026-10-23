@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Improved reliability checks for chat synchronization indicators.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}
