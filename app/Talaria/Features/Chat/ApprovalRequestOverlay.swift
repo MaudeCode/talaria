@@ -8,17 +8,106 @@ struct ApprovalRequestOverlay: View {
     let errorMessage: String?
     let onChoice: (ApprovalChoice) -> Void
     let onSkipAll: () -> Void
+    @Environment(\.layoutDirection) private var layoutDirection
+    // Synthetic divisions let hosted tests exercise the same layout without device-pose state.
+    var divisionFrames: [CGRect]? = nil
 
     var body: some View {
         ZStack {
             Color.black.opacity(0.38)
                 .ignoresSafeArea()
 
-            VStack(alignment: .leading, spacing: 14) {
-                header
-                details
-                actions
+            GeometryReader { geometry in
+                let divisions = divisions(in: geometry)
+                if divisions.isEmpty {
+                    card { cardContent() }
+                        .padding(.horizontal, 18)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    FoldAvoidingCardLayout(divisions: divisions, layoutDirection: layoutDirection) {
+                        card {
+                            ViewThatFits(in: .vertical) {
+                                cardContent()
+                                cardContent(scrollsDetails: true)
+                            }
+                        }
+                    }
+                }
             }
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private func cardContent(scrollsDetails: Bool = false) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            header
+            if scrollsDetails {
+                ScrollView { details }
+            } else {
+                details
+            }
+            actions
+        }
+    }
+
+    private func divisions(in geometry: GeometryProxy) -> [CGRect] {
+        if let divisionFrames { return divisionFrames }
+        if #available(iOS 27.1, *) {
+            return geometry.reservedRegions(kind: .division, layoutDirectionBehavior: .fixed)
+                .filter(\.isActive).map(\.frame)
+        }
+        return []
+    }
+
+    static func availableFrame(in bounds: CGRect, divisions: [CGRect], layoutDirection: LayoutDirection) -> CGRect {
+        divisions.reduce(bounds) { available, division in
+            let fold = bounds.intersection(division)
+            guard !fold.isNull, fold.width > 0, fold.height > 0 else { return available }
+            if fold.height > fold.width {
+                if layoutDirection == .rightToLeft {
+                    return available.intersection(CGRect(x: bounds.minX, y: bounds.minY,
+                        width: fold.minX - bounds.minX, height: bounds.height))
+                }
+                return available.intersection(CGRect(x: fold.maxX, y: bounds.minY,
+                    width: bounds.maxX - fold.maxX, height: bounds.height))
+            }
+            return available.intersection(CGRect(x: bounds.minX, y: bounds.minY,
+                width: bounds.width, height: fold.minY - bounds.minY))
+        }
+    }
+
+    static func cardFrame(in bounds: CGRect, divisions: [CGRect], cardSize: CGSize,
+                          layoutDirection: LayoutDirection = .leftToRight) -> CGRect {
+        let available = availableFrame(in: bounds, divisions: divisions, layoutDirection: layoutDirection)
+        guard !available.isNull else { return CGRect(origin: bounds.origin, size: .zero) }
+        let width = min(520, max(0, available.width - 36))
+        let height = min(cardSize.height, available.height)
+        return CGRect(x: available.midX - width / 2, y: available.midY - height / 2, width: width, height: height)
+    }
+
+    private struct FoldAvoidingCardLayout: Layout {
+        let divisions: [CGRect]
+        let layoutDirection: LayoutDirection
+
+        func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+            proposal.replacingUnspecifiedDimensions()
+        }
+
+        func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+            guard let card = subviews.first else { return }
+            let available = ApprovalRequestOverlay.availableFrame(in: bounds, divisions: divisions, layoutDirection: layoutDirection)
+            guard !available.isNull else { return }
+            let offeredFrame = ApprovalRequestOverlay.cardFrame(in: bounds, divisions: divisions,
+                cardSize: available.size, layoutDirection: layoutDirection)
+            let size = card.sizeThatFits(ProposedViewSize(width: offeredFrame.width, height: offeredFrame.height))
+            let frame = ApprovalRequestOverlay.cardFrame(in: bounds, divisions: divisions, cardSize: size, layoutDirection: layoutDirection)
+            card.place(at: CGPoint(x: frame.midX, y: frame.midY), anchor: .center,
+                       proposal: ProposedViewSize(width: frame.width, height: frame.height))
+        }
+    }
+
+    private func card<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        content()
             .padding(16)
             .frame(maxWidth: 520, alignment: .leading)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -27,9 +116,6 @@ struct ApprovalRequestOverlay: View {
                     .stroke(.primary.opacity(0.10), lineWidth: 1)
             )
             .shadow(color: .black.opacity(0.22), radius: 18, x: 0, y: 12)
-            .padding(.horizontal, 18)
-        }
-        .accessibilityElement(children: .contain)
     }
 
     private var header: some View {
