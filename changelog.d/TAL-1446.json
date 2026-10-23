@@ -1,0 +1,3 @@
+{
+  "skip": "Update the signing-profile download action for the existing Xcode toolchain; no shipped app behavior changes."
+}
