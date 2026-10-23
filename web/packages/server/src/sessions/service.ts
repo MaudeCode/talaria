@@ -2792,9 +2792,12 @@ export class SessionService {
     return this.store.withLock(input.session_id, async () => {
       const { session, transcript } = await this.fullTranscript(input.session_id)
       const calls = withToolCallOutcomes(transcript, session.tool_calls, null).flatMap((m) => Array.isArray(m.tool_calls) ? m.tool_calls as Record<string, unknown>[] : [])
-      const call = calls.findLast((c) => c.id === input.tool_call_id)
+      const call = calls.findLast((c) => {
+        const candidate = (c.result_view as ToolResultView | undefined)?.outbound_draft
+        return c.id === input.tool_call_id && candidate?.draft_id === input.draft_id && candidate.card === input.card
+      })
       const ref = (call?.result_view as ToolResultView | undefined)?.outbound_draft
-      if (ref?.draft_id !== input.draft_id || ref.card !== input.card) throw new HttpFailure(404, 'Draft tool result not found')
+      if (!ref) throw new HttpFailure(404, 'Draft tool result not found')
       const action = input.action ?? 'read'
       if (action !== 'read') await this.assertWritable(session)
       const sidecar = this.deps.sidecar?.()

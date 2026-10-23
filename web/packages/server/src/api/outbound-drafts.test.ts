@@ -94,3 +94,25 @@ it('reconciles a lost acknowledgment by reading confirmed state without repeatin
   expect(await (await b.read()).json()).toMatchObject({ draft: { state: 'approved', can_approve: false } })
   expect(b.sidecar.calls.filter((c) => c.method === 'drafts.review' && (c.params as { action: string }).action === 'approve')).toHaveLength(1)
 })
+
+it('keeps both drafts reviewable and approves the right artifact when a provider reuses a tool-call ID', async () => {
+  const b = await backend()
+  const older = b.draft()
+  const newer: OutboundDraft = { ...older, draft_id: 'd_abcdef12', revision: 'newer-artifact', fields: { ...older.fields, body: 'A different draft' } }
+  b.session.messages.push(
+    { role: 'assistant', content: '', tool_calls: [{ id: 'draft-tool', type: 'function', function: { name: 'draft_card', arguments: '{}' } }] },
+    { role: 'tool', tool_call_id: 'draft-tool', content: JSON.stringify({ draft_id: newer.draft_id, version: 1, card: `::draft-card{id="${newer.draft_id}" v="1"}` }) },
+  )
+  await server!.deps.sessionStore.save(b.session)
+  const approved: string[] = []
+  b.sidecar.respond('drafts.review', (params) => {
+    const draft = params.draft_id === older.draft_id ? older : newer
+    if (params.action === 'approve') approved.push(params.draft_id)
+    return { draft }
+  })
+  expect((await b.read()).status, 'The newer call with the same ID must not hide the older artifact').toBe(200)
+  expect(await (await b.read({ draft_id: newer.draft_id })).json()).toEqual({ draft: newer })
+  expect((await b.act('approve')).status).toBe(200)
+  expect((await b.act('approve', newer.version, newer.revision, { draft_id: newer.draft_id })).status).toBe(200)
+  expect(approved).toEqual([older.draft_id, newer.draft_id])
+})
