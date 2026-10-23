@@ -2,12 +2,14 @@ import { beforeEach, expect, it, vi } from 'vitest'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 vi.mock(import('../../api/endpoints'), async (original) => ({ ...(await original()), updateSession: vi.fn(), ownerAction: vi.fn() }))
+vi.mock(import('../toast/toast'), async (original) => ({ ...(await original()), showToast: vi.fn() }))
 import * as api from '../../api/endpoints'
 import { sessionFixture } from '../../test/fixtures'
 import { ApiError } from '../../contracts/common'
 import { teardownAll } from '../../stream/connection'
 import type { OwnerAttachment } from '@maudecode/talaria-web-contracts'
 import { useSessionUpdate } from './useSessionUpdate'
+import { showToast } from '../toast/toast'
 import { useResourceEffects } from '../sessions/useResourceMutation'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 const refresh = vi.fn(() => Promise.resolve())
@@ -159,4 +161,22 @@ it('shows the picked model at once, keeps it while confirming, and Cancel rolls 
   expect(screen.getByLabelText('chip')).toHaveTextContent('contributor')
   await userEvent.click(screen.getByText('Cancel'))
   await waitFor(() => expect(screen.getByLabelText('chip')).toHaveTextContent('old'))
+})
+
+function WorkspaceChip() {
+  const { updateSession } = useSessionUpdate('s1', refresh)
+  const workspace = useResourceEffects()['session:s1']?.fields?.workspace
+  return <><button onClick={() => { updateSession({ workspace: '/srv/beta' }) }}>Pick workspace</button><output aria-label="chip">{typeof workspace === 'string' ? workspace : '/srv/alpha'}</output></>
+}
+it('shows the picked workspace at once and rolls a refusal back with the error (TAL-1384)', async () => {
+  let refuse!: (error: unknown) => void
+  vi.mocked(api.updateSession).mockReturnValueOnce(new Promise((_, reject) => { refuse = reject }) as never)
+  render(<QueryClientProvider client={client}><WorkspaceChip /></QueryClientProvider>)
+  await userEvent.click(screen.getByText('Pick workspace'))
+  await waitFor(() => expect(screen.getByLabelText('chip')).toHaveTextContent('/srv/beta'))
+  expect(api.updateSession).toHaveBeenCalledWith('s1', { workspace: '/srv/beta' })
+  await act(async () => { refuse(new ApiError({ kind: 'http', status: 400, path: '/api/session/update', message: 'Workspace is not allowed' })); await Promise.resolve() })
+  await waitFor(() => expect(screen.getByLabelText('chip')).toHaveTextContent('/srv/alpha'))
+  expect(showToast).toHaveBeenCalledWith('Workspace is not allowed', 4000, 'error')
+  expect(screen.queryByRole('alertdialog')).toBeNull()
 })
