@@ -22,14 +22,18 @@ export async function revokeDevicesForSession(
       pushToStartIssuedAt: undefined,
       updatedAt: now,
     });
-    const activities = await ctx.db
-      .query("liveActivities")
-      .withIndex("by_user_id_and_device_id_and_mode_and_ended_at", (query) =>
-        query.eq("userId", userId).eq("deviceId", device.deviceId),
-      )
-      .collect();
-    for (const activity of activities) {
-      if (activity.endedAt === undefined) {
+    for (const mode of ["per_session", "all_running"] as const) {
+      const activities = await ctx.db
+        .query("liveActivities")
+        .withIndex("by_user_id_and_device_id_and_mode_and_ended_at", (query) =>
+          query
+            .eq("userId", userId)
+            .eq("deviceId", device.deviceId)
+            .eq("mode", mode)
+            .eq("endedAt", undefined),
+        )
+        .collect();
+      for (const activity of activities) {
         await ctx.db.patch(activity._id, { endedAt: now, updatedAt: now });
       }
     }

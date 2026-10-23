@@ -1455,6 +1455,113 @@ describe("Convex relay state", () => {
     });
   });
 
+  it.each(["sign-out", "expiry"] as const)("%s queries only open activities before revoking session devices", async (trigger) => {
+    const backend = testBackend();
+    const now = Date.now();
+    await backend.run(async (ctx) => {
+      await ctx.db.insert("userSessions", {
+        userId: "user-1", sessionId: "session-1", tokenHash: "session-token",
+        expiresAt: trigger === "expiry" ? now - 1 : now + 60_000,
+        createdAt: now - 2_000,
+      });
+      for (const [userId, deviceId, sessionId] of [
+        ["user-1", "device-1", "session-1"],
+        ["user-1", "device-2", "session-1"],
+        ["user-1", "device-3", "other-session"],
+        ["user-2", "device-1", "session-1"],
+      ] as const) {
+        await ctx.db.insert("devices", {
+          userId, deviceId, sessionId, label: "iPhone",
+          pushToken: "push-token", pushToStartToken: "start-token",
+          pushToStartIssuedAt: now - 2_000,
+          preferences: defaultNotificationPreferences,
+          createdAt: now - 2_000, updatedAt: now - 2_000,
+        });
+        for (const mode of ["per_session", "all_running"] as const) {
+          // More than 100 open rows per mode catches silent revocation caps.
+          for (let index = 0; index < 181; index += 1) {
+            const endedAt = index < 80 ? now - 1_000 : undefined;
+            await ctx.db.insert("liveActivities", {
+              userId, deviceId, mode, activityId: `${mode}-${index}`,
+              attributesType: "TalariaAggregateActivityAttributes", schemaVersion: 1,
+              activityPushToken: `${userId}-${deviceId}-${mode}-${index}`,
+              endedAt, createdAt: now - 2_000, updatedAt: endedAt ?? now - 2_000,
+            });
+          }
+        }
+      }
+    });
+    const before = await backend.run(async (ctx) => ({
+      devices: await ctx.db.query("devices").collect(),
+      activities: await ctx.db.query("liveActivities").collect(),
+    }));
+    // Observe the real Convex query plan without replacing its database execution.
+    const convex = (globalThis as unknown as {
+      Convex: { syscall: (op: string, args: string) => string };
+    }).Convex;
+    const syscall = vi.fn<(op: string, args: string) => string>();
+    await backend.run(async () => { syscall.mockImplementation(convex.syscall); });
+    const syscallGetter = vi.spyOn(convex as { syscall: unknown }, "syscall", "get")
+      .mockReturnValue(syscall);
+    try {
+      if (trigger === "sign-out") {
+        await expect(backend.mutation(internal.auth.revokeSession, {
+          tokenHash: "session-token", now,
+        })).resolves.toEqual({ ok: true });
+      } else {
+        await expect(backend.mutation(internal.cleanup.prune, {})).resolves.toEqual({
+          deleted: 1, revokedDevices: 2,
+        });
+      }
+    } finally {
+      syscallGetter.mockRestore();
+    }
+    const after = await backend.run(async (ctx) => ({
+      devices: await ctx.db.query("devices").collect(),
+      activities: await ctx.db.query("liveActivities").collect(),
+    }));
+    for (const device of before.devices) {
+      const current = after.devices.find((row) => row._id === device._id)!;
+      const matched = device.userId === "user-1" && device.sessionId === "session-1";
+      expect(current).toEqual(matched ? {
+        ...device, revokedAt: expect.any(Number), updatedAt: current.revokedAt,
+        pushToken: undefined, pushToStartToken: undefined, pushToStartIssuedAt: undefined,
+      } : device);
+    }
+    expect(after.activities).toHaveLength(before.activities.length);
+    for (const activity of before.activities) {
+      const current = after.activities.find((row) => row._id === activity._id)!;
+      const device = after.devices.find((row) =>
+        row.userId === activity.userId && row.deviceId === activity.deviceId,
+      )!;
+      const matched = device.userId === "user-1" && device.sessionId === "session-1";
+      expect(current).toEqual(matched && activity.endedAt === undefined
+        ? { ...activity, endedAt: device.revokedAt, updatedAt: device.revokedAt }
+        : activity);
+    }
+    const activityQueries = syscall.mock.calls
+      .filter(([op]) => op === "1.0/queryStream")
+      .map(([, args]) => JSON.parse(args).query)
+      .filter((query) => query.source.indexName ===
+        "liveActivities.by_user_id_and_device_id_and_mode_and_ended_at");
+    expect(activityQueries).toEqual(["device-1", "device-2"].flatMap((deviceId) =>
+      ["per_session", "all_running"].map((mode) => ({
+        source: {
+          type: "IndexRange",
+          indexName: "liveActivities.by_user_id_and_device_id_and_mode_and_ended_at",
+          range: [
+            { type: "Eq", fieldPath: "userId", value: "user-1" },
+            { type: "Eq", fieldPath: "deviceId", value: deviceId },
+            { type: "Eq", fieldPath: "mode", value: mode },
+            { type: "Eq", fieldPath: "endedAt", value: { $undefined: null } },
+          ],
+          order: null,
+        },
+        operators: [],
+      })),
+    ));
+  });
+
   it("sums revoked devices across expired sessions including empty sessions", async () => {
     const backend = testBackend();
     const now = Date.now();

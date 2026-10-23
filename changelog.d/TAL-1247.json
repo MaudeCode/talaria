@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Signing out and expiring Relay sessions avoid scanning ended Live Activity history.",
+      "highlight": false,
+      "components": ["relay"]
+    }
+  ]
+}
