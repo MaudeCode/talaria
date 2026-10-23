@@ -12,6 +12,7 @@ import type { ServerConfig } from './config.js'
 import { fixCredentialPermissions, warnUnauthenticatedBind } from './startup.js'
 import { stopStateDbWorker } from './sessions/state-db.js'
 import { closeTranscribeStreams } from './api/transcribe-stream.js'
+import { watchRetirement } from './cli/supervise.js'
 
 export async function isAlreadyServing(host: string, port: number): Promise<boolean> {
   const probeHost = ['0.0.0.0', '', '::'].includes(host) ? '127.0.0.1' : host
@@ -85,37 +86,35 @@ export async function startServer(app: App, config: ServerConfig, opts: { log?: 
   log(`  Talaria Web listening on ${scheme}://${config.host}:${port}`)
   await warnUnauthenticatedBind(config.host, typeof address === 'object' && address ? address.address : config.host, app.deps.auth, log)
   const close = async () => {
+    // One failed step must not skip the persistence after it; each failure is logged and fails the close.
+    const failures: string[] = []
+    const settle = async (step: string, work: () => Promise<unknown> | undefined): Promise<void> => {
+      try { await work() } catch (error) {
+        failures.push(step)
+        log(`[webui] shutdown: ${step} failed: ${(error as Error).message}`)
+      }
+    }
     app.deps.updates.stopAutoApply()
     // TAL-953: start no post-update gateway restart, and let one in flight finish before the sidecar goes away.
-    const gatewayRestarts = app.deps.gatewayRestarts.quiesce()
-    const hygiene = app.deps.hygiene.stop()
+    const gatewayRestarts = settle('gateway restart', () => app.deps.gatewayRestarts.quiesce())
+    // A retention sweep finishes its current file step before the process exits.
+    const hygiene = settle('retention sweep', () => app.deps.hygiene.stop())
     await new Promise<void>((resolve) => {
       server.close(() => { resolve() })
       server.closeAllConnections()
       // Upgraded sockets left the HTTP server's connection list.
       closeTranscribeStreams()
     })
-    // A retention sweep finishes its current file step before the process exits.
     await hygiene
     await gatewayRestarts
     // Auth state is persisted write-behind: land pending session and login-attempt writes before the process exits.
-    await app.deps.auth.flushPersistence()
-    await stopStateDbWorker()
-    await app.deps.sessions.owner?.close()
-    await app.deps.sessionStore.close()
+    await settle('auth persistence', () => app.deps.auth.flushPersistence())
+    await settle('state database', () => stopStateDbWorker())
+    await settle('session owner', () => app.deps.sessions.owner?.close())
+    await settle('session store', () => app.deps.sessionStore.close())
+    if (failures.length) throw new Error(`shutdown incomplete: ${failures.join(', ')}`)
   }
-  if (opts.signals ?? true) {
-    let requested = false
-    const onSignal = (signal: NodeJS.Signals) => {
-      if (requested) return
-      requested = true
-      log(`[webui] ${signal} received; shutting down`)
-      void close().then(() => { process.exit(0) })
-    }
-    process.once('SIGTERM', onSignal)
-    process.once('SIGINT', onSignal)
-    // The `serve` supervisor forwards SIGHUP too; its default action would exit before auth writes land.
-    process.once('SIGHUP', onSignal)
-  }
+  // SIGHUP is handled too: its default action would exit before auth writes land.
+  if (opts.signals ?? true) watchRetirement({ log }).attach(close)
   return { server, scheme, port, close }
 }

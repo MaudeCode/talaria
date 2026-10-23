@@ -3,6 +3,15 @@
  * (Python `os.execv`; Node has no in-place exec). The supervisor keeps the PID
  * that ctl, launchd, and systemd track, forwards signals, and respawns only
  * when the child requests a restart, or once after an updated worker fails before readiness.
+ *
+ * Lifetime contract (TAL-1432): a worker never outlives its supervisor holding the port.
+ * - The supervisor forwards the first stop signal once, kills its own worker if it has not exited
+ *   within `stopGraceMs`, and returns or respawns only after that worker's `close`.
+ * - The worker (`watchRetirement`) retires on a stop signal or when its IPC supervisor disconnects:
+ *   before its close path exists it exits at once; after, it stops listening, drains, and exits
+ *   within `WORKER_SHUTDOWN_MS`, which is shorter than the supervisor's grace.
+ * A process stuck in an uninterruptible kernel wait ignores SIGKILL too; the supervisor then keeps
+ * waiting rather than start a successor that cannot bind.
  */
 import { spawn } from 'node:child_process'
 import { existsSync, renameSync, rmSync } from 'node:fs'
@@ -12,6 +21,8 @@ import { homeDotenvKeys, setHomeDotenvKeys } from './dotenv.js'
 
 export const RESTART_EXIT_CODE = 75
 export const WORKER_ENV = 'TALARIA_WEB_WORKER'
+export const WORKER_SHUTDOWN_MS = 10_000
+export const STOP_GRACE_MS = 15_000
 
 export interface SuperviseOptions {
   command: string[]
@@ -21,6 +32,8 @@ export interface SuperviseOptions {
   stateDir?: string
   /** Milliseconds between a restart exit and the respawn (port release). */
   restartDelayMs?: number
+  /** Milliseconds a stopping worker may take before the supervisor kills it. */
+  stopGraceMs?: number
 }
 
 export async function supervise(opts: SuperviseOptions): Promise<number> {
@@ -51,13 +64,30 @@ export async function supervise(opts: SuperviseOptions): Promise<number> {
         } catch (error) { opts.log(`[serve] could not finish update recovery cleanup: ${(error as Error).message}`) }
       }
     })
-    const forward = (signal: NodeJS.Signals) => (): void => { stopping = true; child.kill(signal) }
+    let killTimer: NodeJS.Timeout | undefined
+    const forward = (signal: NodeJS.Signals) => (): void => {
+      // The worker shuts down once; repeating the signal would only cut its cleanup short.
+      if (stopping) return
+      stopping = true
+      child.kill(signal)
+      const graceMs = opts.stopGraceMs ?? STOP_GRACE_MS
+      killTimer = setTimeout(() => {
+        opts.log(`[serve] worker ${String(child.pid)} did not exit within ${String(graceMs)} ms of ${signal}; killing it`)
+        child.kill('SIGKILL')
+      }, graceMs)
+    }
     const handlers: [NodeJS.Signals, () => void][] = [['SIGTERM', forward('SIGTERM')], ['SIGINT', forward('SIGINT')], ['SIGHUP', forward('SIGHUP')]]
     for (const [signal, handler] of handlers) process.on(signal, handler)
     const code = await new Promise<number>((resolve) => {
       child.on('close', (status, signal) => { resolve(status ?? (signal ? 128 + (signal === 'SIGKILL' ? 9 : 15) : 1)) })
-      child.on('error', (error) => { opts.log(`[serve] worker failed to start: ${error.message}`); resolve(1) })
+      child.on('error', (error) => {
+        // A started worker still owns its port: wait for its close rather than return or respawn beside it.
+        if (child.pid !== undefined) { opts.log(`[serve] worker error: ${error.message}`); return }
+        opts.log(`[serve] worker failed to start: ${error.message}`)
+        resolve(1)
+      })
     })
+    clearTimeout(killTimer)
     for (const [signal, handler] of handlers) process.off(signal, handler)
     if (stopping) return code
     if (code !== RESTART_EXIT_CODE) {
@@ -83,5 +113,61 @@ export async function supervise(opts: SuperviseOptions): Promise<number> {
     afterRestart = true
     opts.log('[serve] restarting the server with the updated source')
     await new Promise((r) => setTimeout(r, opts.restartDelayMs ?? 500))
+  }
+}
+
+export interface Retirement {
+  readonly retiring: boolean
+  /** Registers the shared close path once the server is listening. */
+  attach: (close: () => Promise<void>) => void
+}
+
+export interface RetirementOptions {
+  log: (line: string) => void
+  /** Also retire when the IPC supervisor disconnects or is already gone. */
+  supervised?: boolean
+  deadlineMs?: number
+  exit?: (code: number) => void
+  /** Signal and IPC event source; tests substitute an emitter. */
+  events?: NodeJS.EventEmitter & { connected?: boolean }
+}
+
+/** Retires the server on SIGTERM/SIGINT/SIGHUP and, for a supervised worker, on loss of its supervisor. */
+export function watchRetirement(opts: RetirementOptions): Retirement {
+  const events = opts.events ?? process
+  const exit = opts.exit ?? ((code: number) => { process.exit(code) })
+  const deadlineMs = opts.deadlineMs ?? WORKER_SHUTDOWN_MS
+  let close: (() => Promise<void>) | null = null
+  let retiring = false
+  let exited = false
+  const finish = (code: number): void => { if (!exited) { exited = true; exit(code) } }
+  const run = (shutdown: () => Promise<void>): void => {
+    const timer = setTimeout(() => {
+      opts.log(`[webui] shutdown did not finish within ${String(deadlineMs)} ms; exiting`)
+      finish(1)
+    }, deadlineMs)
+    void Promise.resolve().then(shutdown).then(
+      () => { clearTimeout(timer); finish(0) },
+      (error: unknown) => { clearTimeout(timer); opts.log(`[webui] shutdown failed: ${(error as Error).message}`); finish(1) },
+    )
+  }
+  const retire = (reason: string): void => {
+    if (retiring) return
+    retiring = true
+    opts.log(`[webui] ${reason}; shutting down`)
+    // Nothing has been served before the close path exists.
+    if (close) run(close)
+    else finish(0)
+  }
+  for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP'] as const) events.on(signal, () => { retire(`${signal} received`) })
+  if (opts.supervised) {
+    events.on('disconnect', () => { retire('supervisor disconnected') })
+    // The listener must not keep a worker alive that would otherwise exit.
+    if (events === process) process.channel?.unref()
+    if (!events.connected) retire('supervisor disconnected')
+  }
+  return {
+    get retiring() { return retiring },
+    attach: (shutdown) => { if (!retiring) close = shutdown },
   }
 }

@@ -40,6 +40,27 @@ sees the long-lived process as the original child, ``KeepAlive=true`` /
 ``Restart=always`` work correctly, and a self-update restarts only the
 worker (exit code 75) so the tracked PID never changes.
 
+### Worker lifetime
+
+The worker never outlives its supervisor while holding the port:
+
+- On SIGTERM, SIGINT or SIGHUP the supervisor forwards the first signal once.
+  A worker that has not exited 15 seconds later is killed with SIGKILL. The
+  supervisor returns, or starts a successor, only after that exact worker has
+  exited.
+- The worker retires on a stop signal or when its supervisor's IPC channel
+  disconnects, including when the supervisor itself is killed with SIGKILL.
+  During startup it exits at once. After it is listening it stops accepting
+  connections, lands pending auth and session writes, logs any failed step, and
+  exits within 10 seconds even if a step stalls.
+- A process stuck in an uninterruptible kernel wait ignores SIGKILL as well.
+  The supervisor then keeps waiting instead of starting a worker that cannot
+  bind; stopping it needs the operating system to release the process.
+
+Keep a service manager's stop timeout above 15 seconds (launchd's default
+`ExitTimeOut` is 20 seconds, systemd's `TimeoutStopSec` 90 seconds) so the
+supervisor can reap its worker before it is killed itself.
+
 ## launchd (macOS)
 
 ``~/Library/LaunchAgents/dev.kil.talaria.web.plist``:

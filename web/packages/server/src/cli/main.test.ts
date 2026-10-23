@@ -14,9 +14,22 @@ const trial = vi.hoisted(() => ({
   listening: vi.fn<(running: RunningServer) => void>(),
   resumed: false,
   mark: vi.fn<(stage: string) => void>(),
+  attached: null as (() => Promise<void>) | null,
 }))
 
 vi.mock('./dotenv.js', () => ({ loadStartupEnv: vi.fn() }))
+// Signals and IPC loss come from a private emitter: the test process's own channel and handlers stay untouched.
+vi.mock('./supervise.js', async (original) => {
+  const supervise = await original<typeof import('./supervise.js')>()
+  const { EventEmitter } = await import('node:events')
+  return { ...supervise, watchRetirement: (opts: import('./supervise.js').RetirementOptions) => {
+    trial.mark('retirement registered')
+    const retirement = supervise.watchRetirement({ ...opts, events: Object.assign(new EventEmitter(), { connected: true }), exit: () => undefined })
+    const attach = retirement.attach
+    retirement.attach = (close) => { trial.attached = close; attach(close) }
+    return retirement
+  } }
+})
 vi.mock('../sidecar/discover.js', () => ({ launchSidecar: () => trial.sidecar }))
 vi.mock('node:fs', async (original) => {
   const fs = await original<typeof import('node:fs')>()
@@ -122,6 +135,10 @@ it('serves auth within 500 ms and refuses chat while a five-second handshake is 
     expect(await chat.json()).toMatchObject({ condition: 'sidecar_unavailable' })
     expect(fake.status).toBe('starting')
     expect((await trial.deps!.sessionStore.get(session.session.session_id)).pending_user_message).toBeNull()
+    // Supervisor loss is watched before any startup work, and retires through the listener's own close.
+    expect(stages[0]?.stage).toBe('retirement registered')
+    expect(trial.attached).toBe((await listening).close)
+    expect(process.env.TALARIA_WEB_WORKER).toBeUndefined()
   } finally {
     clearTimeout(timer)
     clearTimeout(deadline)
