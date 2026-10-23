@@ -88,10 +88,16 @@ final class ChatHostedTests: XCTestCase {
 
         HostedAccessibility.activate(try await requireElement(in: window, label: "Toggle fixture fold"))
         let transcript = try transcriptScrollView(in: window)
-        // Transcript, editor height, and composer placement settle in separate queued layout updates.
+        // Height measurement can briefly overshoot after a valid partition; wait for settled geometry.
+        var previousFrames: [CGRect] = []
+        var stableSamples = 0
         let partitioned = await awaitCondition {
-            transcriptFrame.maxY <= foldInWindow.minY + 1
-                && editor.convert(editor.bounds, to: window).minY >= foldInWindow.maxY
+            let frames = [transcriptFrame, editor.convert(editor.bounds, to: window)]
+            stableSamples = frames == previousFrames ? stableSamples + 1 : 0
+            previousFrames = frames
+            return stableSamples >= 5
+                && frames[0].maxY <= foldInWindow.minY + 1
+                && frames[1].minY >= foldInWindow.maxY
                 && editor.bounds.height > flatHeight + 30
         }
         XCTAssertTrue(partitioned, "The tabletop transcript and draft editor did not finish laying out: \(transcriptFrame), fold \(foldInWindow), editor height \(editor.bounds.height)")
