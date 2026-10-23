@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Long code blocks stay responsive while a reply streams, and highlighted code no longer accumulates memory over a long session.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

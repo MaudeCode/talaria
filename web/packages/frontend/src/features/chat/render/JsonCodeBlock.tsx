@@ -1,11 +1,7 @@
 import { useMemo, useState } from 'react'
-import { CodeBlock, CodeBlockContainer, CodeBlockCopyButton, CodeBlockDownloadButton, CodeBlockHeader, type CustomRendererProps } from 'streamdown'
+import { CodeBlockContainer, CodeBlockCopyButton, CodeBlockDownloadButton, CodeBlockHeader, type CustomRendererProps } from 'streamdown'
 import { m } from '../../../paraglide/messages.js'
-
-// Streamdown's own code-block chrome, so the tree sits in the same frame as the raw view.
-const ACTIONS = 'pointer-events-none sticky top-2 z-10 -mt-10 flex h-8 items-center justify-end'
-const ACTION_BAR = 'pointer-events-auto flex shrink-0 items-center gap-2 rounded-md border border-sidebar bg-sidebar/80 px-1.5 py-1 supports-[backdrop-filter]:bg-sidebar/70 supports-[backdrop-filter]:backdrop-blur'
-const BODY = 'overflow-x-auto rounded-md border border-border bg-background p-4 font-mono text-sm'
+import { ACTION_BAR, ACTIONS, BODY, CodeBlock } from './CodeBlock'
 
 /** Objects and arrays get a tree; scalars, fragments, and a fence still streaming stay raw only. */
 function parseTree(code: string, incomplete: boolean): object | null {
@@ -54,7 +50,7 @@ export function JsonCodeBlock({ code, language, isIncomplete }: CustomRendererPr
     <CodeBlockContainer language={language}>
       <CodeBlockHeader language={language} />
       <div className={ACTIONS}><div className={ACTION_BAR}>{actions}</div></div>
-      <div className={BODY} data-json-tree="1"><JsonNode value={tree} depth={0} last /></div>
+      <div className={`${BODY} font-mono`} data-json-tree="1"><JsonNode value={tree} depth={0} last /></div>
     </CodeBlockContainer>
   )
 }
