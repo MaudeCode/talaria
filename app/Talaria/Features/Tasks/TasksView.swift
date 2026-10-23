@@ -8,30 +8,17 @@ struct TasksView: View {
     @Binding var selection: SectionItem?
     let onAPIError: (Error) -> Void
 
-    @State private var isPresentingCreateTask = false
+    @Environment(\.detailHostsListActions) private var detailHostsListActions
 
     var body: some View {
         content
             .navigationTitle("Tasks")
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        viewModel.clearActionError()
-                        isPresentingCreateTask = true
-                    } label: {
-                        Label("New Task", systemImage: "plus")
-                    }
-                    .disabled(viewModel.isMutating)
-                }
-                .overflowPriority(.create)
-
-                ToolbarItem(placement: .topBarTrailing) {
-                    RefreshToolbarButton(isLoading: viewModel.isLoading) {
-                        Task { await loadTasks() }
-                    }
+                if !detailHostsListActions {
+                    TasksListActions(viewModel: viewModel, onAPIError: onAPIError)
                 }
             }
-            .sheet(isPresented: $isPresentingCreateTask) {
+            .sheet(isPresented: Bindable(viewModel).isPresentingCreateTask) {
                 CronJobEditorSheet(
                     title: String(localized: "New Task"),
                     client: viewModel.client,
@@ -92,6 +79,37 @@ struct TasksView: View {
     /// The feed runs beside the job list as a child of the view's own task,
     /// so leaving Tasks cancels it and jobs never wait on it.
     private func loadTasks() async {
+        await TasksListActions.load(viewModel, onAPIError: onAPIError)
+    }
+}
+
+/// The job list's bar actions: in its own column, or in the detail column beside the iPhone Duo's vertical bar
+/// (TAL-1528).
+struct TasksListActions: ToolbarContent {
+    let viewModel: TasksViewModel
+    let onAPIError: (Error) -> Void
+
+    var body: some ToolbarContent {
+        ToolbarItem(placement: .topBarTrailing) {
+            Button {
+                viewModel.clearActionError()
+                viewModel.isPresentingCreateTask = true
+            } label: {
+                Label("New Task", systemImage: "plus")
+            }
+            .disabled(viewModel.isMutating)
+        }
+        .overflowPriority(.create)
+
+        ToolbarItem(placement: .topBarTrailing) {
+            RefreshToolbarButton(isLoading: viewModel.isLoading) {
+                Task { await Self.load(viewModel, onAPIError: onAPIError) }
+            }
+        }
+    }
+
+    @MainActor
+    static func load(_ viewModel: TasksViewModel, onAPIError: (Error) -> Void) async {
         async let feed: Void = viewModel.loadRecentCompletions()
         await viewModel.load()
 

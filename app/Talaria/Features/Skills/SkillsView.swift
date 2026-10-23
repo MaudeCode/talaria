@@ -9,16 +9,15 @@ struct SkillsView: View {
     let onAPIError: (Error) -> Void
 
     @State private var searchText = ""
+    @Environment(\.detailHostsListActions) private var detailHostsListActions
 
     var body: some View {
         content
             .adaptiveReadableScrollContent(maxWidth: AdaptiveReadableContentWidth.secondaryDestination)
             .navigationTitle("Skills")
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    RefreshToolbarButton(isLoading: viewModel.isLoading) {
-                        Task { await loadSkills() }
-                    }
+                if !detailHostsListActions {
+                    SkillsListActions(viewModel: viewModel, onAPIError: onAPIError)
                 }
             }
             .task {
@@ -81,10 +80,7 @@ struct SkillsView: View {
     }
 
     private func loadSkills() async {
-        await viewModel.load()
-        if let error = viewModel.lastError {
-            onAPIError(error)
-        }
+        await SkillsListActions.load(viewModel, onAPIError: onAPIError)
     }
 
     private func toggle(skill: SkillSummary, enabled: Bool) async {
@@ -102,4 +98,27 @@ struct SkillsView: View {
 
 extension String: @retroactive Identifiable {
     public var id: String { self }
+}
+
+/// The skill list's bar action: in its own column, or in the detail column beside the iPhone Duo's vertical bar
+/// (TAL-1528).
+struct SkillsListActions: ToolbarContent {
+    let viewModel: SkillsViewModel
+    let onAPIError: (Error) -> Void
+
+    var body: some ToolbarContent {
+        ToolbarItem(placement: .topBarTrailing) {
+            RefreshToolbarButton(isLoading: viewModel.isLoading) {
+                Task { await Self.load(viewModel, onAPIError: onAPIError) }
+            }
+        }
+    }
+
+    @MainActor
+    static func load(_ viewModel: SkillsViewModel, onAPIError: (Error) -> Void) async {
+        await viewModel.load()
+        if let error = viewModel.lastError {
+            onAPIError(error)
+        }
+    }
 }

@@ -21,6 +21,11 @@ enum HostedSize {
 /// Reads the public UIKit items SwiftUI emits, including grouped and bottom-bar actions.
 extension HostedAccessibility {
     static func toolbarItems(in window: UIWindow) -> [UIBarButtonItem] {
+        window.rootViewController.map(toolbarItems(under:)) ?? []
+    }
+
+    /// The items one controller and its children show, such as one column of a split view.
+    static func toolbarItems(under root: UIViewController) -> [UIBarButtonItem] {
         var result: [UIBarButtonItem] = []
         var visited: Set<ObjectIdentifier> = []
         func visit(_ controller: UIViewController) {
@@ -34,9 +39,18 @@ extension HostedAccessibility {
             controller.children.forEach(visit)
             if let presented = controller.presentedViewController { visit(presented) }
         }
-        if let root = window.rootViewController { visit(root) }
+        visit(root)
         var seen: Set<ObjectIdentifier> = []
         return result.filter { seen.insert(ObjectIdentifier($0)).inserted }
+    }
+
+    /// The regular-width split view; the chat's inspector is a split view controller of its own.
+    static func splitViewController(under controller: UIViewController?) -> UISplitViewController? {
+        guard let controller else { return nil }
+        if let split = controller as? UISplitViewController, !NSStringFromClass(type(of: split)).contains("Inspector") {
+            return split
+        }
+        return controller.children.lazy.compactMap { splitViewController(under: $0) }.first
     }
 
     static func toolbarItem(_ title: String, in window: UIWindow) -> UIBarButtonItem? {

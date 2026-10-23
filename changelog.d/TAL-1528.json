@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "On the iPhone Duo's inner display in landscape, the sidebar button and the list's actions join the vertical toolbar instead of a row above the list.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

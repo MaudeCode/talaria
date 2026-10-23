@@ -51,6 +51,8 @@ struct SessionListView: View {
     /// The split view's height with its bars and the keyboard: whether a chat's companion page fits beside it reads it
     /// as the page's arrangement measures itself, so the keyboard showing does not bring the sidebar back (TAL-1458).
     @State private var regularSplitFullHeight: CGFloat = 0
+    /// Whether the detail column's bar items sit in the iPhone Duo's vertical bar (TAL-1528).
+    @State private var detailHasVerticalBar = false
     /// Persists `navigationState.filesInspectorPresented` for the window (TAL-479).
     @SceneStorage(SplitFilesInspector.storageKey) private var storedFilesInspectorPresented = false
     @State private var sessionPendingRename: SessionSummary?
@@ -511,6 +513,7 @@ struct SessionListView: View {
             NavigationSplitView(columnVisibility: regularColumnVisibility) {
                 regularWidthSidebar
                     .toolbar(removing: .sidebarToggle)
+                    .environment(\.detailHostsListActions, detailHostsSidebarActions)
                     // Every section's sidebar shares this one column width.
                     .navigationSplitViewColumnWidth(
                         min: foldedSidebarWidth ?? RegularSplitLayout.sidebarMinWidth,
@@ -582,11 +585,28 @@ struct SessionListView: View {
         let identity = regularDetailIdentity
         return regularWidthDetail
             .toolbar {
-                // The drawer button leads the first visible column.
-                if hidesSidebarColumn {
+                // The drawer button leads the first visible column, or joins the detail column's vertical bar.
+                if hidesSidebarColumn || detailHostsSidebarActions {
                     drawerToolbarItem
                 }
+                if detailHostsSidebarActions {
+                    if navigationState.section.chatList != nil {
+                        returnToChatsItem
+                    }
+                    if navigationState.section == .chats {
+                        chatsColumnActions
+                        // Standard priority here: where the bar runs short, the open chat's own actions keep their slots.
+                        ToolbarItem(placement: .topBarTrailing) {
+                            regularNewChatButton
+                        }
+                    } else if navigationState.section == .tasks {
+                        TasksListActions(viewModel: sectionViewModels.tasks, onAPIError: handleAPIError)
+                    } else if navigationState.section == .skills {
+                        SkillsListActions(viewModel: sectionViewModels.skills, onAPIError: handleAPIError)
+                    }
+                }
             }
+            .onToolbarVerticalEdgeChange { detailHasVerticalBar = $0 }
             .onAppear {
                 if coveredRegularDetail == identity { coveredRegularDetail = nil }
             }
@@ -611,6 +631,14 @@ struct SessionListView: View {
         navigationState.section.isFullWidth
             || (navigationState.chatShowsFilesInspector && widensForFilesInspector)
             || (navigationState.chatShowsCompanionPage && widensForCompanionPage)
+    }
+
+    /// Only the detail column moves into the iPhone Duo's vertical bar, so beside one the sidebar column's drawer button
+    /// and list actions join it rather than keep a horizontal row over the list (TAL-1528). A page pushed over the
+    /// detail root shows its own items, so the sidebar keeps them meanwhile.
+    private var detailHostsSidebarActions: Bool {
+        horizontalSizeClass == .regular && !hidesSidebarColumn && detailHasVerticalBar
+            && coveredRegularDetail != regularDetailIdentity
     }
 
     /// Whether hiding the sidebar column is what lets a chat's companion page split beside it (TAL-1458).
@@ -657,19 +685,23 @@ struct SessionListView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(.systemBackground))
         .toolbar {
-            // A hidden column must not hold a second drawer button.
-            if !hidesSidebarColumn {
+            // A hidden column, or one whose detail hosts it, must not hold a second drawer button.
+            if !hidesSidebarColumn && !detailHostsSidebarActions {
                 drawerToolbarItem
             }
-            if section.chatList != nil {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        navigationState.returnToChats()
-                    } label: {
-                        Label("Chats", systemImage: "chevron.backward")
-                            .labelStyle(.titleAndIcon)
-                    }
-                }
+            if section.chatList != nil && !detailHostsSidebarActions {
+                returnToChatsItem
+            }
+        }
+    }
+
+    private var returnToChatsItem: some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
+            Button {
+                navigationState.returnToChats()
+            } label: {
+                Label("Chats", systemImage: "chevron.backward")
+                    .labelStyle(.titleAndIcon)
             }
         }
     }
@@ -719,46 +751,20 @@ struct SessionListView: View {
             isPresented: $isSearchPresented,
             prompt: "Search sessions"
         )
-        .minimizingSearchToolbar()
+        .minimizingSearchToolbar(!detailHostsSidebarActions)
         .toolbar {
-            if updateNotificationViewModel.supportsNotifications {
-                ToolbarItem(placement: .topBarTrailing) {
-                    updateNotificationsButton
-                }
-            }
+            if !detailHostsSidebarActions {
+                chatsColumnActions
 
-            if viewModel.supportsBulkActions {
-                ToolbarItem(placement: .topBarTrailing) {
-                    selectChatsButton
-                }
-                .overflowPriority(.selectChats)
-            }
-
-            let settingsItem = ToolbarItem(placement: .topBarTrailing) {
-                settingsButton
-            }
-            if #available(iOS 27.1, *) {
-                settingsItem.axisBehavior(.verticalPreferred)
-            } else {
-                settingsItem
-            }
-
-            // In regular width the floating button would cover rows in the narrow
-            // column, so New Chat moves to the column's bottom bar (TAL-482).
-            if horizontalSizeClass == .regular {
-                ToolbarItemGroup(placement: .bottomBar) {
-                    Spacer()
-
-                    HapticButton(feedbackStyle: .medium) {
-                        openNewChat()
-                    } label: {
-                        Label("New Chat", systemImage: "square.and.pencil")
+                // In regular width the floating button would cover rows in the narrow
+                // column, so New Chat moves to the column's bottom bar (TAL-482).
+                if horizontalSizeClass == .regular {
+                    ToolbarItemGroup(placement: .bottomBar) {
+                        Spacer()
+                        regularNewChatButton
                     }
-                    .disabled(isNewChatDisabled)
-                    .accessibilityLabel("New Chat")
-                    .newChatModeMenu(viewModel.newChatExecutionModes, isDisabled: isNewChatDisabled, onSelect: openNewChat(in:))
+                    .overflowPriority(.newChat)
                 }
-                .overflowPriority(.newChat)
             }
 
             // iOS 26 minimizes search into the bottom bar, so New Chat joins that row instead
@@ -775,6 +781,43 @@ struct SessionListView: View {
                 }
             }
         }
+    }
+
+    /// The Chats list's bar actions; the detail column shows them beside the iPhone Duo's vertical bar (TAL-1528).
+    @ToolbarContentBuilder
+    private var chatsColumnActions: some ToolbarContent {
+        if updateNotificationViewModel.supportsNotifications {
+            ToolbarItem(placement: .topBarTrailing) {
+                updateNotificationsButton
+            }
+        }
+
+        if viewModel.supportsBulkActions {
+            ToolbarItem(placement: .topBarTrailing) {
+                selectChatsButton
+            }
+            .overflowPriority(.selectChats)
+        }
+
+        let settingsItem = ToolbarItem(placement: .topBarTrailing) {
+            settingsButton
+        }
+        if #available(iOS 27.1, *) {
+            settingsItem.axisBehavior(.verticalPreferred)
+        } else {
+            settingsItem
+        }
+    }
+
+    private var regularNewChatButton: some View {
+        HapticButton(feedbackStyle: .medium) {
+            openNewChat()
+        } label: {
+            Label("New Chat", systemImage: "square.and.pencil")
+        }
+        .disabled(isNewChatDisabled)
+        .accessibilityLabel("New Chat")
+        .newChatModeMenu(viewModel.newChatExecutionModes, isDisabled: isNewChatDisabled, onSelect: openNewChat(in:))
     }
 
     private var isNewChatDisabled: Bool {
@@ -2076,10 +2119,11 @@ struct SessionListView: View {
 
 private extension View {
     @ViewBuilder
-    func minimizingSearchToolbar() -> some View {
+    func minimizingSearchToolbar(_ minimizes: Bool) -> some View {
         if #available(iOS 26, *) {
-            // Keeping the navigation bar up stops the list jumping under the search field.
-            searchToolbarBehavior(.minimize)
+            // Keeping the navigation bar up stops the list jumping under the search field. Beside the iPhone Duo's
+            // vertical bar the field stays in the list's column, where no other bar actions remain (TAL-1528).
+            searchToolbarBehavior(minimizes ? .minimize : .automatic)
                 .searchPresentationToolbarBehavior(.avoidHidingContent)
         } else {
             self

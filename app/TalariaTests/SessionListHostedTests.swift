@@ -63,6 +63,50 @@ final class ToolbarPriorityHostedTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(HostedAccessibility.toolbarItem("Files", in: window)).visibilityPriority, .high)
     }
 
+    /// Only a split view's detail column moves into the vertical bar, so beside one the sidebar's actions join the detail
+    /// column instead of keeping a horizontal row over the list (TAL-1528).
+    func testSidebarActionsJoinTheDetailColumnBesideTheVerticalBar() async throws {
+        guard #available(iOS 27.1, *) else { throw XCTSkip("Requires the vertical-bar SDK") }
+        _ = try await landscapeScene()
+        let fixture = try FixtureApp(for: self)
+        let window = try hostWindow(fixture.sessionList(), size: HostedSize.duoInnerLandscape) {
+            $0.horizontalSizeClass = .regular
+            $0.verticalSizeClass = .regular
+        }
+        _ = try await requireElement(in: window, label: "Notifications")
+        let split = try XCTUnwrap(HostedAccessibility.splitViewController(under: window.rootViewController))
+        let sidebar = try XCTUnwrap(split.viewController(for: .primary))
+        let detail = try XCTUnwrap(split.viewController(for: .secondary))
+        // The Settings avatar's item is titled with the account's initials, so the sidebar check covers it.
+        let actions: Set = ["Open navigation", "New Chat", "Notifications", "Select Chats"]
+        func titles(under column: UIViewController) -> Set<String> {
+            Set(HostedAccessibility.toolbarItems(under: column).compactMap { $0.title ?? $0.accessibilityLabel })
+        }
+        let moved = await awaitCondition { actions.isSubset(of: titles(under: detail)) }
+        attachHostedScreenshot(window, name: "duo-inner-chats-actions")
+        XCTAssertTrue(moved, "Detail column items: \(titles(under: detail).sorted()); sidebar: \(titles(under: sidebar).sorted())")
+        XCTAssertEqual(titles(under: sidebar), [], "The sidebar column kept a row of actions")
+
+        // Every section's list moves its bar actions the same way.
+        for section in ["Tasks", "Skills", "Memory", "Settings"] {
+            let row = try await requireElement(in: window, "Missing the drawer's \(section) row") {
+                $0.accessibilityLabel == section && $0.accessibilityHint == nil && $0.accessibilityTraits.contains(.button)
+            }
+            HostedAccessibility.activate(row)
+            var columns: (sidebar: UIViewController, detail: UIViewController)?
+            let joined = await awaitCondition {
+                guard let split = HostedAccessibility.splitViewController(under: window.rootViewController),
+                      let sidebar = split.viewController(for: .primary), let detail = split.viewController(for: .secondary)
+                else { return false }
+                columns = (sidebar, detail)
+                return titles(under: detail).contains("Open navigation") && titles(under: sidebar).isEmpty
+            }
+            attachHostedScreenshot(window, name: "duo-inner-\(section.lowercased())")
+            XCTAssertTrue(joined, "\(section): detail \(columns.map { titles(under: $0.detail).sorted() } ?? []); "
+                + "sidebar \(columns.map { titles(under: $0.sidebar).sorted() } ?? [])")
+        }
+    }
+
     func testChatsPrioritiesReachTheNativeToolbar() async throws {
         guard #available(iOS 27.1, *) else { throw XCTSkip("Requires the vertical-bar SDK") }
         _ = try await landscapeScene()
@@ -923,8 +967,13 @@ final class RegularSplitHostedTests: XCTestCase {
             $0.accessibilityLabel?.hasPrefix(UITestFixtureURLProtocol.sessionTitle) == true && $0.accessibilityFrame.maxX <= 381
         }
         XCTAssertNotNil(row, "The restored sidebar shows no chats")
-        let sidebarDrawer = await barButton("Open navigation", in: split.window) { $0.minX >= 0 && $0.maxX <= 381 }
-        XCTAssertNotNil(sidebarDrawer, "The restored sidebar lost its navigation bar")
+        // Beside a vertical bar the drawer button joins it instead (TAL-1528).
+        var hasVerticalBar = false
+        if #available(iOS 27.1, *) { hasVerticalBar = split.window.traitCollection.verticalBarEdge != .unspecified }
+        let restoredDrawer = await barButton("Open navigation", in: split.window) {
+            hasVerticalBar ? split.window.bounds.contains($0) : $0.minX >= 0 && $0.maxX <= 381
+        }
+        XCTAssertNotNil(restoredDrawer, "The restored split lost the drawer button")
     }
 
     func testDuoInnerPortraitPushesFiles() async throws {
