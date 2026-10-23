@@ -4,6 +4,7 @@ import { act, render, fireEvent } from '@testing-library/react'
 const noop = () => undefined
 vi.mock('@xterm/xterm', () => ({
   Terminal: class {
+    clear = noop
     options = {}
     cols = 80
     rows = 24
@@ -100,4 +101,17 @@ it('requires an explicit captured command, never opens a PTY stream and never re
   expect(post).toHaveBeenCalledTimes(2)
   expect(post).toHaveBeenLastCalledWith('api/terminal/exec', { session_id: 'native', mode: 'owner_command', target_key: 'owner-key', command: 'pwd' }, expect.anything(), { retries: 0, timeoutMs: 50_000 })
   expect(opened).toEqual([])
+})
+
+it('uses the server-selected mode on restart without reconnecting a former host PTY', async () => {
+  let starts = 0
+  vi.mocked(post).mockImplementation((path: string) => Promise.resolve(path === 'api/terminal/start' && ++starts === 2
+    ? { ok: true, running: false, mode: 'owner_command', workspace: '/frozen/native', target_key: 'new-owner' }
+    : { ok: true, running: true }))
+  const view = render(<TerminalPanel sessionId="s1" workspace="/w" onClose={noop} />)
+  await act(async () => { await Promise.resolve() })
+  expect(opened).toHaveLength(1)
+  await act(async () => { view.getByRole('button', { name: 'Restart' }).click(); await Promise.resolve() })
+  expect(await view.findByRole('textbox', { name: 'Captured command' })).toBeVisible()
+  expect(opened).toHaveLength(1)
 })

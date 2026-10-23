@@ -28,7 +28,7 @@ export function TerminalPanel({ sessionId, workspace, onClose, onReopen = () => 
   const [status, setStatus] = useState<'starting' | 'running' | 'closed' | 'error'>('starting')
   const [height, setHeight] = useState(260)
   const stream = useRef<SseHandle | null>(null)
-  const reconnect = useRef<(() => void) | null>(null)
+  const applyStart = useRef<((result: z.infer<typeof StartSchema>, restart?: boolean) => void) | null>(null)
   const [captured, setCaptured] = useState<{ workspace: string; target_key: string } | null>(null)
   const [command, setCommand] = useState('')
   const [executing, setExecuting] = useState(false)
@@ -59,34 +59,43 @@ export function TerminalPanel({ sessionId, workspace, onClose, onReopen = () => 
         onError: (err) => { t.writeln(`\r\n${err ?? m.terminal_title()}`); setStatus('error') },
       })
     }
-    reconnect.current = connect
+    const started = (res: z.infer<typeof StartSchema>, restart = false) => {
+      if (cancelled) return
+      stream.current?.close(); stream.current = null
+      mode.current = null
+      if ('error' in res && res.error) { setStatus('error'); t.writeln(res.error); return }
+      if (restart) t.clear()
+      if (res.mode === 'owner_command') {
+        mode.current = 'owner_command'
+        setCaptured({ workspace: res.workspace, target_key: res.target_key })
+        t.options.disableStdin = true
+        t.options.screenReaderMode = true
+      } else {
+        mode.current = 'web_pty'
+        setCaptured(null)
+        t.options.disableStdin = false
+        connect()
+      }
+      setStatus('running')
+    }
+    applyStart.current = started
     void (async () => {
       try {
         const res = await post('api/terminal/start', { session_id: sessionId, workspace, cols: t.cols, rows: t.rows }, StartSchema, { retries: 0, timeoutMs: 20_000 })
-        if (cancelled) return
-        if ('error' in res && res.error) { setStatus('error'); t.writeln(res.error); return }
-        if ('mode' in res && res.mode === 'owner_command') {
-          mode.current = 'owner_command'
-          setCaptured({ workspace: res.workspace, target_key: res.target_key })
-          t.options.disableStdin = true
-          t.options.screenReaderMode = true
-          setStatus('running')
-          return
-        }
-        mode.current = 'web_pty'
-        setStatus('running')
-        connect()
+        started(res)
       } catch (e) {
+        if (cancelled) return
         setStatus('error')
         t.writeln(e instanceof Error ? e.message : String(e))
       }
     })()
-    const data = t.onData((d) => { if (mode.current !== 'web_pty') return; inputChain.current = inputChain.current.then(() => post('api/terminal/input', { session_id: sessionId, data: d }, OkSchema, { retries: 0, timeoutMs: 10_000 })).then(() => undefined, () => undefined) })
+    const data = t.onData((d) => { if (mode.current !== 'web_pty') return; inputChain.current = inputChain.current.then(() => mode.current === 'web_pty' ? post('api/terminal/input', { session_id: sessionId, data: d }, OkSchema, { retries: 0, timeoutMs: 10_000 }) : undefined).then(() => undefined, () => undefined) })
     const resize = t.onResize(({ cols, rows }) => { if (mode.current !== 'web_pty') return; void post('api/terminal/resize', { session_id: sessionId, cols, rows }, OkSchema, { retries: 0 }).catch(() => undefined) })
     const ro = new ResizeObserver(() => { try { f.fit() } catch { /* not attached */ } })
     ro.observe(el)
     return () => {
       cancelled = true
+      applyStart.current = null
       stream.current?.close(); stream.current = null
       data.dispose(); resize.dispose(); ro.disconnect(); t.dispose()
       term.current = null
@@ -109,11 +118,10 @@ export function TerminalPanel({ sessionId, workspace, onClose, onReopen = () => 
     })()
   }
   const restart = async () => {
+    const started = applyStart.current
     try {
-      await post('api/terminal/start', { session_id: sessionId, workspace, restart: true, cols: term.current?.cols, rows: term.current?.rows }, StartSchema, { retries: 0 })
-      term.current?.clear()
-      setStatus('running')
-      reconnect.current?.()
+      const res = await post('api/terminal/start', { session_id: sessionId, workspace, restart: true, cols: term.current?.cols, rows: term.current?.rows }, StartSchema, { retries: 0 })
+      started?.(res, true)
     } catch (e) {
       showErrorToast(e)
     }
