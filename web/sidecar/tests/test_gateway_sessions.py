@@ -671,9 +671,10 @@ def test_captured_command_rejects_invalid_owner_result(native_owner_stub, value)
     assert "shell" not in result
 
 
-def test_reaction_snapshot_strips_private_metadata(native_owner_stub):
+@pytest.mark.parametrize("sha", ["4d04303818b61bf3aa09278af48356315515965b", "bf0203a794a07aac3ff764972ab9087baa4e4f4e"])
+def test_reaction_snapshot_strips_private_metadata(native_owner_stub, sha):
     owner = native_owner_stub
-    owner.endpoint.code_sha = "4d04303818b61bf3aa09278af48356315515965b"
+    owner.endpoint.code_sha = sha
     owner.snapshot_extra = {"messages": [{"role": "assistant", "row_id": 42, "content": "answer",
         "display_metadata": {"private_principal": "secret", "reactions": [{"author": "user", "emoji": "👍", "seen": True}]}}]}
     result = owner.run(None, {"session_id": "native", "action": "snapshot"})
