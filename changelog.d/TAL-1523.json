@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Agent updates keep the Updating dialog open during automatic recovery and report the verified running version.",
+      "highlight": false,
+      "components": [
+        "web",
+        "app"
+      ]
+    }
+  ]
+}

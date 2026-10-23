@@ -74281,6 +74281,78 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "operation_id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "operation": {
+                          "type": "object",
+                          "properties": {
+                            "operation_id": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "baseline_revision": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{40}$"
+                            },
+                            "target_revision": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{40}$"
+                            },
+                            "stage": {
+                              "enum": [
+                                "install",
+                                "gateway_restart",
+                                "agent_ready"
+                              ],
+                              "type": "string"
+                            },
+                            "recovered_revision": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{40}$"
+                            },
+                            "source_moved": {
+                              "type": "boolean"
+                            },
+                            "attempt_error": {
+                              "type": "string",
+                              "maxLength": 2000
+                            },
+                            "failed_stage": {
+                              "enum": [
+                                "install",
+                                "gateway_restart",
+                                "agent_ready"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "operation_id",
+                            "baseline_revision",
+                            "target_revision",
+                            "stage"
+                          ]
+                        },
+                        "verified_revision": {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{40}$"
+                        },
+                        "runtime_revision": {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{40}$"
+                        },
+                        "verified_version": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -74921,6 +74993,78 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "operation_id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "operation": {
+                          "type": "object",
+                          "properties": {
+                            "operation_id": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "baseline_revision": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{40}$"
+                            },
+                            "target_revision": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{40}$"
+                            },
+                            "stage": {
+                              "enum": [
+                                "install",
+                                "gateway_restart",
+                                "agent_ready"
+                              ],
+                              "type": "string"
+                            },
+                            "recovered_revision": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{40}$"
+                            },
+                            "source_moved": {
+                              "type": "boolean"
+                            },
+                            "attempt_error": {
+                              "type": "string",
+                              "maxLength": 2000
+                            },
+                            "failed_stage": {
+                              "enum": [
+                                "install",
+                                "gateway_restart",
+                                "agent_ready"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "operation_id",
+                            "baseline_revision",
+                            "target_revision",
+                            "stage"
+                          ]
+                        },
+                        "verified_revision": {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{40}$"
+                        },
+                        "runtime_revision": {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{40}$"
+                        },
+                        "verified_version": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -75553,6 +75697,28 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "recovery_only": {
+                      "type": "boolean",
+                      "description": "Only a retained transaction was repaired; the selected update outcome remains unverified."
+                    },
+                    "recovery_pending": {
+                      "type": "boolean",
+                      "description": "The initiating operation remains active through automatic recovery; follow its notification_id without replaying the update."
+                    },
+                    "verified_revision": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{40}$"
+                    },
+                    "verified_version": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "recovery_compatibility": {
                       "type": "object",
                       "properties": {
@@ -75722,6 +75888,28 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "recovery_only": {
+                      "type": "boolean",
+                      "description": "Only a retained transaction was repaired; the selected update outcome remains unverified."
+                    },
+                    "recovery_pending": {
+                      "type": "boolean",
+                      "description": "The initiating operation remains active through automatic recovery; follow its notification_id without replaying the update."
+                    },
+                    "verified_revision": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{40}$"
+                    },
+                    "verified_version": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "recovery_compatibility": {
                       "type": "object",
                       "properties": {
@@ -75891,6 +76079,28 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "recovery_only": {
+                      "type": "boolean",
+                      "description": "Only a retained transaction was repaired; the selected update outcome remains unverified."
+                    },
+                    "recovery_pending": {
+                      "type": "boolean",
+                      "description": "The initiating operation remains active through automatic recovery; follow its notification_id without replaying the update."
+                    },
+                    "verified_revision": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{40}$"
+                    },
+                    "verified_version": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "recovery_compatibility": {
                       "type": "object",
                       "properties": {
@@ -76257,6 +76467,7 @@
                                   "waiting_for_idle",
                                   "restarting",
                                   "verifying",
+                                  "recovering",
                                   "succeeded",
                                   "blocked",
                                   "failed",
@@ -76429,6 +76640,110 @@
                               }
                             ]
                           },
+                          "recovery": {
+                            "type": "object",
+                            "properties": {
+                              "operation": {
+                                "type": "object",
+                                "properties": {
+                                  "operation_id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                  },
+                                  "baseline_revision": {
+                                    "type": "string",
+                                    "pattern": "^[a-f0-9]{40}$"
+                                  },
+                                  "target_revision": {
+                                    "type": "string",
+                                    "pattern": "^[a-f0-9]{40}$"
+                                  },
+                                  "stage": {
+                                    "enum": [
+                                      "install",
+                                      "gateway_restart",
+                                      "agent_ready"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "recovered_revision": {
+                                    "type": "string",
+                                    "pattern": "^[a-f0-9]{40}$"
+                                  },
+                                  "source_moved": {
+                                    "type": "boolean"
+                                  },
+                                  "attempt_error": {
+                                    "type": "string",
+                                    "maxLength": 2000
+                                  },
+                                  "failed_stage": {
+                                    "enum": [
+                                      "install",
+                                      "gateway_restart",
+                                      "agent_ready"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "operation_id",
+                                  "baseline_revision",
+                                  "target_revision",
+                                  "stage"
+                                ]
+                              },
+                              "attempt_error": {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "maxLength": 2000
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "runtime_revision": {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "pattern": "^[a-f0-9]{40}$"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "rollback": {
+                                "anyOf": [
+                                  {
+                                    "type": "boolean"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "outcome": {
+                                "enum": [
+                                  "recovering",
+                                  "target_installed",
+                                  "baseline_restored",
+                                  "other_revision",
+                                  "blocked",
+                                  "unknown"
+                                ],
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "operation",
+                              "attempt_error",
+                              "runtime_revision",
+                              "outcome"
+                            ]
+                          },
                           "unread": {
                             "type": "boolean"
                           },
@@ -76454,7 +76769,8 @@
                                     "ready",
                                     "gateway_wait",
                                     "gateway_restart",
-                                    "agent_ready"
+                                    "agent_ready",
+                                    "recovery"
                                   ],
                                   "type": "string"
                                 },
@@ -76561,6 +76877,7 @@
                                     "waiting_for_idle",
                                     "restarting",
                                     "verifying",
+                                    "recovering",
                                     "succeeded",
                                     "blocked",
                                     "failed",
@@ -76733,6 +77050,110 @@
                                 }
                               ]
                             },
+                            "recovery": {
+                              "type": "object",
+                              "properties": {
+                                "operation": {
+                                  "type": "object",
+                                  "properties": {
+                                    "operation_id": {
+                                      "type": "string",
+                                      "format": "uuid"
+                                    },
+                                    "baseline_revision": {
+                                      "type": "string",
+                                      "pattern": "^[a-f0-9]{40}$"
+                                    },
+                                    "target_revision": {
+                                      "type": "string",
+                                      "pattern": "^[a-f0-9]{40}$"
+                                    },
+                                    "stage": {
+                                      "enum": [
+                                        "install",
+                                        "gateway_restart",
+                                        "agent_ready"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "recovered_revision": {
+                                      "type": "string",
+                                      "pattern": "^[a-f0-9]{40}$"
+                                    },
+                                    "source_moved": {
+                                      "type": "boolean"
+                                    },
+                                    "attempt_error": {
+                                      "type": "string",
+                                      "maxLength": 2000
+                                    },
+                                    "failed_stage": {
+                                      "enum": [
+                                        "install",
+                                        "gateway_restart",
+                                        "agent_ready"
+                                      ],
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "operation_id",
+                                    "baseline_revision",
+                                    "target_revision",
+                                    "stage"
+                                  ]
+                                },
+                                "attempt_error": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "maxLength": 2000
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "runtime_revision": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "pattern": "^[a-f0-9]{40}$"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "rollback": {
+                                  "anyOf": [
+                                    {
+                                      "type": "boolean"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "outcome": {
+                                  "enum": [
+                                    "recovering",
+                                    "target_installed",
+                                    "baseline_restored",
+                                    "other_revision",
+                                    "blocked",
+                                    "unknown"
+                                  ],
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "operation",
+                                "attempt_error",
+                                "runtime_revision",
+                                "outcome"
+                              ]
+                            },
                             "unread": {
                               "type": "boolean"
                             },
@@ -76758,7 +77179,8 @@
                                       "ready",
                                       "gateway_wait",
                                       "gateway_restart",
-                                      "agent_ready"
+                                      "agent_ready",
+                                      "recovery"
                                     ],
                                     "type": "string"
                                   },
@@ -76953,6 +77375,7 @@
                             "waiting_for_idle",
                             "restarting",
                             "verifying",
+                            "recovering",
                             "succeeded",
                             "blocked",
                             "failed",
@@ -77125,6 +77548,110 @@
                         }
                       ]
                     },
+                    "recovery": {
+                      "type": "object",
+                      "properties": {
+                        "operation": {
+                          "type": "object",
+                          "properties": {
+                            "operation_id": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "baseline_revision": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{40}$"
+                            },
+                            "target_revision": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{40}$"
+                            },
+                            "stage": {
+                              "enum": [
+                                "install",
+                                "gateway_restart",
+                                "agent_ready"
+                              ],
+                              "type": "string"
+                            },
+                            "recovered_revision": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{40}$"
+                            },
+                            "source_moved": {
+                              "type": "boolean"
+                            },
+                            "attempt_error": {
+                              "type": "string",
+                              "maxLength": 2000
+                            },
+                            "failed_stage": {
+                              "enum": [
+                                "install",
+                                "gateway_restart",
+                                "agent_ready"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "operation_id",
+                            "baseline_revision",
+                            "target_revision",
+                            "stage"
+                          ]
+                        },
+                        "attempt_error": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "maxLength": 2000
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "runtime_revision": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{40}$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "rollback": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "outcome": {
+                          "enum": [
+                            "recovering",
+                            "target_installed",
+                            "baseline_restored",
+                            "other_revision",
+                            "blocked",
+                            "unknown"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "operation",
+                        "attempt_error",
+                        "runtime_revision",
+                        "outcome"
+                      ]
+                    },
                     "unread": {
                       "type": "boolean"
                     },
@@ -77150,7 +77677,8 @@
                               "ready",
                               "gateway_wait",
                               "gateway_restart",
-                              "agent_ready"
+                              "agent_ready",
+                              "recovery"
                             ],
                             "type": "string"
                           },
@@ -77415,6 +77943,7 @@
                                   "waiting_for_idle",
                                   "restarting",
                                   "verifying",
+                                  "recovering",
                                   "succeeded",
                                   "blocked",
                                   "failed",
@@ -77587,6 +78116,110 @@
                               }
                             ]
                           },
+                          "recovery": {
+                            "type": "object",
+                            "properties": {
+                              "operation": {
+                                "type": "object",
+                                "properties": {
+                                  "operation_id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                  },
+                                  "baseline_revision": {
+                                    "type": "string",
+                                    "pattern": "^[a-f0-9]{40}$"
+                                  },
+                                  "target_revision": {
+                                    "type": "string",
+                                    "pattern": "^[a-f0-9]{40}$"
+                                  },
+                                  "stage": {
+                                    "enum": [
+                                      "install",
+                                      "gateway_restart",
+                                      "agent_ready"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "recovered_revision": {
+                                    "type": "string",
+                                    "pattern": "^[a-f0-9]{40}$"
+                                  },
+                                  "source_moved": {
+                                    "type": "boolean"
+                                  },
+                                  "attempt_error": {
+                                    "type": "string",
+                                    "maxLength": 2000
+                                  },
+                                  "failed_stage": {
+                                    "enum": [
+                                      "install",
+                                      "gateway_restart",
+                                      "agent_ready"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "operation_id",
+                                  "baseline_revision",
+                                  "target_revision",
+                                  "stage"
+                                ]
+                              },
+                              "attempt_error": {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "maxLength": 2000
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "runtime_revision": {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "pattern": "^[a-f0-9]{40}$"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "rollback": {
+                                "anyOf": [
+                                  {
+                                    "type": "boolean"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "outcome": {
+                                "enum": [
+                                  "recovering",
+                                  "target_installed",
+                                  "baseline_restored",
+                                  "other_revision",
+                                  "blocked",
+                                  "unknown"
+                                ],
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "operation",
+                              "attempt_error",
+                              "runtime_revision",
+                              "outcome"
+                            ]
+                          },
                           "unread": {
                             "type": "boolean"
                           },
@@ -77612,7 +78245,8 @@
                                     "ready",
                                     "gateway_wait",
                                     "gateway_restart",
-                                    "agent_ready"
+                                    "agent_ready",
+                                    "recovery"
                                   ],
                                   "type": "string"
                                 },
@@ -77719,6 +78353,7 @@
                                     "waiting_for_idle",
                                     "restarting",
                                     "verifying",
+                                    "recovering",
                                     "succeeded",
                                     "blocked",
                                     "failed",
@@ -77891,6 +78526,110 @@
                                 }
                               ]
                             },
+                            "recovery": {
+                              "type": "object",
+                              "properties": {
+                                "operation": {
+                                  "type": "object",
+                                  "properties": {
+                                    "operation_id": {
+                                      "type": "string",
+                                      "format": "uuid"
+                                    },
+                                    "baseline_revision": {
+                                      "type": "string",
+                                      "pattern": "^[a-f0-9]{40}$"
+                                    },
+                                    "target_revision": {
+                                      "type": "string",
+                                      "pattern": "^[a-f0-9]{40}$"
+                                    },
+                                    "stage": {
+                                      "enum": [
+                                        "install",
+                                        "gateway_restart",
+                                        "agent_ready"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "recovered_revision": {
+                                      "type": "string",
+                                      "pattern": "^[a-f0-9]{40}$"
+                                    },
+                                    "source_moved": {
+                                      "type": "boolean"
+                                    },
+                                    "attempt_error": {
+                                      "type": "string",
+                                      "maxLength": 2000
+                                    },
+                                    "failed_stage": {
+                                      "enum": [
+                                        "install",
+                                        "gateway_restart",
+                                        "agent_ready"
+                                      ],
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "operation_id",
+                                    "baseline_revision",
+                                    "target_revision",
+                                    "stage"
+                                  ]
+                                },
+                                "attempt_error": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "maxLength": 2000
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "runtime_revision": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "pattern": "^[a-f0-9]{40}$"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "rollback": {
+                                  "anyOf": [
+                                    {
+                                      "type": "boolean"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "outcome": {
+                                  "enum": [
+                                    "recovering",
+                                    "target_installed",
+                                    "baseline_restored",
+                                    "other_revision",
+                                    "blocked",
+                                    "unknown"
+                                  ],
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "operation",
+                                "attempt_error",
+                                "runtime_revision",
+                                "outcome"
+                              ]
+                            },
                             "unread": {
                               "type": "boolean"
                             },
@@ -77916,7 +78655,8 @@
                                       "ready",
                                       "gateway_wait",
                                       "gateway_restart",
-                                      "agent_ready"
+                                      "agent_ready",
+                                      "recovery"
                                     ],
                                     "type": "string"
                                   },
@@ -78107,6 +78847,7 @@
                             "waiting_for_idle",
                             "restarting",
                             "verifying",
+                            "recovering",
                             "succeeded",
                             "blocked",
                             "failed",
@@ -78279,6 +79020,110 @@
                         }
                       ]
                     },
+                    "recovery": {
+                      "type": "object",
+                      "properties": {
+                        "operation": {
+                          "type": "object",
+                          "properties": {
+                            "operation_id": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "baseline_revision": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{40}$"
+                            },
+                            "target_revision": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{40}$"
+                            },
+                            "stage": {
+                              "enum": [
+                                "install",
+                                "gateway_restart",
+                                "agent_ready"
+                              ],
+                              "type": "string"
+                            },
+                            "recovered_revision": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{40}$"
+                            },
+                            "source_moved": {
+                              "type": "boolean"
+                            },
+                            "attempt_error": {
+                              "type": "string",
+                              "maxLength": 2000
+                            },
+                            "failed_stage": {
+                              "enum": [
+                                "install",
+                                "gateway_restart",
+                                "agent_ready"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "operation_id",
+                            "baseline_revision",
+                            "target_revision",
+                            "stage"
+                          ]
+                        },
+                        "attempt_error": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "maxLength": 2000
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "runtime_revision": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{40}$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "rollback": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "outcome": {
+                          "enum": [
+                            "recovering",
+                            "target_installed",
+                            "baseline_restored",
+                            "other_revision",
+                            "blocked",
+                            "unknown"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "operation",
+                        "attempt_error",
+                        "runtime_revision",
+                        "outcome"
+                      ]
+                    },
                     "unread": {
                       "type": "boolean"
                     },
@@ -78304,7 +79149,8 @@
                               "ready",
                               "gateway_wait",
                               "gateway_restart",
-                              "agent_ready"
+                              "agent_ready",
+                              "recovery"
                             ],
                             "type": "string"
                           },
@@ -78468,6 +79314,7 @@
                             "waiting_for_idle",
                             "restarting",
                             "verifying",
+                            "recovering",
                             "succeeded",
                             "blocked",
                             "failed",
@@ -78640,6 +79487,110 @@
                         }
                       ]
                     },
+                    "recovery": {
+                      "type": "object",
+                      "properties": {
+                        "operation": {
+                          "type": "object",
+                          "properties": {
+                            "operation_id": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "baseline_revision": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{40}$"
+                            },
+                            "target_revision": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{40}$"
+                            },
+                            "stage": {
+                              "enum": [
+                                "install",
+                                "gateway_restart",
+                                "agent_ready"
+                              ],
+                              "type": "string"
+                            },
+                            "recovered_revision": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{40}$"
+                            },
+                            "source_moved": {
+                              "type": "boolean"
+                            },
+                            "attempt_error": {
+                              "type": "string",
+                              "maxLength": 2000
+                            },
+                            "failed_stage": {
+                              "enum": [
+                                "install",
+                                "gateway_restart",
+                                "agent_ready"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "operation_id",
+                            "baseline_revision",
+                            "target_revision",
+                            "stage"
+                          ]
+                        },
+                        "attempt_error": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "maxLength": 2000
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "runtime_revision": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{40}$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "rollback": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "outcome": {
+                          "enum": [
+                            "recovering",
+                            "target_installed",
+                            "baseline_restored",
+                            "other_revision",
+                            "blocked",
+                            "unknown"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "operation",
+                        "attempt_error",
+                        "runtime_revision",
+                        "outcome"
+                      ]
+                    },
                     "unread": {
                       "type": "boolean"
                     },
@@ -78665,7 +79616,8 @@
                               "ready",
                               "gateway_wait",
                               "gateway_restart",
-                              "agent_ready"
+                              "agent_ready",
+                              "recovery"
                             ],
                             "type": "string"
                           },

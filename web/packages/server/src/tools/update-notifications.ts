@@ -1,4 +1,4 @@
-import type { AgentRecoveryState } from '@maudecode/talaria-web-contracts'
+import { UpdateNotificationPhaseSchema, UpdateStepSchema, AgentUpdateOperationSchema, AgentUpdateRecoverySchema, type UpdateNotification, type AgentUpdateOperation, type AgentRecoveryState } from '@maudecode/talaria-web-contracts'
 import { createHash, randomUUID } from 'node:crypto'
 import { readDocument } from '../sessions/storage/document.js'
 import type { DocumentBackend } from '../sessions/storage/backend.js'
@@ -21,7 +21,7 @@ export function updateNotificationOwner(session: SessionInfo | null): string {
 
 export type UpdateNotificationTarget = 'webui' | 'agent'
 /** `verifying`: the gateway restarted; the server is checking that the new gateway process and the Agent runtime answer (TAL-1138). */
-export type UpdateNotificationPhase = 'applying' | 'awaiting_confirmation' | 'waiting_for_idle' | 'restarting' | 'verifying' | 'succeeded' | 'blocked' | 'failed' | 'unknown'
+export type UpdateNotificationPhase = (typeof UpdateNotificationPhaseSchema.options)[number]
 /** `tab` names one open Talaria Web tab; rows stamped with a tab are visible only to that tab. `rootProfile`: `profile` names the root profile, which profile notices store as `default`. */
 export interface UpdateNotificationScope { owner: string; profile: string; serverOwner?: boolean; tab?: string | null; rootProfile?: boolean }
 
@@ -66,6 +66,8 @@ interface StoredUpdateNotification {
   gateway_baseline: GatewayProcess[] | null
   /** TAL-1138: the step that was active when the update failed, was blocked, or lost its outcome. */
   failed_step: UpdateStepId | null
+  agent_operation?: AgentUpdateOperation
+  recovery?: UpdateNotification['recovery']
 }
 
 interface UpdateWatcher { tab: string; at: string }
@@ -73,11 +75,11 @@ export interface UpdateNotificationAction { id: string; label: string; style: 'd
 export interface UpdateNotificationDestination { key: string; label: string }
 export interface VerifiedUpdateIdentity { revision: string | null; version: string | null }
 
-export type UpdateStepId = 'install' | 'web_restart' | 'ready' | 'gateway_wait' | 'gateway_restart' | 'agent_ready'
-export interface UpdateStep { id: UpdateStepId; label: string; state: 'done' | 'active' | 'pending' | 'failed' }
+export type UpdateStep = UpdateNotification['steps'][number]
+export type UpdateStepId = UpdateStep['id']
 /** How an Updating dialog showing this record may close: not at all, with Close, with Restart later, or by itself. */
 export type UpdateDialogClose = 'none' | 'close' | 'restart_later' | 'auto'
-export type PublicUpdateNotification = Omit<StoredUpdateNotification, 'notice_key' | 'notice_text_hash' | 'owner' | 'profile' | 'visibility' | 'dismissed_at' | 'expected_identity' | 'performed_action_ids' | 'tab_id' | 'watchers' | 'web_restart_boot' | 'gateway_tasks' | 'gateway_baseline' | 'failed_step'> & {
+export type PublicUpdateNotification = Omit<StoredUpdateNotification, 'notice_key' | 'notice_text_hash' | 'owner' | 'profile' | 'visibility' | 'dismissed_at' | 'expected_identity' | 'performed_action_ids' | 'tab_id' | 'watchers' | 'web_restart_boot' | 'gateway_tasks' | 'gateway_baseline' | 'failed_step' | 'agent_operation'> & {
   unread: boolean
   active: boolean
   requires_interaction: boolean
@@ -104,7 +106,7 @@ export interface CreateUpdateNotificationInput {
   visibility?: 'server' | 'profile'
 }
 
-const PHASES = new Set<UpdateNotificationPhase>(['applying', 'awaiting_confirmation', 'waiting_for_idle', 'restarting', 'verifying', 'succeeded', 'blocked', 'failed', 'unknown'])
+const PHASES = new Set<UpdateNotificationPhase>(UpdateNotificationPhaseSchema.options)
 const REVISION = /^[a-f0-9]{40}$/
 const PER_SCOPE_LIMIT = 50
 const GLOBAL_LIMIT = 500
@@ -118,9 +120,9 @@ const GATEWAY_RESTART_NOW_ACTION: UpdateNotificationAction = { id: GATEWAY_RESTA
 /** A closed tab stops checking in; its refresh notice is dropped once unseen this long. An open tab recreates it on its next check. */
 const TAB_TTL_MS = 60 * 60 * 1000
 const FAILED_MESSAGE = 'The update could not be completed.'
-const STEP_IDS = new Set<string>(['install', 'web_restart', 'ready', 'gateway_wait', 'gateway_restart', 'agent_ready'])
+const STEP_IDS = new Set<string>(UpdateStepSchema.shape.id.options)
 /** Phases in which an update the user started presents its Updating dialog to every tab that can see it. */
-const PRESENTING = new Set(['applying', 'restarting', 'verifying'])
+const PRESENTING = new Set(['applying', 'restarting', 'verifying', 'recovering'])
 const TERMINAL_FAILURE = new Set(['failed', 'blocked', 'unknown'])
 
 /** TAL-953: the waiting gateway restart's message, with the running task count once one is known. */
@@ -136,6 +138,7 @@ const wording = (target: UpdateNotificationTarget, phase: UpdateNotificationPhas
     waiting_for_idle: gatewayWaitingMessage(0),
     restarting: target === 'webui' ? 'The update is installed. Talaria Web is restarting.' : 'The update is installed. The messaging gateway is restarting.',
     verifying: 'The update is installed. Checking that Hermes Agent responds.',
+    recovering: 'Attempting recovery',
     succeeded: `${name} was updated successfully.`,
     blocked: 'The update is waiting for active work to finish.',
     failed: FAILED_MESSAGE,
@@ -152,6 +155,7 @@ const shownVersion = (version: string | null): string => version ? ` ${version.r
 function currentStep(row: StoredUpdateNotification, webPending: boolean): UpdateStepId | null {
   if (TERMINAL_FAILURE.has(row.phase)) return row.failed_step ?? 'install'
   if (row.phase === 'succeeded') return null
+  if (row.phase === 'recovering') return 'recovery'
   if (row.phase === 'restarting') return row.target === 'webui' ? 'web_restart' : 'gateway_restart'
   if (row.phase === 'waiting_for_idle') return webPending ? 'web_restart' : 'gateway_wait'
   if (row.phase === 'verifying') return webPending ? 'web_restart' : 'agent_ready'
@@ -169,8 +173,9 @@ function updateSteps(row: StoredUpdateNotification, webPending: boolean): Update
   const undecided = ['applying', 'awaiting_confirmation'].includes(row.phase)
   // Each restart step needs its own evidence: a scheduled Web restart, or a gateway restart under way or recorded.
   const webRestarts = undecided || row.web_restart_boot !== null || current === 'web_restart'
-  const gatewayRestarts = undecided || ['waiting_for_idle', 'restarting'].includes(row.phase) || row.gateway_baseline !== null || current === 'gateway_wait' || current === 'gateway_restart'
+  const gatewayRestarts = row.recovery?.operation.failed_stage === 'gateway_restart' || undecided || ['waiting_for_idle', 'restarting'].includes(row.phase) || row.gateway_baseline !== null || current === 'gateway_wait' || current === 'gateway_restart'
   const succeeded = row.phase === 'succeeded'
+  const recovered = row.recovery && ['target_installed', 'baseline_restored', 'other_revision'].includes(row.recovery.outcome)
   const tasks = row.gateway_tasks ?? 0
   const plan: [UpdateStepId, string][] = row.target === 'webui'
     ? [['install', 'Installing'], ...(webRestarts ? [['web_restart', 'Restarting Talaria Web'] as [UpdateStepId, string]] : []), ['ready', succeeded ? `Talaria Web${shownVersion(row.verified_version)} is ready` : 'Ready']]
@@ -179,10 +184,12 @@ function updateSteps(row: StoredUpdateNotification, webPending: boolean): Update
       ...(webRestarts ? [['web_restart', 'Restarting Talaria Web'] as [UpdateStepId, string]] : []),
       ...(row.gateway_tasks !== null || current === 'gateway_wait' ? [['gateway_wait', tasks > 0 ? `Waiting for ${String(tasks)} gateway task${tasks === 1 ? '' : 's'}` : 'Waiting for gateway tasks'] as [UpdateStepId, string]] : []),
       ...(gatewayRestarts ? [['gateway_restart', 'Restarting gateway'] as [UpdateStepId, string]] : []),
-      ['agent_ready', succeeded ? `Hermes Agent${shownVersion(row.verified_version)} is running` : 'Agent responding'],
+      ...(row.recovery || current === 'recovery' ? [['recovery', 'Attempting recovery'] as [UpdateStepId, string]] : []),
+      ['agent_ready', succeeded || recovered ? `Hermes Agent${shownVersion(row.verified_version)} is running` : 'Agent responding'],
     ]
   const at = current === null ? plan.length : plan.findIndex(([id]) => id === current)
-  return plan.map(([id, label], index) => ({ id, label, state: index < at ? 'done' : index > at ? 'pending' : TERMINAL_FAILURE.has(row.phase) ? 'failed' : 'active' }))
+  if (recovered && !succeeded) return plan.map(([id, label]) => ({ id, label, state: id === (row.recovery?.operation.failed_stage ?? 'install') ? 'failed' : 'done' }))
+  return plan.map(([id, label], index) => ({ id, label, state: row.phase === 'recovering' && id === row.recovery?.operation.failed_stage ? 'failed' : index < at ? 'done' : index > at ? 'pending' : TERMINAL_FAILURE.has(row.phase) ? 'failed' : 'active' }))
 }
 
 export class UpdateNotificationStore {
@@ -300,15 +307,85 @@ export class UpdateNotificationStore {
     return created
   }
 
+  /** Saved before the native lease can change source; the row ID is the operation ID. */
+  async bindAgentOperation(id: string, baseline: string, target: string): Promise<void> {
+    const row = this.rows.find((entry) => entry.id === id && entry.target === 'agent' && entry.phase === 'applying')
+    if (!row) throw new Error('The initiating Agent update is no longer active.')
+    const operation = AgentUpdateOperationSchema.parse({ operation_id: id, baseline_revision: baseline, target_revision: target, stage: 'install' })
+    if (row.agent_operation && (row.agent_operation.baseline_revision !== baseline || row.agent_operation.target_revision !== target)) throw new Error('The update target changed within the same operation.')
+    row.agent_operation = operation
+    await this.save()
+  }
+
+  async handoffAgentRecovery(id: string, detail: unknown, identity?: VerifiedUpdateIdentity): Promise<boolean> {
+    const row = this.rows.find((entry) => entry.id === id && entry.agent_operation)
+    if (!row) return false
+    if (TERMINAL_FAILURE.has(row.phase) || row.phase === 'succeeded') return true
+    row.recovery ??= { operation: row.agent_operation!, attempt_error: safeDetail(detail), runtime_revision: null, outcome: 'recovering' }
+    row.recovery.attempt_error ??= safeDetail(detail)
+    await this.transition(id, 'recovering', null, identity, row.recovery.attempt_error)
+    return true
+  }
+
+  pendingAgentOperation(): string | undefined {
+    return this.rows.findLast((row) => row.kind === 'update' && row.target === 'agent' && row.agent_operation && ['applying', 'recovering'].includes(row.phase))?.id
+  }
+
   /** A retained notice still needs loaded-readiness verification after native debt clears. */
   hasPendingAgentRecovery(): boolean {
     const row = this.rows.findLast((entry) => entry.kind === 'agent_recovery')
-    return row !== undefined && row.phase !== 'succeeded'
+    return this.pendingAgentOperation() !== undefined || (row !== undefined && row.phase !== 'succeeded')
   }
 
-  /** Recovery has its own row, so it can never rewrite the initiating update's failed outcome. */
+  /** Only a transaction-bound active operation can absorb recovery; orphan receipts retain their own notice. */
   async agentRecovery(state: AgentRecoveryState): Promise<void> {
     if (state.phase === 'idle') return
+    const id = state.operation_id ?? state.operation?.operation_id
+    const original = id ? this.rows.find((row) => row.id === id && row.agent_operation && ['applying', 'recovering'].includes(row.phase)) : undefined
+    if (original) {
+      const expected = original.agent_operation!
+      const evidence = state.operation
+      const bound = evidence?.operation_id === expected.operation_id && evidence.baseline_revision === expected.baseline_revision && evidence.target_revision === expected.target_revision
+      original.recovery ??= { operation: expected, attempt_error: original.detail, runtime_revision: null, outcome: 'recovering' }
+      const recovery = original.recovery
+      if (bound) {
+        const failedStage = evidence.failed_stage ?? recovery.operation.failed_stage
+        recovery.operation = { ...evidence, ...(failedStage ? { failed_stage: failedStage } : {}) }
+        recovery.attempt_error ??= safeDetail(evidence.attempt_error)
+        original.failed_step = failedStage ?? evidence.stage
+      }
+      recovery.runtime_revision = state.runtime_revision ?? null
+      const identity = state.verified_revision ? { revision: state.verified_revision, version: state.verified_version ?? null } : state.phase === 'complete' ? { revision: null, version: null } : undefined
+      if (state.phase === 'complete') {
+        const verified = bound && evidence.recovered_revision === state.verified_revision && state.runtime_revision === state.verified_revision
+        const actual = state.verified_version || state.verified_revision || 'unknown version'
+        recovery.rollback = verified && state.verified_revision === expected.baseline_revision ? evidence.source_moved ?? null : verified ? false : null
+        recovery.outcome = !verified ? 'unknown' : state.verified_revision === expected.target_revision ? 'target_installed' : state.verified_revision === expected.baseline_revision ? 'baseline_restored' : 'other_revision'
+        await this.transition(original.id, recovery.outcome === 'target_installed' ? 'succeeded' : recovery.outcome === 'unknown' ? 'unknown' : 'failed', null, identity, recovery.attempt_error)
+        if (recovery.outcome === 'target_installed') original.message = `Hermes Agent ${actual} is running after automatic recovery.`
+        else if (recovery.outcome === 'baseline_restored') {
+          if (recovery.rollback === true) original.message = `The requested update failed. Automatic recovery rolled back to the previous revision, ${actual}.`
+          else if (recovery.rollback === false) original.message = `The requested update failed. Service recovered on the unchanged previous revision, ${actual}; no rollback occurred.`
+          else original.message = `The requested update failed. Service recovered on the previous revision, ${actual}; rollback could not be verified.`
+        } else if (recovery.outcome === 'other_revision') original.message = `The requested update failed. Service recovered on ${actual}; the selected target was not installed.`
+        else original.message = `The update outcome could not be verified after recovery. ${state.verified_revision ? 'Current version' : 'Loaded version'}: ${actual}.`
+      } else if (state.phase === 'blocked') {
+        recovery.outcome = 'blocked'
+        await this.transition(original.id, 'blocked', null, identity, [recovery.attempt_error, state.detail].filter(Boolean).join('\n'))
+        original.message = 'Automatic recovery could not finish. ' + (state.verified_version ? `Current version: ${state.verified_version}. ` : '') + 'Check the recovery details before retrying.'
+        original.failed_step = 'recovery'
+      } else {
+        await this.transition(original.id, 'recovering', null, identity, [recovery.attempt_error, state.detail].filter(Boolean).join('\n'))
+      }
+      if (state.phase === 'complete' || state.phase === 'blocked') original.detail = safeDetail([original.message, original.detail, recovery.attempt_error].filter((value, index, values) => Boolean(value) && values.indexOf(value) === index).join('\n'))
+      await this.save()
+      if (state.phase === 'complete' && this.rows.some((row) => row.kind === 'agent_recovery' && row.phase !== 'succeeded')) {
+        await this.agentRecovery({ phase: state.phase, attempt: state.attempt, detail: state.detail, retry_at: state.retry_at })
+      }
+      return
+    }
+    // A stale callback cannot rewrite a terminal attempt or create a second notice for that operation.
+    if (id && this.rows.some((row) => row.id === id) && (state.phase !== 'complete' || !this.rows.some((row) => row.kind === 'agent_recovery' && row.phase !== 'succeeded'))) return
     const phase = state.phase === 'complete' ? 'succeeded' : state.phase === 'running' ? 'applying' : 'blocked'
     const title = 'Hermes Agent recovery'
     const message = state.phase === 'complete' ? 'Hermes Agent is usable again. The original update result is unchanged.'
@@ -427,13 +504,20 @@ export class UpdateNotificationStore {
   }
 
   activeUpdate(scope: UpdateNotificationScope, target: UpdateNotificationTarget): PublicUpdateNotification | null {
-    const row = [...this.rows].reverse().find((entry) => this.isVisible(entry, scope) && entry.kind === 'update' && entry.target === target && ['applying', 'awaiting_confirmation', 'restarting', 'verifying'].includes(entry.phase))
+    const row = [...this.rows].reverse().find((entry) => this.isVisible(entry, scope) && entry.kind === 'update' && entry.target === target && ['applying', 'awaiting_confirmation', 'restarting', 'verifying', 'recovering'].includes(entry.phase))
     return row ? this.publish(row) : null
   }
 
   async transition(id: string, phase: UpdateNotificationPhase, expectedIdentity?: string | null, verifiedIdentity?: VerifiedUpdateIdentity, detail?: unknown): Promise<PublicUpdateNotification | null> {
     const row = this.rows.find((entry) => entry.id === id)
     if (!row) return null
+    if (phase === 'applying' && !['applying', 'awaiting_confirmation'].includes(row.phase)) return this.publish(row)
+    const failedStep = currentStep(row, this.webPending(row))
+    if (phase === 'failed' && row.target === 'agent' && row.agent_operation && ['restarting', 'verifying'].includes(row.phase)
+        && (failedStep === 'gateway_restart' || failedStep === 'agent_ready')) {
+      row.recovery ??= { operation: { ...row.agent_operation, failed_stage: failedStep }, attempt_error: safeDetail(detail), runtime_revision: null, outcome: 'recovering' }
+      phase = 'recovering'
+    }
     const phaseChanged = row.phase !== phase
     // TAL-1138: a failure keeps the step it stopped at, so the dialog marks that step failed.
     if (!TERMINAL_FAILURE.has(phase)) row.failed_step = null
@@ -445,7 +529,7 @@ export class UpdateNotificationStore {
     row.updated_at = this.now().toISOString()
     if (phaseChanged) row.read_at = null
     row.expected_identity = expectedIdentity?.trim().slice(0, 160) || null
-    row.detail = phase === 'applying' || phase === 'failed' || phase === 'blocked' || phase === 'succeeded' || phase === 'waiting_for_idle' || phase === 'verifying' ? safeDetail(detail) : null
+    row.detail = phase === 'applying' || phase === 'failed' || phase === 'blocked' || phase === 'succeeded' || phase === 'waiting_for_idle' || phase === 'verifying' || phase === 'recovering' || phase === 'unknown' ? safeDetail(detail) : null
     // The gateway restart is server-wide: every server owner sees the wait and can restart now, and a later update joins it.
     if (row.kind === 'update' && phase === 'waiting_for_idle' && row.visibility === 'server') row.owner = '*'
     // Only a waiting gateway restart offers an action; entering the wait offers it afresh.
@@ -588,6 +672,14 @@ export class UpdateNotificationStore {
         changed = true
         continue
       }
+      if (row.kind === 'update' && row.agent_operation && row.phase === 'applying') {
+        row.phase = 'recovering'
+        Object.assign(row, wording('agent', 'recovering'))
+        row.updated_at = this.now().toISOString()
+        row.read_at = null
+        changed = true
+        continue
+      }
       if (row.kind !== 'update' || (row.target !== 'webui' && row.target !== 'agent') || !['applying', 'restarting'].includes(row.phase)) continue
       const phase: UpdateNotificationPhase = row.target === 'webui' && row.phase === 'restarting' && currentWebIdentity && REVISION.test(currentWebIdentity) && row.expected_identity === currentWebIdentity ? 'succeeded' : 'unknown'
       row.failed_step = phase === 'unknown' ? currentStep(row, false) ?? 'install' : null
@@ -633,8 +725,9 @@ export class UpdateNotificationStore {
       created_at: row.created_at, updated_at: row.updated_at, read_at: row.read_at,
       acknowledged_at: row.acknowledged_at, acknowledged_action_id: row.acknowledged_action_id,
       verified_revision: row.verified_revision, verified_version: row.verified_version, detail: row.detail,
+      ...(row.recovery ? { recovery: row.recovery } : {}),
       unread: row.read_at === null,
-      active: ['update', 'agent_recovery'].includes(row.kind) && ['applying', 'restarting', 'verifying'].includes(row.phase),
+      active: ['update', 'agent_recovery'].includes(row.kind) && PRESENTING.has(row.phase),
       requires_interaction: row.requires_acknowledgement && row.acknowledged_at === null,
       can_dismiss: isDismissible(row),
       steps: updateSteps(row, webPending),
@@ -684,7 +777,7 @@ export class UpdateNotificationStore {
         const kind = safeToken(row.kind, 'update')
         const target = row.target === 'webui' || row.target === 'agent' ? row.target : null
         // TAL-1138: `verifying` is stored as Stable's `restarting` plus a flag Stable ignores.
-        const phase = row.phase === 'restarting' && row.verifying === true ? 'verifying' : safeToken(row.phase, 'unknown')
+        const phase = row.phase === 'restarting' && row.recovering === true ? 'recovering' : row.phase === 'restarting' && row.verifying === true ? 'verifying' : safeToken(row.phase, 'unknown')
         const fallback = target && PHASES.has(phase as UpdateNotificationPhase) ? wording(target, phase as UpdateNotificationPhase) : { title: 'Server notification', message: 'This server needs your attention.' }
         return [{
           ...(typeof row.notice_key === 'string' ? { notice_key: row.notice_key, notice_text_hash: typeof row.notice_text_hash === 'string' ? row.notice_text_hash : '' } : {}),
@@ -710,6 +803,8 @@ export class UpdateNotificationStore {
           web_restart_boot: typeof row.web_restart_boot === 'string' ? row.web_restart_boot.slice(0, 64) : null,
           gateway_tasks: typeof row.gateway_tasks === 'number' && Number.isInteger(row.gateway_tasks) && row.gateway_tasks > 0 ? row.gateway_tasks : null,
           gateway_baseline: Array.isArray(row.gateway_baseline) ? row.gateway_baseline.slice(0, 8).flatMap((entry): GatewayProcess[] => isRecord(entry) && typeof entry.dir === 'string' && typeof entry.pid === 'number' && Number.isInteger(entry.pid) && entry.pid > 0 && (entry.start_time === null || typeof entry.start_time === 'number') ? [{ dir: entry.dir, pid: entry.pid, start_time: entry.start_time }] : []) : null,
+          ...(AgentUpdateOperationSchema.safeParse(row.agent_operation).success ? { agent_operation: AgentUpdateOperationSchema.parse(row.agent_operation) } : {}),
+          ...(AgentUpdateRecoverySchema.safeParse(row.recovery).success ? { recovery: AgentUpdateRecoverySchema.parse(row.recovery) } : {}),
           failed_step: typeof row.failed_step === 'string' && STEP_IDS.has(row.failed_step) ? row.failed_step as UpdateStepId : null,
         }]
       })
@@ -742,6 +837,7 @@ export class UpdateNotificationStore {
     const rows = structuredClone(this.rows).map(({ web_restart_boot, gateway_tasks, gateway_baseline, failed_step, ...row }) => ({
       ...row,
       ...(row.phase === 'verifying' ? { phase: 'restarting', verifying: true } : {}),
+      ...(row.phase === 'recovering' ? { phase: 'restarting', recovering: true } : {}),
       ...(web_restart_boot === null ? {} : { web_restart_boot }),
       ...(gateway_tasks === null ? {} : { gateway_tasks }),
       ...(gateway_baseline === null ? {} : { gateway_baseline }),
@@ -776,8 +872,8 @@ const safeDestination = (value: unknown): UpdateNotificationDestination | null =
 const isTabNotice = (row: StoredUpdateNotification): boolean => row.tab_id !== null
 /** A waiting gateway restart carries its Restart now action, so it stays until the restart runs. */
 const isWaitingGatewayRestart = (row: StoredUpdateNotification): boolean => row.kind === 'update' && row.phase === 'waiting_for_idle'
-const isDismissible = (row: StoredUpdateNotification): boolean => (!row.requires_acknowledgement || row.acknowledged_at !== null) && !isWaitingGatewayRestart(row)
+const isDismissible = (row: StoredUpdateNotification): boolean => (!row.requires_acknowledgement || row.acknowledged_at !== null) && !isWaitingGatewayRestart(row) && !(row.kind === 'update' && row.phase === 'recovering')
 /** Warning identities, including dismissed rows, must survive ordinary history pruning. */
-const isProtected = (row: StoredUpdateNotification): boolean => row.kind === 'agent_warning' || (row.requires_acknowledgement && row.acknowledged_at === null) || (row.kind === 'update' && ['applying', 'awaiting_confirmation', 'waiting_for_idle', 'restarting', 'verifying'].includes(row.phase))
+const isProtected = (row: StoredUpdateNotification): boolean => row.kind === 'agent_warning' || (row.requires_acknowledgement && row.acknowledged_at === null) || (row.kind === 'update' && ['applying', 'awaiting_confirmation', 'waiting_for_idle', 'restarting', 'verifying', 'recovering'].includes(row.phase))
 const retentionBucket = (row: StoredUpdateNotification): string => `${row.owner}\u0000${row.visibility === 'server' ? '*' : row.profile}`
 export const updateNotificationScopeId = (scope: UpdateNotificationScope): string => createHash('sha256').update(`${scope.owner}\u0000${scope.profile}\u0000${scope.serverOwner === true ? 'owner' : 'member'}`).digest('hex').slice(0, 24)

@@ -790,13 +790,16 @@ export interface AgentUpdatePolicy {
   /** Resolved main and named-profile homes sharing this Agent installation. Read again for every attempt. */
   retainedStateHomes?: () => readonly string[]
   repairPending?: boolean
-  withMutation?: (path: string, revision: string, mutate: (git: GitRun) => Promise<Dict>) => Promise<Dict>
+  withMutation?: (path: string, revision: string, mutate: (git: GitRun) => Promise<Dict>, baseline: string) => Promise<Dict>
   beforeMutation?: (path: string, revision: string) => Promise<void>
 }
 /** `version` (TAL-946) names a listed Stable release `ref` for either target; omitted, an update takes the newest. */
 export interface UpdateOptions {
   skipFailedVersion?: boolean | undefined; agentChannel?: Channel | undefined; confirmedRevision?: string | undefined; version?: string | undefined; refreshToken?: string | undefined; mutationIntent?: string | undefined
   /** TAL-1429: the server's wording for what a running Agent update is waiting for, before it changes source. */
+  operationId?: string | undefined
+  onTransaction?: ((baseline: string, target: string) => Promise<void>) | undefined
+  onFailure?: ((detail: unknown, identity?: { revision: string | null; version: string | null }) => Promise<boolean>) | undefined
   onProgress?: ((detail: string) => void) | undefined
 }
 /** TAL-1429: the Agent update waits for the gateways' own native drain instead of interrupting their work. */
@@ -925,7 +928,7 @@ async function withAgentMutation(path: string, info: Dict, git: GitRun, policy: 
   const preflight = await prepareAgentMutation(path, info, git, policy, mode, false)
   if (preflight) return preflight
   try {
-    const result = await policy.withMutation(path, str(info.latest_sha), guarded)
+    const result = await policy.withMutation(path, str(info.latest_sha), guarded, str(info.current_sha))
     return result.refresh_confirmation ? { ...result, target: 'agent', confirmation_required: true, candidate_revision: info.latest_sha, agent_channel: info.channel } : result
   }
   catch (error) { return { ok: false, target: 'agent', message: `Agent update could not safely quiesce or resume its writers: ${sanitizeGitDiagnostic((error as Error).message, 1000)}` } }
@@ -1292,6 +1295,7 @@ export interface UpdateServiceDeps {
   recoverAgent?: (probe?: boolean, signal?: AbortSignal) => Promise<SidecarResult<'runtime.agent_recovery'> & { waiting_for_idle?: boolean }>
   recoveryChanged?: (state: AgentRecoveryState) => Promise<void>
   hasPendingRecovery?: () => boolean
+  pendingRecoveryOperation?: () => string | undefined
   onAgentReconnect?: (listener: (runtime: RuntimeDescribe) => void) => () => void
   /** `web/` of this installation (a Talaria checkout has it at `<root>/web`). */
   webRoot: string
@@ -1311,7 +1315,7 @@ export interface UpdateServiceDeps {
   refreshWebuiVersion?: () => string
   agentDir: () => string | null
   agentHomes?: () => readonly string[]
-  agentMutation?: (path: string, revision: string, mutate: (git: GitRun, sync: UpdateServiceDeps['agentSync']) => Promise<Dict>, consent?: Pick<UpdateOptions, 'mutationIntent' | 'refreshToken' | 'onProgress'>) => Promise<Dict>
+  agentMutation?: (path: string, revision: string, mutate: (git: GitRun, sync: UpdateServiceDeps['agentSync']) => Promise<Dict>, consent?: Pick<UpdateOptions, 'mutationIntent' | 'refreshToken' | 'onProgress' | 'operationId'> & { baseline?: string }) => Promise<Dict>
   /** Repair dependencies through the sidecar even while its imported Agent is stale. */
   agentSync?: (agentDir: string) => Promise<SidecarResult<'runtime.sync_dependencies'>>
   channel: () => Channel
@@ -1440,11 +1444,12 @@ export class UpdateService {
       supportedRevision: str(supported.sourceRevision), supportedVersion: str(supported.version), ...(options.confirmedRevision ? { confirmedRevision: options.confirmedRevision } : {}),
       ...(this.deps.agentHomes ? { retainedStateHomes: this.deps.agentHomes } : {}),
       repairPending: Boolean(marker && existsSync(marker)),
-      ...(this.deps.agentMutation ? { withMutation: async (path: string, revision: string, mutate: (git: GitRun) => Promise<Dict>) => {
+      ...(this.deps.agentMutation ? { withMutation: async (path: string, revision: string, mutate: (git: GitRun) => Promise<Dict>, baseline: string) => {
+        await options.onTransaction?.(baseline, revision)
         const result = await this.deps.agentMutation!(path, revision, async (git, sync) => {
           const applied = await mutate(git)
           return applied.ok ? this.finishAgent(applied, path, sync, false) : applied
-        }, { refreshToken: options.refreshToken, onProgress: options.onProgress, mutationIntent: options.mutationIntent ? JSON.stringify([options.mutationIntent, force, options.agentChannel ?? this.agentChannel(), options.version ?? '', options.confirmedRevision ?? '']) : undefined })
+        }, { operationId: options.operationId, baseline, refreshToken: options.refreshToken, onProgress: options.onProgress, mutationIntent: options.mutationIntent ? JSON.stringify([options.mutationIntent, force, options.agentChannel ?? this.agentChannel(), options.version ?? '', options.confirmedRevision ?? '']) : undefined })
         if (result.ok && !retainRuntimeIntent) {
           const intent = agentSyncMarker(path, this.deps.stateDir)
           try { if (intent) rmSync(intent, { force: true }) }
@@ -1570,7 +1575,7 @@ export class UpdateService {
 
   /** One sequence owns its timer and RPC; unchanged permanent debt cannot restart it. */
   private armRecovery(): void {
-    if (!this.deps.recoverAgent || !this.deps.agentDir() || this.recoveryAbort || !this.autoStarted) return
+    if (!this.deps.recoverAgent || (!this.deps.agentDir() && !this.deps.hasPendingRecovery?.()) || this.recoveryAbort || !this.autoStarted) return
     if (this.recoveryTimer) {
       if (!this.recoveryProbe) return
       clearTimeout(this.recoveryTimer)
@@ -1585,6 +1590,8 @@ export class UpdateService {
   }
 
   private async publishRecovery(): Promise<void> {
+    const operation = this.recovery.operation
+    if (operation?.attempt_error) this.recovery = { ...this.recovery, operation: { ...operation, attempt_error: sanitizeGitDiagnostic(operation.attempt_error, 2000) } }
     try { await this.deps.recoveryChanged?.(this.recovery) }
     catch (error) { this.deps.log(`Could not persist Agent recovery notice: ${String(error)}`) }
   }
@@ -1597,15 +1604,20 @@ export class UpdateService {
     let retryDelay = 1000
     let probeOnly = false
     let ran = false
+    let publish = true
+    let operationId = this.deps.pendingRecoveryOperation?.()
+    let operation: AgentRecoveryState['operation']
     const waitWithoutSpending = (detail: string, delay = 1000): void => {
       retry = true
       retryDelay = delay
       this.recovery = { phase: 'waiting', attempt: this.recoveryAttempt, detail, retry_at: new Date(this.now() * 1000 + retryDelay).toISOString() }
     }
     try {
-      if (this.applying || this.deps.gatewayRestarting?.()) { retry = true; return }
+      if (this.applying || this.deps.gatewayRestarting?.()) { retry = true; publish = false; return }
       const probe = await this.deps.recoverAgent!(true, abort.signal)
       if (!current()) return
+      operation = !operationId || probe.operation?.operation_id === operationId ? probe.operation : undefined
+      operationId ??= operation?.operation_id
       if (probe.waiting_for_idle) { waitWithoutSpending(probe.detail); return }
       if (!probe.owed && ['idle', 'complete'].includes(this.recovery.phase) && !this.deps.hasPendingRecovery?.()) return
       if (probe.fingerprint !== this.recoveryFingerprint && ['idle', 'complete', 'blocked'].includes(this.recovery.phase)) this.recoveryAttempt = 0
@@ -1620,7 +1632,7 @@ export class UpdateService {
       ran = true
       // A re-check of a still-draining gateway keeps its waiting notice rather than flapping to running.
       if (!this.recoveryDraining) {
-        this.recovery = { phase: 'running', attempt: this.recoveryAttempt, detail: '', retry_at: null }
+        this.recovery = { phase: 'running', attempt: this.recoveryAttempt, detail: '', retry_at: null, ...(operationId ? { operation_id: operationId } : {}), ...(operation ? { operation } : {}) }
         await this.publishRecovery()
         if (!current()) return
       }
@@ -1646,7 +1658,7 @@ export class UpdateService {
       }
       if (!result.ok || result.owed) throw new Error(result.detail || 'Agent recovery remains unverified.')
       this.cache.checked_at = 0
-      this.recovery = { phase: 'complete', attempt: this.recoveryAttempt, detail: 'Agent service and runtime recovery is verified. The original update outcome is unchanged.', retry_at: null }
+      this.recovery = { phase: 'complete', attempt: this.recoveryAttempt, detail: 'Agent service and runtime recovery is verified.', retry_at: null, ...(result.operation ? { operation: result.operation } : {}), ...(result.revision ? { verified_revision: result.revision } : {}), ...(result.runtime_revision ? { runtime_revision: result.runtime_revision } : {}), ...(result.verified_version ? { verified_version: result.verified_version } : {}) }
     } catch (error) {
       if (!current()) return
       this.recoveryDraining = false
@@ -1659,7 +1671,8 @@ export class UpdateService {
       retryDelay = exhausted ? RECOVERY_PROBE_MS : RECOVERY_DELAYS[this.recoveryAttempt] ?? 1000
       if (!exhausted) this.recovery.retry_at = new Date(this.now() * 1000 + retryDelay).toISOString()
     } finally {
-      if (current()) {
+      if (current() && publish) {
+        this.recovery = { ...this.recovery, ...(operationId ? { operation_id: operationId } : {}), ...(operation && !this.recovery.operation ? { operation } : {}) }
         await this.publishRecovery()
       }
       if (this.recoveryAbort === abort) this.recoveryAbort = null
@@ -1780,11 +1793,14 @@ export class UpdateService {
         return verified ? { ok: true, target: 'agent', up_to_date: false, message: 'Agent update recovery completed.', ...verified }
           : { ok: false, message: 'Agent recovery could not verify the current source.' }
       }, 'repair')
+      // Repairing an older transaction cannot prove this request installed its selected release.
+      if (options.operationId) result = { ...result, recovery_only: true }
     } else {
       result = force
         ? await forceAgentUpdate(path, this.git, this.deps.log, options.agentChannel ?? this.agentChannel(), this.agentPolicy(options, force), options.version, this.publishedTag)
         : await applyAgentUpdate(path, this.git, options.agentChannel ?? this.agentChannel(), this.agentPolicy(options, force), options.version, this.publishedTag)
     }
+    if (result.ok !== true && result.recovery_required !== false && !result.confirmation_required && await options.onFailure?.(result.message || result.error, typeof result.verified_revision === 'string' ? { revision: result.verified_revision, version: typeof result.verified_version === 'string' ? result.verified_version : null } : undefined)) result.recovery_pending = true
     if (this.deps.agentMutation) {
       if (result.ok && result.restart_scheduled) { this.autoRestartScheduled = true; this.stopAutoApply(); this.deps.scheduleRestart() }
       return result

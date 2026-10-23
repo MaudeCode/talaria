@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import type { Page } from '@playwright/test'
 import type { UpdateNotification } from '../src/contracts'
 import { expect, settle, test } from './fixtures'
@@ -417,4 +418,42 @@ test.describe('adaptive notification cadence', () => {
     expect(server.reads).toBe(finishedReads)
     await expect(dialog).toBeHidden()
   })
+})
+
+
+test('the original Agent modal stays open through automatic recovery and reconnect', async ({ page }, testInfo) => {
+  await page.clock.install()
+  const server = await serveNotifications(page)
+  await serveUpdatesCheck(page, { web: 0, agent: 1 })
+  const fixture = JSON.parse(readFileSync(new URL('../../../../contracts/fixtures/update-notifications.json', import.meta.url), 'utf8')) as { notifications: Row[] }
+  const recovering = { ...fixture.notifications[0]!, id: WEB_ID }
+  let applies = 0
+  await page.route('**/api/updates/apply', (route) => {
+    applies += 1
+    server.tabUpdate = recovering
+    return route.fulfill({ json: { ok: false, recovery_pending: true, notification_id: WEB_ID } })
+  })
+  await page.goto('/settings/system')
+  await settle(page)
+  await page.getByRole('button', { name: 'Update Agent', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: 'Updating Hermes Agent' })
+  await expect(dialog.locator('[aria-current="step"]')).toHaveText('Attempting recovery')
+  await expect(dialog.getByRole('button')).toHaveCount(0)
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('after-attempting-recovery.png') })
+  await page.reload()
+  await settle(page)
+  await expect(dialog.locator('[aria-current="step"]')).toHaveText('Attempting recovery')
+  await expect(dialog.getByRole('button')).toHaveCount(0)
+  server.tabUpdate = { ...recovering, phase: 'failed', active: false, presents_dialog: false, dialog_close: 'close',
+    message: 'The requested update failed. Automatic recovery rolled back to the previous revision, v1.0.0.',
+    detail: 'The requested update failed. Automatic recovery rolled back to the previous revision, v1.0.0.\nSynthetic gateway resume failed.',
+    steps: recovering.steps.map((step) => ({ ...step, label: step.id === 'agent_ready' ? 'Hermes Agent v1.0.0 is running' : step.label, state: step.id === 'gateway_restart' ? 'failed' : 'done' })),
+    updated_at: '2026-10-23T12:00:00Z' }
+  await page.clock.runFor(2_000)
+  await expect(dialog).toContainText('rolled back to the previous revision, v1.0.0')
+  await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('after-recovered-baseline.png') })
+  expect(applies).toBe(1)
 })

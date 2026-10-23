@@ -2849,13 +2849,32 @@ def mutation_worker(backend_stop, monkeypatch):
 
     monkeypatch.setattr(mutation, '_command', command)
 
-    def run(requests=(), binding=None, cancel_at=None):
+    def run(requests=(), binding=None, cancel_at=None, operation=None, recover=False, complete_revision=None, marker=None):
+        if marker is not None:
+            monkeypatch.setattr(mutation, 'recovery_receipts', lambda runtime: ([('synthetic-marker', 1, 1, 1)] if marker.exists() else [], marker))
+        if recover:
+            from talaria_sidecar import runtime
+            saved = json.loads(recovery.path.read_text())
+            # The native checkout gate records this successful move; this fixture's gate is in-process.
+            saved['tree']['baselines'][0]['move_targets'] = [model['target']]
+            recovery.path.write_text(json.dumps(saved))
+            records.orphans = lambda: []
+            records.merge_into = lambda left, right: right
+            records.recover = lambda **kwargs: journal.unlink(missing_ok=True)
+            records.record_path = lambda: journal
+            records._claims = lambda path: []
+            early = types.SimpleNamespace(interrupted_pull_marker=lambda root: root / '.interrupted')
+            monkeypatch.setitem(sys.modules, 'hermes_cli._early_recovery', early)
+            monkeypatch.setattr(runtime, 'AgentRuntime', lambda home, root: types.SimpleNamespace(hermes_home=home))
+            if marker is None:
+                monkeypatch.setattr(mutation, 'recovery_receipts', lambda runtime: ([], None))
+            return mutation._resume_worker(root, complete_revision=complete_revision)
         incoming, replies = queue.Queue(), []
         for request in requests: incoming.put(request)
         incoming.put({'action': 'finish'})
         cancelled = lambda: cancel_at is not None and services.time.monotonic() >= cancel_at
         stopped = types.SimpleNamespace(is_set=cancelled, wait=lambda seconds: pause.advance(seconds) or cancelled())
-        mutation._worker(root, model['target'], {home}, incoming, stopped, replies.append, binding)
+        mutation._worker(root, model['target'], {home}, incoming, stopped, replies.append, binding, operation)
         return replies
 
     return run, model, recovery, entry, parents, events, pause
@@ -3338,24 +3357,7 @@ def test_worker_completes_or_recovers_after_post_move_child_exit(mutation_worker
     if failure:
         assert recovery.path.exists()
         failed = list(replies)
-        from types import SimpleNamespace
-        from talaria_sidecar import agent_mutation as mutation, runtime
-        records = recovery.records
-        saved = json.loads(recovery.path.read_text())
-        # This fixture's native checkout gate records the successful selected move here.
-        saved['tree']['baselines'][0]['move_targets'] = [model['target']]
-        recovery.path.write_text(json.dumps(saved))
-        journal = Path(entry['home']) / 'native-journal.json'
-        records.orphans = lambda: []
-        records.merge_into = lambda left, right: right
-        records.recover = lambda **kwargs: journal.unlink(missing_ok=True)
-        records.record_path = lambda: journal
-        records._claims = lambda path: []
-        early = SimpleNamespace(interrupted_pull_marker=lambda root: root / '.interrupted')
-        monkeypatch.setitem(sys.modules, 'hermes_cli._early_recovery', early)
-        monkeypatch.setattr(runtime, 'AgentRuntime', lambda home, root: SimpleNamespace(hermes_home=home))
-        monkeypatch.setattr(mutation, 'recovery_receipts', lambda runtime: ([], None))
-        recovered = mutation._resume_worker(recovery.root)
+        recovered = run(recover=True)
         assert recovered['ok'] and recovered['revision'] == model['target'], recovered
         assert failed[-1]['ok'] is False and model['head'] == model['target']
     assert not recovery.path.exists()
@@ -3503,3 +3505,105 @@ def test_readiness_tree_switch_requires_every_previous_writer_to_exit(gateway_su
         assert fresh.path.read_bytes() == before
         assert {42001, 42002, 42005} <= parents.keys()
     assert calls == []
+
+
+def test_completed_update_correlation_survives_restart_without_keeping_admission_closed(tmp_path):
+    import types
+    from talaria_sidecar import agent_mutation, agent_services
+    from talaria_sidecar.runtime import AgentRuntime
+    root, home = tmp_path / 'agent', tmp_path / 'home'
+    root.mkdir(); home.mkdir()
+    operation = {'operation_id': '00000000-0000-4000-8000-000000001523', 'baseline_revision': 'a' * 40,
+                 'target_revision': 'b' * 40, 'stage': 'agent_ready', 'recovered_revision': 'b' * 40}
+    recovery = agent_services.ServiceRecovery(root, home, None, None, None)
+    recovery.state['update_operation'] = operation
+    recovery.save()
+    assert recovery.path.exists(), 'verified transaction outcome vanished before the server could read it'
+    restarted = agent_services.ServiceRecovery(root, home, None, None, None)
+    assert restarted.state['update_operation'] == operation
+    runtime = AgentRuntime(home, root)
+    result = agent_mutation.recover_retained(runtime, types.SimpleNamespace(), probe=True)
+    assert result['ok'] and not result['owed'], 'completed history must not close admission'
+    assert result['operation'] == operation and result['revision'] == 'b' * 40
+    # Unrelated orphan debt must not inherit this completed operation.
+    (root / '.update-incomplete').touch()
+    orphan = agent_mutation.recover_retained(runtime, types.SimpleNamespace(), probe=True)
+    assert orphan['owed'] and 'operation' not in orphan
+
+
+@pytest.mark.parametrize('mode', ['merge', 'reset'])
+def test_worker_persists_operation_and_exact_target_before_mutation(mutation_worker, monkeypatch, mode):
+    from talaria_sidecar import agent_mutation as mutation
+    run, model, recovery, entry, parents, events, pause = mutation_worker
+    operation = {'operation_id': '00000000-0000-4000-8000-000000001523', 'baseline_revision': model['head']}
+    original = mutation._command
+    observed = []
+    def command(argv, *args):
+        if argv[1:2] == [mode]:
+            evidence = json.loads(recovery.path.read_text())
+            observed.append(evidence['update_operation'])
+            assert evidence['transaction']['operation_id'] == operation['operation_id']
+        return original(argv, *args)
+    monkeypatch.setattr(mutation, '_command', command)
+    replies = run([{'action': 'git', 'args': [mode, '--hard' if mode == 'reset' else '--ff-only', model['target']]}, {'action': 'sync'}], operation=operation)
+    assert all(reply['ok'] for reply in replies), replies
+    assert observed == [{**operation, 'target_revision': model['target'], 'stage': 'install'}]
+    saved = json.loads(recovery.path.read_text())
+    assert saved['update_operation']['recovered_revision'] == model['target']
+    assert 'transaction' not in saved and not saved['entries']
+
+
+def test_local_repair_preserves_the_original_operation_after_dependency_failure(mutation_worker):
+    run, model, recovery, entry, parents, events, pause = mutation_worker
+    operation = {'operation_id': '00000000-0000-4000-8000-000000001523', 'baseline_revision': model['head']}
+    model['fail_sync'] = True
+    replies = run([{'action': 'git', 'args': ['merge', '--ff-only', model['target']]}, {'action': 'sync'}], operation=operation)
+    assert not replies[-1]['ok']
+    saved = json.loads(recovery.path.read_text())
+    assert saved['update_operation'] == {**operation, 'target_revision': model['target'], 'stage': 'install', 'failed_stage': 'install', 'attempt_error': 'synthetic dependency result', 'source_moved': True}
+    model['fail_sync'] = False
+    repaired = run([{'action': 'sync'}])
+    assert all(reply['ok'] for reply in repaired), repaired
+    assert json.loads(recovery.path.read_text())['update_operation'] == {**saved['update_operation'], 'stage': 'agent_ready', 'recovered_revision': model['target']}
+
+
+def test_worker_refuses_to_replace_another_owners_unresolved_operation(mutation_worker):
+    run, model, recovery, entry, parents, events, pause = mutation_worker
+    first = {'operation_id': '00000000-0000-4000-8000-000000001523', 'baseline_revision': model['head']}
+    model['fail_sync'] = True
+    failed = run([{'action': 'git', 'args': ['merge', '--ff-only', model['target']]}, {'action': 'sync'}], operation=first)
+    assert not failed[-1]['ok']
+    retained = recovery.path.read_bytes()
+    model['fail_sync'] = False
+    other = {'operation_id': '00000000-0000-4000-8000-000000009999', 'baseline_revision': model['head']}
+    rejected = run([{'action': 'sync'}], operation=other)
+    assert rejected[0]['ok'] is False, 'a different owner replaced an unresolved initiating operation'
+    assert recovery.path.read_bytes() == retained
+    assert json.loads(retained)['transaction']['operation_id'] == first['operation_id']
+
+
+def test_marker_unlink_failure_preserves_operation_until_runtime_completion(mutation_worker, monkeypatch):
+    run, model, recovery, entry, parents, events, pause = mutation_worker
+    marker = recovery.root / 'synthetic-runtime-marker'
+    marker.touch()
+    operation = {'operation_id': '00000000-0000-4000-8000-000000001523', 'baseline_revision': model['head']}
+    applied = run([{'action': 'git', 'args': ['merge', '--ff-only', model['target']]}, {'action': 'sync'}], operation=operation, marker=marker)
+    assert all(reply['ok'] for reply in applied), applied
+    unlink = Path.unlink
+    def refuse(path, *args, **kwargs):
+        if path == marker:
+            raise OSError('Synthetic marker removal failed.')
+        return unlink(path, *args, **kwargs)
+    with monkeypatch.context() as fault:
+        fault.setattr(Path, 'unlink', refuse)
+        with pytest.raises(OSError, match='Synthetic marker removal failed'):
+            run(recover=True, complete_revision=model['target'], marker=marker)
+    saved = json.loads(recovery.path.read_text())
+    assert saved.get('transaction', {}).get('operation_id') == operation['operation_id'], 'runtime completion discarded correlation before clearing its marker'
+    assert marker.exists()
+    recovered = run(recover=True, complete_revision=model['target'], marker=marker)
+    assert recovered['ok'] and not marker.exists()
+    completed = json.loads(recovery.path.read_text())
+    assert completed['update_operation']['operation_id'] == operation['operation_id']
+    assert completed['update_operation']['recovered_revision'] == model['target']
+    assert 'transaction' not in completed

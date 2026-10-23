@@ -230,7 +230,7 @@ describe('contracts package', () => {
     expect(parsed.notifications.map((row) => row.kind)).toEqual(['update', 'system', 'update', 'update', 'agent_warning'])
     expect(parsed.notifications[4]).toMatchObject({ kind: 'agent_warning', target: 'agent', phase: 'active', severity: 'warning', persistent: true, unread: true, can_dismiss: true, actions: [], destination: null })
     expect(parsed.frontend_build).toMatchObject({ refresh_required: true, notification_id: null })
-    expect(parsed.notifications[0]).toMatchObject({ phase: 'verifying', presents_dialog: true, dialog_close: 'none', steps: [{ state: 'done' }, { state: 'done' }, { state: 'done' }, { id: 'agent_ready', state: 'active' }] })
+    expect(parsed.notifications[0]).toMatchObject({ phase: 'recovering', active: true, can_dismiss: false, presents_dialog: true, dialog_close: 'none', steps: [{ state: 'done' }, { id: 'gateway_restart', state: 'failed' }, { id: 'recovery', label: 'Attempting recovery', state: 'active' }, { id: 'agent_ready', state: 'pending' }], recovery: { outcome: 'recovering', operation: { failed_stage: 'gateway_restart' } } })
     expect(parsed.tab_update).toEqual(parsed.notifications[0])
     expect(parsed.notifications[1]).toMatchObject({ requires_interaction: true, can_dismiss: false, destination: { key: 'settings.system' }, steps: [], dialog_close: 'close' })
     expect(parsed.notifications[2]).toMatchObject({ verified_revision: 'a'.repeat(40), verified_version: 'web-v1.2.3', dialog_close: 'auto' })

@@ -281,6 +281,26 @@ describe('adaptive notification polling (TAL-1246)', () => {
     expect(api.fetchUpdateNotifications).toHaveBeenCalledTimes(6)
   })
 
+  it('keeps following the same recovering operation after a dropped response', async () => {
+    await mount()
+    act(() => { progress!.begin('agent') })
+    await advance()
+    act(() => { progress!.settle('agent', { failure: new ApiError({ kind: 'network', status: 0, path: '/api/updates/apply', message: 'Lost response' }) }) })
+    const recovery = record({ active: true, phase: 'recovering', presents_dialog: true, can_dismiss: false, dialog_close: 'none',
+      steps: [{ id: 'recovery', label: 'Attempting recovery', state: 'active' }] })
+    server.tabUpdate = recovery
+    await advance(2_000)
+    expect(updating('Hermes Agent')).toHaveTextContent('Attempting recovery')
+    expect(within(updating('Hermes Agent')!).queryByRole('button')).toBeNull()
+    const before = vi.mocked(api.fetchUpdateNotifications).mock.calls.length
+    await advance(2_000)
+    expect(api.fetchUpdateNotifications).toHaveBeenCalledTimes(before + 1)
+    server.tabUpdate = { ...recovery, active: false, phase: 'failed', presents_dialog: false, dialog_close: 'close', detail: 'The requested update failed. Service recovered on the previous revision.' }
+    await advance(2_000)
+    expect(updating('Hermes Agent')).toHaveTextContent('Service recovered on the previous revision')
+    expect(api.performUpdateNotificationAction).not.toHaveBeenCalled()
+  })
+
   it('rechecks on inbox open and uses fast polling until it closes', async () => {
     await mount()
     fireEvent.click(screen.getByRole('button', { name: 'Notifications' }))

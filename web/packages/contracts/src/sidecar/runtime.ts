@@ -37,12 +37,25 @@ export const RpcMethodsResultSchema = z.object({ methods: z.array(z.string()) })
 export const RuntimeSyncDependenciesParamsSchema = z.object({ agent_dir: z.string().min(1) })
 export const RuntimeSyncDependenciesResultSchema = z.object({ ok: z.boolean(), skipped: z.boolean(), detail: z.string() })
 
+const AgentUpdateStageSchema = z.enum(['install', 'gateway_restart', 'agent_ready'])
+
+/** Immutable association retained with the existing native transaction, including its recovered outcome. */
+export const AgentUpdateOperationSchema = z.object({
+  operation_id: z.uuid(), baseline_revision: z.string().regex(/^[a-f0-9]{40}$/), target_revision: z.string().regex(/^[a-f0-9]{40}$/),
+  stage: AgentUpdateStageSchema,
+  recovered_revision: z.string().regex(/^[a-f0-9]{40}$/).optional(),
+  source_moved: z.boolean().optional(),
+  attempt_error: z.string().max(2000).optional(), failed_stage: AgentUpdateStageSchema.optional(),
+})
+export type AgentUpdateOperation = z.infer<typeof AgentUpdateOperationSchema>
+
 /** Continue retained work only; never resolve a release or accept interruption consent. */
 export const RuntimeAgentRecoveryParamsSchema = z.object({ probe: z.boolean().optional(), complete_revision: z.string().regex(/^[a-f0-9]{40}$/).optional() })
 export const RuntimeAgentRecoveryResultSchema = z.object({
   ok: z.boolean(), owed: z.boolean(), fingerprint: z.string(), detail: z.string(),
   local_restore: z.boolean().optional(), revision: z.string().regex(/^[a-f0-9]{40}$/).optional(),
   runtime_pending: z.boolean().optional(),
+  operation: AgentUpdateOperationSchema.optional(), runtime_revision: z.string().regex(/^[a-f0-9]{40}$/).optional(), verified_version: z.string().nullable().optional(),
   /** An acknowledged native gateway drain is still within its native budget: progress, not a failed attempt. */
   draining: z.boolean().optional(),
 })
@@ -52,11 +65,11 @@ export const AgentRefreshConfirmationSchema = z.object({ token: z.string().regex
 
 /** A held writer lease spans compatibility inspection, source mutation, repair, and durable resume. */
 export const RuntimeAgentMutationParamsSchema = z.discriminatedUnion('action', [
-  z.object({ action: z.literal('begin'), agent_dir: z.string().min(1), revision: z.string().regex(/^[a-f0-9]{40}$/), homes: z.array(z.string().min(1)).min(1), intent: z.string().min(1).max(1024).optional(), refresh_token: z.string().regex(/^[a-f0-9]{32}$/).optional() }),
+  z.object({ action: z.literal('begin'), agent_dir: z.string().min(1), revision: z.string().regex(/^[a-f0-9]{40}$/), homes: z.array(z.string().min(1)).min(1), operation_id: z.uuid().optional(), baseline_revision: z.string().regex(/^[a-f0-9]{40}$/).optional(), intent: z.string().min(1).max(1024).optional(), refresh_token: z.string().regex(/^[a-f0-9]{32}$/).optional() }),
   z.object({ action: z.literal('git'), agent_dir: z.string().min(1), token: z.string().regex(/^[a-f0-9]{32}$/), args: z.array(z.string().max(65536)).min(1).max(1000), timeout_ms: z.number().int().min(100).max(300000) }),
   z.object({ action: z.enum(['sync', 'finish']), agent_dir: z.string().min(1), token: z.string().regex(/^[a-f0-9]{32}$/) }),
 ])
-export const RuntimeAgentMutationResultSchema = RuntimeSyncDependenciesResultSchema.extend({ token: z.string().regex(/^[a-f0-9]{32}$/).optional(), refresh_confirmation: AgentRefreshConfirmationSchema.optional() })
+export const RuntimeAgentMutationResultSchema = RuntimeSyncDependenciesResultSchema.extend({ recovery_required: z.boolean().optional(), token: z.string().regex(/^[a-f0-9]{32}$/).optional(), refresh_confirmation: AgentRefreshConfirmationSchema.optional() })
 /**
  * TAL-1429: `begin` reports the shared native gateway drain it waits for. `deadline_seconds` is the worker's
  * bounded drain budget from this frame; the caller keeps custody until it passes plus the ordinary lease margin.
