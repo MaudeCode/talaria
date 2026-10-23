@@ -166,6 +166,10 @@ test(`live tool batches settle once: ${limited ? 'tool limit' : 'completed'}`, a
   await expect(spinner.locator('.live-run-label')).toHaveCSS('animation-name', 'reasoning-title-glow')
   await expect(groupLabel).toHaveCSS('animation-name', 'reasoning-title-glow')
   await expect(groupLabel).toHaveCSS('background-image', /linear-gradient/)
+  // Paint-heavy labels and SVG leaves advance in bounded steps (TAL-1393).
+  for (const label of [groupLabel, spinner.locator('.live-run-label'), spinner.locator('.laurel-leaf').first()]) {
+    await expect(label).toHaveCSS('animation-timing-function', 'steps(30)')
+  }
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await expect(groupLabel).toHaveCSS('background-image', 'none')
   const spinnerBox = (await spinner.boundingBox())!

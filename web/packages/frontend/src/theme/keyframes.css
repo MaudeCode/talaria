@@ -18,7 +18,7 @@
 @keyframes voice-mode-pulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.5;transform:scale(.85);}}
 @keyframes send-pop-in{from{opacity:0;transform:scale(.55);}to{opacity:1;transform:scale(1);}}
 @keyframes tts-pulse{0%,100%{opacity:1}50%{opacity:.5}}
-@keyframes wlpulse{0%,100%{box-shadow:0 0 0 0 var(--accent-bg-strong);}50%{box-shadow:0 0 0 5px rgba(255,215,0,0);}}
+@keyframes wlpulse{0%{opacity:1;transform:scale(1);}100%{opacity:0;transform:scale(2.4);}}
 @keyframes reasoning-title-glow{
   from{background-position:160% 50%;}
   to{background-position:-60% 50%;}

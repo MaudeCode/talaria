@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Chat activity indicators animate with fewer repaints during long responses.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
