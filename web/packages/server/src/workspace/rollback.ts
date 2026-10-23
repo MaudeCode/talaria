@@ -106,7 +106,7 @@ export class RollbackStore {
     const sidecar = this.sidecar()
     const { diff } = await this.exclusive((home) => sidecar.call('checkpoints.diff', { profile_home: home, workspace: resolved, checkpoint: cid }))
     const filesChanged = checkpointDiffFiles(diff)
-    return { checkpoint: cid, workspace: resolved, diff: diff.trimEnd(), files_changed: filesChanged, total_changes: filesChanged.length }
+    return { checkpoint: cid, workspace: resolved, diff: diff.trimEnd(), files_changed: filesChanged, total_changes: filesChanged.length, comparison: { provenance: 'direct_workspace', baseline: 'selected_checkpoint', available: true, reason: null, truncated: false } }
   }
 
   /**

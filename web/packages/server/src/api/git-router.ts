@@ -1,6 +1,6 @@
 /** Git panel, rollback, worktree, and upload-receipt procedures. */
 import { implement } from '@orpc/server'
-import { gitContract } from '@maudecode/talaria-web-contracts'
+import { gitContract, type CheckpointDiff } from '@maudecode/talaria-web-contracts'
 import { HttpError, requireFields, type ApiContext } from './router.js'
 import { requestSessionIdGuard } from './session-visibility.js'
 import type { RequestContext } from '../http/context.js'
@@ -82,8 +82,14 @@ async function generateCommitMessage(ctx: RequestContext, session: Session, prom
 const asStatus = (s: GitStatus): GitStatus => s
 
 /** A rollback request names a configured workspace, or a session that vouches for its own workspace (a worktree chat's is not a configured one). */
-async function rollbackTarget(ctx: RequestContext, input: { workspace?: string | undefined; session_id?: string | undefined }): Promise<{ workspace: string | undefined; allowed: string[] }> {
+async function rollbackTarget(ctx: RequestContext, input: { workspace?: string | undefined; session_id?: string | undefined }, restore = false): Promise<{ workspace: string | undefined; allowed: string[]; native?: CheckpointDiff }> {
   if (!input.session_id) return { workspace: input.workspace, allowed: [] }
+  if (restore) {
+    if (await ctx.deps.sessions.owner?.isOwned(input.session_id)) throw new HttpError(409, 'Native checkpoint access is read-only')
+  } else {
+    const native = await ctx.deps.sessions.owner?.checkpointDiff(input.session_id)
+    if (native) return { workspace: undefined, allowed: [], native }
+  }
   const { workspace } = (await gitSession(ctx, input.session_id))
   return { workspace, allowed: [workspace] }
 }
@@ -174,7 +180,8 @@ export const gitRouter = os.router({
   },
   rollback: {
     list: os.rollback.list.handler(async ({ input, context: { ctx } }) => {
-      const { workspace, allowed } = (await rollbackTarget(ctx, input))
+      const { workspace, allowed, native } = (await rollbackTarget(ctx, input))
+      if (native) return { checkpoints: [], workspace: '', checkpoint_dir: '', session_diff: native }
       if (!workspace) throw new HttpError(400, 'workspace query parameter is required')
       try {
         return await ctx.deps.rollback.list(workspace, allowed) as never
@@ -184,7 +191,8 @@ export const gitRouter = os.router({
     }),
     diff: os.rollback.diff.handler(async ({ input, context: { ctx } }) => {
       const checkpoint = input.checkpoint ?? input.id
-      const { workspace, allowed } = (await rollbackTarget(ctx, input))
+      const { workspace, allowed, native } = (await rollbackTarget(ctx, input))
+      if (native) return native
       if (!workspace || !checkpoint) throw new HttpError(400, 'workspace and checkpoint query parameters are required')
       try {
         return await ctx.deps.git.holdCheckpoint(workspace, () => ctx.deps.rollback.diff(workspace, checkpoint, allowed)) as never
@@ -195,7 +203,7 @@ export const gitRouter = os.router({
     restore: os.rollback.restore.handler(async ({ input, context: { ctx } }) => {
       if (!Object.keys(input).length) throw new HttpError(400, 'request body is required')
       const checkpoint = input.checkpoint ?? input.id
-      const { workspace, allowed } = (await rollbackTarget(ctx, input))
+      const { workspace, allowed } = (await rollbackTarget(ctx, input, true))
       if (!workspace || !checkpoint) throw new HttpError(400, 'workspace and checkpoint are required')
       // Held for the whole restore so no run, terminal, file write, or Git mutation starts there while the Agent rewrites its files.
       try {

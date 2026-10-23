@@ -178,6 +178,42 @@ describe('chat side panel Checkpoints (TAL-571)', () => {
     await waitFor(() => { expect(api.restoreCheckpoint).toHaveBeenCalledWith('s1', 'c1', action === 'Restore everything') })
   }
 
+  it('replaces an open checkpoint diff when the same chat workspace changes', async () => {
+    let workspace = '/repo-a'
+    vi.mocked(api.fetchCheckpoints).mockImplementation(() => Promise.resolve({ ...checkpoints,
+      workspace, checkpoints: [{ ...checkpoints.checkpoints[0]!, message: `before ${workspace}` }],
+    }))
+    vi.mocked(api.fetchCheckpointDiff).mockImplementation(() => Promise.resolve({
+      checkpoint: 'c1', workspace, diff: workspace, files_changed: [{ file: `${workspace.slice(1)}.txt`, status: 'modified' }], total_changes: 1,
+    }))
+    const { rerender } = render(<Panel workspace={workspace} />)
+    await userEvent.click(await screen.findByRole('tab', { name: 'Checkpoints' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'View diff' }))
+    expect(await screen.findByText('repo-a.txt')).toBeInTheDocument()
+    workspace = '/repo-b'
+    rerender(<Panel workspace={workspace} />)
+    expect(await screen.findByText('before /repo-b')).toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: 'Changes in checkpoint' })).not.toBeInTheDocument()
+    expect(screen.queryByText('before /repo-a')).not.toBeInTheDocument()
+    await userEvent.click(await screen.findByRole('button', { name: 'View diff' }))
+    expect(await screen.findByText('repo-b.txt')).toBeInTheDocument()
+    expect(screen.queryByText('repo-a.txt')).not.toBeInTheDocument()
+    expect(api.fetchCheckpoints).toHaveBeenCalledTimes(2)
+    expect(api.fetchCheckpointDiff).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps native checkpoint reads available without a workspace path', async () => {
+    vi.mocked(api.fetchCheckpoints).mockResolvedValue({ checkpoints: [], workspace: '', checkpoint_dir: '', session_diff: {
+      checkpoint: 'earliest-retained', workspace: '', diff: '', files_changed: [], total_changes: 0,
+      comparison: { provenance: 'native_owner', baseline: 'earliest_retained_project_checkpoint', available: false, reason: 'no_baseline', truncated: false },
+    } })
+    render(<Panel workspace={null} />)
+    await userEvent.click(await screen.findByRole('tab', { name: 'Checkpoints' }))
+    expect(await screen.findByRole('button', { name: 'View diff' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Restore' })).not.toBeInTheDocument()
+    expect(api.fetchCheckpoints).toHaveBeenCalledWith('s1')
+  })
+
   it('drops an unsaved Files draft of a file the restore rewrote', async () => {
     vi.mocked(api.readFile).mockReset().mockResolvedValue({ content: 'agent text', binary: false, size: 10 })
     vi.mocked(api.restoreCheckpoint).mockReset().mockResolvedValue(restored())

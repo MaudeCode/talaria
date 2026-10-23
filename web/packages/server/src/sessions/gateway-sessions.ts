@@ -1,4 +1,5 @@
-import { unavailableContextDetail, type ContextDetail } from '@maudecode/talaria-web-contracts'
+import { CHECKPOINT_DIFF_MAX_BYTES, unavailableContextDetail, type CheckpointDiff, type ContextDetail } from '@maudecode/talaria-web-contracts'
+import { checkpointDiffFiles } from '../workspace/rollback.js'
 /** One native-owner seam. Talaria observes its history and never settles it into a local Session. */
 import type { StartupTiming } from '../startup-timing.js'
 import { createHash, randomUUID } from 'node:crypto'
@@ -243,6 +244,22 @@ export class GatewaySessions {
   }
 
   async isOwned(sid: string): Promise<boolean> { return (await this.target(sid)) !== null }
+
+  async checkpointDiff(sid: string): Promise<CheckpointDiff | null> {
+    const profile = this.deps.activeProfile()
+    const target = await this.target(sid, profile)
+    if (!target) return null
+    const result = await this.call(target, { action: 'checkpoint_diff' })
+    const read = profile === this.deps.activeProfile() && result.state === 'attached' ? result.checkpoint_diff : undefined
+    const comparison: NonNullable<CheckpointDiff['comparison']> = read ? { ...read.comparison } : { provenance: 'native_owner', baseline: 'earliest_retained_project_checkpoint', available: false, reason: 'owner_unavailable', truncated: false }
+    if (read && (Buffer.byteLength(JSON.stringify(read.diff), 'utf8') + Buffer.byteLength(JSON.stringify(read.stat), 'utf8') - 4 > CHECKPOINT_DIFF_MAX_BYTES)) {
+      comparison.available = false
+      comparison.reason = 'payload_too_large'
+    }
+    const diff = comparison.available ? read?.diff ?? '' : ''
+    const files = checkpointDiffFiles(diff)
+    return { checkpoint: 'earliest-retained', workspace: '', diff: diff.trimEnd(), files_changed: files, total_changes: files.length, comparison }
+  }
 
   async export(sid: string, format: NonNullable<GatewaySessionParams['format']>): Promise<NonNullable<GatewaySessionResult['export']> | null> {
     const target = await this.target(sid)
