@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Scheduled tasks load faster in Talaria Web when a profile has many of them.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

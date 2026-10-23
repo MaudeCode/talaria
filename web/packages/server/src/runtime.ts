@@ -744,7 +744,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       publishSessionsChanged: (reason, profile) => { events.publish(reason, { profile }) },
       runningJobs: runningCronJobs,
       updateInProgress: () => deps.updates.blocksNewWork(),
-      modelOptionFor: async (home, model, provider) => { await catalog.warmModelOptions(home); return catalog.modelOptionFor(home, model, provider) },
+      modelOptions: (home) => catalog.modelOptionResolver(home),
     }),
     kanban: new KanbanService({ sidecar: () => sidecar, config: agentConfig }),
     extensions: new ExtensionService({ documents: storage.documents, env, stateDir: config.stateDir, isAuthEnabled: () => auth.isAuthEnabled(), fetch: lazyFetch, log }),
