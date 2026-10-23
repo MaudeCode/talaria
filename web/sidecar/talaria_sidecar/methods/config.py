@@ -133,9 +133,17 @@ def _split_config_aliases(text: str, desired: dict) -> str:
     return output.getvalue()
 
 
-def write_config(path: Path, config: dict) -> dict:
+def write_config(path: Path, config: dict, *, profile_home: Path | None = None) -> dict:
     if not isinstance(config, dict):
         raise InvalidParams("config must be an object")
+    try:
+        managed = importlib.import_module("hermes_constants").get_managed_system(profile_home)
+    except Exception as exc:  # noqa: BLE001
+        raise RpcError("Cannot verify config.yaml management policy; repair the Agent installation before saving.",
+                       condition="config_policy_unavailable") from exc
+    if managed is not None:
+        raise RpcError("config.yaml is package-managed. Update the declarative configuration instead.",
+                       condition="config_write_refused")
     target = _write_target(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -302,7 +310,7 @@ def register(registry) -> None:
 
     @registry.method("config.set", requires_agent=False)
     def set_(ctx: CallContext, params: dict) -> dict:
-        return write_config(config_path_param(params), params.get("config"))
+        return write_config(config_path_param(params), params.get("config"), profile_home=profile_home_param(params))
 
     @registry.method("config.env_write")
     def env_write_(ctx: CallContext, params: dict) -> dict:

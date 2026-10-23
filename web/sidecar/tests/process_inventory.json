@@ -790,6 +790,11 @@
         ""
       ]
     },
+    "tests/test_config_write.py::test_native_managed_config_policy": {
+      "layer": "compatibility",
+      "reason": "Exact supported-Agent lightweight management detector contract for environment and owning-profile markers; real unmanaged YAML repair with broken heavy imports.",
+      "cases": [""]
+    },
     "tests/test_config_write.py::test_config_set_preserves_divergent_alias_values": {
       "layer": "compatibility",
       "reason": "Supported-Agent YAML identity and writer behavior: JSON full-state saves split divergent mapping and sequence aliases, retain unchanged aliases and comments, and preserve values when Agent writer imports fail. Requires the installed Agent parser and writer.",

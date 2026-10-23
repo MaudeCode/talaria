@@ -26,12 +26,16 @@ import { forgetPluginFlow, isPluginFlow, rememberPluginFlow } from '../tools/plu
 
 const os = implement(settingsContract).$context<ApiContext>().use(requestSessionIdGuard)
 
-function failure(error: unknown): never {
+function failure(error: unknown, fallbackStatus?: number): never {
   if (error instanceof HttpError) throw error
   if (error instanceof HttpFailure) throw new HttpError(error.status, error.message, error.extra ?? {})
   if (error instanceof ProfileError || error instanceof OnboardingError) throw new HttpError(error.status, error.message)
   if (error instanceof SessionNotFound) throw new HttpError(404, 'Session not found')
+  if (error instanceof SidecarError && ['config_write_refused', 'config_policy_unavailable'].includes(error.condition)) {
+    throw new HttpError(error.condition === 'config_write_refused' ? 409 : 503, error.message, { condition: error.condition })
+  }
   if (error instanceof ConfigUnavailable) throw new HttpError(503, error.message)
+  if (fallbackStatus !== undefined) throw new HttpError(fallbackStatus, str((error as Error).message))
   throw error
 }
 
@@ -161,7 +165,11 @@ async function saveSettings(ctx: RequestContext, input: Dict): Promise<Dict> {
   if (requestedPasswordless) {
     if (!auth.passkeyFeatureFlagEnabled()) throw new HttpError(409, 'Passkey support is disabled. Enable HERMES_WEBUI_PASSKEY before going passwordless.')
     if (!await auth.passkeysEnabled()) throw new HttpError(409, 'Register a passkey before going passwordless.')
-  } else if (requestedClear) await deps.clearPasskeys()
+  }
+  const cfgHome = home(ctx)
+  // A definite YAML refusal must precede every sibling settings or credential mutation.
+  const maxTokens = maxTokensProvided ? await setMaxTokens(deps.agentConfig, cfgHome, maxTokensValue) : null
+  if (!requestedPasswordless && requestedClear) await deps.clearPasskeys()
   const ack = body._auth_disabled_acknowledged
   Reflect.deleteProperty(body, '_auth_disabled_acknowledged')
   if (ack !== undefined && ack !== null && !(await auth.isAuthEnabled())) body.auth_disabled_acknowledged = pyBool(ack)
@@ -171,9 +179,8 @@ async function saveSettings(ctx: RequestContext, input: Dict): Promise<Dict> {
   const raw = await deps.settings.readRaw()
   saved.persisted_speech_keys = [...SETTINGS_SPEECH_KEYS].filter((k) => k in raw).sort()
   Reflect.deleteProperty(saved, 'password_hash')
-  const cfgHome = home(ctx)
   try {
-    Object.assign(saved, maxTokensProvided ? await setMaxTokens(deps.agentConfig, cfgHome, maxTokensValue) : maxTokensStatus(await deps.agentConfig.read(cfgHome)))
+    Object.assign(saved, maxTokens ?? maxTokensStatus(await deps.agentConfig.read(cfgHome)))
   } catch (error) {
     if (maxTokensProvided) failure(error)
     Object.assign(saved, { max_tokens: null, max_tokens_effective: null, max_tokens_fallback: null })
@@ -314,8 +321,7 @@ export const settingsRouter = os.router({
         }
         if (scope === 'main') return await setDefaultModel(ctx.deps.agentConfig, home(ctx), model, provider === 'auto' ? null : provider, input.advanced)
       } catch (error) {
-        if (error instanceof ConfigUnavailable) throw error
-        throw new HttpError(400, str((error as Error).message))
+        failure(error, 400)
       } finally {
         ctx.deps.catalog.invalidate()
       }
@@ -326,8 +332,7 @@ export const settingsRouter = os.router({
       try {
         return await setDefaultModel(ctx.deps.agentConfig, home(ctx), input.model, provider, input.advanced)
       } catch (error) {
-        if (error instanceof ConfigUnavailable) throw error
-        throw new HttpError(400, str((error as Error).message))
+        failure(error, 400)
       } finally {
         ctx.deps.catalog.invalidate()
       }

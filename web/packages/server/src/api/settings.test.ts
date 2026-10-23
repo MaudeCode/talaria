@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { createServer } from 'node:net'
 import { createServer as createHttpServer } from 'node:http'
 import { createHash } from 'node:crypto'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { FakeSidecar, loadSidecarFixtures } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
 import { AccountUsageSnapshotSchema, ProviderQuotaSchema, type SidecarResult } from '@maudecode/talaria-web-contracts'
@@ -92,6 +92,58 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     body = await json(res)
     expect(body.max_tokens).toBeNull()
     expect(configs.get(s.state)).not.toHaveProperty('max_tokens')
+  })
+
+  it('managed YAML refusals preserve confirmed settings and auxiliary values with a non-auth conflict', async () => {
+    const before = structuredClone(configs.get(s.state))
+    const settingsBefore = await json(await s.get('/api/settings'))
+    const auxBefore = await json(await s.get('/api/model/auxiliary'))
+    const original = sidecar.responderFor('config.set')
+    const message = 'config.yaml is package-managed. Update the declarative configuration instead.'
+    sidecar.respond('config.set', () => { throw new SidecarError(message, { condition: 'config_write_refused' }) })
+    try {
+      for (const [path, input] of [
+        ['/api/settings', { max_tokens: 1234 }],
+        ['/api/model/set', { scope: 'auxiliary', task: 'compression', provider: 'anthropic', model: 'claude-opus-4-7' }],
+        ['/api/model/set', { scope: 'auxiliary', task: 'delegation', provider: 'anthropic', model: 'claude-opus-4-7' }],
+      ] as const) {
+        const res = await post(s, path, input)
+        expect(res.status).toBe(409)
+        expect(await json(res)).toMatchObject({ error: message, condition: 'config_write_refused' })
+        expect(res.headers.get('set-cookie')).toBeNull()
+        expect(configs.get(s.state)).toEqual(before)
+        expect((await json(await s.get('/api/settings'))).max_tokens).toEqual(settingsBefore.max_tokens)
+        expect(await json(await s.get('/api/model/auxiliary'))).toEqual(auxBefore)
+      }
+    } finally {
+      if (original) sidecar.respond('config.set', original)
+    }
+  })
+
+  it.each([
+    ['preferences', { bot_name: 'Changed name', send_key: 'ctrl+enter' }],
+    ['password setup', { _set_password: 'synthetic new password' }],
+    ['credential clearing', { _clear_password: true }],
+  ] as const)('managed YAML conflicts preserve the whole mixed patch: %s', async (_name, patch) => {
+    const managed = new FakeSidecar()
+    const isolated = await bootTestServer({ sidecar: managed })
+    try {
+      const store = fakeConfigStore(managed)
+      writeFileSync(join(isolated.state, 'config.yaml'), '# seed\n')
+      store.set(isolated.state, { max_tokens: 512 })
+      const before = await isolated.deps.settings.readRaw()
+      const clearPasskeys = vi.spyOn(isolated.deps, 'clearPasskeys')
+      managed.respond('config.set', () => { throw new SidecarError('config.yaml is package-managed. Update the declarative configuration instead.', { condition: 'config_write_refused' }) })
+      const res = await post(isolated, '/api/settings', { max_tokens: 1234, ...patch })
+      expect(res.status).toBe(409)
+      expect(await isolated.deps.settings.readRaw()).toEqual(before)
+      expect(clearPasskeys).not.toHaveBeenCalled()
+      expect(await isolated.deps.auth.isAuthEnabled()).toBe(false)
+      expect(res.headers.get('set-cookie')).toBeNull()
+      expect(store.get(isolated.state)).toEqual({ max_tokens: 512 })
+    } finally {
+      await isolated.close()
+    }
   })
 
   it('POST /api/settings/link-check answers the saved link preferences per clicked URL (TAL-279)', async () => {

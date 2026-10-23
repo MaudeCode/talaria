@@ -9,6 +9,7 @@ import { DEFAULT_BOOTSTRAP } from '../../contracts/adapters/memory'
 import { keys } from '../../api/queryKeys'
 import { deferred } from '../../test/fixtures'
 import * as api from '../../api/endpoints'
+import { ApiError } from '../../contracts/common'
 import { showToast } from '../toast/toast'
 
 vi.mock('../../api/endpoints', () => ({ fetchSettings: vi.fn(), saveSettings: vi.fn(), fetchModels: vi.fn(), fetchAuxiliaryModels: vi.fn() }))
@@ -108,4 +109,20 @@ it('retains submitted and newer text drafts when a save fails and shows the exis
   await waitFor(() => expect(showToast).toHaveBeenCalledTimes(2))
   expect(showToast).toHaveBeenCalledWith('Save refused', 4000, 'error')
   expect(input).toHaveValue('Requested name with new edits')
+})
+
+it('rolls max output tokens back to the confirmed value after a managed config conflict', async () => {
+  const held = deferred<typeof initial>()
+  const message = 'config.yaml is package-managed. Update the declarative configuration instead.'
+  vi.mocked(api.saveSettings).mockReturnValue(held.promise)
+  const qc = setup()
+  const input = screen.getByLabelText('Max output tokens')
+  await userEvent.click(input)
+  fireEvent.change(input, { target: { value: '1234' } })
+  expect(input).toHaveValue(1234)
+  await waitFor(() => expect(api.saveSettings).toHaveBeenCalledWith({ max_tokens: 1234 }))
+  held.reject(new ApiError({ kind: 'http', status: 409, path: 'api/settings', message, body: { error: message, condition: 'config_write_refused' } }))
+  await waitFor(() => expect(input).toHaveValue(null))
+  expect(qc.getQueryData(keys.settings)).toMatchObject({ max_tokens: null })
+  expect(showToast).toHaveBeenCalledWith(message, 4000, 'error')
 })
