@@ -1,0 +1,138 @@
+{
+  "message": {
+    "role": "assistant",
+    "row_id": 42,
+    "content": "The tests passed. The change is ready for review.",
+    "reaction_view": {
+      "row_id": 42,
+      "state": {
+        "selected": "👍",
+        "items": [
+          {
+            "emoji": "👍",
+            "count": 1,
+            "mine": true
+          },
+          {
+            "emoji": "🎉",
+            "count": 1,
+            "mine": false
+          }
+        ]
+      },
+      "actions": [
+        {
+          "emoji": "👍",
+          "result": {
+            "selected": null,
+            "items": [
+              {
+                "emoji": "🎉",
+                "count": 1,
+                "mine": false
+              }
+            ]
+          }
+        },
+        {
+          "emoji": "👎",
+          "result": {
+            "selected": "👎",
+            "items": [
+              {
+                "emoji": "👎",
+                "count": 1,
+                "mine": true
+              },
+              {
+                "emoji": "🎉",
+                "count": 1,
+                "mine": false
+              }
+            ]
+          }
+        },
+        {
+          "emoji": "❤️",
+          "result": {
+            "selected": "❤️",
+            "items": [
+              {
+                "emoji": "❤️",
+                "count": 1,
+                "mine": true
+              },
+              {
+                "emoji": "🎉",
+                "count": 1,
+                "mine": false
+              }
+            ]
+          }
+        },
+        {
+          "emoji": "😂",
+          "result": {
+            "selected": "😂",
+            "items": [
+              {
+                "emoji": "😂",
+                "count": 1,
+                "mine": true
+              },
+              {
+                "emoji": "🎉",
+                "count": 1,
+                "mine": false
+              }
+            ]
+          }
+        },
+        {
+          "emoji": "😮",
+          "result": {
+            "selected": "😮",
+            "items": [
+              {
+                "emoji": "😮",
+                "count": 1,
+                "mine": true
+              },
+              {
+                "emoji": "🎉",
+                "count": 1,
+                "mine": false
+              }
+            ]
+          }
+        },
+        {
+          "emoji": "🎉",
+          "result": {
+            "selected": "🎉",
+            "items": [
+              {
+                "emoji": "🎉",
+                "count": 2,
+                "mine": true
+              }
+            ]
+          }
+        },
+        {
+          "emoji": null,
+          "result": {
+            "selected": null,
+            "items": [
+              {
+                "emoji": "🎉",
+                "count": 1,
+                "mine": false
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

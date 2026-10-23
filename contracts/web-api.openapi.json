@@ -4705,6 +4705,172 @@
                                   }
                                 ]
                               },
+                              "reaction_view": {
+                                "type": "object",
+                                "properties": {
+                                  "row_id": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991,
+                                    "exclusiveMinimum": 0
+                                  },
+                                  "state": {
+                                    "type": "object",
+                                    "properties": {
+                                      "items": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "emoji": {
+                                              "enum": [
+                                                "👍",
+                                                "👎",
+                                                "❤️",
+                                                "😂",
+                                                "😮",
+                                                "🎉"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "count": {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991,
+                                              "exclusiveMinimum": 0
+                                            },
+                                            "mine": {
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "emoji",
+                                            "count",
+                                            "mine"
+                                          ]
+                                        }
+                                      },
+                                      "selected": {
+                                        "anyOf": [
+                                          {
+                                            "enum": [
+                                              "👍",
+                                              "👎",
+                                              "❤️",
+                                              "😂",
+                                              "😮",
+                                              "🎉"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "items",
+                                      "selected"
+                                    ]
+                                  },
+                                  "actions": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "emoji": {
+                                          "anyOf": [
+                                            {
+                                              "enum": [
+                                                "👍",
+                                                "👎",
+                                                "❤️",
+                                                "😂",
+                                                "😮",
+                                                "🎉"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "result": {
+                                          "type": "object",
+                                          "properties": {
+                                            "items": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "emoji": {
+                                                    "enum": [
+                                                      "👍",
+                                                      "👎",
+                                                      "❤️",
+                                                      "😂",
+                                                      "😮",
+                                                      "🎉"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "count": {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991,
+                                                    "exclusiveMinimum": 0
+                                                  },
+                                                  "mine": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "emoji",
+                                                  "count",
+                                                  "mine"
+                                                ]
+                                              }
+                                            },
+                                            "selected": {
+                                              "anyOf": [
+                                                {
+                                                  "enum": [
+                                                    "👍",
+                                                    "👎",
+                                                    "❤️",
+                                                    "😂",
+                                                    "😮",
+                                                    "🎉"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "items",
+                                            "selected"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "emoji",
+                                        "result"
+                                      ]
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "row_id",
+                                  "state",
+                                  "actions"
+                                ]
+                              },
                               "attachments": {
                                 "type": "array",
                                 "items": {
@@ -8564,6 +8730,172 @@
                                   }
                                 ]
                               },
+                              "reaction_view": {
+                                "type": "object",
+                                "properties": {
+                                  "row_id": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991,
+                                    "exclusiveMinimum": 0
+                                  },
+                                  "state": {
+                                    "type": "object",
+                                    "properties": {
+                                      "items": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "emoji": {
+                                              "enum": [
+                                                "👍",
+                                                "👎",
+                                                "❤️",
+                                                "😂",
+                                                "😮",
+                                                "🎉"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "count": {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991,
+                                              "exclusiveMinimum": 0
+                                            },
+                                            "mine": {
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "emoji",
+                                            "count",
+                                            "mine"
+                                          ]
+                                        }
+                                      },
+                                      "selected": {
+                                        "anyOf": [
+                                          {
+                                            "enum": [
+                                              "👍",
+                                              "👎",
+                                              "❤️",
+                                              "😂",
+                                              "😮",
+                                              "🎉"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "items",
+                                      "selected"
+                                    ]
+                                  },
+                                  "actions": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "emoji": {
+                                          "anyOf": [
+                                            {
+                                              "enum": [
+                                                "👍",
+                                                "👎",
+                                                "❤️",
+                                                "😂",
+                                                "😮",
+                                                "🎉"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "result": {
+                                          "type": "object",
+                                          "properties": {
+                                            "items": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "emoji": {
+                                                    "enum": [
+                                                      "👍",
+                                                      "👎",
+                                                      "❤️",
+                                                      "😂",
+                                                      "😮",
+                                                      "🎉"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "count": {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991,
+                                                    "exclusiveMinimum": 0
+                                                  },
+                                                  "mine": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "emoji",
+                                                  "count",
+                                                  "mine"
+                                                ]
+                                              }
+                                            },
+                                            "selected": {
+                                              "anyOf": [
+                                                {
+                                                  "enum": [
+                                                    "👍",
+                                                    "👎",
+                                                    "❤️",
+                                                    "😂",
+                                                    "😮",
+                                                    "🎉"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "items",
+                                            "selected"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "emoji",
+                                        "result"
+                                      ]
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "row_id",
+                                  "state",
+                                  "actions"
+                                ]
+                              },
                               "attachments": {
                                 "type": "array",
                                 "items": {
@@ -11607,6 +11939,172 @@
                                   {
                                     "type": "null"
                                   }
+                                ]
+                              },
+                              "reaction_view": {
+                                "type": "object",
+                                "properties": {
+                                  "row_id": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991,
+                                    "exclusiveMinimum": 0
+                                  },
+                                  "state": {
+                                    "type": "object",
+                                    "properties": {
+                                      "items": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "emoji": {
+                                              "enum": [
+                                                "👍",
+                                                "👎",
+                                                "❤️",
+                                                "😂",
+                                                "😮",
+                                                "🎉"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "count": {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991,
+                                              "exclusiveMinimum": 0
+                                            },
+                                            "mine": {
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "emoji",
+                                            "count",
+                                            "mine"
+                                          ]
+                                        }
+                                      },
+                                      "selected": {
+                                        "anyOf": [
+                                          {
+                                            "enum": [
+                                              "👍",
+                                              "👎",
+                                              "❤️",
+                                              "😂",
+                                              "😮",
+                                              "🎉"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "items",
+                                      "selected"
+                                    ]
+                                  },
+                                  "actions": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "emoji": {
+                                          "anyOf": [
+                                            {
+                                              "enum": [
+                                                "👍",
+                                                "👎",
+                                                "❤️",
+                                                "😂",
+                                                "😮",
+                                                "🎉"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "result": {
+                                          "type": "object",
+                                          "properties": {
+                                            "items": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "emoji": {
+                                                    "enum": [
+                                                      "👍",
+                                                      "👎",
+                                                      "❤️",
+                                                      "😂",
+                                                      "😮",
+                                                      "🎉"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "count": {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991,
+                                                    "exclusiveMinimum": 0
+                                                  },
+                                                  "mine": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "emoji",
+                                                  "count",
+                                                  "mine"
+                                                ]
+                                              }
+                                            },
+                                            "selected": {
+                                              "anyOf": [
+                                                {
+                                                  "enum": [
+                                                    "👍",
+                                                    "👎",
+                                                    "❤️",
+                                                    "😂",
+                                                    "😮",
+                                                    "🎉"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "items",
+                                            "selected"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "emoji",
+                                        "result"
+                                      ]
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "row_id",
+                                  "state",
+                                  "actions"
                                 ]
                               },
                               "attachments": {
@@ -16641,6 +17139,172 @@
                                   }
                                 ]
                               },
+                              "reaction_view": {
+                                "type": "object",
+                                "properties": {
+                                  "row_id": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991,
+                                    "exclusiveMinimum": 0
+                                  },
+                                  "state": {
+                                    "type": "object",
+                                    "properties": {
+                                      "items": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "emoji": {
+                                              "enum": [
+                                                "👍",
+                                                "👎",
+                                                "❤️",
+                                                "😂",
+                                                "😮",
+                                                "🎉"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "count": {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991,
+                                              "exclusiveMinimum": 0
+                                            },
+                                            "mine": {
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "emoji",
+                                            "count",
+                                            "mine"
+                                          ]
+                                        }
+                                      },
+                                      "selected": {
+                                        "anyOf": [
+                                          {
+                                            "enum": [
+                                              "👍",
+                                              "👎",
+                                              "❤️",
+                                              "😂",
+                                              "😮",
+                                              "🎉"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "items",
+                                      "selected"
+                                    ]
+                                  },
+                                  "actions": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "emoji": {
+                                          "anyOf": [
+                                            {
+                                              "enum": [
+                                                "👍",
+                                                "👎",
+                                                "❤️",
+                                                "😂",
+                                                "😮",
+                                                "🎉"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "result": {
+                                          "type": "object",
+                                          "properties": {
+                                            "items": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "emoji": {
+                                                    "enum": [
+                                                      "👍",
+                                                      "👎",
+                                                      "❤️",
+                                                      "😂",
+                                                      "😮",
+                                                      "🎉"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "count": {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991,
+                                                    "exclusiveMinimum": 0
+                                                  },
+                                                  "mine": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "emoji",
+                                                  "count",
+                                                  "mine"
+                                                ]
+                                              }
+                                            },
+                                            "selected": {
+                                              "anyOf": [
+                                                {
+                                                  "enum": [
+                                                    "👍",
+                                                    "👎",
+                                                    "❤️",
+                                                    "😂",
+                                                    "😮",
+                                                    "🎉"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "items",
+                                            "selected"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "emoji",
+                                        "result"
+                                      ]
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "row_id",
+                                  "state",
+                                  "actions"
+                                ]
+                              },
                               "attachments": {
                                 "type": "array",
                                 "items": {
@@ -21261,6 +21925,172 @@
                                   {
                                     "type": "null"
                                   }
+                                ]
+                              },
+                              "reaction_view": {
+                                "type": "object",
+                                "properties": {
+                                  "row_id": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991,
+                                    "exclusiveMinimum": 0
+                                  },
+                                  "state": {
+                                    "type": "object",
+                                    "properties": {
+                                      "items": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "emoji": {
+                                              "enum": [
+                                                "👍",
+                                                "👎",
+                                                "❤️",
+                                                "😂",
+                                                "😮",
+                                                "🎉"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "count": {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991,
+                                              "exclusiveMinimum": 0
+                                            },
+                                            "mine": {
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "emoji",
+                                            "count",
+                                            "mine"
+                                          ]
+                                        }
+                                      },
+                                      "selected": {
+                                        "anyOf": [
+                                          {
+                                            "enum": [
+                                              "👍",
+                                              "👎",
+                                              "❤️",
+                                              "😂",
+                                              "😮",
+                                              "🎉"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "items",
+                                      "selected"
+                                    ]
+                                  },
+                                  "actions": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "emoji": {
+                                          "anyOf": [
+                                            {
+                                              "enum": [
+                                                "👍",
+                                                "👎",
+                                                "❤️",
+                                                "😂",
+                                                "😮",
+                                                "🎉"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "result": {
+                                          "type": "object",
+                                          "properties": {
+                                            "items": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "emoji": {
+                                                    "enum": [
+                                                      "👍",
+                                                      "👎",
+                                                      "❤️",
+                                                      "😂",
+                                                      "😮",
+                                                      "🎉"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "count": {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991,
+                                                    "exclusiveMinimum": 0
+                                                  },
+                                                  "mine": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "emoji",
+                                                  "count",
+                                                  "mine"
+                                                ]
+                                              }
+                                            },
+                                            "selected": {
+                                              "anyOf": [
+                                                {
+                                                  "enum": [
+                                                    "👍",
+                                                    "👎",
+                                                    "❤️",
+                                                    "😂",
+                                                    "😮",
+                                                    "🎉"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "items",
+                                            "selected"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "emoji",
+                                        "result"
+                                      ]
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "row_id",
+                                  "state",
+                                  "actions"
                                 ]
                               },
                               "attachments": {
@@ -26608,6 +27438,172 @@
                                   }
                                 ]
                               },
+                              "reaction_view": {
+                                "type": "object",
+                                "properties": {
+                                  "row_id": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991,
+                                    "exclusiveMinimum": 0
+                                  },
+                                  "state": {
+                                    "type": "object",
+                                    "properties": {
+                                      "items": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "emoji": {
+                                              "enum": [
+                                                "👍",
+                                                "👎",
+                                                "❤️",
+                                                "😂",
+                                                "😮",
+                                                "🎉"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "count": {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991,
+                                              "exclusiveMinimum": 0
+                                            },
+                                            "mine": {
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "emoji",
+                                            "count",
+                                            "mine"
+                                          ]
+                                        }
+                                      },
+                                      "selected": {
+                                        "anyOf": [
+                                          {
+                                            "enum": [
+                                              "👍",
+                                              "👎",
+                                              "❤️",
+                                              "😂",
+                                              "😮",
+                                              "🎉"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "items",
+                                      "selected"
+                                    ]
+                                  },
+                                  "actions": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "emoji": {
+                                          "anyOf": [
+                                            {
+                                              "enum": [
+                                                "👍",
+                                                "👎",
+                                                "❤️",
+                                                "😂",
+                                                "😮",
+                                                "🎉"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "result": {
+                                          "type": "object",
+                                          "properties": {
+                                            "items": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "emoji": {
+                                                    "enum": [
+                                                      "👍",
+                                                      "👎",
+                                                      "❤️",
+                                                      "😂",
+                                                      "😮",
+                                                      "🎉"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "count": {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991,
+                                                    "exclusiveMinimum": 0
+                                                  },
+                                                  "mine": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "emoji",
+                                                  "count",
+                                                  "mine"
+                                                ]
+                                              }
+                                            },
+                                            "selected": {
+                                              "anyOf": [
+                                                {
+                                                  "enum": [
+                                                    "👍",
+                                                    "👎",
+                                                    "❤️",
+                                                    "😂",
+                                                    "😮",
+                                                    "🎉"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "items",
+                                            "selected"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "emoji",
+                                        "result"
+                                      ]
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "row_id",
+                                  "state",
+                                  "actions"
+                                ]
+                              },
                               "attachments": {
                                 "type": "array",
                                 "items": {
@@ -29600,6 +30596,172 @@
                                   {
                                     "type": "null"
                                   }
+                                ]
+                              },
+                              "reaction_view": {
+                                "type": "object",
+                                "properties": {
+                                  "row_id": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991,
+                                    "exclusiveMinimum": 0
+                                  },
+                                  "state": {
+                                    "type": "object",
+                                    "properties": {
+                                      "items": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "emoji": {
+                                              "enum": [
+                                                "👍",
+                                                "👎",
+                                                "❤️",
+                                                "😂",
+                                                "😮",
+                                                "🎉"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "count": {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991,
+                                              "exclusiveMinimum": 0
+                                            },
+                                            "mine": {
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "emoji",
+                                            "count",
+                                            "mine"
+                                          ]
+                                        }
+                                      },
+                                      "selected": {
+                                        "anyOf": [
+                                          {
+                                            "enum": [
+                                              "👍",
+                                              "👎",
+                                              "❤️",
+                                              "😂",
+                                              "😮",
+                                              "🎉"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "items",
+                                      "selected"
+                                    ]
+                                  },
+                                  "actions": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "emoji": {
+                                          "anyOf": [
+                                            {
+                                              "enum": [
+                                                "👍",
+                                                "👎",
+                                                "❤️",
+                                                "😂",
+                                                "😮",
+                                                "🎉"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "result": {
+                                          "type": "object",
+                                          "properties": {
+                                            "items": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "emoji": {
+                                                    "enum": [
+                                                      "👍",
+                                                      "👎",
+                                                      "❤️",
+                                                      "😂",
+                                                      "😮",
+                                                      "🎉"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "count": {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991,
+                                                    "exclusiveMinimum": 0
+                                                  },
+                                                  "mine": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "emoji",
+                                                  "count",
+                                                  "mine"
+                                                ]
+                                              }
+                                            },
+                                            "selected": {
+                                              "anyOf": [
+                                                {
+                                                  "enum": [
+                                                    "👍",
+                                                    "👎",
+                                                    "❤️",
+                                                    "😂",
+                                                    "😮",
+                                                    "🎉"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "items",
+                                            "selected"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "emoji",
+                                        "result"
+                                      ]
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "row_id",
+                                  "state",
+                                  "actions"
                                 ]
                               },
                               "attachments": {
@@ -32658,6 +33820,172 @@
                                   }
                                 ]
                               },
+                              "reaction_view": {
+                                "type": "object",
+                                "properties": {
+                                  "row_id": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991,
+                                    "exclusiveMinimum": 0
+                                  },
+                                  "state": {
+                                    "type": "object",
+                                    "properties": {
+                                      "items": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "emoji": {
+                                              "enum": [
+                                                "👍",
+                                                "👎",
+                                                "❤️",
+                                                "😂",
+                                                "😮",
+                                                "🎉"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "count": {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991,
+                                              "exclusiveMinimum": 0
+                                            },
+                                            "mine": {
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "emoji",
+                                            "count",
+                                            "mine"
+                                          ]
+                                        }
+                                      },
+                                      "selected": {
+                                        "anyOf": [
+                                          {
+                                            "enum": [
+                                              "👍",
+                                              "👎",
+                                              "❤️",
+                                              "😂",
+                                              "😮",
+                                              "🎉"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "items",
+                                      "selected"
+                                    ]
+                                  },
+                                  "actions": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "emoji": {
+                                          "anyOf": [
+                                            {
+                                              "enum": [
+                                                "👍",
+                                                "👎",
+                                                "❤️",
+                                                "😂",
+                                                "😮",
+                                                "🎉"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "result": {
+                                          "type": "object",
+                                          "properties": {
+                                            "items": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "emoji": {
+                                                    "enum": [
+                                                      "👍",
+                                                      "👎",
+                                                      "❤️",
+                                                      "😂",
+                                                      "😮",
+                                                      "🎉"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "count": {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991,
+                                                    "exclusiveMinimum": 0
+                                                  },
+                                                  "mine": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "emoji",
+                                                  "count",
+                                                  "mine"
+                                                ]
+                                              }
+                                            },
+                                            "selected": {
+                                              "anyOf": [
+                                                {
+                                                  "enum": [
+                                                    "👍",
+                                                    "👎",
+                                                    "❤️",
+                                                    "😂",
+                                                    "😮",
+                                                    "🎉"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "items",
+                                            "selected"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "emoji",
+                                        "result"
+                                      ]
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "row_id",
+                                  "state",
+                                  "actions"
+                                ]
+                              },
                               "attachments": {
                                 "type": "array",
                                 "items": {
@@ -35710,6 +37038,172 @@
                                   {
                                     "type": "null"
                                   }
+                                ]
+                              },
+                              "reaction_view": {
+                                "type": "object",
+                                "properties": {
+                                  "row_id": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991,
+                                    "exclusiveMinimum": 0
+                                  },
+                                  "state": {
+                                    "type": "object",
+                                    "properties": {
+                                      "items": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "emoji": {
+                                              "enum": [
+                                                "👍",
+                                                "👎",
+                                                "❤️",
+                                                "😂",
+                                                "😮",
+                                                "🎉"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "count": {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991,
+                                              "exclusiveMinimum": 0
+                                            },
+                                            "mine": {
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "emoji",
+                                            "count",
+                                            "mine"
+                                          ]
+                                        }
+                                      },
+                                      "selected": {
+                                        "anyOf": [
+                                          {
+                                            "enum": [
+                                              "👍",
+                                              "👎",
+                                              "❤️",
+                                              "😂",
+                                              "😮",
+                                              "🎉"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "items",
+                                      "selected"
+                                    ]
+                                  },
+                                  "actions": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "emoji": {
+                                          "anyOf": [
+                                            {
+                                              "enum": [
+                                                "👍",
+                                                "👎",
+                                                "❤️",
+                                                "😂",
+                                                "😮",
+                                                "🎉"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "result": {
+                                          "type": "object",
+                                          "properties": {
+                                            "items": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "emoji": {
+                                                    "enum": [
+                                                      "👍",
+                                                      "👎",
+                                                      "❤️",
+                                                      "😂",
+                                                      "😮",
+                                                      "🎉"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "count": {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991,
+                                                    "exclusiveMinimum": 0
+                                                  },
+                                                  "mine": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "emoji",
+                                                  "count",
+                                                  "mine"
+                                                ]
+                                              }
+                                            },
+                                            "selected": {
+                                              "anyOf": [
+                                                {
+                                                  "enum": [
+                                                    "👍",
+                                                    "👎",
+                                                    "❤️",
+                                                    "😂",
+                                                    "😮",
+                                                    "🎉"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "items",
+                                            "selected"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "emoji",
+                                        "result"
+                                      ]
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "row_id",
+                                  "state",
+                                  "actions"
                                 ]
                               },
                               "attachments": {
@@ -47723,6 +49217,49 @@
                         "minLength": 1
                       },
                       "action": {
+                        "const": "react"
+                      },
+                      "row_id": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991,
+                        "exclusiveMinimum": 0
+                      },
+                      "emoji": {
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "👍",
+                              "👎",
+                              "❤️",
+                              "😂",
+                              "😮",
+                              "🎉"
+                            ],
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "session_id",
+                      "action",
+                      "row_id",
+                      "emoji"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "session_id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "action": {
                         "const": "cancel"
                       },
                       "admission_id": {
@@ -48092,6 +49629,172 @@
                                   {
                                     "type": "null"
                                   }
+                                ]
+                              },
+                              "reaction_view": {
+                                "type": "object",
+                                "properties": {
+                                  "row_id": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991,
+                                    "exclusiveMinimum": 0
+                                  },
+                                  "state": {
+                                    "type": "object",
+                                    "properties": {
+                                      "items": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "emoji": {
+                                              "enum": [
+                                                "👍",
+                                                "👎",
+                                                "❤️",
+                                                "😂",
+                                                "😮",
+                                                "🎉"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "count": {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991,
+                                              "exclusiveMinimum": 0
+                                            },
+                                            "mine": {
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "emoji",
+                                            "count",
+                                            "mine"
+                                          ]
+                                        }
+                                      },
+                                      "selected": {
+                                        "anyOf": [
+                                          {
+                                            "enum": [
+                                              "👍",
+                                              "👎",
+                                              "❤️",
+                                              "😂",
+                                              "😮",
+                                              "🎉"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "items",
+                                      "selected"
+                                    ]
+                                  },
+                                  "actions": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "emoji": {
+                                          "anyOf": [
+                                            {
+                                              "enum": [
+                                                "👍",
+                                                "👎",
+                                                "❤️",
+                                                "😂",
+                                                "😮",
+                                                "🎉"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "result": {
+                                          "type": "object",
+                                          "properties": {
+                                            "items": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "emoji": {
+                                                    "enum": [
+                                                      "👍",
+                                                      "👎",
+                                                      "❤️",
+                                                      "😂",
+                                                      "😮",
+                                                      "🎉"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "count": {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991,
+                                                    "exclusiveMinimum": 0
+                                                  },
+                                                  "mine": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "emoji",
+                                                  "count",
+                                                  "mine"
+                                                ]
+                                              }
+                                            },
+                                            "selected": {
+                                              "anyOf": [
+                                                {
+                                                  "enum": [
+                                                    "👍",
+                                                    "👎",
+                                                    "❤️",
+                                                    "😂",
+                                                    "😮",
+                                                    "🎉"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "items",
+                                            "selected"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "emoji",
+                                        "result"
+                                      ]
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "row_id",
+                                  "state",
+                                  "actions"
                                 ]
                               },
                               "attachments": {
@@ -51134,6 +52837,172 @@
                                   {
                                     "type": "null"
                                   }
+                                ]
+                              },
+                              "reaction_view": {
+                                "type": "object",
+                                "properties": {
+                                  "row_id": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991,
+                                    "exclusiveMinimum": 0
+                                  },
+                                  "state": {
+                                    "type": "object",
+                                    "properties": {
+                                      "items": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "emoji": {
+                                              "enum": [
+                                                "👍",
+                                                "👎",
+                                                "❤️",
+                                                "😂",
+                                                "😮",
+                                                "🎉"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "count": {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991,
+                                              "exclusiveMinimum": 0
+                                            },
+                                            "mine": {
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "emoji",
+                                            "count",
+                                            "mine"
+                                          ]
+                                        }
+                                      },
+                                      "selected": {
+                                        "anyOf": [
+                                          {
+                                            "enum": [
+                                              "👍",
+                                              "👎",
+                                              "❤️",
+                                              "😂",
+                                              "😮",
+                                              "🎉"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "items",
+                                      "selected"
+                                    ]
+                                  },
+                                  "actions": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "emoji": {
+                                          "anyOf": [
+                                            {
+                                              "enum": [
+                                                "👍",
+                                                "👎",
+                                                "❤️",
+                                                "😂",
+                                                "😮",
+                                                "🎉"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "result": {
+                                          "type": "object",
+                                          "properties": {
+                                            "items": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "emoji": {
+                                                    "enum": [
+                                                      "👍",
+                                                      "👎",
+                                                      "❤️",
+                                                      "😂",
+                                                      "😮",
+                                                      "🎉"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "count": {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991,
+                                                    "exclusiveMinimum": 0
+                                                  },
+                                                  "mine": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "emoji",
+                                                  "count",
+                                                  "mine"
+                                                ]
+                                              }
+                                            },
+                                            "selected": {
+                                              "anyOf": [
+                                                {
+                                                  "enum": [
+                                                    "👍",
+                                                    "👎",
+                                                    "❤️",
+                                                    "😂",
+                                                    "😮",
+                                                    "🎉"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "items",
+                                            "selected"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "emoji",
+                                        "result"
+                                      ]
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "row_id",
+                                  "state",
+                                  "actions"
                                 ]
                               },
                               "attachments": {
@@ -54566,6 +56435,172 @@
                                   }
                                 ]
                               },
+                              "reaction_view": {
+                                "type": "object",
+                                "properties": {
+                                  "row_id": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991,
+                                    "exclusiveMinimum": 0
+                                  },
+                                  "state": {
+                                    "type": "object",
+                                    "properties": {
+                                      "items": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "emoji": {
+                                              "enum": [
+                                                "👍",
+                                                "👎",
+                                                "❤️",
+                                                "😂",
+                                                "😮",
+                                                "🎉"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "count": {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991,
+                                              "exclusiveMinimum": 0
+                                            },
+                                            "mine": {
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "emoji",
+                                            "count",
+                                            "mine"
+                                          ]
+                                        }
+                                      },
+                                      "selected": {
+                                        "anyOf": [
+                                          {
+                                            "enum": [
+                                              "👍",
+                                              "👎",
+                                              "❤️",
+                                              "😂",
+                                              "😮",
+                                              "🎉"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "items",
+                                      "selected"
+                                    ]
+                                  },
+                                  "actions": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "emoji": {
+                                          "anyOf": [
+                                            {
+                                              "enum": [
+                                                "👍",
+                                                "👎",
+                                                "❤️",
+                                                "😂",
+                                                "😮",
+                                                "🎉"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "result": {
+                                          "type": "object",
+                                          "properties": {
+                                            "items": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "emoji": {
+                                                    "enum": [
+                                                      "👍",
+                                                      "👎",
+                                                      "❤️",
+                                                      "😂",
+                                                      "😮",
+                                                      "🎉"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "count": {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991,
+                                                    "exclusiveMinimum": 0
+                                                  },
+                                                  "mine": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "emoji",
+                                                  "count",
+                                                  "mine"
+                                                ]
+                                              }
+                                            },
+                                            "selected": {
+                                              "anyOf": [
+                                                {
+                                                  "enum": [
+                                                    "👍",
+                                                    "👎",
+                                                    "❤️",
+                                                    "😂",
+                                                    "😮",
+                                                    "🎉"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "items",
+                                            "selected"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "emoji",
+                                        "result"
+                                      ]
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "row_id",
+                                  "state",
+                                  "actions"
+                                ]
+                              },
                               "attachments": {
                                 "type": "array",
                                 "items": {
@@ -57896,6 +59931,150 @@
                                       {
                                         "type": "null"
                                       }
+                                    ]
+                                  },
+                                  "reaction_view": {
+                                    "type": "object",
+                                    "properties": {
+                                      "row_id": {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991,
+                                        "exclusiveMinimum": 0
+                                      },
+                                      "state": {
+                                        "type": "object",
+                                        "properties": {
+                                          "items": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "emoji": {
+                                                  "enum": [
+                                                    "👍",
+                                                    "👎",
+                                                    "❤️",
+                                                    "😂",
+                                                    "😮",
+                                                    "🎉"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "count": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991,
+                                                  "exclusiveMinimum": 0
+                                                },
+                                                "mine": {
+                                                  "type": "boolean"
+                                                }
+                                              },
+                                              "required": [
+                                                "emoji",
+                                                "count",
+                                                "mine"
+                                              ]
+                                            }
+                                          },
+                                          "selected": {
+                                            "anyOf": [
+                                              {
+                                                "enum": [
+                                                  "👍",
+                                                  "👎",
+                                                  "❤️",
+                                                  "😂",
+                                                  "😮",
+                                                  "🎉"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "items",
+                                          "selected"
+                                        ]
+                                      },
+                                      "actions": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "emoji": {
+                                              "anyOf": [
+                                                {
+                                                  "enum": [
+                                                    "👍",
+                                                    "👎",
+                                                    "❤️",
+                                                    "😂",
+                                                    "😮",
+                                                    "🎉"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "result": {
+                                              "type": "object",
+                                              "properties": {
+                                                "items": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "emoji": {},
+                                                      "count": {},
+                                                      "mine": {}
+                                                    }
+                                                  }
+                                                },
+                                                "selected": {
+                                                  "anyOf": [
+                                                    {
+                                                      "enum": [
+                                                        "👍",
+                                                        "👎",
+                                                        "❤️",
+                                                        "😂",
+                                                        "😮",
+                                                        "🎉"
+                                                      ],
+                                                      "type": "string"
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "items",
+                                                "selected"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "emoji",
+                                            "result"
+                                          ]
+                                        }
+                                      }
+                                    },
+                                    "required": [
+                                      "row_id",
+                                      "state",
+                                      "actions"
                                     ]
                                   },
                                   "attachments": {

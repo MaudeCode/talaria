@@ -28,6 +28,15 @@ describe('contracts package', () => {
     expect(ConnectorsPageSchema.parse(fixture.sign_in_page)).toEqual(fixture.sign_in_page)
     expect(ConnectorsPageSchema.parse({ available: false, connectors: [], policy_revision: null, rules_error: null }).sign_in_required).toBe(false)
   })
+  it('pins the server-computed reaction view and closed owner request', () => {
+    const fixture = shared('fixtures/web-reactions.json') as { message: unknown }
+    expect(MessageSchema.parse(fixture.message)).toEqual(fixture.message)
+    const request = { session_id: 'canonical', action: 'react', row_id: 42, emoji: '👍' }
+    expect(OwnerActionRequestSchema.parse(request)).toEqual(request)
+    for (const extra of [{ author: 'agent' }, { emoji: 'text' }, { row_id: 0 }, { row_id: true }]) {
+      expect(OwnerActionRequestSchema.safeParse({ ...request, ...extra }).success).toBe(false)
+    }
+  })
   it('preserves the scheduled-chat refusal and nonretryable recovery instruction', () => {
     const fixture = shared('fixtures/native-cron-refusal.json') as { event: unknown }
     expect(ChatEventSchema.parse(fixture.event)).toEqual(fixture.event)

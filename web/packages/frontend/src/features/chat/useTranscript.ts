@@ -92,6 +92,14 @@ export function useTranscript(sessionId: string | null, equalLive?: (previous: L
     retry: (count, error) => !(error instanceof Error && 'status' in error && (error as { status: number }).status === 404) && count < 1,
   })
   const session: Session | null = query.data?.session ?? null
+  // The owner can change metadata on any loaded row. Keep older pages in the same Query invalidation
+  // family as the tail, so reaction reconciliation covers every displayed snapshot without dropping scroll history.
+  const olderOwner = useQuery({
+    queryKey: [...keys.sessions.detail(sessionId ?? ''), 'owner-history', windowOffset, older.length],
+    queryFn: ({ signal }) => api.fetchSession(sessionId ?? '', { messages: true, msg_limit: older.length, msg_before: windowOffset, resolve_model: false }, signal),
+    enabled: !!sessionId && !!session?.owner_attachment && older.length > 0,
+    retry: false, refetchOnWindowFocus: false,
+  })
   const live = useLiveTurn(sessionId, equalLive)
 
   // Remember the last visible session (validated id) for the next boot.
@@ -143,8 +151,8 @@ export function useTranscript(sessionId: string | null, equalLive?: (previous: L
 
   const messages = useMemo(() => {
     const current = session?.messages ?? []
-    return older.length ? [...older, ...current] : current
-  }, [session, older])
+    return older.length ? [...(olderOwner.data?.session.messages ?? older), ...current] : current
+  }, [session, older, olderOwner.data])
 
   const base = Math.max(0, (session?._messages_offset ?? 0) - older.length)
   const rows = useMemo(() => projectMessages(messages, base), [messages, base])

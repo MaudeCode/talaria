@@ -17,8 +17,9 @@ from ..errors import InvalidParams
 from ..home import profile_home_param, scoped_home
 
 _ACTIONS = {"snapshot", "watch", "context_detail", "submit", "receipt", "cancel", "steer_queued", "replace_queued", "interrupt", "approval", "clarify",
-            "clarify_lock", "discard", "mutate", "export", "checkpoint_diff", "terminal_info", "shell_exec"}
+            "clarify_lock", "discard", "mutate", "export", "checkpoint_diff", "terminal_info", "shell_exec", "react"}
 _OWNER_READ_MAX_BYTES = 4 * 1024 * 1024
+_REACTION_EMOJIS = {"👍", "👎", "❤️", "😂", "😮", "🎉"}
 # A restart's after-turn wait keeps the owner reachable only to finish its parked turn (the owner's
 # RESTART_WAIT_WS_METHODS); new work waits for the next owner.
 _RESTART_ACTIONS = {"snapshot", "watch", "receipt", "approval", "clarify", "clarify_lock", "interrupt"}
@@ -75,8 +76,16 @@ def _snapshot(value: dict) -> dict:
     message_keys = {"role", "content", "tool_calls", "tool_call_id", "name", "timestamp", "message_id", "row_id",
                     "reasoning", "reasoning_content", "display_kind", "finish_reason"}
     info_keys = {"title", "model", "cwd", "source", "provider", "config_warning"}
-    return {**value, "messages": [{k: v for k, v in row.items() if k in message_keys} for row in value["messages"]],
-            "info": {k: v for k, v in value["info"].items() if k in info_keys}}
+    rows = []
+    for row in value["messages"]:
+        metadata = row.get("display_metadata")
+        reactions = metadata.get("reactions", []) if isinstance(metadata, dict) else []
+        rows.append({**{k: v for k, v in row.items() if k in message_keys}, "reactions": [
+            {"author": reaction["author"], "emoji": reaction["emoji"]} for reaction in reactions
+            if isinstance(reaction, dict) and reaction.get("author") in ("user", "agent")
+            and isinstance(reaction.get("emoji"), str) and reaction["emoji"] in _REACTION_EMOJIS] if isinstance(reactions, list) else []})
+    return {**value, "messages": rows, "info": {k: v for k, v in value["info"].items() if k in info_keys}}
+
 
 
 def _refused(state: str, reason: str) -> dict:
@@ -203,7 +212,7 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
             subscription = value["subscription_id"]
             if reason := await asyncio.to_thread(_control_refusal, home, sid):
                 raise GatewayRPCError(reason)
-            return _snapshot(value)
+            return {**_snapshot(value), "reactions_supported": _verified_contract(endpoint, "message-reactions-v1")}
 
         receipt = lock = None
         try:
@@ -249,7 +258,13 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                         or len(value["stdout"]) > 4000 or len(value["stderr"]) > 2000):
                     return _refused("refused", "owner_shell_invalid")
                 return {"state": "attached", "reason": None, "snapshot": None, "receipt": None, "shell": value}
-            if action == "context_detail":
+            if action == "react":
+                if not snap["reactions_supported"]:
+                    return _refused("refused", "owner_reactions_unsupported")
+                if not any(row.get("row_id") == params["row_id"] and row.get("role") in {"user", "assistant"} for row in snap["messages"]):
+                    return _refused("refused", "reaction_row_unavailable")
+                await client.rpc("message.react", **common, row_id=params["row_id"], emoji=params["emoji"], author="user")
+            elif action == "context_detail":
                 from ..context_detail import project, unavailable
                 # The authorized native read owns lookup and prompt interpretation. No local Agent is built.
                 try:
@@ -323,16 +338,22 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
             ctx.emit("replay_complete", {})
             checked = asyncio.get_running_loop().time()
             while not ctx.cancelled:
+                now = asyncio.get_running_loop().time()
+                if not restarting and now - checked >= 2:
+                    checked = now
+                    if restarting := await asyncio.to_thread(_restart_wait, home):
+                        result["restarting"] = True
+                        ctx.emit("restarting", {"restarting": True})
+                    if not restarting and snap.get("reactions_supported"):
+                        # The owner emits no reaction event. Read through this viewer's existing subscription,
+                        # including while tokens keep the event queue busy.
+                        current = await snapshot()
+                        if [(r.get("row_id"), r.get("reactions")) for r in current["messages"] if r.get("reactions")] != [(r.get("row_id"), r.get("reactions")) for r in snap["messages"] if r.get("reactions")]:
+                            ctx.emit("snapshot", {**result, "snapshot": current, "reaction_only": True})
+                        snap = current
                 try:
                     frame = await asyncio.wait_for(events.get(), .25)
                 except TimeoutError:
-                    now = asyncio.get_running_loop().time()
-                    if not restarting and now - checked >= 2:
-                        checked = now
-                        # One-way for this owner: its next state is exit, which ends the watch.
-                        if restarting := await asyncio.to_thread(_restart_wait, home):
-                            result["restarting"] = True
-                            ctx.emit("restarting", {"restarting": True})
                     continue
                 if isinstance(frame, Exception):
                     raise frame
@@ -389,6 +410,10 @@ def session(ctx, params: dict) -> dict:
     if action not in _ACTIONS or not isinstance(sid, str) or not sid.strip() or sid != sid.strip():
         raise InvalidParams("session_id and supported action are required")
     params = {**params, "action": action}
+    if action == "react" and (set(params) - {"profile_home", "session_id", "action", "row_id", "emoji"}
+                              or type(params.get("row_id")) is not int or params["row_id"] <= 0
+                              or "emoji" not in params or (params["emoji"] is not None and (not isinstance(params["emoji"], str) or params["emoji"] not in _REACTION_EMOJIS))):
+        raise InvalidParams("react requires a visible row and an allowed emoji")
     if action == "export" and (params.get("format") not in ("json", "markdown", "html")
                                or not isinstance(params.get("redact"), bool)):
         raise InvalidParams("export requires an allowed format and redaction policy")

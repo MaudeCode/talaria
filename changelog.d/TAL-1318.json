@@ -1,0 +1,8 @@
+{
+  "entries": [{
+    "category": "Added",
+    "summary": "React to messages in canonical chats and see reactions from other viewers.",
+    "highlight": false,
+    "components": ["web"]
+  }]
+}

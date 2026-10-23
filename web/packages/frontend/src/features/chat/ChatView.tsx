@@ -1,4 +1,4 @@
-import type { OwnerActionRequest } from '@maudecode/talaria-web-contracts'
+import type { OwnerActionRequest, MessageReactionView, ReactionState } from '@maudecode/talaria-web-contracts'
 import { useResourceEffects, useResourceMutation, withEffect, withEffects } from '../sessions/useResourceMutation'
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearch } from '@tanstack/react-router'
@@ -62,6 +62,7 @@ function sameTurnControls(previous: LiveTurn | null, next: LiveTurn | null): boo
 const closeSidePanel = () => setSidePanelOpen(false)
 
 type AdmissionRequest = Extract<OwnerActionRequest, { admission_id: string }>
+const reactionResource = (sid: string, row: number) => `reaction:${sid}:${row}`
 const admissionResource = (sessionId: string, admissionId: string) => `owner-admission:${sessionId}:${admissionId}`
 
 export function ChatView({ sessionId }: { sessionId: string | null }) {
@@ -75,7 +76,14 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   const { query, session, rows, base, live, truncated, loadOlder, loadingOlder, olderError, refresh } = useTranscript(sessionId, sameTurnControls)
   // Edit, /clear and /undo show their cut at once; the reread of the session confirms it.
   const cutFrom = useResourceEffects<number>()[transcriptCut(sessionId ?? '')]?.value
-  const shownRows = useMemo(() => typeof cutFrom === 'number' ? rows.filter((row) => row.index < cutFrom) : rows, [rows, cutFrom])
+  const reactionEffects = useResourceEffects<ReactionState>()
+  const reactionRows = useMemo(() => rows.map((row) => {
+    const view = row.message.reaction_view
+    if (!view) return row
+    const state = reactionEffects[reactionResource(sessionId ?? '', view.row_id)]?.value
+    return state ? { ...row, message: { ...row.message, reaction_view: { ...view, state } } } : row
+  }), [rows, reactionEffects, sessionId])
+  const shownRows = useMemo(() => typeof cutFrom === 'number' ? reactionRows.filter((row) => row.index < cutFrom) : reactionRows, [reactionRows, cutFrom])
   const lastExchange = useMemo(() => [...rows].reverse().find((row) => row.message.role === 'user')?.index, [rows])
   const intent = useTurnIntent(sessionId)
   const { onEdit, dialog: editDialog, operation, runHistory } = useEditMessage(sessionId, refresh)
@@ -345,6 +353,22 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     }
   }, [renameSession, sessionId, navigate, refresh, qc, onToggleYolo, onModelChange, onWorkspaceChange, onRegenerate, reasoning, setReasoning, runCompression, runHistory, lastExchange, sendSessionWrite, setReasoningDisplay])
 
+  const reactionWrite = useResourceMutation({
+    resource: (request: { rowId: number; action: MessageReactionView['actions'][number] }) => reactionResource(sessionId ?? '', request.rowId),
+    exclusive: true, queryKey: keys.sessions.all,
+    readKeys: () => [{ queryKey: keys.sessions.detail(sessionId ?? ''), exact: false }],
+    effect: ({ action }) => ({ value: action.result }),
+    mutationFn: ({ rowId, action }) => {
+      if (!sessionId) throw new Error(m.error_generic())
+      return api.ownerAction({ session_id: sessionId, action: 'react', row_id: rowId, emoji: action.emoji })
+    },
+    onError: (error) => showErrorToast(error),
+  })
+  const sendReaction = reactionWrite.mutate
+  const onReact = useCallback((row: VisibleMessage, action: MessageReactionView['actions'][number]) => {
+    if (sessionId && row.message.reaction_view) sendReaction({ rowId: row.message.reaction_view.row_id, action })
+  }, [sessionId, sendReaction])
+
   const onBranch = useCallback(async (row: VisibleMessage) => {
     if (!sessionId) return
     const r = await api.branchSession(sessionId, row.index + 1)
@@ -355,9 +379,10 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   const canQuote = !clarify && !!session && (!session.read_only || session.owner_attachment?.can_submit === true)
   const actions = useMemo(() => ({
     ...(sessionId && canQuote ? { onQuoteSelection: (text: string) => returnToComposer(sessionId, text, 'quote') } : {}),
+    onReact,
     ...(session?.read_only ? {} : { onEdit: (row: VisibleMessage, text: string) => { void onEdit(row, text) }, onRegenerate: () => { void onRegenerate() } }),
     ...(session?.can_branch ? { onBranch: (row: VisibleMessage) => { void onBranch(row) } } : {}),
-  }), [sessionId, canQuote, session?.read_only, session?.can_branch, onEdit, onRegenerate, onBranch])
+  }), [sessionId, canQuote, session?.read_only, session?.can_branch, onEdit, onRegenerate, onBranch, onReact])
 
   const mode = (settings.data?.chat_activity_display_mode as ActivityMode | undefined) ?? 'compact_worklog'
   const assistantName = session?.assistant_name ?? bootstrap.assistant_name

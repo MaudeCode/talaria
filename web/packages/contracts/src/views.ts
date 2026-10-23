@@ -9,7 +9,7 @@ import { OutboundDraftRefSchema } from './outbound-drafts.js'
 import { RunStatusSchema } from './run-status.js'
 import { AgentRefreshConfirmationSchema, AgentUpdateOperationSchema } from './sidecar/runtime.js'
 import { SpeedTierSchema } from './speed.js'
-import { ExecutionModeSchema, OwnerAttachmentSchema } from './gateway-session.js'
+import { ExecutionModeSchema, OwnerAttachmentSchema, MessageReactionViewSchema } from './gateway-session.js'
 import { KanbanInspectionNodeSchema, KanbanInspectionSnapshotSchema, CanonicalBotChatSchema, GatewayModeSchema, PluginOAuthClientSchema, PluginSettingFieldSchema, SkillCatalogIdentitySchema } from './sidecar/namespaces.js'
 
 export { SpeedTierSchema } from './speed.js'
@@ -169,6 +169,7 @@ export type BackgroundLine = z.infer<typeof BackgroundLineSchema>
 
 export const MessageSchema = z.looseObject({
   role: z.string(), content: MessageContentSchema.optional(), id: MessageIdSchema.optional(), message_id: MessageIdSchema.optional(), timestamp: z.number().nullable().optional(),
+  reaction_view: MessageReactionViewSchema.optional(),
   attachments: z.array(AttachmentSchema).optional(), tool_calls: z.array(ToolCallSchema).optional(),
   /**
    * TAL-302: an assistant row's whole reasoning as one string (its reasoning fields, typed thinking parts and inline

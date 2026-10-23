@@ -336,3 +336,20 @@ it('fetches once for a background completion and its legacy twin, then refreshes
   await act(() => Promise.resolve(feed.onEvent({ event: 'session-updated', data: { session_id: 'history' } })))
   expect(api.fetchSession).toHaveBeenCalledTimes(3)
 })
+
+it('refreshes reactions on already loaded owner history when another viewer changes them', async () => {
+  const owner = { state: 'attached' as const, reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 2, execution_generation: 1, admissions: [] }
+  const tail = sessionFixture({ session_id: 'older-reactions', owner_attachment: owner, messages: [{ id: 241, role: 'user', content: 'latest' }], message_count: 241, _messages_offset: 240, _messages_truncated: true })
+  let selected: '👍' | '🎉' = '👍'
+  vi.mocked(api.fetchSession).mockImplementation((_sid, options) => Promise.resolve({ session: options?.msg_before
+    ? sessionFixture({ ...tail, messages: [{ id: 240, role: 'assistant', content: 'older answer', reaction_view: { row_id: 42, state: { selected, items: [{ emoji: selected, count: 1, mine: true }] }, actions: [] } }] }) : tail }))
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+  const { result } = renderHook(() => useTranscript('older-reactions'), { wrapper })
+  await waitFor(() => expect(result.current.session).not.toBeNull())
+  await act(() => result.current.loadOlder())
+  expect(result.current.rows[0]?.message.reaction_view?.state.selected).toBe('👍')
+  selected = '🎉'
+  await act(() => qc.invalidateQueries({ queryKey: keys.sessions.detail('older-reactions') }))
+  await waitFor(() => expect(result.current.rows[0]?.message.reaction_view?.state.selected).toBe('🎉'))
+})

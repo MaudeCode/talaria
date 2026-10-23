@@ -162,6 +162,62 @@ describe('canonical owner attachment', () => {
     expect(await s.deps.sessionStore.persistedIds()).not.toContain(sid)
   })
 
+
+  it('adds, toggles and removes canonical reactions and reads them on reconnect', async () => {
+    let reactions: { author: string; emoji: string }[] = []
+    const current = () => snapshot({ reactions_supported: true, messages: [{ role: 'assistant', row_id: 42, content: 'Owner answer', reactions }] })
+    sidecar.respond('gateway.session', (params) => {
+      if (params.action === 'react') {
+        expect(params).not.toHaveProperty('author')
+        expect(params.row_id).toBe(42)
+        const emoji = params.emoji
+        reactions = emoji && reactions[0]?.emoji !== emoji ? [{ author: 'user', emoji }] : []
+      }
+      return attached(current())
+    })
+    const detail = async () => SessionEnvelopeSchema.parse(await (await s.get(`/api/session?session_id=${sid}`)).json()).session
+    expect((await detail()).messages?.[0]?.reaction_view).toMatchObject({ row_id: 42, state: { items: [], selected: null } })
+    for (const [emoji, count] of [['👍', 1], ['👍', 0], ['❤️', 1], [null, 0]] as const) {
+      const response = await post('/api/chat/owner-action', { session_id: sid, action: 'react', row_id: 42, emoji })
+      expect(response.status).toBe(200)
+      expect((await detail()).messages?.[0]?.reaction_view).toMatchObject({ state: { items: count ? [{ emoji, count: 1, mine: true }] : [] } })
+    }
+    expect(sidecar.calls.some((c) => c.method === 'chat.start')).toBe(false)
+  })
+
+  it('refuses foreign rows, forged authors and malformed reactions without owner mutation', async () => {
+    sidecar.respond('gateway.session', () => attached(snapshot({ reactions_supported: true, messages: [{ role: 'assistant', row_id: 42, content: 'answer', reactions: [] }] })))
+    const request = { session_id: sid, action: 'react', row_id: 42, emoji: '👍' }
+    for (const extra of [{ row_id: 99 }, { author: 'agent' }, { emoji: 'not an emoji' }, { row_id: -1 }]) {
+      expect((await post('/api/chat/owner-action', { ...request, ...extra })).status).toBeGreaterThanOrEqual(400)
+    }
+    expect(sidecar.calls.filter((c) => c.method === 'gateway.session' && (c.params as { action: string }).action === 'react')).toEqual([])
+  })
+
+  it('reads back an ambiguous reaction without replaying the toggle', async () => {
+    let writes = 0
+    sidecar.respond('gateway.session', (params) => {
+      if (params.action === 'react') { writes++; throw new Error('ACK lost after write') }
+      return attached(snapshot({ reactions_supported: true, messages: [{ role: 'assistant', row_id: 42, content: 'answer', reactions: writes ? [{ author: 'user', emoji: '👍' }] : [] }] }))
+    })
+    const response = await post('/api/chat/owner-action', { session_id: sid, action: 'react', row_id: 42, emoji: '👍' })
+    expect(response.status).toBe(200)
+    expect(writes).toBe(1)
+    expect((await response.json() as { session: { messages: { reaction_view: unknown }[] } }).session.messages[0]?.reaction_view).toMatchObject({ state: { selected: '👍' } })
+  })
+
+  it('deduplicates owner authors and keeps older owners and foreign profiles read only', async () => {
+    let supported = true
+    sidecar.respond('gateway.session', () => attached(snapshot({ reactions_supported: supported, messages: [{ role: 'assistant', row_id: 42, content: 'answer', reactions: [{ author: 'user', emoji: '👍' }, { author: 'user', emoji: '👍' }, { author: 'agent', emoji: '👍' }] }] })))
+    const detail = async () => SessionEnvelopeSchema.parse(await (await s.get(`/api/session?session_id=${sid}`)).json()).session
+    expect((await detail()).messages?.[0]?.reaction_view?.state.items).toEqual([{ emoji: '👍', count: 2, mine: true }])
+    supported = false
+    expect((await detail()).messages?.[0]?.reaction_view?.actions).toEqual([])
+    sidecar.calls.length = 0
+    expect((await s.get('/api/chat/owner-action', { method: 'POST', headers: { 'content-type': 'application/json', cookie: 'hermes_profile=work' }, body: JSON.stringify({ session_id: sid, action: 'react', row_id: 42, emoji: '👍' }) })).status).toBe(403)
+    expect(sidecar.calls.filter((c) => c.method === 'gateway.session')).toEqual([])
+  })
+
   it.each(['epoch', 'replay', 'model', 'workspace'])('rejects a stale rendered context identity after native %s replacement', async (change) => {
     const detail = ContextDetailSchema.parse((JSON.parse(readFileSync(new URL('../../../contracts/fixtures/sidecar/context-detail.json', import.meta.url), 'utf8')) as Record<string, { result: unknown }[]>)['chat.context_detail']![0]!.result)
     let current = snapshot()
@@ -602,6 +658,7 @@ describe('canonical owner attachment', () => {
         snap = { ...snap, ...extra }
         if (notify) emit!({ event: 'snapshot', data: { ...attached(snap), replay_gap: replayGap } })
       },
+      reactionSnapshot: () => { emit!({ event: 'snapshot', data: { ...attached({ ...snap, running: false, pending: [] }), reaction_only: true } }) },
       replaySnapshot: () => { emit!({ event: 'snapshot', data: { ...attached(snap), replaying: true } }) },
       replayComplete: (terminalOutcome: string) => { outcome = terminalOutcome; emit!({ event: 'replay_complete', data: {} }) },
       finish: (generation = snap.execution_generation, terminalOutcome = 'completed') => {
@@ -636,6 +693,17 @@ describe('canonical owner attachment', () => {
     watch.replayComplete('completed')
     await watch.read
     expect(changes.mock.calls.some(([reason]) => reason === 'web_completion')).toBe(false)
+  })
+
+  it('keeps reaction readback from settling before queued native completion events', async () => {
+    const watch = await observeOwner(snapshot({ running: true, pending: [admission()] }))
+    await vi.waitFor(() => { expect(watch.attached).toBe(true) })
+    watch.reactionSnapshot()
+    watch.event('message.complete', cronRefusal.completion)
+    watch.finish(1, 'failed')
+    const frames = await watch.read
+    expect(frames.some((frame) => frame.event === 'done')).toBe(false)
+    expect(frames.find((frame) => frame.event === 'apperror')?.data).toMatchObject({ type: 'cron_session_read_only', retryable: false })
   })
 
   it.each([false, true])('replays a cron refusal that settled before the submit acknowledgement, viewed=%s', async (viewed) => {

@@ -1,5 +1,7 @@
+import type { MessageReactionView } from '@maudecode/talaria-web-contracts'
+import { Menu, MenuItem } from '../../ui/Menu'
 import { memo, useState } from 'react'
-import { AlertTriangle, ArrowUp, CalendarClock, Copy, GitBranch, Info, ListChecks, Pencil, RotateCcw, Shrink, Volume2, Webhook } from 'lucide-react'
+import { AlertTriangle, ArrowUp, CalendarClock, Copy, GitBranch, Info, ListChecks, Pencil, RotateCcw, SmilePlus, Shrink, Volume2, Webhook } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import type { BackgroundLine, Message } from '../../contracts'
 import { StatusIcon } from '../background/BackgroundWork'
@@ -22,9 +24,32 @@ import { ImageLightbox, type LightboxImage } from './ImageLightbox'
 
 export interface RowActions {
   onQuoteSelection?: (text: string) => void
+  onReact?: (row: VisibleMessage, action: MessageReactionView['actions'][number]) => void
   onEdit?: (row: VisibleMessage, text: string) => void
   onRegenerate?: (row: VisibleMessage) => void
   onBranch?: (row: VisibleMessage) => void
+}
+
+/** Extends the existing row footer and Menu; both message roles share these counts and actions. */
+function MessageReactions({ row, actions }: { row: VisibleMessage; actions: RowActions }) {
+  const view = row.message.reaction_view
+  if (!view) return null
+  const label = (emoji: string, mine: boolean) => mine ? m.reaction_remove({ emoji }) : m.reaction_add({ emoji })
+  return <>
+    {view.state.items.map((item) => {
+      const action = view.actions.find((action) => action.emoji === item.emoji)
+      return <button key={item.emoji} type="button" className="message-reaction" aria-pressed={item.mine}
+        aria-label={`${label(item.emoji, item.mine)}, ${item.count}`} disabled={!action || !actions.onReact}
+        onClick={() => { if (action) actions.onReact?.(row, action) }}><span aria-hidden="true">{item.emoji} {item.count}</span></button>
+    })}
+    {!!view.actions.length && actions.onReact && <Menu side="top" align="end" label={m.message_reactions()}
+      trigger={<IconButton className="message-reaction-trigger" label={m.message_reactions()}><SmilePlus size={14} aria-hidden="true" /></IconButton>}>
+      {view.actions.map((action) => <MenuItem className="min-h-11" key={action.emoji ?? 'remove'}
+        onClick={() => actions.onReact?.(row, action)}>
+        {action.emoji === null ? m.reaction_clear() : label(action.emoji, view.state.selected === action.emoji)}
+      </MenuItem>)}
+    </Menu>}
+  </>
 }
 
 function AttachmentList({ message, sessionId }: { message: Message; sessionId: string | undefined }) {
@@ -62,6 +87,7 @@ export const UserMessageRow = memo(function UserMessageRow({ row, renderMarkdown
         {(excerpt) => <div className="msg-body">{renderMarkdown ? <Markdown text={excerpt ?? text} /> : <div className="whitespace-pre-wrap">{excerpt ?? text}</div>}</div>}
       </CollapsedBody>
       {!pending && <div className="msg-foot">
+        <MessageReactions row={row} actions={actions} />
         {row.message.timestamp ? <span className="msg-time">{formatDate(row.message.timestamp)}</span> : null}
         <IconButton label={m.copy()} className="h-6 w-6" onClick={() => { void navigator.clipboard.writeText(text).then(() => showToast(m.copied())) }}><Copy size={12} aria-hidden="true" /></IconButton>
         {actions.onEdit && <IconButton label={m.edit_message()} className="h-6 w-6" onClick={() => actions.onEdit?.(row, text)}><Pencil size={12} aria-hidden="true" /></IconButton>}
@@ -211,6 +237,7 @@ export const AssistantMessageRow = memo(function AssistantMessageRow({ row, name
         {(row.assistantRows ?? [row]).map((part) => <AttachmentList key={part.key} message={part.message} sessionId={undefined} />)}
       </div>
       <div className={cn('msg-foot', isLast && 'msg-foot-latest')}>
+        <MessageReactions row={row} actions={actions} />
         {row.message.timestamp ? <span className="msg-time">{formatDate(row.message.timestamp)}</span> : null}
         {meta && <span className="msg-run-meta font-mono text-[11px] tabular-nums text-muted opacity-75">{meta}</span>}
         <span className="ml-auto" aria-hidden="true" />

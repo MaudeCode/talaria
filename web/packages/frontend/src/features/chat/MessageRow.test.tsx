@@ -255,3 +255,23 @@ describe('server media references (TAL-186)', () => {
     expect(writeText).toHaveBeenCalledWith(row.message.content)
   })
 })
+
+
+describe('canonical message reactions', () => {
+  it.each(['user', 'assistant'])('renders server counts and permitted actions on a %s row', async (role) => {
+    const fixture = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../..', 'contracts/fixtures/web-reactions.json'), 'utf8')) as { message: Message }
+    const row = { index: 0, key: 'reaction-row', message: { ...fixture.message, role } }
+    const onReact = vi.fn()
+    const actions = { onReact }
+    if (role === 'user') render(<UserMessageRow row={row} renderMarkdown={false} sessionId="native" actions={actions} />)
+    else render(<AssistantMessageRow row={row} name="Assistant" mode="compact_worklog" actions={actions} tts={false} isLast />)
+    expect(screen.getByRole('button', { name: 'Remove 👍 reaction, 1' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'React with 🎉, 1' })).toHaveAttribute('aria-pressed', 'false')
+    fireEvent.click(screen.getByRole('button', { name: 'Remove 👍 reaction, 1' }))
+    expect(onReact).toHaveBeenCalledWith(row, fixture.message.reaction_view!.actions[0])
+    fireEvent.click(screen.getByRole('button', { name: 'React to message' }))
+    expect(await screen.findByRole('menuitem', { name: 'React with ❤️' })).toBeVisible()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'React with ❤️' }))
+    expect(onReact).toHaveBeenLastCalledWith(row, fixture.message.reaction_view!.actions[2])
+  })
+})
