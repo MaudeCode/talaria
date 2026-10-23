@@ -7,6 +7,8 @@ import TalariaKit
 @MainActor
 struct UITestFixtureEnvironment {
     nonisolated static let launchArgument = UITestFixtureLaunch.launchArgument
+    nonisolated static let panelLoadingArgument = "--ui-test-panels-loading"
+    nonisolated static let panelUnavailableArgument = "--ui-test-panels-unavailable"
     nonisolated static let approvalBypassArgument = "--ui-test-approval-bypass"
     /// Serves a transcript of very long bodies in the server's collapsed shape (TAL-456), the
     /// shape that ran the App out of memory before it rendered excerpts.
@@ -530,7 +532,8 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             && ProcessInfo.processInfo.arguments.contains("--ui-test-hold-chat-start")
         let holdsCancel = url.path == "/api/chat/cancel"
             && ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.holdChatCancelArgument)
-        if Self.holdsTranscriptReload(for: url) || holdsSessionList || holdsUpload || holdsSteer || holdsStart || holdsCancel {
+        let holdsPanel = Self.isFullWidthPanelLoad(url) && Self.panelScenario == UITestFixtureEnvironment.panelLoadingArgument
+        if Self.holdsTranscriptReload(for: url) || holdsSessionList || holdsUpload || holdsSteer || holdsStart || holdsCancel || holdsPanel {
             UITestFixtureHold.shared.hold(request: request) { [weak self] in
                 guard let self, !self.isStopped else { return }
                 self.sendResponse(for: url)
@@ -548,6 +551,16 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             return
         }
         sendResponse(for: url)
+    }
+
+    private static var panelScenario: String? {
+        ProcessInfo.processInfo.arguments.first {
+            [UITestFixtureEnvironment.panelLoadingArgument, UITestFixtureEnvironment.panelUnavailableArgument].contains($0)
+        }
+    }
+
+    private static func isFullWidthPanelLoad(_ url: URL) -> Bool {
+        url.path == "/api/insights" || url.path == "/api/kanban/config"
     }
 
     private static func holdsTranscriptReload(for url: URL) -> Bool {
@@ -572,6 +585,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         }
         let statusCode: Int
         if case .status(let code) = listFailure { statusCode = code }
+        else if Self.isFullWidthPanelLoad(url), Self.panelScenario == UITestFixtureEnvironment.panelUnavailableArgument { statusCode = 503 }
         else if Self.failsInitialUpload(url) { statusCode = 500 }
         else if Self.failsSessionCreation(url) {
             statusCode = ProcessInfo.processInfo.arguments.contains("--ui-test-refuse-first-session-creation") ? 409 : 500
@@ -759,6 +773,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                 ]]
             ])
         case "/api/provider/quotas":
+            if panelScenario != nil { return json(["providers": []]) }
             return providerQuotasResponse()
         case "/api/models":
             return json([

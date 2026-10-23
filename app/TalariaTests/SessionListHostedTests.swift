@@ -697,6 +697,52 @@ final class RegularSplitHostedTests: XCTestCase {
         return split
     }
 
+    func testFullWidthLoadingAndErrorStatesStayInTheFoldPane() async throws {
+        let size = HostedSize.duoInnerLandscape
+        let poses = [
+            ("book", CGRect(x: 455, y: -100, width: 40, height: 2000)),
+            ("tabletop", CGRect(x: -100, y: 300, width: 2000, height: 40))
+        ]
+        for (section, flag, label) in [
+            ("Kanban", UITestFixtureEnvironment.panelLoadingArgument, "Loading Kanban"),
+            ("Kanban", UITestFixtureEnvironment.panelUnavailableArgument, "The Kanban server is unavailable."),
+            ("Insights", UITestFixtureEnvironment.panelLoadingArgument, "Loading analytics…"),
+            ("Insights", UITestFixtureEnvironment.panelUnavailableArgument, "Could Not Load Analytics")
+        ] {
+            for (pose, fold) in poses {
+                let fixture = try FixtureApp([flag], for: self)
+                let window = try hostWindow(fixture.sessionList()
+                    .environment(\.chatDivisionFramesForTesting, [fold]).ignoresSafeArea(), size: size) {
+                    $0.horizontalSizeClass = .regular
+                    $0.verticalSizeClass = .regular
+                }
+                let foundNavigation = await barButton("Open navigation", in: window)
+                let navigation = try XCTUnwrap(foundNavigation)
+                press(navigation)
+                HostedAccessibility.activate(try await requireElement(in: window, label: section))
+                let state = try await requireElement(in: window, label: label)
+                let stateFrame = window.convert(state.accessibilityFrame, from: nil)
+                if pose == "book" {
+                    XCTAssertGreaterThanOrEqual(stateFrame.minX, fold.maxX, "\(section) \(label) still crosses the book fold")
+                } else {
+                    XCTAssertGreaterThanOrEqual(stateFrame.minY, fold.maxY, "\(section) \(label) still crosses the tabletop fold")
+                }
+                for control in HostedAccessibility.elements(in: window) where control.accessibilityTraits.contains(.button)
+                    && ["Try Again", "Open provider quota settings", "Refresh all provider quotas"].contains(control.accessibilityLabel ?? "") {
+                    let frame = window.convert(control.accessibilityFrame, from: nil)
+                    guard !frame.isEmpty else { continue }
+                    if pose == "book" { XCTAssertGreaterThanOrEqual(frame.minX, fold.maxX) }
+                    else { XCTAssertGreaterThanOrEqual(frame.minY, fold.maxY) }
+                }
+                attachHostedScreenshot(window, name: "\(section.lowercased())-\(flag.hasSuffix("loading") ? "loading" : "error")-\(pose)")
+                window.isHidden = true
+                window.rootViewController = nil
+                fixture.releaseHeldLoads()
+                settle()
+            }
+        }
+    }
+
     /// Every element in the window, including the bar buttons and inspector each split-view column keeps out of the
     /// window's own element list.
     private func elements(in window: UIWindow) -> [NSObject] {
