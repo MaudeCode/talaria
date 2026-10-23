@@ -190,14 +190,18 @@ export function SessionListPanel() {
   const cliCount = useMemo(() => rows.filter((r) => r.is_cli_session).length, [rows])
   // TAL-308: the server searches within the visible project, source tab and archive state; the local title filter covers the wait.
   const q = useDebounced(filter.trim(), 200)
+  const [retainSearchMatches, setRetainSearchMatches] = useState(false)
   const searchFilters: api.SessionSearchFilters = { project_id: project === NO_PROJECT ? 'none' : (project ?? undefined), sidebar_source: cliCount > 0 ? source : undefined, include_archived: showArchived }
   const search = useQuery({ queryKey: keys.sessions.search(q, searchFilters), queryFn: ({ signal }) => api.searchSessions(q, searchFilters, 5, signal), enabled: q.length >= 2, staleTime: 15_000,
     // Retain matches only within the same source, project and archive scope.
     placeholderData: (previous, query) => {
       const before = query?.queryKey[3] as api.SessionSearchFilters | undefined
-      return before?.project_id === searchFilters.project_id && before?.sidebar_source === searchFilters.sidebar_source && before?.include_archived === searchFilters.include_archived ? keepPreviousData(previous) : undefined
+      return retainSearchMatches && before?.project_id === searchFilters.project_id && before?.sidebar_source === searchFilters.sidebar_source && before?.include_archived === searchFilters.include_archived ? keepPreviousData(previous) : undefined
     },
   })
+  // Disabled short-term queries never replace Query's previous data. Re-arm only after a real search result.
+  if (q.length < 2 && retainSearchMatches) setRetainSearchMatches(false)
+  else if (q.length >= 2 && search.data && !search.isPlaceholderData && !retainSearchMatches) setRetainSearchMatches(true)
   const webuiCount = rows.length - cliCount
   // TAL-785: the server says when state.db could not serve the Agent sessions; an empty list alone would read as deleted history.
   const storage = data?.agent_storage

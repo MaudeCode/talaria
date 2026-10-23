@@ -109,6 +109,28 @@ describe('sidebar search work (TAL-1390)', () => {
     expect(screen.queryByText('server content preview')).toBeNull()
   })
 
+  it.each(['', 'x'])('does not resurrect old matches after pausing on %j', async (shortTerm) => {
+    let answer!: (value: Awaited<ReturnType<typeof api.searchSessions>>) => void
+    const pending = new Promise<Awaited<ReturnType<typeof api.searchSessions>>>((resolve) => { answer = resolve })
+    vi.mocked(api.searchSessions).mockImplementation((q) => q === 'zebra'
+      ? Promise.resolve({ sessions: [delta], sidebar_filtered: true, all_profiles: false, active_profile: 'default' })
+      : q === 'alpha' ? pending : new Promise(() => undefined))
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SessionListPanel /></QueryClientProvider>)
+    await screen.findByText('Alpha zebra')
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'zebra' } })
+    await waitFor(() => expect(shown()).toEqual(['delta']))
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: shortTerm } })
+    await waitFor(() => expect(shown()).toEqual(shortTerm ? [] : ['alpha', 'delta', 'other']))
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'alpha' } })
+    await waitFor(() => expect(api.searchSessions).toHaveBeenLastCalledWith('alpha', expect.any(Object), 5, expect.any(AbortSignal)))
+    expect(shown()).toEqual(['alpha'])
+    answer({ sessions: [other], sidebar_filtered: true, all_profiles: false, active_profile: 'default' })
+    await waitFor(() => expect(shown()).toEqual(['other']))
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'alphas' } })
+    await waitFor(() => expect(api.searchSessions).toHaveBeenLastCalledWith('alphas', expect.any(Object), 5, expect.any(AbortSignal)))
+    expect(shown()).toEqual(['other'])
+  })
+
   it('drops retained matches when the project or source scope changes', async () => {
     vi.mocked(api.searchSessions).mockResolvedValueOnce({ sessions: [other], sidebar_filtered: true, all_profiles: false, active_profile: 'default' })
     render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SessionListPanel /></QueryClientProvider>)

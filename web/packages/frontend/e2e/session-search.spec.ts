@@ -16,11 +16,14 @@ test('search retains server content matches while a replacement request loads (T
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { ...alpha, messages: [] } } }))
   let release!: () => void
   const waiting = new Promise<void>((resolve) => { release = resolve })
+  let releaseAfterClear!: () => void
+  const waitingAfterClear = new Promise<void>((resolve) => { releaseAfterClear = resolve })
   const terms: string[] = []
   await page.route('**/api/sessions/search?**', async (route) => {
     const q = new URL(route.request().url()).searchParams.get('q')!
     terms.push(q)
     if (q === 'zebras') await waiting
+    if (q === 'alpha') await waitingAfterClear
     await route.fulfill({ json: { sessions: [{ ...content, match_type: 'content', match_preview: 'A herd of zebras' }], sidebar_filtered: true, all_profiles: false, active_profile: 'default' } })
   })
   try {
@@ -43,5 +46,10 @@ test('search retains server content matches while a replacement request loads (T
     await input.fill('')
     await expect(page.locator('[data-sid="search-alpha"]')).toBeVisible()
     await expect(result).toBeVisible()
-  } finally { release() }
+    await input.fill('alpha')
+    await expect.poll(() => terms.includes('alpha')).toBe(true)
+    await expect(page.locator('[data-sid="search-alpha"]')).toBeVisible()
+    await expect(result).not.toBeAttached()
+    await page.screenshot({ path: process.env.TAL1390_EVIDENCE ? `${process.env.TAL1390_EVIDENCE}/after-clear-${testInfo.project.name}.png` : testInfo.outputPath('after-clear.png') })
+  } finally { release(); releaseAfterClear() }
 })
