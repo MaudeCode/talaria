@@ -203,24 +203,20 @@ export const Composer = memo(function Composer(props: ComposerProps) {
   // TAL-802: the server's live stream when it reports `streaming`; the browser recognizer otherwise.
   const liveDictation = useRef<LiveDictationHandle | null>(null)
   const liveOffered = !!useTranscribeCapabilityQuery().data?.streaming && liveDictationSupported()
-  const dropLiveDictation = () => {
-    if (!liveDictation.current) return
-    liveDictation.current.cancel()
+  const dictationOwner = useRef<object | null>(null)
+  const dropDictation = useCallback(() => {
+    dictationOwner.current = null
+    liveDictation.current?.cancel()
     liveDictation.current = null
-    setDictating(false)
-  }
-  // When a clarification takes the box over, dictation into the parked draft stops: its control is hidden, and
-  // later results must not land in the draft. `onend` then clears the dictating state.
-  const answering = !!clarify
-  useEffect(() => {
-    if (!answering) return
-    dropLiveDictation()
     const r = recognition.current
-    if (!r) return
-    r.onresult = null
-    r.stop()
-  }, [answering])
-  useEffect(() => () => { liveDictation.current?.cancel() }, [])
+    recognition.current = null
+    if (r) { r.onresult = null; r.onerror = null; r.onend = null; r.stop() }
+  }, [])
+  // Clarification answers and inserted quotes retire the previous draft's microphone callbacks.
+  const answering = !!clarify
+  if (answering && dictating) setDictating(false)
+  useEffect(() => { if (answering) dropDictation() }, [answering, dropDictation])
+  useEffect(() => dropDictation, [dropDictation])
   const busyMode: BusyMode = (settings?.default_message_mode as BusyMode | undefined) ?? 'steer'
   const sendKey = settings?.send_key ?? 'enter'
   // While a clarification is pending the box edits its answer; the chat draft keeps its own state.
@@ -446,6 +442,8 @@ export const Composer = memo(function Composer(props: ComposerProps) {
       if (kind === 'quote') {
         const el = textarea.current
         if (!el || readOnly || clarify || draftIdentity !== localStateId || scope !== getStreamContext()) return
+        dropDictation()
+        setDictating(false)
         quoteCursor.current = lastCursor.current?.sessionId === sessionId ? lastCursor.current.cursor : { start: el.selectionStart, end: el.selectionEnd, direction: el.selectionDirection }
         setText((prev) => `${prev}${prev ? '\n\n' : ''}${returned}`)
       } else {
@@ -453,7 +451,7 @@ export const Composer = memo(function Composer(props: ComposerProps) {
         textarea.current?.focus()
       }
     })
-  }, [sessionId, readOnly, clarify, draftIdentity, localStateId])
+  }, [sessionId, readOnly, clarify, draftIdentity, localStateId, dropDictation])
 
   const { ask: askBtw, notice: btwNotice } = useBtw(sessionId)
   const { run: runCommand, notice: commandNotice } = useCommandOutput(sessionId)
@@ -600,10 +598,14 @@ export const Composer = memo(function Composer(props: ComposerProps) {
   const dictationError = (kind: DictationErrorKind, detail: string) => { showToast(kind === 'denied' ? m.mic_denied() : kind === 'no_speech' ? m.mic_no_speech() : kind === 'network' ? m.mic_network() : m.mic_error() + detail, 3000, 'error') }
   const toggleDictation = () => {
     if (dictating) { recognition.current?.stop(); liveDictation.current?.stop(); return }
+    const owner = {}
+    dictationOwner.current = owner
     const base = text
-    const dictated = (transcript: string) => { setText(settings?.dictation_append === false ? transcript : `${base}${base && !base.endsWith(' ') ? ' ' : ''}${transcript}`) }
+    const dictated = (transcript: string) => { if (dictationOwner.current !== owner) return; setText(settings?.dictation_append === false ? transcript : `${base}${base && !base.endsWith(' ') ? ' ' : ''}${transcript}`) }
     if (liveOffered) {
       const handle = dictateLive(dictated, (error) => {
+        if (dictationOwner.current !== owner) return
+        dictationOwner.current = null
         if (liveDictation.current === handle) { liveDictation.current = null; setDictating(false) }
         if (error) dictationError(liveDictationErrorKind(error), error instanceof Error ? error.message : '')
       })
@@ -620,8 +622,8 @@ export const Composer = memo(function Composer(props: ComposerProps) {
       for (const result of Array.from(ev.results)) transcript += result[0]?.transcript ?? ''
       dictated(transcript)
     }
-    r.onerror = (ev) => { dictationError(classifyDictationError(ev.error), ev.error); setDictating(false) }
-    r.onend = () => { setDictating(false); recognition.current = null }
+    r.onerror = (ev) => { if (dictationOwner.current !== owner) return; dictationOwner.current = null; recognition.current = null; dictationError(classifyDictationError(ev.error), ev.error); setDictating(false) }
+    r.onend = () => { if (dictationOwner.current !== owner) return; dictationOwner.current = null; setDictating(false); recognition.current = null }
     r.start()
     setDictating(true)
   }

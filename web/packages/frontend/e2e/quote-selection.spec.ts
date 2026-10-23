@@ -5,6 +5,18 @@ import { expect, test } from './fixtures'
 test.use({ serviceWorkers: 'block', video: 'on' })
 
 test('quotes displayed selection into the existing draft without submitting', async ({ page }, info) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, 'SpeechRecognition', { configurable: true, value: class {
+      lang = ''; interimResults = false; continuous = false
+      onresult: ((event: { results: { transcript: string }[][] }) => void) | null = null
+      onend: (() => void) | null = null
+      start() {
+        const result = this.onresult
+        Object.assign(window, { quoteSpeech: (text: string) => result?.({ results: [[{ transcript: text }]] }) })
+      }
+      stop() { this.onend?.() }
+    } })
+  })
   const text = 'Selected café 🦜\nsecond line'
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: {
     session_id: 'quote-selection', title: 'Quote selection', messages: [
@@ -69,4 +81,28 @@ test('quotes displayed selection into the existing draft without submitting', as
   await expect(dialog).toContainText('https://example.com/')
   await page.keyboard.press('Escape')
   await expect(dialog).toBeHidden()
+  // Phone layouts use keyboard dictation; start the app microphone while wide, then exercise a responsive shrink.
+  if (info.project.name === 'mobile') await page.setViewportSize({ width: 1280, height: 800 })
+  await page.getByRole('button', { name: 'Dictate', exact: true }).click()
+  await page.evaluate(() => (window as unknown as { quoteSpeech: (text: string) => void }).quoteSpeech('spoken'))
+  await expect(box).toHaveValue(`${draft}\n\n> const café = "🦜"\n\n spoken`)
+  if (info.project.name === 'mobile') {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await expect(page.locator('#btnMic')).toBeHidden()
+  }
+  await screenshot('dictating')
+  const spokenDraft = await box.inputValue()
+  await box.blur()
+  await code.evaluate((el) => {
+    const range = document.createRange(); range.selectNodeContents(el)
+    const selection = window.getSelection()!; selection.removeAllRanges(); selection.addRange(range)
+    document.dispatchEvent(new Event('selectionchange'))
+  })
+  if (info.project.name === 'mobile') await action.tap()
+  else await action.click()
+  await page.evaluate(() => (window as unknown as { quoteSpeech: (text: string) => void }).quoteSpeech('late speech'))
+  await expect(box).toHaveValue(`${spokenDraft}\n\n> const café = "🦜"\n\n`)
+  await expect(page.locator('#btnMic')).toHaveAttribute('aria-pressed', 'false')
+  expect(submissions).toBe(0)
+  await screenshot('dictation-quoted')
 })

@@ -210,6 +210,7 @@ update requirement.
 
 Select text within a chat message, then choose **Quote selection** to append it as a Markdown quote
 to the current draft. The action keeps the draft, attachments and cursor, and never sends a message.
+Quoting stops active dictation so later speech results cannot replace the quote.
 Selections over 16,000 characters are left to the browser selection menu.
 
 Automatic read-aloud claims each watched reply once across tabs on the same browser origin and app mount,

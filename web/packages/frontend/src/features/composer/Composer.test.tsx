@@ -46,6 +46,7 @@ vi.mock('./ComposerNotices', async (original) => {
 import { Composer, type ComposerProps } from './Composer'
 import type { ExecutionModes } from '@maudecode/talaria-web-contracts'
 import { dictateLive } from '../voice/liveDictation'
+import * as browserDictation from '../voice/dictation'
 
 const noop = (): void => undefined
 function renderComposer(session: Session | null, live: LiveTurn | null = null, onQueue: (entry: QueuedTurn) => void = noop, settings?: Settings, onEnsureSession: () => Promise<Session> = () => Promise.resolve(session!), onLocalCommand: ComposerProps['onLocalCommand'] = () => Promise.resolve(false), overrides: Partial<ComposerProps> = {}) {
@@ -354,6 +355,48 @@ describe('Composer', () => {
     act(() => { onText('Ship the release notes.'); onEnd(null) })
     expect(box).toHaveValue('Note: Ship the release notes.')
     expect(screen.getByRole('button', { name: 'Dictate' })).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it.each([
+    ['live', true], ['live', false], ['browser', true], ['browser', false],
+  ] as const)('keeps quotes after late %s dictation results, append: %s', async (backend, append) => {
+    let onText: (text: string) => void = noop
+    let onEnd: (error: unknown) => void = noop
+    const cancel = vi.fn()
+    const stop = vi.fn()
+    const recognizer: NonNullable<ReturnType<typeof browserDictation.createRecognition>> = {
+      lang: 'en', interimResults: true, continuous: false, onresult: null, onerror: null, onend: null, start: vi.fn(), stop,
+    }
+    const supported = vi.spyOn(browserDictation, 'dictationSupported').mockReturnValue(backend === 'browser')
+    const create = vi.spyOn(browserDictation, 'createRecognition').mockReturnValue(recognizer)
+    if (backend === 'live') {
+      vi.mocked(api.fetchTranscribeCapability).mockResolvedValue({ ok: true, available: true, provider: 'openai', streaming: true, warm_supported: false })
+      vi.mocked(dictateLive).mockImplementation((text, end) => { onText = text; onEnd = end; return { stop, cancel } })
+    }
+    const view = renderComposer(writable, null, noop, { dictation_append: append })
+    try {
+      const box = screen.getByRole('textbox')
+      fireEvent.change(box, { target: { value: 'Note:' } })
+      await userEvent.click(await screen.findByRole('button', { name: 'Dictate' }))
+      if (backend === 'browser') {
+        const result = recognizer.onresult!
+        const end = recognizer.onend!
+        onText = (text) => result({ results: [Object.assign([{ transcript: text }], { isFinal: false })] })
+        onEnd = () => end()
+      }
+      const lateText = onText, lateEnd = onEnd
+      act(() => { onText('spoken') })
+      const expected = `${append ? 'Note: spoken' : 'spoken'}\n\n> Selected\n\n`
+      act(() => { returnToComposer('s1', 'Selected', 'quote') })
+      act(() => { lateText('late speech'); lateEnd(null) })
+      expect(box).toHaveValue(expected)
+      expect(backend === 'live' ? cancel : stop).toHaveBeenCalledOnce()
+      expect(screen.getByRole('button', { name: 'Dictate' })).toHaveAttribute('aria-pressed', 'false')
+      await userEvent.click(screen.getByRole('button', { name: 'Dictate' }))
+      act(() => { lateText('older capture'); lateEnd(null) })
+      expect(box).toHaveValue(expected)
+      expect(screen.getByRole('button', { name: 'Stop dictation' })).toHaveAttribute('aria-pressed', 'true')
+    } finally { view.unmount(); supported.mockRestore(); create.mockRestore() }
   })
 
   it('keeps the browser recognizer path when the server reports no streaming (TAL-802)', async () => {
