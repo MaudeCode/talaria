@@ -2,7 +2,25 @@
   "entries": [
     {
       "category": "Fixed",
-      "summary": "Moving, renaming, creating or deleting files, saving a file, and in chat changing the model, workspace, tools, YOLO or reasoning, editing or cancelling a steer, starting /background work, editing, clearing or undoing history, and answering approval or question cards now show the result at once, and undo themselves with an error if the server refuses.",
+      "summary": "Creating, renaming, moving, deleting and saving files now shows the result at once and undoes it with an error if the server refuses.",
+      "highlight": false,
+      "components": ["web"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "In chat, changing the model, workspace, tools, YOLO, reasoning or personality, editing, clearing or undoing history, starting /background work, and editing or cancelling a steer or queued message now show the result at once.",
+      "highlight": false,
+      "components": ["web"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "Approval, question and password prompts leave as soon as you answer and come back with an error if the answer did not reach the server.",
+      "highlight": false,
+      "components": ["web"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "The OpenRouter budget and quota thresholds stay editable while they save.",
       "highlight": false,
       "components": ["web"]
     }
