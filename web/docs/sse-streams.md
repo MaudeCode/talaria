@@ -15,7 +15,7 @@ is configured, clients must authenticate before opening any stream.
 |---|---|---|
 | `GET /api/chat/stream?stream_id=<id>` | Always on | Live agent-turn relay (tokens, tool calls, approvals, `done`, `stream_end`). Falls back to run-journal replay when the in-memory stream is gone. Resume cursors: `after_event_id` / `after_seq` query params, with the standard `Last-Event-ID` header as fallback. Journal-backed events carry `id: <stream_id>:<seq>`; opaque runner cursors are emitted in an owner-bound `runner-v1` envelope so automatic reconnect cannot apply one run's cursor to another. An invalid/foreign/ahead-of-stream cursor is honored as replay-from-start rather than silently skipping events. |
 | `GET /api/session/stream?session_id=<id>` | Always on | Persistent per-session channel that survives across agent turns (`initial`, `server_turn_started`, `session-updated`, `bg_task_complete`). This is the stream the WebUI frontend keeps open per session and the stream non-browser clients should prefer for background session updates. |
-| `GET /api/sessions/events` | Always on | Global session-list invalidation (`sessions_changed` + keepalives). A signal to re-read `/api/sessions`, not a per-session lifecycle feed. With `?gateway=1` the same connection also carries the gateway feed — see [Merged sidebar stream](#merged-sidebar-stream). |
+| `GET /api/sessions/events` | Always on | Global session-list invalidation (`initial` on every connection, then `sessions_changed` + keepalives). Both events signal a re-read of `/api/sessions`, not a per-session lifecycle feed. Web polls only while this stream is down and the tab is visible. With `?gateway=1` the same connection also carries the gateway feed — see [Merged sidebar stream](#merged-sidebar-stream). |
 | `GET /api/sessions/{session_id}/events` | Always on | Per-session run-journal relay with `Last-Event-ID` / `after_event_id` resume and snapshot fallback. See `docs/rfcs/session-sse-contract-v1.md` for the contract and its proof gates. |
 | `GET /api/sessions/gateway/stream` | Optional | Real-time updates for CLI/TUI/messaging (agent) sessions merged into the sidebar. Only streams when the **Agent sessions** setting (`show_cli_sessions`) is enabled and the gateway watcher thread is running. Still served for clients that subscribe to it directly; the browser frontend now takes this feed over `/api/sessions/events?gateway=1` instead. |
 
@@ -74,7 +74,8 @@ GET /api/sessions/events?gateway=1
   frame gains a `stream` discriminator — `"sessions"` for session-list
   invalidation, `"gateway"` for watcher frames — so a client routes each frame
   to the handler it already had.
-- The connection opens with a `gateway_status` event carrying the same payload
+- The connection opens with `initial {stream: "sessions"}` to resync the list,
+  followed by a `gateway_status` event carrying the same payload
   as `?probe=1` below. Because the session-events half stays healthy when the
   gateway half cannot attach, an unusable gateway never surfaces as a transport
   error; this frame is what tells a client to start its `fallback_poll_ms`

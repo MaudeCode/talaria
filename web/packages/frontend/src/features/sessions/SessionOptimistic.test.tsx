@@ -11,7 +11,7 @@ vi.mock('../../api/endpoints', () => ({
   renameSession: vi.fn(), pinSession: vi.fn(), deleteSession: vi.fn(), moveSession: vi.fn(), revokeShare: vi.fn(), removeWorktree: vi.fn(), fetchWorktreeStatus: vi.fn(),
   renameProject: vi.fn(), deleteProject: vi.fn(), duplicateSession: vi.fn(), regenerateTitle: vi.fn(), createShare: vi.fn(), exportSessionUrl: vi.fn(() => ''),
 }))
-vi.mock('../../api/sse', () => ({ openSessionListStream: () => ({ close: () => undefined, readyState: () => 1 }) }))
+vi.mock('../../api/sse', () => ({ SSE_OPEN: 1, openSessionListStream: () => ({ close: () => undefined, readyState: () => 1 }) }))
 vi.mock('./useNewChat', () => ({ useNewChat: () => vi.fn() }))
 const router = vi.hoisted(() => ({ navigate: vi.fn(), active: undefined as string | undefined }))
 const toast = vi.hoisted(() => vi.fn())

@@ -36,6 +36,14 @@ vi.mock('node:fs/promises', async (original) => {
 let server: TestServer | undefined
 afterEach(async () => { vi.restoreAllMocks(); await server?.close(); server = undefined })
 
+it.each(['/api/sessions/events', '/api/sessions/events?gateway=1'])('sends initial first on every connection to %s', async (path) => {
+  const s = server = await bootTestServer()
+  for (let connection = 0; connection < 2; connection++) {
+    const frames = await s.sse(path, () => true, { timeoutMs: 1000 })
+    expect(frames[0]).toMatchObject({ event: 'initial', data: {} })
+  }
+})
+
 it.each([true, false])('reconnect reads each journal once and only the active tail, initially attached=%s', async (initiallyAttached) => {
   const s = server = await bootTestServer()
   const session = await s.deps.sessionStore.newSession()

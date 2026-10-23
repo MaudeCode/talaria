@@ -13,6 +13,7 @@ const streams: { event: (event: ChatEvent, id: string) => void; replay: unknown;
 vi.mock('../../api/endpoints', () => ({ fetchSession: vi.fn(), fetchStreamStatus: vi.fn() }))
 vi.mock('../../api/sse', () => ({
   SSE_CLOSED: 2,
+  SSE_OPEN: 1,
   openSessionStream: vi.fn(() => ({ close: vi.fn(), readyState: () => 1 })),
   openSessionListStream: vi.fn(() => ({ close: vi.fn(), readyState: () => 1 })),
   openChatStream: (_id: string, replay: unknown, cb: { onEvent: (event: ChatEvent, id: string) => void }) => {

@@ -10,7 +10,7 @@ import { ApiError } from '../../contracts/common'
 
 vi.mock('../../api/endpoints', () => ({ fetchSessions: vi.fn(), searchSessions: vi.fn(), fetchProjects: vi.fn(), archiveSession: vi.fn(), createProject: vi.fn(), importSession: vi.fn() }))
 const sessionEvents = vi.hoisted(() => ({ emit: vi.fn<(event: { event: string; data: { session_id?: string; reason?: string } }) => void>() }))
-vi.mock('../../api/sse', () => ({ openSessionListStream: ({ onEvent }: { onEvent: typeof sessionEvents.emit }) => { sessionEvents.emit.mockImplementation(onEvent); return { close: () => undefined, readyState: () => 1 } } }))
+vi.mock('../../api/sse', () => ({ SSE_OPEN: 1, openSessionListStream: ({ onEvent }: { onEvent: typeof sessionEvents.emit }) => { sessionEvents.emit.mockImplementation(onEvent); return { close: () => undefined, readyState: () => 1 } } }))
 vi.mock('./useNewChat', () => ({ useNewChat: () => vi.fn() }))
 const rowRender = vi.hoisted(() => vi.fn())
 vi.mock('./SessionContextMenu', () => ({ SessionContextMenu: ({ row }: { row: SessionRow }) => { rowRender(row.session_id); return null } }))

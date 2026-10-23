@@ -550,7 +550,8 @@ describe('state.db projection', () => {
   it('serves the merged sidebar feed with state.db snapshots', async () => {
     await s.deps.settings.save({ show_cli_sessions: true })
     const merged = await s.sse('/api/sessions/events?gateway=1', (f) => f.event === 'sessions_changed' && (f.data as Json).stream === 'gateway', { timeoutMs: 3000 })
-    expect(merged[0]).toMatchObject({ event: 'gateway_status', data: { ok: true, watcher_running: true } })
+    expect(merged[0]).toMatchObject({ event: 'initial', data: { stream: 'sessions' } })
+    expect(merged[1]).toMatchObject({ event: 'gateway_status', data: { ok: true, watcher_running: true } })
     expect(merged.some((f) => f.event === 'sessions_changed' && (f.data as Json).stream === 'gateway')).toBe(true)
     // A live insert reaches the merged feed through the 100 ms poll.
     const live = s.sse('/api/sessions/events?gateway=1', (f) => f.event === 'sessions_changed' && (f.data as Json).stream === 'gateway' && ((f.data as Json).sessions as Json[]).some((r) => r.session_id === 'tg-3'), { timeoutMs: 4000 })
@@ -560,7 +561,7 @@ describe('state.db projection', () => {
     expect(liveFrames.some((f) => (f.data as Json).stream === 'gateway' && ((f.data as Json).sessions as Json[]).some((r) => r.session_id === 'tg-3'))).toBe(true)
     await s.deps.settings.save({ show_cli_sessions: false })
     const status = await s.sse('/api/sessions/events?gateway=1', (f) => f.event === 'gateway_status', { timeoutMs: 2000 })
-    expect(status[0]?.data).toMatchObject({ ok: false, enabled: false, error: 'agent sessions not enabled' })
+    expect(status[1]?.data).toMatchObject({ ok: false, enabled: false, error: 'agent sessions not enabled' })
   })
 
   it('keeps the newest messaging row per identity and caps CLI rows', () => {
