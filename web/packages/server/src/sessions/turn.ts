@@ -94,6 +94,8 @@ export interface TurnRunnerDeps {
   checkpointStoreBusy?: (profile: string | null) => boolean
   /** TAL-1305: a tool call started background work (`startsBackgroundWork`); the session's records refresh now. */
   onBackgroundWork?: (sessionId: string, profile: string | null) => void
+  /** TAL-1395: a turn was admitted; the completion drain polls at its base interval again. */
+  onTurnStart?: (sessionId: string) => void
   /** Runs after the run is retired (Python teardown idle hook: deferred process wakeups). */
   onTurnEnd?: (sessionId: string) => void
   /** TAL-576: the profile's authoritative config file (`AgentConfig.path`); `<home>/config.yaml` when absent. */
@@ -529,6 +531,7 @@ export class TurnRunner {
     this.registry.writebackOwners.set(s.session_id, streamId)
     // A new chat appears in the list; every turn tells open clients a run started (TAL-434).
     this.deps.events.publish(wasHiddenEmpty ? 'session_new' : 'turn_started', { profile: s.profile, sessionId: s.session_id })
+    try { this.deps.onTurnStart?.(s.session_id) } catch { /* best effort */ }
     try { await timing.measure('workspace_persistence', () => this.deps.workspaces.setLastWorkspace(opts.workspace, s.profile)) } catch { /* best effort */ }
     const channel = this.registry.create(streamId, s.session_id)
     admission.admitting = false
