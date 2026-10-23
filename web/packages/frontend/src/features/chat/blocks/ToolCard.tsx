@@ -80,7 +80,7 @@ export function ToolCard({ call, timestamp, sessionId }: { call: ToolCardData; t
         <span className="tool-card-name min-w-0 flex-1 truncate"><span className="tool-card-name-label">{label}</span></span>
         {!call.done && call.progress && <span className="tool-card-progress min-w-0 max-w-[60%] truncate text-[11px] tabular-nums text-muted" title={call.progress.message ?? undefined}>{[call.progress.percent === null ? null : new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 0 }).format(call.progress.percent / 100), call.progress.message].filter(Boolean).join(' · ')}</span>}
         {call.background && <span className="tool-card-background shrink-0 text-[11px] text-muted" data-background-status={call.background.status}>{call.background.status === 'running' || call.background.status === 'completed' ? agentsSummary(call.background.agents) : `${statusLabel(call.background.status)} · ${agentsSummary(call.background.agents)}`}</span>}
-        {!call.done && <span className="tool-card-running-dot h-2 w-2 shrink-0 animate-pulse rounded-full bg-accent" aria-label={m.status_streaming()} />}
+        {!call.done && <span className="tool-card-running-dot h-2 w-2 shrink-0 rounded-full bg-accent" aria-label={m.status_streaming()} />}
         {call.done && call.duration !== null && <span className="shrink-0 text-[11px] tabular-nums text-muted">{call.duration.toFixed(1)}s</span>}
         {timestamp && <span className="shrink-0 text-[11px] tabular-nums text-muted">{timestamp}</span>}
       </button>

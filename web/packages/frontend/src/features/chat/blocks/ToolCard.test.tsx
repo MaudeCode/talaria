@@ -38,3 +38,11 @@ it('shows server progress only on the running tool row (TAL-1268)', () => {
   rerender(<ToolCard call={{ ...call, done: true, progress }} />)
   expect(screen.queryByText('42% · indexing files')).not.toBeInTheDocument()
 })
+
+it('gives a running tool one animation class and removes its dot on completion (TAL-1393)', () => {
+  const { container, rerender } = render(<ToolCard call={{ ...call, done: false }} />)
+  const dot = container.querySelector('.tool-card-running-dot')!
+  expect([...dot.classList].filter((name) => name === 'tool-card-running-dot' || name.startsWith('animate-'))).toEqual(['tool-card-running-dot'])
+  rerender(<ToolCard call={call} />)
+  expect(container.querySelector('.tool-card-running-dot')).toBeNull()
+})
