@@ -2104,8 +2104,24 @@ function withToolDisplay<T>(raw: unknown, redacted: T, enabled: boolean): T {
     if (typeof fnArgs !== 'string') out.function = { ...out.function, arguments: redactArgs(fnArgs, enabled) }
     else try { out.function = { ...out.function, arguments: JSON.stringify(redactArgs(JSON.parse(fnArgs), enabled)) } } catch { /* unparseable: the text redaction stands */ }
   }
-  // The target is derived in the live order: the sidecar's snapshot (first four arguments, capped) before redaction.
-  return { ...out, ...toolDisplay(toolName(record), redactArgs(snapshotArgs(toolArgs(record)), enabled)) } as T
+  // TAL-1458: only a call naming a file carries `focus_path`, so a bare completion never clears its start frame's.
+  const { focus_path: focusPath, ...display } = redactedToolDisplay(record, enabled)
+  return { ...out, ...display, ...(focusPath ? { focus_path: focusPath } : {}) } as T
+}
+
+/** The target is derived in the live order: the sidecar's snapshot (first four arguments, capped) before redaction. */
+function redactedToolDisplay(call: Record<string, unknown>, enabled: boolean): ReturnType<typeof toolDisplay> {
+  return toolDisplay(toolName(call), redactArgs(snapshotArgs(toolArgs(call)), enabled))
+}
+
+/** TAL-1458: the session's `focus_path`, the last non-null one of its persisted calls as each call ships it. */
+export function sessionFocusPath(calls: unknown[], enabled: boolean): string | null {
+  for (let i = calls.length - 1; i >= 0; i--) {
+    const call = calls[i]
+    const path = call && typeof call === 'object' && !Array.isArray(call) ? redactedToolDisplay(call as Record<string, unknown>, enabled).focus_path : null
+    if (path) return path
+  }
+  return null
 }
 
 /** Every non-empty scalar of a credential value masked, keeping its shape (`{ password: ['x'] }` → `['***']`). */

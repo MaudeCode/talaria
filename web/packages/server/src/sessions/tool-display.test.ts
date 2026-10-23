@@ -44,14 +44,36 @@ describe('toolDisplay', () => {
   })
 
   it('takes the first line of the kind\'s argument, whitespace-collapsed and capped', () => {
-    expect(toolDisplay('terminal', { command: '  ls   -la\n  rm x', path: 'p' })).toEqual({ kind: 'shell', target: 'ls -la' })
-    expect(toolDisplay('read_file', { command: 'c', path: 'src/a.ts' })).toEqual({ kind: 'read', target: 'src/a.ts' })
-    expect(toolDisplay('web_search', { query: 'q', url: 'https://x' })).toEqual({ kind: 'web', target: 'q' })
-    expect(toolDisplay('skill_view', { name: 'pdf' })).toEqual({ kind: 'skill', target: 'pdf' })
-    expect(toolDisplay('delegate_task', { task: 'Summarize' })).toEqual({ kind: 'delegate', target: 'Summarize' })
+    expect(toolDisplay('terminal', { command: '  ls   -la\n  rm x', path: 'p' })).toEqual({ kind: 'shell', target: 'ls -la', focus_path: null })
+    expect(toolDisplay('read_file', { command: 'c', path: 'src/a.ts' })).toEqual({ kind: 'read', target: 'src/a.ts', focus_path: 'src/a.ts' })
+    expect(toolDisplay('web_search', { query: 'q', url: 'https://x' })).toEqual({ kind: 'web', target: 'q', focus_path: null })
+    expect(toolDisplay('skill_view', { name: 'pdf' })).toEqual({ kind: 'skill', target: 'pdf', focus_path: null })
+    expect(toolDisplay('delegate_task', { task: 'Summarize' })).toEqual({ kind: 'delegate', target: 'Summarize', focus_path: null })
     expect(toolDisplay('terminal', { command: 'x'.repeat(300) }).target).toHaveLength(200)
-    expect(toolDisplay('terminal', null)).toEqual({ kind: 'shell', target: '' })
-    expect(toolDisplay('terminal', { command: 42 })).toEqual({ kind: 'shell', target: '42' })
+    expect(toolDisplay('terminal', null)).toEqual({ kind: 'shell', target: '', focus_path: null })
+    expect(toolDisplay('terminal', { command: 42 })).toEqual({ kind: 'shell', target: '42', focus_path: null })
+  })
+
+  it('names a read or write call\'s workspace-relative file as its focus path (TAL-1458)', () => {
+    expect(toolDisplay('read_file', { path: 'src/a.ts' }).focus_path).toBe('src/a.ts')
+    expect(toolDisplay('write_file', { file_path: './web/b.ts', content: 'x' }).focus_path).toBe('web/b.ts')
+    expect(toolDisplay('patch', { file: 'docs/My Notes.md' }).focus_path).toBe('docs/My Notes.md')
+    expect(toolDisplay('mcp_filesystem_edit_file', { target: 'c.swift' }).focus_path).toBe('c.swift')
+    for (const [name, args] of [
+      ['terminal', { command: 'cat src/a.ts', path: 'src/a.ts' }],
+      ['search_files', { pattern: 'x', path: 'src' }],
+      ['skill_view', { name: 'pdf' }],
+      ['read_file', { name: 'notes' }],
+      ['read_file', { path: '/etc/hosts' }],
+      ['read_file', { path: '~/.ssh/config' }],
+      ['read_file', { path: 'C:\\x\\y.ts' }],
+      ['read_url', { path: 'https://example.com/a' }],
+      ['write_file', { path: '../outside.ts' }],
+      ['write_file', { path: 'src/../../outside.ts' }],
+      ['write_file', { path: 'two\nlines' }],
+      ['write_file', { file: `${'p'.repeat(130)}.ts` }],
+      ['write_file', { path: '  ' }],
+    ] as const) expect(toolDisplay(name, args).focus_path, `${name} ${JSON.stringify(args)}`).toBeNull()
   })
 })
 

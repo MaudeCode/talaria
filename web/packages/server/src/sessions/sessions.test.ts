@@ -1,4 +1,5 @@
 import { sessionDirectory, sessionIndexPath, sessionPath } from '../test/storage.js'
+import { publicToolFrame } from '../redact.js'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { readMetadataJsonPrefixWithSignature, statSignature } from './storage/json-files.js'
@@ -3140,5 +3141,38 @@ describe('POST /api/sessions/cleanup (TAL-257)', () => {
     writeFileSync(sessionIndexPath(s.deps.sessionStore), 'corrupt json')
     expect(await cleanup()).toEqual({ ok: true, cleaned: 1 })
     expect(indexIds()).toEqual(['sess-keep'])
+  })
+})
+
+describe('the file a companion page shows (TAL-1458)', () => {
+  let s: TestServer
+  beforeAll(async () => { s = await bootTestServer() })
+  afterAll(() => s.close())
+  const fixture = JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/focus-path.json'), 'utf8')) as { stored_tool_calls: Json[]; session: Json } & Record<'tool_a' | 'tool_b' | 'shell', { data: Json }>
+
+  it('stamps each live frame with the shared fixture\'s focus path', () => {
+    for (const key of ['tool_a', 'tool_b', 'shell'] as const) {
+      // The frame as the sidecar sends it, before the server stamps its display fields.
+      const raw = Object.fromEntries(Object.entries(fixture[key].data).filter(([field]) => !['kind', 'target', 'focus_path'].includes(field)))
+      expect(publicToolFrame(raw, true), key).toEqual(fixture[key].data)
+    }
+  })
+
+  it('reports the last persisted call\'s focus path on the detail and on mutation replies', async () => {
+    const sid = String((await newSession(s)).session_id)
+    const session = (await s.deps.sessionStore.get(sid))
+    session.messages = [{ role: 'user', content: 'Edit the demo' }, { role: 'assistant', content: 'Done.' }]
+    session.tool_calls = fixture.stored_tool_calls
+    await s.deps.sessionStore.save(session)
+    const expected = fixture.session.focus_path
+    expect(((await json(await s.get(`/api/session?session_id=${sid}&messages=1&msg_limit=50`))).session as Json).focus_path).toBe(expected)
+    expect(((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).focus_path).toBe(expected)
+    expect(((await json(await post(s, '/api/session/rename', { session_id: sid, title: 'Demo' }))).session as Json).focus_path).toBe(expected)
+  })
+
+  it('is null for a session without a workspace-relative file call', async () => {
+    const sid = String((await newSession(s)).session_id)
+    await writeMessages(s, sid, [{ role: 'user', content: 'hi' }])
+    expect(((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).focus_path).toBeNull()
   })
 })

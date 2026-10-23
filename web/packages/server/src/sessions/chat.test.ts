@@ -534,7 +534,7 @@ describe('chat turns through the sidecar', () => {
     // Reasoning streamed before the first tool call belongs to that first assistant row (Python per-segment attribution).
     expect((detail.messages as Json[])[1]).toMatchObject({ role: 'assistant', reasoning: 'thinking' })
     expect((detail.messages as Json[])[3]).toMatchObject({ content: 'Hi back', _usedModel: 'test-model' })
-    expect(detail.tool_calls).toEqual([{ name: 'read_file', snippet: 'contents', tid: 'call_1', assistant_msg_idx: 1, args: { path: 'a' }, kind: 'read', target: 'a', is_error: false, duration: expect.any(Number) as number }])
+    expect(detail.tool_calls).toEqual([{ name: 'read_file', snippet: 'contents', tid: 'call_1', assistant_msg_idx: 1, args: { path: 'a' }, kind: 'read', target: 'a', focus_path: 'a', is_error: false, duration: expect.any(Number) as number }])
     expect(detail.input_tokens).toBe(120)
     expect(detail.output_tokens).toBe(30)
     expect(detail.context_length).toBe(200000)
