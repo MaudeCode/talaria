@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The chat list refreshes when its connection returns and avoids unnecessary reloads while connected.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

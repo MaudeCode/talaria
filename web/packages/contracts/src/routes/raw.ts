@@ -38,7 +38,7 @@ export const RAW_ROUTES: readonly RawRoute[] = [
     responses: { 200: { description: 'Event stream with 5 s keepalives.', contentType: 'text/event-stream' } },
   },
   {
-    method: 'GET', path: '/api/sessions/events', summary: 'Global session-list invalidation stream (`sessions_changed`).', tags: ['sessions'],
+    method: 'GET', path: '/api/sessions/events', summary: 'Global session-list invalidation stream (`initial` on every connection, then `sessions_changed`).', tags: ['sessions'],
     query: { gateway: { description: '`1` merges the gateway feed with a `stream` discriminator and an initial `gateway_status` frame.' } },
     responses: { 200: { description: 'Event stream.', contentType: 'text/event-stream' } },
   },

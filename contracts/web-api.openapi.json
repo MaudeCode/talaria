@@ -82808,7 +82808,7 @@
     },
     "/api/sessions/events": {
       "get": {
-        "summary": "Global session-list invalidation stream (`sessions_changed`).",
+        "summary": "Global session-list invalidation stream (`initial` on every connection, then `sessions_changed`).",
         "tags": [
           "sessions"
         ],

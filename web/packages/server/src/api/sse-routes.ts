@@ -450,6 +450,7 @@ export async function handleSessionEvents(ctx: RequestContext): Promise<void> {
   const gatewaySub = wantGateway && gatewayStatus?.ok === true && watcher ? watcher.subscribe() : null
   try {
     sse.start()
+    sse.event('initial', { stream: 'sessions' })
     if (wantGateway && gatewayStatus) sse.event('gateway_status', gatewayStatus)
     if (gatewaySub) sse.event('sessions_changed', { type: 'sessions_changed', sessions: await initialGatewaySessions(ctx), stream: 'gateway' })
     let lastWrite = Date.now()

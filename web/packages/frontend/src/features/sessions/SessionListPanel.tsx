@@ -8,7 +8,7 @@ import { keys } from '../../api/queryKeys'
 import { invalidateSessionQueries } from '../../api/sessionQueries'
 import { getStreamState, hasRecentTerminalSession } from '../../stream/store'
 import { hasLiveConnection } from '../../stream/connection'
-import { openSessionListStream } from '../../api/sse'
+import { openSessionListStream, SSE_OPEN } from '../../api/sse'
 import type { SessionRow } from '../../contracts'
 import { PanelHead, PanelHeadButton } from '../../shell/Sidebar'
 import { cn } from '../../ui/cn'
@@ -55,7 +55,7 @@ export function useSessionListStream() {
       },
       onError: () => { /* EventSource retries on its own; the poll below covers long outages */ },
     })
-    const poll = window.setInterval(() => { if (!closed && document.visibilityState === 'visible') invalidateSidebar(qc) }, 60_000)
+    const poll = window.setInterval(() => { if (!closed && handle.readyState() !== SSE_OPEN && document.visibilityState === 'visible') invalidateSidebar(qc) }, 60_000)
     return () => {
       closed = true
       handle.close()
