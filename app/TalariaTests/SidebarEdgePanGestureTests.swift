@@ -92,14 +92,9 @@ final class SidebarEdgePanArbiterTests: XCTestCase {
 @MainActor
 final class AppSidebarSafeAreaTests: XCTestCase {
     func testOpeningKeepsBothHostsSafeAreas() throws {
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
-        let window = UIWindow(windowScene: scene)
-        defer { window.isHidden = true }
         let presentation = AppSidebarPresentation()
-        let controller = AppSidebarController(presentation: presentation)
-        controller.setRoots(sidebar: AnyView(Color.clear), content: AnyView(Color.clear))
-        window.rootViewController = controller
-        window.makeKeyAndVisible()
+        let (window, controller) = try makeSidebarController(presentation)
+        defer { window.isHidden = true }
         // A leading inset like a landscape iPhone's notch.
         controller.additionalSafeAreaInsets = UIEdgeInsets(top: 20, left: 50, bottom: 10, right: 30)
         controller.view.layoutIfNeeded()
@@ -112,4 +107,76 @@ final class AppSidebarSafeAreaTests: XCTestCase {
 
         XCTAssertEqual(hosts.map(\.safeAreaInsets), closed, "Opening the sidebar changed a host's safe area")
     }
+}
+
+/// The screen slides aside for the sidebar, except beside a vertical bar: the bar is window chrome
+/// and stays put, so there the sidebar slides in over a screen that does not move (TAL-481).
+@MainActor
+final class AppSidebarPresentationTests: XCTestCase {
+    func testPushModeSlidesTheScreen() throws {
+        let presentation = AppSidebarPresentation()
+        let (window, controller) = try makeSidebarController(presentation)
+        defer { window.isHidden = true }
+        try XCTSkipIf(hasVerticalBar(controller), "A vertical bar presents the sidebar over the screen")
+        let sidebar = controller.children[0].view!
+        let content = controller.children[1].view!
+
+        presentation.isPresented = true
+        controller.view.layoutIfNeeded()
+
+        XCTAssertEqual(windowFrame(content).minX, controller.revealWidth, accuracy: 0.5)
+        XCTAssertTrue(controller.view.subviews.first === sidebar, "The pushed-aside screen must cover the sidebar")
+    }
+
+    func testVerticalBarModePresentsOverTheScreen() throws {
+        let presentation = AppSidebarPresentation()
+        let (window, controller) = try makeSidebarController(presentation)
+        defer { window.isHidden = true }
+        try XCTSkipUnless(hasVerticalBar(controller), "Needs iOS 27.1 and a vertical bar, as on the iPhone Duo")
+        let hosts = controller.children.map(\.view!)
+        let sidebar = hosts[0]
+        let content = hosts[1]
+        controller.view.layoutIfNeeded()
+        let closedInsets = hosts.map(\.safeAreaInsets)
+        XCTAssertLessThanOrEqual(windowFrame(sidebar).maxX, 0.5, "The closed sidebar must sit off screen")
+
+        presentation.isPresented = true
+        controller.view.layoutIfNeeded()
+        hosts.forEach { $0.layoutIfNeeded() }
+
+        XCTAssertEqual(windowFrame(content).minX, 0, accuracy: 0.5, "The screen moved away from its vertical bar")
+        XCTAssertEqual(windowFrame(sidebar).minX, 0, accuracy: 0.5)
+        XCTAssertTrue(controller.view.subviews.last === sidebar, "The sidebar must cover the screen")
+        XCTAssertEqual(hosts.map(\.safeAreaInsets), closedInsets, "Opening the sidebar changed a host's safe area")
+
+        presentation.isPresented = false
+        controller.view.layoutIfNeeded()
+
+        XCTAssertLessThanOrEqual(windowFrame(sidebar).maxX, 0.5, "The closed sidebar must sit off screen")
+    }
+
+    private func windowFrame(_ view: UIView) -> CGRect {
+        view.convert(view.bounds, to: nil)
+    }
+
+    private func hasVerticalBar(_ controller: UIViewController) -> Bool {
+        if #available(iOS 27.1, *) {
+            return controller.traitCollection.verticalBarEdge != .unspecified
+        }
+        return false
+    }
+}
+
+/// An `AppSidebarController` with empty roots in a window of the test host's scene.
+@MainActor
+private func makeSidebarController(
+    _ presentation: AppSidebarPresentation
+) throws -> (UIWindow, AppSidebarController) {
+    let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+    let window = UIWindow(windowScene: scene)
+    let controller = AppSidebarController(presentation: presentation)
+    controller.setRoots(sidebar: AnyView(Color.clear), content: AnyView(Color.clear))
+    window.rootViewController = controller
+    window.makeKeyAndVisible()
+    return (window, controller)
 }

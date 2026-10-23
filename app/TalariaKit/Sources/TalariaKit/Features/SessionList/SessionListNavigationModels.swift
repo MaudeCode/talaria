@@ -84,6 +84,47 @@ public enum AppSidebarDestination: Hashable {
     case settings
 }
 
+/// Where the screen and the sidebar sit as the sidebar goes from closed (0) to open (1), in
+/// leading-edge points. The screen slides aside to reveal the sidebar, except beside a vertical
+/// bar: the bar is window chrome that cannot move with the screen, so there the sidebar slides
+/// in over a screen that stays put (TAL-481).
+public struct AppSidebarSlide: Equatable {
+    public var revealWidth: CGFloat
+    public var leadingInset: CGFloat
+    public var presentsOver: Bool
+
+    public init(revealWidth: CGFloat, leadingInset: CGFloat, presentsOver: Bool) {
+        self.revealWidth = revealWidth
+        self.leadingInset = leadingInset
+        self.presentsOver = presentsOver
+    }
+
+    /// How far the moving view travels: the screen by the reveal width, or the sidebar by its
+    /// whole width, leading inset included.
+    private var travel: CGFloat {
+        presentsOver ? leadingInset + revealWidth : revealWidth
+    }
+
+    public func surfaceOffset(progress: CGFloat) -> CGFloat {
+        presentsOver ? 0 : revealWidth * progress
+    }
+
+    public func sidebarOffset(progress: CGFloat) -> CGFloat {
+        presentsOver ? -travel * (1 - progress) : 0
+    }
+
+    public func tintAlpha(progress: CGFloat) -> CGFloat {
+        progress
+    }
+
+    /// The progress at which the moving view (the screen, or the presented sidebar) sits at `offset`.
+    public func progress(movingOffset offset: CGFloat) -> CGFloat {
+        guard travel > 0 else { return 0 }
+        let progress = presentsOver ? 1 + offset / travel : offset / travel
+        return min(max(progress, 0), 1)
+    }
+}
+
 public enum AppSidebarGesturePolicy {
     public static let edgeActivationWidth: CGFloat = 28
 
