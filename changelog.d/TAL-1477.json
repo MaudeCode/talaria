@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Opening or closing an iPhone Duo keeps your place in the chat: the same message stays at the top, and a reply, Listen and dictation keep going without reloading.",
+      "highlight": false,
+      "components": ["app"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "Expanded messages stay expanded, and Files beside the chat comes back, after you close and reopen an iPhone Duo.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

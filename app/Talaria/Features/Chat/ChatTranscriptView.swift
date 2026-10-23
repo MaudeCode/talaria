@@ -18,11 +18,12 @@ struct ChatTranscriptView: View {
     @Environment(\.openURL) private var openURL
     @State private var scrollPositionController = ChatScrollPositionController(usesLazyLayout: true)
     @State private var initialScrollAnchor: UnitPoint? = .bottom
+    @State private var didRestoreReadingRow = false
     @State private var nativeScrollRevision = 0
     @State private var scrollDestination: (id: String, anchor: UnitPoint, animation: Animation?)?
     @State private var scrollDestinationNeedsMount = false
     @State private var readyScrollRevision: Int?
-    @State private var rowCache = ChatTranscriptRowCache()
+    @State private var ownRowCache = ChatTranscriptRowCache()
     @State private var rowViewportTop: CGFloat = 0
     @State private var rowOriginY: CGFloat = 0
     @State private var pinnedRowIDs = Set<String>()
@@ -118,6 +119,14 @@ struct ChatTranscriptView: View {
     var turnChangesSummary: TurnFileChangeSummary? = nil
     var onOpenTurnDiff: () -> Void = {}
     var onOpenTurnFileDiff: (GitFile) -> Void = { _ in }
+    /// Row state the session list keeps across a navigation rebuild, such as expanded disclosures (TAL-1477).
+    var retainedRowCache: ChatTranscriptRowCache? = nil
+    /// The row to reopen at the top, for a reader who had scrolled away from the latest message before the rebuild.
+    var restoredReadingRowID: String? = nil
+    /// Reports the row at the top when the reader lets go of the transcript.
+    var onReadingRowSettled: (String?) -> Void = { _ in }
+
+    private var rowCache: ChatTranscriptRowCache { retainedRowCache ?? ownRowCache }
 
     var body: some View {
         if isLoading && messages.isEmpty && clarificationPrompt == nil {
@@ -208,6 +217,11 @@ struct ChatTranscriptView: View {
                             scrollDestinationNeedsMount = false
                             beginNativeScroll(targetID: destination.id, anchor: destination.anchor)
                             readyScrollRevision = nativeScrollRevision
+                        }
+                        if let restoredReadingRowID, !didRestoreReadingRow {
+                            // Reopen where the reader was, not at the latest message (TAL-1477).
+                            didRestoreReadingRow = true
+                            scrollCommands.scrollTo(id: restoredReadingRowID, anchor: .top)
                         }
                     }
                     .onDisappear {
@@ -427,6 +441,9 @@ struct ChatTranscriptView: View {
                                 scrollDestinationNeedsMount = false
                             }
                             onFollowEvent(event)
+                            if case .userScrollEnd = event {
+                                onReadingRowSettled(scrollPositionController.readingAnchorRowID)
+                            }
                         }
                     ) { metrics in
                         isHistoryNearTop = scrollPositionController.shouldPrefetchHistory()

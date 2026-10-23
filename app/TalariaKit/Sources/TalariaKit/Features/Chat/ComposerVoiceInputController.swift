@@ -15,7 +15,15 @@ public final class ComposerVoiceInputController {
         case transcribing
     }
 
+    /// The draft as dictation last composed it. Every composer showing the chat applies it, so one the navigation
+    /// rebuilt mid-dictation keeps receiving it (TAL-1477).
+    public struct DictatedDraft: Equatable {
+        public let text: String
+        let revision: Int
+    }
+
     public private(set) var state: State = .idle
+    public private(set) var dictatedDraft: DictatedDraft?
     public private(set) var errorMessage: String?
     private(set) var liveTranscript = ""
 
@@ -29,7 +37,6 @@ public final class ComposerVoiceInputController {
     private var audioRecorder: AVAudioRecorder?
     private var recordingURL: URL?
     private var draftUpdateSession = ComposerVoiceDraftUpdateSession()
-    private var updateDraft: ((String) -> Void)?
     private var suppressNextRecognitionError = false
     private var activatedAudioSessionForRecording = false
     private var audioTapInstalled = false
@@ -59,11 +66,11 @@ public final class ComposerVoiceInputController {
         state == .requestingPermission
     }
 
-    public func toggle(currentDraft: String, updateDraft: @escaping (String) -> Void) async {
+    public func toggle(currentDraft: String) async {
         if isListening {
             stopKeepingTranscript()
         } else {
-            await start(currentDraft: currentDraft, updateDraft: updateDraft)
+            await start(currentDraft: currentDraft)
         }
     }
 
@@ -93,7 +100,7 @@ public final class ComposerVoiceInputController {
         state = .idle
     }
 
-    private func start(currentDraft: String, updateDraft: @escaping (String) -> Void) async {
+    private func start(currentDraft: String) async {
         guard state == .idle else { return }
 
         logger.info("Voice input start requested")
@@ -103,7 +110,6 @@ public final class ComposerVoiceInputController {
         cancelServerTranscription()
         discardServerRecording()
         draftUpdateSession.begin(baseDraft: currentDraft)
-        self.updateDraft = updateDraft
         state = .requestingPermission
 
         let canUseServer = apiClient != nil
@@ -414,10 +420,7 @@ public final class ComposerVoiceInputController {
 
             if let transcript = response.transcript?.trimmingCharacters(in: .whitespacesAndNewlines),
                !transcript.isEmpty {
-                liveTranscript = transcript
-                if let composedDraft = draftUpdateSession.composedDraft(for: transcript) {
-                    updateDraft?(composedDraft)
-                }
+                applyRecognizedTranscript(transcript)
                 stopAcceptingDraftUpdates()
                 cleanupRecordingFile(recordingURL, transcriptionID: transcriptionID)
                 state = .idle
@@ -493,9 +496,7 @@ public final class ComposerVoiceInputController {
                 )
                 return
             }
-            if let composedDraft = draftUpdateSession.composedDraft(for: transcript) {
-                updateDraft?(composedDraft)
-            }
+            applyRecognizedTranscript(transcript)
             stopAcceptingDraftUpdates()
             cleanupRecordingFile(recordingURL, transcriptionID: transcriptionID)
             state = .idle
@@ -633,10 +634,7 @@ public final class ComposerVoiceInputController {
 
     private func handleRecognition(result: SFSpeechRecognitionResult?, error: Error?) {
         if let result {
-            liveTranscript = result.bestTranscription.formattedString
-            if let composedDraft = draftUpdateSession.composedDraft(for: liveTranscript) {
-                updateDraft?(composedDraft)
-            }
+            applyRecognizedTranscript(result.bestTranscription.formattedString)
         }
 
         if let error {
@@ -656,9 +654,24 @@ public final class ComposerVoiceInputController {
         }
     }
 
+    /// Recognized speech so far, from either engine, written into the draft after the text dictation began with.
+    func applyRecognizedTranscript(_ transcript: String) {
+        liveTranscript = transcript
+        if let composedDraft = draftUpdateSession.composedDraft(for: transcript) {
+            dictatedDraft = DictatedDraft(text: composedDraft, revision: (dictatedDraft?.revision ?? 0) + 1)
+        }
+    }
+
+    #if DEBUG
+    /// Stands in for a recognizer that has started listening, for hosted tests without a microphone (TAL-1477).
+    func beginListeningForTesting(currentDraft: String) {
+        draftUpdateSession.begin(baseDraft: currentDraft)
+        state = .listening
+    }
+    #endif
+
     private func stopAcceptingDraftUpdates() {
         draftUpdateSession.stopAcceptingUpdates()
-        updateDraft = nil
     }
 
     private func stopAudio(cancelTask: Bool) {

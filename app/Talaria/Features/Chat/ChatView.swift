@@ -138,6 +138,12 @@ struct ChatView: View {
     let restoresDraftSettings: Bool
     let onConversationStarted: () -> Void
     let splitFilesInspector: SplitFilesInspector?
+    /// What the session list keeps of this chat while its navigation is rebuilt (TAL-1477); nil for a chat it doesn't.
+    @State private var retained: RetainedChat?
+    /// True while this view carries on a chat a replaced view was showing, which is still loaded and running.
+    @State private var takesOverLiveChat: Bool
+    /// The row a taken-over transcript reopens at, when its reader had scrolled away from the latest message.
+    @State private var restoredReadingRowID: String?
 
     @State private var draftMessageStorage = ""
     @State private var draftWriteRevision = 0
@@ -253,7 +259,8 @@ struct ChatView: View {
         viewModel: ChatViewModel? = nil,
         onConversationStarted: @escaping () -> Void = {},
         sessionListOwner: SessionListViewModel? = nil,
-        splitFilesInspector: SplitFilesInspector? = nil
+        splitFilesInspector: SplitFilesInspector? = nil,
+        retained: RetainedChat? = nil
     ) {
         _session = State(initialValue: session)
         self.startSession = startSession
@@ -270,21 +277,39 @@ struct ChatView: View {
         self.splitFilesInspector = splitFilesInspector
         _draftMessageStorage = State(initialValue: initialDraft)
         _initialAttachments = State(initialValue: initialAttachments)
-        _viewModel = State(initialValue: viewModel ?? ChatViewModel(
+        _viewModel = State(initialValue: retained?.viewModel ?? viewModel ?? Self.makeViewModel(
+            session: session,
+            server: server,
+            draftAttachmentStore: resolvedDraftAttachmentStore,
+            sessionListOwner: sessionListOwner
+        ))
+        _gitAvailabilityViewModel = State(initialValue: retained?.gitAvailability ?? GitWorkspaceAvailabilityViewModel(
+            session: session,
+            server: server
+        ))
+        _retained = State(initialValue: retained)
+        _takesOverLiveChat = State(initialValue: retained?.isLive ?? false)
+        _restoredReadingRowID = State(initialValue: retained?.readingRowID)
+        _followLatch = State(initialValue: ChatScrollPolicy.FollowLatch(isFollowing: retained?.readingRowID == nil))
+    }
+
+    static func makeViewModel(
+        session: SessionSummary,
+        server: URL,
+        draftAttachmentStore: any ChatDraftAttachmentStoring = ChatDraftAttachmentStore.shared,
+        sessionListOwner: SessionListViewModel? = nil
+    ) -> ChatViewModel {
+        ChatViewModel(
             session: session,
             server: server,
             showsLiveActivityResponseExcerpts: UserDefaults.standard.bool(
                 forKey: AgentRunLiveActivityPrivacy.showsResponseExcerptsKey
             ),
-            draftAttachmentStore: resolvedDraftAttachmentStore,
+            draftAttachmentStore: draftAttachmentStore,
             responseCache: .app(server: server),
             networkPath: NetworkPathObserver.shared,
             sessionListOwner: sessionListOwner
-        ))
-        _gitAvailabilityViewModel = State(initialValue: GitWorkspaceAvailabilityViewModel(
-            session: session,
-            server: server
-        ))
+        )
     }
 
     // Extracted from `body` so the type-checker doesn't have to solve the whole composer
@@ -293,8 +318,9 @@ struct ChatView: View {
     private var messageComposer: some View {
         let prompt = viewModel.clarificationPrompt
         return messageComposerInput(prompt: prompt)
-            // Replacing the input also cancels dictation and picker presentation.
+            // Replacing the input also cancels picker presentation; dictation, which the chat owns, stops with it.
             .id(prompt?.id ?? "message")
+            .onChange(of: prompt?.id) { viewModel.voiceInput.stopBeforeSubmittingDraft() }
             .adaptiveReadableContent(maxWidth: AdaptiveReadableContentWidth.chat)
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerHeight = $0 }
         .environment(\.layoutDirection, chatLayoutDirection)
@@ -358,6 +384,7 @@ struct ChatView: View {
             hasUnsentVoiceNote: viewModel.pendingVoiceDraft != nil,
             autoStartsVoiceInput: prompt == nil && autoStartsVoiceInput,
             voiceInputRequestID: 0,
+            voiceInput: viewModel.voiceInput,
             apiClient: viewModel.client,
             uploadAttachmentErrorMessage: prompt == nil ? viewModel.uploadAttachmentErrorMessage : nil,
             onSend: { behavior in
@@ -675,13 +702,28 @@ struct ChatView: View {
                 flushDraftsBestEffort()
                 activeStreamStatusRefreshTask?.cancel()
                 activeStreamStatusRefreshTask = nil
-                viewModel.stopListening()
-                viewModel.persistTranscript(modelContext: modelContext)
-                viewModel.suspendStreamForNavigation()
-                viewModel.cleanupPollingTasks()
+                let chat = viewModel
+                let modelContext = modelContext
+                let release = {
+                    chat.stopListening()
+                    chat.voiceInput.stopBeforeSubmittingDraft()
+                    chat.persistTranscript(modelContext: modelContext)
+                    chat.suspendStreamForNavigation()
+                    chat.cleanupPollingTasks()
+                }
+                // A view the navigation rebuilt for this chat takes it over without stopping it (TAL-1477).
+                if let retained { retained.viewDidDisappear(release: release) } else { release() }
             }
             .onAppear {
                 viewModel.showCachedComposerChoices()
+                if let retained {
+                    takesOverLiveChat = retained.viewDidAppear()
+                }
+                guard !takesOverLiveChat else {
+                    // Its stream, polling and Listen never stopped; only this view's own stall check restarts.
+                    if viewModel.activeStreamID != nil { handleActiveStreamChange() }
+                    return
+                }
                 Task {
                     await viewModel.reconnectStreamIfNeeded(modelContext: modelContext)
 
@@ -1541,7 +1583,10 @@ struct ChatView: View {
                 },
                 onOpenTurnFileDiff: { file in
                     chat.turnDiffPresentation = .file(file)
-                }
+                },
+                retainedRowCache: chat.retained?.rows,
+                restoredReadingRowID: chat.restoredReadingRowID,
+                onReadingRowSettled: chat.recordReadingRow
             )
             .environment(\.openURL, OpenURLAction(handler: chat.handleTranscriptLink))
             .environment(\.chatFullToolResultLoader) { toolCallID in
@@ -1781,8 +1826,21 @@ struct ChatView: View {
         }
     }
 
+    /// A taken-over chat whose first load finished: everything it shows is loaded and running already.
+    private var resumesLoadedChat: Bool {
+        takesOverLiveChat && retained?.hasLoaded == true
+    }
+
     private func handleInitialAppearanceTask() async {
         await hydrateDraftIfNeeded()
+        guard !resumesLoadedChat else {
+            // The chat is loaded and its work runs already; nothing is fetched again (TAL-1477).
+            viewedCompletionsThrough = Date()
+            scheduleCompletionAcknowledgement()
+            isInitialComposerFocusContentReady = true
+            applyInitialComposerFocusPolicyIfNeeded()
+            return
+        }
         prepareInitialAppearance()
 
         // The appearance flip cancels this task and starts a fresh one; a cancelled task that
@@ -1805,6 +1863,7 @@ struct ChatView: View {
         async let gitAvailability: Void = loadInitialGitAvailability()
         async let draftAttachments: Void = restoreDraftAttachmentsIfNeeded()
         _ = await (chatStartup, gitAvailability, draftAttachments)
+        if !Task.isCancelled { retained?.hasLoaded = true }
     }
 
     /// Creates a new chat's session and takes it on in place, so the composer the user is already
@@ -1897,6 +1956,7 @@ struct ChatView: View {
     private func loadInitialGitAvailability() async {
         let availabilityViewModel = GitWorkspaceAvailabilityViewModel(session: session, server: server)
         gitAvailabilityViewModel = availabilityViewModel
+        retained?.gitAvailability = availabilityViewModel
         await availabilityViewModel.loadIfNeeded()
     }
 
@@ -2346,10 +2406,12 @@ struct ChatView: View {
             writeComposerDraft(textBeforeHydration)
         }
         didHydrateDraft = true
+        lastSyncedDraftAttachments = persistedDraft?.attachments ?? []
+        // A taken-over chat still holds its voice note and attachments.
+        guard !resumesLoadedChat else { return }
 
         if let voiceNote = persistedDraft?.voiceNote { await viewModel.restoreVoiceNote(voiceNote) }
         restoredDraftSettings = persistedDraft?.settings
-        lastSyncedDraftAttachments = persistedDraft?.attachments ?? []
         if let persistedDraft, !persistedDraft.attachments.isEmpty {
             // Hold the sync gate now and restore later: re-uploading staged
             // files is network work and must not delay the transcript.
@@ -3166,7 +3228,14 @@ struct ChatView: View {
         }
         if !resolved.isFollowing {
             updateDisclosureSettle { $0.cancelOwedFollow() }
+        } else {
+            retained?.readingRowID = nil
         }
+    }
+
+    /// Keeps where a reader let go of the transcript, for the view the navigation may rebuild around it (TAL-1477).
+    private func recordReadingRow(_ rowID: String?) {
+        retained?.readingRowID = followLatch.isFollowing ? nil : rowID
     }
 
     /// The transcript ends this suspension when its position hold actually
