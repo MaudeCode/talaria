@@ -7,6 +7,7 @@ import { HubPage } from '../../shell/AppShell'
 import { Button } from '../../ui/Button'
 import { ErrorState, LoadingState, formatDate } from '../../ui/States'
 import { showToast } from '../toast/toast'
+import { showErrorToast } from '../toast/errorToast'
 import { isApiError } from '../../contracts/common'
 import { cn } from '../../ui/cn'
 import { PendingWritesPanel } from '../pending-writes/PendingWritesPanel'
@@ -46,7 +47,7 @@ export function MemoryPage() {
     },
     onError: (e, vars) => {
       if (isApiError(e) && e.code === 'memory_conflict') setConflict((c) => ({ ...c, [vars.target]: e.message }))
-      else showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
+      else showErrorToast(e)
     },
   })
   const reload = (target: Section) => { setDraft((d) => without(d, target)); setConflict((c) => without(c, target)); void memory.refetch() }

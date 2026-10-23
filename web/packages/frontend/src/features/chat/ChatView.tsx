@@ -37,6 +37,7 @@ import { ChatSidePanel } from './ChatSidePanel'
 import { setSidePanelOpen, toggleSidePanel, useShellState } from '../../shell/useShellState'
 import { useRuntimeNotices } from '../notices/useRuntimeNotices'
 import { showRichToast, showToast } from '../toast/toast'
+import { showErrorToast } from '../toast/errorToast'
 import { isApiError } from '../../contracts/common'
 import { ErrorState, formatDate } from '../../ui/States'
 import { readPersisted, removePersisted, writePersisted } from '../../lib/persisted'
@@ -64,7 +65,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   const bootstrap = useBootstrap()
   const locale = useLocale()
   const qc = useQueryClient()
-  const { mutate: renameSession } = useResourceMutation({ resource: () => `session:${sessionId}`, effect: (title: string) => ({ fields: { title } }), mutationFn: (title) => { if (!sessionId) throw new Error(m.error_generic()); return api.renameSession(sessionId, title) }, onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error') })
+  const { mutate: renameSession } = useResourceMutation({ resource: () => `session:${sessionId}`, effect: (title: string) => ({ fields: { title } }), mutationFn: (title) => { if (!sessionId) throw new Error(m.error_generic()); return api.renameSession(sessionId, title) }, onError: (e) => showErrorToast(e) })
 
   const navigate = useNavigate()
   const settings = useSettingsQuery()
@@ -123,7 +124,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
       // External-store queue updates notify synchronously; release before publishing the next queue.
       .finally(() => { draining.current = false })
       .then(() => { if (scope === getStreamContext()) setQueued((q) => q.filter((t) => t.id !== next.id)) })
-      .catch((e: unknown) => { if (scope !== getStreamContext()) return; setFailedQueued(next.id); showToast(e instanceof Error ? e.message : String(e), 4000, 'error') })
+      .catch((e: unknown) => { if (scope !== getStreamContext()) return; setFailedQueued(next.id); showErrorToast(e) })
   }, [sessionId, session, queued, live, setQueued, intent, operation, failedQueued])
 
   const ensureSession = useCallback(async (onCreated?: (sessionId: string) => void): Promise<Session> => {
@@ -170,7 +171,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     effect: ({ level }) => ({ value: level }),
     mutationFn: ({ level, model, provider, sid }) => api.setReasoningEffort(level ?? '', model, provider, sid),
     onSuccess: (status, { key }) => { qc.setQueryData(key, status); showToast(`${m.composer_control_reasoning()}: ${status.reasoning_effort || m.reasoning_default()}`) },
-    onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error'),
+    onError: (e) => showErrorToast(e),
   })
   const sendReasoning = reasoningWrite.mutate
   const setReasoning = useCallback((level: string | null) => {
@@ -185,7 +186,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     queryKey: keys.sessions.all, readKeys: ({ sid }) => [{ queryKey: keys.sessions.detail(sid), exact: true }],
     effect: ({ fields }) => ({ fields }),
     mutationFn: ({ run }) => run(),
-    onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error'),
+    onError: (e) => showErrorToast(e),
   })
   const sendSessionWrite = sessionWrite.mutate
 
@@ -207,7 +208,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
       await refresh(result.session)
       if (scope === getStreamContext() && result.draft !== undefined) returnToComposer(sessionId, result.draft)
     } catch (error) {
-      if (scope === getStreamContext()) showToast(error instanceof Error ? error.message : String(error), 4000, 'error')
+      if (scope === getStreamContext()) showErrorToast(error)
       throw error
     }
   }, [sessionId, refresh, sendAdmission])
@@ -220,7 +221,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     resource: ({ sid }: { sid: string; on: boolean }) => `yolo:${sid}`, queryKey: ['yolo'], effect: ({ on }) => ({ value: on }),
     mutationFn: ({ sid, on }) => api.setSessionYolo(sid, on),
     onSuccess: (r, { sid }) => { if (sid === yoloSession.current) setYolo(r.yolo_enabled) },
-    onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error'),
+    onError: (e) => showErrorToast(e),
   })
   const sendYolo = yoloWrite.mutate
   const onToggleYolo = useCallback(() => { if (!sessionId) return; sendYolo({ sid: sessionId, on: !yoloShown }) }, [sessionId, yoloShown, sendYolo])
@@ -307,7 +308,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
         const arg = args.trim().toLowerCase()
         if (!arg) { showToast(`${m.composer_control_reasoning()}: ${reasoning ?? m.reasoning_default()}`, 4000); return true }
         // Nothing on the page shows the display choice, so the command finishes at once; a refusal reports itself.
-        if (arg === 'show' || arg === 'on' || arg === 'hide' || arg === 'off') { void api.setReasoningDisplay(arg === 'show' || arg === 'on' ? 'show' : 'hide').then(() => qc.invalidateQueries({ queryKey: keys.settings }), (e: unknown) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error')); return true }
+        if (arg === 'show' || arg === 'on' || arg === 'hide' || arg === 'off') { void api.setReasoningDisplay(arg === 'show' || arg === 'on' ? 'show' : 'hide').then(() => qc.invalidateQueries({ queryKey: keys.settings }), (e: unknown) => showErrorToast(e)); return true }
         setReasoning(arg === 'default' ? null : arg)
         return true
       }

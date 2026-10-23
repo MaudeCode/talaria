@@ -3,7 +3,7 @@ import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { ConfirmDialog } from '../../ui/Dialog'
 import { returnToComposer } from '../composer/composerReturn'
-import { showToast } from '../toast/toast'
+import { showErrorToast } from '../toast/errorToast'
 import { getStreamContext } from '../../stream/connection'
 import { getTurnIntent } from '../../stream/store'
 import type { VisibleMessage } from './useTranscript'
@@ -53,7 +53,7 @@ export function useEditMessage(sessionId: string | null, refresh: (accepted?: un
     const current = () => active.current === owner && life !== null && lifecycle.current === life && scope === getStreamContext()
     if (cutFrom === undefined) setOperation(label)
     try { const accepted = cutFrom === undefined ? await run(current) : await sendCut({ sid: sessionId, from: cutFrom, run: () => run(current) }); return current() && accepted !== false }
-    catch (e) { if (current() && !(e instanceof ConfirmationAsked)) showToast(e instanceof Error ? e.message : String(e), 4000, 'error'); return false }
+    catch (e) { if (current() && !(e instanceof ConfirmationAsked)) showErrorToast(e); return false }
     finally { if (active.current === owner) { active.current = null; if (lifecycle.current === life) setOperation(null) } }
   }, [sessionId, sendCut])
   const edit = useCallback(async (sid: string, row: VisibleMessage, text: string, token?: string) => {

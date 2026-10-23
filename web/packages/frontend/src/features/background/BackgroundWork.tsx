@@ -10,7 +10,7 @@ import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { Markdown } from '../chat/render/Markdown'
 import { m } from '../../paraglide/messages.js'
-import { showToast } from '../toast/toast'
+import { showErrorToast } from '../toast/errorToast'
 import { newResource, useResourceEffects, useResourceMutation, withCreated, withEffects } from '../sessions/useResourceMutation'
 
 /** Running work changes on the Agent's side; a quiet refresh keeps the card current between server notices. */
@@ -29,7 +29,7 @@ export function useStartBackground() {
     queryKey: ['sessions', 'background'], readKeys: ({ sessionId }) => [{ queryKey: keys.background(sessionId), exact: true }], exclusive: true,
     effect: ({ resource, prompt }) => ({ fields: { task_id: resource, kind: 'background_command', status: 'running', title: prompt, started_at: null, updated_at: 0, completed_at: null, result_available: false, child_sessions: [], exit_code: null, agents: null, pinned: true, dismissible: false, active: true } satisfies BackgroundTask }),
     mutationFn: ({ sessionId, prompt }) => api.startBackground(sessionId, prompt),
-    onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error'),
+    onError: (e) => showErrorToast(e),
   })
 }
 export const backgroundLaunch = (sessionId: string) => newResource(launchKind(sessionId))
@@ -87,7 +87,7 @@ export function BackgroundTaskAction({ sessionId, task }: { sessionId: string; t
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.background(sessionId) }),
   })
   // Dismiss removes a result from view; Stop waits for the Agent's completion.
-  const dismiss = useResourceMutation({ resource: () => backgroundResource(sessionId, task.task_id), queryKey: keys.background(sessionId), effect: () => ({ remove: true }), mutationFn: () => api.dismissBackgroundTask(sessionId, task.task_id), onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error') })
+  const dismiss = useResourceMutation({ resource: () => backgroundResource(sessionId, task.task_id), queryKey: keys.background(sessionId), effect: () => ({ remove: true }), mutationFn: () => api.dismissBackgroundTask(sessionId, task.task_id), onError: (e) => showErrorToast(e) })
   const action = stopping ? stop : dismiss
   if (!stopping && !task.dismissible) return null
   return <>

@@ -11,6 +11,7 @@ import { TextInput } from '../../ui/Field'
 import { Menu, MenuItem, MenuSeparator } from '../../ui/Menu'
 import { ErrorState, LoadingState, formatBytes } from '../../ui/States'
 import { showToast } from '../toast/toast'
+import { showErrorToast } from '../toast/errorToast'
 import { cn } from '../../ui/cn'
 import { Markdown } from '../chat/render/Markdown'
 import { newResource, useResourceEffects, useResourceMutation, withCreated, withEffects } from '../sessions/useResourceMutation'
@@ -74,7 +75,7 @@ function WorkspaceFiles({ workspace, sessionId, active, restored }: { workspace:
     effect: ({ text }) => ({ value: text }),
     mutationFn: ({ path, text }) => api.saveFile(sessionId, path, text),
     onSuccess: (_, { path, text }) => { showToast(m.ws_panel_saved()); setDraftOf((d) => d?.path === path && d.text === text ? null : d) },
-    onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error'),
+    onError: (e) => showErrorToast(e),
   })
   // A path can now name another file (rename, move, delete then create), so cached contents are dropped, not just marked stale.
   const refresh = () => {

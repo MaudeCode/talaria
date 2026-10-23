@@ -21,6 +21,7 @@ import { RightPanel } from '../../shell/RightPanel'
 import { ConfirmDialog } from '../../ui/Dialog'
 import { EmptyState, ErrorState, LoadingState, formatBytes, formatDate } from '../../ui/States'
 import { showToast } from '../toast/toast'
+import { showErrorToast } from '../toast/errorToast'
 import { cn } from '../../ui/cn'
 import { contextFromList, cronDiagnostics, cronResource, cronState, jobId, lastRunAt, nextRunAt, runningIds, usageStrip, type CronState } from './cronJob'
 import { Markdown } from '../chat/render/Markdown'
@@ -91,7 +92,7 @@ export function useTasksWorkbench(selectedId: string | null, onSelect: (id: stri
     effect: ({ action }) => cronEffect(action),
     mutationFn: ({ action, job }) => api.cronAction(action, { job_id: jobId(job) }),
     onSuccess: (_res, vars) => showToast(vars.action === 'pause' ? m.cron_job_paused() : vars.action === 'resume' ? m.cron_job_resumed() : m.cron_job_deleted()),
-    onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error'),
+    onError: (e) => showErrorToast(e),
   })
   // Run now executes on the server: each job's button stays busy until its own run request settles, so a run is never sent twice.
   const starting = new Set(useMutationState({ filters: { mutationKey: runKey, status: 'pending' }, select: (mutation) => mutation.state.variables as { job: CronJob; context: object } | undefined })
@@ -103,7 +104,7 @@ export function useTasksWorkbench(selectedId: string | null, onSelect: (id: stri
       return api.cronAction('run', { job_id: jobId(job) })
     },
     onSuccess: (_res, vars) => { if (vars.context === getStreamContext()) { showToast(m.cron_job_triggered()); void invalidate() } },
-    onError: (e, vars) => { if (vars.context === getStreamContext()) showToast(e instanceof Error ? e.message : String(e), 4000, 'error') },
+    onError: (e, vars) => { if (vars.context === getStreamContext()) showErrorToast(e) },
   })
   const jobs = useMemo(() => withCreated(withEffects(crons.data?.jobs ?? [], cronResource, effects), 'cron', effects), [crons.data, effects])
   const unwritable = crons.data?.unwritable_stores ?? []

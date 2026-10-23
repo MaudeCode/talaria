@@ -6,6 +6,7 @@ import * as api from '../../api/endpoints'
 import { Menu, MenuItem } from '../../ui/Menu'
 import { IconButton } from '../../ui/Button'
 import { showToast } from '../toast/toast'
+import { showErrorToast } from '../toast/errorToast'
 import { cn } from '../../ui/cn'
 
 /**
@@ -27,7 +28,7 @@ export function ApprovalCard({ sessionId, pending, onResolved }: { sessionId: st
       else onResolved()
     } catch (e) {
       setAnswered(false)
-      showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
+      showErrorToast(e)
     }
   }
   useEffect(() => {

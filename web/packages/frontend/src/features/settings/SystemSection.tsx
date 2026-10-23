@@ -13,6 +13,7 @@ import { Select } from '../../ui/Select'
 import { ConfirmDialog, Dialog } from '../../ui/Dialog'
 import { ErrorState, LoadingState, formatDate } from '../../ui/States'
 import { showToast } from '../toast/toast'
+import { showErrorToast } from '../toast/errorToast'
 import { useSettingField } from './useSettingField'
 import { useLogout } from '../auth/useLogout'
 import { decodeCreationOptions, encodeAttestation, passkeysSupported } from '../auth/passkeys'
@@ -36,7 +37,7 @@ export function SystemSection() {
   const [pw, setPw] = useState('')
   const [currentPw, setCurrentPw] = useState('')
   const [confirmShutdown, setConfirmShutdown] = useState(false)
-  const fail = (e: unknown) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
+  const fail = (e: unknown) => showErrorToast(e)
   // Credentials go through the settings owner too; their `_` keys are never shown before the server answers.
   const saveSettings = useSaveSettings()
   const setPassword = useMutation({ mutationFn: (body: Record<string, unknown>) => saveSettings.mutateAsync(body), onSuccess: async () => { showToast(m.system_password_updated()); setPw(''); setCurrentPw(''); await loadBootstrap(); void qc.invalidateQueries() }, onError: fail })

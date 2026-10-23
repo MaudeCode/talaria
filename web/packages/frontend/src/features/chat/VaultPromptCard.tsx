@@ -9,7 +9,7 @@ import { isApiError } from '../../contracts/common'
 import type { LiveTurn } from '../../stream/reducer'
 import { Button } from '../../ui/Button'
 import { HelpTip, TextInput } from '../../ui/Field'
-import { showToast } from '../toast/toast'
+import { showErrorToast } from '../toast/errorToast'
 import { useClarifyHead } from './useClarify'
 
 /** TAL-887: the clarify queue head when it is one of the Agent's password-manager prompts. */
@@ -57,7 +57,7 @@ export function VaultPromptCard({ sessionId, clarifyId, vault }: { sessionId: st
       await api.respondClarify({ session_id: sessionId, clarify_id: clarifyId, ...(decline ? { decline: true } : { answers }) })
     } catch (e) {
       if (!(isApiError(e) && e.status === 409)) setDone(false)
-      showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
+      showErrorToast(e)
     } finally {
       setBusy(false)
       void qc.invalidateQueries({ queryKey: keys.clarify(sessionId) })

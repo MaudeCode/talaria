@@ -9,6 +9,7 @@ import { openTerminalStream, type SseHandle } from '../../api/sse'
 import { z } from 'zod'
 import { Button } from '../../ui/Button'
 import { showToast } from '../toast/toast'
+import { showErrorToast } from '../toast/errorToast'
 import { isDefiniteRefusal } from '../../contracts/common'
 import { TerminalPanelFrame } from './TerminalPanelFrame'
 
@@ -85,7 +86,7 @@ export function TerminalPanel({ sessionId, workspace, onClose, onReopen = () => 
         let error = first
         if (!isDefiniteRefusal(first)) { try { await send(); return } catch (second) { error = second } }
         onReopen()
-        showToast(error instanceof Error ? error.message : String(error), 4000, 'error')
+        showErrorToast(error)
       }
     })()
   }
@@ -96,7 +97,7 @@ export function TerminalPanel({ sessionId, workspace, onClose, onReopen = () => 
       setStatus('running')
       reconnect.current?.()
     } catch (e) {
-      showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
+      showErrorToast(e)
     }
   }
   const startResize = (e: React.PointerEvent<HTMLDivElement>) => {

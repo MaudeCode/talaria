@@ -16,6 +16,7 @@ import { Select } from '../../ui/Select'
 import { ConfirmDialog, Dialog } from '../../ui/Dialog'
 import { EmptyState, ErrorState, LoadingState, formatDate } from '../../ui/States'
 import { showToast } from '../toast/toast'
+import { showErrorToast } from '../toast/errorToast'
 import { cn } from '../../ui/cn'
 import { newResource, useResourceEffects, useResourceMutation, withCreated, withEffect, withEffects, type ResourceEffect } from '../sessions/useResourceMutation'
 import { getStreamContext } from '../../stream/connection'
@@ -115,7 +116,7 @@ export function KanbanPage() {
   const stats = useQuery({ queryKey: [...keys.kanban.board(current), 'stats'], queryFn: () => api.fetchKanbanStats(current), staleTime: 10_000, enabled: boards.isSuccess })
   useKanbanLiveRefresh(current, board.isPlaceholderData ? undefined : board.data?.latest_event_id)
   const invalidate = (refetchType: 'active' | 'none' = 'active') => qc.invalidateQueries({ queryKey: ['kanban'], refetchType })
-  const toastError = (e: unknown) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
+  const toastError = (e: unknown) => showErrorToast(e)
   const switchBoard = useResourceMutation({ resource: () => boardSelection, queryKey: keys.kanban.boards, effect: (slug: string) => ({ value: slug }), mutationFn: api.switchKanbanBoard, onError: toastError })
   const saveView = useResourceMutation({ resource: () => lanePreference, queryKey: keys.kanban.board(current), readKeys: () => kanbanReads(current), effect: (lanes: boolean) => ({ value: lanes }), mutationFn: api.updateKanbanConfig, onSuccess: () => { void invalidate('none') }, onError: (e) => { void invalidate('none'); showToast(m.kanban_view_update_failed() + (e instanceof Error ? e.message : String(e)), 4000, 'error') } })
   const bulk = useResourceMutation({
@@ -301,7 +302,7 @@ function TaskDialog({ board, task, readOnly, onClose, onChanged }: { board: stri
     readKeys: ({ parent, child }) => kanbanReads(board, [parent, child]),
     effect: ({ remove }) => remove ? { remove: true } : { value: true },
     mutationFn: ({ parent, child, remove }) => remove ? api.unlinkKanbanTasks(board, parent, child) : api.linkKanbanTasks(board, parent, child),
-    onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error'),
+    onError: (e) => showErrorToast(e),
   })
   // Pending link writes show at once: removed ids drop out, added ids join the server's list.
   const shownLinks = (ids: string[], pair: (id: string) => { parent: string; child: string }) => {
@@ -326,10 +327,10 @@ function TaskDialog({ board, task, readOnly, onClose, onChanged }: { board: stri
     mutationFn: ({ action, body }) => api.kanbanTaskAction(board, task.id, action, body),
     onSuccess: () => { showToast(m.saved()) },
     // A refusal (the task changed since this board was read) refetches, so the dialog shows its current actions.
-    onError: (e) => { showToast(e instanceof Error ? e.message : String(e), 4000, 'error') },
+    onError: (e) => { showErrorToast(e) },
   })
   // Dispatch starts a worker on the server: only its button is busy.
-  const dispatchTask = useMutation({ mutationFn: () => api.kanbanTaskAction(board, task.id, 'dispatch', {}), onSuccess: () => { showToast(m.saved()); onChanged() }, onError: (e) => { showToast(e instanceof Error ? e.message : String(e), 4000, 'error'); onChanged() } })
+  const dispatchTask = useMutation({ mutationFn: () => api.kanbanTaskAction(board, task.id, 'dispatch', {}), onSuccess: () => { showToast(m.saved()); onChanged() }, onError: (e) => { showErrorToast(e); onChanged() } })
   // A sent comment joins the log at once; a refused one stays there with Retry instead of losing its text.
   const [unsent, setUnsent] = useState<string[]>([])
   const commentWrite = useResourceMutation({
@@ -337,7 +338,7 @@ function TaskDialog({ board, task, readOnly, onClose, onChanged }: { board: stri
     queryKey: keys.kanban.board(board), readKeys: () => kanbanReads(board, [taskId]), exclusive: true,
     effect: ({ text }) => ({ fields: { text } }),
     mutationFn: ({ text }) => api.kanbanTaskAction(board, task.id, 'comments', { body: text, text }),
-    onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error'),
+    onError: (e) => showErrorToast(e),
   })
   const sendComment = (text: string) => commentWrite.mutate({ text, resource: newResource(`kanban-comment-${board ?? ''}-${taskId}`) }, { onError: (e) => { if (isDefiniteRefusal(e)) setUnsent((rows) => [...rows, text]) } })
   const sending = withCreated<{ text: string }>([], `kanban-comment-${board ?? ''}-${taskId}`, effects)

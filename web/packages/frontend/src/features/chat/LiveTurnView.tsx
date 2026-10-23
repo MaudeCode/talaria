@@ -9,6 +9,7 @@ import { useLiveTurn } from '../../stream/store'
 import { sendSteerNow, withdrawSteer } from '../../api/endpoints'
 import type { RateLimitWait, SteerWithdrawRequest } from '@maudecode/talaria-web-contracts'
 import { showToast } from '../toast/toast'
+import { showErrorToast } from '../toast/errorToast'
 import { returnToComposer } from '../composer/composerReturn'
 import { rememberLiveTurnHeight, SteerMessage, TurnActivityView } from './TurnActivityView'
 import { liveActivity } from './turnActivity'
@@ -59,7 +60,7 @@ function PendingSteerMessage({ sessionId, steer }: { sessionId: string; steer: P
   const run = async (request: () => Promise<void>) => {
     if (busy) return
     setBusy(true)
-    try { await request() } catch (e) { showToast(e instanceof Error ? e.message : String(e), 4000, 'error') } finally { setBusy(false) }
+    try { await request() } catch (e) { showErrorToast(e) } finally { setBusy(false) }
   }
   const withdraw = async (reason: SteerWithdrawRequest['reason']) => {
     setGone(true)
@@ -70,7 +71,7 @@ function PendingSteerMessage({ sessionId, steer }: { sessionId: string; steer: P
       if (!r.withdrawn) showToast(m.steer_already_taken(), 2500)
     } catch (e) {
       setGone(false)
-      showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
+      showErrorToast(e)
     }
   }
   const sendNow = () => run(async () => {

@@ -5,7 +5,7 @@ import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { isTerminal, type LiveTurn } from '../../stream/reducer'
 import { isApiError } from '../../contracts/common'
-import { showToast } from '../toast/toast'
+import { showErrorToast } from '../toast/errorToast'
 
 type Answer = string | string[]
 interface Progress { id: string; index: number; answers: Record<string, Answer>; text: string; selected: string[] }
@@ -76,7 +76,7 @@ export function useClarify(sessionId: string | null, live: LiveTurn | null): Cla
     } catch (e) {
       // 409: the prompt already expired or was answered elsewhere; anything else keeps the answers for a retry.
       if (!(isApiError(e) && e.status === 409)) setResolved((current) => current === id ? null : current)
-      showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
+      showErrorToast(e)
     } finally {
       setBusy(false)
       void qc.invalidateQueries({ queryKey: keys.clarify(sessionId) })

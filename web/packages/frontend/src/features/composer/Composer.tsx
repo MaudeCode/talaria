@@ -10,6 +10,7 @@ import { dispatch, getTurnIntent, setTurnIntent, useTurnIntent } from '../../str
 import { useBootstrap } from '../../app/bootstrap'
 import { cn } from '../../ui/cn'
 import { showToast } from '../toast/toast'
+import { showErrorToast } from '../toast/errorToast'
 import { AttachmentTray, type PendingFile } from './Attachments'
 import { CommandPaletteList, useCommandPalette } from './CommandPalette'
 import { parseCommand, resolveCommand, runsOnServer, type CommandSuggestion } from './commands'
@@ -409,7 +410,7 @@ export const Composer = memo(function Composer(props: ComposerProps) {
       showToast(r.fallback === 'gateway_steer_queued' ? m.steer_leftover_queued() : m.busy_steer_fallback(), 2500)
     } catch (e) {
       if (scope !== getStreamContext()) return
-      showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
+      showErrorToast(e)
     }
     dispatch({ type: 'steer_refused', sessionId, steerId })
     // A Stop that withdrew it while the request was in flight already gave the text back.
@@ -469,7 +470,7 @@ export const Composer = memo(function Composer(props: ComposerProps) {
         if (cmd.name === 'background') {
           if (!cmd.args) { showToast(m.bg_usage(), 2000); return }
           let target: { session_id: string }
-          try { target = session ?? (await onEnsureSession()) } catch (e) { showToast(e instanceof Error ? e.message : String(e), 4000, 'error'); return }
+          try { target = session ?? (await onEnsureSession()) } catch (e) { showErrorToast(e); return }
           // Only the submitted draft clears; a refusal puts the prompt back beside anything typed since.
           setText((current) => current === text ? '' : current)
           launchBackground({ resource: backgroundLaunch(target.session_id), sessionId: target.session_id, prompt: cmd.args }, {

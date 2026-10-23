@@ -13,6 +13,7 @@ import { Select } from '../../ui/Select'
 import { ConfirmDialog, Dialog } from '../../ui/Dialog'
 import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
 import { showToast } from '../toast/toast'
+import { showErrorToast } from '../toast/errorToast'
 import { cn } from '../../ui/cn'
 import { useResourceEffects, useResourceMutation, withCreated, withEffects } from '../sessions/useResourceMutation'
 import { appUrl } from '../../lib/appRoot'
@@ -29,7 +30,7 @@ export function ProfilesPage() {
   const switchProfile = useSwitchProfile()
   const [creating, setCreating] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
-  const onError = (e: unknown) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
+  const onError = (e: unknown) => showErrorToast(e)
   const del = useResourceMutation({ resource: (name: string) => `profile:${name}`, queryKey: keys.profiles, effect: () => ({ remove: true }), mutationFn: (name) => api.deleteProfile(name), onSuccess: () => showToast(m.profile_deleted_toast()), onError })
   // A new profile shows at once by its name; the server fills in the rest on its reread.
   const create = useResourceMutation({
@@ -49,7 +50,7 @@ export function ProfilesPage() {
         if (sessionId) window.location.assign(appUrl(`session/${encodeURIComponent(sessionId)}`).href)
         else window.location.reload()
       },
-      onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error'),
+      onError: (e) => showErrorToast(e),
     })
   }
   return (

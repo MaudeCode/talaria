@@ -7,7 +7,7 @@ import { m } from '../../paraglide/messages.js'
 import { getStreamContext } from '../../stream/connection'
 import { ConfirmDialog } from '../../ui/Dialog'
 import type { ComposerNotice } from '../composer/ComposerNotices'
-import { showToast } from '../toast/toast'
+import { showErrorToast } from '../toast/errorToast'
 import { keys } from '../../api/queryKeys'
 import { useResourceMutation } from '../sessions/useResourceMutation'
 
@@ -79,7 +79,7 @@ export function useSessionUpdate(sessionId: string | null, refresh: (session?: S
         if (!current()) return
         const refusal = ModelConfirmationRequiredSchema.safeParse(error instanceof ApiError && error.status === 409 ? error.body : null)
         if (refusal.success) setPending({ sessionId, body, decision: refusal.data, scope })
-        else { setPending(null); showToast(error instanceof Error ? error.message : String(error), 4000, 'error') }
+        else { setPending(null); showErrorToast(error) }
       },
     })
   }, [sessionId, refresh, nativeOwner, presentNative, send])

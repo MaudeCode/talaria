@@ -10,7 +10,7 @@ import { Button, IconButton } from '../../ui/Button'
 import { TextInput } from '../../ui/Field'
 import { ConfirmDialog, Dialog } from '../../ui/Dialog'
 import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
-import { showToast } from '../toast/toast'
+import { showErrorToast } from '../toast/errorToast'
 import { cn } from '../../ui/cn'
 import { newResource, useResourceEffects, useResourceMutation, withCreated, withEffects } from '../sessions/useResourceMutation'
 
@@ -19,7 +19,7 @@ export function WorkspacesPage() {
   const [adding, setAdding] = useState(false)
   const [removing, setRemoving] = useState<string | null>(null)
   const [renaming, setRenaming] = useState<{ path: string; name: string } | null>(null)
-  const onError = (e: unknown) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
+  const onError = (e: unknown) => showErrorToast(e)
   const owner = { queryKey: keys.workspaces, onError }
   const remove = useResourceMutation({ ...owner, resource: (path: string) => `workspace:${path}`, effect: () => ({ remove: true }), mutationFn: (path) => api.removeWorkspace(path) })
   const rename = useResourceMutation({ ...owner, resource: ({ path }: { path: string; name: string }) => `workspace:${path}`, effect: ({ name }) => ({ fields: { name } }), mutationFn: ({ path, name }) => api.renameWorkspace(path, name) })

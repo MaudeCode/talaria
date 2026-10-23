@@ -4,11 +4,11 @@ import { teardownAll } from '../stream/connection'
 import { keys } from '../api/queryKeys'
 import * as api from '../api/endpoints'
 import { useResourceEffects, useResourceMutation } from '../features/sessions/useResourceMutation'
-import { showToast } from '../features/toast/toast'
+import { showErrorToast } from '../features/toast/errorToast'
 
 export { useSettingsQuery, useSaveSettings } from './settings'
 
-const toastError = (e: unknown) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
+const toastError = (e: unknown) => showErrorToast(e)
 interface DefaultModel { model: string; provider?: string | null; advanced?: { service_tier: string } }
 
 /**
