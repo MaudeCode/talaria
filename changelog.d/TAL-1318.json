@@ -4,5 +4,10 @@
     "summary": "React to messages in canonical chats and see reactions from other viewers.",
     "highlight": false,
     "components": ["web"]
+  }, {
+    "category": "Fixed",
+    "summary": "Completion sounds keep working during bursts of finished runs.",
+    "highlight": false,
+    "components": ["web"]
   }]
 }

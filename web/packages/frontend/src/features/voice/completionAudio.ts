@@ -68,6 +68,7 @@ async function play(sound: AudioPreferences['sound'], preferences: AudioPreferen
     clearTimeout(timer)
     audio.pause()
     audio.removeAttribute('src')
+    audio.load()
     if (stop === cleanup) stop = undefined
   }
   // A local file can never leave an unbounded player running.

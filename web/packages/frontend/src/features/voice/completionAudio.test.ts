@@ -4,15 +4,22 @@ import { claimAutoRead } from './autoReadClaim'
 vi.mock('./autoReadClaim', () => ({ claimAutoRead: vi.fn() }))
 const play = vi.fn<() => Promise<void>>()
 const pause = vi.fn()
+const retainedMedia = new Set<object>()
 let players: { src: string; volume: number }[] = []
 const completion = () => ({ identity: 'run-1', scope: 'server-a-profile-a', profile: 'default', eligible: true, expires_at: Date.now() + 60_000 })
 beforeEach(() => {
   localStorage.clear()
   players = []
+  retainedMedia.clear()
   vi.clearAllMocks()
   vi.mocked(claimAutoRead).mockResolvedValue(true)
   play.mockResolvedValue()
-  vi.stubGlobal('Audio', class { src: string; volume = 1; onended: unknown; onerror: unknown; play = play; pause = pause; removeAttribute = vi.fn(); constructor(src: string) { this.src = src; players.push(this) } })
+  vi.stubGlobal('Audio', class {
+    src: string; volume = 1; onended: unknown; onerror: unknown; play = play; pause = pause
+    removeAttribute(name: string) { if (name === 'src') this.src = '' }
+    load() { if (!this.src) retainedMedia.delete(this) }
+    constructor(src: string) { this.src = src; players.push(this); retainedMedia.add(this) }
+  })
 })
 describe('completion audio delivery', () => {
   it('plays a live eligible completion once across concurrent tabs using the server identity', async () => {
@@ -76,5 +83,14 @@ describe('completion audio delivery', () => {
     await previewSound({ ...DEFAULT_AUDIO, volume: 0.25 })
     expect(play).toHaveBeenCalledTimes(1)
     expect(players.at(-1)?.volume).toBe(0.25)
+  })
+  it('bounds retained media resources across a completion burst', async () => {
+    for (let i = 0; i < 1025; i++) {
+      await deliverCompletion({ ...completion(), identity: `retention-${i}` }, () => true)
+    }
+    expect(play).toHaveBeenCalledTimes(1025)
+    expect(retainedMedia.size).toBe(1)
+    await previewSound({ ...DEFAULT_AUDIO, sound: 'none' })
+    expect(retainedMedia.size).toBe(0)
   })
 })
