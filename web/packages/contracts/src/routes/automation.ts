@@ -1,3 +1,4 @@
+import { CapturedCommandSchema, CapturedCommandResultSchema } from '../gateway-session.js'
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
 import { PromptQueueRunSchema, PromptQueueCardsSchema, PromptQueueActionSchema } from '../prompt-queue.js'
@@ -20,6 +21,11 @@ export const TaskEnvelopeSchema = z.object({ task: PolicyTaskSchema, read_only: 
 /** A card write taking a task out of Running must carry `confirm_running_exit: true`, or the server answers 409 (TAL-557). */
 const CardWriteInput = z.object({ task_id: z.string(), confirm_running_exit: z.boolean().optional() }).catchall(Json)
 const TerminalBody = z.object({ session_id: z.string().optional() })
+
+export const TerminalStartSchema = z.discriminatedUnion('mode', [
+  z.object({ ok: z.literal(true), mode: z.literal('web_pty'), session_id: z.string(), workspace: z.string(), running: z.boolean() }),
+  z.object({ ok: z.literal(true), mode: z.literal('owner_command'), session_id: z.string(), workspace: z.string(), running: z.literal(false), target_key: z.string().min(1) }),
+])
 
 export const automationContract = {
   promptQueues: {
@@ -85,7 +91,8 @@ export const automationContract = {
     uninstall: oc.route({ method: 'POST', path: '/api/extensions/uninstall', tags }).input(z.object({ id: Json.optional() })).output(z.object({ uninstalled: z.literal(true), id: z.string() })),
   },
   terminal: {
-    start: oc.route({ method: 'POST', path: '/api/terminal/start', tags, summary: 'Spawn (or reuse) the embedded PTY shell for a session workspace (local origin when auth is off).' }).input(TerminalBody.extend({ rows: Json.optional(), cols: Json.optional(), restart: Json.optional() })).output(z.object({ ok: z.literal(true), session_id: z.string(), workspace: z.string(), running: z.boolean() })),
+    exec: oc.route({ method: 'POST', path: '/api/terminal/exec', tags, summary: 'Execute one explicit captured command on the selected native owner. Unknown outcomes must never be replayed.' }).input(z.object({ session_id: z.string().min(1), mode: z.literal('owner_command'), target_key: z.string().min(1), command: CapturedCommandSchema })).output(CapturedCommandResultSchema),
+    start: oc.route({ method: 'POST', path: '/api/terminal/start', tags, summary: 'Open the Web host PTY or select captured commands for a native owner (local origin when auth is off).' }).input(TerminalBody.extend({ rows: Json.optional(), cols: Json.optional(), restart: Json.optional() })).output(TerminalStartSchema),
     input: oc.route({ method: 'POST', path: '/api/terminal/input', tags }).input(TerminalBody.extend({ data: z.string().optional() })).output(Ok),
     resize: oc.route({ method: 'POST', path: '/api/terminal/resize', tags }).input(TerminalBody.extend({ rows: Json.optional(), cols: Json.optional() })).output(Ok),
     close: oc.route({ method: 'POST', path: '/api/terminal/close', tags }).input(TerminalBody).output(z.object({ ok: z.literal(true), closed: z.boolean() })),

@@ -151,7 +151,7 @@ def native_owner_stub(tmp_path, monkeypatch):
     from talaria_sidecar.methods import gateway_sessions as adapter
 
     owner = SimpleNamespace(receipt=None, replay=[], events=[], frames=[], info={}, payload=None, calls=[], config_failure=None,
-                            export=None, export_failure=None, checkpoint_diff=None, checkpoint_failure=None, checkpoints=[],
+                            export=None, export_failure=None, checkpoint_diff=None, checkpoint_failure=None, checkpoints=[], shell=None, shell_failure=None,
                             described={"instance_id": "owner", "profile_id": "profile", "authority_epoch": 1,
                                        "capabilities": ["durable-admission-v1", "event-replay-v1"]})
     async def rpc(method, **params):
@@ -160,13 +160,19 @@ def native_owner_stub(tmp_path, monkeypatch):
             return owner.described
         if method == "session.resume":
             return {"session_id": params["session_id"], "subscription_id": "viewer", "messages": [], "info": owner.info,
-                    "replay_epoch": "epoch", "last_sequence": 4, "execution_generation": 1, **getattr(owner, "snapshot_extra", {})}
+                    "authority_epoch": 1, "replay_epoch": "epoch", "last_sequence": 4, "execution_generation": 1, **getattr(owner, "snapshot_extra", {})}
         if method == "rollback.list":
             return {"enabled": True, "checkpoints": owner.checkpoints}
         if method == "rollback.session_diff":
             if owner.checkpoint_failure:
                 raise RuntimeError(owner.checkpoint_failure)
             return owner.checkpoint_diff
+        if method == "shell.exec":
+            if owner.shell_failure == "timeout":
+                raise TimeoutError()
+            if owner.shell_failure:
+                raise RuntimeError(owner.shell_failure)
+            return owner.shell
         if method == "session.export":
             if owner.export_failure == "timeout":
                 raise TimeoutError()
@@ -203,7 +209,7 @@ def native_owner_stub(tmp_path, monkeypatch):
     monkeypatch.setitem(sys.modules, "hermes_cli.gateway_client", SimpleNamespace(GatewayRPCError=RuntimeError))
     monkeypatch.setattr(adapter, "_connect", connect)
     monkeypatch.setattr(adapter, "_control_refusal", lambda *args: None)
-    endpoint = SimpleNamespace(control_home=None, instance_id="owner", profile_id="profile", authority_epoch=1)
+    endpoint = SimpleNamespace(code_sha="4d04303818b61bf3aa09278af48356315515965b", control_home=None, instance_id="owner", profile_id="profile", authority_epoch=1)
     found = SimpleNamespace(endpoint=endpoint, state="ready")
     owner.endpoint, owner.discovery = endpoint, found
     monkeypatch.setattr(adapter, "_with_owner", lambda home, run: asyncio.run(run(found)))
@@ -595,3 +601,69 @@ def test_checkpoint_diff_is_exposed_as_a_closed_session_read(native_owner_stub, 
     native_owner_stub.checkpoint_diff = {'enabled': False}
     result = native_owner_stub.session(None, {'profile_home': str(tmp_path), 'session_id': 'native', 'action': 'checkpoint_diff'})
     assert result['checkpoint_diff']['comparison']['reason'] == 'checkpoints_disabled'
+
+
+@pytest.mark.parametrize("failure", [None, "unsupported_terminal_backend", "cwd_unavailable", "dangerous_command", "command_timeout", "timeout"])
+def test_captured_command_uses_only_authorized_owner(native_owner_stub, failure):
+    owner = native_owner_stub
+    owner.shell = {"stdout": "local output", "stderr": "diagnostic", "code": 7}
+    owner.shell_failure = failure
+    result = owner.run(None, {"session_id": "native", "action": "shell_exec", "command": "printf local",
+                              "authority_epoch": 1, "replay_epoch": "epoch"})
+    assert ("shell.exec", {"session_id": "native", "command": "printf local", "_timeout": 35}) in owner.calls
+    if failure:
+        assert result["state"] == ("unavailable" if failure == "timeout" else "refused")
+        assert "shell" not in result
+    else:
+        assert result["shell"] == owner.shell
+    assert all(method in {"runtime.describe", "session.resume", "shell.exec", "session.detach"} for method, _ in owner.calls)
+    assert sum(method == "shell.exec" for method, _ in owner.calls) == 1
+
+
+@pytest.mark.parametrize("boundary", ["profile", "owner", "epoch", "replay"])
+def test_captured_command_refuses_stale_or_wrong_owner(native_owner_stub, boundary):
+    owner = native_owner_stub
+    if boundary in {"profile", "owner"}:
+        owner.described["profile_id" if boundary == "profile" else "instance_id"] = "other"
+    else:
+        owner.snapshot_extra = {"authority_epoch": 2} if boundary == "epoch" else {"replay_epoch": "successor"}
+    result = owner.run(None, {"session_id": "native", "action": "shell_exec", "command": "pwd",
+                              "authority_epoch": 1, "replay_epoch": "epoch"})
+    assert result["state"] in {"refused", "incompatible"}
+    assert not any(method == "shell.exec" for method, _ in owner.calls)
+
+
+@requires_agent
+def test_supported_owner_captured_command_policy(tmp_path):
+    if not (AGENT_DIR / "gateway/session_shell.py").exists():
+        pytest.skip("this supported Agent has no captured shell command")
+    env = isolated_env(tmp_path / "hermes", HERMES_WEBUI_AGENT_DIR=str(AGENT_DIR))
+    result = subprocess.run([AGENT_PYTHON, str(Path(__file__).parent / "fixtures/gateway_shell_policy.py"),
+                             str(AGENT_DIR), str(tmp_path / "workspaces")], env=env,
+                            capture_output=True, text=True, timeout=60, check=False)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert json.loads(result.stdout)["code"] == 7
+
+
+@pytest.mark.parametrize("revision", ["5b147ab036d6d19131bff8d20701b5001eab844a", "4d04303818b61bf3aa09278af48356315515965b", "bf0203a794a07aac3ff764972ab9087baa4e4f4e"])
+def test_captured_command_accepts_verified_supported_revision(native_owner_stub, revision):
+    native_owner_stub.endpoint.code_sha = revision
+    result = native_owner_stub.run(None, {"session_id": "native", "action": "terminal_info"})
+    assert result["state"] == "attached"
+
+
+@pytest.mark.parametrize("revision", [None, "unknown", "d923a5eb487a17c0a68801bba9ef0f56c81040a8"])
+def test_captured_command_refuses_unverified_native_revision(native_owner_stub, revision):
+    native_owner_stub.endpoint.code_sha = revision
+    result = native_owner_stub.run(None, {"session_id": "native", "action": "terminal_info"})
+    assert (result["state"], result["reason"]) == ("incompatible", "owner_shell_unsupported")
+    assert native_owner_stub.calls == []
+
+
+@pytest.mark.parametrize("value", [{"stdout": "x" * 4001, "stderr": "", "code": 0}, {"stdout": "", "stderr": "", "code": True}, None])
+def test_captured_command_rejects_invalid_owner_result(native_owner_stub, value):
+    native_owner_stub.shell = value
+    result = native_owner_stub.run(None, {"session_id": "native", "action": "shell_exec", "command": "pwd",
+                                          "authority_epoch": 1, "replay_epoch": "epoch"})
+    assert result["reason"] == "owner_shell_invalid"
+    assert "shell" not in result

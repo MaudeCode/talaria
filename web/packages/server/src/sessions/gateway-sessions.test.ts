@@ -9,6 +9,7 @@ import { bootTestServer, type TestServer } from '../test/harness.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { CANONICAL_READ_ONLY_REASON, type StateDbWorkerRequest } from './state-db.js'
 import { GatewaySessions } from './gateway-sessions.js'
+import { TerminalSession } from '../tools/terminal.js'
 
 const fixture = JSON.parse(readFileSync(new URL('../test/fixtures/canonical-ownership.json', import.meta.url), 'utf8')) as { sessions: Record<string, string>; diagnostic: Record<'safe' | 'ignore_config' | 'fresh', string>; schema: string[]; inserts: string[] }
 const nativeNotices = JSON.parse(readFileSync(new URL('../../../../../contracts/fixtures/web-native-notices.json', import.meta.url), 'utf8')) as { events: Record<string, unknown>[] }
@@ -114,6 +115,51 @@ describe('canonical owner attachment', () => {
     const result = await s.deps.sessions.owner!.queueReceipt(sid, 'synthetic-queue-admission')
     expect(result?.receipt).toMatchObject({ admission_id: 'synthetic-queue-admission', status: 'terminal', outcome: 'completed' })
     expect(sidecar.calls.some((call) => call.method === 'chat.start')).toBe(false)
+  })
+
+  it.each(['unreadable', 'refused'])('never releases a %s native target to the host terminal', async (boundary) => {
+    const sources = vi.spyOn(s.deps.sessions, 'stateDbSources').mockResolvedValue(boundary === 'unreadable' ? null : new Map([[sid, { source: 'cli', canonical: true, reason: 'owner unverified' }]]))
+    try { await expect(s.deps.sessions.owner!.terminal(sid)).rejects.toMatchObject({ status: boundary === 'unreadable' ? 503 : 403 }) }
+    finally { sources.mockRestore() }
+  })
+
+  it.each([false, true])('releases the previous Web PTY when selecting native mode (restart=%s)', async (restart) => {
+    sidecar.respond('gateway.session', () => attached(snapshot({ info: { cwd: '/frozen/native' } })))
+    for (const id of [sid, 'other-host']) {
+      const proc = { pid: 4242, write: vi.fn(), resize: vi.fn(), kill: vi.fn(), onData: vi.fn(), onExit: vi.fn() }
+      s.deps.terminals.terminals.set(id, new TerminalSession(id, s.state, proc, () => 100))
+    }
+    const previous = s.deps.terminals.get(sid)!
+    const other = s.deps.terminals.get('other-host')!
+    const response = await post('/api/terminal/start', { session_id: sid, restart })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ mode: 'owner_command', running: false })
+    expect(s.deps.terminals.get(sid)).toBeNull()
+    expect(previous.proc.kill).toHaveBeenCalledWith('SIGHUP')
+    expect(previous.closed).toBe(true)
+    expect(s.deps.terminals.get('other-host')).toBe(other)
+    expect(other.proc.kill).not.toHaveBeenCalled()
+  })
+
+  it('offers captured commands for native owners without spawning a Web PTY, and fences execution', async () => {
+    let snap = snapshot({ info: { cwd: '/frozen/native' } })
+    sidecar.respond('gateway.session', (params) => ({ ...attached(snap), ...(params.action === 'shell_exec' ? { shell: { stdout: 'native output', stderr: 'warning', code: 7 } } : {}) }))
+    const spawn = vi.spyOn(s.deps.terminals, 'start')
+    const before = db.prepare('SELECT * FROM messages').all()
+    const started = await post('/api/terminal/start', { session_id: sid })
+    expect(started.status).toBe(200)
+    const target = await started.json() as { mode: string; target_key: string }
+    expect(target).toMatchObject({ mode: 'owner_command', workspace: '/frozen/native' })
+    const body = { session_id: sid, mode: 'owner_command', target_key: target.target_key, command: 'printf native' }
+    const result = await post('/api/terminal/exec', body)
+    expect(result.status).toBe(200)
+    expect(await result.json()).toMatchObject({ stdout: 'native output', stderr: 'warning', code: 7 })
+    expect(sidecar.calls.filter((c) => c.method === 'gateway.session' && (c.params as { action?: string }).action === 'shell_exec')).toHaveLength(1)
+    snap = snapshot({ authority_epoch: 2 })
+    expect((await post('/api/terminal/exec', body)).status).toBe(409)
+    expect(spawn).not.toHaveBeenCalled()
+    expect(db.prepare('SELECT * FROM messages').all()).toEqual(before)
+    expect(await s.deps.sessionStore.persistedIds()).not.toContain(sid)
   })
 
   it.each(['epoch', 'replay', 'model', 'workspace'])('rejects a stale rendered context identity after native %s replacement', async (change) => {

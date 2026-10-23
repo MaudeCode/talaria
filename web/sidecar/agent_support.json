@@ -4,6 +4,11 @@
     "served-local-policy-v1": [
       "4d04303818b61bf3aa09278af48356315515965b",
       "bf0203a794a07aac3ff764972ab9087baa4e4f4e"
+    ],
+    "captured-command-v1": [
+      "5b147ab036d6d19131bff8d20701b5001eab844a",
+      "4d04303818b61bf3aa09278af48356315515965b",
+      "bf0203a794a07aac3ff764972ab9087baa4e4f4e"
     ]
   },
   "releases": [

@@ -17,7 +17,7 @@ from ..errors import InvalidParams
 from ..home import profile_home_param, scoped_home
 
 _ACTIONS = {"snapshot", "watch", "context_detail", "submit", "receipt", "cancel", "steer_queued", "replace_queued", "interrupt", "approval", "clarify",
-            "clarify_lock", "discard", "mutate", "export", "checkpoint_diff"}
+            "clarify_lock", "discard", "mutate", "export", "checkpoint_diff", "terminal_info", "shell_exec"}
 _OWNER_READ_MAX_BYTES = 4 * 1024 * 1024
 # A restart's after-turn wait keeps the owner reachable only to finish its parked turn (the owner's
 # RESTART_WAIT_WS_METHODS); new work waits for the next owner.
@@ -120,16 +120,20 @@ def _served(home: Path, endpoint, *, allow_verified: bool = False) -> bool:
         return False
     if not allow_verified:
         return True
+    return not _verified_contract(endpoint, "served-local-policy-v1")
+
+
+def _verified_contract(endpoint, name: str) -> bool:
     # The private control socket reports the owner's boot revision, not the sidecar's
     # checkout or a version label. The authenticated describe must still match below.
     try:
         record = json.loads((Path(__file__).resolve().parents[2] / "agent_support.json").read_text())
-        revisions = record["nativeContracts"]["served-local-policy-v1"]
-        return (not isinstance(revisions, list)
-                or not all(isinstance(sha, str) and re.fullmatch(r"[0-9a-f]{40}", sha) for sha in revisions)
-                or getattr(endpoint, "code_sha", None) not in revisions)
+        revisions = record["nativeContracts"][name]
+        return (isinstance(revisions, list)
+                and all(isinstance(sha, str) and re.fullmatch(r"[0-9a-f]{40}", sha) for sha in revisions)
+                and getattr(endpoint, "code_sha", None) in revisions)
     except (OSError, ValueError, KeyError, TypeError):
-        return True
+        return False
 
 
 def _owner_refusal(described: dict, endpoint) -> dict | None:
@@ -178,6 +182,8 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
     endpoint = discovery.endpoint
     if _served(home, endpoint, allow_verified=True):
         return _refused("incompatible", "served_profile_sessions_unavailable")
+    if params["action"] in {"terminal_info", "shell_exec"} and not _verified_contract(endpoint, "captured-command-v1"):
+        return _refused("incompatible", "owner_shell_unsupported")
     restarting = discovery.state != "ready"
     if restarting and params["action"] not in _RESTART_ACTIONS:
         return _refused("refused", "gateway_restarting")
@@ -229,6 +235,20 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
             snap = await snapshot()
             action = params["action"]
             common = {"session_id": sid}
+            if action == "terminal_info":
+                return {"state": "attached", "reason": None, "snapshot": snap, "receipt": None}
+            if action == "shell_exec":
+                if (snap.get("session_id") != params["session_id"] or snap.get("authority_epoch") != params["authority_epoch"]
+                        or snap.get("replay_epoch") != params["replay_epoch"]):
+                    return _refused("refused", "owner_changed")
+                # The native owner alone authorizes the frozen backend/cwd and redacts before bounding.
+                # No second observation may discard a received result; no retry after an unknown ACK.
+                value = await client.rpc("shell.exec", **common, command=params["command"], _timeout=35)
+                if (not isinstance(value, dict) or not isinstance(value.get("stdout"), str)
+                        or not isinstance(value.get("stderr"), str) or type(value.get("code")) is not int
+                        or len(value["stdout"]) > 4000 or len(value["stderr"]) > 2000):
+                    return _refused("refused", "owner_shell_invalid")
+                return {"state": "attached", "reason": None, "snapshot": None, "receipt": None, "shell": value}
             if action == "context_detail":
                 from ..context_detail import project, unavailable
                 # The authorized native read owns lookup and prompt interpretation. No local Agent is built.
@@ -372,6 +392,11 @@ def session(ctx, params: dict) -> dict:
     if action == "export" and (params.get("format") not in ("json", "markdown", "html")
                                or not isinstance(params.get("redact"), bool)):
         raise InvalidParams("export requires an allowed format and redaction policy")
+    if action == "shell_exec" and (not isinstance(params.get("command"), str)
+            or not params["command"].strip() or len(params["command"]) > 8192
+            or type(params.get("authority_epoch")) is not int or params["authority_epoch"] < 0
+            or not isinstance(params.get("replay_epoch"), str) or not params["replay_epoch"]):
+        raise InvalidParams("captured command requires command and owner identity")
     required = {
         "submit": ("request_id", "text"), "receipt": ("admission_id",), "cancel": ("admission_id",),
         "steer_queued": ("admission_id",), "replace_queued": ("admission_id", "submission_id", "text"),

@@ -1,0 +1,28 @@
+{
+  "target": {
+    "ok": true,
+    "mode": "owner_command",
+    "session_id": "native-terminal",
+    "workspace": "/workspace/native",
+    "running": false,
+    "target_key": "opaque-owner-target"
+  },
+  "command": {
+    "session_id": "native-terminal",
+    "mode": "owner_command",
+    "target_key": "opaque-owner-target",
+    "command": "pwd"
+  },
+  "result": {
+    "stdout": "/workspace/native\n",
+    "stderr": "diagnostic\n",
+    "code": 7
+  },
+  "web_target": {
+    "ok": true,
+    "mode": "web_pty",
+    "session_id": "web-terminal",
+    "workspace": "/workspace/web",
+    "running": true
+  }
+}

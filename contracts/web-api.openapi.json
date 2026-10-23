@@ -85934,10 +85934,86 @@
         }
       }
     },
+    "/api/terminal/exec": {
+      "post": {
+        "operationId": "terminal.exec",
+        "summary": "Execute one explicit captured command on the selected native owner. Unknown outcomes must never be replayed.",
+        "tags": [
+          "automation"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "session_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "mode": {
+                    "const": "owner_command"
+                  },
+                  "target_key": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "command": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 8192,
+                    "pattern": "\\S"
+                  }
+                },
+                "required": [
+                  "session_id",
+                  "mode",
+                  "target_key",
+                  "command"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "stdout": {
+                      "type": "string",
+                      "maxLength": 8000
+                    },
+                    "stderr": {
+                      "type": "string",
+                      "maxLength": 4000
+                    },
+                    "code": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "stdout",
+                    "stderr",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/terminal/start": {
       "post": {
         "operationId": "terminal.start",
-        "summary": "Spawn (or reuse) the embedded PTY shell for a session workspace (local origin when auth is off).",
+        "summary": "Open the Web host PTY or select captured commands for a native owner (local origin when auth is off).",
         "tags": [
           "automation"
         ],
@@ -85965,26 +86041,66 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "ok": {
-                      "const": true
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "const": true
+                        },
+                        "mode": {
+                          "const": "web_pty"
+                        },
+                        "session_id": {
+                          "type": "string"
+                        },
+                        "workspace": {
+                          "type": "string"
+                        },
+                        "running": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "mode",
+                        "session_id",
+                        "workspace",
+                        "running"
+                      ]
                     },
-                    "session_id": {
-                      "type": "string"
-                    },
-                    "workspace": {
-                      "type": "string"
-                    },
-                    "running": {
-                      "type": "boolean"
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "const": true
+                        },
+                        "mode": {
+                          "const": "owner_command"
+                        },
+                        "session_id": {
+                          "type": "string"
+                        },
+                        "workspace": {
+                          "type": "string"
+                        },
+                        "running": {
+                          "const": false
+                        },
+                        "target_key": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "mode",
+                        "session_id",
+                        "workspace",
+                        "running",
+                        "target_key"
+                      ]
                     }
-                  },
-                  "required": [
-                    "ok",
-                    "session_id",
-                    "workspace",
-                    "running"
                   ]
                 }
               }

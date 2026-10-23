@@ -227,11 +227,16 @@ export class GatewaySessions {
     return { release: () => { signal.removeEventListener('abort', release); release() }, ended: observation.ended }
   }
 
-  private async target(sid: string, profile = this.deps.activeProfile()): Promise<Target | null> {
+  private async target(sid: string, profile = this.deps.activeProfile(), requireKnownOwnership = false): Promise<Target | null> {
     if (sid.length === 0 || sid !== sid.trim()) return null
-    const owner = (await this.deps.service.stateDbSources([sid], profile))?.get(sid)
+    const sources = await this.deps.service.stateDbSources([sid], profile)
+    if (requireKnownOwnership && !sources) throw new HttpFailure(503, 'Agent session ownership could not be verified')
+    const owner = sources?.get(sid)
     if (typeof owner !== 'object') return null
-    if (owner.reason) return null
+    if (owner.reason) {
+      if (requireKnownOwnership) throw new HttpFailure(403, owner.reason)
+      return null
+    }
     const home = this.deps.profileHome(profile)
     return { sid, profile, home, key: JSON.stringify([home, sid]) }
   }
@@ -280,6 +285,38 @@ export class GatewaySessions {
     const diff = comparison.available ? read?.diff ?? '' : ''
     const files = checkpointDiffFiles(diff)
     return { checkpoint: 'earliest-retained', workspace: '', diff: diff.trimEnd(), files_changed: files, total_changes: files.length, comparison }
+  }
+
+  private terminalKey(target: Target, snap: GatewaySnapshot): string {
+    return ownerStateId(JSON.stringify([target.key, snap.session_id, snap.authority_epoch, snap.replay_epoch, snap.info.cwd]))
+  }
+
+  async terminal(sid: string) {
+    const target = await this.target(sid, this.deps.activeProfile(), true)
+    if (!target) return null
+    const result = await this.call(target, { action: 'terminal_info' })
+    const snap = result.snapshot
+    if (target.profile !== this.deps.activeProfile() || result.state !== 'attached' || snap?.session_id !== sid)
+      throw new HttpFailure(409, 'The native owner cannot run captured commands. Reopen the terminal after checking the gateway.', { code: 'owner_shell_unavailable' })
+    return { target, snap, key: this.terminalKey(target, snap) }
+  }
+
+  async capturedCommand(sid: string, key: string, command: string): Promise<NonNullable<GatewaySessionResult['shell']>> {
+    const selected = await this.terminal(sid)
+    if (key !== selected?.key) throw new HttpFailure(409, 'The native owner changed. Reopen the terminal before running a command.')
+    const { target, snap } = selected
+    const result = await this.call(target, { action: 'shell_exec', command, authority_epoch: snap.authority_epoch, replay_epoch: snap.replay_epoch })
+    if (result.state !== 'attached' || !result.shell) {
+      // Only allowlisted native policy refusals are safe to show. A transport failure may have executed.
+      const messages: Record<string, string> = {
+        unsupported_terminal_backend: 'Captured commands require the native owner’s local terminal backend.',
+        cwd_unavailable: 'The native workspace no longer exists.', dangerous_command: 'The native owner refused this command.',
+        permission_denied: 'The native owner denied this command.', command_timeout: 'The command timed out on the native owner.',
+        owner_changed: 'The native owner changed. Reopen the terminal.',
+      }
+      throw new HttpFailure(409, messages[result.reason ?? ''] ?? 'The command outcome is unknown. Check the native workspace before running it again.', { code: 'owner_shell_failed' })
+    }
+    return { stdout: redactString(result.shell.stdout, true), stderr: redactString(result.shell.stderr, true), code: result.shell.code }
   }
 
   async export(sid: string, format: NonNullable<GatewaySessionParams['format']>): Promise<NonNullable<GatewaySessionResult['export']> | null> {
@@ -344,7 +381,7 @@ export class GatewaySessions {
     const modelMutation = params.action === 'mutate' && params.operation === 'model'
     if (modelMutation) this.modelMutations.set(target.key, (this.modelMutations.get(target.key) ?? 0) + 1)
     try {
-      const result = await sidecar.call('gateway.session', { ...params, profile_home: target.home, session_id: target.sid }, { timeoutMs: params.action === 'mutate' ? 675_000 : 35_000, ...(signal ? { signal } : {}) })
+      const result = await sidecar.call('gateway.session', { ...params, profile_home: target.home, session_id: target.sid }, { timeoutMs: params.action === 'mutate' ? 675_000 : params.action === 'shell_exec' ? 40_000 : 35_000, ...(signal ? { signal } : {}) })
       if (params.action === 'mutate' && params.operation === 'model' && result.snapshot) {
         const change = modelChange(result.receipt ?? {}, params.payload)
         // The stream can resolve a deferred pick before its HTTP ACK returns. Keep the later observation.

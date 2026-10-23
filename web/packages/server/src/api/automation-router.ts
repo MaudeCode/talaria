@@ -157,9 +157,20 @@ export const automationRouter = os.router({
     uninstall: os.extensions.uninstall.handler(({ input, context: { ctx } }) => run(async () => (await ctx.deps.extensions.uninstall(input.id)))),
   },
   terminal: {
+    exec: os.terminal.exec.handler(({ input, context: { ctx } }) => run(async () => {
+      await terminalGate(ctx)
+      if (!ctx.deps.sessions.owner) throw new HttpError(503, 'Native owner connection unavailable')
+      return ctx.deps.sessions.owner.capturedCommand(input.session_id, input.target_key, input.command)
+    })),
     start: os.terminal.start.handler(({ input, context: { ctx } }) => run(async () => {
       await terminalGate(ctx)
       const sid = str(input.session_id).trim()
+      if (!ctx.deps.sessions.owner) throw new HttpError(503, 'Native owner connection unavailable')
+      const native = await ctx.deps.sessions.owner.terminal(sid)
+      if (native) {
+        ctx.deps.terminals.close(sid)
+        return { ok: true as const, mode: 'owner_command' as const, session_id: sid, workspace: str(native.snap.info.cwd), running: false as const, target_key: native.key }
+      }
       const { workspace, profile } = (await terminalSession(ctx, sid))
       let cwd: string
       // Python answered `resolve_trusted_workspace`'s ValueError text unsanitised.
@@ -167,7 +178,7 @@ export const automationRouter = os.router({
       if (ctx.deps.git.workspaceBusy(cwd)) throw new HttpError(409, WORKSPACE_BUSY_MESSAGE)
       try {
         const term = ctx.deps.terminals.start(sid, cwd, { rows: input.rows, cols: input.cols, restart: Boolean(input.restart) })
-        return { ok: true as const, session_id: sid, workspace: term.workspace, running: term.isAlive }
+        return { ok: true as const, mode: 'web_pty' as const, session_id: sid, workspace: term.workspace, running: term.isAlive }
       } catch (error) {
         const message = str((error as Error).message)
         // Python: `int()` failures and other ValueErrors → 400 with the text; unexpected errors → 500 sanitised.

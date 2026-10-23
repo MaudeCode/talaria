@@ -7536,6 +7536,30 @@
         ],
         "additionalProperties": false
       },
+      "shell": {
+        "type": "object",
+        "properties": {
+          "stdout": {
+            "type": "string",
+            "maxLength": 8000
+          },
+          "stderr": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "code": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "stdout",
+          "stderr",
+          "code"
+        ],
+        "additionalProperties": false
+      },
       "restarting": {
         "description": "The owner is in a restart's after-turn wait: parked prompts stay answerable, new work is refused.",
         "type": "boolean"
@@ -8251,6 +8275,30 @@
           "diff",
           "stat",
           "comparison"
+        ],
+        "additionalProperties": false
+      },
+      "shell": {
+        "type": "object",
+        "properties": {
+          "stdout": {
+            "type": "string",
+            "maxLength": 8000
+          },
+          "stderr": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "code": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "stdout",
+          "stderr",
+          "code"
         ],
         "additionalProperties": false
       },

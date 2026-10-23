@@ -3,6 +3,9 @@ import { z } from 'zod'
 import { CheckpointReadSchema } from './checkpoint.js'
 
 const ObjectSchema = z.record(z.string(), z.unknown())
+export const CapturedCommandSchema = z.string().min(1).max(8192).regex(/\S/, 'Command must not be blank')
+/** UTF-16 limits cover the owner's 4000/2000 Unicode code points. Native owner redacts before bounding these captured streams. Never interpreted as terminal control sequences. */
+export const CapturedCommandResultSchema = z.object({ stdout: z.string().max(8000), stderr: z.string().max(4000), code: z.number().int() })
 export const OWNER_EXPORT_MAX_BYTES = 4 * 1024 * 1024
 export const OwnerExportFormatSchema = z.enum(['json', 'markdown', 'html'])
 export const OwnerExportSchema = z.object({
@@ -42,6 +45,7 @@ export const GatewaySessionResultSchema = z.object({
   context_detail: ContextDetailSchema.optional(),
   export: OwnerExportSchema.optional(),
   checkpoint_diff: CheckpointReadSchema.optional(),
+  shell: CapturedCommandResultSchema.optional(),
   restarting: z.boolean().optional().describe("The owner is in a restart's after-turn wait: parked prompts stay answerable, new work is refused."),
   lock: z.object({ status: z.enum(['ok', 'expired']), remaining: z.array(z.string()).optional() }).optional()
     .describe('`clarify_lock`: the batch question ids the owner still waits on; `expired` when the batch already ended.'),
@@ -54,8 +58,10 @@ export const GatewayClarifyBatchSchema = z.object({
 export type GatewayClarifyBatch = z.infer<typeof GatewayClarifyBatchSchema>
 export const GatewaySessionParamsSchema = z.object({
   profile_home: z.string().min(1), session_id: z.string().min(1),
-  action: z.enum(['snapshot', 'watch', 'context_detail', 'submit', 'receipt', 'cancel', 'steer_queued', 'replace_queued', 'interrupt', 'approval', 'clarify', 'clarify_lock', 'discard', 'mutate', 'export', 'checkpoint_diff']),
+  action: z.enum(['snapshot', 'watch', 'context_detail', 'submit', 'receipt', 'cancel', 'steer_queued', 'replace_queued', 'interrupt', 'approval', 'clarify', 'clarify_lock', 'discard', 'mutate', 'export', 'checkpoint_diff', 'terminal_info', 'shell_exec']),
   format: OwnerExportFormatSchema.optional(), redact: z.boolean().optional(),
+  command: CapturedCommandSchema.optional(),
+  authority_epoch: z.number().int().nonnegative().optional(), replay_epoch: z.string().min(1).optional(),
   request_id: z.string().min(1).max(128).optional(), text: z.string().optional(),
   submission_id: z.string().min(1).max(128).optional(),
   show_reasoning: z.boolean().optional().describe('The profile display preference negotiated for an owner watch.'),

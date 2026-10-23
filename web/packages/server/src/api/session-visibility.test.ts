@@ -88,6 +88,7 @@ describe('request-profile session visibility', () => {
       ['/api/reasoning', { session_id: sid, effort: '' }],
       ['/api/session/rename', { session_id: sid, title: 'x' }],
       ['/api/terminal/start', { session_id: sid }],
+      ['/api/terminal/exec', { session_id: sid, mode: 'owner_command', target_key: 'foreign', command: 'pwd' }],
       ['/api/session/worktree/remove', { session_id: sid }],
       ['/api/chat/steer', { session_id: sid, message: 'hi' }],
     ] as const) {

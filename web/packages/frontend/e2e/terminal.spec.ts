@@ -1,8 +1,10 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test } from './fixtures'
+import terminalFixture from '../../../../contracts/fixtures/native-captured-command.json' with { type: 'json' }
 
 test.use({ serviceWorkers: 'block', video: 'on' })
+const terminalStart = (sessionId: string) => ({ ...terminalFixture.web_target, session_id: sessionId, workspace: '/tmp/term' })
 
 test('terminal assets load only on opening and its loading chrome can close', async ({ page }, testInfo) => {
   const manifest = JSON.parse(readFileSync(join(import.meta.dirname, '../dist/client/.vite/manifest.json'), 'utf8')) as Record<string, { file: string; css?: string[] }>
@@ -20,7 +22,7 @@ test('terminal assets load only on opening and its loading chrome can close', as
     await route.continue()
   })
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'terminal-lazy', title: 'Terminal', workspace: '/tmp/term', messages: [] } } }))
-  await page.route('**/api/terminal/start', (route) => { starts++; return route.fulfill({ json: { ok: true, running: true } }) })
+  await page.route('**/api/terminal/start', (route) => { starts++; return route.fulfill({ json: terminalStart('terminal-lazy') }) })
   await page.route('**/api/terminal/output?**', (route) => route.fulfill({ headers: { 'content-type': 'text/event-stream' }, body: 'retry: 60000\n\n' }))
   const panel = page.locator('#composerTerminalPanel')
   const toggle = async () => { await page.locator('#msg').fill('/terminal'); await page.locator('#btnSend').click() }
@@ -61,7 +63,7 @@ test('terminal opens, accepts input, resizes, and closes', async ({ page }, test
     if (path.endsWith('/input')) inputs.push((route.request().postDataJSON() as { data: string }).data)
     if (path.endsWith('/resize')) sizes.push(route.request().postDataJSON() as { cols: number; rows: number })
     if (path.endsWith('/close')) closes++
-    await route.fulfill({ json: { ok: true, running: true } })
+    await route.fulfill({ json: path.endsWith('/start') ? terminalStart(sid) : { ok: true } })
   })
   await page.goto(`/session/${sid}`)
   await page.locator('#msg').fill('/terminal')
@@ -109,7 +111,7 @@ test('closing the terminal during start opens no output stream', async ({ page }
       await route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream' }, body: 'event: terminal_closed\ndata: {}\n\n' })
     } else if (url.endsWith('/api/terminal/start')) {
       if (++starts === 1) await firstGate
-      await route.fulfill({ json: { ok: true, running: true } })
+      await route.fulfill({ json: terminalStart(sid) })
     } else {
       await route.fulfill({ json: { ok: true } })
     }
