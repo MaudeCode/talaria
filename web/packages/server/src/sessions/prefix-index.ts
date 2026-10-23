@@ -32,10 +32,10 @@ export class SessionPrefixIndex {
   private readonly candidatesByKey = new Map<string, Candidate[]>()
   private readonly snapshots: Snapshot[] = [{ maxTimestamp: 0, maxTodoTimestamp: 0, todo: null, userCount: 0, lastTimestamp: null }]
   private readonly rowHashes: string[] = []
-  private readonly toolCallsHash: string
+  private toolCallsHash = ''
   private readonly ids: string[] = []
   private readonly refs = new Map<string, number[]>()
-  private readonly callIndices: number[] = []
+  private callIndices: number[] = []
   private readonly calls = new Map<number, Record<string, unknown>[]>()
   private current: string
   readonly model = new ApiMessageSummary()
@@ -46,8 +46,16 @@ export class SessionPrefixIndex {
   constructor(public rows: Message[], public revision: string | null, readonly generation: string | null, opts: { baseIndex?: number; initialTurn?: string; toolCalls?: unknown[]; timestampFloor?: number; todoFloor?: number; parent?: { index: SessionPrefixIndex; end: number } } = {}) {
     this.baseIndex = opts.baseIndex ?? 0
     this.parent = opts.parent
-    const toolCalls = opts.toolCalls ?? []
+    this.setToolCalls(opts.toolCalls ?? [])
+    this.snapshots[0]!.maxTimestamp = opts.timestampFloor ?? 0
+    this.snapshots[0]!.maxTodoTimestamp = opts.todoFloor ?? 0
+    this.current = opts.initialTurn ?? 'legacy:start'
+    this.extend()
+  }
+
+  private setToolCalls(toolCalls: unknown[]): void {
     this.toolCallsHash = this.hash(toolCalls)
+    this.calls.clear()
     for (const call of toolCalls) {
       if (!call || typeof call !== 'object') continue
       const row = call as Record<string, unknown>, at = row.assistant_msg_idx
@@ -55,10 +63,6 @@ export class SessionPrefixIndex {
       const entries = this.calls.get(at) ?? []; entries.push(row); this.calls.set(at, entries)
     }
     this.callIndices = [...this.calls.keys()].sort((a, b) => a - b)
-    this.snapshots[0]!.maxTimestamp = opts.timestampFloor ?? 0
-    this.snapshots[0]!.maxTodoTimestamp = opts.todoFloor ?? 0
-    this.current = opts.initialTurn ?? 'legacy:start'
-    this.extend()
   }
 
   extend(): void {
@@ -127,9 +131,15 @@ export class SessionPrefixIndex {
   private hashText(text: string): string { return createHash('sha256').update(text).digest('base64') }
   /** `text` is the row's JSON serialization. */
   matchesRow(index: number, text: string): boolean { return this.rowHashes[index] === this.hashText(text) }
-  matchesToolCalls(calls: unknown[]): boolean { return this.toolCallsHash === this.hash(calls) }
+  matchesToolCalls(calls: unknown[]): boolean {
+    // New calls on appended rows cannot change projections of the verified prefix.
+    return this.toolCallsHash === this.hash(calls.filter((call) => {
+      const at = call && typeof call === 'object' ? (call as Record<string, unknown>).assistant_msg_idx : undefined
+      return typeof at !== 'number' || !Number.isInteger(at) || at < this.baseIndex + this.length
+    }))
+  }
   /** Called only after save verified every indexed row during its existing serialization pass. */
-  savedAppend(rows: Message[], revision: string | null): void { this.rows = rows; this.revision = revision; this.extend() }
+  savedAppend(rows: Message[], revision: string | null, calls: unknown[]): void { this.setToolCalls(calls); this.rows = rows; this.revision = revision; this.extend() }
 
   private declarationBefore(call: string, end: number): number | undefined {
     const entries = this.declarations.get(call) ?? []

@@ -500,6 +500,8 @@ describe('chat streams, cancel, and error settlement', () => {
     const streamId = await start(sid, 'Inspect the detached worker')
     prompt = await started
     expect((await json(await s.get(`/api/chat/cancel?stream_id=${streamId}`))).cancelled).toBe(true)
+    // Admission stays busy until the cancelled worker unwinds, even without a stream subscriber.
+    await s.deps.turns.finished(streamId)
     expect(await nextHistory(sid)).toEqual([...earlier, { role: 'user', content: prompt }, { role: 'assistant', content: 'The detached worker completed its audit.' }])
   })
 

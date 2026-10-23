@@ -121,6 +121,8 @@ Web caches a terminal frame's settled session directly, refreshing session lists
 and that session's other metadata without refetching transcript detail. Terminal
 frames without a session retain the detail-refresh fallback. Admitting a live
 turn refreshes only session lists and that session's status.
+Terminal sessions share the detail endpoint's indexed projection and transcript
+window, including activity scenes, tool outcomes, pagination offsets and todo state.
 
 ## Cursor and resume semantics
 

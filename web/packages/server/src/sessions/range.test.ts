@@ -187,6 +187,39 @@ it('reuses a verified saved append and invalidates an edit with unchanged length
   } finally { await server.close() }
 })
 
+it('preserves a saved prefix when new tool calls are appended and invalidates changed indexed calls', async () => {
+  const server = await bootTestServer()
+  try {
+    const session = await server.deps.sessionStore.newSession()
+    session.messages = [
+      { role: 'user', content: 'first', timestamp: 1 },
+      { role: 'assistant', content: '', tool_calls: [{ id: 'old', function: { name: 'terminal', arguments: '{}' } }], timestamp: 2 },
+      { role: 'tool', content: 'old result', tool_call_id: 'old', timestamp: 3 },
+      { role: 'assistant', content: 'first answer', timestamp: 4 },
+    ]
+    session.tool_calls = [{ tid: 'old', name: 'terminal', snippet: 'old result', assistant_msg_idx: 1 }]
+    await server.deps.sessionStore.save(session)
+    await server.deps.sessions.detail(session.session_id, { msg_limit: '2' })
+    const prefix = session.prefixIndex
+    session.messages.push(
+      { role: 'user', content: 'second', timestamp: 5 },
+      { role: 'assistant', content: '', tool_calls: [{ id: 'new', function: { name: 'terminal', arguments: '{}' } }], timestamp: 6 },
+      { role: 'tool', content: 'new result', tool_call_id: 'new', timestamp: 7 },
+      { role: 'assistant', content: 'second answer', timestamp: 8 },
+    )
+    session.tool_calls = [...session.tool_calls, { tid: 'new', name: 'terminal', snippet: 'new result', assistant_msg_idx: 5 }]
+    await server.deps.sessionStore.save(session)
+    const page = await server.deps.sessions.detail(session.session_id, { msg_limit: '2' })
+    expect.soft(session.prefixIndex === prefix).toBe(true)
+    expect(page.tool_calls).toEqual([{ tid: 'new', name: 'terminal', snippet: 'new result', assistant_msg_idx: 0, kind: 'shell', target: '' }])
+    session.tool_calls[0] = { ...(session.tool_calls[0] as Record<string, unknown>), snippet: 'edited old result' }
+    await server.deps.sessionStore.save(session)
+    expect(session.prefixIndex).toBeUndefined()
+    await server.deps.sessions.detail(session.session_id, { msg_limit: '2' })
+    expect(session.prefixIndex === prefix).toBe(false)
+  } finally { vi.restoreAllMocks(); await server.close() }
+})
+
 it('does not inspect an older prefix to attach a trailing result outside the requested page', () => {
   const rows: Message[] = [
     { role: 'assistant', tool_calls: [{ id: 'old' }] },

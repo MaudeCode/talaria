@@ -239,6 +239,7 @@ export class SessionStore {
     if (opts.touchUpdatedAt ?? true) session.updated_at = this.deps.now()
     if (markerCurrent) session.state_db_seen_stamp = session.updated_at
     session.messages = withBackgroundDisplayKinds(session.messages, session)
+    const liveRows = session.messages, liveCalls = session.tool_calls, callCount = liveCalls.length
     const prefix = session.prefixIndex
     let appendOnly = Boolean(prefix && session.messages.length >= prefix.length && prefix.generation === markedStateDbGeneration(session) && prefix.matchesToolCalls(session.tool_calls))
     const doc = structuredClone(session.toDocument())
@@ -280,8 +281,9 @@ export class SessionStore {
       throw error
     }
     this.persistedMessages.set(session, { serialized: snapshot })
-    if (appendOnly) prefix!.savedAppend(rows, session.sidecarLoadedSignature)
-    else delete session.prefixIndex
+    if (appendOnly && session.messages === liveRows && liveRows.length === rows.length && session.tool_calls === liveCalls && liveCalls.length === callCount) {
+      prefix!.savedAppend(liveRows, session.sidecarLoadedSignature, liveCalls)
+    } else delete session.prefixIndex
     // The document is committed; the batched index flush must not delay the caller (the turn's `done`).
     if (!(opts.skipIndex ?? false)) void this.queueIndexUpdate([indexEntry])
     if (rows.length) await this.clearDeletedTombstone(sid)

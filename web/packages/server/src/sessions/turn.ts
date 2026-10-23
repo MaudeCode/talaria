@@ -25,19 +25,18 @@ import { PendingPrompts, clarifyReply, isVaultPrompt, vaultReply } from './pendi
 import type { JournalEventMeta } from './storage/backend.js'
 import type { RunJournal, RunJournalWriter } from './journal.js'
 import { COMPRESSION_RECOVERY_ACTION_START_FOCUSED, COMPRESSION_RECOVERY_TERMINAL_STATE, CONTEXT_USAGE_FIELDS, Session, contextUsage, forgetContextFigures, titleFrom, type Message } from './session.js'
-import { anchorMessageKey, compressionReference, markerSummary, visibleMessagesForAnchor } from './compress.js'
-import { buildActiveTurnToken, completedToolIndex, publicToolFrame, redactNestedMessageContainers, redactSessionData, redactString, withToolId } from '../redact.js'
+import { anchorMessageKey, markerSummary, visibleMessagesForAnchor } from './compress.js'
+import { buildActiveTurnToken, completedToolIndex, publicToolFrame, redactNestedMessageContainers, redactString, withToolId } from '../redact.js'
 import { dict, findPersonality, type Config, type PersonalityRow } from '../config/agent-config.js'
 import { ReasoningTitleTracker, reasoningEventPayload } from './reasoning-titles.js'
-import { messageWindowForDisplay, messagesForLimitedPayload, toolCallsForMessageWindow } from './window.js'
-import { UNSETTLED_TODO_KEY, attachTodoState, parseTodoToolResult } from './todo.js'
+import { UNSETTLED_TODO_KEY, parseTodoToolResult } from './todo.js'
 import type { UpdateNotificationStore } from '../tools/update-notifications.js'
 import { SessionNotices } from './notices.js'
 import { SessionGoals } from './goals.js'
-import { hydrateAnchorActivityScenes, turnTerminalState, withTurnIds } from './anchor.js'
+import { turnTerminalState } from './anchor.js'
 import { persistentStateChanges, persistentStateSnapshot } from './state-saved.js'
 import { agentBuildParams, webuiEphemeralSystemPrompt, workspaceSystemMessage } from './turn-context.js'
-import { agentSteerText, assistantReplyAddedAfterCurrentTurn, attachedFilesPrompt, buildPartialMessage, dedupeContext, checkpointTurnStart, extractToolCallsFromMessages, hasNativeImages, injectMaxIterationSummaryFallback, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, withDataUseRequirements, sessionLacksFinalAssistantAnswer, splitDisplayText, stateDbSeenId, joinReasoning, reasoningFieldsText, toolOutcome, withAttachmentObjects, newestSettledReply, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withToolCallOutcomes, withoutMaxIterationSummaryRequest, withNativeImagesRestored, withoutNativeImages, withoutToolImages } from './merge.js'
+import { agentSteerText, assistantReplyAddedAfterCurrentTurn, attachedFilesPrompt, buildPartialMessage, dedupeContext, checkpointTurnStart, extractToolCallsFromMessages, hasNativeImages, injectMaxIterationSummaryFallback, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, withDataUseRequirements, sessionLacksFinalAssistantAnswer, splitDisplayText, stateDbSeenId, joinReasoning, reasoningFieldsText, toolOutcome, withoutMaxIterationSummaryRequest, withNativeImagesRestored, withoutNativeImages, withoutToolImages } from './merge.js'
 import { mayBecomeSilentReply, turnOrigin, recordBackgroundReview, recordBackgroundUpdate, type BackgroundUpdate } from './background-updates.js'
 import { countExchanges, fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitle, latestExchangeSnippets, looksInvalidGeneratedTitle, looksLikeDefaultCliTitle, sanitizeGeneratedTitle, titleLanguageMismatch, titlePrompts } from './titles.js'
 import { WORKSPACE_BUSY_MESSAGE } from '../workspace/git.js'
@@ -1315,30 +1314,7 @@ export class TurnRunner {
 
   /** The settled session as a terminal frame carries it: the display window, redacted. */
   async publicTerminalSession(s: Session): Promise<Record<string, unknown>> {
-    return redactSessionData((await this.terminalSessionPayload(s)), this.deps.redactEnabled())
-  }
-
-  /**
-   * Python `_session_payload_with_terminal_window`: the same visible-message window contract as `GET /api/session?
-   * msg_limit=` (renderable rows, limited payload shape, windowed tool calls, todo state) with the full count.
-   */
-  private async terminalSessionPayload(s: Session): Promise<Record<string, unknown>> {
-    const payload = (await this.deps.service().wireRow(s))
-    payload.automatic_turns_held = (await this.automaticTurnsHeld(s.session_id))
-    payload.notices = this.sessionNotices(s.session_id)
-    payload.goal = this.sessionGoal(s.session_id)
-    const service = this.deps.service()
-    const scened = (await service.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes((await service.backgroundUpdates(s, withMarkerKinds(withTurnIds(withAttachmentObjects(s.messages)), s))), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, clipToolResults: true })))
-    const [window, offset] = messageWindowForDisplay(scened, TRANSCRIPT_WINDOW, null)
-    const limited = messagesForLimitedPayload(withBodyExcerpts(withDisplayMedia(window, (await service.mediaProjector(s))), s.active_stream_id, newestSettledReply(scened, s.active_stream_id), offset))
-    payload.messages = limited
-    payload.message_count = s.messages.length
-    payload._messages_offset = offset
-    payload._messages_truncated = offset > 0
-    attachTodoState(payload, s.messages, s.extra[UNSETTLED_TODO_KEY])
-    payload.tool_calls = toolCallsForMessageWindow(s.tool_calls, offset, limited.length)
-    payload.compression_reference = compressionReference(s, scened)
-    return payload
+    return this.deps.service().windowedDetail(s, TRANSCRIPT_WINDOW)
   }
 
   /** TAL-540, Python `_live_usage_snapshot`: a finished compression's frame, with the counters and the ring's post-compression figures, so clients update before `done`. */
