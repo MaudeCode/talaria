@@ -370,6 +370,8 @@ export class SidecarClient implements SidecarLike {
       if (opts.timing) opts.timing.rpcId = id
       const request = { jsonrpc: '2.0' as const, id, method, params: schema.params.parse(params), ...(opts.timing ? { trace_id: opts.timing.traceId } : {}) }
       const closeDispatch = opts.timing?.begin('sidecar_dispatch')
+      // A settled call drops its cancellation subscription on every exit: dictation reuses one signal for every batch.
+      const onAbort = () => { this.sendCancel(id) }
       const raw = await new Promise<unknown>((resolve, reject) => {
         const pending: Pending = { method, resolve, reject, onStream: opts.onStream, timing: opts.timing }
         if (opts.timeoutMs !== 0) {
@@ -381,7 +383,7 @@ export class SidecarClient implements SidecarLike {
           pending.timer.unref()
         }
         this.pending.set(id, pending)
-        opts.signal?.addEventListener('abort', () => { this.sendCancel(id) }, { once: true })
+        opts.signal?.addEventListener('abort', onAbort, { once: true })
         stdin.write(JSON.stringify(request) + '\n', (error) => {
           closeDispatch?.(error ? 'unknown' : 'ok')
           if (error) {
@@ -390,7 +392,7 @@ export class SidecarClient implements SidecarLike {
             reject(new SidecarError(`sidecar write failed: ${error.message}`, { condition: 'sidecar_unavailable' }))
           }
         })
-      })
+      }).finally(() => { opts.signal?.removeEventListener('abort', onAbort) })
       const result = schema.result.parse(raw) as SidecarResult<M>
       const status = raw as { status?: string; failed?: boolean; partial?: boolean; error?: unknown }
       closeCall?.(status.status === 'cancelled' ? 'cancelled' : status.status === 'error' || status.failed || status.partial || status.error ? 'error' : 'ok')
