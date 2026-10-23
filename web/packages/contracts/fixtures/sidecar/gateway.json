@@ -207,6 +207,27 @@
           }
         }
       }
+    },
+    {
+      "params": {
+        "profile_home": "<home>",
+        "session_id": "native-terminal",
+        "action": "shell_exec",
+        "command": "pwd",
+        "authority_epoch": 1,
+        "replay_epoch": "native-epoch"
+      },
+      "result": {
+        "state": "attached",
+        "reason": null,
+        "snapshot": null,
+        "receipt": null,
+        "shell": {
+          "stdout": "/workspace/native\n",
+          "stderr": "diagnostic\n",
+          "code": 7
+        }
+      }
     }
   ],
   "gateway.create": [

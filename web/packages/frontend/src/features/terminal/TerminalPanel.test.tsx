@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, render } from '@testing-library/react'
+import { act, render, fireEvent } from '@testing-library/react'
 
 const noop = () => undefined
 vi.mock('@xterm/xterm', () => ({
   Terminal: class {
+    options = {}
     cols = 80
     rows = 24
     loadAddon = noop
@@ -83,4 +84,20 @@ it('reopens the panel with the error when closing is refused, and asks again aft
   await act(async () => { again.getByRole('button', { name: 'Close' }).click(); await new Promise((r) => setTimeout(r, 0)) })
   expect(closes).toBe(2)
   expect(onReopen).toHaveBeenCalledOnce()
+})
+
+it('requires an explicit captured command, never opens a PTY stream and never retries a lost ACK', async () => {
+  vi.mocked(post).mockImplementation((path: string) => path === 'api/terminal/start'
+    ? Promise.resolve({ ok: true, running: false, mode: 'owner_command', workspace: '/frozen/native', target_key: 'owner-key' })
+    : Promise.reject(new Error('Connection lost. Outcome unknown.')))
+  const view = render(<TerminalPanel sessionId="native" workspace="/w" onClose={noop} />)
+  const input = await view.findByRole('textbox', { name: 'Captured command' })
+  expect(opened).toEqual([])
+  expect(post).toHaveBeenCalledTimes(1)
+  fireEvent.change(input, { target: { value: 'pwd' } })
+  fireEvent.submit(input.closest('form')!)
+  await act(async () => { await Promise.resolve() })
+  expect(post).toHaveBeenCalledTimes(2)
+  expect(post).toHaveBeenLastCalledWith('api/terminal/exec', { session_id: 'native', mode: 'owner_command', target_key: 'owner-key', command: 'pwd' }, expect.anything(), { retries: 0, timeoutMs: 50_000 })
+  expect(opened).toEqual([])
 })

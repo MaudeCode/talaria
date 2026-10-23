@@ -116,6 +116,33 @@ describe('canonical owner attachment', () => {
     expect(sidecar.calls.some((call) => call.method === 'chat.start')).toBe(false)
   })
 
+  it.each(['unreadable', 'refused'])('never releases a %s native target to the host terminal', async (boundary) => {
+    const sources = vi.spyOn(s.deps.sessions, 'stateDbSources').mockResolvedValue(boundary === 'unreadable' ? null : new Map([[sid, { source: 'cli', canonical: true, reason: 'owner unverified' }]]))
+    try { await expect(s.deps.sessions.owner!.terminal(sid)).rejects.toMatchObject({ status: boundary === 'unreadable' ? 503 : 403 }) }
+    finally { sources.mockRestore() }
+  })
+
+  it('offers captured commands for native owners without spawning a Web PTY, and fences execution', async () => {
+    let snap = snapshot({ info: { cwd: '/frozen/native' } })
+    sidecar.respond('gateway.session', (params) => ({ ...attached(snap), ...(params.action === 'shell_exec' ? { shell: { stdout: 'native output', stderr: 'warning', code: 7 } } : {}) }))
+    const spawn = vi.spyOn(s.deps.terminals, 'start')
+    const before = db.prepare('SELECT * FROM messages').all()
+    const started = await post('/api/terminal/start', { session_id: sid })
+    expect(started.status).toBe(200)
+    const target = await started.json() as { mode: string; target_key: string }
+    expect(target).toMatchObject({ mode: 'owner_command', workspace: '/frozen/native' })
+    const body = { session_id: sid, mode: 'owner_command', target_key: target.target_key, command: 'printf native' }
+    const result = await post('/api/terminal/exec', body)
+    expect(result.status).toBe(200)
+    expect(await result.json()).toMatchObject({ stdout: 'native output', stderr: 'warning', code: 7 })
+    expect(sidecar.calls.filter((c) => c.method === 'gateway.session' && (c.params as { action?: string }).action === 'shell_exec')).toHaveLength(1)
+    snap = snapshot({ authority_epoch: 2 })
+    expect((await post('/api/terminal/exec', body)).status).toBe(409)
+    expect(spawn).not.toHaveBeenCalled()
+    expect(db.prepare('SELECT * FROM messages').all()).toEqual(before)
+    expect(await s.deps.sessionStore.persistedIds()).not.toContain(sid)
+  })
+
   it.each(['epoch', 'replay', 'model', 'workspace'])('rejects a stale rendered context identity after native %s replacement', async (change) => {
     const detail = ContextDetailSchema.parse((JSON.parse(readFileSync(new URL('../../../contracts/fixtures/sidecar/context-detail.json', import.meta.url), 'utf8')) as Record<string, { result: unknown }[]>)['chat.context_detail']![0]!.result)
     let current = snapshot()

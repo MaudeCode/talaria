@@ -59,3 +59,14 @@ When it answers `false`:
 
 Chat keeps working: the profile's remote terminal backend owns the target-side
 paths and runs the tools there.
+
+## Captured commands in native chats
+
+Opening the terminal in an attached native chat selects **Native owner · captured
+command**. Enter a command and choose **Run**. The existing terminal output area
+shows captured stdout, stderr and the exit code. This runs through the native
+owner in that chat's frozen local workspace, separately from the Web host PTY.
+SSH, Docker and other remote backends are refused by the owner. Unsupported or
+changed owners cannot fall back to the Web host. Reopen the terminal after an
+owner changes. If the acknowledgment is lost, check the native workspace before
+running the command again; Talaria never automatically repeats it.

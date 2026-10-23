@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Run a captured command in a native chat\u2019s local workspace from the terminal panel.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

@@ -382,7 +382,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   const knownEmpty = !sessionId || readPersisted('hermes-webui-session-empty') === sessionId
   const firstSend = useFirstSend()
   const pendingUserText = intent.send && (!intent.send.error || intent.send.uncertain || intent.send.recover) ? intent.send.text : firstSend && !firstSend.failed && ownsFirstSend(firstSend, sessionId) ? firstSend.text : undefined
-  const hero = !live && pendingUserText === undefined && (!sessionId || (query.isSuccess ? rows.length === 0 : knownEmpty))
+  const hero = !terminalOpen && !live && pendingUserText === undefined && (!sessionId || (query.isSuccess ? rows.length === 0 : knownEmpty))
   useEffect(() => {
     if (!sessionId || !query.isSuccess) return
     if (rows.length === 0) writePersisted('hermes-webui-session-empty', sessionId)
@@ -499,7 +499,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
             <TerminalPanelFrame workspace={workspace} status="loading" onClose={() => setTerminalOpen(false)}>
               <div className="composer-terminal-surface px-2 py-1" style={{ height: 260 }} />
             </TerminalPanelFrame>
-          }><TerminalPanel sessionId={sessionId} workspace={workspace} onClose={() => setTerminalOpen(false)} onReopen={() => setTerminalOpen(true)} /></Suspense>}
+          }><TerminalPanel key={JSON.stringify([sessionId, workspace])} sessionId={sessionId} workspace={workspace} onClose={() => setTerminalOpen(false)} onReopen={() => setTerminalOpen(true)} /></Suspense>}
         </div>
         <Composer
           sessionId={sessionId}

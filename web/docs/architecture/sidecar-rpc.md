@@ -36,6 +36,16 @@ the sidecar being killed closes that pipe, so the supervisor stops the
 writer's process tree and reaps the writer before releasing the lock. A concurrent repair fails
 without starting another writer.
 
+RPC v55 adds closed `gateway.session` actions `terminal_info` and `shell_exec`.
+They require a verified native owner boot revision supporting captured commands.
+`terminal_info` observes the target without executing; `shell_exec` fences the
+observed authority/replay identity and forwards only session id and command to
+native `shell.exec`. The owner authorizes its frozen local backend and cwd,
+refuses unsafe commands, strips managed secrets, and redacts before bounding
+stdout/stderr to 4000/2000 characters. The captured result includes the exit code.
+No transcript/admission is written, no host shell fallback exists, and unknown
+acknowledgments are never retried.
+
 RPC v54 adds the read-only `gateway.session` action `checkpoint_diff`. It calls the authenticated
 owner's `rollback.session_diff` without resuming or subscribing, so compression/restart and the
 frozen checkpoint/terminal policy remain owner decisions. No host checkpoint manager or native

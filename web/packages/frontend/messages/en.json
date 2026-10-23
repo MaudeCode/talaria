@@ -2629,5 +2629,10 @@
   "prompt_queue_resume": "Resume",
   "prompt_queue_cancel": "Cancel queue",
   "prompt_queue_reconcile": "Reconcile",
-  "prompt_queue_empty": "No queued messages"
+  "prompt_queue_empty": "No queued messages",
+  "terminal_native_command": "Native owner · captured command",
+  "terminal_captured_command": "Captured command",
+  "terminal_run_command": "Run",
+  "terminal_command_running": "Running…",
+  "terminal_exit_code": "Exit code {code}"
 }
