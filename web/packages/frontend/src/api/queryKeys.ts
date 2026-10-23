@@ -30,6 +30,8 @@ export const keys = {
   workspaces: ['workspaces'] as const,
   files: {
     lists: (workspace: string) => ['files', 'list', workspace] as const,
+    /** One directory's listings, hidden entries shown or not. */
+    dir: (workspace: string, path: string) => ['files', 'list', workspace, path] as const,
     list: (workspace: string, path: string, hidden: boolean) => ['files', 'list', workspace, path, hidden] as const,
     contents: (workspace: string) => ['files', 'content', workspace] as const,
     content: (workspace: string, path: string) => ['files', 'content', workspace, path] as const,

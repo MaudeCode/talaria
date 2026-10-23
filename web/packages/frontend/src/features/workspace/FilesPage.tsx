@@ -32,7 +32,7 @@ interface Entry { path: string; name: string; isDir: boolean }
 /** One write owner per entry and per file's contents; a profile or workspace switch fences them like any resource. */
 const entryResource = (workspace: string, path: string) => JSON.stringify(['file', workspace, path])
 const contentResource = (workspace: string, path: string) => JSON.stringify(['file-content', workspace, path])
-const createKind = (workspace: string, dir: string) => `file-${workspace}-${dir}`
+const createKind = (workspace: string, dir: string) => JSON.stringify(['file-new', workspace, dir])
 type Pending = { kind: 'new-file' } | { kind: 'new-folder' } | { kind: 'rename'; entry: Entry } | { kind: 'delete'; entry: Entry } | null
 
 /** The right panel's Files page (TAL-373): directory tree, file preview/edit, git status. Its folder, preview and draft
@@ -86,10 +86,12 @@ function WorkspaceFiles({ workspace, sessionId, active, restored }: { workspace:
   const op = useMutation({ mutationFn: (call: () => Promise<unknown>) => call(), onMutate: () => setNotice(null), onError: (e) => setNotice(errorText(e)), onSettled: refresh })
   // Tree writes show at once: a moved or deleted entry leaves, a renamed one takes its new name, a new one appears.
   // The server's refusal (symlink, conflict, missing, invalid name) rolls it back and shows inline above the tree.
+  // Each write rereads only the folders it changed: a deleted or moved folder's own listing is gone on the server.
   const treeWrite = { queryKey: keys.files.lists(workspace), onError: (e: unknown) => setNotice(errorText(e)), onSuccess: () => { void refresh() } }
-  const remove = useResourceMutation({ ...treeWrite, resource: ({ path }: { path: string; call: () => Promise<unknown> }) => entryResource(workspace, path), effect: () => ({ remove: true }), mutationFn: ({ call }) => call() })
-  const rename = useResourceMutation({ ...treeWrite, resource: ({ path }: { path: string; name: string }) => entryResource(workspace, path), effect: ({ path, name }) => ({ fields: { name, path: joinPath(parentOf(path), name) } }), mutationFn: ({ path, name }) => api.renameEntry(sessionId, path, name) })
-  const create = useResourceMutation({ ...treeWrite, exclusive: true, resource: ({ resource }: { resource: string; path: string; name: string; isDir: boolean }) => resource, effect: ({ path, name, isDir }) => ({ fields: { path, name, is_dir: isDir, type: isDir ? 'dir' : 'file' } }), mutationFn: ({ path, isDir }) => isDir ? api.createDir(sessionId, path) : api.createFile(sessionId, path) })
+  const folders = (...paths: string[]) => paths.map((path) => keys.files.dir(workspace, path))
+  const remove = useResourceMutation({ ...treeWrite, resource: ({ path }: { path: string; to?: string; call: () => Promise<unknown> }) => entryResource(workspace, path), readKeys: ({ path, to }) => folders(parentOf(path), ...(to === undefined ? [] : [to])), effect: () => ({ remove: true }), mutationFn: ({ call }) => call() })
+  const rename = useResourceMutation({ ...treeWrite, resource: ({ path }: { path: string; name: string }) => entryResource(workspace, path), readKeys: ({ path }) => folders(parentOf(path)), effect: ({ path, name }) => ({ fields: { name, path: joinPath(parentOf(path), name) } }), mutationFn: ({ path, name }) => api.renameEntry(sessionId, path, name) })
+  const create = useResourceMutation({ ...treeWrite, exclusive: true, resource: ({ resource }: { resource: string; path: string; name: string; isDir: boolean }) => resource, readKeys: ({ path }) => folders(parentOf(path)), effect: ({ path, name, isDir }) => ({ fields: { path, name, is_dir: isDir, type: isDir ? 'dir' : 'file' } }), mutationFn: ({ path, isDir }) => isDir ? api.createDir(sessionId, path) : api.createFile(sessionId, path) })
   const submitName = (kind: 'file' | 'dir', name: string) => { setNotice(null); create.mutate({ resource: newResource(createKind(workspace, dir)), path: joinPath(dir, name), name, isDir: kind === 'dir' }) }
   const go = (path: string) => { setNotice(null); setDir(path) }
   const dropProps = (dest: string) => ({
@@ -105,7 +107,7 @@ function WorkspaceFiles({ workspace, sessionId, active, restored }: { workspace:
       setDropTarget(null)
       if (!src) return
       ev.preventDefault()
-      if (src !== dest) { setNotice(null); remove.mutate({ path: src, call: () => api.moveEntry(sessionId, src, dest) }) }
+      if (src !== dest) { setNotice(null); remove.mutate({ path: src, to: dest, call: () => api.moveEntry(sessionId, src, dest) }) }
     },
   })
   const listed = withCreated(withEffects(listing.data?.entries ?? [], (e) => entryResource(workspace, e.path ?? joinPath(dir, e.name)), effects), createKind(workspace, dir), effects)
