@@ -4131,7 +4131,11 @@ describe('live tool outcomes (TAL-313)', () => {
       ])
     })
     sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Make"', usage: null }))
-    const streamId = String((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'build' }))).stream_id)
+    const response = await post(s, '/api/chat/start', { session_id: sid, message: 'build' })
+    const start = await json(response)
+    expect(response.status, JSON.stringify(start)).toBe(200)
+    expect(start.stream_id).toBeTypeOf('string')
+    const streamId = String(start.stream_id)
     // Redacted like every string that leaves the server.
     const view = { stdout: 'built\nok', stderr: 'warning: deprecated\nAuthorization: Bearer synthe...cdef', exit_code: 2 }
     const completes = (frames: SseFrame[]) => frames.filter((f) => f.event === 'tool_complete').map((f) => (f.data as Json).result_view)
