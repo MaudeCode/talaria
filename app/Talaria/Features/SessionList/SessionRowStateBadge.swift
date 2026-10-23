@@ -3,10 +3,11 @@ import TalariaKit
 
 struct SessionRowStateBadge: View {
     let badge: SessionRowStateBadgeKind
+    var font = AppFont.caption2(weight: .semibold)
 
     var body: some View {
         Text(badge.title)
-            .font(AppFont.caption2(weight: .semibold))
+            .font(font)
             .foregroundStyle(badge.tint)
             .padding(.horizontal, 5)
             .padding(.vertical, 2)

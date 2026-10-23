@@ -1,10 +1,19 @@
 import SwiftUI
 import TalariaKit
 
+/// How a session row lays out: the regular list row, or a run card for the Duo's tent pose (TAL-1460).
+enum SessionRowStyle: Equatable {
+    case regular
+    case monitor(ChatActiveRunStatusPresentation)
+}
+
 struct SessionRowView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .caption2) private var pinnedIconSize: CGFloat = 11
     @ScaledMetric(relativeTo: .body) private var verticalPadding: CGFloat = 8
+    /// Two run cards fill the outer display's landscape list.
+    @ScaledMetric(relativeTo: .title2) private var monitorMinimumHeight: CGFloat = 150
+    @ScaledMetric(relativeTo: .title2) private var monitorIconSize: CGFloat = 36
 
     let session: SessionSummary
     var showsMessageCount = true
@@ -16,8 +25,74 @@ struct SessionRowView: View {
     /// The search text the excerpt is highlighted against.
     var searchText = ""
     var pendingChange: PendingResourceChange? = nil
+    var style = SessionRowStyle.regular
 
     var body: some View {
+        switch style {
+        case .regular:
+            regularRow
+                .transition(.opacity)
+        case .monitor(let runStatus):
+            if runStatus.runStartedAt != nil {
+                // The elapsed time is text, so redraw it each second.
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    monitorRow(runStatus, now: context.date)
+                }
+                .transition(.opacity)
+            } else {
+                monitorRow(runStatus, now: .now)
+                    .transition(.opacity)
+            }
+        }
+    }
+
+    /// Title at `.title2`, phase and elapsed time at `.title3`, the provider icon, and "Needs you" while the run waits.
+    private func monitorRow(_ runStatus: ChatActiveRunStatusPresentation, now: Date) -> some View {
+        // No list status label names the agent.
+        let phase = runStatus.label(agentName: "")
+        let elapsed = runStatus.elapsedTime(now: now)
+        return HStack(alignment: .center, spacing: 14) {
+            if let provider = session.modelProvider {
+                ProviderIconView(providerID: provider, label: provider, size: monitorIconSize)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(displayTitle)
+                    .font(AppFont.title2(weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text(phase)
+                    if let elapsed {
+                        Text(elapsed)
+                            .monospacedDigit()
+                    }
+                }
+                .font(AppFont.title3())
+                .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if runStatus.isAwaitingUser {
+                SessionRowStateBadge(badge: .needsYou, font: AppFont.headline(weight: .semibold))
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 16)
+        .frame(minHeight: monitorMinimumHeight, alignment: .center)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            [displayTitle, phase, runStatus.accessibilityElapsedTime(now: now), runStatus.isAwaitingUser ? SessionRowStateBadgeKind.needsYou.title : nil]
+                .compactMap { $0 }
+                .joined(separator: ", ")
+        )
+        .accessibilityIdentifier("session-run-card")
+    }
+
+    private var regularRow: some View {
         HStack(alignment: .top, spacing: 10) {
             if SessionRowPresentation.isActiveStreaming(session) {
                 ActiveSessionStreamingIndicator()
@@ -247,6 +322,7 @@ struct SessionRowView: View {
 enum SessionRowStateBadgeKind: String, Identifiable {
     case streaming
     case cached
+    case needsYou
 
     var id: String { rawValue }
 
@@ -256,6 +332,8 @@ enum SessionRowStateBadgeKind: String, Identifiable {
             return String(localized: "Live")
         case .cached:
             return String(localized: "Cached")
+        case .needsYou:
+            return String(localized: "Needs you")
         }
     }
 
@@ -265,6 +343,8 @@ enum SessionRowStateBadgeKind: String, Identifiable {
             return .green
         case .cached:
             return .orange
+        case .needsYou:
+            return .red
         }
     }
 }

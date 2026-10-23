@@ -36,6 +36,43 @@ struct SessionListRowActions {
     let createProject: (SessionSummary) -> Void
     let refreshProjects: () -> Void
     let export: (SessionSummary, SessionExportFormat) -> Void
+    /// Stops a run card's live run (TAL-1460).
+    let stopRun: (SessionSummary) -> Void
+}
+
+/// Reads the hinge for the session list root, the only place the App does (TAL-1460). The UI fixture's tent pose
+/// stands in for it, since no simulator pose opens the hinge with the outer display active.
+struct SessionListHingeReader: ViewModifier {
+    @Binding var status: SessionRunMonitor.HingeStatus?
+
+    func body(content: Content) -> some View {
+        if Self.forcesTentHinge {
+            content.onAppear { status = .partiallyOpen }
+        } else if #available(iOS 27.1, *) {
+            content.onHingeChange { _, context in
+                status = context.hinge.map { Self.status($0.status) }
+            }
+        } else {
+            content
+        }
+    }
+
+    private static var forcesTentHinge: Bool {
+        #if DEBUG
+        UITestFixtureEnvironment.forcesTentHinge
+        #else
+        false
+        #endif
+    }
+
+    @available(iOS 27.1, *)
+    private static func status(_ status: DeviceHinge.Status) -> SessionRunMonitor.HingeStatus {
+        switch status {
+        case .partiallyOpen: .partiallyOpen
+        case .fullyOpen: .fullyOpen
+        default: .closed
+        }
+    }
 }
 
 enum SessionListMotion {
@@ -57,6 +94,11 @@ enum SessionListMotion {
 
     static func disclosureContentTransition(reduceMotion: Bool) -> AnyTransition {
         reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top))
+    }
+
+    /// Rows switching between list rows and run cards (TAL-1460): Reduce Motion crossfades them in place.
+    static func rowStyleAnimation(reduceMotion: Bool) -> Animation {
+        reduceMotion ? .easeInOut(duration: 0.2) : .snappy(duration: 0.24, extraBounce: 0)
     }
 
     static func toastTransition(reduceMotion: Bool) -> AnyTransition {

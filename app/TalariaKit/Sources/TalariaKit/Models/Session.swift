@@ -300,6 +300,30 @@ public enum SessionSourceKind: String, Sendable, Hashable {
     }
 }
 
+/// The server's summary of the prompts waiting on the user in a session (`attention`): approvals outrank clarify
+/// questions. A kind this build does not know decodes as `.other`.
+public struct SessionAttention: Decodable, Equatable, Hashable, Sendable {
+    public enum Kind: String, Sendable, Hashable {
+        case approval, clarify, other
+    }
+
+    public let kind: Kind
+    public let count: Int?
+
+    public init(kind: Kind, count: Int? = nil) {
+        self.kind = kind
+        self.count = count
+    }
+
+    enum CodingKeys: String, CodingKey { case kind, count }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        kind = container.decodeLossyStringIfPresent(forKey: .kind).map { Kind(rawValue: $0) ?? .other } ?? .other
+        count = container.decodeLossyIntIfPresent(forKey: .count)
+    }
+}
+
 public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
     public var id: String {
         if let sessionId, !sessionId.isEmpty {
@@ -334,7 +358,8 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
     public let outputTokens: Int?
     public let estimatedCost: Double?
     public let activeStreamId: String?
-    public let isStreaming: Bool?
+    /// Settable so the list can show a run the user stopped as stopped before the server agrees (TAL-1460).
+    public internal(set) var isStreaming: Bool?
     public let isCliSession: Bool?
     let userMessageCount: Int?
     let hasPendingUserMessage: Bool?
@@ -360,6 +385,8 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
     /// Server-redacted excerpt around the content hit; only `/api/sessions/search`
     /// rows with `match_type == "content"` carry it, and older servers omit it.
     public let matchPreview: String?
+    /// The approval or clarify prompt waiting on the user (TAL-1460); nil when none waits or the server is older.
+    public let attention: SessionAttention?
 
     public init(
         sessionId: String? = nil,
@@ -402,7 +429,8 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         canDelete: Bool? = nil,
         canDuplicate: Bool? = nil,
         matchType: String? = nil,
-        matchPreview: String? = nil
+        matchPreview: String? = nil,
+        attention: SessionAttention? = nil
     ) {
         self.sessionId = sessionId
         self.title = title
@@ -445,6 +473,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         self.canDuplicate = canDuplicate
         self.matchType = matchType
         self.matchPreview = matchPreview
+        self.attention = attention
     }
 
     enum CodingKeys: String, CodingKey {
@@ -456,7 +485,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         case activeStreamId, isStreaming, isCliSession
         case userMessageCount, hasPendingUserMessage, pendingStartedAt, worktreePath
         case sourceTag, rawSource, sessionSource, sourceLabel, sourceKind
-        case parentSessionId, relationshipType, readOnly, canBranch, canPin, canArchive, canDelete, canDuplicate, matchType, matchPreview
+        case parentSessionId, relationshipType, readOnly, canBranch, canPin, canArchive, canDelete, canDuplicate, matchType, matchPreview, attention
     }
 
     /// Lossy field by field, like `SessionDetail` and `ProjectSummary` already
@@ -512,6 +541,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         canDuplicate = container.decodeLossyBoolIfPresent(forKey: .canDuplicate)
         matchType = container.decodeLossyStringIfPresent(forKey: .matchType)
         matchPreview = container.decodeLossyStringIfPresent(forKey: .matchPreview)
+        attention = try? container.decodeIfPresent(SessionAttention.self, forKey: .attention)
     }
 
     /// Decodes a session array a row at a time, so one unreadable row costs that
@@ -583,6 +613,8 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         canDuplicate = detail.canDuplicate
         matchType = nil
         matchPreview = nil
+        // The full session carries no `attention`; the next list load brings it back.
+        attention = nil
     }
 
     /// Mirrors all stored fields so local title patches preserve session-list metadata.
@@ -629,7 +661,8 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
             canDelete: canDelete,
             canDuplicate: canDuplicate,
             matchType: matchType,
-            matchPreview: matchPreview
+            matchPreview: matchPreview,
+            attention: attention
         )
     }
 }
@@ -699,7 +732,8 @@ extension SessionSummary {
             canDelete: canDelete ?? row.canDelete,
             canDuplicate: canDuplicate ?? row.canDuplicate,
             matchType: matchType ?? row.matchType,
-            matchPreview: matchPreview ?? row.matchPreview
+            matchPreview: matchPreview ?? row.matchPreview,
+            attention: attention ?? row.attention
         )
     }
 

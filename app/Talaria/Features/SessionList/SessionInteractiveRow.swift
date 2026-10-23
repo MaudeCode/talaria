@@ -1,8 +1,14 @@
 import SwiftUI
 import TalariaKit
 
+extension EnvironmentValues {
+    /// The Duo's tent pose holds (TAL-1460): running and waiting rows render as run cards.
+    @Entry var sessionRowsMonitorRuns = false
+}
+
 struct SessionInteractiveRow: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.sessionRowsMonitorRuns) private var monitorsRuns
     let viewModel: SessionListViewModel
     let session: SessionSummary
     let showsMessageCount: Bool
@@ -12,6 +18,52 @@ struct SessionInteractiveRow: View {
     var searchText = ""
 
     var body: some View {
+        rowContent
+            .id(session.id)
+            // While picking chats the checkmarks carry selection, so the open chat stops reading as selected.
+            .sidebarRow(isSelected: !viewModel.isSelectingSessions && session.sessionId == selectedSessionID)
+            .transition(SessionListMotion.sessionRowTransition(reduceMotion: reduceMotion))
+            .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                sessionLeadingSwipeActions(for: session)
+            }
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                sessionTrailingSwipeActions(for: session)
+            }
+            .contextMenu {
+                if !viewModel.isSelectingSessions {
+                    SessionRowContextMenu(
+                        session: session,
+                        projects: viewModel.projects,
+                        isViewingCachedData: viewModel.isViewingCachedData,
+                        isRenamingSession: viewModel.isMutating(session),
+                        isCreatingProject: viewModel.isCreatingProject,
+                        isMovingSession: viewModel.isMutating(session),
+                        isLoadingProjects: viewModel.isLoadingProjects,
+                        isMutating: viewModel.isMutating(session),
+                        pendingChange: viewModel.pendingChange(for: session),
+                        actions: actions
+                    )
+                }
+            }
+    }
+
+    /// A run card keeps Stop beside the button that opens the chat, so VoiceOver reaches it and tapping it stops the
+    /// run instead of opening the chat.
+    @ViewBuilder
+    private var rowContent: some View {
+        if monitorsRuns, let runStatus = SessionRunMonitor.runStatus(for: session) {
+            HStack(spacing: 12) {
+                openButton(style: .monitor(runStatus))
+                if !runStatus.isAwaitingUser {
+                    stopButton
+                }
+            }
+        } else {
+            openButton(style: .regular)
+        }
+    }
+
+    private func openButton(style: SessionRowStyle) -> some View {
         Button {
             if viewModel.isSelectingSessions {
                 viewModel.toggleSelection(session)
@@ -33,7 +85,8 @@ struct SessionInteractiveRow: View {
                     isViewingCachedData: viewModel.isViewingCachedData,
                     matchPreview: viewModel.contentMatchPreview(for: session, searchText: searchText),
                     searchText: searchText,
-                    pendingChange: viewModel.pendingChange(for: session)
+                    pendingChange: viewModel.pendingChange(for: session),
+                    style: style
                 )
             }
             .contentShape(Rectangle())
@@ -41,32 +94,22 @@ struct SessionInteractiveRow: View {
         .buttonStyle(.plain)
         .disabled(viewModel.isSelectingSessions && !isSelectable)
         .accessibilityAddTraits(viewModel.isSelectingSessions && viewModel.isSelected(session) ? .isSelected : [])
-        .id(session.id)
-        // While picking chats the checkmarks carry selection, so the open chat stops reading as selected.
-        .sidebarRow(isSelected: !viewModel.isSelectingSessions && session.sessionId == selectedSessionID)
-        .transition(SessionListMotion.sessionRowTransition(reduceMotion: reduceMotion))
-        .swipeActions(edge: .leading, allowsFullSwipe: false) {
-            sessionLeadingSwipeActions(for: session)
+    }
+
+    private var stopButton: some View {
+        Button {
+            actions.stopRun(session)
+        } label: {
+            Label("Stop", systemImage: "stop.fill")
+                .font(AppFont.title3(weight: .semibold))
+                .foregroundStyle(viewModel.isSelectingSessions || viewModel.isViewingCachedData ? Color.secondary : Color.red)
         }
-        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            sessionTrailingSwipeActions(for: session)
-        }
-        .contextMenu {
-            if !viewModel.isSelectingSessions {
-                SessionRowContextMenu(
-                    session: session,
-                    projects: viewModel.projects,
-                    isViewingCachedData: viewModel.isViewingCachedData,
-                    isRenamingSession: viewModel.isMutating(session),
-                    isCreatingProject: viewModel.isCreatingProject,
-                    isMovingSession: viewModel.isMutating(session),
-                    isLoadingProjects: viewModel.isLoadingProjects,
-                    isMutating: viewModel.isMutating(session),
-                    pendingChange: viewModel.pendingChange(for: session),
-                    actions: actions
-                )
-            }
-        }
+        .buttonStyle(.bordered)
+        .controlSize(.large)
+        .tint(.red)
+        .disabled(viewModel.isSelectingSessions || viewModel.isViewingCachedData)
+        .accessibilityIdentifier("session-run-stop")
+        .padding(.trailing, 12)
     }
 
     private var isSelectable: Bool {

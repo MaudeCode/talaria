@@ -89,7 +89,7 @@ final class SessionListHostedTests: XCTestCase {
         let viewModel = SessionListViewModel(server: server, client: APIClient(baseURL: server, session: URLSession(configuration: configuration)))
         _ = await viewModel.load()
         let session = try XCTUnwrap(viewModel.sessions.first)
-        let actions = SessionListRowActions(retryLoad: {}, open: { _ in }, togglePinned: { _ in }, archive: { _ in }, delete: { _ in }, rename: { _ in }, duplicate: { _ in }, move: { _, _ in }, createProject: { _ in }, refreshProjects: {}, export: { _, _ in })
+        let actions = SessionListRowActions(retryLoad: {}, open: { _ in }, togglePinned: { _ in }, archive: { _ in }, delete: { _ in }, rename: { _ in }, duplicate: { _ in }, move: { _, _ in }, createProject: { _ in }, refreshProjects: {}, export: { _, _ in }, stopRun: { _ in })
         let window = try hostWindow(SessionInteractiveRow(viewModel: viewModel, session: session, showsMessageCount: false, showsWorkspace: false, selectedSessionID: nil, actions: actions))
         let before = XCTAttachment(image: UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
             window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
@@ -932,6 +932,108 @@ extension SessionListHostedTests {
             XCTAssertEqual(HostedAccessibility.labels(in: window), [title], "\(reason)")
             attachHostedScreenshot(window, name: "cached-data-banner-\(reason)")
         }
+    }
+
+    /// The Duo propped like a tent: the running chats become run cards with Stop, the waiting one says it needs you, the
+    /// idle ones keep their list rows, and Stop shows the run stopped before the server answers (TAL-1460). The hinge is the
+    /// fixture's; no hinge API runs in tests.
+    func testTentPoseShowsRunCardsAndStopsARunAtOnce() async throws {
+        let titles = UITestFixtureURLProtocol.monitorSessionTitles
+        let (fixture, window) = try hostRunMonitorList(
+            [UITestFixtureEnvironment.tentHingeArgument, UITestFixtureEnvironment.holdChatCancelArgument],
+            size: HostedSize.duoOuterLandscape,
+            verticalSizeClass: .compact
+        )
+        let firstCard = try await requireElement(in: window, "The first running chat shows no run card") { self.isRunCard($0, titled: titles[0]) }
+        let secondCard = try await requireElement(in: window, "The second running chat shows no run card") { self.isRunCard($0, titled: titles[1]) }
+        attachHostedScreenshot(window, name: "tent-run-monitor")
+        XCTAssertTrue(firstCard.accessibilityLabel?.hasPrefix("\(titles[0]), Working, running for 1 minute") == true, firstCard.accessibilityLabel ?? "")
+        XCTAssertTrue(secondCard.accessibilityLabel?.hasPrefix("\(titles[1]), Working, running for 2 minutes") == true, secondCard.accessibilityLabel ?? "")
+        XCTAssertGreaterThanOrEqual(firstCard.accessibilityFrame.height, 150, "A run card reads from arm's length")
+        let stops = HostedAccessibility.elements(in: window).filter { HostedAccessibility.identifier(of: $0) == "session-run-stop" }
+        XCTAssertEqual(stops.map(\.accessibilityLabel), ["Stop", "Stop"], "Each running card offers Stop")
+        let firstStop = try XCTUnwrap(stops.first { firstCard.accessibilityFrame.minY...firstCard.accessibilityFrame.maxY ~= $0.accessibilityFrame.midY })
+
+        HostedAccessibility.activate(firstStop)
+        let held = await awaitCondition {
+            UITestFixtureHold.shared.pendingRequests.contains {
+                $0.url?.path == "/api/chat/cancel" && $0.url?.query?.contains(UITestFixtureURLProtocol.monitorStreamID(1)) == true
+            }
+        }
+        XCTAssertTrue(held, "Stop sent no stop request for the first card's run")
+        let cardGone = await awaitNoElement(in: window, timeout: 2) { self.isRunCard($0, titled: titles[0]) }
+        XCTAssertTrue(cardGone, "The stopped chat must leave its run card before the server answers")
+        XCTAssertEqual(UITestFixtureHold.shared.pendingCount, 1, "The stop request is still unanswered")
+        attachHostedScreenshot(window, name: "tent-run-monitor-stopped")
+
+        fixture.releaseHeldLoads()
+        // The server lists it with the idle chats again.
+        _ = try await scrollList(in: window, toFind: "The stopped chat did not return to its list row") {
+            $0.accessibilityLabel?.hasPrefix(titles[0]) == true && HostedAccessibility.identifier(of: $0) != "session-run-card"
+        }
+        window.firstView(ofType: UICollectionView.self).map { $0.setContentOffset(CGPoint(x: 0, y: -$0.adjustedContentInset.top), animated: false) }
+
+        let waiting = try await scrollList(in: window, toFind: "The waiting chat shows no run card") { self.isRunCard($0, titled: titles[2]) }
+        XCTAssertTrue(waiting.accessibilityLabel?.hasPrefix("\(titles[2]), Needs approval, running for 3 minutes") == true, waiting.accessibilityLabel ?? "")
+        XCTAssertTrue(waiting.accessibilityLabel?.hasSuffix(", Needs you") == true, waiting.accessibilityLabel ?? "")
+        let idle = try await scrollList(in: window, toFind: "The idle chat lost its list row") {
+            $0.accessibilityLabel?.hasPrefix(self.sessionTitle) == true && HostedAccessibility.identifier(of: $0) != "session-run-card"
+        }
+        XCTAssertLessThan(idle.accessibilityFrame.height, 150)
+        attachHostedScreenshot(window, name: "tent-run-monitor-idle-rows")
+    }
+
+    /// Without the tent pose the running chats keep their list rows (TAL-1460).
+    func testRunningChatsKeepListRowsWithoutTheTentHinge() async throws {
+        let (_, window) = try hostRunMonitorList([], size: HostedSize.duoOuterLandscape, verticalSizeClass: .compact)
+        try await assertRunningChatsKeepListRows(in: window)
+    }
+
+    /// The outer display in portrait never shows run cards, whatever the hinge says (TAL-1460).
+    func testDuoOuterPortraitKeepsListRowsWithTheHingePartlyOpen() async throws {
+        let (_, window) = try hostRunMonitorList([UITestFixtureEnvironment.tentHingeArgument], size: HostedSize.duoOuter, verticalSizeClass: .regular)
+        try await assertRunningChatsKeepListRows(in: window)
+    }
+
+    private func hostRunMonitorList(
+        _ scenario: [String],
+        size: CGSize,
+        verticalSizeClass: UIUserInterfaceSizeClass
+    ) throws -> (FixtureApp, UIWindow) {
+        let fixture = try FixtureApp([UITestFixtureEnvironment.runMonitorArgument] + scenario, for: self)
+        let window = try hostWindow(fixture.sessionList(), size: size) {
+            $0.horizontalSizeClass = .compact
+            $0.verticalSizeClass = verticalSizeClass
+        }
+        return (fixture, window)
+    }
+
+    private func assertRunningChatsKeepListRows(in window: UIWindow, file: StaticString = #filePath, line: UInt = #line) async throws {
+        let title = UITestFixtureURLProtocol.monitorSessionTitles[0]
+        _ = try await requireElement(in: window, "The running chat lost its list row", file: file, line: line) {
+            $0.accessibilityLabel?.hasPrefix("\(title), Streaming") == true
+        }
+        let monitorElements = HostedAccessibility.elements(in: window).filter {
+            ["session-run-card", "session-run-stop"].contains(HostedAccessibility.identifier(of: $0))
+        }
+        XCTAssertTrue(monitorElements.isEmpty, "Run cards showed outside the tent pose", file: file, line: line)
+    }
+
+    private func isRunCard(_ element: NSObject, titled title: String) -> Bool {
+        HostedAccessibility.identifier(of: element) == "session-run-card" && element.accessibilityLabel?.hasPrefix("\(title), ") == true
+    }
+
+    /// Scrolls the list a screen at a time until `match` is on screen: the list builds only the rows near the screen.
+    private func scrollList(in window: UIWindow, toFind message: String, where rawMatch: @escaping (NSObject) -> Bool) async throws -> NSObject {
+        let list = try XCTUnwrap(window.firstView(ofType: UICollectionView.self), "No list")
+        let match = { (element: NSObject) in rawMatch(element) && window.bounds.contains(element.accessibilityFrame) }
+        for _ in 0..<8 {
+            if let found = await awaitElement(in: window, timeout: 1, where: match) { return found }
+            let maxY = max(0, list.contentSize.height - list.bounds.height + list.adjustedContentInset.bottom)
+            list.setContentOffset(CGPoint(x: 0, y: min(maxY, list.contentOffset.y + list.bounds.height * 0.6)), animated: false)
+            settle()
+        }
+        return try XCTUnwrap(HostedAccessibility.elements(in: window).first(where: match), message)
     }
 
     /// Select Chats is off while the list shows saved rows. A removed list row can linger in the accessibility tree, so

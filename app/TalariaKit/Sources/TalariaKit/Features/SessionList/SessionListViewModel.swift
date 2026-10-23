@@ -50,6 +50,9 @@ public final class SessionListViewModel {
     public private(set) var sessions: [SessionSummary] = [] {
         didSet { invalidateSessionPresentation() }
     }
+    /// The live streams the user stopped from a run card (TAL-1460). Their rows show the run stopped until the server's
+    /// rows stop listing the stream as live.
+    private(set) var stoppedStreamIDs: Set<String> = []
     public private(set) var isLoading = false
     public private(set) var isCreatingSession = false
     public var isCreatingProject: Bool { pendingChanges["project:new"].map { !$0.requiresRefresh } ?? false }
@@ -934,6 +937,58 @@ public final class SessionListViewModel {
         }
     }
 
+    /// Stops a run card's live stream with the chat's Stop request (TAL-1460): the row shows the run stopped at once.
+    /// A refusal rolls back with the server's error; an unknown outcome reloads the list, and rolls back only if the
+    /// server still lists the run as live.
+    public func stopRun(_ session: SessionSummary, modelContext: ModelContext? = nil) async {
+        guard !isViewingCachedData, session.isStreaming == true, let streamID = Self.nonEmpty(session.activeStreamId),
+              stoppedStreamIDs.insert(streamID).inserted else { return }
+        actionErrorMessage = nil
+        sessions = showingStoppedRuns(sessions)
+        do {
+            let response = try await client.cancelChat(streamID: streamID)
+            guard response.ok != false else {
+                rollBackStop(of: streamID)
+                actionErrorMessage = response.error ?? String(localized: "The server did not stop the run.")
+                return
+            }
+        } catch {
+            guard !APIError.isCancellation(error) else {
+                rollBackStop(of: streamID)
+                return
+            }
+            _ = await load(modelContext: modelContext)
+            // The reload drops the stream from the set once the server no longer lists it as live.
+            if stoppedStreamIDs.contains(streamID) {
+                rollBackStop(of: streamID)
+                actionErrorMessage = error.localizedDescription
+            }
+            return
+        }
+        _ = await load(modelContext: modelContext)
+    }
+
+    /// `rows` with every run the user stopped shown stopped.
+    private func showingStoppedRuns(_ rows: [SessionSummary]) -> [SessionSummary] {
+        guard !stoppedStreamIDs.isEmpty else { return rows }
+        return rows.map { row in
+            guard let streamID = row.activeStreamId, stoppedStreamIDs.contains(streamID) else { return row }
+            var stopped = row
+            stopped.isStreaming = false
+            return stopped
+        }
+    }
+
+    private func rollBackStop(of streamID: String) {
+        stoppedStreamIDs.remove(streamID)
+        sessions = sessions.map { row in
+            guard row.activeStreamId == streamID else { return row }
+            var running = row
+            running.isStreaming = true
+            return running
+        }
+    }
+
     static let bulkActionLimit = 200
 
     public var selectedSessionCount: Int { selectedSessionsByID.count }
@@ -1552,10 +1607,12 @@ public final class SessionListViewModel {
         animation: Animation?,
         claimCountAtStart: Int = Int.max
     ) {
-        let reconciledSessions = reconcilingClaimedRows(
+        // A stop is confirmed once the server's rows no longer list its stream as live.
+        stoppedStreamIDs.formIntersection(newSessions.filter { $0.isStreaming == true }.compactMap(\.activeStreamId))
+        let reconciledSessions = showingStoppedRuns(reconcilingClaimedRows(
             in: newSessions,
             claimCountAtStart: claimCountAtStart
-        )
+        ))
 
         guard let animation else {
             sessions = reconciledSessions
