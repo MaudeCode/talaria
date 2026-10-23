@@ -339,6 +339,19 @@ describe('supervisor loss', () => {
     expect(await bindable(port)).toBe(true)
   })
 
+  it('keeps serving a worker run directly without a supervisor, and stops it on SIGTERM', async () => {
+    const root = tempRoot('talaria-supervise-direct-')
+    const port = await freePort()
+    const worker = spawn(process.execPath, [DIST_BIN, 'serve', '--host', '127.0.0.1', String(port)], { env: { ...isolatedEnv(root), TALARIA_WEB_WORKER: '1' }, stdio: 'ignore' })
+    owned.push(worker.pid!)
+    const exited = new Promise<number | null>((resolve) => worker.once('exit', resolve))
+    const healthy = () => fetch(`http://127.0.0.1:${String(port)}/health`, { signal: AbortSignal.timeout(1000) }).then((res) => res.ok, () => false)
+    expect(await until(healthy, 15_000)).toBe(true)
+    worker.kill('SIGTERM')
+    expect(await exited).toBe(0)
+    expect(await bindable(port)).toBe(true)
+  })
+
   it('retires a worker still starting when its supervisor is killed abruptly, and a replacement binds the port', async () => {
     const root = tempRoot('talaria-supervise-startup-')
     const port = await freePort()

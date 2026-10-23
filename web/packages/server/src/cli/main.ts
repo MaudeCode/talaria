@@ -38,8 +38,9 @@ async function serve(args: string[]): Promise<number> {
   if (process.env[WORKER_ENV] !== '1') return supervise({ command: [...serveCommand, ...args], env: process.env, log, packageRoot: webRoot, stateDir: config.stateDir })
   // Consumed here: the worker's own children (terminals, sidecar) are not supervised workers.
   Reflect.deleteProperty(process.env, WORKER_ENV)
-  // Before any startup work: a worker whose supervisor is gone must not keep, or go on to take, the port.
-  const retirement = watchRetirement({ log, supervised: true })
+  // Before any startup work: a worker whose supervisor is gone must not keep, or go on to take, the port. A channel
+  // that existed is `null` once its supervisor died; a worker run directly (contract probe) never had one.
+  const retirement = watchRetirement({ log, supervised: process.channel !== undefined })
   const sidecar = launchSidecar({ env: config.env, hermesHome: config.hermesHome, webRoot, home: config.homeDir, log })
   // Handle rejection immediately: dependency initialization and listening must not wait for Agent imports.
   const starting = sidecar?.start().then(
