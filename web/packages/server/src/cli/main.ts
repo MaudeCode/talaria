@@ -14,7 +14,7 @@ import { loadStartupEnv } from './dotenv.js'
 import { parseBootstrapArgs, runBootstrap } from './launcher.js'
 import { runCtl } from './ctl.js'
 import { resolveWebRoot } from './web-root.js'
-import { supervise, WORKER_ENV } from './supervise.js'
+import { supervise, watchRetirement, WORKER_ENV } from './supervise.js'
 
 const webRoot = process.env.TALARIA_WEB_ROOT ?? resolveWebRoot(import.meta.dirname)
 const log = (line: string): void => { console.log(line) }
@@ -36,6 +36,11 @@ async function serve(args: string[]): Promise<number> {
   applyServeArgs(args)
   const config = loadConfig({ webRoot })
   if (process.env[WORKER_ENV] !== '1') return supervise({ command: [...serveCommand, ...args], env: process.env, log, packageRoot: webRoot, stateDir: config.stateDir })
+  // Consumed here: the worker's own children (terminals, sidecar) are not supervised workers.
+  Reflect.deleteProperty(process.env, WORKER_ENV)
+  // Before any startup work: a worker whose supervisor is gone must not keep, or go on to take, the port. A channel
+  // that existed is `null` once its supervisor died; a worker run directly (contract probe) never had one.
+  const retirement = watchRetirement({ log, supervised: process.channel !== undefined })
   const sidecar = launchSidecar({ env: config.env, hermesHome: config.hermesHome, webRoot, home: config.homeDir, log })
   // Handle rejection immediately: dependency initialization and listening must not wait for Agent imports.
   const starting = sidecar?.start().then(
@@ -49,22 +54,24 @@ async function serve(args: string[]): Promise<number> {
   const deps = await createDeps({ webRoot, sidecar })
   // Every exit path (SIGINT/SIGTERM shutdown, `/api/shutdown`, self-update restart) reaps embedded terminals first.
   process.on('exit', () => { deps.updates.stopAutoApply(); deps.terminals.closeAll({ immediate: true }) })
-  process.once('SIGINT', () => { deps.updates.stopAutoApply() })
-  process.once('SIGTERM', () => { deps.updates.stopAutoApply() })
   // Renamed root profiles and the active profile's config must be known before the first request (Python read both
   // synchronously at startup); until then local-I/O gates fail closed.
   await deps.profiles.warmRootAliases()
   await Promise.resolve().then(() => deps.agentConfig.read(deps.profileHome(deps.activeProfile()))).catch(() => undefined)
   const app = createApp(deps)
-  const running = await startServer(app, deps.config)
+  const running = await startServer(app, deps.config, { signals: false })
+  retirement.attach(running.close)
   if (process.connected) process.send?.('ready')
   await starting
   await deps.relay.start()
-  deps.completions.start()
-  deps.hygiene.start()
-  deps.updates.startAutoApply()
-  await deps.gatewayRestarts.resume()
-  log(`  Then open:     ${running.scheme}://localhost:${running.port}`)
+  // A shutdown already stopped the background work; never restart it behind the close.
+  if (!retirement.retiring) {
+    deps.completions.start()
+    deps.hygiene.start()
+    deps.updates.startAutoApply()
+    await deps.gatewayRestarts.resume()
+    log(`  Then open:     ${running.scheme}://localhost:${running.port}`)
+  }
   await new Promise<void>(() => undefined)
   return 0
 }

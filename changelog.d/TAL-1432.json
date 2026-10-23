@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Talaria Web no longer gets stuck behind an old server process holding its port after its service is restarted or killed.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

@@ -282,6 +282,21 @@ describe('ctl', () => {
     expect(ctx.out[0]).toBe('● talaria-web — stopped')
   })
 
+  it('stop waits through an orderly shutdown longer than five seconds instead of killing the group', async () => {
+    const home = scratch()
+    const port = await freePort()
+    const drained = join(home, 'drained')
+    // Shutdown takes 6 s, inside the worker's 10 s bound and the supervisor's 15 s grace.
+    const script = `const http=require('node:http');const port=Number(process.argv[process.argv.indexOf('--host')+2]);const server=http.createServer((req,res)=>{res.setHeader('content-type','application/json');res.end(JSON.stringify({status:'ok',sessions:0,active_streams:0}))}).listen(port,'127.0.0.1');setInterval(()=>{},1000);process.on('SIGTERM',()=>{server.close();setTimeout(()=>{require('node:fs').writeFileSync(${JSON.stringify(drained)},'');process.exit(0)},6000)})`
+    const ctx = makeCtx(home, fakeServe(script))
+    expect(await runCtl(ctx, ['start', String(port)])).toBe(0)
+    stops.push(async () => { await runCtl(ctx, ['stop']) })
+    expect(await runCtl(ctx, ['stop'])).toBe(0)
+    expect(ctx.err).not.toContain('[ctl] Process did not exit after SIGTERM; sending SIGKILL')
+    expect(existsSync(drained)).toBe(true)
+    expect(ctx.out).toContain('[ctl] Stopped')
+  })
+
   it('stop, status, and logs resolve the daemon through the checkout .env like start does', async () => {
     const home = scratch()
     const port = await freePort()

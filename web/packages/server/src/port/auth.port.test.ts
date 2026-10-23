@@ -178,6 +178,27 @@ describe('orderly shutdown lands write-behind auth state', () => {
       await s.close()
     }
   })
+
+  it('a failed shutdown step still lands the pending session write, logs it, and exits non-zero', async () => {
+    const exit = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never)
+    const before = new Map(SIGNALS.map((name) => [name, process.listeners(name)]))
+    const s = await bootTestServer({ env: { HERMES_WEBUI_PASSWORD: 'correct horse battery' }, signals: true })
+    vi.spyOn(s.deps.hygiene, 'stop').mockRejectedValue(new Error('synthetic sweep failure'))
+    try {
+      const token = AuthStore.tokenFromCookieValue(s.deps.auth.createSession()) ?? ''
+      process.emit('SIGTERM', 'SIGTERM')
+      process.emit('SIGTERM', 'SIGTERM')
+      await vi.waitFor(() => { expect(exit).toHaveBeenCalledWith(1) })
+      expect(exit).toHaveBeenCalledTimes(1)
+      expect(JSON.parse(readFileSync(join(s.state, '.sessions.json'), 'utf8'))).toHaveProperty(token)
+      expect(s.logs).toContain('[webui] shutdown: retention sweep failed: synthetic sweep failure')
+      expect(s.logs).toContain('[webui] shutdown failed: shutdown incomplete: retention sweep')
+    } finally {
+      exit.mockRestore()
+      for (const name of SIGNALS) for (const listener of process.listeners(name)) if (!before.get(name)?.includes(listener)) process.off(name, listener)
+      await s.close().catch(() => undefined)
+    }
+  })
 })
 
 describe('authenticated stream budget', () => {
