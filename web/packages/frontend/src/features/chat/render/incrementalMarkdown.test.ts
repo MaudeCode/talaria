@@ -18,4 +18,19 @@ describe('incremental Markdown blocks', () => {
       expect(parse(text)).toEqual(parseMarkdownIntoBlocks(text))
     }
   })
+
+  it('settles blank tab lines while preserving tabs inside code blocks', () => {
+    const text = 'First.\n \t\nSecond.\n\t\n```text\ncode\n\t\nmore\n```\n\t\nAfter.'
+    const blocks = createIncrementalMarkdownParser()(text)
+    expect(blocks).toEqual(['First.', '\n \t\n', 'Second.', '\n\t\n', '```text\ncode\n\t\nmore\n```', '\n\t\n', 'After.'])
+    expect(blocks.join('')).toBe(text)
+  })
+
+  it.each(['    first\n\t\n    second', '```text\nfirst\n\t\nsecond\n```', '<span>\n\t\nfirst\n\t\n</span>'])('preserves blank tabs in code and HTML: %j', (text) => {
+    const parse = createIncrementalMarkdownParser()
+    for (let length = 0; length <= text.length; length += 1) {
+      const frame = text.slice(0, length)
+      expect(parse(frame)).toEqual(parseMarkdownIntoBlocks(frame))
+    }
+  })
 })

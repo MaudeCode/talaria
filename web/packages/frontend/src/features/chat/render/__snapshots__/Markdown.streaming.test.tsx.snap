@@ -289,6 +289,27 @@ exports[`converges to the static DOM and snapshot for references 1`] = `
 ]
 `;
 
+exports[`converges to the static DOM and snapshot for separators 1`] = `
+[
+  {
+    "tag": "P",
+    "text": "Intro.",
+  },
+  {
+    "tag": "P",
+    "text": "Second.",
+  },
+  {
+    "tag": "P",
+    "text": "After.",
+  },
+  {
+    "tag": "P",
+    "text": "More.",
+  },
+]
+`;
+
 exports[`converges to the static DOM and snapshot for tables 1`] = `
 [
   {

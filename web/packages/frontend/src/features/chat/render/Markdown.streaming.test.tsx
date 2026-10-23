@@ -4,9 +4,9 @@ import { render, screen, waitFor } from '@testing-library/react'
 import Markdown from './MarkdownRenderer'
 import fixtures from '../__fixtures__/streamingMarkdown'
 
-const { controlRender, parseInput } = vi.hoisted(() => ({ controlRender: vi.fn(), parseInput: vi.fn<(length: number) => void>() }))
+const { controlRender, parseInput, parserProbe } = vi.hoisted(() => ({ controlRender: vi.fn(), parseInput: vi.fn<(length: number) => void>(), parserProbe: { full: false } }))
 
-beforeEach(() => { vi.clearAllMocks() })
+beforeEach(() => { vi.clearAllMocks(); parserProbe.full = false })
 
 afterEach(() => { Reflect.deleteProperty(HTMLElement.prototype, 'scrollTo') })
 
@@ -21,7 +21,7 @@ vi.mock('streamdown', async (importOriginal) => {
     parseMarkdownIntoBlocks,
     // Count the input to the real parser, including the default pre-optimization path.
     Streamdown: (props: React.ComponentProps<typeof actual.Streamdown>) => (
-      <actual.Streamdown {...props} parseMarkdownIntoBlocksFn={props.parseMarkdownIntoBlocksFn ?? parseMarkdownIntoBlocks} />
+      <actual.Streamdown {...props} parseMarkdownIntoBlocksFn={parserProbe.full ? parseMarkdownIntoBlocks : props.parseMarkdownIntoBlocksFn ?? parseMarkdownIntoBlocks} />
     ),
     // Observe a real control's context subscription without replacing Streamdown's provider or parser.
     CodeBlockCopyButton: memo(function CopyButtonProbe(props: React.ComponentProps<typeof actual.CodeBlockCopyButton>) {
@@ -32,8 +32,23 @@ vi.mock('streamdown', async (importOriginal) => {
   }
 })
 
-it('lexes a 200-paragraph reply in 400 increments with a bounded character budget', () => {
-  const text = Array.from({ length: 200 }, (_, i) => `Paragraph ${i}: a streamed reply with **formatted** content.\n\n`).join('')
+it('renders blank tab separators like the original streaming parser at every character', () => {
+  const text = 'First.\r\n \t\r\nSecond with **formatting**.\n\t\nThird.'
+  const view = render(<Markdown text="" streaming />)
+  for (let length = 1; length <= text.length; length += 1) {
+    const frame = text.slice(0, length)
+    view.rerender(<Markdown text={frame} streaming />)
+    parserProbe.full = true
+    const original = render(<Markdown text={frame} streaming />)
+    parserProbe.full = false
+    // Streamdown's display:contents block wrappers differ when a tab separator starts settling.
+    expect([...view.container.querySelectorAll('p')].map((node) => node.outerHTML)).toEqual([...original.container.querySelectorAll('p')].map((node) => node.outerHTML))
+    original.unmount()
+  }
+})
+
+it.each(['\n\n', '\r\n\r\n', '\n  \n', '\r\n \t\r\n'])('lexes a 200-paragraph reply in 400 increments with a bounded character budget for %j', (separator) => {
+  const text = Array.from({ length: 200 }, (_, i) => `Paragraph ${i}: a streamed reply with **formatted** content.${separator}`).join('')
   const view = render(<Markdown text="" streaming />)
   for (let frame = 1; frame <= 400; frame += 1) {
     view.rerender(<Markdown text={text.slice(0, Math.ceil(text.length * frame / 400))} streaming />)

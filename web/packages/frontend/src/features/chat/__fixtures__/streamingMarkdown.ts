@@ -11,4 +11,5 @@ export default {
   partialMarkers: '- First\n\n1. Ordered\n\n123. Continued\n\nAfter.',
   inlineAcrossBlocks: 'Intro.\n\n*First\n\nSecond*\n\nAfter.',
   multilineReference: 'Intro.\n\n[Link][long label].\n\nAfter.\n\n[long\nlabel]: https://example.test',
+  separators: 'Intro.\r\n\r\nSecond.\r\n  \r\nAfter.\n  \nMore.',
 }
