@@ -631,7 +631,7 @@ export class GatewaySessions {
         terminal = true
         // A new claim may arrive while this turn's receipt is being read. Give it its own projection immediately.
         if (this.watches.get(target.key) === watch) this.watches.delete(target.key)
-        registry.retire(watch.stream)
+        registry.activeRuns.delete(watch.stream)
         await clearTools()
         const current = await this.call(target, { action: 'snapshot' })
         const rawReceipt = activeAdmission ? (await this.call(target, { action: 'receipt', admission_id: activeAdmission })).receipt : null

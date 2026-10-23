@@ -1,9 +1,9 @@
 /** Revision-owned transcript summaries and coordinates. No derived transcript is retained. */
 import { createHash } from 'node:crypto'
 import { str } from '../util.js'
-import { assistantAnchorSceneMessageRef, messageTurnId } from './anchor.js'
+import { assistantAnchorSceneMessageRef, messageTurnId, terminalStateOf } from './anchor.js'
 import { anchorMessageKey, isAnchorCandidate, keyMatches, type CompressionReference } from './compress.js'
-import { isConversationalAssistant, agentSteerText, ApiMessageSummary, isContextCompressionMarker, messageText, normalizeAssistantDisplay, normalizeUserDisplay, withAttachmentObjects } from './merge.js'
+import { isConversationalAssistant, agentRowKind, markerKind, finalAnswerOf, agentSteerText, ApiMessageSummary, isContextCompressionMarker, messageText, normalizeAssistantDisplay, normalizeUserDisplay, withAttachmentObjects } from './merge.js'
 import { isEmptyPartialActivityMessage, messageTimestamp, type Message, type Session } from './session.js'
 import { messageTodoSnapshot, tsFloat } from './todo.js'
 import { stateDbIdentityKeys, stateDbMessageKey } from './state-db-identity.js'
@@ -22,7 +22,8 @@ export class SessionPrefixIndex {
   private readonly replyRows: number[] = []
   readonly dependencies = new Map<string, { first: number; last: number }>()
   private readonly declarations = new Map<string, number[]>()
-  readonly turns = new Map<string, { first: number; last: number }>()
+  readonly turns = new Map<string, { first: number; last: number; terminalState?: string; activityTimestamp?: number }>()
+  private latestActivityTurnId: string | null = null
   readonly prompts = new Map<string, number>()
   readonly refCounts = new Map<string, number>()
   readonly identities = [new Set<string>(), new Set<string>()] as const
@@ -94,7 +95,10 @@ export class SessionPrefixIndex {
       } else if (raw.role === 'tool') answer(str(raw.tool_call_id || raw.tool_use_id))
       else if (raw.role === 'user' && Array.isArray(raw.content)) for (const part of raw.content) if (part && typeof part === 'object' && (part as Message).type === 'tool_result') answer(str((part as Message).tool_use_id))
       const span = this.turns.get(id)
-      this.turns.set(id, { first: span?.first ?? index, last: index })
+      const terminalState = raw._turn_id && raw.role === 'assistant' && !markerKind(raw) && !agentRowKind(raw) ? terminalStateOf(raw, finalAnswerOf(raw)) : span?.terminalState
+      const activityTimestamp = raw._turn_id ? Number(raw.timestamp) || 0 : span?.activityTimestamp
+      this.turns.set(id, { first: span?.first ?? index, last: index, ...(terminalState ? { terminalState } : {}), ...(activityTimestamp !== undefined ? { activityTimestamp } : {}) })
+      if (raw._turn_id) this.latestActivityTurnId = str(raw._turn_id)
       if (raw.role === 'user' && typeof raw._active_turn_token === 'string' && !this.prompts.has(raw._active_turn_token)) this.prompts.set(raw._active_turn_token, index)
       const ref = raw.role === 'assistant' ? assistantAnchorSceneMessageRef(raw) : ''
       if (ref) { this.refCounts.set(ref, (this.refCounts.get(ref) ?? 0) + 1); const positions = this.refs.get(ref) ?? []; positions.push(index); this.refs.set(ref, positions) }
@@ -160,6 +164,12 @@ export class SessionPrefixIndex {
   turnEnd(index: number): number { return (this.turns.get(this.turnId(index))?.last ?? index) + 1 }
   previousTurn(index: number): number { return this.turnStarts[Math.max(0, upperBound(this.turnStarts, index - 1) - 1)] ?? this.baseIndex }
   summary(end = this.baseIndex + this.length): Snapshot { return this.snapshots[Math.max(0, Math.min(this.length, end - this.baseIndex))]! }
+
+  activitySummary(turnId = this.latestActivityTurnId): { turnId: string; timestamp: number; terminalState: string } | null {
+    if (turnId === null) return null
+    const turn = this.turns.get(turnId)
+    return { turnId, timestamp: turn?.activityTimestamp ?? 0, terminalState: turn?.terminalState ?? 'no_response' }
+  }
 
   /** One candidate per turn, newest first, without reading or deriving the cached prefix. */
   *replyTurns(end: number, excluded: Set<string>): Generator<number> {

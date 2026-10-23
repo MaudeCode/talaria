@@ -14,10 +14,11 @@ import { z } from 'zod'
 import type { DocumentBackend } from './storage/backend.js'
 import { updateDocument } from './storage/document.js'
 import type { SessionActivityPhase } from '@maudecode/talaria-web-contracts'
-import { turnTerminalState } from './anchor.js'
 import type { BackgroundActivity } from './background-tasks.js'
 import type { ActiveRun, StreamRegistry } from './streams.js'
 import type { PendingPrompts } from './pending.js'
+import type { Session } from './session.js'
+import type { SessionPrefixIndex } from './prefix-index.js'
 import type { SessionStore } from './store.js'
 import { str } from '../util.js'
 
@@ -198,6 +199,7 @@ export interface RelayPublisherDeps {
   store: SessionStore
   presence: PresenceLeases
   background?: BackgroundActivity
+  activitySummary?: (session: Session) => ReturnType<SessionPrefixIndex['activitySummary']>
   profileHome: (profile: string) => string
   profilesMatch: (row: string | null | undefined, active: string | null | undefined) => boolean
   /** The profile's messageful Agent `state.db` sessions (`readImportableAgentSessionRows`). */
@@ -301,6 +303,10 @@ export class RelayPublisher {
         const path = `/v1/publishers/${encodeURIComponent(this.config.publisher_id)}/profiles/${encodeURIComponent(cfg.profile_id)}/sessions/${encodeURIComponent(sid)}/viewed`
         try {
           await this.put(path, JSON.stringify({ through: view.through }))
+          if (view.deleted && !await hasSessionData(this.deps.store, sid)) {
+            const revision = (await this.reserveRevisions(1))[0]!
+            await this.put(path.replace(/\/viewed$/, '/activity'), JSON.stringify({ eventId: `deleted:${view.deleted.id}`, revision, state: null }))
+          }
           accepted = true
         } catch (error) {
           if (!(error instanceof RelayHttpError) || error.retryable) throw error
@@ -316,9 +322,16 @@ export class RelayPublisher {
     }
   }
 
-  private nextRevision(): number {
-    this.lastRevision = Math.max(this.lastRevision + 1, Math.floor(this.deps.now() * 1000))
-    return this.lastRevision
+  private async reserveRevisions(count: number): Promise<number[]> {
+    return (await updateDocument(this.deps.documents, 'relay', 'revision', (raw) => {
+      let floor = Number.parseInt(str(raw), 10) || 0
+      const revisions = Array.from({ length: count }, () => {
+        this.lastRevision = Math.max(this.lastRevision + 1, floor + 1, Math.floor(this.deps.now() * 1000))
+        floor = this.lastRevision
+        return floor
+      })
+      return { value: `${String(this.lastRevision)}\n`, result: revisions }
+    }))
   }
 
   private sleep(seconds: number): Promise<void> {
@@ -375,27 +388,29 @@ export class RelayPublisher {
     for (const sid of backgroundIds) {
       if (bySession.has(sid) || !await hasSessionData(this.deps.store, sid)) continue
       const session = await this.deps.store.get(sid)
-      const latest = [...session.messages].reverse().find((message) => message._turn_id)
-      const terminal = latest ? turnTerminalState(session.messages, str(latest._turn_id)) : null
+      const latest = this.deps.activitySummary?.(session)
+      const terminal = latest?.terminalState ?? null
       const relay_phase = terminal === null ? undefined : terminal === 'completed' || terminal === 'tool_limit_reached' ? 'completed' : terminal === 'cancelled' ? 'cancelled' : 'failed'
-      bySession.set(sid, { session_id: sid, stream_id: str(latest?._turn_id), started_at: Number(latest?.timestamp) || 0, phase: 'settled', workspace: session.workspace, model: session.model, provider: session.model_provider, ephemeral: false,
+      bySession.set(sid, { session_id: sid, stream_id: latest?.turnId ?? '', started_at: latest?.timestamp ?? 0, phase: 'settled', workspace: session.workspace, model: session.model, provider: session.model_provider, ephemeral: false,
         ...(relay_phase ? { relay_phase, terminal_at: Number(latest?.timestamp) || session.updated_at } : {}) })
     }
     const alertEligible = this.alertEligibilitySupported ? !this.deps.presence.has(profile) : true
     const states: RelayState[] = []
     for (const [sid, run] of bySession) {
+      if (run.activity_parent_session_id) continue
       let session
       try { session = (await this.deps.store.get(sid, { metadataOnly: true })) } catch { continue }
       if (!this.deps.profilesMatch(session.profile, profile)) continue
-      if (!await hasSessionData(this.deps.store, sid)) continue
-      const revision = this.nextRevision()
+      const revision = 0
       let phase = run.relay_phase ?? 'running'
       if (!['completed', 'failed', 'cancelled'].includes(phase) && this.deps.pending.approvalPending(sid).pending) phase = 'waiting_for_approval'
       if (phase === 'running' && this.deps.pending.clarifyPending(sid).pending) phase = 'waiting_for_input'
       if (phase === 'running' && run.phase.endsWith('starting')) phase = 'starting'
       const snapshot = await this.deps.background?.snapshot(sid, session.profile, { ...(run.relay_phase ? { excludeStreamId: run.stream_id, terminalPhase: run.relay_phase as SessionActivityPhase } : {}) })
       if ([...this.deps.registry.activeRuns.values()].some((current) => current.session_id === sid && current.stream_id !== run.stream_id && current.started_at >= run.started_at)) { this.changed(); continue }
-      if (!await hasSessionData(this.deps.store, sid) || !this.deps.profilesMatch((await this.deps.store.get(sid, { metadataOnly: true })).profile, profile)) continue
+      try {
+        if (!this.deps.profilesMatch((await this.deps.store.get(sid, { metadataOnly: true })).profile, profile)) continue
+      } catch { continue }
       if (run.phase === 'settled' && !run.stream_id) phase = snapshot?.activity_phase ?? 'stale'
       // A finished run keeps the instant it ended, so a viewer who saw that turn covers it whenever the snapshot is built.
       const updatedAt = Math.floor((run.terminal_at ?? this.deps.now()) * 1000)
@@ -403,16 +418,13 @@ export class RelayPublisher {
       if (!alertEligible) state.alertEligible = false
       states.push(state)
     }
-    if (states.length) await updateDocument(this.deps.documents, 'relay', 'revision', (raw) => {
-      let floor = Number.parseInt(str(raw), 10) || 0
-      for (const state of states) {
-        state.revision = Math.max(state.revision, floor + 1)
+    if (states.length) {
+      const revisions = await this.reserveRevisions(states.length)
+      for (const [index, state] of states.entries()) {
+        state.revision = revisions[index]!
         state.eventId = `snapshot:${String(state.revision)}:${state.sessionId}`
-        floor = state.revision
       }
-      this.lastRevision = Math.max(this.lastRevision, floor)
-      return { value: `${String(this.lastRevision)}\n`, result: undefined }
-    })
+    }
     return states
   }
 

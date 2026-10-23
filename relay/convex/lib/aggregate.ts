@@ -71,7 +71,7 @@ export function makeAggregate(
 ): ActivityAggregate | null {
   const bySession = new Map<string, SessionState>();
   for (const source of states) {
-    const state = { ...source, phase: activityPhase(source) };
+    const state = { ...source, phase: activityPhase(source, now) };
     if (state.deleted || state.expiresAt <= now
       || (isTerminalPhase(state.phase) && (state.terminalExpiresAt ?? 0) <= now)) continue;
     const key = JSON.stringify([state.publisherId, state.sessionId]);
@@ -120,7 +120,7 @@ export function makeAggregate(
           ? `${attentionCount} need${attentionCount === 1 ? "s" : ""} attention`
           : `${activeCount} active ${activeCount === 1 ? "session" : "sessions"}`,
     updatedAt: Math.max(...visible.map((state) => state.updatedAt)),
-    rows: visible.slice(0, MAX_AGGREGATE_ROWS).map((state) => rowForState(state)),
+    rows: visible.slice(0, MAX_AGGREGATE_ROWS).map((state) => rowForState(state, state.phase)),
   };
 }
 

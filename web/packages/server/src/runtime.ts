@@ -17,8 +17,6 @@ import { GatewayWatcherRegistry } from './sessions/gateway-watcher.js'
 import { GatewaySessions, gatewayStreamVisible } from './sessions/gateway-sessions.js'
 import { readImportableAgentSessionRowsAsync } from './sessions/state-db.js'
 import { CompletionDrain } from './sessions/completions.js'
-import { str } from './util.js'
-import { turnTerminalState } from './sessions/anchor.js'
 import { BackgroundActivity, BackgroundTaskStore } from './sessions/background-tasks.js'
 import { HygieneTicker } from './tools/hygiene.js'
 import { PruneAdvice } from './tools/prune-advice.js'
@@ -472,12 +470,12 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       const ownerPhase = await sessions.owner?.activityPhase(sid, profile ?? 'default')
       if (!session) return { foreground: ownerPhase ?? null, settled: 'stale', since: 0 }
       const run = [...registry.activeRuns.values()].filter((run) => run.session_id === sid && run.stream_id !== excludeStreamId && !('health_only' in run && run.health_only)).sort((a, b) => b.started_at - a.started_at)[0]
-      const latest = [...session.messages].reverse().find((message) => message._turn_id)
-      const terminal = latest ? turnTerminalState(session.messages, str(latest._turn_id)) : 'completed'
+      const latest = sessions.activitySummary(session)
+      const terminal = latest?.terminalState ?? 'completed'
       return {
         foreground: ownerPhase ?? (pending.approvalPending(sid).pending ? 'waiting_for_approval' : pending.clarifyPending(sid).pending ? 'waiting_for_input' : run ? run.phase.endsWith('starting') ? 'starting' : 'running' : null),
         settled: terminal === 'completed' || terminal === 'tool_limit_reached' ? 'completed' : terminal === 'cancelled' ? 'cancelled' : 'failed',
-        since: Number(latest?.timestamp) || 0,
+        since: latest?.timestamp ?? 0,
       }
     },
   })
@@ -486,7 +484,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   // eslint-disable-next-line prefer-const -- assigned after the turn runner exists
   let completions: CompletionDrain
   const relay = new RelayService({
-    registry, pending, store, background, presence: new PresenceLeases(now), profileHome, profilesMatch, fetch: () => lazyFetch, now, log,
+    registry, pending, store, background, activitySummary: (session) => sessions.activitySummary(session), presence: new PresenceLeases(now), profileHome, profilesMatch, fetch: () => lazyFetch, now, log,
     agentSessions: (profile) => readImportableAgentSessionRowsAsync(join(profileHome(profile), 'state.db')),
     documents: storage.documents, env, canonicalProfile: (p) => (isRootProfile(p) ? 'default' : p), addListener: (listener) => events.addListener(listener),
   })

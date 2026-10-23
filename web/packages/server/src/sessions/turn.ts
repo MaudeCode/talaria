@@ -142,6 +142,7 @@ export interface StartTurnOptions {
   completionKeys?: string[]
   backgroundUpdate?: BackgroundUpdate
   ephemeral?: boolean
+  activityParentSessionId?: string
   /** TAL-801: a spoken turn, which the Agent runs on the profile's `auxiliary.voice_chat` slot. */
   voiceTurn?: boolean
   /** TAL-818: the starting client renders `connect_card`; other turns keep the Agent's plain connect links. */
@@ -519,7 +520,7 @@ export class TurnRunner {
     if (opts.completionKeys?.length) s.extra.completion_acceptances = { ...accepted, ...Object.fromEntries(opts.completionKeys.map((key) => [key, streamId])) }
     const previousUpdates = s.extra.background_updates
     if (opts.backgroundUpdate) recordBackgroundUpdate(s, streamId, opts.backgroundUpdate)
-    const admission = { stream_id: streamId, session_id: s.session_id, started_at: this.deps.now(), phase: 'starting', workspace: opts.workspace, model: opts.model, provider: opts.modelProvider, ephemeral: Boolean(opts.ephemeral), origin: turnOrigin(source), admitting: true }
+    const admission = { stream_id: streamId, session_id: s.session_id, started_at: this.deps.now(), phase: 'starting', workspace: opts.workspace, model: opts.model, provider: opts.modelProvider, ephemeral: Boolean(opts.ephemeral), ...(opts.activityParentSessionId ? { activity_parent_session_id: opts.activityParentSessionId } : {}), origin: turnOrigin(source), admitting: true }
     this.registry.registerActiveRun(admission)
     try { await timing.measure('admission_persistence', () => this.deps.store.save(s)) } catch (error) {
       this.registry.activeRuns.delete(streamId)
@@ -1317,7 +1318,7 @@ export class TurnRunner {
 
   /** The settled session as a terminal frame carries it: the display window, redacted. */
   async publicTerminalSession(s: Session, streamId?: string): Promise<Record<string, unknown>> {
-    const terminal = streamId ? turnTerminalState(s.messages, streamId) : null
+    const terminal = streamId ? this.deps.service().activitySummary(s, streamId)?.terminalState : null
     const payload = await this.deps.service().windowedDetail(s, TRANSCRIPT_WINDOW)
     if (!streamId) return payload
     const terminalPhase = terminal === 'completed' || terminal === 'tool_limit_reached' ? 'completed' : terminal === 'cancelled' ? 'cancelled' : 'failed'

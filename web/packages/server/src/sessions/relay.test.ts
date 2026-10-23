@@ -813,6 +813,62 @@ describe('session-started events from the running server', () => {
 
 
 describe('session activity lifecycle (TAL-1520)', () => {
+  it('tombstones deleted activity after acknowledgement and persists its revision fence', async () => {
+    const server = await bootTestServer()
+    const remote = fakeRelay()
+    server.deps.fetch = remote.fetch
+    try {
+      await post(server, '/api/talaria/relay/pair', { relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'synthetic' })
+      const session = await server.deps.sessionStore.newSession()
+      await server.deps.sessionStore.save(session)
+      server.deps.registry.activeRuns.set('deleted-parent', { stream_id: 'deleted-parent', session_id: session.session_id, started_at: 1, phase: 'running', workspace: server.state, model: null, provider: null, ephemeral: false })
+      server.deps.relay.noteTerminal('deleted-parent', 'completed')
+      server.deps.registry.activeRuns.delete('deleted-parent')
+      await server.deps.relay.current()!.publishSnapshot()
+      expect((await post(server, '/api/session/delete', { session_id: session.session_id })).status).toBe(200)
+      await vi.waitFor(() => { expect(deletedViews(server)).toEqual([]) })
+      const tombstones = remote.calls.filter((call) => call.url.endsWith(`/sessions/${session.session_id}/activity`) && call.body.state === null)
+      expect(tombstones).toHaveLength(1)
+      const tombstone = tombstones[0]!
+      verifySigned(remote, tombstone, new URL(tombstone.url).pathname)
+      expect(remote.calls.indexOf(tombstone)).toBeGreaterThan(remote.calls.findIndex((call) => call.url.endsWith(`/sessions/${session.session_id}/viewed`)))
+      const revision = Number(tombstone.body.revision)
+      expect(Number(readFileSync(join(server.state, 'talaria-relay-revision'), 'utf8'))).toBeGreaterThanOrEqual(revision)
+      server.deps.relay.stop()
+      expect(await server.deps.relay.start()).toBe(true)
+      const next = await server.deps.sessionStore.newSession()
+      server.deps.registry.activeRuns.set('next-parent', { stream_id: 'next-parent', session_id: next.session_id, started_at: 2, phase: 'running', workspace: server.state, model: null, provider: null, ephemeral: false })
+      expect((await server.deps.relay.current()!.buildStates('default')).find((state) => state.sessionId === next.session_id)?.revision).toBeGreaterThan(revision)
+    } finally { server.deps.registry.activeRuns.delete('next-parent'); server.deps.relay.stop(); await server.close() }
+  })
+
+  it('publishes only the parent activity for an actual background command (TAL-1520)', async () => {
+    const sidecar = new FakeSidecar()
+    const completed = new FakeSidecar()
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    let entered!: () => void
+    const running = new Promise<void>((resolve) => { entered = resolve })
+    sidecar.respond('chat.start', async (params) => { entered(); await gate; return completed.call('chat.start', params) })
+    const server = await bootTestServer({ sidecar })
+    server.deps.fetch = fakeRelay().fetch
+    let streamId = ''
+    try {
+      await post(server, '/api/talaria/relay/pair', { relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'synthetic' })
+      const session = await server.deps.sessionStore.newSession()
+      session.messages = [{ role: 'user', content: 'Start', _turn_id: 'parent', timestamp: 100 }, { role: 'assistant', content: 'Started', _turn_id: 'parent', timestamp: 101 }]
+      await server.deps.sessionStore.save(session)
+      const response = await post(server, '/api/background', { session_id: session.session_id, prompt: 'Synthetic work' })
+      expect(response.status).toBe(200)
+      const started = await json(response)
+      streamId = String(started.stream_id)
+      await running
+      const states = await server.deps.relay.current()!.buildStates('default')
+      expect(states.find((state) => state.sessionId === session.session_id)).toMatchObject({ activityPhase: 'running' })
+      expect(states.map((state) => state.sessionId)).toEqual([session.session_id])
+    } finally { release(); if (streamId) await server.deps.turns.finished(streamId); server.deps.relay.stop(); await server.close() }
+  })
+
   it.each(['delegation', 'process', 'watch', 'background_command'] as const)('keeps %s work after retention/reload, goes stale on lost ownership, and respects session fences', async (kind) => {
     let clock = 10_000
     const sidecar = new FakeSidecar()

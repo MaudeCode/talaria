@@ -7,8 +7,55 @@ import { defaultNotificationPreferences } from "../convex/lib/model";
 import { webcrypto } from "node:crypto";
 import { setTimeout as realTimeout } from "node:timers/promises";
 import { bytesToBase64Url, sha256 } from "../convex/lib/crypto";
+import { makeAggregate } from "../convex/lib/aggregate";
 
 const modules = import.meta.glob("../convex/**/*.ts");
+
+it.each(["all_running", "per_session"] as const)("keeps unconfirmed background activity stale after its publisher lease expires (%s)", async (mode) => {
+  const { backend, publish, list } = await fixture();
+  if (mode === "per_session") await backend.run(async (ctx) => {
+    const activity = await ctx.db.query("liveActivities").first();
+    await ctx.db.patch(activity!._id, { mode, publisherId: "https://hermes.example", sessionId: "session", streamId: "run-1", attributesType: "AgentRunActivityAttributes" });
+  });
+  await publish("running");
+  await publish("completed", "run-1", "session", "running");
+  vi.setSystemTime(Date.now() + 3 * 60_000 + 1);
+  const current = () => backend.query(internal.publishers.listCurrentStates, { userId: "user", now: Date.now() });
+  expect(makeAggregate(await current(), Date.now(), true)).toMatchObject({ activeCount: 0, isFinal: false, rows: [{ phase: "stale" }] });
+  await backend.mutation(internal.delivery.recompute, { userId: "user" });
+  const jobs = await backend.run((ctx) => ctx.db.query("deliveryJobs").take(20));
+  expect(jobs.some((job) => job.kind === "live_activity_end")).toBe(false);
+  const update = jobs.find((job) => job.kind === "live_activity_update")!;
+  expect(JSON.parse(update.request.payloadJson).aps).toMatchObject({ event: "update", "content-state": { isFinal: false, ...(mode === "per_session" ? { isStale: true } : { activeCount: 0, rows: [{ phase: "stale" }] }) } });
+  const inbox = (await list())!;
+  expect(inbox.completions[0]?.row.phase).toBe("completed");
+  await backend.mutation(internal.completions.acknowledge, { userId: "user", deviceId: "device", ids: inbox.completions.map((row) => row.id) });
+  await backend.mutation(internal.cleanup.prune, {});
+  expect(makeAggregate(await current(), Date.now(), true)).toMatchObject({ activeCount: 0, isFinal: false, rows: [{ phase: "stale" }] });
+  await publish("completed", "run-1", "session", "running");
+  expect(makeAggregate(await current(), Date.now(), true)).toMatchObject({ activeCount: 1, isFinal: false, rows: [{ phase: "running" }] });
+  await publish("completed", "run-1", "session", "completed");
+  expect(await current()).toEqual([]);
+  await backend.finishAllScheduledFunctions(vi.runAllTimers);
+});
+
+it("tombstone ingestion clears stale activity after its completion has been acknowledged", async () => {
+  const { backend, publish, list } = await fixture();
+  await publish("completed", "run-1", "session", "running");
+  const inbox = (await list())!;
+  await backend.mutation(internal.completions.acknowledge, { userId: "user", deviceId: "device", ids: inbox.completions.map((row) => row.id) });
+  vi.setSystemTime(Date.now() + 3 * 60_000 + 1);
+  const current = () => backend.query(internal.publishers.listCurrentStates, { userId: "user", now: Date.now() });
+  expect(makeAggregate(await current(), Date.now(), true)?.isFinal).toBe(false);
+  expect(await backend.mutation(internal.publishers.acceptState, {
+    publisherOwnerUserId: "owner", publisherId: "https://hermes.example", profileId: "profile", keyId: "key",
+    nonce: "deleted-session", nonceExpiresAt: Date.now() + 60_000, receivedAt: Date.now(),
+    sessionId: "session", eventId: "deleted-session", revision: 2, state: null,
+  })).toEqual({ status: "accepted" });
+  expect(await current()).toEqual([]);
+  expect((await list())?.completions).toEqual([]);
+  await backend.finishAllScheduledFunctions(vi.runAllTimers);
+});
 
 // Tests drive delivery explicitly; queued workpool callbacks must not outlive their test.
 beforeEach(() => { vi.useFakeTimers(); });

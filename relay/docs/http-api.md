@@ -113,7 +113,7 @@ BASE64URL_SHA256_OF_EXACT_BODY
 }
 ```
 
-Allowed phases are `starting`, `running`, `waiting_for_approval`, `waiting_for_input`, `completed`, `failed`, `cancelled`, and `stale`. A snapshot contains at most 500 states. Non-terminal rows are three-minute leases refreshed by the WebUI heartbeat. Missing rows expire instead of being immediately tombstoned, so a WebUI restart cannot incorrectly end Gateway-owned work before reconciliation.
+Allowed phases are `starting`, `running`, `waiting_for_approval`, `waiting_for_input`, `completed`, `failed`, `cancelled`, and `stale`. A snapshot contains at most 500 states. Non-terminal activity has a three-minute lease refreshed by the WebUI heartbeat. Missing rows do not immediately tombstone work, so a WebUI restart cannot incorrectly end Gateway-owned work before reconciliation.
 
 `phase` remains the foreground turn's outcome. Optional `activityPhase` uses the
 same vocabulary and is the server's session-wide decision, including confirmed
@@ -126,9 +126,22 @@ Unconfirmed work publishes `stale`; it never counts as confirmed active work.
 Aggregates include additive `isFinal`, true only when all session work is settled,
 so zero confirmed active sessions with stale work cannot render success.
 
+For publishers supplying `activityPhase`, Relay retains the current session row
+after the activity lease expires and projects it as stale. Its existing cleanup
+pass records that stale state and recomputes delivery. The Relay-owned lease
+timestamp is not a publisher input. Retained parent-turn history cannot replace
+unconfirmed work with Done, even after that history is acknowledged. A later
+publication confirms running or settled work. Publishers omitting the additive
+field retain their existing row-expiration behavior.
+
 Each state may carry an optional `alertEligible` boolean. Omitting it means `true`. `alertEligible: false` applies only to the exact event carrying it, including a session's first publication: the relay still persists the transition and delivers the Live Activity state silently, but produces no ordinary notification and no `alert` or sound on a Live Activity update or end. Because APNs requires an alert on push-to-start, an ineligible transition on a device with no running Live Activity defers the start, and the deferral persists on that device while the suppressed state is visible and otherwise until an eligible phase transition, an activity registration, or idle work releases it. The stored value carries forward across same-phase updates of the same run (same `streamId`) until the next phase transition or a new run, so a later heartbeat or eligibility change in the same phase never alerts or starts an activity for the already-consumed transition.
 
 The per-session route remains available at `PUT /v1/publishers/{publisherId}/profiles/{profileId}/sessions/{sessionId}/activity` with `eventId`, `revision`, and `state`; use `state: null` to tombstone it.
+
+Web session deletion uses its existing durable cleanup outbox to acknowledge
+completion history and then publish this tombstone. Both snapshots and
+tombstones reserve monotonic revisions in the same persisted publisher record,
+so a restart cannot reuse a deletion's revision for a new activity.
 
 ## Announce a new session
 

@@ -28,6 +28,7 @@ export interface SessionState {
   updatedAt: number;
   deepLink: string;
   expiresAt: number;
+  activityExpiresAt?: number;
   terminalExpiresAt?: number;
   alertEligible?: boolean;
 }
@@ -99,8 +100,9 @@ export function isTerminalPhase(phase: SessionPhase): boolean {
   return phase === "completed" || phase === "failed" || phase === "cancelled";
 }
 
-export function activityPhase(state: { phase: SessionPhase; activityPhase?: SessionPhase }): SessionPhase {
-  return state.activityPhase ?? state.phase;
+export function activityPhase(state: { phase: SessionPhase; activityPhase?: SessionPhase; activityExpiresAt?: number }, now = Date.now()): SessionPhase {
+  const phase = state.activityPhase ?? state.phase;
+  return state.activityExpiresAt !== undefined && state.activityExpiresAt <= now && !isTerminalPhase(phase) ? "stale" : phase;
 }
 
 /** Current activity survives a completed or acknowledged foreground turn; retained history stays separate. */

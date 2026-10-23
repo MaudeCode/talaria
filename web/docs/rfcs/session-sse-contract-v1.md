@@ -333,3 +333,9 @@ and heartbeat publication, including sessions after foreground retention and a
 publisher restart. It signs the same decision as `activityPhase`, while `phase`
 and `streamId` retain the turn outcome and completion identity. No viewer or
 widget polling owns this lifecycle.
+
+Activity outcomes and timestamps reuse the revision-owned transcript prefix
+index, including cached pages and publisher reloads. A `/background` worker's
+activity parent is recorded at admission, so its hidden session adds no second
+activity. Native streams release admission before activity reconciliation but
+retain their channel through `done` and `stream_end`.

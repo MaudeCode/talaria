@@ -88,6 +88,7 @@ export const storedSessionStateValidator = v.object({
   deepLink: v.string(),
   expiresAt: v.number(),
   terminalExpiresAt: v.optional(v.number()),
+  activityExpiresAt: v.optional(v.number()),
   alertEligible: v.optional(v.boolean()),
   receivedAt: v.number(),
 });

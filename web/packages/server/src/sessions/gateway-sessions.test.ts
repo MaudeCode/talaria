@@ -189,6 +189,41 @@ describe('canonical owner attachment', () => {
     expect(s.deps.channels.subscriberCount(sid)).toBe(0)
   })
 
+  it('keeps a settling native stream attachable while its activity phase is reconciled (TAL-1520)', async () => {
+    let emit: ((frame: Omit<StreamFrame, 'seq'>) => void) | undefined
+    let snap = snapshot({ running: true, pending: [admission()] })
+    sidecar.respond('gateway.session', (params, send, opts) => {
+      if (params.action !== 'watch') return { ...attached(snap), receipt: params.action === 'receipt' ? { ...admission('terminal'), outcome: 'completed' } : null }
+      emit = send
+      send({ event: 'snapshot', data: attached(snap) })
+      return new Promise((resolve) => { opts.signal!.addEventListener('abort', () => { resolve(attached(snap)) }, { once: true }) })
+    })
+    const activity = s.deps.sessions.deps.sessionActivity!
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    let entered!: () => void
+    const held = new Promise<void>((resolve) => { entered = resolve })
+    s.deps.sessions.deps.sessionActivity = async (...args) => {
+      if (args[2]?.terminalPhase) { entered(); await gate }
+      return activity(...args)
+    }
+    try {
+      await s.deps.sessions.detail(sid, {})
+      await vi.waitFor(() => { expect(emit).toBeDefined(); expect(s.deps.registry.activeRunStreamForSession(sid)).not.toBeNull() })
+      const stream = s.deps.registry.activeRunStreamForSession(sid)!
+      snap = snapshot({ last_sequence: 7 })
+      emit!({ event: 'event', data: { type: 'session.info', payload: { authority_epoch: 1, execution_generation: 1, running: false, pending: [] } } })
+      await held
+      const channel = s.deps.registry.peek(stream)
+      expect(channel, 'a settling stream remains attachable until terminal frames are ready').toBeDefined()
+      const read = s.sse(`/api/chat/stream?stream_id=${stream}&replay=1&after_seq=0`, (frame) => frame.event === 'stream_end')
+      await vi.waitFor(() => { expect(channel!.subscriberCount).toBe(1) })
+      release()
+      const frames = await read
+      expect(frames.filter((frame) => frame.event === 'done' || frame.event === 'stream_end').map((frame) => frame.event)).toEqual(['done', 'stream_end'])
+    } finally { release(); s.deps.sessions.deps.sessionActivity = activity }
+  })
+
   it('shares idle native observation between viewers and delivers keyed edits after a turn settles', async () => {
     let emit: ((frame: Omit<StreamFrame, 'seq'>) => void) | undefined
     let aborted = false

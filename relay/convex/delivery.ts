@@ -92,6 +92,7 @@ function asSessionState(state: DataModel["sessionStates"]["document"]): SessionS
     deepLink: state.deepLink,
     expiresAt: state.expiresAt,
     terminalExpiresAt: state.terminalExpiresAt,
+    activityExpiresAt: state.activityExpiresAt,
     alertEligible: state.alertEligible,
   };
 }

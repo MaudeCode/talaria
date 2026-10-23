@@ -298,7 +298,7 @@ function codexCommentary(message: Record<string, unknown>): string[] {
 }
 
 /** The turn's outcome: an explicit terminal state, else its error row's kind, else whether it answered. */
-function terminalStateOf(last: Record<string, unknown>, finalAnswer: string): string {
+export function terminalStateOf(last: Record<string, unknown>, finalAnswer: string): string {
   const label = str(last.provider_details_label)
   const errorState = last._error === true ? (label === 'Cancellation details' ? 'cancelled' : label === 'Interruption details' ? 'interrupted' : 'error') : ''
   return str(last.terminal_state) || str(last._terminal_state) || (last._max_iteration_summary_fallback === true ? 'tool_limit_reached' : '') || errorState || (finalAnswer.trim() ? 'completed' : 'no_response')

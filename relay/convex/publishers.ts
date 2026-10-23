@@ -44,6 +44,9 @@ function expiryForState(
   next: { phase: SessionPhase; activityPhase?: SessionPhase; streamId?: string },
   now: number,
 ) {
+  if (next.activityPhase !== undefined && !isTerminalPhase(next.activityPhase)) {
+    return { expiresAt: Number.MAX_SAFE_INTEGER, activityExpiresAt: now + 3 * 60_000 };
+  }
   if (
     current &&
     !current.deleted &&
@@ -104,6 +107,7 @@ function exposedState(state: Doc<"sessionStates">) {
     deepLink: state.deepLink,
     expiresAt: state.expiresAt,
     terminalExpiresAt: state.terminalExpiresAt,
+    activityExpiresAt: state.activityExpiresAt,
     alertEligible: state.alertEligible,
     receivedAt: state.receivedAt,
   };
@@ -310,7 +314,7 @@ export const acceptSnapshot = internalMutation({
         if (current && state.revision === current.revision) {
           await backfillCompletion(ctx, grant, current);
           await ctx.db.patch(current._id, {
-            ...(isTerminalPhase(activityPhase(current)) ? {} : expiryForPhase(activityPhase(current), args.receivedAt)),
+            ...(isTerminalPhase(activityPhase(current)) ? {} : expiryForState(current, current, args.receivedAt)),
             receivedAt: args.receivedAt,
           });
           continue;

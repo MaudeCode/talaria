@@ -898,6 +898,10 @@ export class SessionService {
   private readonly pageTails = new WeakMap<SessionPrefixIndex, { key: string; tail: Message[]; index: SessionPrefixIndex; newestReply?: number | null; enoughContext: boolean; sources: SessionService['stateDbSources']; contextRows: Message[]; contextLength: number; summary: { total: number; last: number; todo: Record<string, unknown> | null; compression: ReturnType<SessionPrefixIndex['compressionReference']> } }>()
   private readonly pageContexts = new WeakMap<SessionPrefixIndex, { key: string; local: Message[]; enough: boolean; contextRows: Message[]; contextLength: number; marker: boolean; unidentified: readonly ReadonlyMap<string, number>[] }>()
 
+  activitySummary(s: Session, turnId?: string): ReturnType<SessionPrefixIndex['activitySummary']> {
+    return this.prefixIndex(s, s.sidecarLoadedSignature).activitySummary(turnId)
+  }
+
   private prefixIndex(s: Session, revision: string | null): SessionPrefixIndex {
     const previous = s.prefixIndex
     if (previous?.rows === s.messages && previous.revision === revision && previous.length <= s.messages.length) {
