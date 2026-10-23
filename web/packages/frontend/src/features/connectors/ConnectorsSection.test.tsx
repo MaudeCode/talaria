@@ -45,6 +45,13 @@ describe('ConnectorsSection (TAL-818)', () => {
     expect(api.setConnectorRule).toHaveBeenCalledWith('notion', 'rev-7', { enabled: true })
   })
 
+  it('offers existing Nous sign-in when the server requires it, even without a catalog', async () => {
+    vi.mocked(api.fetchConnectors).mockResolvedValueOnce({ ...shared.page, connectors: [], sign_in_required: true })
+    renderWith(<ConnectorsSection />)
+    expect(await screen.findByRole('button', { name: 'Sign in with Nous Portal' })).toBeEnabled()
+    expect(screen.queryByText('No connectors available.')).not.toBeInTheDocument()
+  })
+
   it('connects: the authorization link while it waits, then the connected toast once the server reports it', async () => {
     operation = waiting
     renderWith(<ConnectorsSection />)

@@ -219,6 +219,11 @@ requests, unarchive and automatic cleanup send no event. This notification prese
 approvals and Agent database; plugin failures do not undo the archive. Older Agents without the
 emitter retain the existing archive behavior.
 
+Opening or refreshing Settings → Connectors never provisions a Nous identity or refreshes credentials.
+Without an identity, Agents with a public catalog let you browse apps; older Agents offer sign-in.
+Rules stay off and read-only until the portal returns them. Sign in or choose **Connect** to authorize
+account setup; after signing in through the Agent, refresh the page to load that account.
+
 ### Remote access
 
 Bind to loopback and use an SSH tunnel or Tailscale, or set `HERMES_WEBUI_HOST=0.0.0.0` with

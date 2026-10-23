@@ -56,6 +56,49 @@ const waiting: ConnectorOperationView = { op_id: 'op-page', settled: false, outc
   })
 }
 
+test('an unsigned Connectors page offers sign-in and adopts an external account on refresh (TAL-1504)', async ({ page }, testInfo) => {
+  let signedIn = false
+  let publicCatalog = true
+  await page.route('**/api/connectors/available', (route) => route.fulfill({ json: { available: true } }))
+  await page.route('**/api/connectors', (route) => route.fulfill({ json: signedIn ? shared.page : {
+    ...shared.page, sign_in_required: true, policy_revision: null, rules_error: 'Sign in to Nous Portal to use connectors.',
+    connectors: publicCatalog ? shared.page.connectors.map((c) => ({ ...c, connected: false, accounts: [], enabled: false, org_locked: false, rules_editable: false, tools_off: 0 })) : [],
+  } }))
+  const writes: string[] = []
+  page.on('request', (request) => { if (request.method() !== 'GET') writes.push(request.url()) })
+  await page.goto('/settings/connectors')
+  await settle(page)
+  await expect(page.getByRole('button', { name: 'Sign in with Nous Portal' })).toBeVisible()
+  const gmail = page.locator('[data-connector="gmail"]')
+  await expect(gmail.getByRole('button', { name: 'Connect' })).toBeEnabled()
+  await expect(gmail.getByRole('switch')).toHaveAttribute('aria-disabled', 'true')
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath(`unsigned-${testInfo.project.name}.png`) })
+  // Supported older Agents offer sign-in without inventing a catalog.
+  publicCatalog = false
+  await page.reload()
+  await settle(page)
+  await expect(page.getByRole('button', { name: 'Sign in with Nous Portal' })).toBeVisible()
+  await expect(page.locator('[data-connector]')).toHaveCount(0)
+  await page.screenshot({ path: testInfo.outputPath(`sign-in-only-${testInfo.project.name}.png`) })
+  publicCatalog = true
+  await page.reload()
+  await settle(page)
+  await expect(page.getByRole('button', { name: 'Sign in with Nous Portal' })).toBeVisible()
+  await page.goto('/settings/appearance')
+  await page.goto('/settings/connectors')
+  await settle(page)
+  await expect(page.getByRole('button', { name: 'Sign in with Nous Portal' })).toBeVisible()
+  expect(writes.filter((url) => /connectors|oauth/.test(url))).toEqual([])
+  // A sign-in performed in the Agent becomes the real account on the next page read.
+  signedIn = true
+  await page.reload()
+  await settle(page)
+  await expect(page.getByRole('button', { name: 'Sign in with Nous Portal' })).toHaveCount(0)
+  await expect(page.getByRole('list', { name: 'Notion accounts' })).toContainText('work')
+  await page.screenshot({ path: testInfo.outputPath(`adopted-${testInfo.project.name}.png`) })
+})
+
 test('the Connectors entry follows the server flag (TAL-818)', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name === 'mobile', 'the settings menu is the desktop sidebar')
   let available = false

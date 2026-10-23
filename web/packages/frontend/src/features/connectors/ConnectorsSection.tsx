@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ConnectorOperationView, ConnectorToolsView, ConnectorView } from '@maudecode/talaria-web-contracts'
 import { ChevronDown, ChevronRight } from 'lucide-react'
@@ -14,6 +14,7 @@ import { showToast } from '../toast/toast'
 import { useResourceEffects, useResourceMutation, withEffects } from '../sessions/useResourceMutation'
 import { ResourceSwitch } from '../sessions/ResourceSwitch'
 import { ConnectTargets, useConnectorOperation } from './ConnectTargets'
+import { OAuthSignIn } from '../onboarding/OAuthSignIn'
 
 type Rule = { enabled: boolean } | { tool: string; tool_enabled: boolean }
 const ruleResource = (connector: string, rule: Rule) => JSON.stringify(['connector-rule', connector, 'tool' in rule ? rule.tool : null])
@@ -60,14 +61,18 @@ function useRule() {
 export function ConnectorsSection() {
   const page = useQuery({ queryKey: keys.connectors.page, queryFn: api.fetchConnectors, staleTime: 30_000 })
   const rule = useRule()
+  const { refetch } = page
+  const refresh = useCallback(() => { void refetch() }, [refetch])
   if (page.isPending) return <LoadingState />
   if (page.isError && !page.data) return <ErrorState error={page.error} onRetry={() => { void page.refetch() }} />
   if (!page.data?.available) return <EmptyState>{m.connectors_unavailable()}</EmptyState>
-  if (page.data.connectors.length === 0) return <EmptyState>{m.connectors_empty()}</EmptyState>
   const revision = page.data.policy_revision
   return (
     <>
-    {page.data.rules_error && <p role="status" className="mb-2 text-xs text-error" data-connectors-rules-error>{page.data.rules_error}</p>}
+    {page.data.sign_in_required && <OAuthSignIn provider="nous" label="Nous Portal" signedIn={false} compact idPrefix="connectorsOauth"
+      onApproved={refresh} />}
+    {!page.data.sign_in_required && page.data.rules_error && <p role="status" className="mb-2 text-xs text-error" data-connectors-rules-error>{page.data.rules_error}</p>}
+    {page.data.connectors.length === 0 && !page.data.sign_in_required && <EmptyState>{m.connectors_empty()}</EmptyState>}
     <ul className="flex flex-col divide-y divide-border-subtle" aria-label={m.settings_section_connectors_title()} data-section="connectors">
       {page.data.connectors.map((connector) => (
         <ConnectorRow key={connector.slug} connector={connector} ruleBusy={!revision}
