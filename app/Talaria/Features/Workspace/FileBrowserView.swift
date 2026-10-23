@@ -28,6 +28,9 @@ struct FileBrowserView: View {
     let onAPIError: (Error) -> Void
     /// Opens a file in place of a navigation link, for a host that pushes it itself.
     private let onOpenFile: ((WorkspaceEntry) -> Void)?
+    /// The directory the browser opens at, and where it reports each one it shows, for a host that keeps it (TAL-1458).
+    private let initialPath: String
+    private let onPathChange: ((String) -> Void)?
 
     private let session: SessionSummary
     private let server: URL
@@ -38,11 +41,15 @@ struct FileBrowserView: View {
         session: SessionSummary,
         server: URL,
         onAPIError: @escaping (Error) -> Void,
+        initialPath: String = ".",
+        onPathChange: ((String) -> Void)? = nil,
         onOpenFile: ((WorkspaceEntry) -> Void)? = nil
     ) {
         self.session = session
         self.server = server
         self.onAPIError = onAPIError
+        self.initialPath = initialPath
+        self.onPathChange = onPathChange
         self.onOpenFile = onOpenFile
         _viewModel = State(initialValue: FileBrowserViewModel(session: session, server: server))
     }
@@ -60,6 +67,7 @@ struct FileBrowserView: View {
             .task {
                 await loadInitialRootIfNeeded()
             }
+            .onChange(of: viewModel.currentPath) { _, path in onPathChange?(path) }
     }
 
     @ViewBuilder
@@ -285,7 +293,7 @@ struct FileBrowserView: View {
     }
 
     private func loadInitialRootIfNeeded() async {
-        await viewModel.loadInitialRootIfNeeded()
+        await viewModel.loadInitialRootIfNeeded(path: initialPath)
         handleLastError()
     }
 

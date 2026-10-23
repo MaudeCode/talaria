@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "On a wide iPad window or an open iPhone Duo, the file the agent is working on shows beside the chat and follows it from file to file; pick a file to pin it.",
+      "highlight": true,
+      "components": ["app"]
+    }
+  ]
+}

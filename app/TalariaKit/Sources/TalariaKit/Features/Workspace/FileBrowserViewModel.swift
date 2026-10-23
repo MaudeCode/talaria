@@ -54,10 +54,10 @@ public final class FileBrowserViewModel {
     }
 
     @MainActor
-    public func loadInitialRootIfNeeded() async {
+    public func loadInitialRootIfNeeded(path: String = ".") async {
         guard !hasLoadedInitialPath else { return }
         hasLoadedInitialPath = true
-        await loadRoot()
+        await load(path: path)
     }
 
     @MainActor

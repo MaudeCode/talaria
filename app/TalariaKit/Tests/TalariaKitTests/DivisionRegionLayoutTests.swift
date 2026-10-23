@@ -29,6 +29,16 @@ final class DivisionRegionLayoutTests: XCTestCase {
         }
     }
 
+    /// TAL-1458: a split arrangement's pane ends at the fold, which may overlap its edge; the pane keeps its own side.
+    func testAFoldAtAnEdgeOnlyTrimsThatEdge() {
+        for direction in [LayoutDirection.leftToRight, .rightToLeft] {
+            XCTAssertEqual(DivisionRegionLayout.availableFrame(in: bounds, divisions: [CGRect(x: 880, y: 0, width: 40, height: 700)],
+                layoutDirection: direction, avoidsHorizontalDivisions: false), CGRect(x: 0, y: 0, width: 880, height: 700))
+            XCTAssertEqual(DivisionRegionLayout.availableFrame(in: bounds, divisions: [CGRect(x: -20, y: 0, width: 40, height: 700)],
+                layoutDirection: direction, avoidsHorizontalDivisions: false), CGRect(x: 20, y: 0, width: 880, height: 700))
+        }
+    }
+
     func testUsesContainerCoordinatesAndLastVerticalDivision() {
         let container = CGRect(x: 100, y: 50, width: 900, height: 700)
         let folds = [CGRect(x: 350, y: 0, width: 20, height: 800),

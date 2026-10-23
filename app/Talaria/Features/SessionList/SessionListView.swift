@@ -48,6 +48,9 @@ struct SessionListView: View {
         DivisionRegionLayout.sidebarWidth(in: splitGeometry.frame, divisions: splitGeometry.divisions,
             layoutDirection: layoutDirection)
     }
+    /// The split view's height with its bars and the keyboard: whether a chat's companion page fits beside it reads it
+    /// as the page's arrangement measures itself, so the keyboard showing does not bring the sidebar back (TAL-1458).
+    @State private var regularSplitFullHeight: CGFloat = 0
     /// Persists `navigationState.filesInspectorPresented` for the window (TAL-479).
     @SceneStorage(SplitFilesInspector.storageKey) private var storedFilesInspectorPresented = false
     @State private var sessionPendingRename: SessionSummary?
@@ -537,6 +540,9 @@ struct SessionListView: View {
                 regularSplitRevision += 1
             }
             .navigationSplitViewStyle(.balanced)
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.size.height + proxy.safeAreaInsets.top + proxy.safeAreaInsets.bottom
+            } action: { regularSplitFullHeight = $0 }
             // Starts fresh when its columns change, since showing the sidebar column again after a
             // full-width section left it without its navigation bar, and to drop covered pages. A split
             // built before its width was measured, as opening an iPhone Duo builds one, keeps the sidebar
@@ -602,9 +608,17 @@ struct SessionListView: View {
     }
 
     /// Kanban and Insights have no list, so they take the whole width, and a chat takes it while its Files
-    /// inspector needs the room.
+    /// inspector or companion page needs the room.
     private var hidesSidebarColumn: Bool {
-        navigationState.section.isFullWidth || (navigationState.chatShowsFilesInspector && widensForFilesInspector)
+        navigationState.section.isFullWidth
+            || (navigationState.chatShowsFilesInspector && widensForFilesInspector)
+            || (navigationState.chatShowsCompanionPage && widensForCompanionPage)
+    }
+
+    /// Whether hiding the sidebar column is what lets a chat's companion page split beside it (TAL-1458).
+    private var widensForCompanionPage: Bool {
+        horizontalSizeClass == .regular
+            && RegularSplitLayout.hidesSidebarForCompanionPage(splitWidth: regularSplitWidth, splitHeight: regularSplitFullHeight)
     }
 
     /// Whether hiding the sidebar column is what puts a chat's Files inspector beside it.
@@ -623,7 +637,9 @@ struct SessionListView: View {
                 navigationState.filesInspectorPresented = presented
             },
             widensChat: widensForFilesInspector,
-            reportShown: { navigationState.chatShowsFilesInspector = $0 }
+            reportShown: { navigationState.chatShowsFilesInspector = $0 },
+            offersCompanionPage: horizontalSizeClass == .regular,
+            reportCompanionPage: { navigationState.chatShowsCompanionPage = $0 }
         )
     }
 

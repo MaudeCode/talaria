@@ -92,6 +92,11 @@ struct UITestFixtureEnvironment {
     nonisolated static var hasBranchedFrom: Bool {
         ProcessInfo.processInfo.arguments.contains(branchedFromArgument)
     }
+    /// TAL-1458: the fixture session's last file call named a companion file, which the session detail reports.
+    nonisolated static let companionFocusArgument = "--ui-test-companion-focus"
+    nonisolated static var hasCompanionFocus: Bool {
+        ProcessInfo.processInfo.arguments.contains(companionFocusArgument)
+    }
     nonisolated static var hasSessionNotices: Bool {
         ProcessInfo.processInfo.arguments.contains(sessionNoticesArgument)
     }
@@ -286,6 +291,8 @@ private enum UITestChatScenario: String, CaseIterable {
     case pendingSteers = "--ui-test-chat-pending-steers"
     /// TAL-1046: a running turn whose skill asks for its missing secret through the masked vault prompt.
     case skillSecret = "--ui-test-chat-skill-secret"
+    /// TAL-1458: a run that writes one companion fixture file per step the test releases.
+    case companion = "--ui-test-chat-companion"
 
     static var current: Self? {
         let arguments = ProcessInfo.processInfo.arguments
@@ -305,6 +312,7 @@ private final class UITestChatFixtureState: @unchecked Sendable {
     private var steerID: String?
     private var withdrawnSteerID: String?
     private var cancelled = false
+    private var companionStep = 0
 
     /// A fresh launch's state, for hosted tests that start the fixture once per test (TAL-856).
     func reset() {
@@ -317,6 +325,14 @@ private final class UITestChatFixtureState: @unchecked Sendable {
         steerID = nil
         withdrawnSteerID = nil
         cancelled = false
+        companionStep = 0
+        condition.broadcast()
+        condition.unlock()
+    }
+
+    func advanceCompanion() {
+        condition.lock()
+        companionStep += 1
         condition.broadcast()
         condition.unlock()
     }
@@ -423,6 +439,7 @@ private final class UITestChatFixtureState: @unchecked Sendable {
     fileprivate var acceptedSteerID: String? { steerID }
     fileprivate var steerWithdrawnID: String? { withdrawnSteerID }
     fileprivate var wasCancelled: Bool { cancelled }
+    fileprivate var companionStepsReleased: Int { companionStep }
 }
 
 final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
@@ -786,6 +803,10 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             return json(auxiliaryModelsResponse())
         case "/api/model/set":
             return json(["ok": true, "auxiliary": auxiliaryModelsResponse()])
+        case "/api/file" where UITestChatScenario.current == .companion || UITestFixtureEnvironment.hasCompanionFocus:
+            return companionFileResponse(url)
+        case "/api/list" where UITestChatScenario.current == .companion || UITestFixtureEnvironment.hasCompanionFocus:
+            return companionListResponse()
         case "/api/workspaces":
             return json(["workspaces": [["path": "/fixture", "name": "Fixture Workspace"]]])
         case "/api/workspaces/suggest":
@@ -1398,6 +1419,24 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         return json(["session": detail])
     }
 
+    /// TAL-1458: the companion fixture's files, in the order the shared `focus-path` fixture names them.
+    static let companionFiles = ["Sources/Demo/Alpha.swift", "Sources/Demo/Beta.swift", "Sources/Demo/Gamma.swift", "Sources/Demo/Delta.swift"]
+
+    static func advanceCompanionRun() {
+        chatState.advanceCompanion()
+    }
+
+    private static func companionFileResponse(_ url: URL) -> Data {
+        let path = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "path" }?.value ?? ""
+        let name = (path as NSString).lastPathComponent
+        return json(["path": path, "name": name, "language": "swift", "lines": 2,
+                     "content": "// \(path)\nstruct \((name as NSString).deletingPathExtension) {}\n"])
+    }
+
+    private static func companionListResponse() -> Data {
+        json(["path": ".", "entries": companionFiles.map { ["name": ($0 as NSString).lastPathComponent, "path": $0, "type": "file", "size": 32] }])
+    }
+
     static func session(id: String, title: String) -> [String: Any] {
         [
             "session_id": id,
@@ -1407,6 +1446,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             "sort_ts": 2_000_000_000,
             "workspace": "/fixture",
             "workspace_name": "Fixture Workspace",
+            "focus_path": id == sessionID && UITestFixtureEnvironment.hasCompanionFocus ? companionFiles[2] : NSNull(),
             "model": "fixture-model",
             "model_provider": "fixture-provider",
             "profile": "fixture-profile",
@@ -1650,6 +1690,28 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             wait { $0.wasCancelled }
             guard !isStopped else { return }
             send(events: [("cancel", [:])])
+            finish()
+        case .companion:
+            // Alpha, then Beta, then Delta, each written once the test releases the step before it.
+            for (step, path) in [Self.companionFiles[0], Self.companionFiles[1], Self.companionFiles[3]].enumerated() {
+                if step > 0 { wait { $0.companionStepsReleased >= step } }
+                guard !isStopped else { return }
+                let name = (path as NSString).lastPathComponent
+                let id = "ui-fixture-write-\(step)"
+                send(events: [
+                    ("token", ["text": step == 0 ? "Writing \(name)." : " Writing \(name)."]),
+                    ("tool", ["event_type": "tool.started", "name": "write_file", "args": ["path": path], "kind": "write", "target": path, "focus_path": path, "id": id]),
+                    ("tool_complete", ["event_type": "tool.completed", "name": "write_file", "duration": 0.1, "id": id, "edit_diff": [
+                        "added": 1, "removed": 0, "diff": "+struct Fixture {}", "truncated": false,
+                        "hunks": [["header": "@@ -0,0 +1 @@", "old_start": 0, "new_start": 1, "new_end": 1, "additions": 1, "deletions": 0,
+                                   "lines": [["kind": "addition", "text": "struct Fixture {}", "old_line": NSNull(), "new_line": 1]]]]
+                    ]])
+                ])
+            }
+            wait { $0.companionStepsReleased >= 3 }
+            guard !isStopped else { return }
+            Self.chatState.settle()
+            send(events: [("done", [:]), ("stream_end", [:])])
             finish()
         case .controls:
             let showsPromptReading = ProcessInfo.processInfo.arguments.contains("--ui-test-chat-prompt-reading")

@@ -267,27 +267,7 @@ struct ToolCallCardView: View {
             Text("Changes")
                 .font(AppFont.caption2(weight: .semibold))
                 .foregroundStyle(.secondary)
-
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(editDiff.hunks) { hunk in
-                    Text(hunk.displayLabel)
-                        .font(AppFont.mono(style: .caption))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color(.tertiarySystemBackground))
-                    ForEach(hunk.lines) { DiffLineRow(line: $0) }
-                }
-            }
-            .textSelection(.enabled)
-            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-
-            if editDiff.truncated {
-                Text("Diff truncated")
-                    .font(AppFont.caption())
-                    .foregroundStyle(.secondary)
-            }
+            EditDiffHunks(editDiff: editDiff)
         }
     }
 

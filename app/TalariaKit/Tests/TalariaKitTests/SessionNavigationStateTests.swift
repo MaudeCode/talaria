@@ -694,13 +694,29 @@ final class AppSectionLayoutTests: XCTestCase {
         XCTAssertFalse(RegularSplitLayout.hidesSidebarForFilesInspector(splitWidth: 1194))
     }
 
+    /// The companion page hides the sidebar only where that is what lets the arrangement split (TAL-1458).
+    func testCompanionPageHidesTheSidebarOnlyWhereThatMakesRoom() {
+        // iPhone Duo inner display, portrait, and iPad portrait: taller than wide, so the page never splits.
+        XCTAssertFalse(RegularSplitLayout.hidesSidebarForCompanionPage(splitWidth: 669, splitHeight: 951))
+        XCTAssertFalse(RegularSplitLayout.hidesSidebarForCompanionPage(splitWidth: 834, splitHeight: 1194))
+        // iPhone Duo inner display and iPad, landscape: the detail beside the sidebar is taller than wide.
+        XCTAssertTrue(RegularSplitLayout.hidesSidebarForCompanionPage(splitWidth: 951, splitHeight: 669))
+        XCTAssertTrue(RegularSplitLayout.hidesSidebarForCompanionPage(splitWidth: 1194, splitHeight: 834))
+        // A window wide enough for the sidebar and both pages keeps the sidebar.
+        XCTAssertFalse(RegularSplitLayout.hidesSidebarForCompanionPage(splitWidth: 1600, splitHeight: 900))
+        XCTAssertTrue(RegularSplitLayout.splitsCompanionPage(width: 700, height: 700))
+        XCTAssertFalse(RegularSplitLayout.splitsCompanionPage(width: 700, height: 720))
+    }
+
     func testANewDestinationForgetsTheLastChatsFilesInspector() {
         var state = SessionNavigationState()
         state.select(SessionSummary(sessionId: "session-1"))
         state.chatShowsFilesInspector = true
+        state.chatShowsCompanionPage = true
 
         state.select(SessionSummary(sessionId: "session-2"))
         XCTAssertFalse(state.chatShowsFilesInspector)
+        XCTAssertFalse(state.chatShowsCompanionPage)
 
         state.chatShowsFilesInspector = true
         state.returnToChats()

@@ -30,6 +30,16 @@ public enum DivisionRegionLayout {
             guard !fold.isNull, fold.width > 0, fold.height > 0 else { return available }
             if division.height > division.width {
                 guard avoidsVerticalDivisions else { return available }
+                // A fold at an edge leaves these bounds one pane, as a split arrangement lays it out (TAL-1458): it only
+                // trims that edge.
+                if fold.maxX >= bounds.maxX {
+                    return available.intersection(CGRect(x: bounds.minX, y: bounds.minY,
+                        width: fold.minX - bounds.minX, height: bounds.height))
+                }
+                if fold.minX <= bounds.minX {
+                    return available.intersection(CGRect(x: fold.maxX, y: bounds.minY,
+                        width: bounds.maxX - fold.maxX, height: bounds.height))
+                }
                 if layoutDirection == .rightToLeft {
                     return available.intersection(CGRect(x: bounds.minX, y: bounds.minY,
                         width: fold.minX - bounds.minX, height: bounds.height))

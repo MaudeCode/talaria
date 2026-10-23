@@ -293,6 +293,21 @@ public final class ChatViewModel {
             cacheErrorMessage = error.localizedDescription
         }
     }
+    /// TAL-1458: the file the companion page shows. Kept per session in memory, so the chat a size-class change
+    /// rebuilds (closing and opening the iPhone Duo) shows the same page.
+    public private(set) var companionFocus = ChatCompanionFocus() {
+        didSet { if let key = companionMemoryKey { Self.companionMemory[key] = companionFocus } }
+    }
+    private static var companionMemory: [String: ChatCompanionFocus] = [:]
+    /// What a relaunch forgets, for hosted tests that share one process.
+    public static func forgetCompanionPages() { companionMemory = [:] }
+    private var companionMemoryKey: String? { Self.companionMemoryKey(server: server, sessionID: sessionID) }
+    private static func companionMemoryKey(server: URL, sessionID: String?) -> String? {
+        sessionID.map { "\(server.absoluteString)|\($0)" }
+    }
+    public func pinCompanionFile(_ path: String) { companionFocus.pin(path, runID: activeStreamID) }
+    public func followCompanionFocus() { companionFocus.resumeFollowing() }
+    public func showCompanionBrowser(at path: String?) { companionFocus.browserPath = path }
     /// The cached link paints with the cached transcript; a failed read shows none.
     private func restoreCachedBranchedFrom(sessionID: String, modelContext: ModelContext) {
         branchedFrom = try? CacheStore.cachedBranchedFrom(serverURL: server, sessionID: sessionID, in: modelContext)
@@ -632,6 +647,9 @@ public final class ChatViewModel {
         resourceCacheVersionAtOpen = session.sessionId.flatMap { sessionListOwner?.resourceCacheVersion(for: $0) }
         self.responseCache = responseCache
         sessionID = session.sessionId
+        if let key = Self.companionMemoryKey(server: server, sessionID: session.sessionId), let remembered = Self.companionMemory[key] {
+            companionFocus = remembered
+        }
         currentWorkspace = session.workspace
         serverWorkspacePath = session.workspace
         serverWorkspaceName = session.workspaceName
@@ -1762,6 +1780,8 @@ public final class ChatViewModel {
             serverConfirmsDeepTruncate = session?.confirmsDeepTruncate == true
             applyCompressionReference(from: session)
             applyBranchedFrom(from: session, modelContext: modelContext)
+            // The live stream names newer files than a detail read mid-run, so the detail only seeds the page.
+            if companionFocus.followedPath == nil { companionFocus.follow(session?.focusPath) }
             let newerSteerRows = pendingSteerRows(changedAfter: steerChangesAtFetch)
             applyReloadedMessages(
                 reloadedMessages,
@@ -5928,6 +5948,7 @@ public final class ChatViewModel {
             toolCallAnchorMessageID = messageID
         }
 
+        companionFocus.follow(payload.focusPath, callID: payload.stableID)
         liveAssistantActivity.appendTool(
             ToolCall(
                 id: payload.stableID ?? "live-tool-\(UUID().uuidString)",
@@ -5988,6 +6009,7 @@ public final class ChatViewModel {
 
     @discardableResult
     private func completeToolCall(_ payload: ToolStreamEvent) -> Bool {
+        companionFocus.complete(payload.focusPath, callID: payload.stableID, editDiff: payload.editDiff)
         let messageID = ensureStreamingAssistantMessage()
         if toolCallAnchorMessageID == nil {
             toolCallAnchorMessageID = messageID
@@ -6623,6 +6645,7 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
     }
 
     public func streamCoordinatorStartAuxiliaryMonitoring() {
+        companionFocus.runStarted(activeStreamID)
         pendingActionCoordinator.startMonitoring()
     }
 
