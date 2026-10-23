@@ -320,9 +320,11 @@ describe('live steering', () => {
       expect(await view.findByText('Check b too')).toBeInTheDocument()
       expect(returned).toEqual([])
     } else {
-      await waitFor(() => { expect(returned).toEqual(['Check b too']) })
+      // It may have been delivered, so its text never comes back to be sent twice.
+      await waitFor(() => { expect(getStreamState().turns.s!.pendingSteers).toHaveLength(0) })
       view.rerender(<View run={run} />)
       expect(view.queryByText('Check b too')).toBeNull()
+      expect(returned).toEqual([])
     }
     expect(api.withdrawSteer).toHaveBeenCalledTimes(1)
     stop()

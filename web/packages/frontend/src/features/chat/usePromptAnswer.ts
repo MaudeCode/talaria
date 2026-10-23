@@ -10,7 +10,10 @@ import { useResourceEffects, useResourceMutation } from '../sessions/useResource
  */
 export function usePromptAnswer<V, R>(options: {
   resource: (variables: V) => string
-  /** Reread when the outcome stays unknown (the owner's fallback when `waiting` cannot be read). */
+  /**
+   * Reread when `waiting` cannot be read either. A prompt held only in the stream (approval, steer) has no query here,
+   * so it comes back for another answer, which the server refuses if it already took the first (409, `withdrawn: false`).
+   */
   queryKey: QueryKey
   send: (variables: V) => Promise<R>
   /** Whether the server still waits on this prompt. */

@@ -168,7 +168,8 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     sendReasoning({ key: reasoningKey, level, sid: sessionId ?? undefined })
   // eslint-disable-next-line react-hooks/exhaustive-deps -- reasoningKey is derived from session model/provider
   }, [sendReasoning, sessionId, session?.model, session?.model_provider])
-  // The CLI's reasoning display (config.yaml): nothing here shows it, so only a refusal reports; an unknown outcome rereads it.
+  // The CLI's reasoning display (config.yaml): nothing here shows it, so only a refusal reports; an unknown outcome rereads
+  // the reasoning status, which carries `show_reasoning`.
   const { mutate: setReasoningDisplay } = useResourceMutation({
     resource: () => 'reasoning-display', queryKey: ['reasoning'], effect: (display: 'show' | 'hide') => ({ value: display }),
     mutationFn: (display) => api.setReasoningDisplay(display),

@@ -107,6 +107,24 @@ describe('OpenRouter cost card', () => {
     expect(input).toHaveValue(425)
   })
 
+  it.each([
+    ['kept', 7, false],
+    ['lost', 42.37, true],
+  ] as const)('rereads the budget after an unknown outcome and reports only a lost save: %s (TAL-1384)', async (_, budget, failed) => {
+    vi.mocked(api.fetchOpenRouterCostHistory).mockResolvedValue(fixture)
+    vi.mocked(showToast).mockClear()
+    vi.mocked(api.saveSettings).mockRejectedValue(new ApiError({ kind: 'network', path: '/api/settings', message: 'Network down' }))
+    renderCost()
+    const input = await screen.findByLabelText('Monthly budget')
+    vi.mocked(api.fetchOpenRouterCostHistory).mockResolvedValue({ ...fixture, monthly_budget: budget })
+    await userEvent.clear(input)
+    await userEvent.type(input, '7{Enter}')
+    await waitFor(() => expect(api.fetchOpenRouterCostHistory).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(input).toHaveValue(budget))
+    if (failed) await waitFor(() => expect(showToast).toHaveBeenCalledWith('Failed to save budget', 4000, 'error'))
+    else expect(showToast).not.toHaveBeenCalled()
+  })
+
   it('returns to the saved budget with the error when the save is refused (TAL-1384)', async () => {
     vi.mocked(api.fetchOpenRouterCostHistory).mockResolvedValue(fixture)
     vi.mocked(api.saveSettings).mockRejectedValue(new ApiError({ kind: 'http', status: 400, path: '/api/settings', message: 'Budget refused' }))

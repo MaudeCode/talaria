@@ -7,6 +7,7 @@ import { useSaveSettings } from '../../app/queries'
 import { Button } from '../../ui/Button'
 import { TextInput } from '../../ui/Field'
 import { showToast } from '../toast/toast'
+import { isDefiniteRefusal } from '../../contracts/common'
 import { cn } from '../../ui/cn'
 
 const LEVEL_FILL = { ok: 'bg-accent', warn: 'bg-warning', over: 'bg-error' } as const
@@ -24,12 +25,17 @@ export function OpenRouterCost() {
   const level = h.budget_level ?? null
   const snapshots = h.snapshots ?? []
   // The submitted budget stays shown until the cost history rereads with it, and a refusal returns to the saved one;
-  // either way a budget typed since stays.
+  // an unknown outcome rereads first and reports a failure only if the server kept the old budget. A budget typed since stays.
   const saveBudget = (value: number | null, submitted: string) => {
     const settle = () => { setDraft((d) => d === submitted ? null : d) }
+    const failed = () => showToast(m.provider_cost_budget_save_failed(), 4000, 'error')
+    const reread = () => qc.invalidateQueries({ queryKey: keys.providerCostHistory }).then(settle)
     save.mutate({ provider_cost_budget: value }, {
-      onSuccess: () => { void qc.invalidateQueries({ queryKey: keys.providerCostHistory }).then(settle) },
-      onError: () => { settle(); showToast(m.provider_cost_budget_save_failed(), 4000, 'error') },
+      onSuccess: () => { void reread() },
+      onError: (error) => {
+        if (isDefiniteRefusal(error)) { settle(); failed(); return }
+        void reread().then(() => { if ((qc.getQueryData<typeof h>(keys.providerCostHistory)?.monthly_budget ?? null) !== value) failed() }, () => { settle(); failed() })
+      },
     })
   }
   const value = draft ?? (budget === null ? '' : budget.toFixed(2))

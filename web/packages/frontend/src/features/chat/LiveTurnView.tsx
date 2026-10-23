@@ -61,7 +61,8 @@ function PendingSteerMessage({ sessionId, steer }: { sessionId: string; steer: P
     setBusy(true)
     try { await request() } catch (e) { showErrorToast(e) } finally { setBusy(false) }
   }
-  // Edit and Cancel take the row away at once; a refusal brings it back. Edit's text returns once the server has it back.
+  // Edit and Cancel take the row away at once; a refusal brings it back. Edit's text returns only from a confirmed withdrawal:
+  // a steer that left during an unknown outcome may have been delivered, and returning it would invite sending it twice.
   const resource = `steer:${sessionId}:${steer.steerId}`
   const { answer: withdrawNow, answered } = usePromptAnswer({
     resource: () => resource, queryKey: ['steer', sessionId],
@@ -71,8 +72,7 @@ function PendingSteerMessage({ sessionId, steer }: { sessionId: string; steer: P
       dispatch({ type: 'steer_closed', sessionId, steerId: steer.steerId })
       // Already taken: the steer is being delivered, so the row stays gone and says why.
       if (r && !r.withdrawn) { showToast(m.steer_already_taken(), 2500); return }
-      // Unconfirmed but no longer waiting: the text comes back rather than being lost.
-      if (reason === 'edit') returnToComposer(sessionId, r?.text ?? steer.text)
+      if (reason === 'edit' && r) returnToComposer(sessionId, r.text ?? steer.text)
     },
   })
   const withdraw = (reason: SteerWithdrawRequest['reason']) => { if (!busy) withdrawNow(reason); return Promise.resolve() }
