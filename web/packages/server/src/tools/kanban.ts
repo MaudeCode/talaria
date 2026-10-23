@@ -98,15 +98,71 @@ export function lastCardAction(events: unknown[]): { action: 'block' | 'unblock'
   return last
 }
 
-/** Adds the card policy to a payload's `task` and `columns[].tasks`, and a detail's `last_card_action`; anything else passes through. */
+/** Shared card policy for tasks, board columns, details and the bounded inspection projection. */
 export function withKanbanPolicy<T>(payload: T): T {
   const p = payload as Dict
   if (!p || typeof p !== 'object' || Array.isArray(p)) return payload
   const out: Dict = { ...p }
+  if (Array.isArray(p.nodes) && Array.isArray(p.edges)) return inspectionProjection(p) as T
   if ('task' in p) out.task = withTaskPolicy(p.task)
   if ('task' in p && Array.isArray(p.events)) out.last_card_action = lastCardAction(p.events as unknown[])
   if (Array.isArray(p.columns)) out.columns = p.columns.map((c: unknown) => (c && typeof c === 'object' && Array.isArray((c as Dict).tasks) ? { ...(c as Dict), tasks: ((c as Dict).tasks as unknown[]).map(withTaskPolicy) } : c))
   return out as T
+}
+
+/** Bounded profile snapshot. Traversal sees only visible nodes, never a hidden bridge. */
+function inspectionProjection(p: Dict): Dict {
+  const filters = dict(p.inspection_filters)
+  const visible = (p.nodes as Dict[]).filter(n => {
+    const t = dict(n.task)
+    return (filters.include_archived === true || t.status !== 'archived') &&
+      (!filters.assignee || t.assignee === filters.assignee) && (!filters.tenant || t.tenant === filters.tenant) &&
+      (!filters.search || [t.id, t.title, t.body, t.assignee, t.tenant].some(v => str(v).toLowerCase().includes(str(filters.search).toLowerCase())))
+  })
+  const nodes = visible.slice(0, 500)
+  const ids = new Set(nodes.map(n => str(n.key)))
+  const validEdges = (p.edges as Dict[]).filter(e => ids.has(str(e.source)) && ids.has(str(e.target)))
+  const edges = validEdges.slice(0, 2000)
+  const up = new Map<string, string[]>(), down = new Map<string, string[]>()
+  for (const e of edges) {
+    const s = str(e.source), t = str(e.target)
+    up.set(t, [...(up.get(t) ?? []), s]); down.set(s, [...(down.get(s) ?? []), t])
+  }
+  const walk = (id: string, map: Map<string, string[]>) => {
+    const seen = new Set<string>(), stack = [...(map.get(id) ?? [])]
+    while (stack.length) { const next = stack.pop()!; if (!seen.has(next)) { seen.add(next); stack.push(...(map.get(next) ?? [])) } }
+    return seen
+  }
+  const running = new Set(nodes.filter(n => dict(n.task).status === 'running').map(n => str(n.key)))
+  const epoch = (v: unknown): number | null => typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null
+  const now = epoch(p.generated_at) ?? Date.now() / 1000
+  let projected = nodes.map(n => {
+    const key = str(n.key), task = dict(n.task), ancestors = walk(key, up), descendants = walk(key, down)
+    const cycle = ancestors.delete(key) || descendants.has(key)
+    descendants.delete(key)
+    const start = epoch(task.status === 'running' ? task.current_run_started_at : task.started_at)
+    const end = epoch(task.completed_at)
+    const stop = task.status === 'running' ? now : end
+    const duration_seconds = start !== null && stop !== null && stop >= start ? stop - start : null
+    return { ...n, key, task: withTaskPolicy(task), ancestors: [...ancestors].sort(), descendants: [...descendants].sort(), cycle, running_lineage: running.has(key) || [...ancestors, ...descendants].some(id => running.has(id)), timing: { start, end, duration_seconds, offset: null as number | null, width: null as number | null } }
+  })
+  if (filters.running_only === true) projected = projected.filter(n => n.running_lineage)
+  projected.sort((a, b) => a.key.localeCompare(b.key))
+  const starts = projected.flatMap(n => n.timing.start === null ? [] : [n.timing.start])
+  const stops = projected.flatMap(n => n.timing.start === null || n.timing.duration_seconds === null ? [] : [n.timing.start + n.timing.duration_seconds])
+  const start = starts.length ? Math.min(...starts) : null
+  const end = stops.length ? Math.max(...stops, ...starts) : null
+  if (start !== null && end !== null) for (const n of projected) {
+    if (n.timing.start !== null && n.timing.duration_seconds !== null) {
+      n.timing.offset = (n.timing.start - start) / Math.max(1, end - start)
+      n.timing.width = n.timing.duration_seconds / Math.max(1, end - start)
+    }
+  }
+  const kept = new Set(projected.map(n => n.key))
+  for (const n of projected) { n.ancestors = n.ancestors.filter(id => kept.has(id)); n.descendants = n.descendants.filter(id => kept.has(id)) }
+  const rest = { ...p }
+  delete rest.inspection_filters
+  return { ...rest, nodes: projected, edges: edges.filter(e => kept.has(str(e.source)) && kept.has(str(e.target))), window: { start, end }, truncated: p.truncated === true || visible.length > 500 || validEdges.length > 2000 }
 }
 
 interface Column { name: string; tasks: Dict[] }
@@ -155,6 +211,11 @@ export class KanbanService {
     const s = this.deps.sidecar()
     if (!s) throw new HttpFailure(503, 'kanban unavailable: Hermes Agent sidecar is not running')
     return s
+  }
+
+  async inspection(home: string, q: { board?: string | undefined; search?: string | undefined; assignee?: string | undefined; tenant?: string | undefined; only_mine?: string | undefined; include_archived?: string | undefined; running_only?: string | undefined }, activeProfile: string): Promise<Dict> {
+    const snapshot = await this.sidecar().call('kanban.inspection', { profile_home: home, board: str(q.board).trim() || null, include_archived: truthyQuery(q.include_archived) }).catch(kanbanFailure)
+    return withKanbanPolicy({ ...snapshot, inspection_filters: { search: str(q.search).trim(), assignee: truthyQuery(q.only_mine) ? activeProfile || 'default' : str(q.assignee), tenant: str(q.tenant), include_archived: truthyQuery(q.include_archived), running_only: truthyQuery(q.running_only) } })
   }
 
   async board(home: string, q: { board?: string | undefined; tenant?: string | undefined; assignee?: string | undefined; include_archived?: string | undefined; only_mine?: string | undefined; since?: string | undefined; search?: string | undefined }, activeProfile: string): Promise<Dict> {

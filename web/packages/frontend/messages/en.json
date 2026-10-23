@@ -2668,5 +2668,20 @@
   "terminal_captured_command": "Captured command",
   "terminal_run_command": "Run",
   "terminal_command_running": "Running…",
-  "terminal_exit_code": "Exit code {code}"
+  "terminal_exit_code": "Exit code {code}",
+  "kanban_presentation": "View",
+  "kanban_view_board": "Board",
+  "kanban_view_timeline": "Timeline",
+  "kanban_view_relationships": "Relationships",
+  "kanban_inspection_scope": "Inspection scope",
+  "kanban_current_board": "Current board",
+  "kanban_all_boards": "All boards",
+  "kanban_running_lineage": "Running + lineage",
+  "kanban_cycle": "Dependency cycle",
+  "kanban_ancestors": "Prerequisites",
+  "kanban_descendants": "Dependents",
+  "kanban_no_relationships": "No relationships",
+  "kanban_timing_unknown": "Actual timing unknown",
+  "kanban_duration_seconds": "{count} seconds",
+  "kanban_inspection_truncated": "Showing a bounded snapshot. Select a board to inspect more tasks."
 }

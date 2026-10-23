@@ -83297,6 +83297,378 @@
         }
       }
     },
+    "/api/kanban/inspection": {
+      "get": {
+        "operationId": "kanban.inspection",
+        "tags": [
+          "automation"
+        ],
+        "parameters": [
+          {
+            "name": "board",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "assignee",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "tenant",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "only_mine",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "include_archived",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "running_only",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "nodes": {
+                      "type": "array",
+                      "maxItems": 500,
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string"
+                          },
+                          "board": {
+                            "type": "string"
+                          },
+                          "board_name": {
+                            "type": "string"
+                          },
+                          "task": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "number"
+                                  }
+                                ]
+                              },
+                              "title": {
+                                "type": "string"
+                              },
+                              "status": {
+                                "type": "string"
+                              },
+                              "assignee": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "priority": {
+                                "anyOf": [
+                                  {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "number"
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "description": {
+                                "type": "string"
+                              },
+                              "tags": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "session_id": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "archived": {
+                                "type": "boolean"
+                              },
+                              "created_at": {},
+                              "updated_at": {},
+                              "available_actions": {
+                                "type": "object",
+                                "properties": {
+                                  "block": {
+                                    "type": "boolean"
+                                  },
+                                  "unblock": {
+                                    "type": "boolean"
+                                  },
+                                  "complete": {
+                                    "type": "boolean"
+                                  },
+                                  "archive": {
+                                    "type": "boolean"
+                                  },
+                                  "move_to": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "block",
+                                  "unblock",
+                                  "complete",
+                                  "archive",
+                                  "move_to"
+                                ]
+                              },
+                              "requires_running_exit_confirmation": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "available_actions",
+                              "requires_running_exit_confirmation"
+                            ],
+                            "additionalProperties": {}
+                          },
+                          "ancestors": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "descendants": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "cycle": {
+                            "type": "boolean"
+                          },
+                          "running_lineage": {
+                            "type": "boolean"
+                          },
+                          "timing": {
+                            "type": "object",
+                            "properties": {
+                              "start": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "end": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "duration_seconds": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "offset": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "width": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "start",
+                              "end",
+                              "duration_seconds",
+                              "offset",
+                              "width"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "key",
+                          "board",
+                          "board_name",
+                          "task",
+                          "ancestors",
+                          "descendants",
+                          "cycle",
+                          "running_lineage",
+                          "timing"
+                        ]
+                      }
+                    },
+                    "edges": {
+                      "type": "array",
+                      "maxItems": 2000,
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "source": {
+                            "type": "string"
+                          },
+                          "target": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "source",
+                          "target"
+                        ]
+                      }
+                    },
+                    "generated_at": {
+                      "type": "number"
+                    },
+                    "truncated": {
+                      "type": "boolean"
+                    },
+                    "read_only": {
+                      "type": "boolean"
+                    },
+                    "window": {
+                      "type": "object",
+                      "properties": {
+                        "start": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "end": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "start",
+                        "end"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "nodes",
+                    "edges",
+                    "generated_at",
+                    "truncated",
+                    "read_only",
+                    "window"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/kanban/boards": {
       "get": {
         "operationId": "kanban.boards",

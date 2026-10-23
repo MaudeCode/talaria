@@ -197,7 +197,14 @@ export const KanbanBoardSchema = z.union([
 export const KanbanAssigneeSchema = z.union([z.string(), z.object({ name: z.string(), on_disk: z.boolean().optional(), counts: z.record(z.string(), z.number().int()).optional() }).catchall(Json)])
 export const KanbanEventSchema = z.object({ id: z.number().int(), task_id: z.string().nullable(), run_id: z.union([z.number().int(), z.string()]).nullable(), kind: z.string(), payload: Json, created_at: z.number().nullable() })
 export const KanbanBoardMetaSchema = z.object({ slug: z.string(), name: z.string().nullable().optional(), archived: z.boolean().optional() }).catchall(Json)
+export const KanbanInspectionEdgeSchema = z.object({ source: z.string(), target: z.string() })
+export const KanbanInspectionNodeSchema = z.object({ key: z.string(), board: z.string(), board_name: z.string(), task: KanbanTaskSchema.extend(KanbanRunStartShape) })
+export const KanbanInspectionSnapshotSchema = z.object({
+  nodes: z.array(KanbanInspectionNodeSchema).max(500),
+  edges: z.array(KanbanInspectionEdgeSchema).max(2000), generated_at: z.number(), truncated: z.boolean(), read_only: z.boolean(),
+})
 export const KANBAN_METHODS = {
+  'kanban.inspection': { params: Board.extend({ include_archived: z.boolean().optional() }), result: KanbanInspectionSnapshotSchema },
   'kanban.board': { params: Board.extend({ tenant: z.string().nullable().optional(), assignee: z.string().nullable().optional(), include_archived: z.boolean().optional(), only_mine: z.boolean().optional(), since: z.number().int().nullable().optional(), profile: z.string().nullable().optional() }), result: KanbanBoardSchema },
   'kanban.boards': { params: ProfileHomeParams.extend({ include_archived: z.boolean().optional() }), result: z.object({ boards: z.array(KanbanBoardMetaSchema.extend({ is_current: z.boolean(), counts: z.record(z.string(), z.number().int()), total: z.number().int() })), current: z.string(), read_only: z.boolean() }) },
   'kanban.create_board': { params: ProfileHomeParams.extend({ board_spec: Loose }), result: z.object({ board: KanbanBoardMetaSchema, current: z.string(), read_only: z.boolean() }) },

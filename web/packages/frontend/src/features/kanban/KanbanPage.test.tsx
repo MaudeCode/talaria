@@ -10,7 +10,7 @@ vi.mock('../../shell/AppShell', () => ({ HubPage: ({ title, actions, toolbar, ch
 const toast = vi.hoisted(() => vi.fn())
 vi.mock('../toast/toast', () => ({ showToast: toast }))
 vi.mock('../../api/sse', () => ({ SSE_CLOSED: 2, openKanbanEventStream: vi.fn(() => ({ close: vi.fn(), readyState: () => 1 })) }))
-vi.mock('../../api/endpoints', () => ({ fetchKanbanBoards: vi.fn(), fetchKanbanBoard: vi.fn(), fetchKanbanStats: vi.fn(), fetchKanbanTask: vi.fn(), fetchKanbanTaskLog: vi.fn(), kanbanTaskAction: vi.fn(), linkKanbanTasks: vi.fn(), unlinkKanbanTasks: vi.fn(), bulkKanbanStatus: vi.fn(), switchKanbanBoard: vi.fn(), updateKanbanConfig: vi.fn(), createKanbanTask: vi.fn(), archiveKanbanBoard: vi.fn() }))
+vi.mock('../../api/endpoints', () => ({ fetchKanbanInspection: vi.fn(), fetchKanbanBoards: vi.fn(), fetchKanbanBoard: vi.fn(), fetchKanbanStats: vi.fn(), fetchKanbanTask: vi.fn(), fetchKanbanTaskLog: vi.fn(), kanbanTaskAction: vi.fn(), linkKanbanTasks: vi.fn(), unlinkKanbanTasks: vi.fn(), bulkKanbanStatus: vi.fn(), switchKanbanBoard: vi.fn(), updateKanbanConfig: vi.fn(), createKanbanTask: vi.fn(), archiveKanbanBoard: vi.fn() }))
 import * as api from '../../api/endpoints'
 import { openKanbanEventStream } from '../../api/sse'
 import { KanbanPage } from './KanbanPage'
@@ -381,4 +381,41 @@ describe('Kanban writes show their result while the server is held (TAL-1179)', 
     await userEvent.type(screen.getByRole('textbox', { name: 'Title' }), 'Fresh task{Enter}')
     expect(screen.getAllByRole('button', { name: /^Fresh task/ })).toHaveLength(1)
   })
+})
+
+
+it('shares the inspection read across modes, opens the qualified board detail, and reconciles optimistic writes', async () => {
+  const node = { key: 'other/A', board: 'other', board_name: 'Other', task: task(), ancestors: [], descendants: [], cycle: false, running_lineage: false, timing: { start: null, end: null, duration_seconds: null, offset: null, width: null } }
+  const view = { nodes: [node], edges: [], window: { start: null, end: null }, generated_at: 200, truncated: false, read_only: false }
+  vi.mocked(api.fetchKanbanInspection).mockResolvedValue(view)
+  const write = deferred<Awaited<ReturnType<typeof api.kanbanTaskAction>>>()
+  vi.mocked(api.kanbanTaskAction).mockReturnValue(write.promise)
+  const { qc } = renderPage()
+  await choose('View', 'Timeline')
+  await choose('Inspection scope', 'All boards')
+  expect(await screen.findAllByText('Actual timing unknown')).toHaveLength(1)
+  await choose('View', 'Relationships')
+  await userEvent.click(screen.getByRole('button', { name: /^Task A/ }))
+  await waitFor(() => expect(api.fetchKanbanTask).toHaveBeenCalledWith('other', 'A'))
+  await choose('Column', 'done')
+  expect(screen.getByRole('dialog')).toHaveTextContent('done')
+  vi.mocked(api.fetchKanbanInspection).mockResolvedValue({ ...view, nodes: [{ ...node, task: task('A', 'done') }] })
+  await act(async () => { write.resolve({ task: task('A', 'done'), read_only: false }); await Promise.resolve() })
+  await waitFor(() => expect(qc.getQueryData(['kanban', 'inspection', undefined, { include_archived: false, assignee: '', tenant: '', only_mine: false, search: '', running_only: false }])).toMatchObject({ nodes: [{ task: { status: 'done' } }] }))
+  act(() => { teardownAll(); qc.clear() })
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+})
+
+it('shows a task created from inspection immediately and removes a refused creation', async () => {
+  vi.mocked(api.fetchKanbanInspection).mockResolvedValue({ nodes: [], edges: [], window: { start: null, end: null }, generated_at: 200, truncated: false, read_only: false })
+  const write = deferred<Awaited<ReturnType<typeof api.createKanbanTask>>>()
+  vi.mocked(api.createKanbanTask).mockReturnValue(write.promise)
+  renderPage()
+  await choose('View', 'Timeline')
+  await userEvent.click(screen.getByRole('button', { name: 'New task' }))
+  await userEvent.type(screen.getByRole('textbox', { name: 'Title' }), 'Fresh inspection task{Enter}')
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  expect(screen.getByRole('button', { name: 'Fresh inspection task' })).toBeDisabled()
+  await act(async () => { write.reject(refusal('Creation refused')); await Promise.resolve() })
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Fresh inspection task' })).toBeNull())
 })
