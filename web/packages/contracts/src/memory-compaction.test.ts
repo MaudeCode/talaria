@@ -8,5 +8,5 @@ it('shares compaction preview and apply fixtures with native consumers', () => {
   expect(MemoryCompactionRefusalSchema.parse(fixture.conflict).code).toBe('memory_compaction_conflict')
   expect(MemoryCompactionRefusalSchema.parse(fixture.unavailable).code).toBe('memory_compaction_unavailable')
   expect(MemoryCompactionApplySchema.parse(fixture.applied).ok).toBe(true)
-  expect(toolsContract.memory.compactionApply['~orpc'].inputSchema.parse(fixture.apply)).toEqual(fixture.apply)
+  expect(toolsContract.memory.compactionApply['~orpc'].inputSchema?.parse(fixture.apply)).toEqual(fixture.apply)
 })
