@@ -15,6 +15,68 @@ final class SessionListHostedTests: XCTestCase {
         element.accessibilityLabel?.hasPrefix(sessionTitle) == true
     }
 
+    private func isSettingsAvatar(_ element: NSObject) -> Bool {
+        // The hidden navigation drawer also has a Settings row.
+        element.accessibilityLabel == "Settings" &&
+            element.accessibilityHint == "Opens Settings. Long press to switch servers."
+    }
+
+    func testSettingsAvatarJoinsTheDuoVerticalToolbar() async throws {
+        try XCTSkipUnless(
+            ProcessInfo.processInfo.environment["SIMULATOR_MODEL_IDENTIFIER"] == "iPhone19,4",
+            "Requires the iPhone Duo simulator's native vertical toolbar"
+        )
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let panel = scene.screen.nativeBounds.size
+        let viewport = scene.coordinateSpace.bounds.size
+        let cover = [HostedSize.duoOuter.width, HostedSize.duoOuter.height].sorted()
+        try XCTSkipUnless(
+            [panel.width, panel.height].sorted() == cover.map { $0 * scene.screen.nativeScale } &&
+                [viewport.width, viewport.height].sorted() == cover,
+            "Requires the active iPhone Duo outer display; close and verify the Duo posture before running"
+        )
+        let fixture = try FixtureApp(for: self)
+        addTeardownBlock { @MainActor in
+            scene.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait))
+            let restored = await self.awaitCondition { scene.interfaceOrientation == .portrait }
+            XCTAssertTrue(restored, "Portrait must be restored before the next hosted test starts")
+        }
+        for orientation: UIInterfaceOrientationMask in [.portrait, .landscapeRight] {
+            scene.requestGeometryUpdate(.iOS(interfaceOrientations: orientation))
+            let rotated = await awaitCondition {
+                orientation == .portrait ? scene.interfaceOrientation == .portrait : scene.interfaceOrientation == .landscapeRight
+            }
+            XCTAssertTrue(rotated, "The native scene must reach the requested orientation")
+            let window = try hostWindow(fixture.sessionList(), size: scene.coordinateSpace.bounds.size)
+            _ = try await requireElement(in: window, where: isSettingsAvatar)
+            _ = try await requireElement(in: window, label: "Notifications")
+            // SwiftUI can publish toolbar accessibility before its native axis transition settles.
+            _ = await awaitCondition {
+                guard let settings = HostedAccessibility.elements(in: window).first(where: self.isSettingsAvatar),
+                      let notifications = HostedAccessibility.element(in: window, label: "Notifications") else { return false }
+                return abs(settings.accessibilityFrame.midX - notifications.accessibilityFrame.midX) <= 1
+            }
+            let settings = try XCTUnwrap(HostedAccessibility.elements(in: window).first(where: isSettingsAvatar))
+            let notifications = try XCTUnwrap(HostedAccessibility.element(in: window, label: "Notifications"))
+            attachHostedScreenshot(window, name: orientation == .portrait ? "duo-settings-portrait" : "duo-settings-landscape")
+            XCTAssertEqual(settings.accessibilityFrame.midX, notifications.accessibilityFrame.midX, accuracy: 1,
+                "Settings must share the vertical bar with Notifications instead of keeping a horizontal bar")
+            XCTAssertGreaterThan(abs(settings.accessibilityFrame.midY - notifications.accessibilityFrame.midY), 20)
+            XCTAssertEqual(settings.accessibilityHint, "Opens Settings. Long press to switch servers.")
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+    }
+
+    func testSettingsAvatarOpensSettings() async throws {
+        let fixture = try FixtureApp(for: self)
+        let window = try hostWindow(fixture.sessionList())
+        HostedAccessibility.activate(try await requireElement(in: window, where: isSettingsAvatar))
+        _ = try await requireElement(in: window) {
+            HostedAccessibility.identifier(of: $0) == "settings-user-profile"
+        }
+    }
+
     func testPendingPinIsVisibleBeforeTheServerAnswers() async throws {
         let arrived = expectation(description: "pin request held")
         let state = HeldRowMutationProtocol.State()
