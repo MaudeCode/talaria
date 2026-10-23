@@ -17,8 +17,9 @@ final class AppSidebarPresentation {
     @ObservationIgnored fileprivate var didChange: ((Bool) -> Void)?
 }
 
-/// The slide-out sidebar behind the app's screen. Core Animation runs the slide, so it keeps its
-/// frames while the main thread builds the section just picked in the sidebar (TAL-477).
+/// The slide-out sidebar behind the app's screen, or over it beside a vertical bar (TAL-481).
+/// Core Animation runs the slide, so it keeps its frames while the main thread builds the section
+/// just picked in the sidebar (TAL-477).
 struct AppSidebarContainer<Sidebar: View, Content: View>: View {
     private let presentation: AppSidebarPresentation
     private let onPresentationChange: (Bool) -> Void
@@ -142,7 +143,6 @@ final class AppSidebarController: UIViewController {
         view.backgroundColor = .systemBackground
 
         embed(sidebarHost, in: view)
-        sidebarHost.view.backgroundColor = .clear
 
         surface.layer.shadowColor = UIColor.black.cgColor
         surface.layer.shadowRadius = 24
@@ -167,6 +167,12 @@ final class AppSidebarController: UIViewController {
         edgePan.addTarget(self, action: #selector(edgePanned(_:)))
         view.addGestureRecognizer(edgePan)
 
+        if #available(iOS 27.1, *) {
+            registerForTraitChanges(UITraitCollection.systemTraitsAffectingVerticalBarEdge) { (self: Self, _) in
+                self.view.setNeedsLayout()
+            }
+        }
+
         reflect(isPresented: presentation.isPresented)
         progress = presentation.isPresented ? 1 : 0
     }
@@ -175,8 +181,16 @@ final class AppSidebarController: UIViewController {
         super.viewDidLayoutSubviews()
         let bounds = view.bounds
         let width = revealWidth
-        // Frames are laid out untransformed; apply(progress:) moves the surface afterwards.
+        // Frames are laid out untransformed; apply(progress:) moves the surface or sidebar afterwards.
         surface.transform = .identity
+        sidebarHost.view.transform = .identity
+        if presentsOver {
+            sidebarHost.view.backgroundColor = .systemBackground
+            view.bringSubviewToFront(sidebarHost.view)
+        } else {
+            sidebarHost.view.backgroundColor = .clear
+            view.sendSubviewToBack(sidebarHost.view)
+        }
         sidebarHost.view.frame = CGRect(
             x: isRightToLeft ? bounds.width - leadingInset - width : 0,
             y: 0,
@@ -195,7 +209,7 @@ final class AppSidebarController: UIViewController {
     }
 
     /// The width the screen slides aside, measured inside the safe area (TAL-416).
-    private var revealWidth: CGFloat {
+    var revealWidth: CGFloat {
         let insets = view.safeAreaInsets
         return min(360, (view.bounds.width - insets.left - insets.right) * 0.84)
     }
@@ -208,6 +222,24 @@ final class AppSidebarController: UIViewController {
         isRightToLeft ? -1 : 1
     }
 
+    /// A vertical bar is window chrome and stays put, so beside one the sidebar slides in over the
+    /// screen instead of pushing the screen away from its bar (TAL-481).
+    private var presentsOver: Bool {
+        if #available(iOS 27.1, *) {
+            return traitCollection.verticalBarEdge != .unspecified
+        }
+        return false
+    }
+
+    private var slide: AppSidebarSlide {
+        AppSidebarSlide(revealWidth: revealWidth, leadingInset: leadingInset, presentsOver: presentsOver)
+    }
+
+    /// The view that moves in the current mode.
+    private var slidingView: UIView {
+        presentsOver ? sidebarHost.view : surface
+    }
+
     private func embed(_ child: UIViewController, in container: UIView) {
         addChild(child)
         container.addSubview(child.view)
@@ -217,23 +249,29 @@ final class AppSidebarController: UIViewController {
     /// Every visual that follows the sidebar's position, from closed (0) to open (1).
     private func apply(progress: CGFloat) {
         self.progress = progress
-        let offset = revealWidth * progress
-        surface.transform = CGAffineTransform(translationX: offset * direction, y: 0)
-        // UIKit measures safe areas through transforms, so sliding the screen off the leading
-        // edge would drop its leading inset and lay it out again. Hand back what the slide took.
-        let restored = min(leadingInset, offset)
+        let slide = slide
+        let surfaceOffset = slide.surfaceOffset(progress: progress)
+        let sidebarOffset = slide.sidebarOffset(progress: progress)
+        surface.transform = CGAffineTransform(translationX: surfaceOffset * direction, y: 0)
+        sidebarHost.view.transform = CGAffineTransform(translationX: sidebarOffset * direction, y: 0)
+        // UIKit measures safe areas through the surface's transform, so sliding the screen off the
+        // leading edge would drop its leading inset and lay it out again. Hand back what the slide
+        // took. The sidebar's own transform leaves its safe area alone.
+        let restored = min(leadingInset, surfaceOffset)
         let additional = isRightToLeft
             ? UIEdgeInsets(top: 0, left: 0, bottom: 0, right: restored)
             : UIEdgeInsets(top: 0, left: restored, bottom: 0, right: 0)
         if contentHost.additionalSafeAreaInsets != additional {
             contentHost.additionalSafeAreaInsets = additional
         }
-        surface.layer.shadowOpacity = Float(0.28 * progress)
-        surface.layer.shadowOffset = CGSize(width: -8 * direction * progress, height: 0)
-        clip.layer.cornerRadius = Motion.cornerRadius * progress
-        tint.alpha = progress
+        // The screen only lifts off as a card when it slides aside.
+        let pushed = slide.presentsOver ? 0 : progress
+        surface.layer.shadowOpacity = Float(0.28 * pushed)
+        surface.layer.shadowOffset = CGSize(width: -8 * direction * pushed, height: 0)
+        clip.layer.cornerRadius = Motion.cornerRadius * pushed
+        tint.alpha = slide.tintAlpha(progress: progress)
         // A fade only: scaling the sidebar would shrink its safe area the same way.
-        sidebarHost.view.alpha = reduceMotion ? 1 : 0.25 + 0.75 * progress
+        sidebarHost.view.alpha = reduceMotion || slide.presentsOver ? 1 : 0.25 + 0.75 * progress
     }
 
     private func reflect(isPresented: Bool) {
@@ -297,9 +335,8 @@ final class AppSidebarController: UIViewController {
 
     /// A drag that catches the sidebar mid-slide takes it from where it is on screen.
     private func stopSlide() {
-        if let presented = surface.layer.presentation() {
-            let offset = abs(presented.affineTransform().tx)
-            apply(progress: revealWidth > 0 ? min(offset / revealWidth, 1) : 0)
+        if let presented = slidingView.layer.presentation() {
+            apply(progress: slide.progress(movingOffset: presented.affineTransform().tx * direction))
         }
         for layer in [surface.layer, clip.layer, tint.layer, sidebarHost.view.layer] {
             layer.removeAllAnimations()

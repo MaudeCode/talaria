@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "On the iPhone Duo outer display, the sidebar slides in over the screen, so the side bar's buttons no longer float over a moved screen.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}
