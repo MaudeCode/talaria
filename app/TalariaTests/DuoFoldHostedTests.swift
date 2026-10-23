@@ -190,7 +190,8 @@ final class DuoFoldHostedTests: XCTestCase {
             .filter { $0.accessibilityLabel == "Show more" && isVisible($0) }
             .max { $0.accessibilityFrame.minY < $1.accessibilityFrame.minY }, "No collapsed long body near the latest message")
         HostedAccessibility.activate(showMore)
-        _ = try await requireElement(in: window, "The long body did not expand") { $0.accessibilityLabel == "Show less" && isVisible($0) }
+        // The expanded body is long enough that its Show less can sit below the screen.
+        _ = try await requireElement(in: window, label: "Show less", "The long body did not expand")
 
         for closed in [true, false] {
             fold(folding, closed: closed)
