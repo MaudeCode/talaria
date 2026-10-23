@@ -57,12 +57,13 @@ def _native_home(home):
 
 def drain_budget(pause, homes, ceiling=GATEWAY_DRAIN_CEILING):
     """One shared drain budget: the longest native after-turn + stop-drain budget among the homes, bounded."""
-    budgets = []
+    budget = 0.0
     for home in sorted({str(home) for home in homes}):
         with _native_home(home):
-            budgets.append(float(pause._drain_budget()))
-    budget = max(budgets, default=0.0)
-    return ceiling if math.isnan(budget) else min(max(budget, 0.0), ceiling)
+            native = float(pause._drain_budget())
+        # A native wait-indefinitely budget (inf or NaN) takes the ceiling before any comparison.
+        budget = max(budget, native if math.isfinite(native) else ceiling)
+    return min(budget, ceiling)
 
 
 @contextlib.contextmanager

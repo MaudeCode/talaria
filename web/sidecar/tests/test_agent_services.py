@@ -2455,8 +2455,9 @@ def test_profiles_share_the_longest_bounded_native_budget(native_drain, monkeypa
     pause._drain_budget = lambda: budgets.get(os.environ.get('HERMES_HOME'), 45.0)
     assert recovery.gateway_deadline() == NATIVE_BUDGET, 'one profile clipped or ignored another profile\'s native budget'
     assert os.environ.get('HERMES_HOME') == before
-    budgets[str(other)] = float('inf')
-    assert recovery.gateway_deadline() == services.GATEWAY_DRAIN_CEILING
+    for unbounded in (float('inf'), float('nan')):
+        budgets[str(other)] = unbounded
+        assert recovery.gateway_deadline() == services.GATEWAY_DRAIN_CEILING, f'an indefinite {unbounded} budget was clipped to another profile'
     # One orphan-recovery attempt still fits its recovery RPC; the retained debt drives the next attempt.
     monkeypatch.setattr(services, 'threading', types.SimpleNamespace(Event=model['waiting']))
     with pytest.raises(RuntimeError, match='gateway drain remains owed'):
