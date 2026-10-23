@@ -26,6 +26,8 @@ private struct ChatBodyEvaluationKey: EnvironmentKey {
 }
 
 extension EnvironmentValues {
+    @Entry var chatDivisionFramesForTesting: [CGRect]? = nil
+
     var chatBodyEvaluation: ChatBodyEvaluationRecorder? {
         get { self[ChatBodyEvaluationKey.self] }
         set { self[ChatBodyEvaluationKey.self] = newValue }
@@ -71,6 +73,7 @@ private enum TurnDiffPresentation: Identifiable {
 struct ChatView: View {
 #if DEBUG
     @Environment(\.chatBodyEvaluation) private var recordBodyEvaluation
+    @Environment(\.chatDivisionFramesForTesting) private var divisionFramesForTesting
 #endif
     private var bottomAnchorID: String {
         latestTranscriptMessageID ?? ChatTranscriptView.emptyContainerID
@@ -500,6 +503,7 @@ struct ChatView: View {
 
     private var chatLayout: some View {
         GeometryReader { geometry in
+            let composerFrame = composerRegion(in: geometry)
             ZStack(alignment: .bottom) {
                 VStack(spacing: 0) {
                     if viewModel.isViewingCachedData {
@@ -515,11 +519,14 @@ struct ChatView: View {
                 }
                 .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: viewModel.showsListenPlaybackBar)
 
-                BottomComposerMaterialFade(composerHeight: composerHeight)
-
-                composerAccessoryStack
-
-                messageComposer
+                ZStack(alignment: .bottom) {
+                    BottomComposerMaterialFade(composerHeight: composerHeight)
+                    composerAccessoryStack
+                    messageComposer
+                }
+                .frame(width: composerFrame.width)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .animation(ChatMotion.composerChrome(reduceMotion: reduceMotion), value: composerFrame.minX)
 
                 if let approvalPrompt = viewModel.approvalPrompt {
                     ApprovalRequestOverlay(
@@ -556,6 +563,22 @@ struct ChatView: View {
         .onChange(of: viewModel.pendingResourceChange) { previous, current in
             if previous?.title != nil && current == nil { viewModel.reconcileResourceTitle() }
         }
+    }
+
+    private func composerRegion(in geometry: GeometryProxy) -> CGRect {
+        let bounds = CGRect(origin: .zero, size: geometry.size)
+#if DEBUG
+        if let divisionFramesForTesting {
+            return DivisionRegionLayout.trailingFrame(in: bounds, divisions: divisionFramesForTesting)
+        }
+#endif
+        guard #available(iOS 27.1, *) else { return bounds }
+        let divisions = geometry.reservedRegions(kind: .division).filter(\.isActive).map { region in
+            CGRect(x: region.frame.minX - region.margins.leading, y: region.frame.minY,
+                   width: region.frame.width + region.margins.leading + region.margins.trailing,
+                   height: region.frame.height)
+        }
+        return DivisionRegionLayout.trailingFrame(in: bounds, divisions: divisions)
     }
 
     private var chatWithLifecycle: some View {
