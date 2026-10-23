@@ -150,25 +150,31 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   // Reasoning effort is server state shared with the CLI (config.yaml), keyed on the session's model.
   const reasoningKey = ['reasoning', session?.model ?? null, session?.model_provider ?? null] as const
   const reasoningStatus = useQuery({ queryKey: reasoningKey, queryFn: () => api.fetchReasoning(session?.model, session?.model_provider), enabled: !!sessionId, staleTime: 30_000 })
-  const reasoningResource = JSON.stringify(['reasoning', session?.model ?? null, session?.model_provider ?? null])
-  const reasoningEffect = useResourceEffects<string | null>()[reasoningResource]
+  const reasoningEffect = useResourceEffects<string | null>()[JSON.stringify(reasoningKey)]
   // The chosen effort shows at once; the server's answer replaces it.
   const reasoning = reasoningEffect && 'value' in reasoningEffect ? reasoningEffect.value ?? null : reasoningStatus.data?.reasoning_effort || null
   const reasoningLevels = reasoningStatus.data?.supported_efforts
   const reasoningSupported = reasoningStatus.data?.supports_reasoning_effort !== false || reasoningStatus.data?.supports_thinking_toggle === true
   const reasoningWrite = useResourceMutation({
-    resource: ({ resource }: { resource: string; key: readonly unknown[]; level: string | null; model: string | null | undefined; provider: string | null | undefined; sid: string | undefined }) => resource,
+    resource: ({ key }: { key: typeof reasoningKey; level: string | null; sid: string | undefined }) => JSON.stringify(key),
     queryKey: ['reasoning'], readKeys: ({ key }) => [{ queryKey: key, exact: true }],
     effect: ({ level }) => ({ value: level }),
-    mutationFn: ({ level, model, provider, sid }) => api.setReasoningEffort(level ?? '', model, provider, sid),
+    mutationFn: ({ key: [, model, provider], level, sid }) => api.setReasoningEffort(level ?? '', model, provider, sid),
     onSuccess: (status, { key }) => { qc.setQueryData(key, status); showToast(`${m.composer_control_reasoning()}: ${status.reasoning_effort || m.reasoning_default()}`) },
     onError: (e) => showErrorToast(e),
   })
   const sendReasoning = reasoningWrite.mutate
   const setReasoning = useCallback((level: string | null) => {
-    sendReasoning({ resource: reasoningResource, key: reasoningKey, level, model: session?.model, provider: session?.model_provider, sid: sessionId ?? undefined })
+    sendReasoning({ key: reasoningKey, level, sid: sessionId ?? undefined })
   // eslint-disable-next-line react-hooks/exhaustive-deps -- reasoningKey is derived from session model/provider
-  }, [sendReasoning, reasoningResource, sessionId, session?.model, session?.model_provider])
+  }, [sendReasoning, sessionId, session?.model, session?.model_provider])
+  // The CLI's reasoning display (config.yaml): nothing here shows it, so only a refusal reports; an unknown outcome rereads it.
+  const { mutate: setReasoningDisplay } = useResourceMutation({
+    resource: () => 'reasoning-display', queryKey: ['reasoning'], effect: (display: 'show' | 'hide') => ({ value: display }),
+    mutationFn: (display) => api.setReasoningDisplay(display),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: keys.settings }) },
+    onError: showErrorToast,
+  })
 
   const { updateSession, dialog: modelDialog, notice: modelNotice, confirming } = useSessionUpdate(sessionId, refresh, session?.owner_attachment)
   // Session controls (toolsets, personality) show the choice at once; the reread of the session confirms it.
@@ -298,8 +304,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
       case 'reasoning': {
         const arg = args.trim().toLowerCase()
         if (!arg) { showToast(`${m.composer_control_reasoning()}: ${reasoning ?? m.reasoning_default()}`, 4000); return true }
-        // Nothing on the page shows the display choice, so the command finishes at once; a refusal reports itself.
-        if (arg === 'show' || arg === 'on' || arg === 'hide' || arg === 'off') { void api.setReasoningDisplay(arg === 'show' || arg === 'on' ? 'show' : 'hide').then(() => qc.invalidateQueries({ queryKey: keys.settings }), (e: unknown) => showErrorToast(e)); return true }
+        if (arg === 'show' || arg === 'on' || arg === 'hide' || arg === 'off') { setReasoningDisplay(arg === 'show' || arg === 'on' ? 'show' : 'hide'); return true }
         setReasoning(arg === 'default' ? null : arg)
         return true
       }
@@ -323,7 +328,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
       case 'voice': showToast(m.voice_error(), 3000); return true
       default: return false
     }
-  }, [renameSession, sessionId, navigate, refresh, qc, onToggleYolo, onModelChange, onWorkspaceChange, onRegenerate, reasoning, setReasoning, runCompression, runHistory, lastExchange, sendSessionWrite])
+  }, [renameSession, sessionId, navigate, refresh, qc, onToggleYolo, onModelChange, onWorkspaceChange, onRegenerate, reasoning, setReasoning, runCompression, runHistory, lastExchange, sendSessionWrite, setReasoningDisplay])
 
   const onBranch = useCallback(async (row: VisibleMessage) => {
     if (!sessionId) return
