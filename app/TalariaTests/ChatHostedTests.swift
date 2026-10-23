@@ -1406,3 +1406,97 @@ private struct RecycledBodyView: View {
         }
     }
 }
+
+
+@MainActor
+final class ApprovalOverlayLayoutTests: XCTestCase {
+    func testBookKeepsEveryChoiceOnTheTrailingSide() async throws {
+        let fold = CGRect(x: 440, y: 0, width: 20, height: 760)
+        let window = try hostApproval(size: CGSize(width: 900, height: 760), divisions: [fold])
+        attachHostedScreenshot(window, name: "approval-book")
+        for title in ["Allow once", "Allow session", "Always allow", "Deny", "Skip all this session"] {
+            let button = try XCTUnwrap(HostedAccessibility.element(in: window, label: title))
+            XCTAssertGreaterThanOrEqual(button.accessibilityFrame.minX, fold.maxX + 18,
+                "\(title) must stay inside the trailing pane, including its padding")
+            XCTAssertFalse(button.accessibilityFrame.intersects(fold), "\(title) crosses the fold")
+        }
+    }
+
+    func testTabletopKeepsEveryChoiceAboveTheFold() async throws {
+        let fold = CGRect(x: 0, y: 470, width: 900, height: 20)
+        let window = try hostApproval(size: CGSize(width: 900, height: 960), divisions: [fold])
+        attachHostedScreenshot(window, name: "approval-tabletop")
+        for title in ["Allow once", "Allow session", "Always allow", "Deny", "Skip all this session"] {
+            let button = try XCTUnwrap(HostedAccessibility.element(in: window, label: title))
+            XCTAssertLessThanOrEqual(button.accessibilityFrame.maxY, fold.minY,
+                "\(title) must remain above the fold")
+            XCTAssertFalse(button.accessibilityFrame.intersects(fold), "\(title) crosses the fold")
+        }
+    }
+
+    func testLongDetailsKeepActionsVisibleAboveTheFold() async throws {
+        let fold = CGRect(x: 0, y: 370, width: 900, height: 20)
+        let window = try hostApproval(size: CGSize(width: 900, height: 760), divisions: [fold],
+            description: Array(repeating: "A line of synthetic approval details.", count: 40).joined(separator: "\n"))
+        attachHostedScreenshot(window, name: "approval-tabletop-long-details")
+        for title in ["Allow once", "Allow session", "Always allow", "Deny", "Skip all this session"] {
+            let button = try XCTUnwrap(HostedAccessibility.element(in: window, label: title))
+            XCTAssertGreaterThan(button.accessibilityFrame.height, 0)
+            XCTAssertGreaterThanOrEqual(button.accessibilityFrame.minY, 0)
+            XCTAssertLessThanOrEqual(button.accessibilityFrame.maxY, fold.minY)
+        }
+    }
+
+    func testFlatPhoneKeepsTheOriginalCenteredCard() throws {
+        let window = try hostApproval(size: HostedSize.phone, divisions: [])
+        attachHostedScreenshot(window, name: "approval-flat-phone")
+        let allow = try XCTUnwrap(HostedAccessibility.element(in: window, label: "Allow once"))
+        XCTAssertEqual(allow.accessibilityFrame.minX, 34, accuracy: 1)
+    }
+
+    func testCardFramesRespectBookTabletopAndLayoutDirection() {
+        let bounds = CGRect(x: 0, y: 0, width: 900, height: 760)
+        let book = CGRect(x: 440, y: 0, width: 20, height: 760)
+        let size = CGSize(width: 520, height: 300)
+        XCTAssertEqual(ApprovalRequestOverlay.cardFrame(in: bounds, divisions: [book], cardSize: size),
+                       CGRect(x: 478, y: 230, width: 404, height: 300))
+        XCTAssertEqual(ApprovalRequestOverlay.cardFrame(in: bounds, divisions: [book], cardSize: size,
+                                                       layoutDirection: .rightToLeft),
+                       CGRect(x: 18, y: 230, width: 404, height: 300))
+        let tabletop = CGRect(x: 0, y: 370, width: 900, height: 20)
+        XCTAssertEqual(ApprovalRequestOverlay.cardFrame(in: bounds, divisions: [tabletop], cardSize: size),
+                       CGRect(x: 190, y: 35, width: 520, height: 300))
+    }
+
+    func testFlatAndOffscreenDivisionsKeepTheCenteredFrame() {
+        let bounds = CGRect(x: 0, y: 0, width: 900, height: 760)
+        let size = CGSize(width: 520, height: 300)
+        let expected = CGRect(x: 190, y: 230, width: 520, height: 300)
+        XCTAssertEqual(ApprovalRequestOverlay.cardFrame(in: bounds, divisions: [], cardSize: size), expected)
+        XCTAssertEqual(ApprovalRequestOverlay.cardFrame(in: bounds,
+            divisions: [CGRect(x: 1000, y: 0, width: 20, height: 760)], cardSize: size), expected)
+        let phone = CGRect(x: 0, y: 0, width: 390, height: 844)
+        XCTAssertEqual(ApprovalRequestOverlay.cardFrame(in: phone, divisions: [], cardSize: size),
+                       CGRect(x: 18, y: 272, width: 354, height: 300))
+    }
+
+    func testOversizedCardIsConstrainedWithinThePane() {
+        let bounds = CGRect(x: 30, y: 20, width: 900, height: 760)
+        let fold = CGRect(x: 30, y: 390, width: 900, height: 20)
+        let frame = ApprovalRequestOverlay.cardFrame(in: bounds, divisions: [fold],
+                                                     cardSize: CGSize(width: 2000, height: 2000))
+        XCTAssertEqual(frame, CGRect(x: 220, y: 20, width: 520, height: 370))
+        XCTAssertFalse(frame.intersects(fold))
+    }
+
+    private func hostApproval(size: CGSize, divisions: [CGRect],
+                              description: String = "Run the fixture command?") throws -> UIWindow {
+        let pending = PendingApproval(approvalId: "synthetic-fold-approval", command: "echo fixture",
+                                      description: description)
+        return try hostWindow(ApprovalRequestOverlay(
+            prompt: ApprovalPromptState(sessionID: "synthetic-fold-session", pending: pending, pendingCount: 1),
+            isResponding: false, errorMessage: nil, onChoice: { _ in }, onSkipAll: {},
+            divisionFrames: divisions
+        ).ignoresSafeArea(), size: size)
+    }
+}
