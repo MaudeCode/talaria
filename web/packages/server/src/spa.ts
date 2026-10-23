@@ -2,8 +2,10 @@
  * The production SPA shell from `static/dist` (Python `api/spa_shell.py`):
  * route allowlist, placeholder substitution, hashed assets with ETag/gzip.
  */
-import { gzipSync } from 'node:zlib'
+import { gzip } from 'node:zlib'
+import { promisify } from 'node:util'
 import { readFileSync, statSync } from 'node:fs'
+import { readFile, stat } from 'node:fs/promises'
 import { extname, relative, resolve, isAbsolute } from 'node:path'
 import { PREVIEW_PREFIX } from './workspace/preview.js'
 
@@ -38,6 +40,7 @@ const ASSET_MIME: Record<string, string> = {
   '.wasm': 'application/wasm',
 }
 const COMPRESSIBLE = new Set(['.js', '.mjs', '.css', '.html', '.json', '.webmanifest', '.svg', '.txt', '.map'])
+const gzipAsync = promisify(gzip)
 
 export function isServerOwned(path: string): boolean {
   return SERVER_OWNED_EXACT.has(path) || SERVER_OWNED_PREFIXES.some((p) => path.startsWith(p))
@@ -66,23 +69,27 @@ export function quoteAll(value: string): string {
   return encodeURIComponent(value).replace(/[!'()*~]/g, (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase()).replace(/%7E/g, '~')
 }
 
-/** Cached files under one root: raw bytes, gzip twin for compressible types over 1 KiB, weak ETag from (size, mtime_ns). */
+/**
+ * Cached files under one root: raw bytes, gzip twin for compressible types over 1 KiB, weak ETag from (size, mtime_ns).
+ * Cold loads read and compress off the event loop; concurrent requests for one file version share a single load.
+ */
 export class AssetCache {
   readonly root: string
   private readonly entries = new Map<string, { sig: string; asset: Asset }>()
+  private readonly loading = new Map<string, { sig: string; load: Promise<Asset> }>()
 
   constructor(root: string) {
     this.root = resolve(root)
   }
 
-  /** Resolve `<root>/<rel>`; null when missing, not a file, or escaping the root. */
-  get(rel: string): Asset | null {
+  /** Resolve `<root>/<rel>`; null when missing, not a file, or escaping the root. Rejects when the file cannot be read. */
+  async get(rel: string): Promise<Asset | null> {
     const file = resolve(this.root, rel)
     const inside = relative(this.root, file)
     if (!inside || inside.startsWith('..') || isAbsolute(inside)) return null
     let st
     try {
-      st = statSync(file, { bigint: true })
+      st = await stat(file, { bigint: true })
     } catch {
       return null
     }
@@ -90,13 +97,32 @@ export class AssetCache {
     const sig = `${st.size}:${st.mtimeNs}`
     const cached = this.entries.get(file)
     if (cached?.sig === sig) return cached.asset
-    const body = readFileSync(file)
-    const ext = extname(file).toLowerCase()
-    const gz = COMPRESSIBLE.has(ext) && body.length > 1024 ? gzipSync(body, { level: 6 }) : null
+    const pending = this.loading.get(file)
+    if (pending?.sig === sig) return pending.load
     const etag = `W/"${st.size.toString(16)}-${st.mtimeNs.toString(16)}"`
-    const asset: Asset = { body, gz, etag, contentType: ASSET_MIME[ext] ?? 'application/octet-stream' }
-    this.entries.set(file, { sig, asset })
-    return asset
+    const load: Promise<Asset> = this.load(file, etag).then(
+      (asset) => {
+        // Only the newest load for this file may publish; a slower load of a replaced version is dropped.
+        if (this.loading.get(file)?.load === load) {
+          this.loading.delete(file)
+          this.entries.set(file, { sig, asset })
+        }
+        return asset
+      },
+      (error: unknown) => {
+        if (this.loading.get(file)?.load === load) this.loading.delete(file)
+        throw error
+      },
+    )
+    this.loading.set(file, { sig, load })
+    return load
+  }
+
+  private async load(file: string, etag: string): Promise<Asset> {
+    const body = await readFile(file)
+    const ext = extname(file).toLowerCase()
+    const gz = COMPRESSIBLE.has(ext) && body.length > 1024 ? await gzipAsync(body, { level: 6 }) : null
+    return { body, gz, etag, contentType: ASSET_MIME[ext] ?? 'application/octet-stream' }
   }
 }
 
@@ -147,7 +173,7 @@ export class SpaShell {
   }
 
   /** Resolve `static/dist/<rel>` inside the root; null when missing or escaping. */
-  asset(rel: string): Asset | null {
+  asset(rel: string): Promise<Asset | null> {
     return this.assets.get(rel)
   }
 

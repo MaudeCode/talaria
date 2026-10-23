@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Loading Talaria Web right after the server starts no longer stalls other open chats while it prepares the app files.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
