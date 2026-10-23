@@ -299,8 +299,11 @@ public final class ChatViewModel {
         didSet { if let key = companionMemoryKey { Self.companionMemory[key] = companionFocus } }
     }
     private static var companionMemory: [String: ChatCompanionFocus] = [:]
-    /// What a relaunch forgets, for hosted tests that share one process.
-    public static func forgetCompanionPages() { companionMemory = [:] }
+    /// Signing out of a server forgets its pages; hosted tests, which share one process, forget all of them.
+    public static func forgetCompanionPages(for server: URL? = nil) {
+        guard let server else { return companionMemory = [:] }
+        companionMemory = companionMemory.filter { !$0.key.hasPrefix("\(server.absoluteString)|") }
+    }
     private var companionMemoryKey: String? { Self.companionMemoryKey(server: server, sessionID: sessionID) }
     private static func companionMemoryKey(server: URL, sessionID: String?) -> String? {
         sessionID.map { "\(server.absoluteString)|\($0)" }
@@ -647,7 +650,8 @@ public final class ChatViewModel {
         resourceCacheVersionAtOpen = session.sessionId.flatMap { sessionListOwner?.resourceCacheVersion(for: $0) }
         self.responseCache = responseCache
         sessionID = session.sessionId
-        if let key = Self.companionMemoryKey(server: server, sessionID: session.sessionId), let remembered = Self.companionMemory[key] {
+        if let key = Self.companionMemoryKey(server: server, sessionID: session.sessionId), var remembered = Self.companionMemory[key] {
+            remembered.forgetLiveCalls()
             companionFocus = remembered
         }
         currentWorkspace = session.workspace
@@ -1781,7 +1785,7 @@ public final class ChatViewModel {
             applyCompressionReference(from: session)
             applyBranchedFrom(from: session, modelContext: modelContext)
             // The live stream names newer files than a detail read mid-run, so the detail only seeds the page.
-            if companionFocus.followedPath == nil { companionFocus.follow(session?.focusPath) }
+            companionFocus.seed(session?.focusPath)
             let newerSteerRows = pendingSteerRows(changedAfter: steerChangesAtFetch)
             applyReloadedMessages(
                 reloadedMessages,

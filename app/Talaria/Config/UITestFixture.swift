@@ -803,9 +803,9 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             return json(auxiliaryModelsResponse())
         case "/api/model/set":
             return json(["ok": true, "auxiliary": auxiliaryModelsResponse()])
-        case "/api/file" where UITestChatScenario.current == .companion || UITestFixtureEnvironment.hasCompanionFocus:
+        case "/api/file" where servesCompanionFiles:
             return companionFileResponse(url)
-        case "/api/list" where UITestChatScenario.current == .companion || UITestFixtureEnvironment.hasCompanionFocus:
+        case "/api/list" where servesCompanionFiles:
             return companionListResponse()
         case "/api/workspaces":
             return json(["workspaces": [["path": "/fixture", "name": "Fixture Workspace"]]])
@@ -1421,6 +1421,10 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
 
     /// TAL-1458: the companion fixture's files, in the order the shared `focus-path` fixture names them.
     static let companionFiles = ["Sources/Demo/Alpha.swift", "Sources/Demo/Beta.swift", "Sources/Demo/Gamma.swift", "Sources/Demo/Delta.swift"]
+
+    private static var servesCompanionFiles: Bool {
+        UITestChatScenario.current == .companion || UITestFixtureEnvironment.hasCompanionFocus
+    }
 
     static func advanceCompanionRun() {
         chatState.advanceCompanion()

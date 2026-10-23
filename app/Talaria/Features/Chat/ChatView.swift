@@ -912,9 +912,7 @@ struct ChatView: View {
                     chat
                 }
             }
-            .onGeometryChange(for: CGSize.self) { proxy in
-                CGSize(width: proxy.size.width, height: proxy.size.height + proxy.safeAreaInsets.top + proxy.safeAreaInsets.bottom)
-            } action: { arrangementSize = $0 }
+            .onGeometryChange(for: CGSize.self) { $0.sizeIncludingSafeArea } action: { arrangementSize = $0 }
         } else {
             chat
         }

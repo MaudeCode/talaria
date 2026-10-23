@@ -236,6 +236,7 @@ public final class AuthManager {
             ResponseCache(server: server, root: responseCacheRoot).clear()
             KanbanFeatureState.clearBrowsedBoard(for: server, in: defaults)
             ActiveChatStreamSnapshotStore.shared.removeAll(for: server)
+            ChatViewModel.forgetCompanionPages(for: server)
             await draftStore.discardDrafts(for: server)
             // The two durable deletions are independent: attempt both, then
             // surface the first failure so neither store outlives the other.

@@ -50,6 +50,24 @@ final class ChatCompanionFocusTests: XCTestCase {
         XCTAssertEqual(focus.path, "a.swift", "A pin made while idle held into the next run")
     }
 
+    func testAnEarlierCallsCompletionDoesNotTurnThePageBack() {
+        var focus = ChatCompanionFocus()
+        focus.follow("a.swift", callID: "a")
+        focus.follow("b.swift", callID: "b")
+        focus.complete("a.swift", callID: "a", editDiff: nil)
+        XCTAssertEqual(focus.path, "b.swift")
+    }
+
+    func testOnlyAChatRebuiltFromMemoryTakesTheDetailsFile() {
+        var focus = ChatCompanionFocus()
+        focus.follow("a.swift", callID: "a")
+        focus.seed("b.swift")
+        XCTAssertEqual(focus.path, "a.swift", "A detail read mid-run turned the page back")
+        focus.forgetLiveCalls()
+        focus.seed("b.swift")
+        XCTAssertEqual(focus.path, "b.swift", "A reopened chat kept the file it remembered")
+    }
+
     func testTheChatARebuildMakesShowsTheSamePage() throws {
         let chat = try makeChat()
         chat.streamCoordinatorAppendToolCall(try frame("tool_a"))
@@ -57,7 +75,8 @@ final class ChatCompanionFocusTests: XCTestCase {
         chat.showCompanionBrowser(at: "Sources")
 
         let rebuilt = try makeChat()
-        XCTAssertEqual(rebuilt.companionFocus, chat.companionFocus)
+        XCTAssertEqual(rebuilt.companionFocus.path, "Sources/Demo/Gamma.swift")
+        XCTAssertEqual(rebuilt.companionFocus.followedPath, "Sources/Demo/Alpha.swift")
         XCTAssertEqual(rebuilt.companionFocus.browserPath, "Sources")
     }
 

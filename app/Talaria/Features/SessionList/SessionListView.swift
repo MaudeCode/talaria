@@ -540,9 +540,7 @@ struct SessionListView: View {
                 regularSplitRevision += 1
             }
             .navigationSplitViewStyle(.balanced)
-            .onGeometryChange(for: CGFloat.self) { proxy in
-                proxy.size.height + proxy.safeAreaInsets.top + proxy.safeAreaInsets.bottom
-            } action: { regularSplitFullHeight = $0 }
+            .onGeometryChange(for: CGFloat.self) { $0.sizeIncludingSafeArea.height } action: { regularSplitFullHeight = $0 }
             // Starts fresh when its columns change, since showing the sidebar column again after a
             // full-width section left it without its navigation bar, and to drop covered pages. A split
             // built before its width was measured, as opening an iPhone Duo builds one, keeps the sidebar

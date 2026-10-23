@@ -15,6 +15,8 @@ public struct ChatCompanionFocus: Equatable {
     private var pinnedRunID: String?
     /// The live call that named the followed file, whose completion brings its change.
     private var followedCallID: String?
+    /// The latest live call, so a completion of an earlier one does not turn the page back.
+    private var latestCallID: String?
     /// The directory the page's file browser shows; nil when the page shows its file.
     public var browserPath: String?
 
@@ -28,6 +30,7 @@ public struct ChatCompanionFocus: Equatable {
 
     /// A tool frame or session detail naming a file moves the followed page to it; one naming none leaves it.
     mutating func follow(_ path: String?, callID: String? = nil) {
+        if callID != nil { latestCallID = callID }
         guard let path, !path.isEmpty else { return }
         followedPath = path
         followedCallID = callID
@@ -36,13 +39,25 @@ public struct ChatCompanionFocus: Equatable {
 
     /// A completion carries the call's change. A bare one (no arguments, so no `focus_path`) names its call by id.
     mutating func complete(_ path: String?, callID: String?, editDiff: ToolEditDiff?) {
-        if path?.isEmpty == false {
+        if path?.isEmpty == false, callID == nil || callID == latestCallID {
             follow(path, callID: callID)
         } else if callID == nil || callID != followedCallID {
             return
         }
         self.editDiff = editDiff
         editRevision += 1
+    }
+
+    /// The session detail's file moves the page unless a live call in this chat named one since.
+    mutating func seed(_ path: String?) {
+        guard followedCallID == nil, path != followedPath else { return }
+        follow(path)
+    }
+
+    /// A chat rebuilt from memory missed the stream meanwhile, so the next session detail names the latest file.
+    mutating func forgetLiveCalls() {
+        followedCallID = nil
+        latestCallID = nil
     }
 
     public mutating func pin(_ path: String, runID: String?) {

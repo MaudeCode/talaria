@@ -81,7 +81,7 @@ public enum RegularSplitLayout {
     /// it is tall. Measured on iOS 27.1: 700×700 pt splits, 700×720 pt does not.
     // ponytail: measured rule, not a documented one; revisit if SwiftUI exposes whether the arrangement can split.
     public static func splitsCompanionPage(width: CGFloat, height: CGFloat) -> Bool {
-        width >= height
+        width > 0 && width >= height
     }
 
     /// Whether the chat's companion page fits beside it only with the sidebar column hidden: the iPhone Duo inner
