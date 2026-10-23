@@ -495,7 +495,7 @@ else
       || error_exit "Failed to determine the Agent's Python version"
     ( cd "$_stage_src" && uv venv venv --python "$_agent_python" --no-python-downloads ) \
       || error_exit "Failed to create the Agent virtual environment"
-    uv pip install --python "$_stage_src/venv/bin/python" -e "$_stage_src[all]" --trusted-host pypi.org --trusted-host files.pythonhosted.org \
+    uv pip install --project "$_stage_src" --python "$_stage_src/venv/bin/python" -e "$_stage_src[all]" --trusted-host pypi.org --trusted-host files.pythonhosted.org \
       || error_exit "Failed to install hermes-agent's requirements"
     touch "$_stage_src/venv/.deps_installed"
     export HERMES_WEBUI_AGENT_DIR="$_stage_src"

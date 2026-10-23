@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Support Hermes Agent 0.22.5 while retaining compatibility with 0.22.3 and 0.22.4.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

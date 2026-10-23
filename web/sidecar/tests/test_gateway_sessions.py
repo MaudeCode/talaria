@@ -232,8 +232,10 @@ def test_idle_notice_replay_and_snapshot_warning(native_owner_stub, boundary):
 
 @pytest.mark.parametrize("sha,attached", [
     ("4d04303818b61bf3aa09278af48356315515965b", True),
+    ("bf0203a794a07aac3ff764972ab9087baa4e4f4e", True),
+    ("bf0203a794a07aac3ff764972ab9087baa4e4f4f", False),
     ("5b147ab036d6d19131bff8d20701b5001eab844a", False),
-    ("0.22.4", False), (None, False), ("unknown", False),
+    ("0.22.4", False), ("0.22.5", False), (None, False), ("unknown", False),
 ])
 def test_served_owner_requires_verified_runtime_revision(tmp_path, native_owner_stub, sha, attached):
     owner = native_owner_stub

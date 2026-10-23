@@ -22,8 +22,11 @@ def native(tmp_path, monkeypatch):
     return AgentRuntime(tmp_path / "home"), worker, events
 
 
-def test_worker_starts_once_and_retirement_prevents_restart(native):
+def test_worker_starts_once_and_retirement_prevents_restart(native, monkeypatch):
+    from talaria_sidecar import agent_mutation
+
     runtime, _, events = native
+    monkeypatch.setattr("talaria_sidecar.runtime.read_agent_revision", lambda *args: "a" * 40)
     runtime.load()
     runtime.load()
     runtime.describe()
@@ -35,6 +38,10 @@ def test_worker_starts_once_and_retirement_prevents_restart(native):
     assert described["compatible"] is False, "retired runtime still advertises readiness to dependency recovery"
     assert described["stale"] is True
     assert runtime.loaded is False
+    monkeypatch.setattr(agent_mutation, "recovery_receipts", lambda *args, **kwargs: (["debt"], None))
+    recovered = agent_mutation.recover_retained(runtime, None, complete_revision=runtime.revision)
+    assert recovered["ok"] is False and recovered["owed"] is True
+    assert recovered["detail"] == "The loaded Agent runtime does not match the recovered revision."
     with pytest.raises(AgentRuntimeStale):
         runtime.load()
 
