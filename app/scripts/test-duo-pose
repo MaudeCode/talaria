@@ -1,0 +1,34 @@
+#!/bin/bash
+set -euo pipefail
+script_dir=$(cd "$(dirname "$0")" && pwd)
+node --test "$script_dir/duo-pose.test.mjs"
+
+if [[ $(uname) != Darwin ]] || ! xcrun simctl list devicetypes | /usr/bin/grep -q 'com.apple.CoreSimulator.SimDeviceType.iPhone-Duo'; then
+    echo 'SKIP live duo-pose: no iPhone Duo simulator type on this host.'
+    exit 0
+fi
+if ! node --input-type=module - "$script_dir/duo-pose.mjs" <<'JS'
+import { pathToFileURL } from 'node:url';
+try {
+  const { hubUrl } = await import(pathToFileURL(process.argv[2]));
+  const response = await fetch(`${hubUrl()}/readyz`, { signal: AbortSignal.timeout(2000), redirect: 'error' });
+  if (!response.ok) process.exitCode = 1;
+} catch { process.exitCode = 1; }
+JS
+then
+    echo 'SKIP live duo-pose: open a simulator in T3 to start its local backend.'
+    exit 0
+fi
+
+selection=$(IOS_SIMULATOR_DEVICE_TYPE=com.apple.CoreSimulator.SimDeviceType.iPhone-Duo "$script_dir/select-ios-simulator")
+IFS=$'\t' read -r _selected_id runtime device_type <<< "$selection"
+device=$(xcrun simctl create "Talaria Duo pose test $$" "$device_type" "$runtime")
+cleanup() {
+    xcrun simctl shutdown "$device" >/dev/null 2>&1 || true
+    xcrun simctl delete "$device" >/dev/null
+}
+trap cleanup EXIT
+trap 'exit 130' INT TERM
+echo "Testing disposable Duo: $device"
+IOS_SIMULATOR_ID="$device" "$script_dir/ios-simulator-pool" \
+    env DUO_POSE_LIVE_DEVICE="$device" node --test --test-name-pattern 'live leased Duo' "$script_dir/duo-pose.test.mjs"
