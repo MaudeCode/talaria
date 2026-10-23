@@ -196,6 +196,12 @@ export default defineSchema({
     cursor: v.string(),
   }).index("by_table", ["table"]),
 
+  // Singleton lease: the one cleanup pass chain allowed to continue a full batch.
+  pruneDrains: defineTable({
+    generation: v.number(),
+    scheduledId: v.optional(v.id("_scheduled_functions")),
+  }),
+
   liveActivities: defineTable({
     userId: v.string(),
     deviceId: v.string(),
