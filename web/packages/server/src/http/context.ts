@@ -36,6 +36,7 @@ import type { SessionChannels, StreamRegistry } from '../sessions/streams.js'
 import type { PendingPrompts } from '../sessions/pending.js'
 import type { RunJournal } from '../sessions/journal.js'
 import type { BackgroundActivity } from '../sessions/background-tasks.js'
+import type { PromptQueues } from '../sessions/prompt-queues.js'
 import type { StreamSlots } from '../api/sse-routes.js'
 import type { BootstrapFeatures, ReleaseInfo } from '@maudecode/talaria-web-contracts'
 import { buildCspEnforcedPolicy, buildCspReportOnlyPolicy, cspExtras, CSP_REPORT_TO, type CspExtras } from './csp.js'
@@ -144,6 +145,7 @@ export interface AppDeps {
   pending: PendingPrompts
   journal: RunJournal
   background: BackgroundActivity
+  promptQueues: PromptQueues
   streamSlots: StreamSlots
   // ── settings, profiles, providers, onboarding (checkpoint 7a) ──
   /** Home directory for a logical profile name (root aliases and invalid names clamp to the base home). */

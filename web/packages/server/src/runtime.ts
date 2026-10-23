@@ -18,6 +18,7 @@ import { GatewaySessions, gatewayStreamVisible } from './sessions/gateway-sessio
 import { readImportableAgentSessionRowsAsync } from './sessions/state-db.js'
 import { CompletionDrain } from './sessions/completions.js'
 import { BackgroundActivity, BackgroundTaskStore } from './sessions/background-tasks.js'
+import { PromptQueues } from './sessions/prompt-queues.js'
 import { HygieneTicker } from './tools/hygiene.js'
 import { PruneAdvice } from './tools/prune-advice.js'
 import { McpHealthProber } from './tools/mcp-health.js'
@@ -687,6 +688,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     pending,
     journal,
     background,
+    promptQueues: new PromptQueues(storage.documents, () => deps),
     streamSlots,
     profileHome,
     agentConfig,
@@ -723,7 +725,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     requestShutdown: () => { setTimeout(() => { process.kill(process.pid, 'SIGINT') }, 300).unref() },
     // Embedded shells are separate process groups that would outlive the worker: terminate and reap them on both exits.
     // A running retention sweep stops before the exit, like on shutdown.
-    requestRestart: () => { void waitUntilRestartSafe(restartBlockers, { log }).then(() => deps.gatewayRestarts.quiesce()).then(() => deps.hygiene.stop()).then(() => auth.flushPersistence()).then(() => store.close()).then(() => { deps.terminals.closeAll({ immediate: true }); purgeAgentPycache(); process.exit(RESTART_EXIT_CODE) }) },
+    requestRestart: () => { void waitUntilRestartSafe(restartBlockers, { log }).then(() => deps.gatewayRestarts.quiesce()).then(() => deps.hygiene.stop()).then(() => auth.flushPersistence()).then(() => deps.promptQueues.close()).then(() => store.close()).then(() => { deps.terminals.closeAll({ immediate: true }); purgeAgentPycache(); process.exit(RESTART_EXIT_CODE) }) },
     updates: null as unknown as UpdateService,
     updateNotifications,
     pruneAdvice,
@@ -908,6 +910,8 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   })
   // TAL-1254: every (re)started sidecar owns the worktree chats' locks before it reports ready, so the Agent's sweep keeps them.
   await sidecar?.addReadyGate?.((call) => sessions.retainWorktrees(call))
+
+  await deps.promptQueues.initialize()
 
   return deps
 }

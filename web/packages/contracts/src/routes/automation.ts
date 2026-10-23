@@ -1,5 +1,6 @@
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
+import { PromptQueueRunSchema, PromptQueueCardsSchema, PromptQueueActionSchema } from '../prompt-queue.js'
 import { CronsSchema, CronContextSourcesSchema, CronRecentSchema, CronHistorySchema, CronRunSchema, CronStatusSchema, CronMutationSchema, KanbanBoardsViewSchema, KanbanBoardViewSchema, KanbanStatsViewSchema, KanbanTaskPolicyShape, ExtensionStatusSchema } from '../views.js'
 import { CronBlueprintsSchema, CronBlueprintFillInputSchema, CronBlueprintFillSchema, KanbanAssigneeSchema, KanbanBoardMetaSchema, KanbanEventSchema, KanbanRunStartShape, KanbanTaskLinksShape, KanbanTaskSchema } from '../sidecar/namespaces.js'
 
@@ -21,6 +22,12 @@ const CardWriteInput = z.object({ task_id: z.string(), confirm_running_exit: z.b
 const TerminalBody = z.object({ session_id: z.string().optional() })
 
 export const automationContract = {
+  promptQueues: {
+    list: oc.route({ method: 'GET', path: '/api/prompt-queues', tags }).output(z.object({ runs: z.array(PromptQueueRunSchema) })),
+    create: oc.route({ method: 'POST', path: '/api/prompt-queues', tags }).input(z.object({ request_id: z.string().min(1).max(128), cards: PromptQueueCardsSchema })).output(PromptQueueRunSchema),
+    edit: oc.route({ method: 'PATCH', path: '/api/prompt-queues/{id}', tags }).input(z.object({ id: z.string(), revision: z.number().int().nonnegative(), cards: PromptQueueCardsSchema })).output(PromptQueueRunSchema),
+    action: oc.route({ method: 'POST', path: '/api/prompt-queues/{id}/action', tags }).input(z.object({ id: z.string(), revision: z.number().int().nonnegative(), action: PromptQueueActionSchema })).output(PromptQueueRunSchema),
+  },
   crons: {
     blueprints: oc.route({ method: 'GET', path: '/api/cron/blueprints', tags }).output(CronBlueprintsSchema),
     blueprintFill: oc.route({ method: 'POST', path: '/api/cron/blueprints/fill', tags }).input(CronBlueprintFillInputSchema).output(CronBlueprintFillSchema),

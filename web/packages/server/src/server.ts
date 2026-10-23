@@ -94,6 +94,7 @@ export async function startServer(app: App, config: ServerConfig, opts: { log?: 
         log(`[webui] shutdown: ${step} failed: ${(error as Error).message}`)
       }
     }
+    await settle('prompt queues', () => app.deps.promptQueues.close())
     app.deps.updates.stopAutoApply()
     // TAL-953: start no post-update gateway restart, and let one in flight finish before the sidecar goes away.
     const gatewayRestarts = settle('gateway restart', () => app.deps.gatewayRestarts.quiesce())

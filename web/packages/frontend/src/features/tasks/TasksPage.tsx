@@ -6,7 +6,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useMutation, useMutationState, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
-import { Copy, Pause, Play, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { Copy, ListOrdered, Pause, Play, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
@@ -25,6 +25,9 @@ import { showErrorToast } from '../toast/errorToast'
 import { cn } from '../../ui/cn'
 import { contextFromList, cronDiagnostics, cronResource, cronState, jobId, lastRunAt, nextRunAt, runningIds, usageStrip, type CronState } from './cronJob'
 import { Markdown } from '../chat/render/Markdown'
+import { statusLabel } from './automationStatus'
+import { usePromptQueues, queueSelection } from './PromptQueue'
+import type { PromptQueueRun } from '@maudecode/talaria-web-contracts'
 import { JobForm, type EditorMode } from './JobForm'
 import { useResourceEffects, useResourceMutation, withCreated, withEffects, type ResourceEffect } from '../sessions/useResourceMutation'
 import { getStreamContext, useStreamContext } from '../../stream/connection'
@@ -41,17 +44,7 @@ function cronEffect(action: CronWrite): ResourceEffect {
 interface Editor { mode: EditorMode; job: CronJob | null }
 
 
-export function statusLabel(state: CronState): { label: string; tone: string } {
-  switch (state) {
-    case 'running': return { label: m.cron_status_running(), tone: 'text-accent-text' }
-    case 'needs_attention': case 'schedule_error': return { label: m.cron_status_needs_attention(), tone: 'text-warning' }
-    case 'paused': return { label: m.cron_status_paused(), tone: 'text-muted' }
-    case 'off': return { label: m.cron_status_off(), tone: 'text-muted' }
-    case 'error': return { label: m.cron_status_error(), tone: 'text-error' }
-    case 'active': return { label: m.cron_status_active(), tone: 'text-success' }
-    default: return { label: '', tone: 'text-muted' }
-  }
-}
+export { statusLabel } from './automationStatus'
 
 export function TasksRoute() {
   useLocale()
@@ -135,8 +128,11 @@ export function useTasksWorkbench(selectedId: string | null, onSelect: (id: stri
   const select = (id: string | null) => { selection.current = id; setEditor(null); onSelect(id); closeMobileSidebar() }
   const startEditor = (mode: EditorMode, job: CronJob | null) => { setEditor({ mode, job }); closeMobileSidebar() }
 
+  const queues = usePromptQueues(selectedId, select)
   const sidebar = (
     <TaskListPanel
+      queues={queues.runs}
+      onNewQueue={() => select('queue:new')}
       jobs={jobs}
       pending={crons.isPending}
       error={crons.isError ? crons.error : null}
@@ -152,7 +148,9 @@ export function useTasksWorkbench(selectedId: string | null, onSelect: (id: stri
   )
 
   let main: ReactNode
-  if (editor) {
+  if (queues.body) {
+    main = queues.body
+  } else if (editor) {
     main = (
       <JobForm
         mode={editor.mode}
@@ -204,8 +202,8 @@ export function useTasksWorkbench(selectedId: string | null, onSelect: (id: stri
 
 // ── Sidebar ──────────────────────────────────────────────────────────────────
 
-function TaskListPanel({ jobs, pending, error, otherProfileCount, allProfiles, running, selectedId, onSelect, onNew, onRefresh, onToggleAllProfiles }: {
-  jobs: CronJob[]; pending: boolean; error: unknown; otherProfileCount: number; allProfiles: boolean; running: Set<string>
+function TaskListPanel({ queues, onNewQueue, jobs, pending, error, otherProfileCount, allProfiles, running, selectedId, onSelect, onNew, onRefresh, onToggleAllProfiles }: {
+  queues: PromptQueueRun[]; onNewQueue: () => void; jobs: CronJob[]; pending: boolean; error: unknown; otherProfileCount: number; allProfiles: boolean; running: Set<string>
   selectedId: string | null; onSelect: (id: string) => void; onNew: () => void; onRefresh: () => void; onToggleAllProfiles: () => void
 }) {
   const rows = jobs.map((job) => ({ job, id: jobId(job), state: cronState(job, running.has(jobId(job))) }))
@@ -215,32 +213,14 @@ function TaskListPanel({ jobs, pending, error, otherProfileCount, allProfiles, r
   const item = ({ job, id, state }: typeof rows[number]) => {
     const st = statusLabel(state)
     const active = id === selectedId
-    return (
-      <div key={id}>
-        <button
-          type="button"
-          // A job the server has not created yet has nothing to open.
-          disabled={id.includes(':new:')}
-          onClick={() => onSelect(id)}
-          aria-current={active ? 'page' : undefined}
-          data-job-id={id}
-          data-state={state}
-          className={cn('side-menu-item flex w-full flex-col gap-0.5 rounded-(--r-sm) border-0 bg-transparent px-2.5 py-[7px] text-left text-text hover:bg-hover [&.active]:bg-(--menu-active-bg) [&.active]:text-(--menu-active-fg)', active && 'active', job.read_only && 'opacity-75')}
-        >
-          <span className="flex min-w-0 items-center gap-2">
-            <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{job.name || m.untitled()}</span>
-            <span className={cn('shrink-0 text-[11px]', active ? 'opacity-80' : st.tone)}>{st.label}</span>
-          </span>
-          <span className="truncate font-mono text-[11px] opacity-70">{job.schedule_display}</span>
-        </button>
-      </div>
-    )
+    return <AutomationListItem key={id} id={id} title={job.name || m.untitled()} state={state} status={st} active={active} onSelect={onSelect} disabled={id.includes(':new:')} readOnly={job.read_only} details={job.schedule_display} />
   }
   return (
     <div className="panel-view active flex min-h-0 flex-1 flex-col" id="panelTasks">
       <PanelHead title={m.tab_tasks()} actions={
         <>
           <PanelHeadButton label={m.refresh()} onClick={onRefresh}><RefreshCw size={14} aria-hidden="true" /></PanelHeadButton>
+          <PanelHeadButton label={m.prompt_queue_new()} onClick={onNewQueue}><ListOrdered size={14} aria-hidden="true" /></PanelHeadButton>
           <PanelHeadButton label={m.cron_new_job()} onClick={onNew}><Plus size={14} aria-hidden="true" /></PanelHeadButton>
         </>
       } />
@@ -248,6 +228,7 @@ function TaskListPanel({ jobs, pending, error, otherProfileCount, allProfiles, r
         {pending && <div className="session-list-note" role="status">{m.loading()}</div>}
         {error !== null && <div className="session-list-note session-list-error" role="alert">{m.error_generic()} <button type="button" className="linklike" onClick={onRefresh}>{m.retry()}</button></div>}
         {!pending && error === null && jobs.length === 0 && <div className="session-list-note">{otherProfileCount > 0 && !allProfiles ? m.cron_no_jobs_in_profile() : m.cron_no_jobs()}</div>}
+        {queues.map((queue) => <AutomationListItem key={queue.id} id={queueSelection(queue.id)} title={queue.title} state={queue.phase} status={statusLabel(queue.phase)} active={selectedId === queueSelection(queue.id)} onSelect={onSelect} />)}
         {live.map(item)}
         {parked.length > 0 && (
           <details className="mt-1" open={parked.some((r) => r.id === selectedId) || undefined}>
@@ -263,6 +244,14 @@ function TaskListPanel({ jobs, pending, error, otherProfileCount, allProfiles, r
       </nav>
     </div>
   )
+}
+
+/** One automation sidebar row for scheduled jobs and explicit prompt runs. */
+function AutomationListItem({ id, title, state, status, active, onSelect, disabled = false, readOnly = false, details }: { id: string; title: string; state: string; status: { label: string; tone: string }; active: boolean; onSelect: (id: string) => void; disabled?: boolean; readOnly?: boolean | undefined; details?: string }) {
+  return <button type="button" disabled={disabled} onClick={() => onSelect(id)} aria-current={active ? 'page' : undefined} data-job-id={id} data-state={state} className={cn('side-menu-item flex w-full flex-col gap-0.5 rounded-(--r-sm) border-0 bg-transparent px-2.5 py-[7px] text-left text-text hover:bg-hover [&.active]:bg-(--menu-active-bg) [&.active]:text-(--menu-active-fg)', active && 'active', readOnly && 'opacity-75')}>
+    <span className="flex min-w-0 items-center gap-2"><span className="min-w-0 flex-1 truncate text-[13px] font-medium">{title}</span><span className={cn('shrink-0 text-[11px]', active ? 'opacity-80' : status.tone)}>{status.label}</span></span>
+    {details && <span className="truncate font-mono text-[11px] opacity-70">{details}</span>}
+  </button>
 }
 
 // ── Main view ────────────────────────────────────────────────────────────────

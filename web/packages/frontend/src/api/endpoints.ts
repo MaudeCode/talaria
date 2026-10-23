@@ -313,3 +313,9 @@ export const respondConnectorOperation = (move: { op_id: string; action: 'skip' 
 export const shutdownServer = () => orpc().ops.shutdown({})
 
 export const fetchContextDetail = (session_id: string, context_detail_key: string, signal?: AbortSignal) => orpc().session.contextDetail({ session_id, context_detail_key }, { ...(signal ? { signal } : {}) })
+
+// Explicit cross-chat prompt runs share automation ownership, never the browser drain.
+export const fetchPromptQueues = () => orpc().promptQueues.list()
+export const createPromptQueue = (input: Parameters<ReturnType<typeof orpc>['promptQueues']['create']>[0]) => orpc().promptQueues.create(input)
+export const editPromptQueue = (input: Parameters<ReturnType<typeof orpc>['promptQueues']['edit']>[0]) => orpc().promptQueues.edit(input)
+export const promptQueueAction = (input: Parameters<ReturnType<typeof orpc>['promptQueues']['action']>[0]) => orpc().promptQueues.action(input)

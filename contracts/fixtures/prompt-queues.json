@@ -1,0 +1,86 @@
+{
+  "paused": {
+    "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "revision": 4,
+    "profile": "default",
+    "phase": "paused",
+    "current_step": 1,
+    "cards": [
+      {
+        "session_id": "synthetic-chat-a",
+        "project_id": null,
+        "text": "Summarise the changes",
+        "request_id": "synthetic-step-a",
+        "title": "Review changes",
+        "backend": "direct",
+        "authority_epoch": null,
+        "status": "completed",
+        "stream_id": "synthetic-stream-a",
+        "admission_id": null,
+        "outcome": "completed"
+      },
+      {
+        "session_id": "synthetic-chat-b",
+        "project_id": null,
+        "text": "Check the summary",
+        "request_id": "synthetic-step-b",
+        "title": "Write checks",
+        "backend": "direct",
+        "authority_epoch": null,
+        "status": "waiting",
+        "stream_id": null,
+        "admission_id": null,
+        "outcome": null
+      }
+    ],
+    "actions": [
+      "resume",
+      "cancel"
+    ],
+    "editable": false,
+    "error": null,
+    "title": "Summarise the changes"
+  },
+  "unknown": {
+    "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "revision": 4,
+    "profile": "default",
+    "phase": "unknown",
+    "current_step": 0,
+    "cards": [
+      {
+        "session_id": "synthetic-chat-a",
+        "project_id": null,
+        "text": "Summarise the changes",
+        "request_id": "synthetic-step-a",
+        "title": "Review changes",
+        "backend": "direct",
+        "authority_epoch": null,
+        "status": "unknown",
+        "stream_id": "synthetic-stream-a",
+        "admission_id": null,
+        "outcome": null
+      },
+      {
+        "session_id": "synthetic-chat-b",
+        "project_id": null,
+        "text": "Check the summary",
+        "request_id": "synthetic-step-b",
+        "title": "Write checks",
+        "backend": "direct",
+        "authority_epoch": null,
+        "status": "waiting",
+        "stream_id": null,
+        "admission_id": null,
+        "outcome": null
+      }
+    ],
+    "actions": [
+      "reconcile",
+      "cancel"
+    ],
+    "editable": false,
+    "error": "Admission outcome is unknown; reconcile before continuing",
+    "title": "Summarise the changes"
+  }
+}

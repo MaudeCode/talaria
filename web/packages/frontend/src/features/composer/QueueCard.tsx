@@ -1,4 +1,4 @@
-import { useRef, useState, type FocusEvent, type KeyboardEvent, type PointerEvent } from 'react'
+import { useRef, useState, type ReactNode, type FocusEvent, type KeyboardEvent, type PointerEvent } from 'react'
 import { ArrowUp, GripVertical, Pencil, X } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
@@ -26,14 +26,14 @@ function QueueCancelButton({ disabled, onClick }: { disabled: boolean; onClick: 
  * TAL-562: the queued messages behind the composer's queue chip (TAL-1078), sent top to bottom when the turn ends. A row is edited in place,
  * removed, or moved by dragging its handle (Arrow Up/Down on the focused handle moves it too).
  */
-export function QueueCard({ sessionId, queued, onChange, pendingId, admissions = [], onAdmissionAction }: { sessionId: string; queued: QueuedTurn[]; onChange: (queued: QueuedTurn[]) => void; pendingId?: string | undefined; admissions?: OwnerAttachment['admissions'] | undefined; onAdmissionAction?: ((request: OwnerActionRequest) => Promise<void>) | undefined }) {
+export function QueueCard({ sessionId, queued, onChange, pendingId, admissions = [], onAdmissionAction, readOnly = false, rowLabel, rowStatus, ariaLabel }: { sessionId: string; ariaLabel?: string; readOnly?: boolean; rowLabel?: (id: string) => ReactNode; rowStatus?: (id: string) => ReactNode; queued: QueuedTurn[]; onChange: (queued: QueuedTurn[]) => void; pendingId?: string | undefined; admissions?: OwnerAttachment['admissions'] | undefined; onAdmissionAction?: ((request: OwnerActionRequest) => Promise<void>) | undefined }) {
   const [editing, setEditing] = useState<string | null>(null)
   // Retry is executed by the server, so its own button stays busy until the server answers.
   const [retrying, setRetrying] = useState<ReadonlySet<string>>(new Set())
   const replacements = useRef(new Map<string, { text: string; submission_id: string }>())
   const discard = useRef(false)
   const dragging = useRef<string | null>(null)
-  const label = admissions.length ? m.owner_inputs() : m.queued_count({ n: queued.length })
+  const label = ariaLabel ?? (admissions.length ? m.owner_inputs() : m.queued_count({ n: queued.length }))
 
   const move = (id: string, to: number) => {
     const from = queued.findIndex((q) => q.id === id)
@@ -64,9 +64,12 @@ export function QueueCard({ sessionId, queued, onChange, pendingId, admissions =
   }
   // Native and local rows share their editor, icon, focus behavior and accessible wording.
   const editableText = (id: string, text: string, disabled: boolean, native = false, canEdit = true, suffix = '') => <>
-    {editing === id
+    <div className={rowLabel ? 'flex min-w-0 flex-1 flex-col gap-0.5' : 'contents'}>
+    {rowLabel?.(id)}
+    {editing === id && !readOnly
       ? <input className="queue-card-input" disabled={disabled} aria-label={m.queued_edit()} defaultValue={text} autoFocus onBlur={(e) => { finishEdit(id, e, native) }} onKeyDown={onEditKey} />
       : <span className="queue-card-text truncate" title={text}>{text}{suffix}</span>}
+    </div>
     {canEdit && editing !== id && <button type="button" disabled={disabled} className="steer-action min-h-11 min-w-11 shrink-0" aria-label={m.queued_edit()} title={m.queued_edit()} onClick={() => { setEditing(id) }}><Pencil size={14} aria-hidden="true" /></button>}
   </>
   // A removed message's files are discarded on the server too, like a file taken off the composer.
@@ -116,16 +119,17 @@ export function QueueCard({ sessionId, queued, onChange, pendingId, admissions =
         ))}
         {queued.map((q, i) => (
           <li key={q.id} className="queue-card-row" data-queue-index={i}>
-            <button
+            {!readOnly && <button
               type="button" disabled={q.id === pendingId} className="steer-action queue-card-handle min-h-11 min-w-11 shrink-0" aria-label={m.queued_reorder()} title={m.queued_reorder()}
               onPointerDown={(e) => { keepFocus(e); e.currentTarget.setPointerCapture(e.pointerId); dragging.current = q.id }}
               onPointerMove={(e) => { onHandleMove(q.id, e) }}
               onPointerUp={() => { dragging.current = null }}
               onPointerCancel={() => { dragging.current = null }}
               onKeyDown={(e) => { onHandleKey(q.id, i, e) }}
-            ><GripVertical size={14} aria-hidden="true" /></button>
-            {editableText(q.id, q.text, q.id === pendingId, false, true, q.attachments.length ? ` (+${String(q.attachments.length)})` : '')}
-            <QueueCancelButton disabled={q.id === pendingId} onClick={() => { remove(q) }} />
+            ><GripVertical size={14} aria-hidden="true" /></button>}
+            {editableText(q.id, q.text, q.id === pendingId, false, !readOnly, q.attachments.length ? ` (+${String(q.attachments.length)})` : '')}
+            {rowStatus?.(q.id)}
+            {!readOnly && <QueueCancelButton disabled={q.id === pendingId} onClick={() => { remove(q) }} />}
           </li>
         ))}
       </ol>

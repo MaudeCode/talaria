@@ -1,22 +1,23 @@
 /** Chat turn admission, control, approvals, clarify, goals, background tasks, and side questions. */
 import { timingOutcome } from '../startup-timing.js'
-import { GATEWAY_APPROVAL_RELAY_UNAVAILABLE, isGenericContinuationIntent } from '../sessions/turn.js'
+import { GATEWAY_APPROVAL_RELAY_UNAVAILABLE } from '../sessions/turn.js'
 import { implement } from '@orpc/server'
-import { chatContract, MAX_CHAT_ATTACHMENTS, RPC_ERROR_CODES, type SidecarResult, type OwnerAttachment } from '@maudecode/talaria-web-contracts'
+import { chatContract, type OwnerAttachment } from '@maudecode/talaria-web-contracts'
 import { randomUUID } from 'node:crypto'
 import { HttpError, type ApiContext } from './router.js'
 import { requestSessionIdGuard, streamOwnerSessionId, streamVisibleToRequest } from './session-visibility.js'
 import type { RequestContext } from '../http/context.js'
-import { ensureAgentRuntimeCurrent, HttpFailure } from '../sessions/service.js'
+import { HttpFailure } from '../sessions/service.js'
 import { SessionNotFound } from '../sessions/store.js'
 import type { Session } from '../sessions/session.js'
-import { compressionRecoveryPayload, isSafeSessionId } from '../sessions/session.js'
+import { isSafeSessionId } from '../sessions/session.js'
 import { messageText } from '../sessions/merge.js'
 import { str } from '../util.js'
-import { activeProfileName } from '../auth/gate.js'
 import { SidecarError } from '../sidecar/client.js'
-import { unsupportedPromptMessage } from '../tools/commands.js'
-import type { StartTurnOptions, TurnFailure, TurnRunner } from '../sessions/turn.js'
+import type { StartTurnOptions, TurnFailure } from '../sessions/turn.js'
+
+import { startSessionChat, requireField, startPayload, expandPromptBuiltin } from '../sessions/admission.js'
+export { normalizeChatAttachments } from '../sessions/admission.js'
 
 const os = implement(chatContract).$context<ApiContext>().use(requestSessionIdGuard)
 const STEER_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/
@@ -47,153 +48,15 @@ async function getSession(ctx: RequestContext, sid: string, metadataOnly = false
   }
 }
 
-/** Python `_normalize_chat_attachments`. */
-export function normalizeChatAttachments(raw: unknown): Record<string, unknown>[] {
-  if (!Array.isArray(raw)) return []
-  const out: Record<string, unknown>[] = []
-  for (const item of raw) {
-    if (item && typeof item === 'object' && !Array.isArray(item)) {
-      const row = item as Record<string, unknown>
-      const name = str(row.name || row.filename).trim()
-      const path = str(row.path).trim()
-      const att: Record<string, unknown> = { name: name || path, path, mime: str(row.mime).trim() }
-      if (typeof row.size === 'number' && Number.isInteger(row.size)) att.size = row.size
-      if (typeof row.is_image === 'boolean') att.is_image = row.is_image
-      out.push(att)
-    } else {
-      const value = str(item).trim()
-      if (value) out.push({ name: value, path: '', mime: '' })
-    }
-  }
-  return out
-}
-
-function startPayload(response: Awaited<ReturnType<TurnRunner['start']>>): Record<string, unknown> {
-  const payload: Record<string, unknown> = { ...response }
-  Reflect.deleteProperty(payload, '_status')
-  Reflect.deleteProperty(payload, 'error')
-  Reflect.deleteProperty(payload, 'active_stream_id')
-  return payload
-}
-
-function requireField(body: Record<string, unknown>, ...fields: string[]): void {
-  const missing = fields.filter((f) => body[f] === undefined || body[f] === null || body[f] === '')
-  if (missing.length) throw new HttpError(400, `Missing required field(s): ${missing.join(', ')}`)
-}
-
-function visibleOrRetag(ctx: RequestContext, s: Session, requestedProfile: string): void {
-  const active = ctx.deps.activeProfile()
-  if (ctx.deps.profilesMatch(s.profile, active)) return
-  const hasTurns = s.messages.length > 0 || s.context_messages.length > 0 || s.hasPendingPrompt
-  if (requestedProfile && ctx.deps.profilesMatch(requestedProfile, active) && !hasTurns) {
-    s.profile = requestedProfile
-    return
-  }
-  throw new HttpError(404, 'Session not found')
-}
-
-/**
- * TAL-817: what the model gets for a typed Agent prompt built-in (`/plan`, `/initiate-setup`, …): the Agent's own expansion
- * of it for this session's profile, workspace and toolsets, while the transcript keeps the typed text; null when `msg` is
- * not one. One the Agent cannot expand is
- * refused with the catalog's message instead of reaching the model raw. Without a sidecar the turn reports that itself.
- */
-async function expandPromptBuiltin(ctx: RequestContext, s: Session, msg: string, workspace: unknown): Promise<string | null> {
-  const sidecar = ctx.deps.sidecar()
-  if (!msg.startsWith('/') || !sidecar) return null
-  // Only `/init` reads the workspace, and the sidecar refuses it without one; the turn reports a bad workspace itself.
-  let cwd = ''
-  try { cwd = (await ctx.deps.sessions.turnWorkspace(s, workspace)) } catch { cwd = '' }
-  let expanded: SidecarResult<'commands.expand_prompt'>
-  try {
-    expanded = await sidecar.call('commands.expand_prompt', {
-      profile_home: ctx.deps.profileHome(s.profile ?? activeProfileName(ctx)), command: msg, session_id: s.session_id, workspace: cwd,
-      enabled_toolsets: s.enabled_toolsets,
-    }, { timeoutMs: 120_000 })
-  } catch (error) {
-    if (!(error instanceof SidecarError)) throw error
-    const invalid = error.condition === 'invalid_params' || error.code === RPC_ERROR_CODES.invalidParams
-    throw new HttpError(invalid ? 400 : error.condition === 'sidecar_unavailable' ? 503 : 502, error.message)
-  }
-  if (expanded.name !== null && expanded.message === null) throw new HttpError(400, unsupportedPromptMessage(expanded.name))
-  return expanded.message
-}
-
 /** `chat.start`; a `chat.steer` sent while a background turn runs starts the user's turn through it too (TAL-460). */
 async function startChat(ctx: RequestContext, body: Record<string, unknown>, settle: Pick<StartTurnOptions, 'onDone' | 'onFailed'> = {}): Promise<Record<string, unknown>> {
   ctx.enterChatStart()
   const timing = ctx.startupTiming
   try {
-    const response = await startChatTimed(ctx, body, settle)
+    const response = await startSessionChat(ctx.deps, body, settle, timing ?? undefined)
     if (!response.stream_id) timing?.finish('noop')
     return response
   } catch (error) { timing?.finish(timingOutcome(error)); throw error }
-}
-
-async function startChatTimed(ctx: RequestContext, body: Record<string, unknown>, settle: Pick<StartTurnOptions, 'onDone' | 'onFailed'>): Promise<Record<string, unknown>> {
-  const timing = ctx.startupTiming
-  const measure = <T>(name: Parameters<NonNullable<typeof timing>['measure']>[0], fn: () => Promise<T> | T): Promise<T> => timing ? timing.measure(name, fn) : Promise.resolve(fn())
-  requireField(body, 'session_id')
-  timing?.identify(str(body.session_id))
-  if (str(body.message).trim() === '[SILENT]') return { status: 'suppressed', reason: 'silent_control_message' }
-  if (body.regenerate === true) throw new HttpError(409, 'Regeneration is not supported by this backend.', { code: 'unsupported_regeneration_backend' })
-  const sid = str(body.session_id)
-  // Python `_agent_runtime_barrier_response`: a stale local Agent checkout is refused with a typed 409 before any
-  // session state is materialised, claimed, or mutated.
-  await measure('runtime_barrier', () => ensureAgentRuntimeCurrent(ctx.deps.sidecar()))
-  const owner = ctx.deps.sessions.owner
-  if (owner && (await measure('owner_routing', () => owner.isOwned(sid)))) {
-    if (!(await ctx.deps.sessions.sessionIdVisible(sid))) throw new HttpError(404, 'Session not found')
-    const response = (await owner.submit(sid, body, timing))!
-    timing?.finish('ok')
-    return response
-  }
-  // Admission reads the cached catalog snapshot; it never waits for a refresh.
-  timing?.begin('catalog_wait')
-  timing?.end('catalog_wait', 'noop')
-  const closeLoad = timing?.begin('session_load')
-  let s: Session
-  try {
-    s = (await ctx.deps.sessionStore.get(sid))
-  } catch {
-    // Python `_claim_or_synthesize_cli_session` on the POST path: a claimable foreign (CLI/TUI/Desktop) session is
-    // materialised as a WebUI sidecar before its first turn; an owned foreign store answers 403, nothing → 404.
-    const synth = (await ctx.deps.sessions.claimOrSynthesizeCliSession(sid))
-    if (!synth.session) throw new HttpError(404, 'Session not found')
-    if (synth.reason === 'not_claimable') throw new HttpError(403, 'session is read-only in its foreign store; cannot be claimed writeable in WebUI')
-    await ctx.deps.sessionStore.save(synth.session)
-    s = (await ctx.deps.sessionStore.get(sid))
-  }
-  closeLoad?.()
-  const closeOwnership = timing?.begin('ownership_checks')
-  // Python `_get_or_materialize_session` raised PermissionError for both: a read-only import and a delegated
-  // subagent child (by sidecar tag or state.db row), which chat start answered with the same 403.
-  if ((await ctx.deps.sessions.isReadOnly(s)) || s.branchSourceReadonly || (await ctx.deps.sessions.isSubagentViewOnly(sid))) throw new HttpError(403, 'Read-only imported sessions cannot be continued from WebUI')
-  const requestedProfile = str(body.profile).trim()
-  if (requestedProfile && requestedProfile !== 'default' && !PROFILE_ID_RE.test(requestedProfile)) throw new HttpError(400, 'invalid profile')
-  visibleOrRetag(ctx, s, requestedProfile)
-  closeOwnership?.()
-  const msg = str(body.message).trim()
-  const attachments = normalizeChatAttachments(body.attachments).slice(0, MAX_CHAT_ATTACHMENTS)
-  // TAL-276: an attached file alone makes a turn; one with neither text nor a file path is refused.
-  if (!msg && !attachments.some((att) => str(att.path))) throw new HttpError(400, 'message is required')
-  const prompt = await measure('prompt_preparation', () => expandPromptBuiltin(ctx, s, msg, body.workspace))
-  // TAL-460: the user's message never joins a background turn; that turn stops quietly and this one takes its place.
-  const yielded = await measure('background_yield', () => ctx.deps.turns.yieldBackgroundTurn(sid))
-  if (prompt !== null || yielded) {
-    s = (await ctx.deps.sessionStore.get(sid))
-    visibleOrRetag(ctx, s, requestedProfile)
-  }
-  // Python `compression_recovery_payload_for_session` + `is_generic_continuation_intent`.
-  if (compressionRecoveryPayload(s) && !attachments.length && isGenericContinuationIntent(msg)) {
-    throw new HttpError(409, 'This session exhausted context compression. Start a focused continuation, then describe the next narrow task.', { type: 'compression_recovery_required', compression_recovery: s.compression_recovery, session_id: s.session_id })
-  }
-  const workspace = await measure('workspace_preparation', () => ctx.deps.sessions.turnWorkspace(s, body.workspace))
-  const [model, provider, normalized] = ctx.deps.sessions.turnModel(s, body)
-  if (body.moa_config) throw new HttpError(503, 'MoA overrides need the Agent command registry (checkpoint 7).')
-  const response = (await ctx.deps.turns.start(s, { timing, msg, ...(prompt === null ? {} : { prompt }), attachments, workspace, model, modelProvider: provider, normalizedModel: normalized, source: 'webui', voiceTurn: body.voice_turn === true, connectCard: body.connect_card === true, skillSecret: body.skill_secret === true, ...settle }))
-  if (response._status !== undefined && response._status >= 400) throw new HttpError(response._status, response.error ?? 'chat start failed', response.active_stream_id ? { active_stream_id: response.active_stream_id } : {})
-  return startPayload(response)
 }
 
 /**
@@ -265,7 +128,7 @@ export const chatRouter = os.router({
       // TAL-817: a prompt built-in steers with its expansion; the steer still shows as typed. A missing session is the steer's to report.
       let target: Session | null = null
       try { target = (await ctx.deps.sessionStore.get(sid, { metadataOnly: true })) } catch { target = null }
-      const prompt = target ? await expandPromptBuiltin(ctx, target, text, undefined) : null
+      const prompt = target ? await expandPromptBuiltin(ctx.deps, target, text, undefined) : null
       return (await ctx.deps.turns.steer(sid, prompt ?? text, display || (prompt === null ? '' : text), steerId)) as { accepted: boolean; fallback: string | null; stream_id: string | null; steer_id?: string }
     })),
     // TAL-424: Edit, Cancel and Send now on a pending steer; unknown or already-taken steers answer false.

@@ -21,6 +21,7 @@ const formats: Record<string, Format> = {
   profiles: { files: { deleted: 'deleted-profiles.json' } },
   extensions: { files: { overrides: 'extension-overrides.json', 'install-manifest': 'extension-install-manifest.json' }, indent: 2 },
   background: { directory: 'sessions/_background' },
+  'prompt-queues': { directory: 'prompt-queues', secret: true },
   catalog: { files: { 'quota-scope': '.quota_scope_id' }, text: true },
   'relay-keys': { text: true, secret: true },
   'relay-identities': { text: true, secret: true },

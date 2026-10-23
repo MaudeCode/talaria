@@ -197,3 +197,22 @@ Descriptors are scoped to the session,
 authority, replay epoch, execution generation and admission, and are discarded on
 replacement or replay gaps. Web hides Retry when the server sends `retryable:
 false`; absent fields retain older-server behavior.
+
+Explicit prompt queues use `/api/prompt-queues` and its versioned edit/action
+routes. Creating a run saves a draft; only `start` or `resume` authorizes dispatch.
+The server owns target profile/project/backend fences, ordered steps, availability,
+admission claims and receipts, current step, phase and permitted actions. Clients
+render these fields and optimistically show their own writes with rollback.
+Stale control revisions return 409; receipt-only progress preserves the control
+revision so a still-permitted Pause or Cancel remains usable during admission. Pause and cancel hold successors, including when a
+step is already dispatching; they do not interrupt an admitted turn.
+
+Runs are additive private documents under `prompt-queues/`, scoped to the
+creating authenticated owner and profile. A durable dispatch claim precedes the
+shared chat admission. Direct steps settle from the exact run journal after
+worker release. Native steps use the canonical owner submit path and its exact
+admission receipt, fenced by authority epoch. A lost acknowledgement without a
+receipt remains unknown across reload/restart and is never resubmitted. A later
+confirmed completion after uncertainty leaves remaining steps paused for an
+explicit Resume. Failed or refused steps stop the run. No schedule or recurring
+execution is created. App adoption is tracked separately in TAL-1356.

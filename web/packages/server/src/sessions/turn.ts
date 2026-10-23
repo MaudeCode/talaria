@@ -148,6 +148,8 @@ export interface StartTurnOptions {
   connectCard?: boolean
   /** The starting client can answer the masked skill-secret variant. */
   skillSecret?: boolean
+  /** Recheck a queued target immediately before mutating admission state. */
+  admissionCheck?: ((session: Session) => void) | undefined
   /** The settled turn's answer: its last non-error assistant reply, or `` when it produced none. */
   onDone?: (answer: string) => void | Promise<void>
   /** Runs on every other end: an error, a cancel, or a writeback another stream took over (Python background runner: `complete_background(..., "(background task failed)")`). */
@@ -479,6 +481,7 @@ export class TurnRunner {
       timing.finish('noop')
       return { stream_id: str(accepted[opts.completionKeys[0]!]), session_id: s.session_id }
     }
+    opts.admissionCheck?.(s)
     closeChecks()
     const streamId = randomUUID().replace(/-/g, '')
     timing.identify(s.session_id, streamId)
