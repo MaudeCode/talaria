@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Queued notifications and Live Activity updates respect your latest notification preferences.",
+      "highlight": false,
+      "components": ["relay"]
+    }
+  ]
+}
