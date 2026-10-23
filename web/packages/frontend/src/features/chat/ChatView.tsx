@@ -13,7 +13,7 @@ import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { invalidateSessionQueries } from '../../api/sessionQueries'
 import { useBootstrap } from '../../app/bootstrap'
-import { useSettingsQuery, useWorkspacesQuery } from '../../app/queries'
+import { useExecutionModesQuery, useSettingsQuery, useWorkspacesQuery } from '../../app/queries'
 import type { Session, SessionsList } from '../../contracts'
 import { configureStream, cancelTurn, getStreamContext, startTurn } from '../../stream/connection'
 import { dispatch, useTurnIntent } from '../../stream/store'
@@ -95,6 +95,8 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   if (draftProfile !== bootstrap.profile?.name) { setDraftProfile(bootstrap.profile?.name); setPending({}) }
   const focusKey = useSearch({ strict: false }).msg
   const creation = useCreationId(pending)
+  const executionModes = useExecutionModesQuery(!sessionId)
+  const canReference = executionModes.data?.modes.find((mode) => mode.mode === (pending.execution_mode ?? 'normal'))?.can_reference === true
 
   useEffect(() => {
     configureStream({ queryClient: qc, onCompressed: (sid, next) => { if (sid === sessionId) void navigate({ to: '/session/$sessionId', params: { sessionId: next } }) } })
@@ -217,7 +219,10 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
 
   const onModelChange = useCallback((model: string, provider: string | null) => { if (!sessionId) { setPending((p) => ({ ...p, model, model_provider: provider })); return } updateSession({ model, model_provider: provider }) }, [sessionId, updateSession])
   const onWorkspaceChange = useCallback((path: string) => { if (!sessionId) { setPending((p) => ({ ...p, workspace: path })); return } updateSession({ workspace: path }) }, [sessionId, updateSession])
-  const onExecutionModeChange = useCallback((mode: ExecutionMode) => { setPending((p) => ({ ...p, execution_mode: mode })) }, [])
+  const onExecutionModeChange = useCallback((mode: ExecutionMode) => {
+    const canReference = executionModes.data?.modes.find((option) => option.mode === mode)?.can_reference === true
+    setPending((p) => ({ ...p, execution_mode: mode, ...(canReference ? {} : { source_references: [] }) }))
+  }, [executionModes.data])
   const onToolsetsChange = useCallback((toolsets: string[] | null) => { if (!sessionId) { setPending((p) => ({ ...p, enabled_toolsets: toolsets })); return } sendSessionWrite({ sid: sessionId, fields: { enabled_toolsets: toolsets }, run: () => api.setSessionToolsets(sessionId, toolsets) }) }, [sessionId, sendSessionWrite])
   const yoloWrite = useResourceMutation({
     resource: ({ sid }: { sid: string; on: boolean }) => `yolo:${sid}`, queryKey: ['yolo'], readKeys: ({ sid }) => [{ queryKey: keys.yolo(sid), exact: true }], effect: ({ on }) => ({ value: on }),
@@ -504,7 +509,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
             </TerminalPanelFrame>
           }><TerminalPanel key={JSON.stringify([sessionId, workspace])} sessionId={sessionId} workspace={workspace} onClose={() => setTerminalOpen(false)} onReopen={() => setTerminalOpen(true)} /></Suspense>}
         </div>
-        <SessionReferences key={bootstrap.profile?.name} profile={bootstrap.profile?.name ?? 'default'} selected={sessionId ? session?.source_references ?? [] : pending.source_references ?? []} {...(!sessionId ? { onChange: (source_references: AcceptedSourceReference[]) => setPending((p) => ({ ...p, source_references })) } : {})} />
+        {(sessionId || canReference) && <SessionReferences key={bootstrap.profile?.name} profile={bootstrap.profile?.name ?? 'default'} selected={sessionId ? session?.source_references ?? [] : pending.source_references ?? []} {...(!sessionId ? { onChange: (source_references: AcceptedSourceReference[]) => setPending((p) => ({ ...p, source_references })) } : {})} />}
         <Composer
           sessionId={sessionId}
           session={composerSession}

@@ -107,6 +107,19 @@ describe('new-chat conversation references', () => {
     expect(create).not.toHaveBeenCalled()
   })
 
+  it('does not allocate a worktree when sources change during workspace resolution', async () => {
+    await seed('first')
+    vi.spyOn(s.deps.sessions, 'resolveNewSessionWorkspace').mockImplementationOnce(async () => {
+      await s.deps.sessionStore.delete('first')
+      return join(s.state, 'workspace')
+    })
+    vi.spyOn(s.deps.git, 'holdWrite').mockImplementation(async (_path, action) => action())
+    const worktree = vi.spyOn(s.deps.worktrees, 'create').mockResolvedValue({ path: join(s.state, 'worktree'), branch: 'synthetic', repo_root: s.state, created_at: 1 })
+    const res = await post(s, { source_references: [ref('first')], request_id: 'changed-before-worktree', worktree: true, workspace: join(s.state, 'workspace') })
+    expect(res.status).toBe(409)
+    expect(worktree).not.toHaveBeenCalled()
+  })
+
   it('refuses a retained row whose identity was retired', async () => {
     await seed('retired')
     const db = new DatabaseSync(join(s.state, 'state.db'))
@@ -144,5 +157,13 @@ describe('new-chat conversation references', () => {
     expect(JSON.stringify(result)).not.toContain('SECRET TRANSCRIPT MATERIAL')
     expect(JSON.stringify(result)).not.toContain('foreign')
     expect(result.max_sources).toBe(5)
+  })
+
+  it('lists candidates before a search query is entered', async () => {
+    await seed('first', 'Earlier conversation')
+    const res = await s.get('/api/sessions/references')
+    expect(res.status).toBe(200)
+    const result = await res.json() as { sessions: Json[] }
+    expect(result.sessions.map((row) => row.session_id)).toEqual(['first'])
   })
 })

@@ -1521,7 +1521,7 @@ export class SessionService {
     const sessions: Row[] = []
     for (const row of list.body.sessions) {
       if (sessions.length === 50) break
-      if (!sessionSearchMatches(str(row.title), terms)) continue
+      if (terms.length && !sessionSearchMatches(str(row.title), terms)) continue
       const tip = str(row.session_id)
       const report = await stateDbSessionReadAsync(emptyLineageReport(tip), 'stateDbLineageReport', this.stateDbPath(profile), tip)
       if (!report?.found) continue
@@ -1559,6 +1559,8 @@ export class SessionService {
       const sources: { reference: AcceptedSourceReference; rows: Message[] }[] = []
       let context: Message[] = []
       const session = await create(sid, async () => {
+        // An implicit worktree fallback validates again on the ordinary creation path.
+        sources.length = 0
         for (const ref of refs) sources.push(await this.referenceSource(ref, true))
         try {
           context = withDataUseRequirements([

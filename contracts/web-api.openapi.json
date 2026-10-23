@@ -11277,6 +11277,10 @@
                               }
                             ]
                           },
+                          "can_reference": {
+                            "type": "boolean",
+                            "description": "A fresh chat in this mode accepts earlier-conversation references. Absent means unavailable."
+                          },
                           "can_attach": {
                             "type": "boolean",
                             "description": "A fresh chat in this mode accepts file attachments."

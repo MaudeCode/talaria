@@ -221,8 +221,12 @@ export const sessionsRouter = os.router({
             let base = input.workspace ? (await ctx.deps.sessions.resolveNewSessionWorkspace(input, null, profile)) : null
             base ??= (await ctx.deps.workspaces.resolveTrusted((await ctx.deps.workspaces.lastWorkspace(profile)), profile))
             const repo = base
-            worktree = await ctx.deps.git.holdWrite(repo, () => ctx.deps.worktrees.create(repo))
+            worktree = await ctx.deps.git.holdWrite(repo, async () => {
+              await validateSources?.()
+              return ctx.deps.worktrees.create(repo)
+            })
           } catch (error) {
+            if (error instanceof HttpFailure) throw error
             if (error instanceof GitWorkspaceError) throw new HttpError(409, error.message, { code: error.code })
             // Python: `ValueError`/`TypeError` (not a repo, not a directory) → 400 or a degraded plain session; the Agent
             // helper failing (`RuntimeError`) → 500 `Failed to create worktree: ...`.
@@ -233,7 +237,8 @@ export const sessionsRouter = os.router({
             worktreeSkipped = (error as Error).message
           }
         }
-        return ctx.deps.sessions.create(input, { worktree, ...(sessionId ? { sessionId } : {}), ...(validateSources ? { validateSources } : {}) })
+        // A worktree has already passed source validation before allocation.
+        return ctx.deps.sessions.create(input, { worktree, ...(sessionId ? { sessionId } : {}), ...(!worktree && validateSources ? { validateSources } : {}) })
       })
       const payload: Record<string, unknown> = { session: (await ctx.deps.sessions.publicSession(s)) }
       if (worktreeSkipped) payload.worktree_skipped = worktreeSkipped

@@ -9,7 +9,7 @@ import { dispatch, resetStreamStoreForTests } from '../../stream/store'
 import { resetConnectionsForTests } from '../../stream/connection'
 import { ApiError } from '../../contracts/common'
 
-const { renders, navigate, composer, chatRenders, sidePanel } = vi.hoisted(() => ({ renders: vi.fn(), navigate: vi.fn(), composer: vi.fn(), chatRenders: vi.fn(), sidePanel: vi.fn() }))
+const { renders, navigate, composer, chatRenders, sidePanel, references } = vi.hoisted(() => ({ renders: vi.fn(), navigate: vi.fn(), composer: vi.fn(), chatRenders: vi.fn(), sidePanel: vi.fn(), references: vi.fn() }))
 vi.mock('@tanstack/react-router', async (original) => ({ ...await original<object>(), useNavigate: () => navigate, useSearch: () => ({}) }))
 vi.mock('../../shell/AppShell', () => ({ MAIN_VIEW: '' }))
 vi.mock('../../app/bootstrap', async (original) => {
@@ -17,8 +17,9 @@ vi.mock('../../app/bootstrap', async (original) => {
   // ChatView is the only caller here (the Composer is mocked), so each call is one ChatView render.
   return { ...await original<object>(), useBootstrap: () => { chatRenders(); return bootstrap } }
 })
-vi.mock('../../app/queries', () => ({ useSettingsQuery: () => ({ data: { auto_scroll_follow: false } }), useWorkspacesQuery: () => ({ data: { workspaces: [] } }) }))
+vi.mock('../../app/queries', () => ({ useSettingsQuery: () => ({ data: { auto_scroll_follow: false } }), useWorkspacesQuery: () => ({ data: { workspaces: [] } }), useExecutionModesQuery: () => ({ data: { modes: [{ mode: 'normal', can_reference: true }, { mode: 'safe', can_reference: false }, { mode: 'ignore_config', can_reference: false }] } }) }))
 vi.mock('../composer/Composer', () => ({ Composer: (props: unknown) => { composer(props); return null } }))
+vi.mock('../sessions/SessionReferences', () => ({ SessionReferences: (props: { onChange?: (refs: unknown[]) => void }) => { references(props); return props.onChange ? <button>Reference selector</button> : null } }))
 // Count side panel renders inside the real export's memo boundary, if it has one.
 vi.mock('./ChatSidePanel', async (original) => {
   const { ChatSidePanel } = await original<typeof import('./ChatSidePanel')>()
@@ -71,6 +72,17 @@ function chat(streaming = true) {
   const view = render(<QueryClientProvider client={qc}><ChatView sessionId={session.session_id} /></QueryClientProvider>)
   return { ...view, qc, session }
 }
+
+it.each(['safe', 'ignore_config'])('clears draft references and hides selection when switching to %s', async (mode) => {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(<QueryClientProvider client={qc}><ChatView sessionId={null} /></QueryClientProvider>)
+  await screen.findByRole('button', { name: 'Reference selector' })
+  act(() => { references.mock.lastCall![0].onChange([{ session_id: 'earlier', tip_session_id: 'earlier', profile: 'default', title: 'Earlier chat' }]) })
+  expect(composer.mock.lastCall![0].pendingChoices.source_references).toHaveLength(1)
+  act(() => { composer.mock.lastCall![0].onExecutionModeChange(mode) })
+  expect(composer.mock.lastCall![0].pendingChoices.source_references).toEqual([])
+  expect(screen.queryByRole('button', { name: 'Reference selector' })).not.toBeInTheDocument()
+})
 
 it('renders each persisted message once while three token frames update the live turn', async () => {
   const { container } = chat()
