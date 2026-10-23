@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "MCP server health checks finish as soon as the server answers, even when it sends notifications first or keeps the stream open.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

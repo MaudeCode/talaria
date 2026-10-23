@@ -3,7 +3,6 @@
  * driven, fingerprint keyed, at most four in flight, eight seconds each, one
  * probe per server identity per 120 s. `unknown` is never treated as healthy.
  */
-import { readCapped } from '../http/capped.js'
 import { createHash } from 'node:crypto'
 import { accessSync, constants as fsConstants } from 'node:fs'
 import { delimiter, isAbsolute, join } from 'node:path'
@@ -14,7 +13,6 @@ export const HEALTH_INTERVAL_S = 120
 export const PROBE_TIMEOUT_MS = 8000
 const PROBE_BODY_LIMIT_BYTES = 64 * 1024
 const MAX_CONCURRENT_PROBES = 4
-const MAX_PROBE_BODY_BYTES = 64 * 1024
 const AUTH_STATUSES = new Set([401, 403, 407])
 const PROTOCOL_MISMATCH_STATUSES = new Set([404, 405, 406, 415])
 const PROTOCOL_VERSION_RE = /\d{4}-\d{2}-\d{2}/
@@ -23,20 +21,64 @@ const INITIALIZE_REQUEST = { jsonrpc: '2.0', id: 'hermes-webui-health', method: 
 export type Health = 'healthy' | 'needs_auth' | 'unhealthy' | 'unknown'
 export interface HealthRow { health?: Health; detail?: string; checked_at?: number; pending: boolean }
 
-function jsonRpcFromBody(raw: string): Dict | null {
-  const text = raw.slice(0, MAX_PROBE_BODY_BYTES).trim()
-  if (!text) return null
-  const parse = (s: string): Dict | null => { try { const v: unknown = JSON.parse(s); return v && typeof v === 'object' && !Array.isArray(v) ? (v as Dict) : null } catch { return null } }
-  const direct = parse(text)
-  if (direct) return direct
-  // SSE: the reply is the first `data:` payload of an event block.
-  for (const block of text.split(/(?:\r\n|\r|\n){2}/)) {
-    const data = block.split(/\r\n|\r|\n/).filter((l) => l.startsWith('data:')).map((l) => l.slice(5).trim()).join('\n')
-    if (!data) continue
-    const parsed = parse(data)
-    if (parsed) return parsed
+const parseObject = (s: string): Dict | null => { try { const v: unknown = JSON.parse(s); return v && typeof v === 'object' && !Array.isArray(v) ? (v as Dict) : null } catch { return null } }
+
+/** Incremental `text/event-stream` framing: feed decoded text, get back the `data` of each event it completes. */
+function sseFramer(): (text: string) => string[] {
+  let buffer = ''
+  let data: string[] = []
+  let endedOnCr = false
+  return (chunk) => {
+    // A chunk-final CR ends its line at once; drop the LF that completes it as a CRLF in the next chunk.
+    const text = endedOnCr && chunk.startsWith('\n') ? chunk.slice(1) : chunk
+    if (chunk) endedOnCr = text.endsWith('\r')
+    buffer += text
+    const events: string[] = []
+    const lineEnd = /\r\n|\r|\n/g
+    let start = 0
+    for (let m = lineEnd.exec(buffer); m; m = lineEnd.exec(buffer)) {
+      const line = buffer.slice(start, m.index)
+      start = lineEnd.lastIndex
+      if (!line) { if (data.length) events.push(data.join('\n')); data = [] }
+      else if (line.startsWith('data:')) data.push(line.slice(line.startsWith('data: ') ? 6 : 5))
+    }
+    buffer = buffer.slice(start)
+    return events
   }
-  return null
+}
+
+/** The initialize reply within the byte and deadline budget: a JSON body, or the SSE event answering our request id, read without waiting for EOF. */
+async function readInitializeReply(res: Response, deadline: number): Promise<Dict | null> {
+  if (!res.body) return null
+  const reader = (res.body as ReadableStream<Uint8Array>).getReader()
+  const decoder = new TextDecoder()
+  const frame = sseFramer()
+  const reply = (events: string[]): Dict | null => events.map(parseObject).find((p) => p?.id === INITIALIZE_REQUEST.id && ('result' in p || 'error' in p)) ?? null
+  let timer: NodeJS.Timeout | undefined
+  const expired = new Promise<null>((resolve) => { timer = setTimeout(() => { resolve(null) }, Math.max(1, deadline - Date.now())).unref() })
+  let text = ''
+  let bytes = 0
+  try {
+    for (;;) {
+      const chunk = await Promise.race([reader.read(), expired])
+      if (!chunk) return null
+      if (chunk.done) break
+      bytes += chunk.value.byteLength
+      if (bytes > PROBE_BODY_LIMIT_BYTES) return null
+      const decoded = decoder.decode(chunk.value, { stream: true })
+      text += decoded
+      const found = reply(frame(decoded))
+      if (found) return found
+    }
+    const rest = decoder.decode()
+    // The trailing blank line dispatches a final event the server closed without terminating.
+    return parseObject((text + rest).trim()) ?? reply(frame(`${rest}\n\n`))
+  } catch {
+    return null
+  } finally {
+    clearTimeout(timer)
+    reader.cancel().catch(() => undefined)
+  }
 }
 
 function initializeResult(payload: Dict | null): Dict | null {
@@ -72,10 +114,10 @@ async function probeHttp(url: string, cfg: Dict, fetchImpl: typeof fetch): Promi
     sessionId = res.headers.get('mcp-session-id')
     let payload: Dict | null = null
     if (res.ok) {
-      const remaining = deadline - Date.now()
-      const text = await Promise.race([readCapped(res, PROBE_BODY_LIMIT_BYTES).then((b) => (b ? b.toString('utf8') : '')), new Promise<string>((_, reject) => { setTimeout(() => { reject(new Error('timeout')) }, Math.max(1, remaining)).unref() })]).catch(() => '')
-      payload = jsonRpcFromBody(text)
+      payload = await readInitializeReply(res, deadline)
       protocolVersion = str(initializeResult(payload)?.protocolVersion) || null
+    } else {
+      res.body?.cancel().catch(() => undefined)
     }
     return statusResult(res.status, payload)
   } catch (error) {
