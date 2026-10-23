@@ -106,7 +106,7 @@ test('interrupt queues immediately and waits for confirmed worker release', asyn
   }
 })
 
-test('Edit exposes intent before an accepted authoritative cut', async ({ page }, info) => {
+test('Edit cuts the transcript at once, before the server accepts the cut', async ({ page }, info) => {
   let messages = initial
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: snapshot(messages) } }))
   const edit = hold()
@@ -123,8 +123,8 @@ test('Edit exposes intent before an accepted authoritative cut', async ({ page }
     edit.resolve()
     return
   }
-  await expect(page.locator('[data-notice="history"]')).toHaveText('Editing')
-  await expect(page.getByText('Earlier answer', { exact: true })).toBeVisible()
+  await expect(page.getByText('Earlier answer', { exact: true })).toHaveCount(0)
+  await expect(page.locator('[data-notice="history"]')).toHaveCount(0)
   await evidence(page, 'edit', info.project.name)
   edit.resolve()
   await expect(page.locator('#msg')).toHaveValue('Earlier question')
@@ -164,7 +164,7 @@ test('Retry exposes intent through mutation, detail refresh and admission', asyn
 })
 
 for (const action of ['undo', 'clear'] as const) {
-  test(`${action} reports intent throughout the write and authoritative refresh`, async ({ page }) => {
+  test(`${action} cuts the transcript at once and keeps it through the write and authoritative refresh`, async ({ page }) => {
     test.skip(before, 'Before evidence is covered by Edit')
     let messages = initial
     let holdRefresh = false
@@ -182,12 +182,11 @@ for (const action of ['undo', 'clear'] as const) {
     await page.locator('#msg').fill(`/${action}`)
     await page.locator('#btnSend').click()
     const status = page.locator('[data-notice="history"]')
-    await expect(status).toHaveText(action === 'undo' ? 'Undoing' : 'Clearing')
-    await expect(page.getByText('Earlier answer', { exact: true })).toBeVisible()
+    await expect(page.getByText('Earlier answer', { exact: true })).toHaveCount(0)
+    await expect(status).toHaveCount(0)
     await page.locator('#msg').fill('Newer typing')
     mutation.resolve()
-    await expect(status).toBeVisible()
-    await expect(page.getByText('Earlier answer', { exact: true })).toBeVisible()
+    await expect(page.getByText('Earlier answer', { exact: true })).toHaveCount(0)
     refresh.resolve()
     await expect(page.getByText('Earlier answer', { exact: true })).toHaveCount(0)
     await expect(status).toHaveCount(0)
@@ -246,7 +245,9 @@ for (const action of ['retry', 'undo', 'clear'] as const) {
     await expect(page.getByText('Earlier answer', { exact: true })).toBeVisible()
     await page.locator('#msg').fill(`/${action}`)
     await page.locator('#btnSend').click()
-    await expect(page.locator('[data-notice="history"]')).toBeVisible()
+    // Retry's result comes from the server, so it shows a status; undo and clear cut the transcript at once.
+    if (action === 'retry') await expect(page.locator('[data-notice="history"]')).toBeVisible()
+    else await expect(page.getByText('Earlier answer', { exact: true })).toHaveCount(0)
     await page.locator('#msg').fill('Newer draft')
     refusal.resolve()
     await expect(page.locator('#msg')).toHaveValue(`Newer draft\n\n/${action}`)
