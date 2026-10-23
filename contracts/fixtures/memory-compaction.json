@@ -1,0 +1,30 @@
+{
+  "preview": {
+    "section": "memory",
+    "revision": "source-revision",
+    "proposed_revision": "proposed-revision",
+    "receipt": "opaque-profile-bound-receipt",
+    "source": "Prefers concise answers.\n\u00a7\nPrefers brief answers.",
+    "proposed": "Prefers concise answers.",
+    "diff": "--- Source\n+++ Proposed\n-Prefers concise answers.\n-\u00a7\n-Prefers brief answers.\n+Prefers concise answers.",
+    "model": "synthetic-compression",
+    "expires_at": 1800001800
+  },
+  "apply": {
+    "receipt": "opaque-profile-bound-receipt"
+  },
+  "applied": {
+    "ok": true,
+    "section": "memory",
+    "revision": "proposed-revision"
+  },
+  "conflict": {
+    "error": "Memory or preview changed. Review a new compaction preview.",
+    "code": "memory_compaction_conflict"
+  },
+  "unavailable": {
+    "error": "Memory compaction is unavailable on the configured auxiliary route.",
+    "code": "memory_compaction_unavailable",
+    "condition": "data_policy_denied"
+  }
+}

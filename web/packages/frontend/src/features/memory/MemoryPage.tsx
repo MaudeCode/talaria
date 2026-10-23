@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import type { MemoryCompactionPreview } from '@maudecode/talaria-web-contracts'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
@@ -8,9 +9,11 @@ import { Button } from '../../ui/Button'
 import { ErrorState, LoadingState, formatDate } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { showErrorToast } from '../toast/errorToast'
-import { isApiError } from '../../contracts/common'
+import { isApiError, isDefiniteRefusal } from '../../contracts/common'
 import { cn } from '../../ui/cn'
-import { PendingWritesPanel } from '../pending-writes/PendingWritesPanel'
+import { useResourceEffects, useResourceMutation, withEffect } from '../sessions/useResourceMutation'
+import { getStreamContext, useStreamContext } from '../../stream/connection'
+import { PendingWritesPanel, PendingWriteReview } from '../pending-writes/PendingWritesPanel'
 
 type Section = 'memory' | 'user' | 'soul' | 'project_context'
 type Writable = Exclude<Section, 'project_context'>
@@ -31,6 +34,37 @@ export function MemoryPage() {
   const [draft, setDraft] = useState<Record<string, Draft>>({})
   // The server's message for a save it refused because the file changed since the edit started.
   const [conflict, setConflict] = useState<Record<string, string>>({})
+  const context = useStreamContext()
+  const [review, setReview] = useState<{ context: object; preview: MemoryCompactionPreview } | null>(null)
+  const preview = review?.context === context ? review.preview : null
+  const [failure, setFailure] = useState<{ context: object; message: string } | null>(null)
+  const compactionError = failure?.context === context ? failure.message : ''
+  const setCompactionError = (message: string) => setFailure({ context: getStreamContext(), message })
+  const reviewRef = useRef<HTMLElement>(null)
+  const effects = useResourceEffects()
+  const generate = useMutation({
+    mutationFn: async ({ context: owner, ...body }: { section: 'memory' | 'user'; revision: string; context: object }) => ({ context: owner, preview: await api.previewMemoryCompaction(body) }),
+    onSuccess: (result) => { if (result.context === getStreamContext()) { setReview(result); setCompactionError('') } },
+    onError: (error, vars) => { if (vars.context === getStreamContext()) setCompactionError(error instanceof Error ? error.message : m.error_generic()) },
+  })
+  const reviewHidden = !!effects['memory-compaction']?.remove
+  useEffect(() => { if (preview && !reviewHidden) reviewRef.current?.scrollIntoView?.({ block: 'start' }) }, [preview, reviewHidden])
+  const apply = useResourceMutation({
+    resource: () => 'memory-compaction', queryKey: keys.memory, exclusive: true,
+    effect: (p: MemoryCompactionPreview) => ({ fields: { [p.section]: p.proposed }, remove: true }),
+    mutationFn: async (p) => {
+      try { return await api.applyMemoryCompaction(p.receipt) } catch (error) {
+        if (!isDefiniteRefusal(error)) {
+          // Read the authoritative outcome; never replay a write after a missing acknowledgment.
+          const current = await api.fetchMemory()
+          if (current[`${p.section}_revision`] === p.proposed_revision) return { ok: true as const, section: p.section, revision: p.proposed_revision }
+        }
+        throw error
+      }
+    },
+    onSuccess: () => { setReview(null); setCompactionError(''); showToast(m.memory_saved()) },
+    onError: (error) => { setCompactionError(error instanceof Error ? error.message : m.error_generic()) },
+  })
   const write = useMutation({
     // The draft clears only once a refetch brings the new revision, so the next edit starts from it. When that refetch
     // fails the saved text stays in the editor on its old revision, and the next save meets a conflict and its reload.
@@ -51,7 +85,7 @@ export function MemoryPage() {
     },
   })
   const reload = (target: Section) => { setDraft((d) => without(d, target)); setConflict((c) => without(c, target)); void memory.refetch() }
-  const data = memory.data
+  const data = memory.data ? withEffect(memory.data, { fields: effects['memory-compaction']?.fields ?? {} }) : undefined
   const current = SECTIONS.find((s) => s.id === section) ?? SECTIONS[0]
   const serverText = data ? (section === 'project_context' ? data.project_context ?? '' : data[section]) : ''
   const text = draft[section]?.text ?? serverText
@@ -71,6 +105,20 @@ export function MemoryPage() {
       }
     >
       <PendingWritesPanel kind="memory" />
+      {compactionError && <div role="alert" className="mb-3 text-xs text-error">{compactionError}</div>}
+      {preview && !effects['memory-compaction']?.remove && (
+        <section ref={reviewRef} aria-label={m.memory_compaction_preview()} className="mb-6 flex scroll-mt-40 flex-col gap-3">
+          <PendingWriteReview summary={m.memory_compaction_preview()} target={preview.model} diff={preview.diff} open actions={<>
+            <Button variant="primary" disabled={draft[preview.section] !== undefined || write.isPending} onClick={() => { setCompactionError(''); apply.mutate(preview) }}>{m.memory_compaction_apply()}</Button>
+            <Button variant="ghost" onClick={() => { setReview(null); setCompactionError('') }}>{m.cancel()}</Button>
+          </>}>
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="min-w-0 text-xs text-muted">{m.memory_compaction_source()}<textarea readOnly value={preview.source} rows={7} className="mt-1 w-full rounded-md border border-border-subtle bg-code-bg p-3 font-mono text-xs text-pre-text" /></label>
+              <label className="min-w-0 text-xs text-muted">{m.memory_compaction_proposed()}<textarea readOnly value={preview.proposed} rows={7} className="mt-1 w-full rounded-md border border-border-subtle bg-code-bg p-3 font-mono text-xs text-pre-text" /></label>
+            </div>
+          </PendingWriteReview>
+        </section>
+      )}
       {memory.isPending && <LoadingState />}
       {memory.isError && <ErrorState error={memory.error} onRetry={() => { void memory.refetch() }} />}
       {data && (
@@ -84,7 +132,7 @@ export function MemoryPage() {
           </div>
           <textarea
             value={text}
-            readOnly={!current?.writable}
+            readOnly={!current?.writable || !!effects['memory-compaction']}
             onChange={(e) => { const value = e.target.value; setDraft((d) => ({ ...d, [section]: { text: value, revision: d[section]?.revision ?? (section === 'project_context' ? '' : data[`${section}_revision`]) } })) }}
             rows={22}
             spellCheck={false}
@@ -98,7 +146,8 @@ export function MemoryPage() {
             </div>
           )}
           {current?.writable && (
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
+              {(section === 'memory' || section === 'user') && <Button disabled={generate.isPending || draft[section] !== undefined || !!effects['memory-compaction'] || !path} onClick={() => { setCompactionError(''); generate.mutate({ context, section, revision: data[`${section}_revision`] }) }}>{generate.isPending ? m.memory_compaction_generating() : m.memory_compaction_action()}</Button>}
               <Button variant="primary" disabled={draft[section] === undefined || conflict[section] !== undefined || write.isPending} onClick={() => { const d = draft[section]; if (d !== undefined && section !== 'project_context') write.mutate({ target: section, draft: d }) }}>{m.save()}</Button>
               <Button variant="ghost" disabled={draft[section] === undefined} onClick={() => { setDraft((d) => without(d, section)); setConflict((c) => without(c, section)) }}>{m.cancel()}</Button>
             </div>

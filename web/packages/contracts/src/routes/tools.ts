@@ -1,4 +1,4 @@
-import { oc } from '@orpc/contract'
+import { oc, type OpenAPI } from '@orpc/contract'
 import { z } from 'zod'
 import { SkillsSchema, SkillContentSchema, SkillsUsageSchema, MemorySchema, PromptSchema, PromptsSchema, CommandsSchema, LogsSchema, InsightsSchema, AgentHealthSchema, SystemHealthSchema, McpServerSchema, McpServersSchema, McpToolsSchema, ConnectorsPageSchema, ConnectorToolsViewSchema, ConnectorOperationViewSchema, PluginsSchema, UpdatesCheckSchema, UpdatesSummarySchema, UpdateApplySchema, UpdateNotificationsSchema, UpdateNotificationSchema, TabIdSchema, FrontendBuildIdSchema, NotesSourcesSchema, NotesSearchSchema, NoteItemSchema, WikiStatusSchema, WikiBrowseSchema, WikiPageSchema, DashboardStatusSchema, DashboardConfigSchema, GatewayStatusSchema, GatewayActionSchema, ProjectOsDashboardSchema, TranscribeCapabilitySchema, SpeechPrepareSchema, PluginSettingViewSchema, OnboardingOAuthSchema } from '../views.js'
 import { PluginCatalogQuerySchema, PluginCatalogSchema, PluginInstallInputSchema, PluginInstallResultSchema, PluginRuntimeApplicationSchema, PluginUpdateResultSchema, ToolsetsCatalogSchema, CommandBundleInvocationSchema, CommandBundleSchema, PendingWriteSchema, PendingWriteRefSchema } from '../sidecar/namespaces.js'
@@ -36,6 +36,24 @@ const openApiSchema = (schema: z.ZodType): Record<string, unknown> => {
   return json
 }
 
+/** User-requested preview, separate from Agent pending writes; apply accepts only this opaque receipt. */
+export const MemoryCompactionPreviewSchema = z.object({
+  section: z.enum(['memory', 'user']), revision: z.string(), proposed_revision: z.string(), receipt: z.string().min(1).max(64_000),
+  source: z.string(), proposed: z.string(), diff: z.string(), model: z.string(), expires_at: z.number(),
+})
+export type MemoryCompactionPreview = z.infer<typeof MemoryCompactionPreviewSchema>
+export const MemoryCompactionApplySchema = z.object({ ok: z.literal(true), section: z.enum(['memory', 'user']), revision: z.string() })
+
+export const MemoryCompactionRefusalSchema = z.union([
+  MemoryWriteRefusalSchema,
+  z.object({ error: z.string(), code: z.enum(['memory_compaction_conflict', 'memory_compaction_invalid']) }),
+  z.object({ error: z.string(), code: z.literal('memory_compaction_unavailable'), condition: z.string() }),
+])
+const compactionSpec = (op: OpenAPI.OperationObject): OpenAPI.OperationObject => ({ ...op, responses: {
+  ...op.responses,
+  ...Object.fromEntries([409, 422, 503].map((status) => [status, { description: 'Compaction refused or unavailable. The review is retained; no unconfirmed write is replayed.', content: { 'application/json': { schema: openApiSchema(MemoryCompactionRefusalSchema) } } }])),
+} })
+
 /** TAL-819: a kind's staged writes and whether the page shows its review panel. */
 export const PendingWritesSchema = z.object({ kind: z.enum(['skills', 'memory']), visible: z.boolean(), enabled: z.boolean(), items: z.array(PendingWriteSchema) })
 export type PendingWrites = z.infer<typeof PendingWritesSchema>
@@ -53,6 +71,8 @@ export const toolsContract = {
     toggle: oc.route({ method: 'POST', path: '/api/skills/toggle', tags, summary: 'Writes `skills.disabled` (and `skills.platform_disabled.webui` when present) in config.yaml.' }).input(z.object({ name: z.string().optional(), enabled: Json.optional() })).output(z.object({ ok: z.literal(true), name: z.string(), enabled: z.boolean() })),
   },
   memory: {
+    compactionPreview: oc.route({ method: 'POST', path: '/api/memory/compaction/preview', tags, spec: compactionSpec, summary: 'Generate a bounded compaction through the configured compression auxiliary route, without writing. Secrets and protected entries are retained locally. Preview binds the active profile, source revision, proposal and expiry; an unavailable privacy-safe route returns 503.' }).input(z.object({ section: z.enum(['memory', 'user']), revision: z.string() })).output(MemoryCompactionPreviewSchema),
+    compactionApply: oc.route({ method: 'POST', path: '/api/memory/compaction/apply', tags, spec: compactionSpec, summary: 'Explicitly apply the exact preview receipt through the Agent-format and locked revision gate. Stale, foreign or expired receipts are refused. Repeated acknowledgments reconcile with the exact proposed bytes without rewriting.' }).input(z.object({ receipt: z.string().min(1).max(64_000) })).output(MemoryCompactionApplySchema),
     get: oc.route({ method: 'GET', path: '/api/memory', tags }).input(z.object({ session_id: z.string().optional(), workspace: z.string().optional() })).output(MemorySchema),
     write: oc.route({ method: 'POST', path: '/api/memory/write', tags, summary: '`section` names the file (memory, user, soul); the legacy `target` alias is accepted. `revision` is the section\'s `*_revision` the edit started from; 409 refuses the save when the file changed since. Masks the page showed are restored to the values they hide; 422 refuses an ambiguous or edited mask, or a MEMORY.md / USER.md body over the Agent store limit.', spec: (op) => ({ ...op, responses: { ...op.responses, 409: { description: 'The file changed since `revision`; the file is untouched.', content: { 'application/json': { schema: openApiSchema(MemoryWriteConflictSchema) } } }, 422: { description: 'Refused; the file is untouched.', content: { 'application/json': { schema: openApiSchema(MemoryWriteRejectionSchema) } } } } }) }).input(z.object({ section: z.string().optional(), target: z.string().optional(), content: z.string().optional(), revision: z.string() })).output(z.object({ ok: z.literal(true), section: z.string(), path: z.string() })),
   },

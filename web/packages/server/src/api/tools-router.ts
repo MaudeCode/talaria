@@ -13,7 +13,7 @@ import { SessionNotFound } from '../sessions/store.js'
 import { stateDbSessionReadAsync } from '../sessions/state-db.js'
 import { ConfigUnavailable, type Config, type Dict } from '../config/agent-config.js'
 import { SidecarError } from '../sidecar/client.js'
-import { createPrompt, deletePrompt, externalNotesEnabled, loadPrompts, readMemory, writeMemory } from '../tools/memory.js'
+import { createPrompt, deletePrompt, externalNotesEnabled, loadPrompts, readMemory, writeMemory, previewMemoryCompaction, applyMemoryCompaction, type MemoryWriteDeps } from '../tools/memory.js'
 import { JoplinError, joplinNote, joplinSearch, notesSources, type JoplinDeps } from '../tools/mcp.js'
 import { catalogNames, connectorOperation, connectorsPage, connectorTools, rememberCatalogNames } from '../tools/connectors.js'
 import { resolveWikiLocation, wikiPages, type WikiLocation } from '../tools/wiki.js'
@@ -374,6 +374,14 @@ async function reviewPendingWrites(ctx: RequestContext, verb: 'approve' | 'rejec
   return { results: results.map((r) => ({ ...r, message: redactString(r.message, ctx.deps.sessions.deps.redactEnabled()) })) }
 }
 
+function memoryWriteDeps(ctx: RequestContext, profileHome: string): MemoryWriteDeps {
+  return {
+    key: ctx.deps.auth.signingKey(),
+    check: (target, content) => runningSidecar(ctx).call('memory.check', { profile_home: profileHome, target, content }),
+    write: (section, base, content) => runningSidecar(ctx).call('memory.write', { profile_home: profileHome, section, base, content }),
+  }
+}
+
 export const toolsRouter = os.router({
   toolsetsCatalog: os.toolsetsCatalog.handler(({ input, context: { ctx } }) => run(() =>
     runningSidecar(ctx).call('toolsets.catalog', { profile_home: home(ctx), enabled_toolsets: input.toolsets }),
@@ -402,6 +410,17 @@ export const toolsRouter = os.router({
     })),
   },
   memory: {
+    compactionPreview: os.memory.compactionPreview.handler(({ input, context: { ctx } }) => run(async () => {
+      const profileHome = home(ctx)
+      return previewMemoryCompaction(profileHome, await ctx.deps.agentConfig.read(profileHome), input.section, input.revision, {
+        ...memoryWriteDeps(ctx, profileHome), now: ctx.deps.nowSeconds,
+        complete: (messages) => runningSidecar(ctx).call('aux.complete', { profile_home: profileHome, task: 'compression', messages, main_fallback: false, max_tokens: 4096, temperature: 0.2 }, { timeoutMs: 60_000 }),
+      })
+    })),
+    compactionApply: os.memory.compactionApply.handler(({ input, context: { ctx } }) => run(async () => {
+      const profileHome = home(ctx)
+      return applyMemoryCompaction(profileHome, await ctx.deps.agentConfig.read(profileHome), input.receipt, { ...memoryWriteDeps(ctx, profileHome), now: ctx.deps.nowSeconds })
+    })),
     get: os.memory.get.handler(({ input, context: { ctx } }) => run(async () => {
       const config = await ctx.deps.agentConfig.read(home(ctx))
       return readMemory(home(ctx), config, (await memoryWorkspace(ctx, str(input.session_id), str(input.workspace))), ctx.deps.config.env, ctx.deps.sessions.deps.redactEnabled(), ctx.deps.auth.signingKey()) as never
@@ -410,11 +429,7 @@ export const toolsRouter = os.router({
       const section = input.section ?? input.target
       if (section === undefined || input.content === undefined) throw new HttpError(400, 'Missing required field(s): section, content')
       const profileHome = home(ctx)
-      return writeMemory(profileHome, await ctx.deps.agentConfig.read(profileHome), str(section), str(input.content), input.revision, {
-        key: ctx.deps.auth.signingKey(),
-        check: (target, content) => runningSidecar(ctx).call('memory.check', { profile_home: profileHome, target, content }),
-        write: (target, base, content) => runningSidecar(ctx).call('memory.write', { profile_home: profileHome, section: target, base, content }),
-      })
+      return writeMemory(profileHome, await ctx.deps.agentConfig.read(profileHome), str(section), str(input.content), input.revision, memoryWriteDeps(ctx, profileHome))
     })),
   },
   pendingWrites: {

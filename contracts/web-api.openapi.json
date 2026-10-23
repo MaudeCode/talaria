@@ -65834,6 +65834,970 @@
         }
       }
     },
+    "/api/memory/compaction/preview": {
+      "post": {
+        "operationId": "memory.compactionPreview",
+        "summary": "Generate a bounded compaction through the configured compression auxiliary route, without writing. Secrets and protected entries are retained locally. Preview binds the active profile, source revision, proposal and expiry; an unavailable privacy-safe route returns 503.",
+        "tags": [
+          "tools"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "section": {
+                    "enum": [
+                      "memory",
+                      "user"
+                    ],
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "section",
+                  "revision"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "section": {
+                      "enum": [
+                        "memory",
+                        "user"
+                      ],
+                      "type": "string"
+                    },
+                    "revision": {
+                      "type": "string"
+                    },
+                    "proposed_revision": {
+                      "type": "string"
+                    },
+                    "receipt": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64000
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "proposed": {
+                      "type": "string"
+                    },
+                    "diff": {
+                      "type": "string"
+                    },
+                    "model": {
+                      "type": "string"
+                    },
+                    "expires_at": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "section",
+                    "revision",
+                    "proposed_revision",
+                    "receipt",
+                    "source",
+                    "proposed",
+                    "diff",
+                    "model",
+                    "expires_at"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Compaction refused or unavailable. The review is retained; no unconfirmed write is replayed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "error": {
+                              "type": "string"
+                            },
+                            "code": {
+                              "type": "string",
+                              "const": "memory_char_limit"
+                            },
+                            "char_limit": {
+                              "type": "object",
+                              "properties": {
+                                "count": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "limit": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "count",
+                                "limit"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "error",
+                            "code",
+                            "char_limit"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "error": {
+                              "type": "string"
+                            },
+                            "code": {
+                              "type": "string",
+                              "enum": [
+                                "memory_mask_ambiguous",
+                                "memory_mask_edited"
+                              ]
+                            },
+                            "mask": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "error",
+                            "code",
+                            "mask"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "error": {
+                              "type": "string"
+                            },
+                            "code": {
+                              "type": "string",
+                              "const": "memory_conflict"
+                            }
+                          },
+                          "required": [
+                            "error",
+                            "code"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "memory_compaction_conflict",
+                            "memory_compaction_invalid"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error",
+                        "code"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string",
+                          "const": "memory_compaction_unavailable"
+                        },
+                        "condition": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "error",
+                        "code",
+                        "condition"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Compaction refused or unavailable. The review is retained; no unconfirmed write is replayed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "error": {
+                              "type": "string"
+                            },
+                            "code": {
+                              "type": "string",
+                              "const": "memory_char_limit"
+                            },
+                            "char_limit": {
+                              "type": "object",
+                              "properties": {
+                                "count": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "limit": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "count",
+                                "limit"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "error",
+                            "code",
+                            "char_limit"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "error": {
+                              "type": "string"
+                            },
+                            "code": {
+                              "type": "string",
+                              "enum": [
+                                "memory_mask_ambiguous",
+                                "memory_mask_edited"
+                              ]
+                            },
+                            "mask": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "error",
+                            "code",
+                            "mask"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "error": {
+                              "type": "string"
+                            },
+                            "code": {
+                              "type": "string",
+                              "const": "memory_conflict"
+                            }
+                          },
+                          "required": [
+                            "error",
+                            "code"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "memory_compaction_conflict",
+                            "memory_compaction_invalid"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error",
+                        "code"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string",
+                          "const": "memory_compaction_unavailable"
+                        },
+                        "condition": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "error",
+                        "code",
+                        "condition"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Compaction refused or unavailable. The review is retained; no unconfirmed write is replayed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "error": {
+                              "type": "string"
+                            },
+                            "code": {
+                              "type": "string",
+                              "const": "memory_char_limit"
+                            },
+                            "char_limit": {
+                              "type": "object",
+                              "properties": {
+                                "count": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "limit": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "count",
+                                "limit"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "error",
+                            "code",
+                            "char_limit"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "error": {
+                              "type": "string"
+                            },
+                            "code": {
+                              "type": "string",
+                              "enum": [
+                                "memory_mask_ambiguous",
+                                "memory_mask_edited"
+                              ]
+                            },
+                            "mask": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "error",
+                            "code",
+                            "mask"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "error": {
+                              "type": "string"
+                            },
+                            "code": {
+                              "type": "string",
+                              "const": "memory_conflict"
+                            }
+                          },
+                          "required": [
+                            "error",
+                            "code"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "memory_compaction_conflict",
+                            "memory_compaction_invalid"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error",
+                        "code"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string",
+                          "const": "memory_compaction_unavailable"
+                        },
+                        "condition": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "error",
+                        "code",
+                        "condition"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/memory/compaction/apply": {
+      "post": {
+        "operationId": "memory.compactionApply",
+        "summary": "Explicitly apply the exact preview receipt through the Agent-format and locked revision gate. Stale, foreign or expired receipts are refused. Repeated acknowledgments reconcile with the exact proposed bytes without rewriting.",
+        "tags": [
+          "tools"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "receipt": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64000
+                  }
+                },
+                "required": [
+                  "receipt"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    },
+                    "section": {
+                      "enum": [
+                        "memory",
+                        "user"
+                      ],
+                      "type": "string"
+                    },
+                    "revision": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "section",
+                    "revision"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Compaction refused or unavailable. The review is retained; no unconfirmed write is replayed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "error": {
+                              "type": "string"
+                            },
+                            "code": {
+                              "type": "string",
+                              "const": "memory_char_limit"
+                            },
+                            "char_limit": {
+                              "type": "object",
+                              "properties": {
+                                "count": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "limit": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "count",
+                                "limit"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "error",
+                            "code",
+                            "char_limit"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "error": {
+                              "type": "string"
+                            },
+                            "code": {
+                              "type": "string",
+                              "enum": [
+                                "memory_mask_ambiguous",
+                                "memory_mask_edited"
+                              ]
+                            },
+                            "mask": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "error",
+                            "code",
+                            "mask"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "error": {
+                              "type": "string"
+                            },
+                            "code": {
+                              "type": "string",
+                              "const": "memory_conflict"
+                            }
+                          },
+                          "required": [
+                            "error",
+                            "code"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "memory_compaction_conflict",
+                            "memory_compaction_invalid"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error",
+                        "code"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string",
+                          "const": "memory_compaction_unavailable"
+                        },
+                        "condition": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "error",
+                        "code",
+                        "condition"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Compaction refused or unavailable. The review is retained; no unconfirmed write is replayed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "error": {
+                              "type": "string"
+                            },
+                            "code": {
+                              "type": "string",
+                              "const": "memory_char_limit"
+                            },
+                            "char_limit": {
+                              "type": "object",
+                              "properties": {
+                                "count": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "limit": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "count",
+                                "limit"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "error",
+                            "code",
+                            "char_limit"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "error": {
+                              "type": "string"
+                            },
+                            "code": {
+                              "type": "string",
+                              "enum": [
+                                "memory_mask_ambiguous",
+                                "memory_mask_edited"
+                              ]
+                            },
+                            "mask": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "error",
+                            "code",
+                            "mask"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "error": {
+                              "type": "string"
+                            },
+                            "code": {
+                              "type": "string",
+                              "const": "memory_conflict"
+                            }
+                          },
+                          "required": [
+                            "error",
+                            "code"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "memory_compaction_conflict",
+                            "memory_compaction_invalid"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error",
+                        "code"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string",
+                          "const": "memory_compaction_unavailable"
+                        },
+                        "condition": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "error",
+                        "code",
+                        "condition"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Compaction refused or unavailable. The review is retained; no unconfirmed write is replayed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "error": {
+                              "type": "string"
+                            },
+                            "code": {
+                              "type": "string",
+                              "const": "memory_char_limit"
+                            },
+                            "char_limit": {
+                              "type": "object",
+                              "properties": {
+                                "count": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "limit": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "count",
+                                "limit"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "error",
+                            "code",
+                            "char_limit"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "error": {
+                              "type": "string"
+                            },
+                            "code": {
+                              "type": "string",
+                              "enum": [
+                                "memory_mask_ambiguous",
+                                "memory_mask_edited"
+                              ]
+                            },
+                            "mask": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "error",
+                            "code",
+                            "mask"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "error": {
+                              "type": "string"
+                            },
+                            "code": {
+                              "type": "string",
+                              "const": "memory_conflict"
+                            }
+                          },
+                          "required": [
+                            "error",
+                            "code"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "memory_compaction_conflict",
+                            "memory_compaction_invalid"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error",
+                        "code"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string",
+                          "const": "memory_compaction_unavailable"
+                        },
+                        "condition": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "error",
+                        "code",
+                        "condition"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/memory": {
       "get": {
         "operationId": "memory.get",

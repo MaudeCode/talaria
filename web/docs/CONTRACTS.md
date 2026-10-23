@@ -216,3 +216,30 @@ receipt remains unknown across reload/restart and is never resubmitted. A later
 confirmed completion after uncertainty leaves remaining steps paused for an
 explicit Resume. Failed or refused steps stop the run. No schedule or recurring
 execution is created. App adoption is tracked separately in TAL-1356.
+
+
+## Memory compaction
+
+`POST /api/memory/compaction/preview` accepts `section` (`memory` or `user`) and the
+loaded section `revision`. The server uses `aux.complete` on `compression` with
+no main-model fallback. The source and model output are bounded to 32,000 bytes
+and 128 entries. Secret-bearing entries and entries containing `<protected>` or
+`[protected]` are retained locally. Other entries are compacted as data. Memory
+files lack per-entry history provenance, so the derived prompt always carries
+`data_use: ["no_training", "zero_retention"]` through the existing auxiliary privacy
+gate. Inability to enforce that policy is explicit, never a permissive fallback.
+
+The returned source, proposed text and diff are server-owned and always redacted.
+The opaque signed receipt contains no secrets and binds the profile home, source
+revision, exact proposal, result revision and a 30-minute expiry. It needs no
+persistent proposal store. Clients apply only `{receipt}` to
+`POST /api/memory/compaction/apply`, never resubmit displayed text. The existing
+mask restoration, Agent format/character check, and locked compare-and-write
+protect the save. Changed source or expired/foreign receipt returns 409 and
+requires a new preview. A lost acknowledgment is read back against the exact
+proposed revision; neither server nor client blindly replays the write.
+
+`contracts/fixtures/memory-compaction.json` and the generated OpenAPI document
+carry the same preview/apply interface for the downstream App consumer. These
+user-requested previews are distinct from the Agent's pending-write queue; both
+use the shared Web proposal review presentation.
