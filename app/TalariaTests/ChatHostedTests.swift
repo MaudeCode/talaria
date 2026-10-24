@@ -1280,6 +1280,37 @@ final class ChatHostedTests: XCTestCase {
         XCTAssertNil(HostedAccessibility.toolbarItem("Queued messages", in: window))
     }
 
+    func testOwnerQueueToolbarCountsAdmissionsAndTracksTheirRemoval() async throws {
+        guard #available(iOS 26, *) else { throw XCTSkip("Requires toolbar badges") }
+        let window = try await hostFixtureChat([UITestFixtureURLProtocol.ownerChatArgument])
+        _ = try await requireElement(in: window, label: "Outcome unknown")
+        settle(0.3)
+        attachHostedScreenshot(window, name: "owner-queue-toolbar")
+        let item = try XCTUnwrap(HostedAccessibility.toolbarItem("Queued messages", in: window),
+                                 "Missing Queued messages toolbar item for owner admissions")
+        XCTAssertEqual(item.badge?.stringValue, "2")
+        XCTAssertTrue(UIApplication.shared.sendAction(try XCTUnwrap(item.action), to: item.target, from: item, for: nil))
+        _ = try await requireElement(in: window, label: UITestFixtureURLProtocol.ownerUnknownText)
+        _ = try await requireElement(in: window, label: "Then post the summary in #ops")
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Discard"))
+        let reduced = await awaitCondition {
+            HostedAccessibility.toolbarItem("Queued messages", in: window)?.badge?.stringValue == "1"
+        }
+        XCTAssertTrue(reduced, "Discard must reduce the owner queue badge")
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Done"))
+        let closed = await awaitCondition { window.rootViewController?.presentedViewController == nil }
+        XCTAssertTrue(closed)
+        HostedAccessibility.activate(try await requireElement(in: window, label: "1 queued"))
+        _ = try await requireElement(in: window, label: "Then post the summary in #ops")
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Cancel"))
+        let emptied = await awaitCondition {
+            window.rootViewController?.presentedViewController == nil
+                && HostedAccessibility.toolbarItem("Queued messages", in: window) == nil
+        }
+        XCTAssertTrue(emptied, "The last settled admission must remove the toolbar entry and close the sheet")
+        XCTAssertTrue(elements(named: "1 queued", in: window).isEmpty)
+    }
+
     /// Background work shows as one count chip above the composer (TAL-1001); its sheet lists the server's records, a
     /// delegation its subagents' progress, the full result on request, and a Dismiss that removes only finished work
     /// (TAL-372).
