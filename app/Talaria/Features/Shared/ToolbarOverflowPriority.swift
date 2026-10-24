@@ -25,6 +25,7 @@ private struct PrioritizedToolbarContent<Content: ToolbarContent>: ToolbarConten
     var body: some ToolbarContent {
         if verticalEdge != nil || includesHorizontal {
             switch action.priority {
+            case .highest: content.visibilityPriority(.init(higherThan: .high))
             case .high: content.visibilityPriority(.high)
             case .low: content.visibilityPriority(.low)
             case .standard: content
@@ -52,6 +53,7 @@ private struct ToolbarVerticalEdgeReader: View {
     let action: (Bool) -> Void
 
     var body: some View {
-        Color.clear.onChange(of: verticalEdge != nil, initial: true) { action($1) }
+        Color.clear
+            .onChange(of: verticalEdge != nil, initial: true) { action($1) }
     }
 }

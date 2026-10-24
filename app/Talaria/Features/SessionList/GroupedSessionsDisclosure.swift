@@ -16,8 +16,6 @@ struct GroupedSessionsDisclosure: View {
     var countIsPartial = false
     let isSearchActive: Bool
     let searchText: String
-    let showsMessageCount: Bool
-    let showsWorkspace: Bool
     let selectedSessionID: String?
     @Binding var userIsExpanded: Bool
     let actions: SessionListRowActions
@@ -46,8 +44,6 @@ struct GroupedSessionsDisclosure: View {
                 SessionInteractiveRow(
                     viewModel: viewModel,
                     session: session,
-                    showsMessageCount: showsMessageCount,
-                    showsWorkspace: showsWorkspace,
                     selectedSessionID: selectedSessionID,
                     actions: actions,
                     searchText: searchText

@@ -2,27 +2,40 @@ import SwiftUI
 import UIKit
 import TalariaKit
 
+extension EnvironmentValues {
+    @Entry var workspaceSurface = Color(.systemBackground)
+}
+
 /// Files owns its navigation controller so previews push inside the inspector, beside the chat.
 struct FilesInspectorContent: UIViewControllerRepresentable {
     let session: SessionSummary
     let server: URL
     let onAPIError: (Error) -> Void
     let onClose: () -> Void
+    let isPresented: Bool
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
-    func makeUIViewController(context: Context) -> UINavigationController {
-        let navigation = UINavigationController()
+    func makeUIViewController(context: Context) -> NavigationController {
+        let navigation = NavigationController()
+        navigation.inspectorIsPresented = isPresented
         navigation.view.backgroundColor = .secondarySystemBackground
+        let appearance = UINavigationBarAppearance()
+        appearance.configureWithTransparentBackground()
+        appearance.shadowColor = .clear
+        navigation.navigationBar.standardAppearance = appearance
+        navigation.navigationBar.scrollEdgeAppearance = appearance
+        navigation.navigationBar.compactAppearance = appearance
+        navigation.navigationBar.compactScrollEdgeAppearance = appearance
+        navigation.navigationBar.isTranslucent = true
         let browser = FileBrowserView(
             session: session, server: server, onAPIError: onAPIError,
-            background: Color(.secondarySystemBackground),
             inspectorSearch: context.coordinator
         ) { [weak navigation] entry in
             let preview = FilePreviewView(session: session, server: server, entry: entry, onAPIError: onAPIError)
-            navigation?.pushViewController(UIHostingController(rootView: preview), animated: true)
+            navigation?.pushViewController(Self.host(preview, appearance: appearance), animated: true)
         }
-        let host = UIHostingController(rootView: browser)
+        let host = Self.host(browser, appearance: appearance)
         host.navigationItem.title = String(localized: "Files")
         host.navigationItem.largeTitleDisplayMode = .never
         let search = UISearchController(searchResultsController: nil)
@@ -42,8 +55,50 @@ struct FilesInspectorContent: UIViewControllerRepresentable {
         return navigation
     }
 
+    /// Browser and every pushed page use the same full-height inspector surface. The column already
+    /// excludes the window toolbar; neither its trailing nor bottom inset should shrink a hosted page.
+    private static func host(_ content: some View, appearance: UINavigationBarAppearance) -> UIViewController {
+        let host = UIHostingController(rootView: content
+            .environment(\.workspaceSurface, Color(.secondarySystemBackground))
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color(.secondarySystemBackground).ignoresSafeArea())
+            .ignoresSafeArea(.container, edges: [.trailing, .bottom])
+            .toolbarBackground(.hidden, for: .navigationBar))
+        host.view.backgroundColor = .secondarySystemBackground
+        host.navigationItem.standardAppearance = appearance
+        host.navigationItem.scrollEdgeAppearance = appearance
+        host.navigationItem.compactAppearance = appearance
+        host.navigationItem.compactScrollEdgeAppearance = appearance
+        return host
+    }
+
     // The detail column recreates the inspector for another session.
-    func updateUIViewController(_ controller: UINavigationController, context: Context) {}
+    func updateUIViewController(_ controller: NavigationController, context: Context) {
+        controller.inspectorIsPresented = isPresented
+        controller.reconcilePresentation()
+    }
+
+    /// Extends the inspector's existing navigation controller to consume the same presentation decision
+    /// after UIKit restores its column during rotation. This changes no SwiftUI navigation identity.
+    final class NavigationController: UINavigationController {
+        var inspectorIsPresented = false
+        private var isReconciling = false
+
+        override func viewDidLayoutSubviews() {
+            super.viewDidLayoutSubviews()
+            reconcilePresentation()
+        }
+
+        func reconcilePresentation() {
+            guard #available(iOS 26, *), let split = splitViewController else { return }
+            // The outer split also owns the reserved vertical-bar background.
+            split.view.backgroundColor = inspectorIsPresented ? .secondarySystemBackground : .systemBackground
+            guard !inspectorIsPresented, !isReconciling, split.isShowing(.inspector) else { return }
+            isReconciling = true
+            UIView.performWithoutAnimation { split.hide(.inspector) }
+            isReconciling = false
+        }
+    }
 
     @Observable
     final class Coordinator: NSObject, UISearchResultsUpdating {
@@ -59,7 +114,7 @@ struct FileBrowserView: View {
     let onAPIError: (Error) -> Void
     /// Opens a file in place of a navigation link, for a host that pushes it itself.
     private let onOpenFile: ((WorkspaceEntry) -> Void)?
-    private let background: Color
+    @Environment(\.workspaceSurface) private var background
     private let inspectorSearch: FilesInspectorContent.Coordinator?
     /// The directory the browser opens at, and where it reports each one it shows, for a host that keeps it (TAL-1458).
     private let initialPath: String
@@ -76,7 +131,6 @@ struct FileBrowserView: View {
         onAPIError: @escaping (Error) -> Void,
         initialPath: String = ".",
         onPathChange: ((String) -> Void)? = nil,
-        background: Color = Color(.systemBackground),
         inspectorSearch: FilesInspectorContent.Coordinator? = nil,
         onOpenFile: ((WorkspaceEntry) -> Void)? = nil
     ) {
@@ -86,7 +140,6 @@ struct FileBrowserView: View {
         self.initialPath = initialPath
         self.onPathChange = onPathChange
         self.onOpenFile = onOpenFile
-        self.background = background
         self.inspectorSearch = inspectorSearch
         _viewModel = State(initialValue: FileBrowserViewModel(session: session, server: server))
     }
@@ -94,7 +147,11 @@ struct FileBrowserView: View {
     var body: some View {
         Group {
             if inspectorSearch != nil {
-                browserSurface
+                if #available(iOS 26, *) {
+                    browserSurface.scrollEdgeEffectHidden(true, for: .top)
+                } else {
+                    browserSurface
+                }
             } else {
                 browserSurface
                     .navigationTitle("Files")
@@ -113,7 +170,8 @@ struct FileBrowserView: View {
             content
                 .adaptiveReadableScrollContent(maxWidth: AdaptiveReadableContentWidth.workspace)
         }
-        .background(background)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(background.ignoresSafeArea())
     }
 
     private var query: String { inspectorSearch?.searchText ?? searchText }
@@ -137,11 +195,11 @@ struct FileBrowserView: View {
             ContentUnavailableView {
                 Label(query.isEmpty ? "No Files" : "No Matches", systemImage: query.isEmpty ? "folder" : "magnifyingglass")
             } description: {
-                if query.isEmpty {
+                if query.isEmpty && !viewModel.isAtRoot {
                     Text(viewModel.currentPath)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
-                } else {
+                } else if !query.isEmpty {
                     Text("Try a different file name or path.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)

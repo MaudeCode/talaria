@@ -76,6 +76,13 @@ struct SessionListHingeReader: ViewModifier {
 }
 
 enum SessionListMotion {
+    /// The sidebar column's move; the chat reflows on the same curve.
+    static let foldDuration: TimeInterval = 0.35
+
+    static func foldAnimation(reduceMotion: Bool) -> Animation {
+        reduceMotion ? .easeInOut(duration: 0.15) : .smooth(duration: foldDuration, extraBounce: 0)
+    }
+
     static func disclosureAnimation(reduceMotion: Bool) -> Animation? {
         reduceMotion ? nil : .smooth(duration: 0.28, extraBounce: 0)
     }

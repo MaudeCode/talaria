@@ -12,6 +12,7 @@ struct PendingNewChatView: View {
     let onAPIError: (Error) -> Void
     let onSessionCreated: (SessionSummary) -> Void
     let initialAttachments: [SharedAttachmentImport]
+    let isExplicit: Bool
     let autoStartsVoiceInput: Bool
     let profileName: String?
     let providerID: String?
@@ -34,6 +35,7 @@ struct PendingNewChatView: View {
     init(
         initialDraft: String = "",
         initialAttachments: [SharedAttachmentImport] = [],
+        isExplicit: Bool = true,
         autoStartsVoiceInput: Bool = false,
         profileName: String? = nil,
         providerID: String? = nil,
@@ -51,6 +53,7 @@ struct PendingNewChatView: View {
         self.onAPIError = onAPIError
         self.onSessionCreated = onSessionCreated
         self.initialAttachments = initialAttachments
+        self.isExplicit = isExplicit
         self.autoStartsVoiceInput = autoStartsVoiceInput
         self.profileName = profileName
         self.providerID = providerID
@@ -70,6 +73,7 @@ struct PendingNewChatView: View {
             initialAttachments: initialAttachments,
             loadsInitialMessages: false,
             autoStartsVoiceInput: autoStartsVoiceInput,
+            isExplicitNewChat: isExplicit,
             draftStore: draftStore,
             restoresDraftSettings: true,
             startSession: createSession,

@@ -233,10 +233,18 @@ public final class ChatViewModel {
     /// Keep observers on the previous mapping until both have their final values.
     private func withDeferredTranscriptMapping(_ update: () -> Void) {
         let wasDeferring = isDeferringTranscriptMapping
+        let previousMessages = messages
+        let previousOffset = messagesOffset
         isDeferringTranscriptMapping = true
         defer {
             isDeferringTranscriptMapping = wasDeferring
-            if !wasDeferring { recomputeDisplayedTranscriptMessages() }
+            if !wasDeferring {
+                if messages != previousMessages || messagesOffset != previousOffset {
+                    recomputeDisplayedTranscriptMessages()
+                } else {
+                    recomputeCompressionReferenceCard()
+                }
+            }
         }
         update()
     }
@@ -2297,32 +2305,31 @@ public final class ChatViewModel {
                 loadedMessageCount: reloadedMessages.count
             )
 
+            let nextMessages: [ChatMessage]
             if let expandedMessages = Self.mergingReloadedMessages(
                 reloadedMessages,
                 intoCurrentMessages: previousMessages,
                 currentMessagesOffset: previousMessagesOffset,
                 reloadedMessagesOffset: reloadedMessagesOffset
             ) {
-                messages = expandedMessages
+                nextMessages = expandedMessages
                 messagesOffset = previousMessagesOffset
                 hasOlderMessages = previousMessagesOffset > 0
-                return
-            }
-
-            if let trimmedMessages = Self.trimmingReloadedMessages(
+            } else if let trimmedMessages = Self.trimmingReloadedMessages(
                 reloadedMessages,
                 toPreserveCurrentMessages: previousMessages,
                 currentMessagesOffset: previousMessagesOffset,
                 reloadedMessagesOffset: reloadedMessagesOffset
             ) {
-                messages = trimmedMessages
+                nextMessages = trimmedMessages
                 messagesOffset = previousMessagesOffset
                 hasOlderMessages = previousMessagesOffset > 0 || session?.messagesTruncated == true
-                return
+            } else {
+                nextMessages = reloadedMessages
+                updateOlderMessagePagination(from: session, loadedMessageCount: nextMessages.count)
             }
-
-            messages = reloadedMessages
-            updateOlderMessagePagination(from: session, loadedMessageCount: messages.count)
+            // An unchanged reconciliation keeps the existing message storage and realized rows.
+            if messages != nextMessages { messages = nextMessages }
         }
     }
 
@@ -5309,6 +5316,8 @@ public final class ChatViewModel {
         joinsLoadInFlight: Bool,
         isRoutineReconciliation: Bool = false
     ) async {
+        // The implicit New Chat root has no transcript to reconcile until its first send.
+        guard hasSession else { return }
         if activeStreamID == nil {
             if joinsLoadInFlight {
                 await refreshSession(modelContext: modelContext)

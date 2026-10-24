@@ -3,8 +3,6 @@ import TalariaKit
 
 struct SessionFilterControls: View {
     let viewModel: SessionListViewModel
-    let showsProfile: Bool
-    let showsProjects: Bool
     @Binding var selectedProjectID: String?
     @Binding var projectPendingDeletion: ProjectSummary?
     @Binding var projectPendingRename: ProjectSummary?
@@ -33,47 +31,44 @@ struct SessionFilterControls: View {
                     }
                 }
             }
-            if showsProjects {
-                Section("Projects") {
-                    Button { selectedProjectID = nil } label: {
-                        Label("All Projects", systemImage: selectedProjectID == nil ? "checkmark" : "tray.full")
+            Section("Projects") {
+                Button { selectedProjectID = nil } label: {
+                    Label("All Projects", systemImage: selectedProjectID == nil ? "checkmark" : "tray.full")
+                }
+                ForEach(viewModel.projects) { project in
+                    if let projectID = project.projectId {
+                        ProjectFilterRow(
+                            project: project,
+                            isSelected: selectedProjectID == projectID,
+                            count: 0,
+                            isViewingCachedData: viewModel.isViewingCachedData,
+                            isRenamingProject: viewModel.pendingChange(for: project) != nil,
+                            isDeletingProject: viewModel.pendingChange(for: project) != nil,
+                            action: { selectedProjectID = projectID },
+                            rename: { projectPendingRename = project },
+                            delete: { projectPendingDeletion = project },
+                            isMenuItem: true
+                        )
                     }
-                    ForEach(viewModel.projects) { project in
-                        if let projectID = project.projectId {
-                            ProjectFilterRow(
-                                project: project,
-                                isSelected: selectedProjectID == projectID,
-                                count: 0,
-                                isViewingCachedData: viewModel.isViewingCachedData,
-                                isRenamingProject: viewModel.pendingChange(for: project) != nil,
-                                isDeletingProject: viewModel.pendingChange(for: project) != nil,
-                                action: { selectedProjectID = projectID },
-                                rename: { projectPendingRename = project },
-                                delete: { projectPendingDeletion = project },
-                                isMenuItem: true
-                            )
-                        }
+                }
+                Button(action: presentProjectCreation) {
+                    Label("New Project", systemImage: "plus")
+                }
+                .disabled(viewModel.isViewingCachedData || viewModel.isCreatingProject)
+                if let selectedProject {
+                    Menu("Selected Project") {
+                        Button("Rename Project", systemImage: "pencil") { projectPendingRename = selectedProject }
+                        Button("Delete Project", systemImage: "trash", role: .destructive) { projectPendingDeletion = selectedProject }
                     }
-                    Button(action: presentProjectCreation) {
-                        Label("New Project", systemImage: "plus")
-                    }
-                    .disabled(viewModel.isViewingCachedData || viewModel.isCreatingProject)
-                    if let selectedProject {
-                        Menu("Selected Project") {
-                            Button("Rename Project", systemImage: "pencil") { projectPendingRename = selectedProject }
-                            Button("Delete Project", systemImage: "trash", role: .destructive) { projectPendingDeletion = selectedProject }
-                        }
-                        .disabled(viewModel.isViewingCachedData || viewModel.pendingChange(for: selectedProject) != nil)
-                    }
+                    .disabled(viewModel.isViewingCachedData || viewModel.pendingChange(for: selectedProject) != nil)
                 }
             }
         } label: {
-            Image(systemName: hasActiveFilter
+            Label("Filters", systemImage: hasActiveFilter
                 ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease")
                 .font(.system(size: 20))
         }
         .buttonStyle(.plain)
-        .disabled(!showsProfileMenu && !showsProjects)
         .accessibilityLabel("Filters")
         .accessibilityValue(hasActiveFilter ? "Filtered" : "All sessions")
     }
@@ -85,7 +80,7 @@ struct SessionFilterControls: View {
     }
 
     private var showsProfileMenu: Bool {
-        showsProfile && !viewModel.isSingleProfileMode
+        !viewModel.isSingleProfileMode
     }
 
     private var selectedProject: ProjectSummary? {

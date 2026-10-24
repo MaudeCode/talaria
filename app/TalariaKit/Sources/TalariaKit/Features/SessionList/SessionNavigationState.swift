@@ -28,11 +28,13 @@ public struct SessionNavigationState: Equatable {
     public private(set) var destination: SessionNavigationDestination? {
         // The chat a destination opens reports its own Files inspector and companion page when it appears.
         didSet {
+            launchRestoreResolved = true
+            filesInspectorPresented = false
             chatShowsFilesInspector = false
             chatShowsCompanionPage = false
         }
     }
-    /// Whether chats in this window show Files beside them (TAL-479). Device-local UI state.
+    /// Explicit Files presentation for the current chat, cleared on navigation or layout dismissal.
     public var filesInspectorPresented = false
     /// Whether the open chat shows its Files inspector, which can hide the regular-width sidebar column to make room
     /// (TAL-1453).
@@ -41,10 +43,16 @@ public struct SessionNavigationState: Equatable {
     /// to make room (TAL-1458).
     public var chatShowsCompanionPage = false
     public private(set) var lastSelectedSessionID: String?
+    /// Consumed synchronously from local summaries before a launch root is displayed, including a cache miss.
+    public private(set) var launchRestoreResolved = false
     public private(set) var rootRevision = 0
     /// Changes only when a chat root is replaced or cleared.
     public private(set) var chatRootRevision = 0
-    public var selectedSectionSession: SessionSummary?
+    public var selectedSectionSession: SessionSummary? {
+        didSet {
+            if selectedSectionSession?.sessionId != oldValue?.sessionId { filesInspectorPresented = false }
+        }
+    }
     /// The current root; the sidebar always remains the Chats panel.
     public private(set) var section = AppSection.chats {
         didSet {
@@ -161,21 +169,19 @@ public struct SessionNavigationState: Equatable {
         deepLinkedSessionLoadID = nil
     }
 
-    /// The stored session to restore, or nil when no restore should happen. Deep
-    /// links, shared drafts, and App Intent requests take precedence over the stored
-    /// selection, and a pending or in-flight deep link (not yet resolved into a
-    /// destination) also blocks the restore so its network load is never pre-empted;
-    /// the stored ID is kept for a later restore. The caller opens the returned
-    /// session through the same import path a tapped row uses, so this never sets
-    /// the destination itself.
+    /// Consumes the launch-only restore decision from local summaries. A miss or an explicit route settles it too;
+    /// later network rows must never replace the root already on screen. The caller installs a hit synchronously.
     public mutating func sessionToRestore(
         from sessions: [SessionSummary],
         allowsAutomaticRestore: Bool = true,
         clearsMissingSelection: Bool = true,
         pendingDeepLinkedSessionID: String? = nil
     ) -> SessionSummary? {
+        guard !launchRestoreResolved else { return nil }
+        launchRestoreResolved = true
         guard allowsAutomaticRestore,
               destination == nil,
+              startedOpens == 0,
               deepLinkedSessionLoadID == nil,
               Self.normalized(pendingDeepLinkedSessionID) == nil,
               let lastSelectedSessionID

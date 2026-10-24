@@ -7,8 +7,6 @@ struct GroupedSessionsView: View {
     let emptySystemImage: String
     let includes: (SessionSummary) -> Bool
     let viewModel: SessionListViewModel
-    let showsMessageCount: Bool
-    let showsWorkspace: Bool
     let selectedSessionID: String?
     let actions: SessionListRowActions
 
@@ -33,8 +31,6 @@ struct GroupedSessionsView: View {
                     SessionInteractiveRow(
                         viewModel: viewModel,
                         session: session,
-                        showsMessageCount: showsMessageCount,
-                        showsWorkspace: showsWorkspace,
                         selectedSessionID: selectedSessionID,
                         actions: actions,
                         searchText: searchText

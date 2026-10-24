@@ -226,6 +226,7 @@ struct ComposerStripScrollRow<Content: View>: View {
     @ViewBuilder let content: Content
 
     @State private var edgeFades = ComposerStripEdgeFades(leading: false, trailing: false)
+    @Environment(\.composerStripOverhang) private var overhang
 
     var body: some View {
         ScrollView(.horizontal) {
@@ -255,6 +256,10 @@ struct ComposerStripScrollRow<Content: View>: View {
                     .frame(width: edgeFades.trailing ? edgeFadeWidth : 0)
             }
         }
+        // A scroll view that changes size snaps to its final frame while the split animates; at the destination width
+        // before the split moves, it only translates with the card.
+        .padding(.trailing, -overhang)
+        .clipShape(TrailingEdgeClip())
     }
 
     private var edgeFadeWidth: CGFloat { 18 }

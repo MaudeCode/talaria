@@ -18,6 +18,7 @@ struct ChatTranscriptView: View {
     @Environment(\.openURL) private var openURL
     @State private var scrollPositionController = ChatScrollPositionController(usesLazyLayout: true)
     @State private var initialScrollAnchor: UnitPoint? = .bottom
+    @State private var previousViewportWidth: CGFloat?
     @State private var didRestoreReadingRow = false
     @State private var nativeScrollRevision = 0
     @State private var scrollDestination: (id: String, anchor: UnitPoint, animation: Animation?)?
@@ -68,6 +69,7 @@ struct ChatTranscriptView: View {
     let transcriptMessageSpacing: CGFloat
     let transcriptBlockSpacing: CGFloat
     let transcriptBottomInsetHeight: CGFloat
+    var confinesToDivisionPane = false
     /// Bumped by the scroll-to-latest chip above the composer.
     let scrollToBottomRequest: Int
     /// Bumped when a follow blocked by a settling disclosure is due.
@@ -249,12 +251,9 @@ struct ChatTranscriptView: View {
                         }
                     }
                     .scrollDismissesKeyboard(.interactively)
-                    .safeAreaInset(edge: .bottom, spacing: 0) {
-                        Color.clear
-                            .frame(height: transcriptBottomInsetHeight)
-                            .accessibilityHidden(true)
-                    }
-                    .adaptiveSoftScrollEdges()
+                    .contentMargins(.bottom, transcriptBottomInsetHeight, for: .scrollContent)
+                    .ignoresSafeArea(.container, edges: confinesToDivisionPane ? [] : .bottom)
+                    .adaptiveSoftScrollEdges(emphasizesTop: true)
                     .simultaneousGesture(
                         TapGesture().onEnded {
                             guard clarificationPrompt == nil else { return }
@@ -262,7 +261,19 @@ struct ChatTranscriptView: View {
                         }
                     )
                 }
+                .frame(width: confinesToDivisionPane ? viewport.size.width : nil,
+                       height: confinesToDivisionPane ? viewport.size.height : nil, alignment: .topLeading)
                 .background(Color(.systemBackground))
+                .onGeometryChange(for: CGFloat.self, of: { max(0, $0.size.width) }) { width in
+                    guard width > 0, width != previousViewportWidth else { return }
+                    if previousViewportWidth != nil {
+                        onReaderMoved { scrollPositionController.readingAnchorRowID }
+                        scrollPositionController.preserveForWidthChange(isFollowingLatest: isFollowingLatestContent)
+                        pinnedRowIDs = scrollPositionController.realizedRowsNearViewport
+                        if let id = scrollPositionController.preservationAnchorRowID { pinnedRowIDs.insert(id) }
+                    }
+                    previousViewportWidth = width
+                }
                 .onChange(of: messages.map { [$0.displayExcerpt, $0.activityScene?.finalAnswerExcerpt] }) {
                     guard !shouldFollowLatestMessage else { return }
                     scrollPositionController.holdVisiblePosition {

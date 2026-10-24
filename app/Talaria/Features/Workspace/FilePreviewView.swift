@@ -4,6 +4,7 @@ import TalariaKit
 
 struct FilePreviewView: View {
     let onAPIError: (Error) -> Void
+    @Environment(\.workspaceSurface) private var background
 
     private let entry: WorkspaceEntry
     private let initialLine: Int?
@@ -152,7 +153,7 @@ struct FilePreviewView: View {
         }
         .contentShape(Rectangle())
         .contextMenu { copyActions(for: content) }
-        .background(Color(.systemBackground))
+        .background(background)
     }
 
     private func sourceContent(_ file: FileResponse) -> some View {
@@ -174,7 +175,7 @@ struct FilePreviewView: View {
         }
         .contentShape(Rectangle())
         .contextMenu { copyActions(for: content) }
-        .background(Color(.systemBackground))
+        .background(background)
     }
 
     /// Whole-file Copy and the exact multiline Select Text sheet.
@@ -225,7 +226,7 @@ struct FilePreviewView: View {
                 }
                 .padding()
             }
-            .background(Color(.systemBackground))
+            .background(background)
         } else {
             unavailableContent(String(localized: "Could not preview this image."))
         }

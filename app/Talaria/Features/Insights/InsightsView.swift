@@ -212,7 +212,7 @@ struct InsightsView: View {
                 .accessibilityLabel("Refresh all provider quotas")
             }
         } footer: {
-            Text("Pin up to two accounts to show them above Settings in the sidebar.")
+            Text("Pin up to two accounts to show them in the sidebar.")
         }
         .accessibilityIdentifier("provider-quota-section")
     }

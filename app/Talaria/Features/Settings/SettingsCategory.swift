@@ -40,5 +40,6 @@ struct SettingsPage<Content: View>: View {
         }
         .background(Color(.systemGroupedBackground))
         .navigationTitle(title)
+        .adaptiveSecondaryNavigationTitle(title: title)
     }
 }

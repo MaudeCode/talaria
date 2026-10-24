@@ -9,17 +9,13 @@ public struct SidebarSectionVisibility: Equatable {
     public var skills: Bool
     public var memory: Bool
     public var insights: Bool
-    var activeProfile: Bool
-    public var projects: Bool
 
-    public init(tasks: Bool, kanban: Bool, skills: Bool, memory: Bool, insights: Bool, activeProfile: Bool, projects: Bool) {
+    public init(tasks: Bool, kanban: Bool, skills: Bool, memory: Bool, insights: Bool) {
         self.tasks = tasks
         self.kanban = kanban
         self.skills = skills
         self.memory = memory
         self.insights = insights
-        self.activeProfile = activeProfile
-        self.projects = projects
     }
 
     /// Show every row, primarily for previews and tests.
@@ -28,9 +24,7 @@ public struct SidebarSectionVisibility: Equatable {
         kanban: true,
         skills: true,
         memory: true,
-        insights: true,
-        activeProfile: true,
-        projects: true
+        insights: true
     )
 
     /// The five plain links share one List row, so that row is dropped entirely

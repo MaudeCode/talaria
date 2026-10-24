@@ -13,6 +13,20 @@ public enum AppSection: Hashable {
     case kanban
     case insights
 
+    public var title: String {
+        switch self {
+        case .chats: String(localized: "Chats")
+        case .archived: String(localized: "Archived Chats")
+        case .scheduled: String(localized: "Scheduled sessions")
+        case .webhook: String(localized: "Webhook sessions")
+        case .memory: String(localized: "Memory")
+        case .skills: String(localized: "Skills")
+        case .tasks: String(localized: "Tasks")
+        case .kanban: String(localized: "Kanban")
+        case .insights: String(localized: "Insights")
+        }
+    }
+
     public init?(_ utility: SessionListUtilityDestination) {
         switch utility {
         case .settings, .providerQuotaWidgetSettings: return nil
@@ -63,6 +77,52 @@ public enum RegularSplitLayout {
     public static func hidesSidebarForCompanionPage(splitWidth: CGFloat, splitHeight: CGFloat) -> Bool {
         splitsCompanionPage(width: splitWidth, height: splitHeight)
             && !splitsCompanionPage(width: splitWidth - sidebarIdealWidth(splitWidth: splitWidth), height: splitHeight)
+    }
+}
+
+/// One device-local decision for the split column, drawer and toolbar ownership.
+public struct SidebarPresentation: Equatable {
+    public enum ToggleTarget: Equatable { case column, drawer }
+
+    public let isLandscape: Bool
+    public let tiled: Bool
+    public let showsColumn: Bool
+    public let columnIsForced: Bool
+    public let drawerEnabled: Bool
+    public let overlaysContent: Bool
+    public let hostsSidebarActionsInDetail: Bool
+    public let toggleTarget: ToggleTarget
+    public let showsFilesInspector: Bool
+    public let dismissesFilesInspector: Bool
+
+    public init(isRegularWidth: Bool, splitSize: CGSize, hasVerticalBar: Bool, storedChoice: Bool,
+                drawerIsPresented: Bool = false, columnIsVisible: Bool = false,
+                hidesSidebarColumn: Bool = false, hasVerticalDivision: Bool = false,
+                filesInspectorPresented: Bool = false, filesInspectorIsEligible: Bool = true,
+                filesInspectorOpeningIsLandscape: Bool? = nil) {
+        isLandscape = Self.isLandscape(splitSize)
+        columnIsForced = isRegularWidth && hasVerticalDivision
+        tiled = isRegularWidth && (columnIsForced || (isLandscape && splitSize.width >= 900))
+        // Rotation consumes this explicit presentation; a Files tap can reopen it in the new layout.
+        showsFilesInspector = filesInspectorPresented && filesInspectorIsEligible && isRegularWidth
+            && !hasVerticalDivision && splitSize.width >= RegularSplitLayout.filesInspectorChatWidth
+            && (filesInspectorOpeningIsLandscape == nil || filesInspectorOpeningIsLandscape == isLandscape)
+        dismissesFilesInspector = filesInspectorPresented && !showsFilesInspector
+        let filesNeedsRoom = showsFilesInspector && RegularSplitLayout.hidesSidebarForFilesInspector(splitWidth: splitSize.width)
+        showsColumn = columnIsForced || (tiled && storedChoice && !hidesSidebarColumn && !filesNeedsRoom && !drawerIsPresented)
+        drawerEnabled = !tiled && !columnIsVisible
+        overlaysContent = isRegularWidth
+        hostsSidebarActionsInDetail = tiled && hasVerticalBar
+        toggleTarget = tiled ? .column : .drawer
+    }
+
+    public static func isLandscape(_ size: CGSize) -> Bool {
+        size.height > 0 && size.width > size.height
+    }
+
+    /// Leaving a tiled layout consumes its native primary column, including a late UIKit visibility report.
+    public func requiresColumnCollapse(previouslyTiled: Bool, nativeColumnIsVisible: Bool) -> Bool {
+        !tiled && (previouslyTiled || nativeColumnIsVisible)
     }
 }
 

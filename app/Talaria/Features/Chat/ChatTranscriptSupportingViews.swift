@@ -296,6 +296,23 @@ final class ChatScrollPositionController {
     private var heldRowViewportOffset: CGFloat?
     private var heldRowBaselineHeight: CGFloat?
     private var lastNativeHoldAnchor: UnitPoint?
+    private var widthChangeAnchor: (fraction: CGFloat, lineOffset: CGFloat)?
+    private var preservesEndForWidthChange = false
+
+    /// Capture before the settled width changes, while row measurements still describe the old wrapping.
+    func preserveForWidthChange(isFollowingLatest: Bool) {
+        guard !isUserInteracting, !isNavigating, let scrollView else { return }
+        let rowID = readingAnchorRowID
+        let top = scrollView.contentOffset.y + scrollView.adjustedContentInset.top
+        let minY = rowID.flatMap { rowMinY[$0] }
+        let height = rowID.flatMap { rowFrames[$0]?.height }
+        holdPosition(anchorRowID: isFollowingLatest ? nil : rowID, resync: {})
+        guard isPreservingPosition else { return }
+        preservesEndForWidthChange = isFollowingLatest
+        if !isFollowingLatest, let minY, let height, height > 0 {
+            widthChangeAnchor = (min(1, max(0, (top - minY) / height)), max(0, minY - top))
+        }
+    }
 
     private let usesLazyLayout: Bool
     private var compensationScheduled = false
@@ -694,6 +711,8 @@ final class ChatScrollPositionController {
         heldRowViewportOffset = nil
         heldRowBaselineHeight = nil
         lastNativeHoldAnchor = nil
+        widthChangeAnchor = nil
+        preservesEndForWidthChange = false
         hasPrependCapture = false
         hasRestoredMeasuredReader = false
         isRealizingReaderNatively = false
@@ -802,7 +821,7 @@ final class ChatScrollPositionController {
         } else if mode == .prepend, sizeIsChanging {
             requestCompensation()
         } else if mode == .hold {
-            if sizeIsChanging {
+            if sizeIsChanging || widthChangeAnchor != nil || preservesEndForWidthChange {
                 requestCompensation()
             } else if let targetY = compensatedOffsetY(in: scrollView),
                       abs(scrollView.contentOffset.y - targetY) > 0.5 {
@@ -813,6 +832,18 @@ final class ChatScrollPositionController {
 
     private func compensatedOffsetY(in scrollView: UIScrollView) -> CGFloat? {
         guard let baselineOffsetY else { return nil }
+        if preservesEndForWidthChange {
+            return max(-scrollView.adjustedContentInset.top,
+                scrollView.contentSize.height - scrollView.bounds.height + scrollView.adjustedContentInset.bottom)
+        }
+        if let widthChangeAnchor, let anchor, !inactiveRowIDs.contains(anchor.rowID),
+           let minY = rowMinY[anchor.rowID], let height = rowFrames[anchor.rowID]?.height {
+            return Self.compensatedOffsetY(
+                baselineOffsetY: minY + height * widthChangeAnchor.fraction
+                    - widthChangeAnchor.lineOffset - scrollView.adjustedContentInset.top,
+                anchorShift: 0, adjustedInset: scrollView.adjustedContentInset,
+                contentSizeHeight: scrollView.contentSize.height, boundsHeight: scrollView.bounds.height)
+        }
         if usesLazyLayout, mode == .prepend, hasRestoredMeasuredReader || isRealizingReaderNatively {
             // Bridge until the actual reader is restored, rather than an early background layout.
             guard let anchor, !inactiveRowIDs.contains(anchor.rowID), rowMinY[anchor.rowID] != nil else { return nil }
@@ -879,7 +910,7 @@ final class ChatScrollPositionController {
 
     private func applyCompensation() {
         guard let scrollView else { return }
-        if mode == .hold, let onHoldAnchor {
+        if mode == .hold, widthChangeAnchor == nil, !preservesEndForWidthChange, let onHoldAnchor {
             guard let anchor, let frame = rowFrames[anchor.rowID] else { return }
             // A layout acknowledgement can precede the expanded frame. Using the
             // collapsed height here would send the newly tall row to its end.

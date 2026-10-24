@@ -10,8 +10,6 @@ struct SessionListRowsSection: View {
     let emptyDescription: String?
     let isSearchActive: Bool
     let searchText: String
-    let showsMessageCount: Bool
-    let showsWorkspace: Bool
     let selectedSessionID: String?
     let actions: SessionListRowActions
     var suppressEmptyState = false
@@ -61,8 +59,6 @@ struct SessionListRowsSection: View {
         SessionInteractiveRow(
             viewModel: viewModel,
             session: session,
-            showsMessageCount: showsMessageCount,
-            showsWorkspace: showsWorkspace,
             selectedSessionID: selectedSessionID,
             actions: actions,
             searchText: searchText
@@ -82,9 +78,7 @@ struct SessionListRowsSection: View {
     private var sessionLoadingSkeletonRows: some View {
         ForEach(Array(SessionRowSkeletonConfiguration.loadingRows.enumerated()), id: \.element.id) { index, row in
             SessionRowSkeletonView(
-                configuration: row,
-                showsMessageCount: showsMessageCount,
-                showsWorkspace: showsWorkspace
+                configuration: row
             )
             .sessionsScreenListRow(insets: EdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12))
             .accessibilityElement(children: .ignore)

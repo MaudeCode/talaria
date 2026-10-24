@@ -18,8 +18,6 @@ struct SessionRowView: View {
     @ScaledMetric(relativeTo: .title2) private var monitorIconSize: CGFloat = 36
 
     let session: SessionSummary
-    var showsMessageCount = true
-    var showsWorkspace = true
     var isViewingCachedData = false
     /// Server-redacted excerpt around a content-search hit (TAL-164); nil for
     /// title-only matches and rows outside a search.
@@ -147,8 +145,8 @@ struct SessionRowView: View {
     private var metadataLabel: String? {
         SessionRowPresentation.metadataLabel(
             for: session,
-            showsMessageCount: showsMessageCount,
-            showsWorkspace: showsWorkspace
+            showsMessageCount: true,
+            showsWorkspace: true
         )
     }
 

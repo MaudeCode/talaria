@@ -34,6 +34,7 @@ struct SettingsView: View {
             }
         }
         .navigationTitle("Settings")
+        .adaptiveSecondaryNavigationTitle(title: String(localized: "Settings"))
     }
 }
 

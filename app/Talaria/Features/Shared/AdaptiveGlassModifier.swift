@@ -12,12 +12,14 @@ extension GeometryProxy {
 
 struct DivisionRegionGeometry: Equatable {
     var frame: CGRect = .zero
+    var safeAreaInsets = EdgeInsets()
     var divisions: [CGRect] = []
 
     init() {}
 
     init(_ geometry: GeometryProxy, divisions override: [CGRect]? = nil) {
         frame = geometry.frame(in: .global)
+        safeAreaInsets = geometry.safeAreaInsets
         let local: [CGRect]
         if let override {
             local = override
@@ -30,14 +32,105 @@ struct DivisionRegionGeometry: Equatable {
         divisions = local.map { $0.offsetBy(dx: frame.minX, dy: frame.minY) }
     }
 
+    func needsHingeSettlement(comparedTo previous: Self?) -> Bool {
+        guard let previous, previous.frame.size == frame.size else { return false }
+        func verticalRanges(_ geometry: Self) -> [Range<CGFloat>] {
+            geometry.divisions.filter { $0.height > $0.width }.map {
+                ($0.minX - geometry.frame.minX)..<($0.maxX - geometry.frame.minX)
+            }
+        }
+        return verticalRanges(previous) != verticalRanges(self)
+    }
+
     func localDivisions(in geometry: GeometryProxy) -> [CGRect] {
         let origin = geometry.frame(in: .global).origin
         return divisions.map { $0.offsetBy(dx: -origin.x, dy: -origin.y) }
     }
 }
 
+/// The sidebar decision's spatial inputs are admitted atomically after returning from an app-switch snapshot.
+struct SidebarLayoutInputs: Equatable {
+    var sizeClass: UserInterfaceSizeClass?
+    var splitSize: CGSize = .zero
+    var geometry = DivisionRegionGeometry()
+    var hasVerticalBar = false
+    var hingeStatus: SessionRunMonitor.HingeStatus?
+
+    var isValid: Bool {
+        sizeClass != nil && splitSize.width > 0 && splitSize.height > 0
+            && geometry.frame.width > 0 && geometry.frame.height > 0
+    }
+}
+
+/// Coalesces hinge movement only; ordinary container geometry stays live.
+private struct SettledGeometryModifier<Value: Equatable>: ViewModifier {
+    let measure: (GeometryProxy) -> Value
+    let hingeStatus: SessionRunMonitor.HingeStatus?
+    let requiresSettlement: (Value?, Value) -> Bool
+    let action: (Value) -> Void
+    @State private var settlement = DivisionRegionSettlement<Value>()
+    @State private var pending: Task<Void, Never>?
+    @State private var previous: Value?
+    @State private var hingeIsChanging = false
+
+    func body(content: Content) -> some View {
+        content
+            .onGeometryChange(for: Value.self, of: measure) { value in
+                pending?.cancel()
+                let shouldSettle = hingeIsChanging || requiresSettlement(previous, value)
+                previous = value
+                if let initial = settlement.observe(value, at: ProcessInfo.processInfo.systemUptime) {
+                    action(initial)
+                }
+                if shouldSettle { scheduleSettlement() }
+                else { applySettled(hingeIsSettled: true) }
+            }
+            .onChange(of: hingeStatus) {
+                hingeIsChanging = true
+                pending?.cancel()
+                scheduleSettlement()
+            }
+            .onDisappear {
+                pending?.cancel()
+                hingeIsChanging = false
+            }
+    }
+
+    private func scheduleSettlement() {
+        pending = Task { @MainActor in
+            do { try await Task.sleep(for: .seconds(DivisionRegionSettlement<Value>.quietPeriod)) }
+            catch { return }
+            guard !Task.isCancelled else { return }
+            hingeIsChanging = false
+            applySettled()
+        }
+    }
+
+    private func applySettled(hingeIsSettled: Bool = false) {
+        if let value = settlement.settle(at: ProcessInfo.processInfo.systemUptime, hingeIsSettled: hingeIsSettled) {
+            action(value)
+        }
+    }
+}
+
+extension View {
+    func onSettledGeometryChange<Value: Equatable>(for type: Value.Type,
+        hingeStatus: SessionRunMonitor.HingeStatus? = nil,
+        requiresSettlement: @escaping (Value?, Value) -> Bool,
+        of measure: @escaping (GeometryProxy) -> Value, action: @escaping (Value) -> Void) -> some View {
+        modifier(SettledGeometryModifier(measure: measure, hingeStatus: hingeStatus,
+            requiresSettlement: requiresSettlement, action: action))
+    }
+}
+
 extension EnvironmentValues {
     @Entry var divisionRegionGeometry: DivisionRegionGeometry? = nil
+    /// The sidebar's foreground gate also protects chat wrapping from app-switch snapshot sizes.
+    @Entry var holdsForegroundLayout = false
+    /// The split's destination width, independent of its moving column boundary.
+    @Entry var targetChatLayoutWidth: CGFloat? = nil
+    /// How much wider the composer will be at that destination; its strips' scroll views take that width early.
+    @Entry var composerStripOverhang: CGFloat = 0
     @Entry var tabletopComposerHeight: CGFloat? = nil
 }
 
@@ -141,20 +234,26 @@ extension View {
         presentationSizing(.form)
     }
 
-    func adaptivePagePresentation() -> some View {
-        presentationSizing(.page)
+    func adaptivePagePresentation(width: CGFloat? = nil) -> some View {
+        frame(width: width)
+            .presentationSizing(.page.fitted(horizontal: width != nil, vertical: false))
     }
 
-    func adaptiveSecondaryNavigationTitle() -> some View {
-        modifier(AdaptiveSecondaryNavigationTitleModifier())
+    func adaptiveSecondaryNavigationTitle(title: String? = nil) -> some View {
+        modifier(AdaptiveSecondaryNavigationTitleModifier(title: title))
     }
 }
 
 private struct AdaptiveSecondaryNavigationTitleModifier: ViewModifier {
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    var title: String?
 
     func body(content: Content) -> some View {
-        content.navigationBarTitleDisplayMode(horizontalSizeClass == .regular ? .inline : .automatic)
+        content.navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                if let title {
+                    ToolbarItem(placement: .principal) { Text(title).font(.headline).lineLimit(1) }
+                }
+            }
     }
 }
 
@@ -252,6 +351,7 @@ private struct AdaptiveSoftScrollEdgeModifier: ViewModifier {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     let edges: Edge.Set
+    var emphasizesTop = false
 
     @ViewBuilder
     func body(content: Content) -> some View {
@@ -260,7 +360,12 @@ private struct AdaptiveSoftScrollEdgeModifier: ViewModifier {
                softScrollEdgesAvailable: true,
                reduceTransparency: reduceTransparency
            ) == .soft {
-            content.scrollEdgeEffectStyle(.soft, for: edges)
+            if emphasizesTop {
+                content.scrollEdgeEffectStyle(.soft, for: edges.subtracting(.top))
+                    .scrollEdgeEffectStyle(.hard, for: .top)
+            } else {
+                content.scrollEdgeEffectStyle(.soft, for: edges)
+            }
         } else {
             content
         }
@@ -326,7 +431,7 @@ extension View {
         ))
     }
 
-    func adaptiveSoftScrollEdges(_ edges: Edge.Set = [.top, .bottom]) -> some View {
-        modifier(AdaptiveSoftScrollEdgeModifier(edges: edges))
+    func adaptiveSoftScrollEdges(_ edges: Edge.Set = [.top, .bottom], emphasizesTop: Bool = false) -> some View {
+        modifier(AdaptiveSoftScrollEdgeModifier(edges: edges, emphasizesTop: emphasizesTop))
     }
 }

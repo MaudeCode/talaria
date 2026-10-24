@@ -13,8 +13,6 @@ struct SessionInteractiveRow: View {
     @Environment(\.sessionRowStyle) private var rowStyle
     let viewModel: SessionListViewModel
     let session: SessionSummary
-    let showsMessageCount: Bool
-    let showsWorkspace: Bool
     let selectedSessionID: String?
     let actions: SessionListRowActions
     var searchText = ""
@@ -90,8 +88,6 @@ struct SessionInteractiveRow: View {
                 }
                 SessionRowView(
                     session: session,
-                    showsMessageCount: showsMessageCount,
-                    showsWorkspace: showsWorkspace,
                     isViewingCachedData: viewModel.isViewingCachedData,
                     matchPreview: viewModel.contentMatchPreview(for: session, searchText: searchText),
                     searchText: searchText,

@@ -341,7 +341,7 @@ struct ProvidersSettingsView: View {
                     ProviderQuotaSidebarDisplayView()
                 } label: {
                     SettingsAccessoryRow(
-                        title: String(localized: "Sidebar Display"),
+                        title: String(localized: "Sidebar Quotas"),
                         systemImage: "sidebar.left"
                     )
                 }

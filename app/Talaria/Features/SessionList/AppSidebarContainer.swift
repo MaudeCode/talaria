@@ -25,6 +25,7 @@ struct AppSidebarContainer<Sidebar: View, Content: View>: View {
     private let fillsSafeArea: Bool
     private let isEnabled: Bool
     private let overlaysContent: Bool
+    private let collapsesNativeSidebar: Bool
     private let onPresentationChange: (Bool) -> Void
     private let sidebar: (Bool) -> Sidebar
     private let content: Content
@@ -34,6 +35,7 @@ struct AppSidebarContainer<Sidebar: View, Content: View>: View {
         fillsSafeArea: Bool = false,
         isEnabled: Bool = true,
         overlaysContent: Bool = false,
+        collapsesNativeSidebar: Bool = false,
         onPresentationChange: @escaping (Bool) -> Void,
         @ViewBuilder sidebar: @escaping (_ isPresented: Bool) -> Sidebar,
         @ViewBuilder content: () -> Content
@@ -42,6 +44,7 @@ struct AppSidebarContainer<Sidebar: View, Content: View>: View {
         self.fillsSafeArea = fillsSafeArea
         self.isEnabled = isEnabled
         self.overlaysContent = overlaysContent
+        self.collapsesNativeSidebar = collapsesNativeSidebar
         self.onPresentationChange = onPresentationChange
         self.sidebar = sidebar
         self.content = content()
@@ -55,6 +58,7 @@ struct AppSidebarContainer<Sidebar: View, Content: View>: View {
             fillsSafeArea: fillsSafeArea,
             isEnabled: isEnabled,
             overlaysContent: overlaysContent,
+            collapsesNativeSidebar: collapsesNativeSidebar,
             sidebar: AnyView(AppSidebarRoot(presentation: presentation, sidebar: sidebar)),
             content: AnyView(AppSidebarRoot(presentation: presentation) { isPresented in
                 content.transaction { transaction in
@@ -82,6 +86,7 @@ private struct AppSidebarHost: UIViewControllerRepresentable {
     let fillsSafeArea: Bool
     let isEnabled: Bool
     let overlaysContent: Bool
+    let collapsesNativeSidebar: Bool
     let sidebar: AnyView
     let content: AnyView
     let onPresentationChange: (Bool) -> Void
@@ -94,6 +99,7 @@ private struct AppSidebarHost: UIViewControllerRepresentable {
         let environment = context.environment
         controller.fillsSafeArea = fillsSafeArea
         controller.overlaysContent = overlaysContent
+        controller.collapsesNativeSidebar = collapsesNativeSidebar
         controller.isEnabled = isEnabled
         controller.onPresentationChange = onPresentationChange
         controller.isRightToLeft = environment.layoutDirection == .rightToLeft
@@ -143,6 +149,9 @@ final class AppSidebarController: UIViewController, UIGestureRecognizerDelegate 
     }
     var overlaysContent = false {
         didSet { if isViewLoaded { view.setNeedsLayout() } }
+    }
+    var collapsesNativeSidebar = false {
+        didSet { if isViewLoaded, collapsesNativeSidebar != oldValue { view.setNeedsLayout() } }
     }
     var reduceMotion = false
     var fillsSafeArea = false {
@@ -217,12 +226,32 @@ final class AppSidebarController: UIViewController, UIGestureRecognizerDelegate 
 
         if #available(iOS 27.1, *) {
             registerForTraitChanges(UITraitCollection.systemTraitsAffectingVerticalBarEdge) { (self: Self, _) in
-                self.view.setNeedsLayout()
+                self.invalidateHostedLayout()
             }
         }
 
         reflect(isPresented: presentation.isPresented)
         progress = presentation.isPresented ? 1 : 0
+    }
+
+    override func viewSafeAreaInsetsDidChange() {
+        super.viewSafeAreaInsetsDidChange()
+        invalidateHostedLayout()
+    }
+
+    override func viewWillTransition(to size: CGSize, with coordinator: any UIViewControllerTransitionCoordinator) {
+        super.viewWillTransition(to: size, with: coordinator)
+        coordinator.animate(alongsideTransition: nil) { [weak self] _ in
+            self?.invalidateHostedLayout()
+            self?.reconcileNativeSidebar()
+        }
+    }
+
+    /// These hosts are framed manually. A reserved bar can change their insets without changing those frames.
+    private func invalidateHostedLayout() {
+        view.setNeedsLayout()
+        contentHost.view.setNeedsLayout()
+        sidebarHost.view.setNeedsLayout()
     }
 
     override func viewDidLayoutSubviews() {
@@ -258,6 +287,22 @@ final class AppSidebarController: UIViewController, UIGestureRecognizerDelegate 
             cornerRadius: Motion.cornerRadius
         ).cgPath
         apply(progress: progress)
+        reconcileNativeSidebar()
+    }
+
+    /// Reassert after native rotation/layout too: an unchanged SwiftUI binding does not collapse a stale UIKit column.
+    private func reconcileNativeSidebar() {
+        guard collapsesNativeSidebar else { return }
+        func collapse(in controller: UIViewController) {
+            // The inspector also owns a split controller, but its main content is secondary and it has no primary.
+            if let split = controller as? UISplitViewController, split.viewController(for: .primary) != nil {
+                guard split.style != .unspecified, !split.isCollapsed, split.displayMode != .secondaryOnly else { return }
+                UIView.performWithoutAnimation { split.hide(.primary) }
+                return
+            }
+            for child in controller.children { collapse(in: child) }
+        }
+        collapse(in: contentHost)
     }
 
     /// The width the screen slides aside, measured inside the safe area (TAL-416).
@@ -345,6 +390,7 @@ final class AppSidebarController: UIViewController, UIGestureRecognizerDelegate 
     /// here commits the slide on its own.
     private func presentationChanged(_ isPresented: Bool) {
         guard isEnabled else {
+            if presentation.isPresented { presentation.isPresented = false }
             reflect(isPresented: false)
             apply(progress: 0)
             return
