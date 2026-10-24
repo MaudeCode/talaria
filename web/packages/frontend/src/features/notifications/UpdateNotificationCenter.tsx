@@ -204,6 +204,7 @@ export function UpdateNotificationProvider({ children }: { children: ReactNode }
       onSelect: () => interact(row, { navigate: true, closeToast: !row.requires_interaction }),
     }] : []
     const unresolvedPersistent = new Set<string>()
+    let phaseChanged = false
     for (const row of notifications.data.notifications) {
       const toastId = `server-${row.id}`
       const priorPhase = observedPhases.current.get(row.id)
@@ -241,14 +242,17 @@ export function UpdateNotificationProvider({ children }: { children: ReactNode }
         })
         visibleServerToasts.current.add(toastId)
       }
+      if (primed.current && (row.kind === 'update' || row.kind === 'agent_recovery') && priorPhase !== row.phase) phaseChanged = true
       observedPhases.current.set(row.id, row.phase)
     }
+    // TAL-1525: a server phase change can install a new version; reread what Settings shows about it.
+    if (phaseChanged) for (const queryKey of [keys.updates.check, keys.health.system, keys.health.agent, keys.settings]) void qc.invalidateQueries({ queryKey })
     for (const toastId of visiblePersistent.current) if (!unresolvedPersistent.has(toastId)) dismissToast(toastId)
     const current = new Set(notifications.data.notifications.map((row) => `server-${row.id}`))
     for (const toastId of visibleServerToasts.current) if (!current.has(toastId)) dismissToast(toastId)
     visiblePersistent.current = unresolvedPersistent
     primed.current = true
-  }, [notifications.data, interact, performAction, shownRowId])
+  }, [notifications.data, interact, performAction, shownRowId, qc])
 
   const show = () => {
     setOpen(true)

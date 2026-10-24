@@ -586,7 +586,7 @@ async function applyNpmWebUpdate(webRoot: string | null, channel: Channel, getJs
   const switching = npmInstallChannel(installed, id) !== channel
   if (version !== undefined && (channel !== 'stable' || switching)) return { ok: false, target: 'webui', channel, message: ONLY_STABLE_VERSIONS }
   const onDisk = diskRelease(installed.packageRoot)
-  let target: { version: string; sourceRevision: string; label: string; matches: (release: Dict | null) => boolean; npm?: string; experimental?: ExperimentalRelease }
+  let target: { tag: string; version: string; sourceRevision: string; label: string; matches: (release: Dict | null) => boolean; npm?: string; experimental?: ExperimentalRelease }
   if (channel === 'stable') {
     const stableInstalled = new RegExp(`^${VERSION}$`).test(installed.version) ? installed.version : undefined
     let release: PublishedRelease
@@ -595,7 +595,7 @@ async function applyNpmWebUpdate(webRoot: string | null, channel: Channel, getJs
     try { chosen = (switching ? undefined : selectVersion(stableInstalled ? npmVersions(release, stableInstalled) : [], version, 'Talaria Web')) ?? release }
     catch (error) { return { ok: false, target: 'webui', channel, message: (error as Error).message } }
     if (!chosen.npm) return { ok: false, manual_update: true, message: 'The completed Stable release does not include an npm package identity.' }
-    target = { version: chosen.version, sourceRevision: chosen.sourceRevision, label: `npm release ${chosen.version}`, matches: (r) => same(r, chosen.runtime), npm: chosen.npm }
+    target = { tag: chosen.tag, version: chosen.version, sourceRevision: chosen.sourceRevision, label: `npm release ${chosen.version}`, matches: (r) => same(r, chosen.runtime), npm: chosen.npm }
     if (!switching) {
       if (!canApply()) return { ok: false, message: 'Web update deferred because its settings or lifecycle changed.' }
       const comparison = compareVersions(installed.version, chosen.version)
@@ -608,14 +608,14 @@ async function applyNpmWebUpdate(webRoot: string | null, channel: Channel, getJs
     try { release = await packaged.registry.release() } catch (error) { return { ok: false, message: error instanceof ReleaseUnavailable ? error.message : 'The Experimental artifact is unavailable.' } }
     const identity = { tag: release.tag, version: release.version, sourceRevision: release.sourceRevision, releaseSet: release.sourceRevision }
     // validateReleaseInfo (in diskRelease) already applies Stable's contract and Agent-pin checks to the packaged files.
-    target = { version: release.version, sourceRevision: release.sourceRevision, label: `Experimental ${release.version}`, matches: (r) => r !== null && same({ tag: r.tag, version: r.version, sourceRevision: r.sourceRevision, releaseSet: r.releaseSet }, identity), experimental: release }
+    target = { tag: release.tag, version: release.version, sourceRevision: release.sourceRevision, label: `Experimental ${release.version}`, matches: (r) => r !== null && same({ tag: r.tag, version: r.version, sourceRevision: r.sourceRevision, releaseSet: r.releaseSet }, identity), experimental: release }
   }
   const priorRollback = readUpdateRollback(packaged.stateDir)
   if (packaged.skipFailedVersion && priorRollback?.failedVersion === target.version) return { ok: false, target: 'webui', channel, message: `Automatic update skipped: ${target.version} previously failed to start.` }
   const current = !switching && target.matches(onDisk)
   if (current) {
     if (same(id.release(), onDisk)) return { ok: true, up_to_date: true, target: 'webui', channel, message: channel === 'stable' ? 'Talaria Web already contains the selected npm release.' : `Talaria Web already contains ${target.label}.` }
-    return { ok: true, target: 'webui', channel, sourceRevision: target.sourceRevision, ...(target.npm ? { npm: target.npm } : {}), message: `Restarting Talaria Web with ${target.label}.` }
+    return { ok: true, target: 'webui', channel, tag: target.tag, sourceRevision: target.sourceRevision, ...(target.npm ? { npm: target.npm } : {}), message: `Restarting Talaria Web with ${target.label}.` }
   }
   if (!canApply()) return { ok: false, message: 'Web update deferred because its settings or lifecycle changed.' }
   // Global npm installs keep dependencies inside the package. Build the replacement beside the old package so
@@ -683,7 +683,7 @@ async function applyNpmWebUpdate(webRoot: string | null, channel: Channel, getJs
   } finally {
     if (!keepBackup) { try { rmSync(staging, { recursive: true, force: true }) } catch { /* a leftover staging directory must not prevent restart after a verified switch */ } }
   }
-  return { ok: true, target: 'webui', channel, sourceRevision: target.sourceRevision, ...(target.npm ? { npm: target.npm } : {}),
+  return { ok: true, target: 'webui', channel, tag: target.tag, sourceRevision: target.sourceRevision, ...(target.npm ? { npm: target.npm } : {}),
     ...(switching ? { channel_switch: true, backup_dir: stores } : {}), message: `Updated Talaria Web to ${target.label}.${stores ? ` Settings were backed up to ${stores}.` : ''}` }
 }
 
@@ -708,6 +708,31 @@ async function currentReleaseTag(path: string, git: GitRun): Promise<string | nu
   const out = await git(['describe', '--tags', '--exact-match', '--match', AGENT_TAG_GLOB, 'HEAD'], path)
   return out.ok && out.out ? out.out : null
 }
+/** TAL-1525: the checkout's installed identity and its distance to an already-known target, from local Git only. */
+async function installedAgentIdentity(path: string | null, latest: unknown, git: GitRun): Promise<Dict | null> {
+  if (!path) return null
+  const head = await git(['rev-parse', 'HEAD'], path)
+  if (!head.ok || !SHA.test(head.out)) return null
+  const installed: Dict = { current_sha: head.out, current_version: await currentReleaseTag(path, git) ?? head.out.slice(0, 12) }
+  if (typeof latest !== 'string' || !SHA.test(latest) || latest === head.out) return installed
+  const count = await git(['rev-list', '--count', `${head.out}..${latest}`], path)
+  return { ...installed, behind: count.ok && /^\d+$/.test(count.out) ? Number.parseInt(count.out, 10) : null }
+}
+
+/** TAL-1525: a cached target re-anchored on its installed identity; only cached releases newer than it stay offered. */
+function reanchored(info: Dict, installed: Dict): Dict {
+  const next: Dict = { ...info, ...installed }
+  delete next.message
+  delete next.metadata_repair
+  delete next.channel_switch
+  const versions = Array.isArray(info.versions) ? info.versions.map(dict) : []
+  const at = versions.findIndex((v) => v.version === installed.current_version || (typeof v.sha === 'string' && v.sha === installed.current_sha))
+  if (at >= 0) next.versions = versions.slice(0, at)
+  if (installed.current_sha === info.latest_sha) { next.behind = 0; next.versions = []; delete next.manual_update }
+  else if (installed.behind === undefined) next.behind = at >= 0 ? at : null
+  return next
+}
+
 async function verifiedAgentIdentity(path: string, expectedRevision: string, git: GitRun): Promise<{ verified_revision: string; verified_version: string | null } | null> {
   const head = await git(['rev-parse', 'HEAD'], path)
   if (!head.ok || head.out !== expectedRevision || !SHA.test(head.out)) return null
@@ -1354,6 +1379,10 @@ export class UpdateService {
   private checkingKey: string | null = null
   private readonly lastGood = new Map<string, { at: number; result: Dict }>()
   private applying = false
+  /** TAL-1525: a forced check owed once the current apply releases its lock. */
+  private refreshOwed = false
+  /** TAL-1525: the Web package installed for the pending restart; this process still runs the old one. */
+  private installedWeb: Dict | null = null
   private autoTimer: NodeJS.Timeout | null = null
   private autoStarted = false
   private lifecycle = 0
@@ -1504,7 +1533,12 @@ export class UpdateService {
         // The check may have fetched release tags the startup `git describe` never saw.
         if (this.deps.refreshWebuiVersion) webui.current_version = this.deps.refreshWebuiVersion()
         const agentDir = this.deps.agentDir()
-        const agent = includeAgent ? this.keepLastGood('agent', agentChannel, await checkAgentUpdate(agentDir, this.git, agentChannel, this.publishedTag)) : ignoredAgent()
+        let agent = includeAgent ? this.keepLastGood('agent', agentChannel, await checkAgentUpdate(agentDir, this.git, agentChannel, this.publishedTag)) : ignoredAgent()
+        // A fetch failure keeps the last good remote answer, never its outdated installed identity.
+        if (agent.stale_check && agent.latest_sha) {
+          const installed = await installedAgentIdentity(agentDir, agent.latest_sha, this.git)
+          if (installed) agent = reanchored(agent, installed)
+        }
         const marker = agentSyncMarker(agentDir, this.deps.stateDir)
         if (includeAgent && marker && existsSync(marker)) {
           Object.assign(agent, { metadata_repair: true, message: this.recovery.phase === 'blocked' ? this.recovery.detail || 'Agent update recovery needs attention.' : 'Agent update recovery is incomplete. Recovery will retry automatically when it is safe.' })
@@ -1512,7 +1546,7 @@ export class UpdateService {
         const policy = this.agentPolicy()
         if (agent.latest_sha) Object.assign(agent, agentWarning(agent, policy))
         if (Array.isArray(agent.versions)) agent.versions = agent.versions.map((v) => ({ ...dict(v), ...supportOf(dict(v).sha, policy) }))
-        Object.assign(this.cache, { webui, agent, checked_at: this.now(), include_agent: includeAgent, channel, agent_channel: agentChannel })
+        Object.assign(this.cache, { webui: this.installedWeb ? reanchored(webui, this.installedWeb) : webui, agent, checked_at: this.now(), include_agent: includeAgent, channel, agent_channel: agentChannel })
         this.preGenerateSummaries(this.cache)
         return this.statusSnapshot()
       } finally {
@@ -1533,6 +1567,28 @@ export class UpdateService {
     this.deps.log(`[updates] ${target} fetch failed: ${str(result.error)}`)
     const prior = this.lastGood.get(key)
     return prior && this.now() - prior.at < CACHE_TTL_S ? { ...prior.result, stale_check: true } : result
+  }
+
+  /**
+   * TAL-1525: an apply or recovery settled, so the cached target is re-anchored on its installed identity
+   * at once (local reads only) and one forced check follows in the background once no apply holds the lock.
+   */
+  private async invalidate(target: 'webui' | 'agent', applied?: Dict): Promise<void> {
+    this.cache.checked_at = 0
+    if (target === 'webui' && applied) this.installedWeb = { current_sha: applied.sourceRevision ?? null, current_version: applied.tag }
+    const installed = target === 'webui' ? this.installedWeb : await installedAgentIdentity(this.deps.agentDir(), dict(this.cache.agent).latest_sha, this.git)
+    const cached = this.cache[target] as Dict | null
+    if (installed && cached && cached.ignored !== true) this.cache[target] = reanchored(cached, installed)
+    if (this.deps.checkEnabled?.() === false) return
+    this.refreshOwed = true
+    if (!this.applying) this.refreshOwedCheck()
+  }
+
+  /** Starts the owed check; a check already in flight for the same key answers it. */
+  private refreshOwedCheck(): void {
+    if (!this.refreshOwed) return
+    this.refreshOwed = false
+    void this.check(true).catch((error: unknown) => { this.deps.log(`[updates] refresh after update failed: ${(error as Error).message}`) })
   }
 
   startAutoApply(intervalMs = AUTO_UPDATE_INTERVAL_MS): void {
@@ -1657,7 +1713,7 @@ export class UpdateService {
         throw new Error('Retained local edits were recovered; verifying runtime admission.')
       }
       if (!result.ok || result.owed) throw new Error(result.detail || 'Agent recovery remains unverified.')
-      this.cache.checked_at = 0
+      await this.invalidate('agent')
       this.recovery = { phase: 'complete', attempt: this.recoveryAttempt, detail: 'Agent service and runtime recovery is verified.', retry_at: null, ...(result.operation ? { operation: result.operation } : {}), ...(result.revision ? { verified_revision: result.revision } : {}), ...(result.runtime_revision ? { runtime_revision: result.runtime_revision } : {}), ...(result.verified_version ? { verified_version: result.verified_version } : {}) }
     } catch (error) {
       if (!current()) return
@@ -1741,7 +1797,7 @@ export class UpdateService {
   private async locked(fn: () => Promise<Dict>): Promise<Dict> {
     if (this.applying || this.recoveryAbort) return { ok: false, message: 'Update or retained recovery already in progress' }
     this.applying = true
-    try { return await fn() } finally { this.applying = false; this.armRecovery() }
+    try { return await fn() } finally { this.applying = false; this.refreshOwedCheck(); this.armRecovery() }
   }
 
   /** Python `apply_update`. */
@@ -1761,7 +1817,7 @@ export class UpdateService {
       const lifecycle = this.lifecycle
       const result = await applyWebUpdate(this.deps.webRoot, channel, this.git, this.deps.getJson, this.deps.identity, this.deps.npm ?? runPackageNpm, canApply, { registry: this.deps.experimental, stateDir: this.deps.stateDir, skipFailedVersion: options.skipFailedVersion }, options.version)
       // Settings can cancel before mutation, but a committed replacement must finish restarting unless shutting down.
-      if (result.ok && !result.up_to_date && lifecycle === this.lifecycle) { this.cache.checked_at = 0; this.autoRestartScheduled = true; this.stopAutoApply(); this.deps.scheduleRestart(); result.restart_scheduled = true }
+      if (result.ok && !result.up_to_date && lifecycle === this.lifecycle) { await this.invalidate('webui', result); this.autoRestartScheduled = true; this.stopAutoApply(); this.deps.scheduleRestart(); result.restart_scheduled = true }
       return result
     }
     if (target !== 'agent') return { ok: false, message: `Unknown target: ${target}` }
@@ -1803,13 +1859,14 @@ export class UpdateService {
     if (result.ok !== true && result.recovery_required !== false && !result.confirmation_required && await options.onFailure?.(result.message || result.error, typeof result.verified_revision === 'string' ? { revision: result.verified_revision, version: typeof result.verified_version === 'string' ? result.verified_version : null } : undefined)) result.recovery_pending = true
     if (this.deps.agentMutation) {
       if (result.ok && result.restart_scheduled) { this.autoRestartScheduled = true; this.stopAutoApply(); this.deps.scheduleRestart() }
-      return result
-    }
-    return result.ok ? this.finishAgent(result, path) : result
+    } else if (result.ok) result = await this.finishAgent(result, path)
+    // A failure can still leave Git advanced (a failed dependency sync), so the next check refetches.
+    if (result.ok) await this.invalidate('agent')
+    else this.cache.checked_at = 0
+    return result
   }
 
   private async finishAgent(result: Dict, path: string | null, sync = this.deps.agentSync, restart = true): Promise<Dict> {
-    this.cache.checked_at = 0
     const marker = agentSyncMarker(path, this.deps.stateDir)
     if (result.up_to_date === true && (!marker || !existsSync(marker))) return result
     // A failed sync leaves Git advanced: an explicit retry still owes the sync and restart.
@@ -1849,7 +1906,6 @@ export class UpdateService {
       const inv = inventoryLocks(path)
       const manual = `rm -f ${str(inv.well_known_lock_path)}`
       if (!inv.well_known_lock_present) {
-        this.cache.checked_at = 0
         const retry = await this.applyInner(target, this.deps.channel(), () => true, options)
         return { ...retry, lock_recovery: { action: 'no-lock-found', manual_command: manual, other_locks: inv.other_locks } }
       }

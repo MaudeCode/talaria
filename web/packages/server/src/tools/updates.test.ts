@@ -21,7 +21,7 @@ import { FakeSidecar } from '../sidecar/fake.js'
 import { RESTART_EXIT_CODE, supervise } from '../cli/supervise.js'
 import {
   applyAgentUpdate, applyWebUpdate, CACHE_TTL_S, checkAgentUpdate, checkWebUpdate, forceAgentUpdate, githubJson, inventoryLocks, npmInstallInfo, publishedWebRelease, ReleaseUnavailable,
-  REPOSITORY_URL, runGit, sanitizeGitDiagnostic, UpdateService, updatesCheckView, updateTargetView, waitUntilRestartSafe, type BuildRun, type GetJson, type GitRun, type PublishedRelease, type ReleaseIdentity, type RestartBlockers, type UpdateServiceDeps,
+  REPOSITORY_URL, runGit, sanitizeGitDiagnostic, UpdateService, updatesCheckView, updateTargetView, waitUntilRestartSafe, type BuildRun, type GetJson, type GitOutcome, type GitRun, type PublishedRelease, type ReleaseIdentity, type RestartBlockers, type UpdateServiceDeps,
 } from './updates.js'
 
 const GIT_ENV = { GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 'Synthetic', GIT_COMMITTER_NAME: 'Synthetic', GIT_AUTHOR_EMAIL: 'synthetic@example.invalid', GIT_COMMITTER_EMAIL: 'synthetic@example.invalid' }
@@ -716,6 +716,32 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     expect(n.calls.filter((c) => c[0] === 'install')).toEqual([['install', '--global', '--prefix', expect.stringContaining('.talaria-update-'), '--no-audit', '--no-fund', '@maudecode/talaria-web@2.0.0']])
     expect((JSON.parse(readFileSync(join(n.packageRoot, 'package.json'), 'utf8')) as { version?: unknown }).version).toBe('2.0.0')
     expect(restarts).toEqual([1])
+  })
+
+  it('reports the installed npm release as soon as the Web update settles, before its restart (TAL-1525)', async () => {
+    const s = sourceInstall()
+    const n = npmPackageInstall(s)
+    let releaseReads = 0
+    const getJson: GetJson = (path, opts) => { if (path.startsWith('/releases?')) releaseReads += 1; return s.getJson(path, opts) }
+    const svc = new UpdateService({
+      webRoot: n.packageRoot, git: s.run, npm: n.npm, getJson, identity: s.identity, webuiVersion: 'web-v1.0.0',
+      stateDir: tmp(), agentDir: () => null, channel: () => 'stable', includeAgent: () => false, checkEnabled: () => true,
+      blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
+      scheduleRestart: () => undefined, log: () => undefined,
+    })
+    const webView = (): Dict => updatesCheckView(svc.cachedStatus(false, 'stable')).webui as Dict
+    const offered = (await svc.check(true, false, 'stable')).webui as Dict
+    expect(webView()).toMatchObject({ current_version: 'web-v1.0.0', behind: 1, can_apply: true })
+    releaseReads = 0
+    expect(await svc.apply('webui', 'stable')).toMatchObject({ ok: true, restart_scheduled: true })
+    const installed = { current_version: offered.latest_version, current_sha: offered.latest_sha, behind: 0, state: 'up_to_date', can_apply: false }
+    expect(webView()).toMatchObject(installed)
+    const refresh = (svc as unknown as { checking: Promise<Dict> | null }).checking
+    expect(refresh).not.toBeNull()
+    await refresh
+    expect(releaseReads).toBeGreaterThan(0)
+    // The pending restart still runs the old process; the refreshed status keeps the installed package.
+    expect(webView()).toMatchObject(installed)
   })
 
   it.each(['failure', 'bad-stamp', 'empty-dependency'] as const)('fails closed when the npm replacement is %s', async (outcome) => {
@@ -1671,15 +1697,15 @@ describe('Agent checkout updates', () => {
   })
 
   /** TAL-350: a service whose Web root owns this test's `sidecar/agent_support.json` (`undefined` leaves it missing). */
-  function windowService(a: { agent: string }, support: unknown, opts: { agentChannel?: 'stable' | 'experimental'; pin?: string } = {}): UpdateService {
+  function windowService(a: { agent: string }, support: unknown, opts: { agentChannel?: 'stable' | 'experimental'; pin?: string; deps?: Partial<UpdateServiceDeps>; onGit?: (args: string[]) => GitOutcome | undefined } = {}): UpdateService {
     const s = sourceInstall()
     if (support !== undefined) write(join(web(s.client), 'sidecar/agent_support.json'), typeof support === 'string' ? support : JSON.stringify(support))
     if (opts.pin) s.id.release = { ...s.id.release, compatibleAgent: { ...(s.id.release.compatibleAgent as Dict), sourceRevision: opts.pin } }
     return new UpdateService({
-      webRoot: web(s.client), git: (args, cwd, timeout) => cwd === a.agent ? runGit(args, cwd, timeout) : s.run(args, cwd, timeout), getJson: noReleases, identity: s.identity, webuiVersion: 'test',
+      webRoot: web(s.client), git: (args, cwd, timeout) => cwd === a.agent ? Promise.resolve(opts.onGit?.(args)).then((stub) => stub ?? runGit(args, cwd, timeout)) : s.run(args, cwd, timeout), getJson: noReleases, identity: s.identity, webuiVersion: 'test',
       agentDir: () => a.agent, channel: () => 'experimental', agentChannel: () => opts.agentChannel ?? 'stable', includeAgent: () => true,
       blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
-      scheduleRestart: () => undefined, log: () => undefined,
+      scheduleRestart: () => undefined, log: () => undefined, ...opts.deps,
     })
   }
   const verified = (...revisions: string[]): Dict => ({ schemaVersion: 1, releases: revisions.map((sourceRevision, i) => ({ releaseTag: `v${i + 1}.0.0`, version: `${i + 1}.0.0`, sourceRevision })) })
@@ -2584,6 +2610,110 @@ describe('Agent checkout updates', () => {
     expect(await applyAgentUpdate(r.agent, runGit, 'experimental', policy, 'v0.21.6')).toMatchObject(experimental)
     expect(await forceAgentUpdate(r.agent, runGit, () => undefined, 'experimental', policy, 'v0.21.6')).toMatchObject(experimental)
     expect(git(r.agent, 'rev-parse', 'HEAD')).toBe(r.v5)
+  })
+
+  /** TAL-1525: `a`'s service counting Agent fetches; `failFetch` answers them like an unreachable remote. */
+  function refreshService(a: { agent: string; v1: string; v2: string }, deps: Partial<UpdateServiceDeps> = {}, support: unknown = verified(a.v1, a.v2)) {
+    const counters = { fetches: 0, failFetch: false }
+    const svc = windowService(a, support, { deps, onGit: (args) => {
+      if (args[0] !== 'fetch') return undefined
+      counters.fetches += 1
+      return counters.failFetch ? { ok: false, out: 'synthetic: remote unreachable' } : undefined
+    } })
+    return { svc, counters, inFlight: () => (svc as unknown as { checking: Promise<Dict> | null }).checking }
+  }
+  const agentView = (svc: UpdateService): Dict => updatesCheckView(svc.cachedStatus()).agent as Dict
+  const installedV2 = (a: { v2: string }) => ({ current_sha: a.v2, current_version: 'v2.0.0', behind: 0, state: 'up_to_date', can_apply: false })
+
+  it.each(['finishAgent', 'agentMutation'] as const)('reports the installed Agent as soon as a %s update settles and refreshes once in the background (TAL-1525)', async (path) => {
+    const a = agentInstall()
+    const restarts: string[] = []
+    const { svc, counters, inFlight } = refreshService(a, {
+      scheduleRestart: () => restarts.push('restart'),
+      // The sidecar path records its dependency-sync intent in Web's state directory.
+      ...(path === 'agentMutation' ? { stateDir: tmp(), agentMutation: (_path: string, _revision: string, mutate: (git: GitRun, sync: UpdateServiceDeps['agentSync']) => Promise<Dict>) => mutate(runGit, undefined).then((result) => ({ ...result, restart_scheduled: true })) } : {}),
+    })
+    expect(agentView(svc)).toBeNull()
+    await svc.check(true)
+    expect(agentView(svc)).toMatchObject({ current_sha: a.v1, behind: 1, can_apply: true })
+    svc.stopAutoApply()
+    expect(await svc.apply('agent')).toMatchObject({ ok: true, verified_revision: a.v2, restart_scheduled: true })
+    counters.fetches = 0
+    expect(restarts).toEqual(['restart'])
+    // The poll answers the installed release before any check runs.
+    expect(agentView(svc)).toMatchObject(installedV2(a))
+    const refresh = inFlight()
+    expect(refresh).not.toBeNull()
+    await refresh
+    expect(counters.fetches).toBe(1)
+    expect(agentView(svc)).toMatchObject(installedV2(a))
+    expect(inFlight()).toBeNull()
+  })
+
+  it('reports the installed Agent after retained recovery completes (TAL-1525)', async () => {
+    const a = agentInstall()
+    let owed = true
+    const recover = vi.fn((probe = false) => {
+      // The retained transaction finishes the interrupted update: the checkout reaches the selected release.
+      if (!probe) { git(a.agent, 'merge', '--ff-only', '--quiet', 'v2.0.0'); owed = false }
+      return Promise.resolve({ ok: !probe, owed, fingerprint: owed ? 'receipt' : '', detail: '', revision: a.v2 })
+    })
+    const { svc, counters, inFlight } = refreshService(a, { recoverAgent: recover, hasPendingRecovery: () => owed, checkEnabled: () => true })
+    await svc.check(true)
+    counters.fetches = 0
+    vi.useFakeTimers()
+    try {
+      svc.startAutoApply(60 * 60 * 1000)
+      await vi.waitFor(() => { expect(svc.cachedStatus().agent_recovery).toMatchObject({ phase: 'complete' }) })
+    } finally { svc.stopAutoApply(); vi.useRealTimers() }
+    expect(agentView(svc)).toMatchObject(installedV2(a))
+    await inFlight()
+    expect(agentView(svc)).toMatchObject(installedV2(a))
+  })
+
+  it('keeps the installed Agent when the refresh after an update cannot reach the remote (TAL-1525)', async () => {
+    const a = agentInstall()
+    const { svc, counters, inFlight } = refreshService(a, { scheduleRestart: () => { counters.failFetch = true } })
+    await svc.check(true)
+    expect(await svc.apply('agent')).toMatchObject({ ok: true })
+    await inFlight()
+    expect(counters.failFetch).toBe(true)
+    expect(agentView(svc)).toMatchObject({ ...installedV2(a), stale_check: true })
+  })
+
+  it('refreshes only the local Agent identity while update checks are off (TAL-1525)', async () => {
+    const a = agentInstall()
+    const { svc, counters, inFlight } = refreshService(a, { checkEnabled: () => false })
+    await svc.check(true)
+    counters.fetches = 0
+    expect(await svc.apply('agent')).toMatchObject({ ok: true })
+    const applyFetches = counters.fetches
+    expect(agentView(svc)).toMatchObject(installedV2(a))
+    expect(inFlight()).toBeNull()
+    expect(counters.fetches).toBe(applyFetches)
+  })
+
+  it('leaves the cached Agent unchanged after a refused update (TAL-1525)', async () => {
+    const a = agentInstall()
+    const { svc, inFlight } = refreshService(a, {}, verified(a.v1))
+    await svc.check(true)
+    const before = agentView(svc)
+    expect(await svc.apply('agent')).toMatchObject({ ok: false, confirmation_required: true })
+    expect(agentView(svc)).toEqual(before)
+    expect(inFlight()).toBeNull()
+  })
+
+  it('concurrent invalidations share one background check (TAL-1525)', async () => {
+    const a = agentInstall()
+    const { svc, counters, inFlight } = refreshService(a)
+    await svc.check(true)
+    counters.fetches = 0
+    git(a.agent, 'merge', '--ff-only', '--quiet', 'v2.0.0')
+    const invalidate = (svc as unknown as { invalidate: (target: 'agent') => Promise<void> }).invalidate.bind(svc)
+    await Promise.all([invalidate('agent'), invalidate('agent')])
+    expect(agentView(svc)).toMatchObject(installedV2(a))
+    await inFlight()
+    expect(counters.fetches).toBe(1)
   })
 })
 
