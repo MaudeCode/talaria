@@ -25,11 +25,14 @@ final class DuoFoldHostedTests: XCTestCase {
     private func openChatOnInnerDisplay(
         _ scenario: [String] = [],
         size inner: CGSize = HostedSize.duoInner,
+        animationsEnabled: Bool = false,
         list: (FixtureApp) async throws -> AnyView = { AnyView($0.sessionList()) }
     ) async throws -> Folding {
         let fixture = try FixtureApp(scenario, for: self)
         let display = HostedDuoDisplay()
-        let window = try hostWindow(FoldingDisplay(display: display, content: try await list(fixture)), size: inner) {
+        let window = try hostWindow(
+            FoldingDisplay(display: display, content: try await list(fixture)), size: inner, animationsEnabled: animationsEnabled
+        ) {
             $0.horizontalSizeClass = .regular
             $0.verticalSizeClass = .regular
         }
@@ -213,6 +216,109 @@ final class DuoFoldHostedTests: XCTestCase {
         XCTAssertTrue(kept, "Files beside the chat did not come back when the Duo opened")
     }
 
+    /// Opening the Duo slides the sidebar column in beside the same chat, in the session list's one fold animation
+    /// (TAL-1482); closing it crossfades in the same animation.
+    func testOpeningTheDuoSlidesTheSidebarInBesideTheSameChat() async throws {
+        let transactions = FoldTransactions()
+        let chats = ChatViewModelCache()
+        var session: SessionSummary!
+        let folding = try await openChatOnInnerDisplay(animationsEnabled: true) { fixture in
+            session = try await fixture.session()
+            return AnyView(fixture.sessionList(chats: chats).environment(\.foldTransactionsForTesting, transactions.record))
+        }
+        let viewModel = try XCTUnwrap(chats.chat(for: session, server: UITestFixtureEnvironment.serverURL) {
+            XCTFail("The open chat has no view model")
+            return ChatViewModel(session: session, server: UITestFixtureEnvironment.serverURL)
+        }.viewModel)
+        let animation = SessionListMotion.foldAnimation(reduceMotion: false)
+        XCTAssertFalse(transactions.animations.contains(animation), "The first launch played the fold animation")
+
+        for closed in [true, false] {
+            transactions.animations.removeAll()
+            let sidebarOffsets = closed ? [] : await sampleSidebarOffsets(while: { fold(folding, closed: false) }, in: folding.window)
+            if closed { fold(folding, closed: true) }
+            let moment = closed ? "Closing" : "Opening"
+            XCTAssertTrue(transactions.animations.contains(animation), "\(moment) the Duo did not animate: \(transactions.animations)")
+            let kept = chats.chat(for: session, server: UITestFixtureEnvironment.serverURL) {
+                XCTFail("The chat's view model was not kept")
+                return viewModel
+            }
+            XCTAssertTrue(kept.viewModel === viewModel, "The chat has a new view model after \(moment.lowercased())")
+            if !closed {
+                XCTAssertTrue(sidebarOffsets.contains { $0 < -1 }, "The sidebar column did not slide in, it was at \(sidebarOffsets)")
+            }
+        }
+
+        let window = folding.window
+        let split = try XCTUnwrap(HostedAccessibility.splitViewController(under: window.rootViewController))
+        let sidebar = try XCTUnwrap(split.viewController(for: .primary)?.view)
+        let landed = await awaitCondition {
+            split.displayMode == .oneBesideSecondary && abs(sidebar.convert(sidebar.bounds, to: window).minX) < 1
+        }
+        XCTAssertTrue(landed, "The sidebar column never reached its place: \(split.displayMode.rawValue), "
+            + "\(sidebar.convert(sidebar.bounds, to: window))")
+        XCTAssertEqual(sidebar.bounds.width, split.primaryColumnWidth, accuracy: 1)
+    }
+
+    /// Where the shown sidebar column's leading edge is on screen, frame by frame, while `change` plays out.
+    private func sampleSidebarOffsets(while change: () -> Void, in window: UIWindow) async -> [CGFloat] {
+        var offsets: [CGFloat] = []
+        let link = HostedFrameLink {
+            guard let split = HostedAccessibility.splitViewController(under: window.rootViewController),
+                  split.displayMode == .oneBesideSecondary,
+                  let layer = split.viewController(for: .primary)?.view.layer, layer.superlayer != nil
+            else { return }
+            let presented = layer.presentation() ?? layer
+            offsets.append(presented.convert(presented.bounds, to: nil).minX)
+        }
+        change()
+        // Sleeping, not `settle()`: the reveal is queued on the main queue, which this test's own job holds.
+        try? await Task.sleep(for: .seconds(1.5))
+        link.invalidate()
+        return offsets
+    }
+
+    func testReduceMotionCrossfadesTheFold() async throws {
+        let transactions = FoldTransactions()
+        let folding = try await openChatOnInnerDisplay(animationsEnabled: true) {
+            AnyView($0.sessionList()
+                .environment(\.foldTransactionsForTesting, transactions.record)
+                .environment(\.reduceMotionForTesting, true))
+        }
+        for closed in [true, false] {
+            transactions.animations.removeAll()
+            let sidebarOffsets = await sampleSidebarOffsets(while: { fold(folding, closed: closed) }, in: folding.window)
+            XCTAssertTrue(transactions.animations.contains(SessionListMotion.foldAnimation(reduceMotion: true)),
+                "\(closed ? "Closing" : "Opening") the Duo did not crossfade: \(transactions.animations)")
+            XCTAssertFalse(transactions.animations.contains(SessionListMotion.foldAnimation(reduceMotion: false)),
+                "Reduce Motion still played the sliding animation")
+            XCTAssertFalse(sidebarOffsets.contains { $0 < -1 }, "Reduce Motion still slid the sidebar in: \(sidebarOffsets)")
+        }
+    }
+
+    /// Only a size-class change animates: not the first launch at regular width, and not switching servers, which
+    /// rebuilds the list (`ContentView`'s `.id(server)`).
+    func testLaunchingAndSwitchingServersAnimateNothing() async throws {
+        let transactions = FoldTransactions()
+        let fixture = try FixtureApp(for: self)
+        let server = HostedServerSwitch()
+        let window = try hostWindow(
+            ServerSwitchingDisplay(server: server, content: AnyView(
+                fixture.sessionList().environment(\.foldTransactionsForTesting, transactions.record))),
+            size: HostedSize.duoInner, animationsEnabled: true
+        ) {
+            $0.horizontalSizeClass = .regular
+            $0.verticalSizeClass = .regular
+        }
+        _ = try await requireElement(in: window, label: "Notifications")
+        server.revision += 1
+        settle(0.5)
+        _ = try await requireElement(in: window, label: "Notifications")
+        XCTAssertFalse(transactions.animations.contains(SessionListMotion.foldAnimation(reduceMotion: false)),
+            "Launching or switching servers played the fold animation")
+        XCTAssertTrue(transactions.animations.count > 0, "The list's transactions were never recorded")
+    }
+
     private func showsFiles(in window: UIWindow) -> Bool {
         allElements(in: window).contains { $0.accessibilityLabel == "Search files" }
     }
@@ -290,6 +396,47 @@ private struct FoldingDisplay: View {
 
     var body: some View {
         content.environment(\.horizontalSizeClass, display.sizeClass)
+    }
+}
+
+/// Calls its action on every display frame until invalidated.
+@MainActor
+private final class HostedFrameLink: NSObject {
+    private let action: () -> Void
+    private var link: CADisplayLink?
+
+    init(_ action: @escaping () -> Void) {
+        self.action = action
+        super.init()
+        let link = CADisplayLink(target: self, selector: #selector(tick))
+        link.add(to: .main, forMode: .common)
+        self.link = link
+    }
+
+    @objc private func tick() { action() }
+
+    func invalidate() { link?.invalidate() }
+}
+
+/// The animation of every transaction that updated the session list's layouts (TAL-1482). Only the main actor records.
+private final class FoldTransactions: @unchecked Sendable {
+    var animations: [Animation?] = []
+    func record(_ animation: Animation?) { animations.append(animation) }
+}
+
+/// A server switch, which rebuilds the list from scratch as `ContentView`'s `.id(server)` does.
+@MainActor
+@Observable
+private final class HostedServerSwitch {
+    var revision = 0
+}
+
+private struct ServerSwitchingDisplay: View {
+    let server: HostedServerSwitch
+    let content: AnyView
+
+    var body: some View {
+        content.id(server.revision)
     }
 }
 

@@ -104,7 +104,27 @@ enum SessionListMotion {
     static func toastTransition(reduceMotion: Bool) -> AnyTransition {
         reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom))
     }
+
+    /// Opening or closing an iPhone Duo, or resizing an iPad window across the size-class boundary (TAL-1482): the two
+    /// layouts crossfade and the sidebar column slides in beside the chat. Reduce Motion crossfades only.
+    static func foldAnimation(reduceMotion: Bool) -> Animation {
+        reduceMotion ? .easeInOut(duration: 0.15) : .smooth(duration: 0.35, extraBounce: 0)
+    }
+
+    /// A chat's companion page fades in just after the layout it joins (TAL-1482).
+    static func companionPageAnimation(reduceMotion: Bool) -> Animation {
+        foldAnimation(reduceMotion: reduceMotion).delay(0.12)
+    }
 }
+
+#if DEBUG
+extension EnvironmentValues {
+    /// Receives the animation of every transaction that updates the session list's layouts (TAL-1482).
+    @Entry var foldTransactionsForTesting: ((Animation?) -> Void)? = nil
+    /// Reduce Motion for the session list, which the system setting otherwise decides.
+    @Entry var reduceMotionForTesting: Bool? = nil
+}
+#endif
 
 /// Offers to undo the latest chat archive (TAL-443), worded like the Kanban
 /// archive-undo banner. A failed undo stays with Try Again until it succeeds or

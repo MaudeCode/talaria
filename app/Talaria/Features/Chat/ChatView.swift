@@ -115,6 +115,7 @@ struct ChatView: View {
     @State private var chatAreaWidth: CGFloat?
     /// The chat's frame, bars included: the size the companion page's split rule reads (TAL-1458).
     @State private var arrangementSize: CGSize = .zero
+    @State private var companionPageIsShown = false
     @AppStorage(AppHaptics.isEnabledKey) private var isHapticsEnabled = true
     @AppStorage(StreamingSendBehavior.storageKey) private var streamingSendBehaviorRawValue = StreamingSendBehavior.steer.rawValue
     @AppStorage(ResponseCompletionNotifications.isEnabledKey) private var isResponseCompletionNotificationsEnabled = false
@@ -906,6 +907,14 @@ struct ChatView: View {
                         chat
                     } secondary: {
                         ChatCompanionPage(viewModel: viewModel, session: session, server: server, onAPIError: onAPIError)
+                            // It fades in once the chat has made room for it, as when opening the Duo (TAL-1482).
+                            .opacity(companionPageIsShown ? 1 : 0)
+                            .onAppear {
+                                withAnimation(SessionListMotion.companionPageAnimation(reduceMotion: reduceMotion)) {
+                                    companionPageIsShown = true
+                                }
+                            }
+                            .onDisappear { companionPageIsShown = false }
                     }
                     .arrangementViewStyle(.split.axes(.horizontal))
                 } else {

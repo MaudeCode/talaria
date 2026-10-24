@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Opening the iPhone Duo slides the sidebar in beside the chat and fades in the companion page, and closing it crossfades, instead of a hard cut. With Reduce Motion on, both crossfade.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}
