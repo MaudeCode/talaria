@@ -1,4 +1,4 @@
-/// Visibility policy for existing actions in the system's vertical toolbar.
+/// Visibility policy for system toolbar actions on either axis.
 public enum ToolbarAction: CaseIterable, Sendable {
     case chatGoal, chatFiles, chatGit, chatBackgroundTasks, chatQueuedMessages
     case newChat, drawer, notifications, selectChats, chatsRefresh
@@ -9,11 +9,12 @@ public enum ToolbarAction: CaseIterable, Sendable {
         case high, standard, low
     }
 
-    public var priority: Priority {
-        switch self {
-        case .chatGoal, .chatFiles, .chatBackgroundTasks, .chatQueuedMessages, .newChat, .drawer, .create, .commit, .done: .high
+    public func priority(isVerticalBar: Bool) -> Priority {
+        return switch self {
+        case .chatBackgroundTasks, .chatQueuedMessages: .high
+        case .chatGoal, .chatFiles, .newChat, .drawer, .create, .commit, .done: isVerticalBar ? .high : .standard
         case .chatGit, .notifications, .refresh: .standard
-        case .selectChats, .chatsRefresh, .secondary, .share: .low
+        case .selectChats, .chatsRefresh, .secondary, .share: isVerticalBar ? .low : .standard
         }
     }
 }
