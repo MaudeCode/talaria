@@ -12,11 +12,6 @@ public enum SessionNavigationDestination: Hashable, Identifiable {
         return session.sessionId
     }
 
-    public var compactRootUtility: SessionListUtilityDestination? {
-        guard case .utility(let utility) = self, !utility.listsSessions else { return nil }
-        return utility
-    }
-
     /// Scheduled and webhook lists show the session list's own rows, so the list keeps polling
     /// while they are on screen (TAL-434).
     public var showsSessionListRows: Bool {
@@ -26,11 +21,6 @@ public enum SessionNavigationDestination: Hashable, Identifiable {
         default:
             return false
         }
-    }
-
-    public var compactPushedDestination: Self? {
-        guard compactRootUtility == nil else { return nil }
-        return self
     }
 }
 
@@ -52,25 +42,24 @@ public struct SessionNavigationState: Equatable {
     public var chatShowsCompanionPage = false
     public private(set) var lastSelectedSessionID: String?
     public private(set) var rootRevision = 0
-    /// What the regular-width sidebar column shows. A chat opened from Archived, Scheduled or
-    /// Webhook keeps that list as its section (TAL-643).
+    /// Changes only when a chat root is replaced or cleared.
+    public private(set) var chatRootRevision = 0
+    public var selectedSectionSession: SessionSummary?
+    /// The current root; the sidebar always remains the Chats panel.
     public private(set) var section = AppSection.chats {
         didSet {
-            // An item belongs to its section; Chats must not keep showing a settings page.
+            // Inner pages belong to their section root.
             guard section != oldValue else { return }
             selectedItem = nil
         }
     }
-    /// The current section's selected item. Kept here, outside both width branches, so a size
-    /// class change keeps it: the pushed page at compact width is the detail at regular width.
+    /// The current section's pushed item, kept outside both layouts so folding preserves the path.
     public var selectedItem: SectionItem? {
         didSet {
             guard selectedItem != oldValue else { return }
-            pushesProviderQuotaWidget = false
+            selectedSectionSession = nil
         }
     }
-    /// The quota widget's appearance page is pushed over Live Activities & Widgets.
-    public var pushesProviderQuotaWidget = false
     private var newChatSessionID: String?
     private var deepLinkedSessionLoadID: String?
     private var startedOpens = 0
@@ -95,49 +84,40 @@ public struct SessionNavigationState: Equatable {
         return newChatSessionID == nil
     }
 
-    /// `list` is the chat list the session was opened from, which stays in the sidebar.
-    public mutating func select(_ session: SessionSummary, in list: AppSection = .chats) {
+    /// Selecting a chat replaces the root and clears its inner pages.
+    public mutating func select(_ session: SessionSummary) {
         rootRevision += 1
+        chatRootRevision += 1
+        selectedSectionSession = nil
         newChatSessionID = nil
         destination = .session(session)
-        section = list
+        section = .chats
         remember(session)
     }
 
     public mutating func select(_ route: PendingNewChatRoute) {
         rootRevision += 1
+        chatRootRevision += 1
+        selectedSectionSession = nil
         newChatSessionID = nil
         destination = .newChat(route)
         section = .chats
     }
 
-    /// Entering a section starts from its default item, or from the page an anchor names.
+    /// Entering a section replaces the root and clears its inner pages.
     public mutating func select(_ utility: SessionListUtilityDestination) {
+        guard let root = AppSection(utility) else { return }
         rootRevision += 1
         newChatSessionID = nil
         destination = .utility(utility)
-        section = AppSection(utility)
-        selectedItem = SectionItem(entering: utility)
-        pushesProviderQuotaWidget = utility == .providerQuotaWidgetSettings
+        section = root
+        selectedSectionSession = nil
+        selectedItem = nil
     }
 
-    /// The regular-width detail column's item: the selected one, or the section's default.
-    public var displayedItem: SectionItem? {
-        selectedItem ?? section.defaultItem
-    }
-
-    /// Called when the width turns compact, so the page the detail column showed is pushed.
-    public mutating func pinDisplayedItem() {
-        selectedItem = displayedItem
-    }
-
-    /// The back control of the Archived, Scheduled and Webhook sidebars. An open chat stays open.
-    public mutating func returnToChats() {
-        guard case .utility = destination else {
-            section = .chats
-            return
-        }
-        clearDestination()
+    public mutating func pushSectionSession(_ session: SessionSummary) {
+        rootRevision += 1
+        selectedSectionSession = session
     }
 
     public mutating func remember(_ session: SessionSummary) {
@@ -153,8 +133,11 @@ public struct SessionNavigationState: Equatable {
     /// destination it replaces must not reinstate it.
     public mutating func clearDestination() {
         rootRevision += 1
+        selectedSectionSession = nil
+        chatRootRevision += 1
         destination = nil
         newChatSessionID = nil
+        selectedItem = nil
         section = .chats
     }
 
@@ -215,9 +198,11 @@ public struct SessionNavigationState: Equatable {
     public mutating func remove(sessionID: String?) {
         guard let sessionID = Self.normalized(sessionID) else { return }
 
-        if selectedSessionID == sessionID {
-            // A chat list in the sidebar stays there with nothing beside it.
-            destination = section.chatList.map { .utility($0) }
+        if selectedSectionSession?.sessionId == sessionID { selectedSectionSession = nil }
+        if destination?.selectedSessionID == sessionID || newChatSessionID == sessionID {
+            chatRootRevision += 1
+            destination = nil
+            section = .chats
             newChatSessionID = nil
         }
 

@@ -7,7 +7,21 @@ struct ActiveProfilePickerRow: View {
     let isSwitching: Bool
     let action: () -> Void
 
+    var isMenuItem = false
+
+    @ViewBuilder
     var body: some View {
+        if isMenuItem {
+            Button(action: action) {
+                Label(profile.displayName, systemImage: isSelected ? "checkmark" : "person")
+            }
+            .accessibilityLabel(accessibilityLabel)
+        } else {
+            regularRow
+        }
+    }
+
+    private var regularRow: some View {
         Button(action: action) {
             HStack(spacing: 18) {
                 SidebarUtilityIcon(

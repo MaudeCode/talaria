@@ -4,6 +4,9 @@ struct SettingsPickerSearchField: View {
     @Binding var text: String
     let prompt: LocalizedStringKey
     let clearLabel: LocalizedStringKey
+    var autofocus = false
+    var onClose: (() -> Void)? = nil
+    @FocusState private var isFocused: Bool
 
     var body: some View {
         HStack(spacing: 8) {
@@ -14,12 +17,15 @@ struct SettingsPickerSearchField: View {
 
             TextField(prompt, text: $text)
                 .font(.subheadline)
+                .focused($isFocused)
+                .task { if autofocus { isFocused = true } }
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
 
-            if !text.isEmpty {
+            if onClose != nil || !text.isEmpty {
                 Button {
-                    text = ""
+                    if let onClose { onClose() }
+                    else { text = "" }
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.caption)

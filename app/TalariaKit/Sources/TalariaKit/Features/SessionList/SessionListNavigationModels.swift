@@ -73,17 +73,6 @@ public struct AvatarServerSwitcherModel: Equatable {
     }
 }
 
-public enum AppSidebarDestination: Hashable {
-    case chats
-    case tasks
-    case kanban
-    case skills
-    case memory
-    case insights
-    case quota(String)
-    case settings
-}
-
 /// Where the screen and the sidebar sit as the sidebar goes from closed (0) to open (1), in
 /// leading-edge points. The screen slides aside to reveal the sidebar, except beside a vertical
 /// bar: the bar is window chrome that cannot move with the screen, so there the sidebar slides
@@ -92,17 +81,19 @@ public struct AppSidebarSlide: Equatable {
     public var revealWidth: CGFloat
     public var leadingInset: CGFloat
     public var presentsOver: Bool
+    public var trailingInset: CGFloat
 
-    public init(revealWidth: CGFloat, leadingInset: CGFloat, presentsOver: Bool) {
+    public init(revealWidth: CGFloat, leadingInset: CGFloat, presentsOver: Bool, trailingInset: CGFloat = 0) {
         self.revealWidth = revealWidth
         self.leadingInset = leadingInset
         self.presentsOver = presentsOver
+        self.trailingInset = trailingInset
     }
 
     /// How far the moving view travels: the screen by the reveal width, or the sidebar by its
     /// whole width, leading inset included.
     private var travel: CGFloat {
-        presentsOver ? leadingInset + revealWidth : revealWidth
+        presentsOver ? leadingInset + revealWidth + trailingInset : revealWidth
     }
 
     public func surfaceOffset(progress: CGFloat) -> CGFloat {

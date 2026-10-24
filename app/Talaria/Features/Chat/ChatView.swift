@@ -73,16 +73,15 @@ private enum TurnDiffPresentation: Identifiable {
     }
 }
 
-/// The regular-width split view's part in a chat's Files inspector (TAL-1453): the window's presented state, which it
-/// keeps, whether it hides its sidebar column so the inspector fits beside the chat, and where the chat reports that it
-/// shows the inspector. TAL-1458: also whether the chat may show its companion page beside it, and where it reports
-/// that it has one, which can hide the sidebar column the same way.
+/// The window owns Files presentation and makes room for it (TAL-1453/1477). Its chat reports the
+/// current session and whether Files or a companion page needs that room (TAL-1458).
 struct SplitFilesInspector {
     static let storageKey = "chat.filesInspectorPresented"
 
     let isPresented: Binding<Bool>
     let widensChat: Bool
     let reportShown: (Bool) -> Void
+    var reportSession: (SessionSummary) -> Void = { _ in }
     var offersCompanionPage = false
     var reportCompanionPage: (Bool) -> Void = { _ in }
 }
@@ -108,11 +107,6 @@ struct ChatView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
-    /// Device-local, per window: whether a wide chat shows Files beside it (TAL-479). The session list keeps its own
-    /// copy, which `splitFilesInspector` carries.
-    @SceneStorage(SplitFilesInspector.storageKey) private var storedFilesInspectorPresented = false
-    /// The chat's width including any Files inspector; nil until measured.
-    @State private var chatAreaWidth: CGFloat?
     /// The chat's frame, bars included: the size the companion page's split rule reads (TAL-1458).
     @State private var arrangementSize: CGSize = .zero
     @AppStorage(AppHaptics.isEnabledKey) private var isHapticsEnabled = true
@@ -779,18 +773,13 @@ struct ChatView: View {
 
     private var chatWithToolbar: some View {
         chatWithVisibility
-            // Before `.toolbar`: applied after it, the inspector hides the chat's navigation bar.
-            .inspector(isPresented: filesInspectorIsPresented) {
-                // Built only while shown: a hidden browser's "Files" title replaces the chat's.
-                if filesInspectorIsPresented.wrappedValue {
-                    FilesInspectorContent(session: session, server: server, onAPIError: onAPIError)
-                        .inspectorColumnWidth(min: 280, ideal: 340, max: 520)
-                }
-            }
-            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { chatAreaWidth = $0 }
             .onChange(of: showsFilesInspector, initial: true) { splitFilesInspector?.reportShown(showsFilesInspector) }
             .onChange(of: showsCompanionPage, initial: true) { splitFilesInspector?.reportCompanionPage(showsCompanionPage) }
-            // Outside the inspector, which otherwise keeps the title from the navigation bar.
+            .onAppear {
+                splitFilesInspector?.reportSession(session)
+                splitFilesInspector?.reportShown(showsFilesInspector)
+            }
+            .onChange(of: session) { _, session in splitFilesInspector?.reportSession(session) }
             .navigationTitle(displayTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -834,7 +823,7 @@ struct ChatView: View {
     /// pushes the browser.
     @ViewBuilder
     private var filesButton: some View {
-        if fitsFilesInspector || splitFilesInspector?.widensChat == true {
+        if splitFilesInspector?.widensChat == true {
             Button {
                 isFilesInspectorPresented.toggle()
             } label: {
@@ -849,36 +838,14 @@ struct ChatView: View {
         }
     }
 
-    /// Whether the inspector sits beside the chat. Narrower, SwiftUI lays it over the chat, and one
-    /// still over it when the window turns compact stays behind as an empty sheet, so a narrow chat
-    /// hides the inspector and Files pushes instead. The narrowest measured side-by-side chat was
-    /// 753 pt (iPad mini, landscape); the widest overlaid, 652 pt (13-inch iPad, portrait).
-    // ponytail: measured threshold, not SwiftUI's rule; revisit if SwiftUI exposes the placement.
-    private var fitsFilesInspector: Bool {
-        (chatAreaWidth ?? 0) >= RegularSplitLayout.filesInspectorChatWidth
-    }
-
     private var isFilesInspectorPresented: Bool {
-        get { splitFilesInspector?.isPresented.wrappedValue ?? storedFilesInspectorPresented }
-        nonmutating set {
-            if let splitFilesInspector {
-                splitFilesInspector.isPresented.wrappedValue = newValue
-            } else {
-                storedFilesInspectorPresented = newValue
-            }
-        }
+        get { splitFilesInspector?.isPresented.wrappedValue ?? false }
+        nonmutating set { splitFilesInspector?.isPresented.wrappedValue = newValue }
     }
 
     /// Whether this chat shows Files beside it once it has the width. The companion page takes its place.
     private var showsFilesInspector: Bool {
         isFilesInspectorPresented && showsFilesButton && viewModel.hasSession && !companionPageIsBeside
-    }
-
-    private var filesInspectorIsPresented: Binding<Bool> {
-        Binding(
-            get: { isFilesInspectorPresented && showsFilesButton && fitsFilesInspector && !companionPageIsBeside },
-            set: { isFilesInspectorPresented = $0 }
-        )
     }
 
     /// Whether the chat has a companion page to show beside it (TAL-1458): an iOS 27.1 arrangement at regular width,

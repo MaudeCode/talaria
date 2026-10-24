@@ -139,7 +139,7 @@
 		C107K0000000000000000011 /* SessionExportShareSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000111 /* SessionExportShareSheet.swift */; };
 		C107K0000000000000000012 /* SidebarNavButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000112 /* SidebarNavButton.swift */; };
 		C107K0000000000000000013 /* AppSidebarContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000113 /* AppSidebarContainer.swift */; };
-		C107K0000000000000000014 /* AppSidebarDrawer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000114 /* AppSidebarDrawer.swift */; };
+		C107K0000000000000000014 /* AppSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000114 /* AppSidebar.swift */; };
 		C107K0000000000000000015 /* SidebarDisclosureButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000115 /* SidebarDisclosureButton.swift */; };
 		C107K0000000000000000016 /* SidebarDisclosureChevron.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000116 /* SidebarDisclosureChevron.swift */; };
 		C107K0000000000000000017 /* SidebarUtilityIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000117 /* SidebarUtilityIcon.swift */; };
@@ -570,7 +570,7 @@
 		C107K0000000000000000111 /* SessionExportShareSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionExportShareSheet.swift; sourceTree = "<group>"; };
 		C107K0000000000000000112 /* SidebarNavButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarNavButton.swift; sourceTree = "<group>"; };
 		C107K0000000000000000113 /* AppSidebarContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSidebarContainer.swift; sourceTree = "<group>"; };
-		C107K0000000000000000114 /* AppSidebarDrawer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSidebarDrawer.swift; sourceTree = "<group>"; };
+		C107K0000000000000000114 /* AppSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSidebar.swift; sourceTree = "<group>"; };
 		C107K0000000000000000115 /* SidebarDisclosureButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarDisclosureButton.swift; sourceTree = "<group>"; };
 		C107K0000000000000000116 /* SidebarDisclosureChevron.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarDisclosureChevron.swift; sourceTree = "<group>"; };
 		C107K0000000000000000117 /* SidebarUtilityIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarUtilityIcon.swift; sourceTree = "<group>"; };
@@ -1128,7 +1128,7 @@
 				C107K0000000000000000111 /* SessionExportShareSheet.swift */,
 				C107K0000000000000000112 /* SidebarNavButton.swift */,
 				C107K0000000000000000113 /* AppSidebarContainer.swift */,
-				C107K0000000000000000114 /* AppSidebarDrawer.swift */,
+				C107K0000000000000000114 /* AppSidebar.swift */,
 				C107K0000000000000000115 /* SidebarDisclosureButton.swift */,
 				C107K0000000000000000116 /* SidebarDisclosureChevron.swift */,
 				C107K0000000000000000117 /* SidebarUtilityIcon.swift */,
@@ -1957,7 +1957,7 @@
 				C107K0000000000000000011 /* SessionExportShareSheet.swift in Sources */,
 				C107K0000000000000000012 /* SidebarNavButton.swift in Sources */,
 				C107K0000000000000000013 /* AppSidebarContainer.swift in Sources */,
-				C107K0000000000000000014 /* AppSidebarDrawer.swift in Sources */,
+				C107K0000000000000000014 /* AppSidebar.swift in Sources */,
 				C107K0000000000000000015 /* SidebarDisclosureButton.swift in Sources */,
 				C107K0000000000000000016 /* SidebarDisclosureChevron.swift in Sources */,
 				C107K0000000000000000017 /* SidebarUtilityIcon.swift in Sources */,

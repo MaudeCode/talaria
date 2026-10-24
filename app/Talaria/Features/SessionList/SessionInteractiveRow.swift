@@ -4,11 +4,13 @@ import TalariaKit
 extension EnvironmentValues {
     /// The Duo's tent pose holds (TAL-1460): running and waiting rows render as run cards.
     @Entry var sessionRowsMonitorRuns = false
+    @Entry var sessionRowStyle = SessionRowStyle.regular
 }
 
 struct SessionInteractiveRow: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.sessionRowsMonitorRuns) private var monitorsRuns
+    @Environment(\.sessionRowStyle) private var rowStyle
     let viewModel: SessionListViewModel
     let session: SessionSummary
     let showsMessageCount: Bool
@@ -31,6 +33,12 @@ struct SessionInteractiveRow: View {
             }
             .contextMenu {
                 if !viewModel.isSelectingSessions {
+                    if rowStyle == .sidebar && viewModel.supportsBulkActions {
+                        Button { viewModel.beginSelectingSessions() } label: {
+                            Label("Select Chats…", systemImage: "checkmark.circle")
+                        }
+                        .disabled(viewModel.isViewingCachedData || viewModel.isPerformingBulkAction)
+                    }
                     SessionRowContextMenu(
                         session: session,
                         projects: viewModel.projects,
@@ -51,7 +59,9 @@ struct SessionInteractiveRow: View {
     /// run instead of opening the chat.
     @ViewBuilder
     private var rowContent: some View {
-        if monitorsRuns, let runStatus = SessionRunMonitor.runStatus(for: session) {
+        if rowStyle == .sidebar {
+            openButton(style: .sidebar)
+        } else if monitorsRuns, let runStatus = SessionRunMonitor.runStatus(for: session) {
             HStack(spacing: 12) {
                 openButton(style: .monitor(runStatus))
                 if !runStatus.isAwaitingUser {

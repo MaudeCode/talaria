@@ -1,11 +1,10 @@
 import SwiftUI
 import TalariaKit
 
-/// A section-list row that selects its item. The item's page shows beside the list at regular
-/// width and is pushed over it at compact width (TAL-643).
-struct SectionSelectionRow<Label: View>: View {
-    let item: SectionItem
-    @Binding var selection: SectionItem?
+/// A list row selecting a page within a section or Settings.
+struct SectionSelectionRow<Item: Hashable, Label: View>: View {
+    let item: Item
+    @Binding var selection: Item?
     @ViewBuilder let label: Label
 
     var body: some View {
@@ -53,6 +52,8 @@ struct SidebarList<Content: View>: View {
 /// A section heading inside a `SidebarList`, styled like Chats' "Sessions".
 struct SidebarSectionHeader<Trailing: View>: View {
     let title: String?
+    var topPadding: CGFloat = 16
+    var isCompact = false
     /// Makes the heading a button, for a collapsible section.
     var toggle: (() -> Void)?
     @ViewBuilder let trailing: Trailing
@@ -77,16 +78,18 @@ struct SidebarSectionHeader<Trailing: View>: View {
         HStack(spacing: 10) {
             if let title {
                 Text(title)
-                    .font(.title3.bold())
-                    .foregroundStyle(.primary)
+                    .font(isCompact ? .footnote.weight(.semibold) : .title3.bold())
+                    .foregroundStyle(isCompact ? Color.secondary : .primary)
+                    .textCase(nil)
                     .accessibilityAddTraits(.isHeader)
             }
             Spacer()
             trailing
         }
+        .frame(minHeight: isCompact && toggle != nil ? 24 : 0)
         .padding(.horizontal, 24)
-        .padding(.top, 16)
-        .padding(.bottom, 8)
+        .padding(.top, isCompact ? 16 : topPadding)
+        .padding(.bottom, isCompact ? 4 : 8)
     }
 }
 

@@ -12,7 +12,21 @@ struct ProjectFilterRow: View {
     let rename: () -> Void
     let delete: () -> Void
 
+    var isMenuItem = false
+
+    @ViewBuilder
     var body: some View {
+        if isMenuItem {
+            Button(action: action) {
+                Label(displayName, systemImage: isSelected ? "checkmark" : "folder")
+            }
+            .accessibilityLabel(displayName)
+        } else {
+            regularRow
+        }
+    }
+
+    private var regularRow: some View {
         HStack(spacing: 8) {
             Button(action: action) {
                 HStack(spacing: 18) {

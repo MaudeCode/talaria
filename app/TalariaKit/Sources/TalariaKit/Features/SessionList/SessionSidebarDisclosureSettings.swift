@@ -1,6 +1,8 @@
 import SwiftUI
 
 public enum SessionSidebarDisclosureSettings {
+    public static let regularPortraitVisibilityKey = "sessionSidebar.regular.portrait.visibility"
+    public static let regularLandscapeVisibilityKey = "sessionSidebar.regular.landscape.visibility"
     static let profilesAreExpandedKey = "sessionSidebar.profilesAreExpanded"
     static let projectsAreExpandedKey = "sessionSidebar.projectsAreExpanded"
     public static let scheduledSessionsAreExpandedKey = "sessionSidebar.scheduledSessionsAreExpanded"

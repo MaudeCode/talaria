@@ -2,11 +2,11 @@ import SwiftUI
 import TalariaKit
 import UIKit
 
-/// Whether the app sidebar is open. The container animates every change the moment it is made,
-/// and only the sidebar reads it in SwiftUI, so opening and closing never redraws the screen
-/// that owns it (TAL-477).
+/// Sidebar and search presentation read inside their hosting roots. The container animates the
+/// drawer directly, without redrawing the owning screen (TAL-477).
 @Observable
 final class AppSidebarPresentation {
+    var searchRequested = false
     var isPresented = false {
         didSet {
             guard isPresented != oldValue else { return }
@@ -22,17 +22,26 @@ final class AppSidebarPresentation {
 /// just picked in the sidebar (TAL-477).
 struct AppSidebarContainer<Sidebar: View, Content: View>: View {
     private let presentation: AppSidebarPresentation
+    private let fillsSafeArea: Bool
+    private let isEnabled: Bool
+    private let overlaysContent: Bool
     private let onPresentationChange: (Bool) -> Void
     private let sidebar: (Bool) -> Sidebar
     private let content: Content
 
     init(
         presentation: AppSidebarPresentation,
+        fillsSafeArea: Bool = false,
+        isEnabled: Bool = true,
+        overlaysContent: Bool = false,
         onPresentationChange: @escaping (Bool) -> Void,
         @ViewBuilder sidebar: @escaping (_ isPresented: Bool) -> Sidebar,
         @ViewBuilder content: () -> Content
     ) {
         self.presentation = presentation
+        self.fillsSafeArea = fillsSafeArea
+        self.isEnabled = isEnabled
+        self.overlaysContent = overlaysContent
         self.onPresentationChange = onPresentationChange
         self.sidebar = sidebar
         self.content = content()
@@ -43,15 +52,22 @@ struct AppSidebarContainer<Sidebar: View, Content: View>: View {
         // inside the window's safe area.
         AppSidebarHost(
             presentation: presentation,
+            fillsSafeArea: fillsSafeArea,
+            isEnabled: isEnabled,
+            overlaysContent: overlaysContent,
             sidebar: AnyView(AppSidebarRoot(presentation: presentation, sidebar: sidebar)),
-            content: AnyView(content),
+            content: AnyView(AppSidebarRoot(presentation: presentation) { isPresented in
+                content.transaction { transaction in
+                    if isPresented { transaction.disablesAnimations = true }
+                }
+            }),
             onPresentationChange: onPresentationChange
         )
         .ignoresSafeArea()
     }
 }
 
-/// Reads the presentation inside the sidebar's own hosting controller.
+/// Reads presentation inside each hosting controller without rebuilding the owning screen.
 private struct AppSidebarRoot<Sidebar: View>: View {
     let presentation: AppSidebarPresentation
     let sidebar: (Bool) -> Sidebar
@@ -63,6 +79,9 @@ private struct AppSidebarRoot<Sidebar: View>: View {
 
 private struct AppSidebarHost: UIViewControllerRepresentable {
     let presentation: AppSidebarPresentation
+    let fillsSafeArea: Bool
+    let isEnabled: Bool
+    let overlaysContent: Bool
     let sidebar: AnyView
     let content: AnyView
     let onPresentationChange: (Bool) -> Void
@@ -73,19 +92,24 @@ private struct AppSidebarHost: UIViewControllerRepresentable {
 
     func updateUIViewController(_ controller: AppSidebarController, context: Context) {
         let environment = context.environment
+        controller.fillsSafeArea = fillsSafeArea
+        controller.overlaysContent = overlaysContent
+        controller.isEnabled = isEnabled
         controller.onPresentationChange = onPresentationChange
         controller.isRightToLeft = environment.layoutDirection == .rightToLeft
         controller.reduceMotion = environment.accessibilityReduceMotion
         // Each hosting controller starts its own environment; hand it this one whole, so the
         // screens inside see the model context and everything else set above them.
-        controller.setRoots(
-            sidebar: AnyView(sidebar.environment(\.self, environment)),
-            content: AnyView(content.environment(\.self, environment))
-        )
+        withTransaction(context.transaction) {
+            controller.setRoots(
+                sidebar: AnyView(sidebar.environment(\.self, environment)),
+                content: AnyView(content.environment(\.self, environment))
+            )
+        }
     }
 }
 
-final class AppSidebarController: UIViewController {
+final class AppSidebarController: UIViewController, UIGestureRecognizerDelegate {
     private enum Motion {
         static let duration: TimeInterval = 0.28
         static let bounce: CGFloat = 0.15
@@ -105,7 +129,28 @@ final class AppSidebarController: UIViewController {
             view.setNeedsLayout()
         }
     }
+    var isEnabled = true {
+        didSet {
+            guard isViewLoaded, isEnabled != oldValue else { return }
+            edgePan.isEnabled = isEnabled
+            surfacePan.isEnabled = isEnabled
+            if !isEnabled {
+                stopSlide()
+                reflect(isPresented: false)
+                apply(progress: 0)
+            }
+        }
+    }
+    var overlaysContent = false {
+        didSet { if isViewLoaded { view.setNeedsLayout() } }
+    }
     var reduceMotion = false
+    var fillsSafeArea = false {
+        didSet {
+            guard fillsSafeArea != oldValue, isViewLoaded else { return }
+            view.setNeedsLayout()
+        }
+    }
 
     private let presentation: AppSidebarPresentation
     private let sidebarHost = UIHostingController(rootView: AnyView(EmptyView()))
@@ -158,6 +203,7 @@ final class AppSidebarController: UIViewController {
         tint.accessibilityElementsHidden = true
         tint.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tintTapped)))
         surfacePan.addTarget(self, action: #selector(surfacePanned(_:)))
+        surfacePan.delegate = self
         tint.addGestureRecognizer(surfacePan)
         clip.addSubview(tint)
 
@@ -166,6 +212,8 @@ final class AppSidebarController: UIViewController {
         edgePan.delegate = edgePanArbiter
         edgePan.addTarget(self, action: #selector(edgePanned(_:)))
         view.addGestureRecognizer(edgePan)
+        edgePan.isEnabled = isEnabled
+        surfacePan.isEnabled = isEnabled
 
         if #available(iOS 27.1, *) {
             registerForTraitChanges(UITraitCollection.systemTraitsAffectingVerticalBarEdge) { (self: Self, _) in
@@ -191,12 +239,16 @@ final class AppSidebarController: UIViewController {
             sidebarHost.view.backgroundColor = .clear
             view.sendSubviewToBack(sidebarHost.view)
         }
+        // A full-width host lets its native toolbar share the window's reserved vertical bar.
+        let sidebarWidth = fillsSafeArea ? bounds.width : leadingInset + width
         sidebarHost.view.frame = CGRect(
-            x: isRightToLeft ? bounds.width - leadingInset - width : 0,
+            x: isRightToLeft ? bounds.width - sidebarWidth : 0,
             y: 0,
-            width: leadingInset + width,
+            width: sidebarWidth,
             height: bounds.height
         )
+        let dragHost = fillsSafeArea ? sidebarHost.view! : tint
+        if surfacePan.view !== dragHost { dragHost.addGestureRecognizer(surfacePan) }
         surface.frame = bounds
         clip.frame = surface.bounds
         contentHost.view.frame = clip.bounds
@@ -211,7 +263,8 @@ final class AppSidebarController: UIViewController {
     /// The width the screen slides aside, measured inside the safe area (TAL-416).
     var revealWidth: CGFloat {
         let insets = view.safeAreaInsets
-        return min(360, (view.bounds.width - insets.left - insets.right) * 0.84)
+        let available = max(0, view.bounds.width - insets.left - insets.right)
+        return fillsSafeArea ? available : min(360, available * 0.84)
     }
 
     private var leadingInset: CGFloat {
@@ -225,6 +278,7 @@ final class AppSidebarController: UIViewController {
     /// A vertical bar is window chrome and stays put, so beside one the sidebar slides in over the
     /// screen instead of pushing the screen away from its bar (TAL-481).
     private var presentsOver: Bool {
+        if fillsSafeArea || overlaysContent { return true }
         if #available(iOS 27.1, *) {
             return traitCollection.verticalBarEdge != .unspecified
         }
@@ -232,7 +286,12 @@ final class AppSidebarController: UIViewController {
     }
 
     private var slide: AppSidebarSlide {
-        AppSidebarSlide(revealWidth: revealWidth, leadingInset: leadingInset, presentsOver: presentsOver)
+        AppSidebarSlide(
+            revealWidth: revealWidth,
+            leadingInset: leadingInset,
+            presentsOver: presentsOver,
+            trailingInset: fillsSafeArea ? (isRightToLeft ? view.safeAreaInsets.left : view.safeAreaInsets.right) : 0
+        )
     }
 
     /// The view that moves in the current mode.
@@ -285,6 +344,13 @@ final class AppSidebarController: UIViewController {
     /// Only actions and gestures change the presentation, never a SwiftUI update, so flushing
     /// here commits the slide on its own.
     private func presentationChanged(_ isPresented: Bool) {
+        guard isEnabled else {
+            reflect(isPresented: false)
+            apply(progress: 0)
+            return
+        }
+        if isPresented { contentHost.view.endEditing(true) }
+        else { sidebarHost.view.endEditing(true) }
         reflect(isPresented: isPresented)
         animate(to: isPresented ? 1 : 0)
         // Hand the slide to the render server now, before this turn's SwiftUI update builds
@@ -372,6 +438,7 @@ final class AppSidebarController: UIViewController {
     @objc private func edgePanned(_ recognizer: UIScreenEdgePanGestureRecognizer) {
         switch recognizer.state {
         case .began:
+            if !presentation.isPresented { contentHost.view.endEditing(true) }
             stopSlide()
         case .changed:
             apply(progress: dragProgress(recognizer.translation(in: nil).x))
@@ -389,6 +456,28 @@ final class AppSidebarController: UIViewController {
     }
 
     /// The open sidebar follows any mostly horizontal drag over the screen beside it.
+    /// Reserve only the drawer's trailing edge for closing, leaving row swipes and vertical scrolling intact.
+    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        guard isEnabled, presentation.isPresented, let pan = gestureRecognizer as? UIPanGestureRecognizer else { return false }
+        let velocity = pan.velocity(in: view)
+        guard abs(velocity.x) > abs(velocity.y) else { return false }
+        guard fillsSafeArea else { return true }
+        let point = pan.location(in: sidebarHost.view)
+        let translation = pan.translation(in: sidebarHost.view)
+        let startX = point.x - translation.x
+        let insets = sidebarHost.view.safeAreaInsets
+        let edge = AppSidebarGesturePolicy.edgeActivationWidth
+        let startsAtClosingEdge = isRightToLeft
+            ? startX <= insets.left + edge
+            : startX >= sidebarHost.view.bounds.width - insets.right - edge
+        return startsAtClosingEdge && velocity.x * direction < 0
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                           shouldBeRequiredToFailBy otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+        fillsSafeArea && gestureRecognizer === surfacePan && otherGestureRecognizer is UIPanGestureRecognizer
+    }
+
     @objc private func surfacePanned(_ recognizer: UIPanGestureRecognizer) {
         let translation = recognizer.translation(in: nil)
         let isHorizontal = translation == .zero || abs(translation.x) > abs(translation.y)

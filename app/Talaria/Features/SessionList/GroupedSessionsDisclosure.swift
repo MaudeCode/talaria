@@ -3,6 +3,7 @@ import TalariaKit
 
 struct GroupedSessionsDisclosure: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.sessionRowStyle) private var rowStyle
     let title: String
     let assetImage: String?
     let systemImage: String?
@@ -21,6 +22,7 @@ struct GroupedSessionsDisclosure: View {
     @Binding var userIsExpanded: Bool
     let actions: SessionListRowActions
     let viewAll: () -> Void
+    var showsHeading = true
 
     private var isExpanded: Bool { isSearchActive || userIsExpanded }
     private var displayedSessions: [SessionSummary] {
@@ -28,32 +30,16 @@ struct GroupedSessionsDisclosure: View {
     }
 
     var body: some View {
-        SidebarDisclosureButton(
-            title: title,
-            assetImage: assetImage,
-            systemImage: systemImage,
-            isExpanded: isExpanded
-        ) {
-            guard !isSearchActive else { return }
-            userIsExpanded.toggle()
-        } accessory: {
-            Text(verbatim: countIsPartial ? "\(totalCount.formatted())+" : totalCount.formatted())
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 2)
-                .background(.thinMaterial, in: Capsule())
+        if showsHeading {
+            header
+                .accessibilityLabel(
+                    isSearchActive
+                        ? title
+                        : isExpanded
+                            ? collapseAccessibilityLabel
+                            : expandAccessibilityLabel
+                )
         }
-        .padding(.horizontal, 24)
-        .padding(.top, isSearchActive ? 16 : 12)
-        .sessionsScreenListRow()
-        .accessibilityLabel(
-            isSearchActive
-                ? title
-                : isExpanded
-                    ? collapseAccessibilityLabel
-                    : expandAccessibilityLabel
-        )
 
         if isExpanded {
             ForEach(displayedSessions) { session in
@@ -91,4 +77,39 @@ struct GroupedSessionsDisclosure: View {
             }
         }
     }
+    private func toggle() {
+        guard !isSearchActive else { return }
+        userIsExpanded.toggle()
+    }
+
+    @ViewBuilder
+    private var header: some View {
+        if rowStyle == .sidebar {
+            SidebarSectionHeader(title: title, isCompact: true, toggle: toggle) {
+                Text(verbatim: countIsPartial ? "\(totalCount.formatted())+" : totalCount.formatted())
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                SidebarDisclosureChevron(isExpanded: isExpanded)
+            }
+        } else {
+            SidebarDisclosureButton(
+                title: title,
+                assetImage: assetImage,
+                systemImage: systemImage,
+                isExpanded: isExpanded,
+                action: toggle
+            ) {
+                Text(verbatim: countIsPartial ? "\(totalCount.formatted())+" : totalCount.formatted())
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 2)
+                    .background(.thinMaterial, in: Capsule())
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, isSearchActive ? 16 : 12)
+            .sessionsScreenListRow()
+        }
+    }
+
 }

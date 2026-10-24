@@ -152,12 +152,18 @@ struct ChatTranscriptView: View {
                     Task { await onLoadMessages() }
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.bottom, transcriptBottomInsetHeight)
         } else if messages.isEmpty && clarificationPrompt == nil {
             ContentUnavailableView {
                 Image(systemName: "bubble.left.and.bubble.right")
             } description: {
                 Text("Send a message to start the conversation.")
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.bottom, transcriptBottomInsetHeight)
             .contentShape(Rectangle())
             .onTapGesture {
                 onDismissKeyboard()

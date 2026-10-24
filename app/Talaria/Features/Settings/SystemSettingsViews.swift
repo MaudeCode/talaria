@@ -22,9 +22,7 @@ struct LiveActivitiesWidgetsSettingsView: View {
             }
 
             SettingsCard(title: String(localized: "Widgets")) {
-                NavigationLink {
-                    ProviderQuotaWidgetAppearanceView()
-                } label: {
+                NavigationLink(value: SettingsPane.providerQuotaWidget) {
                     SettingsAccessoryRow(
                         title: String(localized: "Provider Quotas"),
                         systemImage: "gauge.open.with.lines.needle.33percent"
