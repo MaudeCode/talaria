@@ -920,7 +920,7 @@ struct ChatView: View {
                             }
                             .badge(viewModel.pinnedBackgroundTasks.count)
                         }
-                        .overflowPriority(.chatBackgroundTasks)
+                        .overflowPriority(.chatBackgroundTasks, includesHorizontal: true)
                     }
                     if queuedMessagesCount > 0 {
                         ToolbarItem(placement: .topBarTrailing) {
@@ -929,7 +929,7 @@ struct ChatView: View {
                             }
                             .badge(queuedMessagesCount)
                         }
-                        .overflowPriority(.chatQueuedMessages)
+                        .overflowPriority(.chatQueuedMessages, includesHorizontal: true)
                     }
                 }
             }
@@ -1509,7 +1509,7 @@ struct ChatView: View {
 
     private var ownerAdmissions: [OwnerAdmission] { viewModel.ownerAttachment?.admissions ?? [] }
 
-    // shortcut: derive confirmed counts from records until TAL-1531 supplies contract fields.
+    // shortcut: derive confirmed counts from records until TAL-1519 supplies contract fields.
     private var queuedMessagesCount: Int { viewModel.queuedMessagePreviews.count + ownerAdmissions.count }
 
     private var hasCompactStatusItems: Bool {

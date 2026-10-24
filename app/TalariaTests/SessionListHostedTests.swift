@@ -7,6 +7,35 @@ import TalariaKit
 /// Overflow priorities must reach real bar items, not just an unused policy table (TAL-478).
 @MainActor
 final class ToolbarPriorityHostedTests: XCTestCase {
+    func testHorizontalWorkBadgesKeepHighPriorityInANarrowChat() async throws {
+        guard #available(iOS 27.1, *) else { throw XCTSkip("Requires horizontal work-item priorities") }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        try XCTSkipUnless(scene.traitCollection.verticalBarEdge == .unspecified, "Requires a horizontal toolbar")
+        let window = try await hostFixtureChat(
+            ["--ui-test-background-updates", "--ui-test-chat-controls"],
+            size: CGSize(width: 320, height: HostedSize.duoInner.height)
+        ) {
+            $0.horizontalSizeClass = .regular
+            $0.verticalSizeClass = .regular
+        }
+        try XCTSkipUnless(window.traitCollection.verticalBarEdge == .unspecified, "Requires a horizontal toolbar")
+        _ = try await requireElement(in: window, label: "Background tasks · 2")
+        try await sendFromComposer("Run the deterministic fixture", in: window)
+        _ = try await requireElement(in: window, label: "Waiting for control input.")
+        try await sendFromComposer("/queue Queued fixture message", in: window)
+        _ = try await requireElement(in: window, label: "1 queued")
+        let titles = ["Background tasks", "Queued messages"]
+        let ready = await awaitCondition { titles.allSatisfy { HostedAccessibility.toolbarItem($0, in: window) != nil } }
+        XCTAssertTrue(ready)
+        settle(0.3)
+        attachHostedScreenshot(window, name: "narrow-horizontal-work-priorities")
+        for title in titles {
+            let item = try XCTUnwrap(HostedAccessibility.toolbarItem(title, in: window))
+            XCTAssertEqual(item.visibilityPriority, .high, "\(title) must retain priority in a crowded horizontal bar")
+        }
+        XCTAssertEqual(try XCTUnwrap(HostedAccessibility.toolbarItem("Files", in: window)).visibilityPriority, .standard)
+    }
+
     func testHorizontalBarsUseTheApprovedActionPriorities() async throws {
         guard #available(iOS 27.1, *) else { throw XCTSkip("Requires bar-item visibility priorities") }
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
