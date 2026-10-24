@@ -2681,6 +2681,20 @@ describe('Agent checkout updates', () => {
     expect(agentView(svc)).toMatchObject({ ...installedV2(a), stale_check: true })
   })
 
+  it('keeps retained local-edit recovery when a later check cannot reach the remote (TAL-1525)', async () => {
+    const a = agentInstall()
+    git(a.agent, 'fetch', '--quiet', '--tags', 'origin')
+    git(a.agent, 'merge', '--ff-only', '--quiet', 'v2.0.0')
+    git(a.agent, 'update-ref', `refs/talaria/autostash/pending/${a.v1}`, a.v1)
+    const { svc, counters } = refreshService(a)
+    await svc.check(true)
+    const finish = { current_sha: a.v2, behind: 0, metadata_repair: true, state: 'finish', can_apply: true }
+    expect(agentView(svc)).toMatchObject(finish)
+    counters.failFetch = true
+    await svc.check(true)
+    expect(agentView(svc)).toMatchObject({ ...finish, stale_check: true })
+  })
+
   it('refreshes only the local Agent identity while update checks are off (TAL-1525)', async () => {
     const a = agentInstall()
     const { svc, counters, inFlight } = refreshService(a, { checkEnabled: () => false })

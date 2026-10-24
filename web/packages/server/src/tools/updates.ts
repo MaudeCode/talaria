@@ -708,12 +708,14 @@ async function currentReleaseTag(path: string, git: GitRun): Promise<string | nu
   const out = await git(['describe', '--tags', '--exact-match', '--match', AGENT_TAG_GLOB, 'HEAD'], path)
   return out.ok && out.out ? out.out : null
 }
-/** TAL-1525: the checkout's installed identity and its distance to an already-known target, from local Git only. */
+/** TAL-1525: the checkout's installed identity, retained local-edit recovery, and distance to an already-known target, from local Git only. */
 async function installedAgentIdentity(path: string | null, latest: unknown, git: GitRun): Promise<Dict | null> {
   if (!path) return null
   const head = await git(['rev-parse', 'HEAD'], path)
   if (!head.ok || !SHA.test(head.out)) return null
-  const installed: Dict = { current_sha: head.out, current_version: await currentReleaseTag(path, git) ?? head.out.slice(0, 12) }
+  let pending: string[]
+  try { pending = await pendingAutostashes(path, git) } catch { return null } // Uninspectable recovery keeps the cached answer.
+  const installed: Dict = { current_sha: head.out, current_version: await currentReleaseTag(path, git) ?? head.out.slice(0, 12), ...(pending.length ? RETAINED_LOCAL_EDITS : {}) }
   if (typeof latest !== 'string' || !SHA.test(latest) || latest === head.out) return installed
   const count = await git(['rev-list', '--count', `${head.out}..${latest}`], path)
   return { ...installed, behind: count.ok && /^\d+$/.test(count.out) ? Number.parseInt(count.out, 10) : null }
@@ -721,10 +723,12 @@ async function installedAgentIdentity(path: string | null, latest: unknown, git:
 
 /** TAL-1525: a cached target re-anchored on its installed identity; only cached releases newer than it stay offered. */
 function reanchored(info: Dict, installed: Dict): Dict {
-  const next: Dict = { ...info, ...installed }
+  const next: Dict = { ...info }
+  // The installed identity re-asserts whatever recovery it still owes.
   delete next.message
   delete next.metadata_repair
   delete next.channel_switch
+  Object.assign(next, installed)
   const versions = Array.isArray(info.versions) ? info.versions.map(dict) : []
   const at = versions.findIndex((v) => v.version === installed.current_version || (typeof v.sha === 'string' && v.sha === installed.current_sha))
   if (at >= 0) next.versions = versions.slice(0, at)
@@ -861,6 +865,8 @@ async function isDirty(path: string, git: GitRun): Promise<boolean> {
 }
 
 /** Fetch and compare the independently selected Agent channel. */
+const RETAINED_LOCAL_EDITS = { metadata_repair: true, message: 'Local Agent changes need recovery. Their saved recovery records are retained.' }
+
 export async function checkAgentUpdate(path: string | null, git: GitRun, channel: Channel = DEFAULT_CHANNEL, published?: PublishedAgentTag): Promise<Dict> {
   if (!path || !existsSync(join(path, '.git'))) return { name: 'agent', behind: null, no_git: true }
   const fetched = await fetchWithRetry(git, ['fetch', 'origin', '--tags', '--force'], path, 15_000)
@@ -871,7 +877,7 @@ export async function checkAgentUpdate(path: string | null, git: GitRun, channel
   try {
     const pending = await pendingAutostashes(path, git)
     return { ...await agentTarget(path, git, channel, undefined, published), dirty: await isDirty(path, git),
-      ...(pending.length ? { metadata_repair: true, message: 'Local Agent changes need recovery. Their saved recovery records are retained.' } : {}) }
+      ...(pending.length ? RETAINED_LOCAL_EDITS : {}) }
   }
   catch (error) { return { name: 'agent', channel, behind: null, error: (error as Error).message } }
 }
