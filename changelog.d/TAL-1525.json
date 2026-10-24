@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Settings › System shows the newly installed Talaria Web or Hermes Agent version as soon as an update finishes, without pressing Check now.",
+      "highlight": false,
+      "components": [
+        "web",
+        "app"
+      ]
+    }
+  ]
+}

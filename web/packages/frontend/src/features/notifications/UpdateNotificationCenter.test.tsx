@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useEffect } from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { focusManager, notifyManager, onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { focusManager, notifyManager, onlineManager, QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
 import type { UpdateNotification, UpdateNotifications } from '../../contracts'
 
 vi.mock('../../api/endpoints', () => ({
@@ -18,6 +18,7 @@ vi.mock('../notices/ServerStoppedOverlay', () => ({ ServerStoppedOverlay: () => 
 import * as api from '../../api/endpoints'
 import { UpdateNotificationCenterButton, UpdateNotificationProvider, useUpdateProgress, type UpdateProgress } from './UpdateNotificationCenter'
 import { ApiError } from '../../contracts/common'
+import { keys } from '../../api/queryKeys'
 
 type Step = UpdateNotification['steps'][number]
 const AGENT = ['Installing', 'Restarting Talaria Web', 'Restarting gateway', 'Agent responding']
@@ -376,5 +377,39 @@ describe('adaptive notification polling (TAL-1246)', () => {
       await advance()
       expect(api.fetchUpdateNotifications).toHaveBeenCalledTimes(2)
     } finally { cleanup(); Reflect.deleteProperty(navigator, 'serviceWorker') }
+  })
+})
+
+describe('update status after a server phase change (TAL-1525)', () => {
+  it('refetches update status, health and settings once when an update row advances, showing the new installed version', async () => {
+    const status = { installed: 'web-v1.0.0' }
+    const reads = {
+      updates: vi.fn(() => Promise.resolve({ webui: { current_version: status.installed } })),
+      system: vi.fn(() => Promise.resolve({})), agent: vi.fn(() => Promise.resolve({})), settings: vi.fn(() => Promise.resolve({})),
+    }
+    function Installed() {
+      const updates = useQuery({ queryKey: keys.updates.check, queryFn: reads.updates, staleTime: Infinity })
+      useQuery({ queryKey: keys.health.system, queryFn: reads.system, staleTime: Infinity })
+      useQuery({ queryKey: keys.health.agent, queryFn: reads.agent, staleTime: Infinity })
+      useQuery({ queryKey: keys.settings, queryFn: reads.settings, staleTime: Infinity })
+      return <p>Installed {updates.data?.webui.current_version ?? ''}</p>
+    }
+    const web = (overrides: Partial<UpdateNotification>) => record({ id: '00000000-0000-4000-8000-000000000303', target: 'webui', title: 'Talaria Web update', ...overrides })
+    server.rows = [web({ phase: 'restarting' })]
+    qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+    render(<QueryClientProvider client={qc}><UpdateNotificationProvider><Installed /></UpdateNotificationProvider></QueryClientProvider>)
+    await screen.findByText('Installed web-v1.0.0')
+    const readNotifications = async () => {
+      await act(async () => { await qc.refetchQueries({ queryKey: keys.updateNotifications }) })
+      await act(() => new Promise((resolve) => { setTimeout(resolve, 0) }))
+    }
+    // An unchanged phase reads nothing else.
+    await readNotifications()
+    for (const read of Object.values(reads)) expect(read).toHaveBeenCalledOnce()
+    status.installed = 'web-v2.0.0'
+    server.rows = [web({ phase: 'succeeded' })]
+    await readNotifications()
+    expect(await screen.findByText('Installed web-v2.0.0')).toBeVisible()
+    for (const read of Object.values(reads)) expect(read).toHaveBeenCalledTimes(2)
   })
 })
