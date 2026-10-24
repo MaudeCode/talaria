@@ -22,7 +22,7 @@ struct SessionListView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @Environment(\.layoutDirection) private var layoutDirection
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.scenePhase) private var scenePhase
     @State private var viewModel: SessionListViewModel
@@ -40,8 +40,14 @@ struct SessionListView: View {
     private var regularSplitWidth: CGFloat { splitGeometry.frame.width }
 #if DEBUG
     @Environment(\.chatDivisionFramesForTesting) private var divisionFramesForTesting
+    @Environment(\.foldTransactionsForTesting) private var recordFoldTransaction
+    @Environment(\.reduceMotionForTesting) private var reduceMotionForTesting
+    private var reduceMotion: Bool { reduceMotionForTesting ?? systemReduceMotion }
+#else
+    private var reduceMotion: Bool { systemReduceMotion }
 #endif
-    /// Read live by the chat being replaced, whose own environment still says regular (TAL-1477).
+    /// Read live by the chat being replaced, whose own environment still says regular (TAL-1477). It follows the size
+    /// class one update late, which is what holds the sidebar column back while opening the Duo builds the split view.
     @State private var isCompactWidth = false
 
     private var foldedSidebarWidth: CGFloat? {
@@ -191,6 +197,11 @@ struct SessionListView: View {
             ZStack {
                 Color(.systemBackground)
                 navigationContainer
+#if DEBUG
+                    .transaction { recordFoldTransaction?($0.animation) }
+#endif
+                    // Opening or closing an iPhone Duo crossfades the two layouts (TAL-1482).
+                    .animation(SessionListMotion.foldAnimation(reduceMotion: reduceMotion), value: horizontalSizeClass)
                     .environment(\.divisionRegionGeometry, splitGeometry)
                     .onGeometryChange(for: DivisionRegionGeometry.self) { geometry in
 #if DEBUG
@@ -204,7 +215,15 @@ struct SessionListView: View {
                 chats.keepOnly(sessionID: sessionID)
             }
             .onChange(of: horizontalSizeClass, initial: true) { _, sizeClass in
-                isCompactWidth = sizeClass == .compact
+                guard isCompactWidth, sizeClass == .regular, !reduceMotion else {
+                    isCompactWidth = sizeClass == .compact
+                    return
+                }
+                // The split view goes on screen without its sidebar column first, so the column slides in beside the
+                // chat (TAL-1482).
+                DispatchQueue.main.async {
+                    withAnimation(SessionListMotion.foldAnimation(reduceMotion: false)) { isCompactWidth = false }
+                }
             }
             .onChange(of: horizontalSizeClass) { _, sizeClass in
                 // Closing an iPhone Duo or narrowing an iPad window keeps the open page (TAL-643).
@@ -622,7 +641,7 @@ struct SessionListView: View {
     }
 
     private var regularColumnVisibility: Binding<NavigationSplitViewVisibility> {
-        .constant(hidesSidebarColumn ? .detailOnly : .all)
+        .constant(hidesSidebarColumn || isCompactWidth ? .detailOnly : .all)
     }
 
     /// Kanban and Insights have no list, so they take the whole width, and a chat takes it while its Files
