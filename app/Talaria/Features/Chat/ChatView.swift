@@ -827,6 +827,27 @@ struct ChatView: View {
                         gitActionsMenu
                     }
                 }
+
+                if #available(iOS 26, *) {
+                    if !viewModel.pinnedBackgroundTasks.isEmpty {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button(action: backgroundTasksAction) {
+                                Label("Background tasks", systemImage: "square.3.layers.3d")
+                            }
+                            .badge(viewModel.pinnedBackgroundTasks.count)
+                        }
+                        .overflowPriority(.chatBackgroundTasks)
+                    }
+                    if queuedMessagesCount > 0 {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button(action: queuedMessagesAction) {
+                                Label("Queued messages", systemImage: "tray.full")
+                            }
+                            .badge(queuedMessagesCount)
+                        }
+                        .overflowPriority(.chatQueuedMessages)
+                    }
+                }
             }
     }
 
@@ -1402,6 +1423,9 @@ struct ChatView: View {
 
     private var ownerAdmissions: [OwnerAdmission] { viewModel.ownerAttachment?.admissions ?? [] }
 
+    // shortcut: derive confirmed counts from records until TAL-1531 supplies contract fields.
+    private var queuedMessagesCount: Int { viewModel.queuedMessagePreviews.count + ownerAdmissions.count }
+
     private var hasCompactStatusItems: Bool {
         activeRunStatusPresentation != nil || hasReservedCompactStatusItems
     }
@@ -1452,7 +1476,7 @@ struct ChatView: View {
                 }
                 .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
             }
-            if !viewModel.queuedMessagePreviews.isEmpty || !ownerAdmissions.isEmpty {
+            if queuedMessagesCount > 0 {
                 queuedMessagesChip
             }
         }
@@ -1460,13 +1484,19 @@ struct ChatView: View {
 
     /// What waits to send after this response (TAL-630); tapping opens the queue sheet.
     private var showsSheetChipRow: Bool {
-        !viewModel.pinnedBackgroundTasks.isEmpty || !viewModel.queuedMessagePreviews.isEmpty || !ownerAdmissions.isEmpty
+        !viewModel.pinnedBackgroundTasks.isEmpty || queuedMessagesCount > 0
+    }
+
+    private func backgroundTasksAction() {
+        showsBackgroundWorkSheet = true
+    }
+
+    private func queuedMessagesAction() {
+        showsQueuedMessagesSheet = true
     }
 
     private func backgroundTasksChip(_ tasks: [BackgroundWorkTask]) -> some View {
-        Button {
-            showsBackgroundWorkSheet = true
-        } label: {
+        Button(action: backgroundTasksAction) {
             StatusChip(label: String(localized: "Background tasks · \(tasks.count)"), icon: .symbol("square.stack.3d.up"))
                 .frame(minHeight: 44)
                 .contentShape(.rect)
@@ -1478,12 +1508,9 @@ struct ChatView: View {
     /// An owner input with an unknown outcome blocks sending until it is retried or discarded, so it says so (TAL-1043).
     private var queuedMessagesChip: some View {
         let unknown = ownerAdmissions.contains(where: \.isOutcomeUnknown)
-        let count = viewModel.queuedMessagePreviews.count + ownerAdmissions.count
-        return Button {
-            showsQueuedMessagesSheet = true
-        } label: {
+        return Button(action: queuedMessagesAction) {
             StatusChip(
-                label: unknown ? String(localized: "Outcome unknown") : String(localized: "\(count) queued"),
+                label: unknown ? String(localized: "Outcome unknown") : String(localized: "\(queuedMessagesCount) queued"),
                 icon: .symbol(unknown ? "questionmark.circle" : "text.badge.plus"),
                 emphasis: unknown ? .prominent : .standard
             )

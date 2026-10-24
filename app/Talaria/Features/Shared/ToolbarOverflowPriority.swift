@@ -2,7 +2,7 @@ import SwiftUI
 import TalariaKit
 
 extension ToolbarContent {
-    /// One gate and mapping for all toolbar sites. Horizontal bars keep their original priorities.
+    /// Badged work retains priority on either axis; other horizontal items keep their defaults.
     @MainActor
     @ToolbarContentBuilder
     func overflowPriority(_ action: ToolbarAction) -> some ToolbarContent {
@@ -22,14 +22,10 @@ private struct PrioritizedToolbarContent<Content: ToolbarContent>: ToolbarConten
 
     @ToolbarContentBuilder
     var body: some ToolbarContent {
-        if verticalEdge != nil {
-            switch action.priority {
-            case .high: content.visibilityPriority(.high)
-            case .low: content.visibilityPriority(.low)
-            case .standard: content
-            }
-        } else {
-            content
+        switch action.priority(isVerticalBar: verticalEdge != nil) {
+        case .high: content.visibilityPriority(.high)
+        case .low: content.visibilityPriority(.low)
+        case .standard: content
         }
     }
 }
