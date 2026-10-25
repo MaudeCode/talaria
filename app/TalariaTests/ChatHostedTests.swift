@@ -474,8 +474,10 @@ final class ChatHostedTests: XCTestCase {
     func testForegroundReturnRealizesZeroUnchangedTranscriptRows() async throws {
         let fixture = try FixtureApp(for: self)
         let session = try await fixture.session()
-        let model = ChatViewModel(session: session, server: UITestFixtureEnvironment.serverURL, client: fixture.client,
-            liveActivityManager: SpyChatLiveActivityManager())
+        let model = ChatViewModel(
+            session: session, server: UITestFixtureEnvironment.serverURL, client: fixture.client,
+            liveActivityManager: SpyChatLiveActivityManager()
+        )
         let retained = RetainedChat(viewModel: model, session: session)
         let window = try hostWindow(NavigationStack {
             ChatView(session: session, server: UITestFixtureEnvironment.serverURL, onAPIError: { _ in },
