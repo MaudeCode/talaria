@@ -1014,7 +1014,7 @@ struct SessionListView: View {
             } set: { presented in
                 setFilesInspectorPresented(presented)
             },
-            widensChat: horizontalSizeClass == .regular && regularSplitWidth >= RegularSplitLayout.filesInspectorChatWidth,
+            widensChat: sidebarPresentation.filesInspectorFits,
             reportShown: { navigationState.chatShowsFilesInspector = $0 },
             reportSession: { session in
                 if horizontalSizeClass == .regular { regularWidthChat = session }
@@ -2240,4 +2240,3 @@ extension View {
         }
     }
 }
-

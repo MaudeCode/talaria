@@ -69,6 +69,19 @@ final class SidebarPresentationTests: XCTestCase {
         XCTAssertTrue(returned.showsColumn)
     }
 
+    func testFilesFitsBesideTheChatOnlyWithoutAFoldThroughTheSplit() {
+        let inner = CGSize(width: 951, height: 669)
+        XCTAssertTrue(SidebarPresentation(isRegularWidth: true, splitSize: inner, hasVerticalBar: true, storedChoice: true)
+            .filesInspectorFits)
+        // Book pose: the split is wide enough on paper, but the chat has only the right pane, so Files pushes.
+        XCTAssertFalse(SidebarPresentation(isRegularWidth: true, splitSize: inner, hasVerticalBar: true, storedChoice: true,
+            hasVerticalDivision: true).filesInspectorFits)
+        XCTAssertFalse(SidebarPresentation(isRegularWidth: true, splitSize: CGSize(width: 669, height: 951),
+            hasVerticalBar: false, storedChoice: true).filesInspectorFits)
+        XCTAssertFalse(SidebarPresentation(isRegularWidth: false, splitSize: inner, hasVerticalBar: false, storedChoice: true)
+            .filesInspectorFits)
+    }
+
     func testFoldDismissesFilesAndUnfoldDoesNotRestoreIt() {
         for regular in [false, true] {
             let hidden = SidebarPresentation(isRegularWidth: regular, splitSize: CGSize(width: 669, height: 951),

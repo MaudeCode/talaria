@@ -92,6 +92,9 @@ public struct SidebarPresentation: Equatable {
     public let overlaysContent: Bool
     public let hostsSidebarActionsInDetail: Bool
     public let toggleTarget: ToggleTarget
+    /// Whether the Files inspector can sit beside the chat at all: regular width, no fold through the split, and
+    /// room for the chat. A Files tap opens the inspector only when this holds; otherwise it pushes the browser.
+    public let filesInspectorFits: Bool
     public let showsFilesInspector: Bool
     public let dismissesFilesInspector: Bool
 
@@ -104,8 +107,9 @@ public struct SidebarPresentation: Equatable {
         columnIsForced = isRegularWidth && hasVerticalDivision
         tiled = isRegularWidth && (columnIsForced || (isLandscape && splitSize.width >= 900))
         // Rotation consumes this explicit presentation; a Files tap can reopen it in the new layout.
-        showsFilesInspector = filesInspectorPresented && filesInspectorIsEligible && isRegularWidth
-            && !hasVerticalDivision && splitSize.width >= RegularSplitLayout.filesInspectorChatWidth
+        filesInspectorFits = isRegularWidth && !hasVerticalDivision
+            && splitSize.width >= RegularSplitLayout.filesInspectorChatWidth
+        showsFilesInspector = filesInspectorPresented && filesInspectorIsEligible && filesInspectorFits
             && (filesInspectorOpeningIsLandscape == nil || filesInspectorOpeningIsLandscape == isLandscape)
         dismissesFilesInspector = filesInspectorPresented && !showsFilesInspector
         let filesNeedsRoom = showsFilesInspector && RegularSplitLayout.hidesSidebarForFilesInspector(splitWidth: splitSize.width)
