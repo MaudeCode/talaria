@@ -18,13 +18,10 @@ struct SessionFilterControls: View {
                     } else {
                         ForEach(viewModel.profileOptions) { profile in
                             let isActive = isActiveProfile(profile)
-                            ActiveProfilePickerRow(
-                                profile: profile,
-                                isSelected: isActive,
-                                isSwitching: viewModel.isSwitchingActiveProfile,
-                                action: { switchActiveProfile(profile) },
-                                isMenuItem: true
-                            )
+                            Button { switchActiveProfile(profile) } label: {
+                                Label(profile.displayName, systemImage: isActive ? "checkmark" : "person")
+                            }
+                            .accessibilityLabel(profileAccessibilityLabel(profile, isActive: isActive))
                             .disabled(isActive || viewModel.isViewingCachedData
                                 || viewModel.isSwitchingActiveProfile || profile.normalizedName == nil)
                         }
@@ -37,18 +34,12 @@ struct SessionFilterControls: View {
                 }
                 ForEach(viewModel.projects) { project in
                     if let projectID = project.projectId {
-                        ProjectFilterRow(
-                            project: project,
-                            isSelected: selectedProjectID == projectID,
-                            count: 0,
-                            isViewingCachedData: viewModel.isViewingCachedData,
-                            isRenamingProject: viewModel.pendingChange(for: project) != nil,
-                            isDeletingProject: viewModel.pendingChange(for: project) != nil,
-                            action: { selectedProjectID = projectID },
-                            rename: { projectPendingRename = project },
-                            delete: { projectPendingDeletion = project },
-                            isMenuItem: true
-                        )
+                        let name = project.name?.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let displayName = name.flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "Untitled Project")
+                        Button { selectedProjectID = projectID } label: {
+                            Label(displayName, systemImage: selectedProjectID == projectID ? "checkmark" : "folder")
+                        }
+                        .accessibilityLabel(displayName)
                     }
                 }
                 Button(action: presentProjectCreation) {
@@ -85,6 +76,14 @@ struct SessionFilterControls: View {
 
     private var selectedProject: ProjectSummary? {
         viewModel.projects.first { $0.projectId == selectedProjectID }
+    }
+
+    private func profileAccessibilityLabel(_ profile: ProfileSummary, isActive: Bool) -> String {
+        let model = profile.model?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let modelTitle = model.flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "Default model unavailable")
+        let state = isActive ? String(localized: "Active profile") : String(localized: "Profile")
+        let switchingState = viewModel.isSwitchingActiveProfile ? String(localized: ", switching in progress") : ""
+        return String(localized: "\(state), \(profile.displayName), \(modelTitle)\(switchingState)")
     }
 
     private func isActiveProfile(_ profile: ProfileSummary) -> Bool {

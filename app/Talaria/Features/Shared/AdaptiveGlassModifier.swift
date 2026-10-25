@@ -10,6 +10,10 @@ extension GeometryProxy {
     }
 }
 
+extension EnvironmentValues {
+    @Entry var chatDivisionFramesForTesting: [CGRect]? = nil
+}
+
 struct DivisionRegionGeometry: Equatable {
     var frame: CGRect = .zero
     var safeAreaInsets = EdgeInsets()
@@ -17,7 +21,13 @@ struct DivisionRegionGeometry: Equatable {
 
     init() {}
 
-    init(_ geometry: GeometryProxy, divisions override: [CGRect]? = nil) {
+    init(_ geometry: GeometryProxy, divisions testDivisions: [CGRect]? = nil) {
+        let override: [CGRect]?
+#if DEBUG
+        override = testDivisions
+#else
+        override = nil
+#endif
         frame = geometry.frame(in: .global)
         safeAreaInsets = geometry.safeAreaInsets
         let local: [CGRect]

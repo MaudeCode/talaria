@@ -301,6 +301,13 @@ final class SessionListHostedTests: XCTestCase {
         try await openSidebar(in: window)
         HostedAccessibility.activate(try await requireElement(in: window, label: "New Chat"))
         _ = try await requireElement(in: window, label: "Select model")
+        try await typeIntoComposer("Unsent draft", in: window)
+        try await openSidebar(in: window)
+        let compose = try await requireElement(in: window, label: "New Chat")
+        XCTAssertFalse(compose.accessibilityTraits.contains(.notEnabled))
+        XCTAssertTrue(HostedAccessibility.activate(compose))
+        let restored = await awaitCondition { self.composerDraftText(in: window) == "Unsent draft" }
+        XCTAssertTrue(restored)
         func creates() -> Int {
             UITestFixtureURLProtocol.answeredPaths.withLock { $0.filter { $0 == "/api/session/new" }.count }
         }
@@ -313,6 +320,34 @@ final class SessionListHostedTests: XCTestCase {
         _ = try await requireElement(in: window, label: "Search files")
         XCTAssertEqual(creates(), 1)
         XCTAssertEqual(UITestFixtureURLProtocol.answeredPaths.withLock { $0.filter { $0 == "/api/chat/start" }.count }, 0)
+    }
+
+    func testSectionPushedChatKeepsNotificationsAtBothWidths() async throws {
+        for size in [HostedSize.phone, HostedSize.padLandscape] {
+            let fixture = try FixtureApp(["--ui-test-scheduled-sessions"], for: self)
+            let window = try hostWindow(fixture.sessionList(), size: size) {
+                $0.horizontalSizeClass = size == HostedSize.phone ? .compact : .regular
+            }
+            let rootBell = await awaitCondition { HostedAccessibility.toolbarItem("Notifications", in: window) != nil }
+            XCTAssertTrue(rootBell, "The root must have its notifications toolbar button")
+            try await openSidebar(in: window)
+            HostedAccessibility.activate(try await requireElement(in: window, label: "Expand scheduled sessions"))
+            HostedAccessibility.activate(try await requireElement(in: window, label: "View all"))
+            if size == HostedSize.phone {
+                _ = try await requireElement(in: window, label: "Open navigation")
+            } else {
+                let sidebar = try XCTUnwrap(HostedAccessibility.toolbarItem("Sidebar", in: window))
+                XCTAssertTrue(HostedAccessibility.activate(sidebar))
+            }
+            HostedAccessibility.activate(try await requireElement(in: window, where: isFixtureRow))
+            _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
+            let pushedBell = await awaitCondition { HostedAccessibility.toolbarItem("Notifications", in: window) != nil }
+            XCTAssertTrue(pushedBell, "The section-pushed chat must keep its notifications toolbar button")
+            XCTAssertNil(HostedAccessibility.toolbarItem("New Chat", in: window))
+            XCTAssertNil(HostedAccessibility.toolbarItem("Settings", in: window))
+            window.isHidden = true
+            window.rootViewController = nil
+        }
     }
 
     func testSidebarSectionIsARootAndSettingsIsAModalOverIt() async throws {

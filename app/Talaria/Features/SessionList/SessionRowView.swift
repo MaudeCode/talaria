@@ -146,11 +146,7 @@ struct SessionRowView: View {
     private var pendingStatus: String? { pendingChange?.pinned == nil ? pendingChange?.status : nil }
 
     private var metadataLabel: String? {
-        SessionRowPresentation.metadataLabel(
-            for: session,
-            showsMessageCount: true,
-            showsWorkspace: true
-        )
+        SessionRowPresentation.metadataLabel(for: session)
     }
 
     private var rowContent: some View {
@@ -337,7 +333,7 @@ struct SessionRowView: View {
                                                                                pinned: pendingChange?.pinned))
 
         let spokenMetadata = style == .sidebar
-            ? SessionRowPresentation.metadataLabel(for: session, showsMessageCount: true, showsWorkspace: true)
+            ? SessionRowPresentation.metadataLabel(for: session)
             : metadataLabel
         if let spokenMetadata { parts.append(spokenMetadata) }
 

@@ -256,7 +256,7 @@ struct ComposerStripScrollRow<Content: View>: View {
                     .frame(width: edgeFades.trailing ? edgeFadeWidth : 0)
             }
         }
-        .clipShape(TrailingEdgeClip(layoutDirection: layoutDirection))
+        .clipShape(PaneEdgeClip())
     }
 
     private var edgeFadeWidth: CGFloat { 18 }

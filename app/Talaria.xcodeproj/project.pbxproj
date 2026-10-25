@@ -142,9 +142,6 @@
 		C107K0000000000000000015 /* SidebarDisclosureButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000115 /* SidebarDisclosureButton.swift */; };
 		C107K0000000000000000016 /* SidebarDisclosureChevron.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000116 /* SidebarDisclosureChevron.swift */; };
 		C107K0000000000000000017 /* SidebarUtilityIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000117 /* SidebarUtilityIcon.swift */; };
-		C107K0000000000000000018 /* SidebarSelectedSubrowIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000118 /* SidebarSelectedSubrowIndicator.swift */; };
-		C107K0000000000000000019 /* ActiveProfilePickerRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000119 /* ActiveProfilePickerRow.swift */; };
-		C107K0000000000000000020 /* ProjectFilterRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000120 /* ProjectFilterRow.swift */; };
 		C107K0000000000000000021 /* CompactStatusRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000121 /* CompactStatusRow.swift */; };
 		C107K0000000000000000022 /* SessionListStatusRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000122 /* SessionListStatusRow.swift */; };
 		C107K0000000000000000023 /* SessionRowSkeletonView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000123 /* SessionRowSkeletonView.swift */; };
@@ -572,9 +569,6 @@
 		C107K0000000000000000115 /* SidebarDisclosureButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarDisclosureButton.swift; sourceTree = "<group>"; };
 		C107K0000000000000000116 /* SidebarDisclosureChevron.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarDisclosureChevron.swift; sourceTree = "<group>"; };
 		C107K0000000000000000117 /* SidebarUtilityIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarUtilityIcon.swift; sourceTree = "<group>"; };
-		C107K0000000000000000118 /* SidebarSelectedSubrowIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarSelectedSubrowIndicator.swift; sourceTree = "<group>"; };
-		C107K0000000000000000119 /* ActiveProfilePickerRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveProfilePickerRow.swift; sourceTree = "<group>"; };
-		C107K0000000000000000120 /* ProjectFilterRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectFilterRow.swift; sourceTree = "<group>"; };
 		C107K0000000000000000121 /* CompactStatusRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompactStatusRow.swift; sourceTree = "<group>"; };
 		C107K0000000000000000122 /* SessionListStatusRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListStatusRow.swift; sourceTree = "<group>"; };
 		C107K0000000000000000123 /* SessionRowSkeletonView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRowSkeletonView.swift; sourceTree = "<group>"; };
@@ -1129,9 +1123,6 @@
 				C107K0000000000000000115 /* SidebarDisclosureButton.swift */,
 				C107K0000000000000000116 /* SidebarDisclosureChevron.swift */,
 				C107K0000000000000000117 /* SidebarUtilityIcon.swift */,
-				C107K0000000000000000118 /* SidebarSelectedSubrowIndicator.swift */,
-				C107K0000000000000000119 /* ActiveProfilePickerRow.swift */,
-				C107K0000000000000000120 /* ProjectFilterRow.swift */,
 				C107K0000000000000000121 /* CompactStatusRow.swift */,
 				C107K0000000000000000122 /* SessionListStatusRow.swift */,
 				C107K0000000000000000123 /* SessionRowSkeletonView.swift */,
@@ -1957,9 +1948,6 @@
 				C107K0000000000000000015 /* SidebarDisclosureButton.swift in Sources */,
 				C107K0000000000000000016 /* SidebarDisclosureChevron.swift in Sources */,
 				C107K0000000000000000017 /* SidebarUtilityIcon.swift in Sources */,
-				C107K0000000000000000018 /* SidebarSelectedSubrowIndicator.swift in Sources */,
-				C107K0000000000000000019 /* ActiveProfilePickerRow.swift in Sources */,
-				C107K0000000000000000020 /* ProjectFilterRow.swift in Sources */,
 				C107K0000000000000000021 /* CompactStatusRow.swift in Sources */,
 				C107K0000000000000000022 /* SessionListStatusRow.swift in Sources */,
 				C107K0000000000000000023 /* SessionRowSkeletonView.swift in Sources */,

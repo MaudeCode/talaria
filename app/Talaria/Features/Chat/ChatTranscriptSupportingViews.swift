@@ -887,6 +887,12 @@ final class ChatScrollPositionController {
             applyCompensation()
             return
         }
+        if mode == .hold, widthChangeAnchor != nil || preservesEndForWidthChange {
+            // A width change reports the anchor's new top before the content size moves, so the reader's offset
+            // lands in the same transaction as the re-wrap. A deferred pass commits only after the column move has
+            // kept the main thread busy, which left the old offset on screen for several frames.
+            applyCompensation()
+        }
         guard !compensationScheduled else { return }
         compensationScheduled = true
         compensationEpoch += 1

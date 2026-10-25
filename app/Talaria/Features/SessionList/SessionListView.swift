@@ -46,9 +46,7 @@ struct SessionListView: View {
     }
     private var splitGeometry: DivisionRegionGeometry { appliedSidebarLayout?.geometry ?? DivisionRegionGeometry() }
     private var regularSplitWidth: CGFloat { splitGeometry.frame.width }
-#if DEBUG
     @Environment(\.chatDivisionFramesForTesting) private var divisionFramesForTesting
-#endif
     /// Read live by the chat being replaced, whose own environment still says regular (TAL-1477).
     @State private var isCompactWidth = false
 
@@ -510,7 +508,19 @@ struct SessionListView: View {
         }
         .onAppear { observeSidebarLayout() }
         .onChange(of: observedHorizontalSizeClass) { observeSidebarLayout() }
-        .onChange(of: observedHingeStatus) { observeSidebarLayout() }
+        .onChange(of: observedHingeStatus) { previous, status in
+            // A fold always closes Files. Dismiss the native inspector as soon as the hinge leaves fully open,
+            // before the collapsing split can carry the presentation onto the outer display as an empty sheet;
+            // layout admission settles too late for that.
+            if previous == .fullyOpen, status != .fullyOpen, nativeFilesInspectorPresented {
+                withTransaction(.unanimated) {
+                    navigationState.filesInspectorPresented = false
+                    navigationState.chatShowsFilesInspector = false
+                    nativeFilesInspectorPresented = false
+                }
+            }
+            observeSidebarLayout()
+        }
         .onChange(of: scenePhase, initial: true) {
             sidebarLayoutResumeTask?.cancel()
             columnUpdateRevision += 1
@@ -538,11 +548,7 @@ struct SessionListView: View {
                 .environment(\.targetChatLayoutWidth, targetChatWidth)
                 .onSettledGeometryChange(for: DivisionRegionGeometry.self, hingeStatus: hingeStatus,
                     requiresSettlement: { $1.needsHingeSettlement(comparedTo: $0) }) { geometry in
-#if DEBUG
                     DivisionRegionGeometry(geometry, divisions: divisionFramesForTesting)
-#else
-                    DivisionRegionGeometry(geometry)
-#endif
                 } action: { geometry in
                     observeSidebarLayout { $0.geometry = geometry }
                 }
@@ -551,7 +557,6 @@ struct SessionListView: View {
 
     private func sharedSidebar(isPresented: Bool = false, isDrawer: Bool = false) -> some View {
         AppSidebar(
-            searchText: Binding(get: { sidebarSearch.text }, set: { sidebarSearch.text = $0 }),
             presentation: appSidebar,
             searchPull: sidebarSearch,
             searchUsesBottomBar: horizontalSizeClass == .compact,
@@ -715,7 +720,12 @@ struct SessionListView: View {
                     )
             } detail: {
                 conversationStack
-                    .inspector(isPresented: $nativeFilesInspectorPresented) {
+                    // The live size class, not the admitted layout: a fold that is still settling must not let the
+                    // collapsing split re-present the inspector as an empty sheet on the outer display.
+                    .inspector(isPresented: Binding(
+                        get: { nativeFilesInspectorPresented && observedHorizontalSizeClass == .regular },
+                        set: { nativeFilesInspectorPresented = $0 }
+                    )) {
                         if let regularWidthChat {
                             FilesInspectorContent(
                                 session: regularWidthChat,
@@ -761,17 +771,7 @@ struct SessionListView: View {
                         ToolbarItem(placement: .topBarTrailing) { regularNewChatButton }
                             .overflowPriority(.newChat)
                     }
-                    if updateNotificationViewModel.supportsNotifications {
-                        if #available(iOS 27.1, *) {
-                            ToolbarItem(placement: detailHasVerticalBar ? .bottomBar : .topBarTrailing) {
-                                updateNotificationsButton
-                            }
-                                .axisBehavior(.verticalPreferred)
-                                .overflowPriority(.notifications, includesHorizontal: true)
-                        } else {
-                            ToolbarItem(placement: .topBarTrailing) { updateNotificationsButton }
-                        }
-                    }
+                    updateNotificationsToolbar
                     if #available(iOS 27.1, *), detailHostsSidebarActions {
                         ToolbarItem(placement: .bottomBar) { settingsButton }
                             .axisBehavior(.verticalPreferred)
@@ -791,7 +791,24 @@ struct SessionListView: View {
         Group {
             switch page {
             case .item(let item): sectionItemPage(item)
-            case .session(let session): navigationDestination(.session(session))
+            case .session(let session):
+                navigationDestination(.session(session))
+                    .toolbar { updateNotificationsToolbar }
+            }
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var updateNotificationsToolbar: some ToolbarContent {
+        if updateNotificationViewModel.supportsNotifications {
+            if #available(iOS 27.1, *) {
+                ToolbarItem(placement: detailHasVerticalBar ? .bottomBar : .topBarTrailing) {
+                    updateNotificationsButton
+                }
+                .axisBehavior(.verticalPreferred)
+                .overflowPriority(.notifications, includesHorizontal: true)
+            } else {
+                ToolbarItem(placement: .topBarTrailing) { updateNotificationsButton }
             }
         }
     }
@@ -819,9 +836,7 @@ struct SessionListView: View {
             _ = sidebarLayoutSettlement.settle(at: ProcessInfo.processInfo.systemUptime)
             guard let layout = sidebarLayoutSettlement.applied, layout == observedSidebarLayout else { return }
             isResumingSidebarLayout = false
-            var transaction = Transaction(animation: nil)
-            transaction.disablesAnimations = true
-            withTransaction(transaction) { applySidebarLayout(layout) }
+            withTransaction(.unanimated) { applySidebarLayout(layout) }
         }
     }
 
@@ -830,11 +845,9 @@ struct SessionListView: View {
         if splitGeometry.frame.width != layout.geometry.frame.width || splitGeometry.divisions != layout.geometry.divisions {
             chats.prepareForWidthChange()
         }
-        var transaction = Transaction(animation: nil)
-        transaction.disablesAnimations = true
         isApplyingSidebarLayout = true
         defer { isApplyingSidebarLayout = false }
-        withTransaction(transaction) {
+        withTransaction(.unanimated) {
             appliedSidebarLayout = layout
             isCompactWidth = layout.sizeClass == .compact
             if isCompactWidth {
@@ -913,9 +926,7 @@ struct SessionListView: View {
         // A native callback during preparation must not put the previous target back.
         guard !isPreparingColumn || observedVisibility == nil || storedChoice != nil else { return }
         if let observedVisibility { nativeColumnVisibility = observedVisibility }
-        var layout = Transaction(animation: nil)
-        layout.disablesAnimations = true
-        withTransaction(layout) {
+        withTransaction(.unanimated) {
             if storedChoice == true, widensForFilesInspector {
                 navigationState.filesInspectorPresented = false
                 navigationState.chatShowsFilesInspector = false
@@ -934,8 +945,9 @@ struct SessionListView: View {
         let revision = columnUpdateRevision
         // Render one destination layout before UIKit moves the pane. Its leading placement carries the fixed
         // transcript and composer together; interpolating their width would re-wrap text during the move.
-        if targetChatWidth != width { chats.prepareForWidthChange() }
-        withTransaction(layout) {
+        // The transcript preserves its reader when its viewport width lands, not before: a hold armed ahead of
+        // the re-wrap left the old offset on screen for several frames and then corrected it (TAL-1532).
+        withTransaction(.unanimated) {
             isPreparingColumn = true
             targetChatWidth = width
         }
@@ -953,6 +965,13 @@ struct SessionListView: View {
                 columnFoldWidth = columnWidth
                 nativeColumnVisibility = visibility
                 isPreparingColumn = false
+            }
+            // The column hide is what makes room for a pending Files presentation; admit it on the following turn.
+            if visibility == .detailOnly, navigationState.filesInspectorPresented, !nativeFilesInspectorPresented {
+                DispatchQueue.main.async {
+                    guard columnUpdateRevision == revision else { return }
+                    reconcileFilesInspector()
+                }
             }
         }
     }
@@ -1009,9 +1028,7 @@ struct SessionListView: View {
     /// UIKit keeps the same inspector content mounted while its presentation closes across a rotation.
     /// Intent, the chat's report, and the split width target are reconciled before the native boundary moves.
     private func setFilesInspectorPresented(_ presented: Bool) {
-        var transaction = Transaction(animation: nil)
-        transaction.disablesAnimations = true
-        withTransaction(transaction) {
+        withTransaction(.unanimated) {
             navigationState.filesInspectorPresented = presented
             filesInspectorOpeningIsLandscape = presented ? regularSidebarIsLandscape : nil
             if !presented { navigationState.chatShowsFilesInspector = false }
@@ -1027,9 +1044,12 @@ struct SessionListView: View {
             navigationState.chatShowsFilesInspector = false
         }
         if !navigationState.filesInspectorPresented { filesInspectorOpeningIsLandscape = nil }
-        // Admit only after the detail has widened; once shown, the inspector itself narrows that measurement.
+        // Admit only after the column is hidden and the detail has widened; once shown, the inspector itself narrows
+        // that measurement. A room measurement left over from before a fold must not present over a visible column:
+        // UIKit dismisses that presentation at once, which reads as the tap doing nothing.
         nativeFilesInspectorPresented = presentation.showsFilesInspector
-            && (nativeFilesInspectorPresented || !widensForFilesInspector || detailHasInspectorRoom)
+            && (nativeFilesInspectorPresented || !widensForFilesInspector
+                || (detailHasInspectorRoom && nativeColumnVisibility == .detailOnly))
     }
 
     private var regularSidebarToggleButton: some View {
@@ -1108,7 +1128,7 @@ struct SessionListView: View {
     }
 
     private var isNewChatDisabled: Bool {
-        viewModel.isViewingCachedData || navigationState.isCreatingNewChat
+        viewModel.isViewingCachedData
     }
 
     /// An empty chat needs no compose button, even after its session has been created.
@@ -1542,9 +1562,7 @@ struct SessionListView: View {
             navigate()
             return
         }
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        withTransaction(transaction) { navigate() }
+        withTransaction(.unanimated) { navigate() }
         DispatchQueue.main.async { appSidebar.isPresented = false }
     }
 
@@ -1733,14 +1751,14 @@ struct SessionListView: View {
 
     private var sceneActions: TalariaSceneActions {
         TalariaSceneActions(
-            canCreateNewChat: !viewModel.isViewingCachedData && !navigationState.isCreatingNewChat,
+            canCreateNewChat: !isNewChatDisabled,
             createNewChat: openNewChatFromKeyboard,
             searchSessions: openSearchFromKeyboard
         )
     }
 
     private func openNewChatFromKeyboard() {
-        guard !viewModel.isViewingCachedData, !navigationState.isCreatingNewChat else { return }
+        guard !isNewChatDisabled else { return }
         openNewChat()
     }
 

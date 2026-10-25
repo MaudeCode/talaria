@@ -14,13 +14,25 @@
     },
     {
       "category": "Changed",
-      "summary": "A new chat is created on your first message, or when you open Files, so abandoned drafts no longer leave empty chats behind.",
+      "summary": "A new chat is created on your first message, or when you open Files, so abandoned drafts no longer leave empty chats behind. New Chat remains available while your draft is unsent.",
       "highlight": false,
       "components": ["app"]
     },
     {
       "category": "Changed",
       "summary": "Files opens only from its button and closes when the layout no longer has room for it.",
+      "highlight": false,
+      "components": ["app"]
+    },
+    {
+      "category": "Changed",
+      "summary": "Active Profile and Projects controls have moved from Chat List settings to the sidebar's Filters menu. The Message Count and Workspace subtitle switches are gone; chat subtitles always show both when available.",
+      "highlight": false,
+      "components": ["app"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "The notification bell stays available in chats opened from sections.",
       "highlight": false,
       "components": ["app"]
     },

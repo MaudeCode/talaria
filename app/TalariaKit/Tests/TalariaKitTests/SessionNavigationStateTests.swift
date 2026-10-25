@@ -153,14 +153,12 @@ final class SessionNavigationStateTests: XCTestCase {
         let created = SessionSummary(sessionId: "created-session")
         var state = SessionNavigationState()
         state.select(route)
-        XCTAssertTrue(state.isCreatingNewChat)
 
         state.remember(created)
 
         XCTAssertEqual(state.destination, .newChat(route))
         XCTAssertEqual(state.selectedSessionID, "created-session")
         XCTAssertEqual(state.lastSelectedSessionID, "created-session")
-        XCTAssertFalse(state.isCreatingNewChat)
     }
 
     func testImplicitCreatedChatIsRememberedWithoutReplacingItsRoot() {
@@ -173,18 +171,18 @@ final class SessionNavigationStateTests: XCTestCase {
         XCTAssertEqual(state.chatRootRevision, revision)
     }
 
-    func testSelectingAnotherNewChatRouteStartsFreshCreationState() {
+    func testSelectingAnotherNewChatRouteReplacesTheUnsentRoot() {
         let firstRoute = PendingNewChatRoute()
         let secondRoute = PendingNewChatRoute()
         var state = SessionNavigationState()
         state.select(firstRoute)
-        state.remember(SessionSummary(sessionId: "created-session"))
+        let revision = state.chatRootRevision
 
         state.select(secondRoute)
 
         XCTAssertEqual(state.destination, .newChat(secondRoute))
         XCTAssertNil(state.selectedSessionID)
-        XCTAssertTrue(state.isCreatingNewChat)
+        XCTAssertGreaterThan(state.chatRootRevision, revision)
     }
 
     /// Work still resolving for a destination the user cleared — an external

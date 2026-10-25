@@ -87,11 +87,6 @@ public struct SessionNavigationState: Equatable {
         destination?.selectedSessionID ?? newChatSessionID
     }
 
-    public var isCreatingNewChat: Bool {
-        guard case .newChat = destination else { return false }
-        return newChatSessionID == nil
-    }
-
     /// Selecting a chat replaces the root and clears its inner pages.
     public mutating func select(_ session: SessionSummary) {
         rootRevision += 1

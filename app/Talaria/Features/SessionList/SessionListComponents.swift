@@ -141,34 +141,6 @@ struct SessionExportShareItem: Identifiable {
     var id: String { fileURL.absoluteString }
 }
 
-struct SidebarSubrowSelectionStyle: ViewModifier {
-    let isSelected: Bool
-
-    func body(content: Content) -> some View {
-        content
-            .padding(.leading, 18)
-            .padding(.trailing, 10)
-            .background {
-                if isSelected {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(Color.accentColor.opacity(0.10))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .stroke(Color.accentColor.opacity(0.20), lineWidth: 1)
-                        }
-                }
-            }
-    }
-}
-
-extension View {
-    func sidebarSubrowSelectionStyle(isSelected: Bool) -> some View {
-        modifier(SidebarSubrowSelectionStyle(isSelected: isSelected))
-    }
-}
-
-
-
 extension Color {
     init?(hexString: String?) {
         guard let hexString else { return nil }

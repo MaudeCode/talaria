@@ -922,6 +922,9 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                 title: index == 0 ? sessionTitle : String(format: "Fixture Session %02d", index)
             )
         }.filter { !archivedIDs.contains($0["session_id"] as? String ?? "") }
+        if ProcessInfo.processInfo.arguments.contains("--ui-test-scheduled-sessions") {
+            for index in sessions.indices { sessions[index]["source_kind"] = "cron" }
+        }
         if ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.runMonitorArgument) {
             // The server lists active sessions first (TAL-306).
             var active: [[String: Any]] = []

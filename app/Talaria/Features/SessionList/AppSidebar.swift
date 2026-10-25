@@ -3,7 +3,6 @@ import TalariaKit
 
 /// The same navigation panel is used by the split column and the compact drawer.
 struct AppSidebar<Sessions: View, Actions: ToolbarContent>: View {
-    @Binding var searchText: String
     @Bindable var presentation: AppSidebarPresentation
     @Bindable var searchPull: SidebarSearchPull
     let searchUsesBottomBar: Bool
@@ -34,12 +33,12 @@ struct AppSidebar<Sessions: View, Actions: ToolbarContent>: View {
             VStack(spacing: 0) {
                 if searchPull.isSearchPresented && isActive {
                     SettingsPickerSearchField(
-                        text: $searchText,
+                        text: $searchPull.text,
                         prompt: "Search",
                         clearLabel: "Close search",
                         autofocus: true,
                         onClose: {
-                            searchText = ""
+                            searchPull.text = ""
                             searchPull.isSearchPresented = false
                         }
                     )

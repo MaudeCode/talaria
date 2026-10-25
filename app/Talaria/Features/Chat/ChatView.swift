@@ -29,8 +29,6 @@ private struct ChatBodyEvaluationKey: EnvironmentKey {
 }
 
 extension EnvironmentValues {
-    @Entry var chatDivisionFramesForTesting: [CGRect]? = nil
-
     var chatBodyEvaluation: ChatBodyEvaluationRecorder? {
         get { self[ChatBodyEvaluationKey.self] }
         set { self[ChatBodyEvaluationKey.self] = newValue }
@@ -88,8 +86,8 @@ struct SplitFilesInspector {
 struct ChatView: View {
 #if DEBUG
     @Environment(\.chatBodyEvaluation) private var recordBodyEvaluation
-    @Environment(\.chatDivisionFramesForTesting) private var divisionFramesForTesting
 #endif
+    @Environment(\.chatDivisionFramesForTesting) private var divisionFramesForTesting
     private var bottomAnchorID: String {
         latestTranscriptMessageID ?? ChatTranscriptView.emptyContainerID
     }
@@ -640,8 +638,9 @@ struct ChatView: View {
                     .zIndex(10)
                 }
             }
-            // A fixed destination layout inside the moving native pane: text, strips and composer translate
-            // together. Animating this inner width would produce a new text wrap on every frame.
+            // A fixed destination layout anchored to the pane's trailing edge, which is the screen edge and never
+            // moves: the chat snaps to its final wrap and place once, and the column slides over or into the
+            // space it leaves, as the ChatGPT app does. Animating this inner width would re-wrap text every frame.
             .frame(width: blockSize.width, height: blockSize.height)
             .transaction(value: blockSize.width) {
                 $0.animation = nil
@@ -653,8 +652,8 @@ struct ChatView: View {
                     transaction.disablesAnimations = true
                 }
             }
-            .frame(width: viewportSize.width, height: viewportSize.height, alignment: .leading)
-            .clipShape(TrailingEdgeClip(layoutDirection: layoutDirection))
+            .frame(width: viewportSize.width, height: viewportSize.height, alignment: .trailing)
+            .clipShape(PaneEdgeClip())
         }
         .onGeometryChange(for: CGSize.self, of: { chatLayoutSize(in: $0, width: targetChatLayoutWidth) }) { size in
             guard !holdsForegroundLayout, size.width > 0, size.height > 0 else { return }
@@ -697,11 +696,7 @@ struct ChatView: View {
         if let divisionGeometry {
             divisions = divisionGeometry.localDivisions(in: geometry)
         } else {
-#if DEBUG
             divisions = DivisionRegionGeometry(geometry, divisions: divisionFramesForTesting).localDivisions(in: geometry)
-#else
-            divisions = DivisionRegionGeometry(geometry).localDivisions(in: geometry)
-#endif
         }
         let bounds = CGRect(origin: .zero, size: chatLayoutSize(in: geometry))
         guard let width else {
@@ -3713,13 +3708,10 @@ private struct ChatLiveSync: ViewModifier {
     }
 }
 
-/// Clips only the semantic trailing edge, where the destination width overflows the pane; content still scrolls beneath
-/// the bars, and a native fold transient that animates the mask never sweeps it across the chat's leading edge.
-struct TrailingEdgeClip: Shape {
-    var layoutDirection: LayoutDirection = .leftToRight
-
+/// Clips the pane's side edges, where a wider destination layout overflows under the sliding column, while content
+/// still scrolls beneath the bars.
+struct PaneEdgeClip: Shape {
     func path(in rect: CGRect) -> Path {
-        Path(CGRect(x: layoutDirection == .leftToRight ? rect.minX - rect.width : rect.minX,
-                    y: rect.minY - rect.height, width: rect.width * 2, height: rect.height * 3))
+        Path(CGRect(x: rect.minX, y: rect.minY - rect.height, width: rect.width, height: rect.height * 3))
     }
 }

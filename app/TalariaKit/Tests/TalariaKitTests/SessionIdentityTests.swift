@@ -48,7 +48,7 @@ final class SessionIdentityTests: XCTestCase {
         XCTAssertFalse(SessionRowPresentation.isActiveStreaming(SessionSummary(sessionId: "blank-stream", activeStreamId: "   ")))
     }
 
-    func testSessionRowMetadataLabelUsesVisiblePartsAndTheServerWorkspaceName() {
+    func testSessionRowMetadataLabelUsesMessageCountAndTheServerWorkspaceName() {
         let session = SessionSummary(
             sessionId: "metadata",
             workspace: "/Users/example/talaria-main",
@@ -57,37 +57,26 @@ final class SessionIdentityTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            SessionRowPresentation.metadataLabel(for: session, showsMessageCount: true, showsWorkspace: true),
+            SessionRowPresentation.metadataLabel(for: session),
             "2 messages • Talaria"
-        )
-        XCTAssertEqual(
-            SessionRowPresentation.metadataLabel(for: session, showsMessageCount: true, showsWorkspace: false),
-            "2 messages"
-        )
-        XCTAssertEqual(
-            SessionRowPresentation.metadataLabel(for: session, showsMessageCount: false, showsWorkspace: true),
-            "Talaria"
         )
         // A row from a server that predates `workspace_name` shows no workspace rather than the folder name (TAL-303).
         XCTAssertEqual(
             SessionRowPresentation.metadataLabel(
-                for: SessionSummary(sessionId: "older", workspace: "/Users/example/talaria-main", messageCount: 2),
-                showsMessageCount: true,
-                showsWorkspace: true
+                for: SessionSummary(sessionId: "older", workspace: "/Users/example/talaria-main", messageCount: 2)
             ),
             "2 messages"
         )
     }
 
-    func testSessionRowMetadataLabelOmitsHiddenOrUnavailableParts() {
+    func testSessionRowMetadataLabelOmitsUnavailableParts() {
         let session = SessionSummary(
             sessionId: "metadata-empty",
             workspace: "   ",
             messageCount: -1
         )
 
-        XCTAssertNil(SessionRowPresentation.metadataLabel(for: session, showsMessageCount: true, showsWorkspace: true))
-        XCTAssertNil(SessionRowPresentation.metadataLabel(for: session, showsMessageCount: false, showsWorkspace: false))
+        XCTAssertNil(SessionRowPresentation.metadataLabel(for: session))
     }
 
     func testSessionRowAccessibilityStateLabelsIncludeStreamingPinnedAndCachedState() {
