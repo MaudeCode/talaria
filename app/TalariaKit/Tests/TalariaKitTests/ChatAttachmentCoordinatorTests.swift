@@ -611,6 +611,36 @@ final class ChatAttachmentCoordinatorTests: APIClientTestCase {
         XCTAssertEqual(coordinator.pendingAttachments.map(\.id), [record.id])
     }
 
+    func testRestoredDraftAttachmentWithoutASessionStaysStagedUntilAdoption() async throws {
+        let record = ChatDraftAttachment(id: UUID(), name: "notes.txt", mime: "text/plain", size: 5, isImage: false, file: "abc-notes.txt")
+        var requests = 0
+        let client = makeClient { request in
+            requests += 1
+            return apiTestJSONResponse(#"{"path":"/uploads/notes.txt","mime":"text/plain","is_image":false}"#, for: request)
+        }
+        let coordinator = ChatAttachmentCoordinator(client: client, draftAttachmentStore: RecordingAttachmentStore())
+        let delegate = ChatAttachmentCoordinatorDelegateSpy()
+        delegate.attachmentSessionID = nil
+        coordinator.delegate = delegate
+
+        let restored = await coordinator.reuploadDraftAttachment(data: Data("notes".utf8), draftAttachment: record)
+
+        XCTAssertEqual(requests, 0, "A new chat has nothing to upload against before its first send")
+        XCTAssertEqual(restored?.id, record.id)
+        XCTAssertEqual(restored?.uploadPhase, .staged)
+        XCTAssertEqual(restored?.draftFileName, "abc-notes.txt")
+        XCTAssertEqual(coordinator.pendingAttachments.map(\.id), [record.id])
+        XCTAssertFalse(coordinator.pendingAttachments.contains { if case .failed = $0.uploadPhase { true } else { false } })
+
+        delegate.attachmentSessionID = "created"
+        coordinator.adoptSessionContext(from: "")
+        await coordinator.uploadStagedAttachments()
+
+        XCTAssertEqual(requests, 1)
+        XCTAssertEqual(coordinator.pendingAttachments.map(\.id), [record.id], "Adoption keeps the draft record's identity")
+        XCTAssertTrue(coordinator.pendingAttachments.allSatisfy(\.isReadyToSend))
+    }
+
     func testReuploadDraftAttachmentFailureStaysQuiet() async throws {
         let record = ChatDraftAttachment(
             id: UUID(),

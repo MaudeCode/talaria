@@ -279,13 +279,17 @@ final class ChatAttachmentCoordinator {
         let thumbnail = draftAttachment.isImage ? await ImagePreviewDownsampler.previewDataAsync(
             from: data, maxPixelSize: ImagePreviewDownsampler.attachmentMaxPixelSize
         ) : nil
+        // A new chat has no session to upload against until its first send: the record stays a staged local
+        // file, and the send's staged-upload drain carries it once the created session is adopted.
+        let hasSession = delegate?.attachmentSessionID != nil
         let staged = PendingAttachment(
             id: draftAttachment.id, name: draftAttachment.name, path: "local-attachment:\(draftAttachment.id)", mime: draftAttachment.mime,
             size: draftAttachment.size, isImage: draftAttachment.isImage, thumbnailData: thumbnail,
-            draftFileName: file, uploadPhase: .uploading
+            draftFileName: file, uploadPhase: hasSession ? .uploading : .staged
         )
         setPendingAttachment(staged)
         stagedContexts[staged.id] = delegate?.attachmentContextID
+        guard hasSession else { return staged }
         return await retryAttachment(id: staged.id, data: data, reportsErrors: false)
     }
 
