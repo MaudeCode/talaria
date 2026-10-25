@@ -126,13 +126,15 @@ public struct SessionNavigationState: Equatable {
     public mutating func pushSectionSession(_ session: SessionSummary) {
         rootRevision += 1
         selectedSectionSession = session
+        remember(session)
     }
 
     public mutating func remember(_ session: SessionSummary) {
         guard let sessionID = Self.normalized(session.sessionId) else { return }
         lastSelectedSessionID = sessionID
-        if case .newChat = destination {
-            newChatSessionID = sessionID
+        switch destination {
+        case nil, .newChat: newChatSessionID = sessionID
+        default: break
         }
     }
 

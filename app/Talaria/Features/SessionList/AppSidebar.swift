@@ -8,6 +8,7 @@ struct AppSidebar<Sessions: View, Actions: ToolbarContent>: View {
     @Bindable var searchPull: SidebarSearchPull
     let searchUsesBottomBar: Bool
     let isActive: Bool
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @AppStorage(
         ProviderQuotaDisplaySettings.aliasesKey,
@@ -49,7 +50,10 @@ struct AppSidebar<Sessions: View, Actions: ToolbarContent>: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .clipped()
             }
-            .background(Color(.systemBackground))
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color(.systemBackground).ignoresSafeArea())
+            .containerBackground(Color(.systemBackground), for: .navigation)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .accessibilityIdentifier("app-sidebar")
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
@@ -131,7 +135,8 @@ struct AppSidebar<Sessions: View, Actions: ToolbarContent>: View {
             SidebarUtilityIcon(assetImage: icon, tint: selected ? .accentColor : .primary, size: 20)
         } label: {
             HStack {
-                Text(AppSection(destination)?.title ?? "").font(.body).lineLimit(1)
+                Text(AppSection(destination)?.title ?? "").font(.body)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
                 Spacer(minLength: 0)
             }
         }
@@ -141,22 +146,14 @@ struct AppSidebar<Sessions: View, Actions: ToolbarContent>: View {
     private func destinationRow(destination: SessionListUtilityDestination, isSelected: Bool,
                                 @ViewBuilder icon: () -> some View,
                                 @ViewBuilder label: () -> some View) -> some View {
-        Button { select(destination) } label: {
-            HStack(spacing: 12) {
-                icon()
-                label()
-            }
-            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-            .foregroundStyle(isSelected ? Color.accentColor : .primary)
-            .background(isSelected ? Color.accentColor.opacity(0.12) : .clear,
-                        in: RoundedRectangle(cornerRadius: 10))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        SectionSelectionRow(isSelected: isSelected, isListRow: false, showsChevron: false,
+                            action: { select(destination) }, icon: icon, label: label)
     }
 
     private func quotaRow(_ source: ProviderQuotaWidgetSource) -> some View {
+        let labelLayout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+            : AnyLayout(HStackLayout(spacing: 8))
         let options = ProviderQuotaSidebarDisplayOptions(
             detail: ProviderQuotaSidebarDetail(rawValue: quotaDetailRawValue) ?? .defaultValue,
             showsRail: showsQuotaRail,
@@ -192,19 +189,19 @@ struct AppSidebar<Sessions: View, Actions: ToolbarContent>: View {
                 )
             }
         } label: {
-            VStack(spacing: 2) {
-                HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                labelLayout {
                     Text(providerDisplayName(source))
                         .font(.body)
-                        .lineLimit(1)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
 
-                    Spacer(minLength: 8)
+                    if !dynamicTypeSize.isAccessibilitySize { Spacer(minLength: 8) }
 
                     if let detail {
                         Text(detail)
                             .font(.caption.monospacedDigit())
                             .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
                     }
                 }
 

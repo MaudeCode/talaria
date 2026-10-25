@@ -27,14 +27,16 @@ final class SessionNavigationStateTests: XCTestCase {
         XCTAssertEqual(state.lastSelectedSessionID, "session-2")
     }
 
-    func testRestoreLeavesCompactChatRootAtSessionList() {
-        let stored = SessionSummary(sessionId: "stored")
-        var state = SessionNavigationState(lastSelectedSessionID: "stored")
-
-        let restored = state.sessionToRestore(from: [stored], allowsAutomaticRestore: false)
-
-        XCTAssertNil(restored)
-        XCTAssertEqual(state.lastSelectedSessionID, "stored")
+    func testCachedLaunchRestoreIsWidthIndependentAndConsumedOnce() {
+        for _ in ["compact", "regular"] {
+            let stored = SessionSummary(sessionId: "stored")
+            var state = SessionNavigationState(lastSelectedSessionID: "stored")
+            XCTAssertEqual(state.sessionToRestore(from: [stored]), stored)
+            XCTAssertTrue(state.launchRestoreResolved)
+            state.select(stored)
+            XCTAssertNil(state.sessionToRestore(from: [stored]))
+            XCTAssertEqual(state.destination, .session(stored))
+        }
     }
 
     func testRestoreClearsStoredSelectionWhenSessionNoLongerExists() {
@@ -79,7 +81,8 @@ final class SessionNavigationStateTests: XCTestCase {
         state.finishDeepLinkedSessionLoad(id: deepLinkedSessionID)
         let restored = state.sessionToRestore(from: [stored], pendingDeepLinkedSessionID: nil)
 
-        XCTAssertEqual(restored, stored)
+        XCTAssertNil(restored)
+        XCTAssertTrue(state.launchRestoreResolved)
     }
 
     func testRestoreProceedsWhenPendingDeepLinkIDIsBlank() {
@@ -158,6 +161,16 @@ final class SessionNavigationStateTests: XCTestCase {
         XCTAssertEqual(state.selectedSessionID, "created-session")
         XCTAssertEqual(state.lastSelectedSessionID, "created-session")
         XCTAssertFalse(state.isCreatingNewChat)
+    }
+
+    func testImplicitCreatedChatIsRememberedWithoutReplacingItsRoot() {
+        var state = SessionNavigationState()
+        let revision = state.chatRootRevision
+        state.remember(SessionSummary(sessionId: "implicit-created"))
+        XCTAssertNil(state.destination)
+        XCTAssertEqual(state.selectedSessionID, "implicit-created")
+        XCTAssertEqual(state.lastSelectedSessionID, "implicit-created")
+        XCTAssertEqual(state.chatRootRevision, revision)
     }
 
     func testSelectingAnotherNewChatRouteStartsFreshCreationState() {
@@ -354,14 +367,18 @@ final class SessionNavigationStateTests: XCTestCase {
         XCTAssertNil(state.lastSelectedSessionID)
     }
 
-    func testUtilityDestinationRemainsSelectedAcrossLayoutReevaluation() {
+    func testSettingsRoutingLeavesTheUnderlyingRootAndPagesUnchanged() {
         var state = SessionNavigationState()
-        state.select(SessionListUtilityDestination.settings(nil))
-
-        let reevaluatedState = state
-
-        XCTAssertEqual(reevaluatedState.destination, .utility(.settings(nil)))
-        XCTAssertNil(reevaluatedState.selectedSessionID)
+        state.select(.memory)
+        state.selectedItem = .memory(.section(.user))
+        let root = state.destination
+        let item = state.selectedItem
+        let revision = state.beginOpen() // The modal routing chokepoint invalidates outstanding opens.
+        XCTAssertEqual(state.destination, root)
+        XCTAssertEqual(state.selectedItem, item)
+        XCTAssertEqual(state.openRevision, revision)
+        XCTAssertNil(AppSection(.settings(nil)))
+        XCTAssertNil(AppSection(.providerQuotaWidgetSettings))
     }
 
     func testKanbanIsSelectableAsAUtilityDestination() {
@@ -373,22 +390,17 @@ final class SessionNavigationStateTests: XCTestCase {
         XCTAssertNil(state.selectedSessionID)
     }
 
-    func testCompactNavigationPresentsUtilitiesAsRootsAndChatsAsDetails() {
-        let session = SessionNavigationDestination.session(
-            SessionSummary(sessionId: "session-1")
-        )
-        let kanban = SessionNavigationDestination.utility(.kanban)
-        let archived = SessionNavigationDestination.utility(.archived)
-        let webhook = SessionNavigationDestination.utility(.webhook)
-
-        XCTAssertEqual(session.compactPushedDestination, session)
-        XCTAssertNil(session.compactRootUtility)
-        XCTAssertNil(kanban.compactPushedDestination)
-        XCTAssertEqual(kanban.compactRootUtility, .kanban)
-        XCTAssertEqual(archived.compactPushedDestination, archived)
-        XCTAssertNil(archived.compactRootUtility)
-        XCTAssertEqual(webhook.compactPushedDestination, webhook)
-        XCTAssertNil(webhook.compactRootUtility)
+    func testSidebarDestinationsReplaceTheRootAndClearInnerPages() {
+        var state = SessionNavigationState()
+        for utility: SessionListUtilityDestination in [.kanban, .archived, .webhook, .scheduled, .memory, .tasks, .skills, .insights] {
+            state.select(SessionSummary(sessionId: "chat"))
+            state.select(utility)
+            XCTAssertEqual(state.destination, .utility(utility))
+            XCTAssertEqual(state.section, AppSection(utility))
+            XCTAssertNil(state.selectedItem)
+            XCTAssertNil(state.selectedSectionSession)
+            XCTAssertNil(state.selectedSessionID)
+        }
     }
 
     func testReselectingRootDestinationAdvancesNavigationRevision() {
@@ -517,120 +529,85 @@ private actor SessionInitialLoadEventRecorder {
     }
 }
 
-/// TAL-643: the section and its selected item decide both split-view columns at regular width,
-/// and they live outside the width branches so a size-class change keeps them.
+/// Section roots and inner pages are independent of the sidebar presentation.
 final class AppSectionLayoutTests: XCTestCase {
-    func testEachSectionNamesItsSidebarWidthAndDefaultItem() {
-        let expectations: [(SessionListUtilityDestination, AppSection, Bool, SectionItem?)] = [
-            (.settings(nil), .settings, false, .settings(.category(.appearance))),
-            (.providerQuotaWidgetSettings, .settings, false, .settings(.category(.appearance))),
-            (.memory, .memory, false, .memory(.section(.memory))),
-            (.skills, .skills, false, nil),
-            (.tasks, .tasks, false, nil),
-            (.kanban, .kanban, true, nil),
-            (.insights, .insights, true, nil),
-            (.providers("source"), .insights, true, nil),
-            (.archived, .archived, false, nil),
-            (.scheduled, .scheduled, false, nil),
-            (.webhook, .webhook, false, nil),
+    func testEachUtilityNamesItsRootWithoutAnImplicitPushedPage() {
+        let expectations: [(SessionListUtilityDestination, AppSection)] = [
+            (.memory, .memory), (.skills, .skills), (.tasks, .tasks), (.kanban, .kanban),
+            (.insights, .insights), (.providers("source"), .insights), (.archived, .archived),
+            (.scheduled, .scheduled), (.webhook, .webhook)
         ]
-        for (utility, section, isFullWidth, defaultItem) in expectations {
+        for (utility, section) in expectations {
             var state = SessionNavigationState()
             state.select(utility)
-            XCTAssertEqual(state.section, section, "\(utility)")
-            XCTAssertEqual(state.section.isFullWidth, isFullWidth, "\(utility)")
-            XCTAssertEqual(state.section.defaultItem, defaultItem, "\(utility)")
+            XCTAssertEqual(state.section, section)
+            XCTAssertEqual(state.destination, .utility(utility))
+            XCTAssertNil(state.selectedItem)
         }
         XCTAssertEqual(SessionNavigationState().section, .chats)
-        XCTAssertFalse(AppSection.chats.isFullWidth)
     }
 
-    func testSettingsAnchorsSelectTheirCategory() {
+    func testSettingsAnchorsNameModalCategoriesOutsideAppSections() {
         let anchors: [(SettingsScrollAnchor, SettingsCategory)] = [
-            (.servers, .servers), (.system, .servers), (.providerQuotas, .providers),
+            (.servers, .servers), (.system, .servers), (.providerQuotas, .providers)
         ]
         for (anchor, category) in anchors {
-            var state = SessionNavigationState()
-            state.select(.settings(anchor))
-            XCTAssertEqual(state.selectedItem, .settings(.category(category)), "\(anchor)")
-            XCTAssertFalse(state.pushesProviderQuotaWidget)
+            XCTAssertEqual(anchor.category, category)
+            XCTAssertNil(AppSection(.settings(anchor)))
         }
-
-        var state = SessionNavigationState()
-        state.select(.providerQuotaWidgetSettings)
-        XCTAssertEqual(state.selectedItem, .settings(.category(.liveActivitiesAndWidgets)))
-        XCTAssertTrue(state.pushesProviderQuotaWidget)
-        state.selectedItem = .settings(.category(.about))
-        XCTAssertFalse(state.pushesProviderQuotaWidget, "Another category closes the widget page")
+        XCTAssertNil(AppSection(.providerQuotaWidgetSettings))
     }
 
-    func testEnteringASectionStartsFromItsDefault() {
+    func testEnteringASectionStartsAtItsRoot() {
         var state = SessionNavigationState()
         state.select(.memory)
         state.selectedItem = .memory(.section(.user))
-        state.select(.settings(nil))
+        state.select(.skills)
         XCTAssertNil(state.selectedItem)
-        XCTAssertEqual(state.displayedItem, .settings(.category(.appearance)))
         state.select(.memory)
-        XCTAssertEqual(state.displayedItem, .memory(.section(.memory)))
+        XCTAssertNil(state.selectedItem)
     }
 
     /// Regular → compact pushes the page the detail column showed; compact → regular shows the
     /// pushed page beside the list.
-    func testSizeClassRoundTripKeepsSectionAndItem() {
-        var settings = SessionNavigationState()
-        settings.select(.settings(nil))
-        settings.pinDisplayedItem()
-        XCTAssertEqual(settings.selectedItem, .settings(.category(.appearance)))
-        XCTAssertEqual(settings.displayedItem, .settings(.category(.appearance)))
-        XCTAssertEqual(settings.section, .settings)
-
-        var memory = SessionNavigationState()
-        memory.select(.memory)
-        memory.selectedItem = .memory(.section(.user))
-        memory.pinDisplayedItem()
-        XCTAssertEqual(memory.selectedItem, .memory(.section(.user)))
-        XCTAssertEqual(memory.displayedItem, .memory(.section(.user)))
-
-        var tasks = SessionNavigationState()
-        tasks.select(.tasks)
-        tasks.pinDisplayedItem()
-        XCTAssertNil(tasks.selectedItem, "Tasks has no default, so compact width shows the list")
-
-        let session = SessionSummary(sessionId: "chat")
-        var chat = SessionNavigationState()
-        chat.select(session)
-        chat.pinDisplayedItem()
-        XCTAssertEqual(chat.destination, .session(session))
-        XCTAssertEqual(chat.section, .chats)
-        XCTAssertNil(chat.selectedItem)
+    func testLayoutReevaluationKeepsTheRootInnerPageAndChatRevision() {
+        var state = SessionNavigationState()
+        state.select(.memory)
+        state.selectedItem = .memory(.section(.user))
+        let before = state
+        for size in [CGSize(width: 466, height: 678), CGSize(width: 951, height: 669), CGSize(width: 669, height: 951)] {
+            _ = SidebarPresentation(isRegularWidth: size.width > 600, splitSize: size,
+                hasVerticalBar: size.width > size.height, storedChoice: true)
+            XCTAssertEqual(state, before)
+            XCTAssertEqual(state.selectedItem, .memory(.section(.user)))
+            XCTAssertEqual(state.chatRootRevision, before.chatRootRevision)
+        }
     }
 
-    func testChatOpenedFromAListKeepsTheListAndReturnsToChats() {
-        let session = SessionSummary(sessionId: "scheduled-chat")
-        var state = SessionNavigationState()
-        state.select(.scheduled)
-        state.select(session, in: .scheduled)
-        XCTAssertEqual(state.section, .scheduled)
-        XCTAssertEqual(state.selectedSessionID, "scheduled-chat")
-        XCTAssertEqual(state.lastSelectedSessionID, "scheduled-chat")
-
-        state.returnToChats()
-        XCTAssertEqual(state.section, .chats)
-        XCTAssertEqual(state.destination, .session(session), "Back to Chats keeps the open chat")
-
-        state.select(.archived)
-        let revision = state.rootRevision
-        state.returnToChats()
-        XCTAssertEqual(state.section, .chats)
-        XCTAssertNil(state.destination)
-        XCTAssertGreaterThan(state.rootRevision, revision)
+    func testChatPushedFromASectionRemembersTheSessionAndPopsToThatRoot() {
+        for section: SessionListUtilityDestination in [.archived, .scheduled, .webhook] {
+            let session = SessionSummary(sessionId: "section-chat")
+            var state = SessionNavigationState()
+            state.select(section)
+            let chatRevision = state.chatRootRevision
+            state.pushSectionSession(session)
+            XCTAssertEqual(state.section, AppSection(section))
+            XCTAssertEqual(state.destination, .utility(section))
+            XCTAssertEqual(state.selectedSectionSession, session)
+            XCTAssertEqual(state.lastSelectedSessionID, session.sessionId)
+            XCTAssertEqual(state.chatRootRevision, chatRevision)
+            state.selectedSectionSession = nil
+            XCTAssertEqual(state.destination, .utility(section))
+            XCTAssertNil(state.selectedSectionSession)
+            XCTAssertEqual(state.lastSelectedSessionID, session.sessionId)
+        }
     }
 
     func testRemovingTheOpenChatKeepsItsListInTheSidebar() {
         let session = SessionSummary(sessionId: "webhook-chat")
         var state = SessionNavigationState()
-        state.select(session, in: .webhook)
+        state.select(.webhook)
+        state.pushSectionSession(session)
         state.remove(sessionID: "webhook-chat")
         XCTAssertEqual(state.section, .webhook)
         XCTAssertEqual(state.destination, .utility(.webhook))
@@ -642,7 +619,7 @@ final class AppSectionLayoutTests: XCTestCase {
         XCTAssertNil(chats.destination)
     }
 
-    /// A section's item never outlives the section, so Chats shows the chat again.
+    /// A section's item never outlives its root.
     func testLeavingASectionDropsItsSelectedItem() {
         let session = SessionSummary(sessionId: "chat")
         for leave: (inout SessionNavigationState) -> Void in [
@@ -652,11 +629,10 @@ final class AppSectionLayoutTests: XCTestCase {
             { $0.select(.kanban) },
         ] {
             var state = SessionNavigationState()
-            state.select(.settings(nil))
-            state.selectedItem = .settings(.category(.about))
+            state.select(.memory)
+            state.selectedItem = .memory(.section(.user))
             leave(&state)
             XCTAssertNil(state.selectedItem)
-            XCTAssertNil(state.displayedItem)
         }
     }
 
@@ -708,20 +684,20 @@ final class AppSectionLayoutTests: XCTestCase {
         XCTAssertFalse(RegularSplitLayout.splitsCompanionPage(width: 700, height: 720))
     }
 
-    func testANewDestinationForgetsTheLastChatsFilesInspector() {
+    func testRootReplacementClearsFilesReportsButModalInvalidationPreservesTheRoot() {
         var state = SessionNavigationState()
-        state.select(SessionSummary(sessionId: "session-1"))
+        let chat = SessionSummary(sessionId: "session-1")
+        state.select(chat)
+        state.filesInspectorPresented = true
         state.chatShowsFilesInspector = true
         state.chatShowsCompanionPage = true
-
-        state.select(SessionSummary(sessionId: "session-2"))
+        _ = state.beginOpen()
+        XCTAssertEqual(state.destination, .session(chat))
+        state.select(.memory)
+        XCTAssertFalse(state.filesInspectorPresented)
         XCTAssertFalse(state.chatShowsFilesInspector)
         XCTAssertFalse(state.chatShowsCompanionPage)
-
-        state.chatShowsFilesInspector = true
-        state.returnToChats()
-        XCTAssertTrue(state.chatShowsFilesInspector, "Chats keeps the open chat beside it")
-        state.select(.settings(nil))
-        XCTAssertFalse(state.chatShowsFilesInspector)
+        state.clearDestination()
+        XCTAssertNil(state.destination)
     }
 }

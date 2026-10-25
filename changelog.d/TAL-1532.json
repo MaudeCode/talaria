@@ -1,0 +1,34 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "One sidebar everywhere: chats, sections, search and pinned quotas live in a single panel that slides over the chat on iPhone and the Duo's outer display and sits beside it on iPad and the inner display.",
+      "highlight": true,
+      "components": ["app"]
+    },
+    {
+      "category": "Changed",
+      "summary": "Settings opens as a modal over your current screen, and sections opened from the sidebar replace the screen instead of stacking a Back button.",
+      "highlight": false,
+      "components": ["app"]
+    },
+    {
+      "category": "Changed",
+      "summary": "A new chat is created on your first message, or when you open Files, so abandoned drafts no longer leave empty chats behind.",
+      "highlight": false,
+      "components": ["app"]
+    },
+    {
+      "category": "Changed",
+      "summary": "Files opens only from its button and closes when the layout no longer has room for it.",
+      "highlight": false,
+      "components": ["app"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "Opening or closing the sidebar and folding the Duo keep the chat's text, composer and reading position steady.",
+      "highlight": true,
+      "components": ["app"]
+    }
+  ]
+}

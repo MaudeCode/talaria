@@ -32,14 +32,24 @@ struct DivisionRegionGeometry: Equatable {
         divisions = local.map { $0.offsetBy(dx: frame.minX, dy: frame.minY) }
     }
 
+    var verticalRanges: [Range<CGFloat>] {
+        divisions.filter { $0.height > $0.width }.map { ($0.minX - frame.minX)..<($0.maxX - frame.minX) }
+    }
+
     func needsHingeSettlement(comparedTo previous: Self?) -> Bool {
         guard let previous, previous.frame.size == frame.size else { return false }
-        func verticalRanges(_ geometry: Self) -> [Range<CGFloat>] {
-            geometry.divisions.filter { $0.height > $0.width }.map {
-                ($0.minX - geometry.frame.minX)..<($0.maxX - geometry.frame.minX)
-            }
+        return previous.verticalRanges != verticalRanges
+    }
+
+    /// Only the fold ranges wait; current window bounds, safe areas and horizontal divisions stay live.
+    func replacingVerticalRanges(_ ranges: [Range<CGFloat>]) -> Self {
+        var result = self
+        let vertical = divisions.first { $0.height > $0.width }
+        result.divisions = divisions.filter { $0.height <= $0.width } + ranges.map {
+            CGRect(x: frame.minX + $0.lowerBound, y: vertical?.minY ?? frame.minY,
+                   width: $0.upperBound - $0.lowerBound, height: vertical?.height ?? frame.height)
         }
-        return verticalRanges(previous) != verticalRanges(self)
+        return result
     }
 
     func localDivisions(in geometry: GeometryProxy) -> [CGRect] {
@@ -58,36 +68,42 @@ struct SidebarLayoutInputs: Equatable {
 
     var isValid: Bool {
         sizeClass != nil && splitSize.width > 0 && splitSize.height > 0
-            && geometry.frame.width > 0 && geometry.frame.height > 0
+            && geometry.frame.size.width > 0 && geometry.frame.size.height > 0
     }
 }
 
 /// Coalesces hinge movement only; ordinary container geometry stays live.
-private struct SettledGeometryModifier<Value: Equatable>: ViewModifier {
-    let measure: (GeometryProxy) -> Value
+private struct SettledGeometryModifier: ViewModifier {
+    let measure: (GeometryProxy) -> DivisionRegionGeometry
     let hingeStatus: SessionRunMonitor.HingeStatus?
-    let requiresSettlement: (Value?, Value) -> Bool
-    let action: (Value) -> Void
-    @State private var settlement = DivisionRegionSettlement<Value>()
+    let requiresSettlement: (DivisionRegionGeometry?, DivisionRegionGeometry) -> Bool
+    let action: (DivisionRegionGeometry) -> Void
+    @State private var settlement = DivisionRegionSettlement<[Range<CGFloat>]>()
     @State private var pending: Task<Void, Never>?
-    @State private var previous: Value?
+    @State private var latest: DivisionRegionGeometry?
+    @State private var hasPendingDivisions = false
     @State private var hingeIsChanging = false
 
     func body(content: Content) -> some View {
         content
-            .onGeometryChange(for: Value.self, of: measure) { value in
-                pending?.cancel()
-                let shouldSettle = hingeIsChanging || requiresSettlement(previous, value)
-                previous = value
-                if let initial = settlement.observe(value, at: ProcessInfo.processInfo.systemUptime) {
-                    action(initial)
+            .onGeometryChange(for: DivisionRegionGeometry.self, of: measure) { value in
+                let previous = latest
+                latest = value
+                let changed = previous?.verticalRanges != value.verticalRanges
+                _ = settlement.observe(value.verticalRanges, at: ProcessInfo.processInfo.systemUptime)
+                if changed {
+                    let hingeRangeChanged = hingeIsChanging && previous?.frame.size == value.frame.size
+                    if hasPendingDivisions || hingeRangeChanged || requiresSettlement(previous, value) {
+                        hasPendingDivisions = true
+                        scheduleSettlement()
+                    } else {
+                        _ = settlement.settle(at: ProcessInfo.processInfo.systemUptime, hingeIsSettled: true)
+                    }
                 }
-                if shouldSettle { scheduleSettlement() }
-                else { applySettled(hingeIsSettled: true) }
+                publishLiveGeometry()
             }
             .onChange(of: hingeStatus) {
                 hingeIsChanging = true
-                pending?.cancel()
                 scheduleSettlement()
             }
             .onDisappear {
@@ -97,27 +113,31 @@ private struct SettledGeometryModifier<Value: Equatable>: ViewModifier {
     }
 
     private func scheduleSettlement() {
+        pending?.cancel()
         pending = Task { @MainActor in
-            do { try await Task.sleep(for: .seconds(DivisionRegionSettlement<Value>.quietPeriod)) }
+            do { try await Task.sleep(for: .seconds(DivisionRegionSettlement<[Range<CGFloat>]>.quietPeriod)) }
             catch { return }
             guard !Task.isCancelled else { return }
             hingeIsChanging = false
-            applySettled()
+            hasPendingDivisions = false
+            _ = settlement.settle(at: ProcessInfo.processInfo.systemUptime)
+            publishLiveGeometry()
+            pending = nil
         }
     }
 
-    private func applySettled(hingeIsSettled: Bool = false) {
-        if let value = settlement.settle(at: ProcessInfo.processInfo.systemUptime, hingeIsSettled: hingeIsSettled) {
-            action(value)
-        }
+    private func publishLiveGeometry() {
+        guard let latest else { return }
+        action(latest.replacingVerticalRanges(settlement.applied ?? latest.verticalRanges))
     }
 }
 
 extension View {
-    func onSettledGeometryChange<Value: Equatable>(for type: Value.Type,
+    func onSettledGeometryChange(for type: DivisionRegionGeometry.Type,
         hingeStatus: SessionRunMonitor.HingeStatus? = nil,
-        requiresSettlement: @escaping (Value?, Value) -> Bool,
-        of measure: @escaping (GeometryProxy) -> Value, action: @escaping (Value) -> Void) -> some View {
+        requiresSettlement: @escaping (DivisionRegionGeometry?, DivisionRegionGeometry) -> Bool,
+        of measure: @escaping (GeometryProxy) -> DivisionRegionGeometry,
+        action: @escaping (DivisionRegionGeometry) -> Void) -> some View {
         modifier(SettledGeometryModifier(measure: measure, hingeStatus: hingeStatus,
             requiresSettlement: requiresSettlement, action: action))
     }
@@ -129,8 +149,6 @@ extension EnvironmentValues {
     @Entry var holdsForegroundLayout = false
     /// The split's destination width, independent of its moving column boundary.
     @Entry var targetChatLayoutWidth: CGFloat? = nil
-    /// How much wider the composer will be at that destination; its strips' scroll views take that width early.
-    @Entry var composerStripOverhang: CGFloat = 0
     @Entry var tabletopComposerHeight: CGFloat? = nil
 }
 

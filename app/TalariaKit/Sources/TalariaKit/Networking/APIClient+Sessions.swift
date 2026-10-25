@@ -87,6 +87,7 @@ extension APIClient {
         modelProvider: String?,
         profile: String?,
         projectID: String? = nil,
+        enabledToolsets: [String]? = nil,
         executionMode: ExecutionMode? = nil,
         requestID: String? = nil
     ) async throws -> SessionResponse {
@@ -100,6 +101,7 @@ extension APIClient {
                 modelProvider: modelProvider,
                 profile: profile,
                 projectId: projectID,
+                enabledToolsets: enabledToolsets,
                 executionMode: diagnostic ? executionMode : nil,
                 requestId: diagnostic ? requestID : nil
             )
@@ -258,7 +260,7 @@ extension APIClient {
     }
 
     /// Nil means an older Web server lacks the catalog endpoint. Other failures remain errors.
-    public func fetchToolsetsCatalog(sessionID: String, toolsets: [String]?) async throws -> ToolsetsCatalog? {
+    public func fetchToolsetsCatalog(sessionID: String?, toolsets: [String]?) async throws -> ToolsetsCatalog? {
         do {
             let catalog: ToolsetsCatalog = try await send(endpoint: .toolsetsCatalog, method: "POST", body: SessionToolsetsRequest(sessionId: sessionID, toolsets: toolsets))
             return catalog
@@ -282,7 +284,7 @@ public struct SessionToolsetsResponse: Decodable, Equatable {
 }
 
 private struct SessionToolsetsRequest: Encodable {
-    let sessionId: String
+    let sessionId: String?
     let toolsets: [String]?
 
     enum CodingKeys: String, CodingKey {
@@ -292,7 +294,7 @@ private struct SessionToolsetsRequest: Encodable {
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(sessionId, forKey: .sessionId)
+        try container.encodeIfPresent(sessionId, forKey: .sessionId)
         // An explicit null, not an absent key: null is the request for the profile's defaults.
         try container.encode(toolsets, forKey: .toolsets)
     }
@@ -304,6 +306,7 @@ private struct NewSessionRequest: Encodable {
     let modelProvider: String?
     let profile: String?
     let projectId: String?
+    let enabledToolsets: [String]?
     let executionMode: ExecutionMode?
     let requestId: String?
 }

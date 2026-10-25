@@ -105,6 +105,7 @@ struct ChatView: View {
     @Environment(\.layoutDirection) private var layoutDirection
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.openURL) private var openURL
     @Environment(\.scenePhase) private var scenePhase
     /// The chat's frame, bars included: the size the companion page's split rule reads (TAL-1458).
     @State private var arrangementSize: CGSize = .zero
@@ -222,6 +223,7 @@ struct ChatView: View {
     @Environment(\.divisionRegionGeometry) private var divisionGeometry
     @State private var composerIsFocused = false
     @State private var composerRequiresExpandedPresentation = false
+    @State private var stagingAttachmentBatches = 0
     @State private var didHydrateDraft = false
     /// True from the moment hydration finds persisted attachment records until
     /// their restore pass finishes. It gates `syncDraftAttachments` across the
@@ -250,6 +252,10 @@ struct ChatView: View {
     /// While a new chat's session is being created, or after creating it failed (TAL-636).
     @State private var sessionStart: ComposerSessionStart?
     @State private var sessionStartTask: Task<Bool, Never>?
+    @State private var pendingCreationSettings: ChatDraftSettings?
+    @State private var pendingCreationInteractionGeneration: Int?
+    @State private var isOpeningFiles = false
+    @State private var showsFilesBrowser = false
     @State private var sessionStartGeneration = 0
     @State private var pendingFirstDraft: String?
     @State private var pendingSubmissionAttachmentIDs = Set<UUID>()
@@ -275,7 +281,6 @@ struct ChatView: View {
     ) {
         _session = State(initialValue: session)
         self.startSession = startSession
-        _sessionStart = State(initialValue: isExplicitNewChat && startSession != nil && session.sessionId == nil ? .starting : nil)
         self.server = server
         self.onAPIError = onAPIError
         self.loadsInitialMessages = loadsInitialMessages
@@ -392,7 +397,7 @@ struct ChatView: View {
             // An in-flight draft restore counts as an upload in progress: until
             // it finishes, the composer does not yet hold the attachments the
             // user expects this message to carry.
-            isUploadingAttachment: prompt == nil && (viewModel.isUploadingAttachment || isRestoringDraftAttachments),
+            isUploadingAttachment: prompt == nil && (viewModel.isUploadingAttachment || isRestoringDraftAttachments || stagingAttachmentBatches > 0),
             attachmentUploadCount: viewModel.attachmentUploadCount,
             attachmentUploadGeneration: viewModel.attachmentUploadGeneration,
             isSendingVoiceNote: viewModel.isSendingVoiceNote,
@@ -530,7 +535,8 @@ struct ChatView: View {
                 guard let prompt else { return }
                 Task { await submitClarification(response, promptID: prompt.id) }
             },
-            sessionStart: sessionStart,
+            sessionStart: isOpeningFiles && !viewModel.isSubmittingMessage ? nil : sessionStart,
+            hasSession: viewModel.hasSession,
             onRetrySessionStart: retrySessionStart,
             sessionToolsets: viewModel.sessionToolsets,
             onLoadToolsets: { try await viewModel.loadToolsetsCatalog() },
@@ -565,7 +571,7 @@ struct ChatView: View {
         GeometryReader { geometry in
             let layoutSize = chatLayoutSize(in: geometry, width: targetChatLayoutWidth)
             let viewportSize = chatLayoutSize(in: geometry)
-            let blockSize = hasVerticalDivision ? viewportSize : layoutSize
+            let blockSize = hasVerticalDivision && targetChatLayoutWidth == nil ? viewportSize : layoutSize
             let frames = chatFrames(in: geometry, width: targetChatLayoutWidth)
             // Both transcript and composer take their destination width before the column moves.
             let composerFrame = frames.composer
@@ -583,7 +589,7 @@ struct ChatView: View {
                         .environment(\.layoutDirection, chatLayoutDirection)
                 }
                 .frame(width: hasVerticalDivision ? frames.transcript.width : nil,
-                       height: hasVerticalDivision ? frames.transcript.height : nil, alignment: .top)
+                       height: hasVerticalDivision || frames.isTabletop ? frames.transcript.height : nil, alignment: .top)
 #if DEBUG
                 .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { recordBodyEvaluation?.recordTranscriptFrame($0) }
 #endif
@@ -603,8 +609,6 @@ struct ChatView: View {
                     messageComposer(availableHeight: composerFrame.height)
                 }
                 .environment(\.tabletopComposerHeight, frames.isTabletop ? max(0, composerFrame.height - composerAccessoriesHeight - 8) : nil)
-                .environment(\.composerStripOverhang, min(frames.composer.width, AdaptiveReadableContentWidth.chat)
-                    - min(composerFrame.width, AdaptiveReadableContentWidth.chat))
                 .frame(width: composerFrame.width, height: frames.isTabletop ? composerFrame.height : nil, alignment: .bottom)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                 // Measure the live pane and composer before its first visible layout; never fade in a provisional size.
@@ -650,7 +654,7 @@ struct ChatView: View {
                 }
             }
             .frame(width: viewportSize.width, height: viewportSize.height, alignment: .leading)
-            .clipShape(TrailingEdgeClip())
+            .clipShape(TrailingEdgeClip(layoutDirection: layoutDirection))
         }
         .onGeometryChange(for: CGSize.self, of: { chatLayoutSize(in: $0, width: targetChatLayoutWidth) }) { size in
             guard !holdsForegroundLayout, size.width > 0, size.height > 0 else { return }
@@ -705,9 +709,7 @@ struct ChatView: View {
                 layoutDirection: layoutDirection, keyboardIsVisible: keyboardIsVisible)
         }
         // A split width already excludes the vertical division, even while the native origin is moving.
-        var pane = DivisionRegionLayout.availableFrame(in: bounds, divisions: divisions.filter { $0.height > $0.width },
-            layoutDirection: layoutDirection)
-        pane.size.width = width
+        let pane = CGRect(origin: .zero, size: CGSize(width: width, height: bounds.height))
         return DivisionRegionLayout.chatFrames(in: pane, divisions: divisions.filter { $0.height <= $0.width },
             layoutDirection: layoutDirection, keyboardIsVisible: keyboardIsVisible)
     }
@@ -846,6 +848,9 @@ struct ChatView: View {
                 splitFilesInspector?.reportShown(showsFilesInspector)
             }
             .onChange(of: session) { _, session in splitFilesInspector?.reportSession(session) }
+            .navigationDestination(isPresented: $showsFilesBrowser) {
+                FileBrowserView(session: session, server: server, onAPIError: onAPIError)
+            }
             .navigationTitle(displayTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -859,16 +864,15 @@ struct ChatView: View {
                 // One item per action so each bridges to a system bar button: iOS 26+ groups
                 // adjacent trailing items in one glass pill, and iPhone Duo can move them to its
                 // vertical bar, which a single custom-view item prevents.
-                if viewModel.hasActivatedGoalCommand {
+                if viewModel.hasSession, viewModel.hasActivatedGoalCommand {
                     ToolbarItem(placement: .topBarTrailing) {
                         goalControlMenu
                     }
                     .overflowPriority(.chatGoal)
                 }
 
-                // The workspace browser needs the session; a new chat gains it once created (TAL-636). Beside the chat,
-                // the companion page has its own (TAL-1458).
-                if showsFilesButton, viewModel.hasSession, !companionPageIsBeside {
+                // Files creates an idle chat on demand; companion pages keep their own browser action.
+                if showsFilesButton, !companionPageIsBeside {
                     ToolbarItem(placement: .topBarTrailing) {
                         filesButton
                             .disabled(viewModel.isViewingCachedData)
@@ -877,7 +881,7 @@ struct ChatView: View {
                     .overflowPriority(.chatFiles)
                 }
 
-                if showsGitControls, gitAvailabilityViewModel.hasRepository {
+                if showsGitControls, viewModel.hasSession, gitAvailabilityViewModel.hasRepository {
                     ToolbarItem(placement: .topBarTrailing) {
                         gitActionsMenu
                     }
@@ -887,20 +891,36 @@ struct ChatView: View {
 
     /// A wide chat, or one the split view widens for it, toggles the Files inspector beside it; a narrower one
     /// pushes the browser.
-    @ViewBuilder
     private var filesButton: some View {
+        Button {
+            Task { await openFiles() }
+        } label: {
+            if isOpeningFiles {
+                ProgressView().accessibilityLabel("Opening Files")
+            } else {
+                Label("Files", systemImage: "folder")
+            }
+        }
+        .disabled(isOpeningFiles || stagingAttachmentBatches > 0)
+    }
+
+    private func openFiles() async {
+        guard !isOpeningFiles else { return }
+        isOpeningFiles = true
+        defer { isOpeningFiles = false }
+        guard await startPendingSession() else {
+            if case .failed(let message, _) = sessionStart {
+                viewModel.setSendErrorMessage(message)
+                sessionStart = nil
+            }
+            return
+        }
+        splitFilesInspector?.reportSession(session)
+        dismissKeyboard()
         if splitFilesInspector?.widensChat == true {
-            Button {
-                isFilesInspectorPresented.toggle()
-            } label: {
-                Label("Files", systemImage: "folder")
-            }
+            isFilesInspectorPresented.toggle()
         } else {
-            NavigationLink {
-                FileBrowserView(session: session, server: server, onAPIError: onAPIError)
-            } label: {
-                Label("Files", systemImage: "folder")
-            }
+            showsFilesBrowser = true
         }
     }
 
@@ -1092,11 +1112,7 @@ struct ChatView: View {
                 Button("Cancel", role: .cancel) {
                     pendingProfileSelection = nil
                 }
-                Button("Start New Session") {
-                    if let profile = pendingProfileSelection {
-                        Task { await switchProfile(profile, startNewSession: true) }
-                    }
-                }
+                Button("Start New Session", action: openPendingProfileChat)
             } message: {
                 Text(profileSwitchWarningMessage)
             }
@@ -1617,7 +1633,7 @@ struct ChatView: View {
                 transcriptMessageSpacing: chat.transcriptMessageSpacing,
                 transcriptBlockSpacing: chat.transcriptBlockSpacing,
                 transcriptBottomInsetHeight: chat.transcriptBottomInsetHeight,
-                confinesToDivisionPane: chat.hasVerticalDivision,
+                confinesToDivisionPane: chat.hasVerticalDivision || chat.tabletopIsActive,
                 scrollToBottomRequest: chat.scrollToBottomRequest,
                 followReplayRequest: chat.followReplayRequest,
                 assistantName: viewModel.assistantName,
@@ -1700,6 +1716,7 @@ struct ChatView: View {
                     chat.turnDiffPresentation = .file(file)
                 },
                 retainedRowCache: chat.retained?.rows,
+                retainedChat: chat.retained,
                 restoredReadingRowID: chat.restoredReadingRowID,
                 onReaderMoved: chat.recordReadingRow
             )
@@ -1708,7 +1725,12 @@ struct ChatView: View {
                 try await viewModel.fullToolResult(toolCallID: toolCallID)
             }
             .environment(\.voiceNoteControls, VoiceNoteControls(
-                retry: { id in Task { await viewModel.retryVoiceNote(messageID: id, modelContext: chat.modelContext) } },
+                retry: { id in Task {
+                    if chat.needsSessionStart {
+                        guard await chat.startPendingSession() else { return }
+                    }
+                    await viewModel.retryVoiceNote(messageID: id, modelContext: chat.modelContext)
+                } },
                 remove: { viewModel.removeVoiceNote(messageID: $0) }
             ))
             .environment(\.pendingSteerControls, PendingSteerControls(
@@ -1967,10 +1989,6 @@ struct ChatView: View {
             return
         }
 
-        if sessionStart != nil {
-            _ = await startPendingSession()
-            return
-        }
         await beginSessionWork()
     }
 
@@ -1996,6 +2014,8 @@ struct ChatView: View {
             switch result {
             case .started(let created, let detail):
                 if !viewModel.hasSession {
+                    pendingCreationSettings = viewModel.newSessionSettings
+                    pendingCreationInteractionGeneration = viewModel.composerConfigurationInteractionGeneration
                     let newChatKey = ChatDraftKey.newChat(server: server)
                     persistComposerDraft()
                     let moved = draftStore.moveDraft(from: newChatKey, to: .session(server: server, session: created))
@@ -2009,8 +2029,20 @@ struct ChatView: View {
                     isRestoringDraftAttachments = true
                 }
                 await beginSessionWork()
+                await viewModel.uploadStagedAttachments()
                 guard !Task.isCancelled, generation == sessionStartGeneration else { return false }
-                let importFailure = initialAttachments.isEmpty && viewModel.pendingAttachments.allSatisfy(\.isReadyToSend) ? nil
+                if let settings = pendingCreationSettings {
+                    await viewModel.restoreDraftSettings(settings,
+                        expectedInteractionGeneration: pendingCreationInteractionGeneration ?? viewModel.composerConfigurationInteractionGeneration)
+                    guard !Task.isCancelled, generation == sessionStartGeneration else { return false }
+                    if let error = viewModel.composerConfigurationErrorMessage {
+                        sessionStart = .failed(error)
+                        return false
+                    }
+                    pendingCreationSettings = nil
+                    pendingCreationInteractionGeneration = nil
+                }
+                let importFailure = initialAttachments.isEmpty && (viewModel.sessionStartupAttachments + viewModel.pendingAttachments).allSatisfy(\.isReadyToSend) ? nil
                     : String(localized: "Couldn't upload every attachment. Retry before sending.")
                 if let error = viewModel.uploadAttachmentErrorMessage ?? importFailure ?? (!draftAttachmentsPendingRetry.isEmpty
                     ? draftRestoreFailureMessage(retryCount: draftAttachmentsPendingRetry.count, droppedCount: 0) : nil) {
@@ -2031,7 +2063,13 @@ struct ChatView: View {
     }
 
     private func retrySessionStart() {
-        Task { _ = await startPendingSession() }
+        Task {
+            guard await startPendingSession() else { return }
+            if let note = viewModel.pendingVoiceDraft {
+                await viewModel.retryVoiceNote(messageID: note.id, modelContext: modelContext)
+            }
+            // Recovery keeps the text draft ready for Send, including any typing added after the refusal.
+        }
     }
 
     private var needsSessionStart: Bool {
@@ -2187,19 +2225,30 @@ struct ChatView: View {
         let shouldRestoreFocusAfterSend = composerIsFocused
         let commandText = command.map { "/\($0) \(submittedDraft)" } ?? submittedDraft
         let sendsWithChosenBehavior = behavior != nil && viewModel.activeStreamID != nil
+        let parsedSlash = commandText.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("/")
+            ? SlashCommandExecutor.parse(commandText, catalog: viewModel.agentCommands) : nil
+
+        if !sendsWithChosenBehavior, viewModel.ownerAttachment == nil,
+           parsedSlash?.command?.handler == .clientSide(.new),
+           let url = TalariaDeepLink.newChatURL {
+            reconcileConsumedDraft(submittedDraft, submittedDraftRevision: submittedDraftRevision)
+            openURL(url)
+            return
+        }
 
         var pendingSlash: ParsedSlashCommand?
         if needsSessionStart, commandText.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("/") {
-            guard command == nil, viewModel.activeStreamID == nil,
-                  let parsed = SlashCommandExecutor.parse(commandText, catalog: viewModel.agentCommands),
-                  parsed.messageForIdleSend != nil else { return }
-            pendingSlash = parsed
+            if parsedSlash?.messageForIdleSend != nil {
+                pendingSlash = parsedSlash
+            } else {
+                guard await startPendingSession(), submissionGeneration == sessionStartGeneration else { return }
+            }
         }
 
         // An owner chat's slash text goes to its owner as typed (TAL-1043).
         if pendingSlash == nil, !sendsWithChosenBehavior, viewModel.ownerAttachment == nil,
            commandText.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("/") {
-            let parsed = SlashCommandExecutor.parse(commandText, catalog: viewModel.agentCommands)
+            let parsed = parsedSlash
             let parsedCommand = parsed?.command
             // A typed command leaves the composer whatever its result, so it leaves as it is sent, like a message,
             // rather than after a long one (/compress, a server-run /refine) finishes.
@@ -2274,10 +2323,14 @@ struct ChatView: View {
         guard viewModel.clarificationPrompt == nil else { return }
         prepareTranscriptForExplicitSend()
 
+        let waitForSession: (@MainActor () async -> Bool)?
+        if needsSessionStart { waitForSession = { await startPendingSession() } }
+        else { waitForSession = nil }
         let outcome = await viewModel.sendVoiceNote(
             audioData: audioData,
             filename: filename,
-            modelContext: modelContext
+            modelContext: modelContext,
+            waitForSession: waitForSession
         )
 
         if outcome.didStart {
@@ -2319,6 +2372,7 @@ struct ChatView: View {
         draftMessage = ""
 
         let generation = sessionStartGeneration
+        let isFirstSend = startSession != nil && retained?.didStartConversation != true
         let awaitedSession = needsSessionStart
         if awaitedSession {
             pendingFirstDraft = submittedDraft
@@ -2343,7 +2397,7 @@ struct ChatView: View {
             modelContext: modelContext,
             waitForSession: waitForSession,
             sessionAttachments: {
-                let files = viewModel.pendingAttachments.filter {
+                let files = (viewModel.sessionStartupAttachments + viewModel.pendingAttachments).filter {
                     restoredIDs.contains($0.id) || initialImportedAttachmentIDs.contains($0.id)
                 }
                 sessionFileIDs = Set(files.map(\.id))
@@ -2365,6 +2419,9 @@ struct ChatView: View {
             onConversationStarted()
         }
         if awaitedSession { pendingFirstDraft = nil }
+        if !didStart, isFirstSend, sessionStart == nil {
+            sessionStart = .failed(viewModel.sendErrorMessage ?? String(localized: "Couldn't send the message. Try again."))
+        }
         pendingSubmissionAttachmentIDs = []
         guard generation == sessionStartGeneration else { return didStart }
         if !didStart, awaitedSession, draftRevision != submittedDraftRevision {
@@ -2738,6 +2795,13 @@ struct ChatView: View {
         }
     }
 
+    private func openPendingProfileChat() {
+        guard let name = pendingProfileSelection?.normalizedName,
+              let url = TalariaDeepLink.newChatInProfileURL(profileName: name) else { return }
+        pendingProfileSelection = nil
+        openURL(url)
+    }
+
     private func handleProfileSelection(_ profile: ProfileSummary) {
         guard viewModel.clarificationPrompt == nil else { return }
         viewModel.markComposerConfigurationInteraction()
@@ -2745,7 +2809,7 @@ struct ChatView: View {
             return
         }
 
-        if viewModel.messages.isEmpty {
+        if !viewModel.hasSession || viewModel.messages.isEmpty {
             Task { await switchProfile(profile, startNewSession: false) }
         } else {
             pendingProfileSelection = profile
@@ -2782,6 +2846,8 @@ struct ChatView: View {
     ) async {
         guard viewModel.clarificationPrompt == nil else { return }
         let context = viewModel.attachmentStagingContext
+        stagingAttachmentBatches += 1
+        defer { stagingAttachmentBatches -= 1 }
         var ids: [UUID] = []
         for (index, item) in items.enumerated() {
             guard !Task.isCancelled, context == viewModel.attachmentStagingContext else { return }
@@ -3647,10 +3713,13 @@ private struct ChatLiveSync: ViewModifier {
     }
 }
 
-/// Clips only the right edge, where a chat's destination width overflows the moving pane; content still scrolls beneath
+/// Clips only the semantic trailing edge, where the destination width overflows the pane; content still scrolls beneath
 /// the bars, and a native fold transient that animates the mask never sweeps it across the chat's leading edge.
 struct TrailingEdgeClip: Shape {
+    var layoutDirection: LayoutDirection = .leftToRight
+
     func path(in rect: CGRect) -> Path {
-        Path(CGRect(x: rect.minX - rect.width, y: rect.minY - rect.height, width: rect.width * 2, height: rect.height * 3))
+        Path(CGRect(x: layoutDirection == .leftToRight ? rect.minX - rect.width : rect.minX,
+                    y: rect.minY - rect.height, width: rect.width * 2, height: rect.height * 3))
     }
 }

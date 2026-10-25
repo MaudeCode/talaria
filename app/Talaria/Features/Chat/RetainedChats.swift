@@ -7,18 +7,24 @@ import TalariaKit
 @MainActor
 final class RetainedChat {
     let viewModel: ChatViewModel
+    /// A pending root adopts its server summary here without replacing its mounted composer.
+    var session: SessionSummary?
+    var didStartConversation = false
     let rows = ChatTranscriptRowCache()
     var gitAvailability: GitWorkspaceAvailabilityViewModel?
     /// The row at the top of the transcript where the reader last let go of it; nil while it follows the latest message.
     var readingRowID: String?
+    /// Registered by the mounted transcript; layout admission calls it before publishing a new wrap width.
+    var widthChangePreparation: (owner: ObjectIdentifier, action: () -> Void)?
     /// Whether a view finished the chat's first load. One taken over before then loads it again, since its own was
     /// cancelled with the view it ran in.
     var hasLoaded = false
     private var shownViews = 0
     private var pendingRelease: Task<Void, Never>?
 
-    init(viewModel: ChatViewModel) {
+    init(viewModel: ChatViewModel, session: SessionSummary? = nil) {
         self.viewModel = viewModel
+        self.session = session
     }
 
     /// Whether a view shows the chat, or left it this turn and may yet hand it over.
@@ -66,21 +72,43 @@ final class ChatViewModelCache {
 
     /// The kept chat for `session`, made with `make` on first use. A chat on another server is dropped.
     func chat(for session: SessionSummary, server: URL, make: () -> ChatViewModel) -> RetainedChat {
-        let key = Key(server: server, sessionID: session.id)
-        entries.removeAll { $0.key.server != server }
-        if let index = entries.firstIndex(where: { $0.key == key }) {
+        chat(key: Key(server: server, sessionID: session.id), matchingSessionID: session.sessionId) {
+            RetainedChat(viewModel: make(), session: session)
+        }
+    }
+
+    func pendingChat(for route: PendingNewChatRoute, server: URL,
+                     make: (SessionSummary) -> ChatViewModel) -> RetainedChat {
+        chat(key: Key(server: server, sessionID: "new:\(route.id)")) {
+            let provisional = SessionSummary(title: String(localized: "New Chat"), modelProvider: route.providerID,
+                profile: route.profileName)
+            return RetainedChat(viewModel: make(provisional), session: provisional)
+        }
+    }
+
+    private func chat(key: Key, matchingSessionID: String? = nil, make: () -> RetainedChat) -> RetainedChat {
+        entries.removeAll { $0.key.server != key.server }
+        if let index = entries.firstIndex(where: {
+            $0.key == key || (matchingSessionID != nil && $0.chat.session?.sessionId == matchingSessionID)
+        }) {
             let entry = entries.remove(at: index)
             entries.insert(entry, at: 0)
             return entry.chat
         }
-        let chat = RetainedChat(viewModel: make())
+        let chat = make()
         entries.insert((key, chat), at: 0)
         entries.removeLast(max(0, entries.count - Self.capacity))
         return chat
     }
 
+    func prepareForWidthChange() {
+        for entry in entries where entry.chat.isLive {
+            entry.chat.widthChangePreparation?.action()
+        }
+    }
+
     /// Drops every chat but the one navigation shows: a deleted, archived or closed chat is not kept.
     func keepOnly(sessionID: String?) {
-        entries.removeAll { $0.key.sessionID != sessionID }
+        entries.removeAll { $0.key.sessionID != sessionID && $0.chat.session?.sessionId != sessionID }
     }
 }

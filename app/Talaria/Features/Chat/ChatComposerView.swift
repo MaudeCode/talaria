@@ -126,6 +126,7 @@ struct MessageComposerView: View {
     /// Set while a new chat's session is being created, or failed to be (TAL-636): the strip shows
     /// it in place of the controls, and nothing that needs the session can be used yet.
     var sessionStart: ComposerSessionStart? = nil
+    var hasSession = true
     var onRetrySessionStart: () -> Void = {}
     /// The session's toolset override (TAL-631); nil, before a session reports it, hides the control.
     var sessionToolsets: SessionToolsets? = nil
@@ -1204,7 +1205,7 @@ struct MessageComposerView: View {
     }
 
     private var hasUnreadyAttachments: Bool {
-        pendingAttachments.contains { !$0.isReadyToSend }
+        pendingAttachments.contains { !$0.isReadyToSend && (hasSession || $0.uploadPhase != .staged) }
     }
 
     private var isVoiceInputDisabled: Bool {
@@ -1320,7 +1321,7 @@ struct MessageComposerView: View {
     private var isActionButtonDisabled: Bool {
         // A new chat accepts local intent while creation runs; the shared send owns the pending row.
         if isReadOnly { return true }
-        if case .some(.failed(_, canRetry: false)) = sessionStart { return true }
+        if case .some(.failed) = sessionStart { return true }
 
         if isAnsweringClarification {
             return (trimmedDraftMessage.isEmpty && clarificationSelectedChoices.isEmpty) || isSending

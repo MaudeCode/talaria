@@ -58,7 +58,7 @@ struct InsightsView: View {
             .refreshesLive(on: .runEnded, showsStatus: false) {
                 await loadInsights()
             }
-            .task {
+            .task(id: initialQuotaSourceID) {
                 quotaScrollPosition = initialQuotaSourceID
                 await refreshPendingWidgetSourceIfNeeded()
             }

@@ -487,106 +487,75 @@ final class SessionListMutationTests: XCTestCase {
 
     // MARK: Launch restore
 
-    /// A restored external session takes the same detail load as a tapped row, so
-    /// the destination carries the server's writability rather than the list's.
     @MainActor
-    func testRestoredExternalSessionLoadsDetailOnceBeforeOpening() async throws {
-        var requestedPaths: [String] = []
-        let viewModel = try makeViewModel { request in
-            let path = request.url?.path ?? "nil"
-            requestedPaths.append(path)
-            if path == "/api/sessions" {
-                return apiTestJSONResponse("""
-                {"sessions": [{"session_id": "cli-1", "title": "CLI", "is_cli_session": true, "read_only": true, "source_kind": "cli"}]}
-                """, for: request)
-            }
-            return apiTestJSONResponse("""
-            {"session": {"session_id": "cli-1", "title": "CLI", "is_cli_session": true, "read_only": false, "source_kind": "cli"}}
-            """, for: request)
-        }
-        var state = SessionNavigationState(lastSelectedSessionID: "cli-1")
-        _ = await viewModel.load()
-
-        let candidate = try XCTUnwrap(state.sessionToRestore(from: viewModel.sessions))
-        XCTAssertTrue(candidate.isSessionReadOnly)
-        let resolved = await viewModel.sessionToOpen(for: candidate)
-        let opened = try XCTUnwrap(resolved)
-        state.select(opened)
-
-        XCTAssertEqual(requestedPaths, ["/api/sessions", "/api/session"])
-        XCTAssertEqual(state.destination, .session(opened))
-        XCTAssertFalse(opened.isSessionReadOnly)
-    }
-
-    @MainActor
-    func testRestoredWebUISessionOpensWithoutADetailLoad() async throws {
-        let viewModel = try makeViewModel { request in
-            guard request.url?.path == "/api/sessions" else {
-                XCTFail("A restored WebUI session must not issue \(request.url?.path ?? "nil").")
-                throw URLError(.badURL)
-            }
-            return apiTestJSONResponse("""
-            {"sessions": [{"session_id": "webui-1", "title": "WebUI", "is_cli_session": true, "session_source": "webui", "source_kind": "webui"}]}
-            """, for: request)
-        }
-        var state = SessionNavigationState(lastSelectedSessionID: "webui-1")
-        _ = await viewModel.load()
-
-        let candidate = try XCTUnwrap(state.sessionToRestore(from: viewModel.sessions))
-        let opened = await viewModel.sessionToOpen(for: candidate)
-
-        XCTAssertEqual(opened, candidate)
-    }
-
-    /// A failed restore load leaves the list showing with the stored selection
-    /// intact, like a failed tap, instead of a destination the server rejected.
-    @MainActor
-    func testFailedRestoreLoadLeavesTheListShowing() async throws {
-        let viewModel = try makeViewModel { request in
-            if request.url?.path == "/api/sessions" {
-                return apiTestJSONResponse("""
-                {"sessions": [{"session_id": "cli-1", "title": "CLI", "is_cli_session": true, "source_kind": "cli"}]}
-                """, for: request)
-            }
-            return apiTestJSONResponse(#"{"error": "Session not found"}"#, statusCode: 404, for: request)
-        }
-        var state = SessionNavigationState(lastSelectedSessionID: "cli-1")
-        _ = await viewModel.load()
-
-        let candidate = try XCTUnwrap(state.sessionToRestore(from: viewModel.sessions))
-        let opened = await viewModel.sessionToOpen(for: candidate)
-
-        XCTAssertNil(opened)
-        XCTAssertNil(state.destination)
-        XCTAssertEqual(state.lastSelectedSessionID, "cli-1")
-        XCTAssertNotNil(viewModel.actionErrorMessage)
-    }
-
-    /// Offline cached browsing restores the cached row as-is: there is no server to
-    /// load from, and the cached list is what the user is browsing.
-    @MainActor
-    func testRestoredSessionOpensFromCacheWithoutADetailLoad() async throws {
+    func testCachedLaunchRootIsInstalledBeforeAnyNetworkRequest() async throws {
         let context = try makeContext()
         let server = try XCTUnwrap(URL(string: "https://example.test"))
-        try CacheStore.cacheSessions(
-            [SessionSummary(sessionId: "cli-1", title: "CLI", isCliSession: true)],
-            serverURL: server,
-            in: context
-        )
-        var requestedPaths: [String] = []
-        let viewModel = try makeViewModel { request in
-            requestedPaths.append(request.url?.path ?? "nil")
-            throw URLError(.notConnectedToInternet)
+        let cached = SessionSummary(sessionId: "cached", title: "Cached", isCliSession: true)
+        try CacheStore.cacheSessions([cached], serverURL: server, in: context)
+        var paths: [String] = []
+        let model = try makeViewModel { request in
+            paths.append(request.url?.path ?? "nil")
+            return apiTestJSONResponse(#"{"sessions":[{"session_id":"network","title":"Network"}]}"#, for: request)
         }
-        var state = SessionNavigationState(lastSelectedSessionID: "cli-1")
-        _ = await viewModel.load(modelContext: context)
-        XCTAssertTrue(viewModel.isViewingCachedData)
+        var state = SessionNavigationState(lastSelectedSessionID: "cached")
+        model.paintCachedStateIfEmpty(modelContext: context)
+        let restored = try XCTUnwrap(state.sessionToRestore(from: model.sessions))
+        state.select(restored)
+        XCTAssertEqual(state.destination, .session(cached))
+        XCTAssertTrue(paths.isEmpty, "The first root must be decided synchronously from local summaries")
+        _ = await model.load(modelContext: context)
+        XCTAssertNil(state.sessionToRestore(from: model.sessions))
+        XCTAssertEqual(state.destination, .session(cached))
+        XCTAssertEqual(paths, ["/api/sessions"])
+    }
 
-        let candidate = try XCTUnwrap(state.sessionToRestore(from: viewModel.sessions))
-        let opened = await viewModel.sessionToOpen(for: candidate, modelContext: context)
+    @MainActor
+    func testCacheMissStaysNewChatWhenTheServerLaterFindsTheID() async throws {
+        let context = try makeContext()
+        let model = try makeViewModel { request in
+            apiTestJSONResponse(#"{"sessions":[{"session_id":"late","title":"Late"}]}"#, for: request)
+        }
+        var state = SessionNavigationState(lastSelectedSessionID: "late")
+        model.paintCachedStateIfEmpty(modelContext: context)
+        XCTAssertNil(state.sessionToRestore(from: model.sessions))
+        XCTAssertTrue(state.launchRestoreResolved)
+        _ = await model.load(modelContext: context)
+        XCTAssertNil(state.sessionToRestore(from: model.sessions))
+        XCTAssertNil(state.destination)
+        XCTAssertNil(state.lastSelectedSessionID)
+    }
 
-        XCTAssertEqual(opened?.sessionId, "cli-1")
-        XCTAssertEqual(requestedPaths, ["/api/sessions"])
+    @MainActor
+    func testExplicitRouteWinsOverTheSynchronousCachedCandidate() async throws {
+        let context = try makeContext()
+        let server = try XCTUnwrap(URL(string: "https://example.test"))
+        try CacheStore.cacheSessions([SessionSummary(sessionId: "cached")], serverURL: server, in: context)
+        let model = try makeViewModel { request in
+            XCTFail("A local launch decision must not request the network")
+            throw URLError(.badURL)
+        }
+        var state = SessionNavigationState(lastSelectedSessionID: "cached")
+        state.select(.memory)
+        model.paintCachedStateIfEmpty(modelContext: context)
+        XCTAssertNil(state.sessionToRestore(from: model.sessions))
+        XCTAssertEqual(state.destination, .utility(.memory))
+    }
+
+    @MainActor
+    func testOfflineRefreshCannotReplaceTheCachedLaunchRoot() async throws {
+        let context = try makeContext()
+        let server = try XCTUnwrap(URL(string: "https://example.test"))
+        let cached = SessionSummary(sessionId: "cached", title: "Cached")
+        try CacheStore.cacheSessions([cached], serverURL: server, in: context)
+        let model = try makeViewModel { _ in throw URLError(.notConnectedToInternet) }
+        var state = SessionNavigationState(lastSelectedSessionID: "cached")
+        model.paintCachedStateIfEmpty(modelContext: context)
+        state.select(try XCTUnwrap(state.sessionToRestore(from: model.sessions)))
+        _ = await model.load(modelContext: context)
+        XCTAssertTrue(model.isViewingCachedData)
+        XCTAssertNil(state.sessionToRestore(from: model.sessions))
+        XCTAssertEqual(state.destination, .session(cached))
     }
 
     @MainActor

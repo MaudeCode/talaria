@@ -144,6 +144,8 @@ final class AppSidebarController: UIViewController, UIGestureRecognizerDelegate 
                 stopSlide()
                 reflect(isPresented: false)
                 apply(progress: 0)
+            } else {
+                presentationChanged(presentation.isPresented)
             }
         }
     }
@@ -390,7 +392,7 @@ final class AppSidebarController: UIViewController, UIGestureRecognizerDelegate 
     /// here commits the slide on its own.
     private func presentationChanged(_ isPresented: Bool) {
         guard isEnabled else {
-            if presentation.isPresented { presentation.isPresented = false }
+            // Layout admission owns intent; a restore can arrive before this host is re-enabled.
             reflect(isPresented: false)
             apply(progress: 0)
             return

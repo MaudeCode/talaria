@@ -70,6 +70,9 @@ struct ChatTranscriptRow<Content: View>: View {
             if realizesContent {
                 content()
                     .environment(\.chatTranscriptRowState, cache.state(for: rowID))
+#if DEBUG
+                    .onAppear { cache.recordRealization() }
+#endif
                     .onGeometryChange(for: CGFloat.self, of: \.size.height) { height in
                         cache.record(height: height, for: rowID)
                     }
@@ -128,6 +131,10 @@ final class ChatTranscriptRowCache {
     @ObservationIgnored private var cachedRevision = -1
     @ObservationIgnored private var cachedSpacing: CGFloat = 0
     @ObservationIgnored private(set) var mountedIDs = Set<String>()
+#if DEBUG
+    @ObservationIgnored private(set) var realizationCount = 0
+    func recordRealization() { realizationCount += 1 }
+#endif
     private var revision = 0
     var layoutRevision: Int { revision }
 

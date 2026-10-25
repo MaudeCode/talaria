@@ -33,6 +33,7 @@ final class DuoFoldHostedTests: XCTestCase {
             $0.horizontalSizeClass = .regular
             $0.verticalSizeClass = .regular
         }
+        try await openSidebar(in: window)
         let row = try await requireElement(in: window, "Missing deterministic session fixture") {
             $0.accessibilityLabel?.hasPrefix(UITestFixtureURLProtocol.sessionTitle) == true
         }
@@ -191,9 +192,8 @@ final class DuoFoldHostedTests: XCTestCase {
         }
     }
 
-    /// Files beside the chat is the window's choice: the closed Duo is too narrow to show it, and opening the Duo
-    /// shows it again.
-    func testFilesBesideTheChatComesBackWhenTheDuoOpens() async throws {
+    /// Folding consumes an explicit inspector presentation; unfolding needs a new Files tap.
+    func testFilesDismissedByFoldingStaysClosedUntilAnotherTap() async throws {
         let folding = try await openChatOnInnerDisplay(size: HostedSize.duoInnerLandscape)
         let window = folding.window
         var files: NSObject?
@@ -209,12 +209,18 @@ final class DuoFoldHostedTests: XCTestCase {
 
         fold(folding, closed: true)
         fold(folding, closed: false)
-        let kept = await awaitCondition { self.showsFiles(in: window) }
-        XCTAssertTrue(kept, "Files beside the chat did not come back when the Duo opened")
+        XCTAssertFalse(self.showsFiles(in: window), "Unfolding must not re-present Files")
+        let reopen = try XCTUnwrap(HostedAccessibility.toolbarAction("Files", in: window), "The chat lost its Files action")
+        XCTAssertTrue(HostedAccessibility.activate(reopen))
+        let reopened = await awaitCondition { self.showsFiles(in: window) }
+        XCTAssertTrue(reopened, "A new Files tap must reopen the inspector")
     }
 
     private func showsFiles(in window: UIWindow) -> Bool {
-        allElements(in: window).contains { $0.accessibilityLabel == "Search files" }
+        guard #available(iOS 26, *),
+              let controller = window.rootViewController?.firstDescendant(ofType: FilesInspectorContent.NavigationController.self)
+        else { return false }
+        return controller.view.window != nil && controller.splitViewController?.isShowing(.inspector) == true
     }
 
     /// Both an object's accessibility children and its subviews: a column's element list leaves out its bar buttons.

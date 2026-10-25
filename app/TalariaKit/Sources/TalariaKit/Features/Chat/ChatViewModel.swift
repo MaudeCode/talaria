@@ -388,7 +388,8 @@ public final class ChatViewModel {
     public private(set) var isLoadingComposerConfiguration = false
     public private(set) var isUpdatingComposerConfiguration = false
     public private(set) var composerConfigurationErrorMessage: String?
-    public var pendingAttachments: [PendingAttachment] { attachmentCoordinator.pendingAttachments }
+    public var pendingAttachments: [PendingAttachment] { attachmentCoordinator.composerAttachments }
+    public var sessionStartupAttachments: [PendingAttachment] { attachmentCoordinator.sessionStartupAttachments }
     public var isUploadingAttachment: Bool { attachmentCoordinator.isUploadingAttachment }
     public var attachmentUploadCount: Int { attachmentCoordinator.uploadInFlightCount }
     public var attachmentUploadGeneration: Int { attachmentCoordinator.uploadStartGeneration }
@@ -429,6 +430,15 @@ public final class ChatViewModel {
 
     /// True once the chat has a server session to load from and send to.
     public var hasSession: Bool { sessionID != nil }
+    private var pendingNewChatSettings = ChatDraftSettings()
+
+    /// User-owned draft choices; defaults continue to come from the creation response.
+    public var newSessionSettings: ChatDraftSettings {
+        var settings = pendingNewChatSettings
+        settings.profileName = requestProfileName
+        settings.workspacePath = currentWorkspace
+        return settings
+    }
 
     /// A new chat starts with no session so its screen, and the composer the user is already typing
     /// in, can appear before the server answers; this takes on the session the server created, in
@@ -436,6 +446,7 @@ public final class ChatViewModel {
     /// list row lacks, such as a diagnostic chat's owner and frozen mode (TAL-1045).
     public func adoptCreatedSession(_ session: SessionSummary, detail: SessionDetail? = nil) {
         guard sessionID == nil, let id = Self.nonEmpty(session.sessionId) else { return }
+        let previousAttachmentContext = attachmentContextID
         sessionID = id
         currentWorkspace = session.workspace
         serverWorkspacePath = session.workspace
@@ -449,6 +460,12 @@ public final class ChatViewModel {
         canBranch = session.canBranch == true
         displayTitle = Self.displayTitle(from: session.title)
         if let detail { applyReadOnlyState(from: detail) }
+        attachmentCoordinator.adoptSessionContext(from: previousAttachmentContext)
+        if let note = pendingVoiceDraft {
+            pendingVoiceDraft = ChatDraftVoiceNote(id: note.id, file: note.file, filename: note.filename,
+                context: attachmentContextID, timestamp: note.timestamp, transcript: note.transcript,
+                uncertainStart: note.uncertainStart, uploadedAttachment: note.uploadedAttachment)
+        }
     }
 
     public var isRespondingToClarification: Bool { pendingActionCoordinator.isRespondingToClarification }
@@ -1003,6 +1020,7 @@ public final class ChatViewModel {
             }
 
             applyComposerConfigurationState(result.state)
+            if !hasSession, let effort = pendingNewChatSettings.reasoningEffort { selectedReasoningEffort = effort }
             if result.configurationError == nil {
                 isProfileSelectionFromCache = false
             }
@@ -1100,8 +1118,16 @@ public final class ChatViewModel {
         }
 
         guard let sessionID else {
-            composerConfigurationErrorMessage = String(localized: "The server did not provide a session ID.")
-            return false
+            currentModel = option.bareID ?? option.id
+            currentModelProvider = option.providerID
+            currentModelOptionID = option.id
+            pendingExplicitModelPick = true
+            pendingNewChatSettings.modelID = option.id
+            pendingNewChatSettings.modelProviderID = option.providerID
+            pendingNewChatSettings.modelOptionID = option.id
+            composerConfigurationErrorMessage = nil
+            await loadComposerConfiguration()
+            return true
         }
 
         return await switchSessionModel(id: sessionID, workspace: currentWorkspace, model: option.id, provider: option.providerID)
@@ -1292,8 +1318,10 @@ public final class ChatViewModel {
         }
 
         guard let sessionID else {
-            composerConfigurationErrorMessage = String(localized: "The server did not provide a session ID.")
-            return false
+            currentWorkspace = workspace
+            pendingNewChatSettings.workspacePath = workspace
+            composerConfigurationErrorMessage = nil
+            return true
         }
 
         if ownerAttachment != nil {
@@ -1435,10 +1463,14 @@ public final class ChatViewModel {
                 currentModelOptionID = nil
             }
             pendingExplicitModelPick = false
+            if !hasSession {
+                pendingNewChatSettings = ChatDraftSettings(profileName: selectedProfileName, workspacePath: currentWorkspace)
+                sessionToolsets = nil
+            }
 
             await loadComposerConfiguration()
 
-            guard startNewSession else {
+            guard startNewSession, hasSession else {
                 return ProfileSwitchOutcome(session: nil)
             }
 
@@ -1487,6 +1519,13 @@ public final class ChatViewModel {
             return false
         }
 
+        if !hasSession {
+            selectedReasoningEffort = selectedEffort
+            pendingNewChatSettings.reasoningEffort = selectedEffort
+            composerConfigurationErrorMessage = nil
+            return true
+        }
+
         isUpdatingComposerConfiguration = true
         composerConfigurationErrorMessage = nil
         lastError = nil
@@ -1512,8 +1551,9 @@ public final class ChatViewModel {
         expectedInteractionGeneration: Int
     ) async {
         guard canContinueDraftSettingsRestore(expectedInteractionGeneration) else { return }
-        let hasOnlyPendingFirstMessage = pendingFirstMessageID != nil
-            && messages.allSatisfy { $0.messageId == pendingFirstMessageID }
+        let pendingMessageID = pendingFirstMessageID ?? pendingVoiceDraft?.id
+        let hasOnlyPendingFirstMessage = pendingMessageID != nil
+            && messages.allSatisfy { $0.messageId == pendingMessageID }
         guard messages.isEmpty || hasOnlyPendingFirstMessage, activeStreamID == nil else { return }
         let settings = rawSettings.normalized()
 
@@ -2832,7 +2872,9 @@ public final class ChatViewModel {
         // send is valid when it carries staged files: read them before `prepareForSend` consumes them.
         let message = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         let attachmentsToSend = queuedAttachments ?? attachmentCoordinator.pendingAttachments
-        if let error = attachmentSendReadinessError(attachmentsToSend) {
+        let defersUploads = sessionID == nil && waitForSession != nil
+        let readinessAttachments = defersUploads ? attachmentsToSend.filter { $0.uploadPhase != .staged } : attachmentsToSend
+        if let error = attachmentSendReadinessError(readinessAttachments) {
             sendErrorMessage = error
             return ChatSendOutcome(didStart: false)
         }
@@ -2851,7 +2893,8 @@ public final class ChatViewModel {
         }
 
         let localMessageID = "local-\(UUID().uuidString)"
-        let attachmentPreparation = attachmentCoordinator.prepareForSend(queuedAttachments, localMessageID: localMessageID)
+        let attachmentPreparation = attachmentCoordinator.prepareForSend(queuedAttachments, localMessageID: localMessageID,
+                                                                         keepsPendingAttachments: defersUploads)
 
         return await performChatSend(
             sessionID: sessionID,
@@ -2895,14 +2938,15 @@ public final class ChatViewModel {
     }
 
     @discardableResult
-    public func sendVoiceNote(audioData: Data, filename: String, modelContext: ModelContext? = nil) async -> ChatSendOutcome {
+    public func sendVoiceNote(audioData: Data, filename: String, modelContext: ModelContext? = nil,
+                              waitForSession: (@MainActor () async -> Bool)? = nil) async -> ChatSendOutcome {
         guard !isSubmittingMessage else { return ChatSendOutcome(didStart: false) }
         guard pendingVoiceDraft == nil else {
             let error = VoiceNotePreparationError(String(localized: "Retry or remove the unsent voice note before recording another."))
             setUploadAttachmentError(error.localizedDescription)
             return ChatSendOutcome(didStart: false, error: error)
         }
-        guard !isViewingCachedData, sessionID != nil, !audioData.isEmpty else { return ChatSendOutcome(didStart: false) }
+        guard !isViewingCachedData, sessionID != nil || waitForSession != nil, !audioData.isEmpty else { return ChatSendOutcome(didStart: false) }
         guard audioData.count <= PendingAttachment.maximumUploadBytes else {
             setUploadAttachmentError(PendingAttachment.uploadTooLargeMessage(filename: filename))
             return ChatSendOutcome(didStart: false)
@@ -2926,6 +2970,10 @@ public final class ChatViewModel {
             )
             message.localVoicePhase = .preparing
             messages.append(message)
+            if let waitForSession, !(await waitForSession()) {
+                setVoicePhase(.failed(String(localized: "Voice note has not been sent. Try again.")), id: id)
+                return ChatSendOutcome(didStart: false)
+            }
             return await prepareAndSendVoiceNote(modelContext: modelContext)
         } catch {
             setUploadAttachmentError(error.localizedDescription)
@@ -3073,7 +3121,8 @@ public final class ChatViewModel {
         }
         let ownership = sendOwnershipGeneration
         let preparesSession = waitForSession != nil
-        attachmentCoordinator.startupAttachmentCount = preparesSession ? messageAttachments.count : 0
+        let deferredUploads = preparesSession && sessionID == nil
+        attachmentCoordinator.startupAttachmentCount = preparesSession && !deferredUploads ? messageAttachments.count : 0
         pendingFirstMessageID = preparesSession && appendsUserMessage ? localMessageID : nil
         isStartingChat = true
         isStartingMessageSend = true
@@ -3137,9 +3186,10 @@ public final class ChatViewModel {
         let initialFiles = preparesSession
             ? attachmentCoordinator.prepareForSend(sessionAttachments?() ?? [], localMessageID: localMessageID) : nil
         for file in initialFiles?.attachments ?? [] { attachmentCoordinator.removePendingAttachment(id: file.id) }
-        let sendAttachments = messageAttachments + (initialFiles?.messageAttachments ?? [])
-        let sendPayloads = (attachmentPreparation.apiPayloads ?? []) + (initialFiles?.apiPayloads ?? [])
-        let restoredFiles = attachmentsToRestoreOnFailure + (initialFiles?.attachments ?? [])
+        let sendAttachments = (deferredUploads ? [] : messageAttachments) + (initialFiles?.messageAttachments ?? [])
+        let sendPayloads = (deferredUploads ? [] : attachmentPreparation.apiPayloads ?? []) + (initialFiles?.apiPayloads ?? [])
+        let restoredFiles = deferredUploads ? initialFiles?.attachments ?? attachmentsToRestoreOnFailure
+            : attachmentsToRestoreOnFailure + (initialFiles?.attachments ?? [])
         if let index = messages.firstIndex(where: { $0.messageId == localMessageID }), !sendAttachments.isEmpty {
             messages[index].attachments = sendAttachments
         }
@@ -5506,7 +5556,6 @@ public final class ChatViewModel {
     }
 
     public func loadToolsetsCatalog() async throws -> ToolsetsCatalog? {
-        guard let sessionID else { throw URLError(.badURL) }
         return try await client.fetchToolsetsCatalog(sessionID: sessionID, toolsets: sessionToolsets?.names)
     }
 
@@ -5515,7 +5564,11 @@ public final class ChatViewModel {
     /// failure keeps the old value and reports in the composer (TAL-631).
     @discardableResult
     public func saveSessionToolsets(_ names: [String]?) async -> Bool {
-        guard let sessionID, !isUpdatingComposerConfiguration else { return false }
+        guard !isUpdatingComposerConfiguration else { return false }
+        guard let sessionID else {
+            sessionToolsets = SessionToolsets(names: names)
+            return true
+        }
         isUpdatingComposerConfiguration = true
         composerConfigurationErrorMessage = nil
         defer { isUpdatingComposerConfiguration = false }

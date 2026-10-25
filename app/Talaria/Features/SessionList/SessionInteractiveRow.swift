@@ -31,11 +31,11 @@ struct SessionInteractiveRow: View {
             }
             .contextMenu {
                 if !viewModel.isSelectingSessions {
-                    if rowStyle == .sidebar && viewModel.supportsBulkActions {
+                    if canEnterSelection {
                         Button { viewModel.beginSelectingSessions() } label: {
                             Label("Select Chats…", systemImage: "checkmark.circle")
                         }
-                        .disabled(viewModel.isViewingCachedData || viewModel.isPerformingBulkAction)
+                        .disabled(selectionIsDisabled)
                     }
                     SessionRowContextMenu(
                         session: session,
@@ -51,15 +51,24 @@ struct SessionInteractiveRow: View {
                     )
                 }
             }
+            .accessibilityActions {
+                if canEnterSelection, !selectionIsDisabled {
+                    Button("Select Chats…") { viewModel.beginSelectingSessions() }
+                }
+            }
     }
+
+    private var canEnterSelection: Bool {
+        rowStyle == .sidebar && viewModel.supportsBulkActions && !viewModel.isSelectingSessions
+    }
+
+    private var selectionIsDisabled: Bool { viewModel.isViewingCachedData || viewModel.isPerformingBulkAction }
 
     /// A run card keeps Stop beside the button that opens the chat, so VoiceOver reaches it and tapping it stops the
     /// run instead of opening the chat.
     @ViewBuilder
     private var rowContent: some View {
-        if rowStyle == .sidebar {
-            openButton(style: .sidebar)
-        } else if monitorsRuns, let runStatus = SessionRunMonitor.runStatus(for: session) {
+        if monitorsRuns, let runStatus = SessionRunMonitor.runStatus(for: session) {
             HStack(spacing: 12) {
                 openButton(style: .monitor(runStatus))
                 if !runStatus.isAwaitingUser {
@@ -67,7 +76,7 @@ struct SessionInteractiveRow: View {
                 }
             }
         } else {
-            openButton(style: .regular)
+            openButton(style: rowStyle)
         }
     }
 

@@ -137,17 +137,7 @@ struct TalariaApp: App {
         // fatal there too. The offline cache is device-local: the CloudKit
         // entitlement (TAL-91 configuration sync) must not turn on SwiftData's
         // automatic mirroring, which also rejects the cache's unique keys.
-        var cacheConfiguration = ModelConfiguration(isStoredInMemoryOnly: usesUITestFixture, cloudKitDatabase: .none)
-        #if DEBUG
-        // Opt-in disk persistence for manual cold-launch validation; ordinary fixtures remain isolated in memory.
-        if usesUITestFixture, arguments.contains("--ui-test-persistent-cache") {
-            try? FileManager.default.createDirectory(at: .applicationSupportDirectory, withIntermediateDirectories: true)
-            cacheConfiguration = ModelConfiguration(
-                url: URL.applicationSupportDirectory.appending(path: "ui-test-launch-cache.store"),
-                cloudKitDatabase: .none
-            )
-        }
-        #endif
+        let cacheConfiguration = ModelConfiguration(isStoredInMemoryOnly: usesUITestFixture, cloudKitDatabase: .none)
         let cacheContainer = try! ModelContainer(
             for: CachedSession.self, CachedMessage.self,
             configurations: cacheConfiguration

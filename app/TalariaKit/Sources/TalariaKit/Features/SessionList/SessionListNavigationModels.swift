@@ -27,11 +27,6 @@ public struct SidebarSectionVisibility: Equatable {
         insights: true
     )
 
-    /// The five plain links share one List row, so that row is dropped entirely
-    /// once all of them are hidden rather than leaving an empty padded gap.
-    var showsAnyUtilityLink: Bool {
-        tasks || kanban || skills || memory || insights
-    }
 }
 
 /// Pure, testable backing model for the session-list avatar's long-press server

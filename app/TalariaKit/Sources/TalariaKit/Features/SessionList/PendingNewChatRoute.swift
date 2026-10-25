@@ -11,7 +11,7 @@ public struct PendingNewChatRoute: Identifiable, Hashable {
     public let id = UUID()
     public let initialDraft: String
     public let initialAttachments: [SharedAttachmentImport]
-    /// Explicit compose/intent routes start and focus immediately; the empty launch root waits for Send.
+    /// Explicit compose/intent routes focus the composer; every route waits for Send or Files to create a session.
     public let isExplicit: Bool
     /// When true, the composer auto-starts voice dictation on appear (#338).
     public let autoStartsVoiceInput: Bool

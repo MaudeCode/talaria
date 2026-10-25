@@ -36,6 +36,8 @@ final class SessionListPendingChangeTests: XCTestCase {
         let session = try XCTUnwrap(viewModel.sessions.first)
         let pin = Task { await viewModel.setPinned(true, for: session) }
         await fulfillment(of: [pinHeld], timeout: 5)
+        XCTAssertEqual(viewModel.pendingChange(for: session)?.pinned, true)
+        XCTAssertEqual(viewModel.sessions.first?.pinned, false, "The server's order is retained until its snapshot arrives")
         let stale = Task { await viewModel.load() }
         await fulfillment(of: [oldRead], timeout: 5)
         requests.request(at: 0).complete(withJSON: #"{"ok":true}"#)
@@ -48,6 +50,54 @@ final class SessionListPendingChangeTests: XCTestCase {
         _ = await stale.value
         XCTAssertEqual(viewModel.sessions.first?.pinned, true)
         XCTAssertNil(viewModel.pendingChange(for: session))
+    }
+
+    func testRefusedPinRollsBackItsDisplayChoice() async throws {
+        let requests = DeferredRequests()
+        let arrived = expectation(description: "pin held")
+        let viewModel = model { request in
+            if request.request.url?.path == "/api/session/pin" {
+                _ = requests.append(request)
+                arrived.fulfill()
+            } else { request.complete(withJSON: self.baseline) }
+        }
+        _ = await viewModel.load()
+        let session = try XCTUnwrap(viewModel.sessions.first)
+        let pin = Task { await viewModel.setPinned(true, for: session) }
+        await fulfillment(of: [arrived], timeout: 5)
+        XCTAssertEqual(viewModel.pendingChange(for: session)?.pinned, true)
+        requests.request(at: 0).complete(withJSON: #"{"error":"Synthetic refusal"}"#, statusCode: 409)
+        let accepted = await pin.value
+        XCTAssertFalse(accepted)
+        XCTAssertNil(viewModel.pendingChange(for: session))
+        XCTAssertEqual(viewModel.sessions.first?.pinned, false)
+        XCTAssertNotNil(viewModel.actionErrorMessage)
+    }
+
+    func testUnknownPinOutcomeReconcilesBeforeDroppingItsDisplayChoice() async throws {
+        let requests = DeferredRequests()
+        let arrived = expectation(description: "pin held")
+        let reconcile = expectation(description: "reconcile held")
+        let viewModel = model { request in
+            if request.request.url?.path == "/api/session/pin" {
+                _ = requests.append(request)
+                arrived.fulfill()
+            } else if requests.count == 0 { request.complete(withJSON: self.baseline) }
+            else { _ = requests.append(request); reconcile.fulfill() }
+        }
+        _ = await viewModel.load()
+        let session = try XCTUnwrap(viewModel.sessions.first)
+        let pin = Task { await viewModel.setPinned(true, for: session) }
+        await fulfillment(of: [arrived], timeout: 5)
+        requests.request(at: 0).fail(with: URLError(.networkConnectionLost))
+        await fulfillment(of: [reconcile], timeout: 5)
+        XCTAssertEqual(viewModel.pendingChange(for: session)?.pinned, true)
+        requests.request(at: 1).complete(withJSON: #"{"sessions":[{"session_id":"same","title":"Original","pinned":true}]}"#)
+        let accepted = await pin.value
+        XCTAssertFalse(accepted, "The transport outcome remains an error even when the server confirms the pin")
+        XCTAssertEqual(viewModel.sessions.first?.pinned, true)
+        XCTAssertNil(viewModel.pendingChange(for: session))
+        XCTAssertEqual(requests.count, 2, "One pin and one read, with no blind write replay")
     }
 
     func testRenameKeepsSubmittedTitleSeparateThroughStaleReadThenAdoptsCanonicalTitle() async throws {

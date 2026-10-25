@@ -38,20 +38,32 @@ struct SessionListRowsSection: View {
                 .sessionsScreenListRow()
         } else {
             if rowStyle == .sidebar {
-                let pinned = sessions.filter { $0.pinned == true }
-                if !pinned.isEmpty {
-                    if showsHeading {
-                        SidebarSectionHeader(title: String(localized: "Pinned"), isCompact: true) { EmptyView() }
+                ForEach(sidebarRows, id: \.session.id) { row in
+                    if showsHeading, let caption = row.caption {
+                        SidebarSectionHeader(title: caption, isCompact: true) { EmptyView() }
                     }
-                    ForEach(pinned) { session in sessionRow(session) }
+                    sessionRow(row.session)
                 }
-                if showsHeading {
-                    SidebarSectionHeader(title: String(localized: "Recents"), isCompact: true) { EmptyView() }
-                }
-                ForEach(sessions.filter { $0.pinned != true }) { session in sessionRow(session) }
             } else {
                 ForEach(sessions) { session in sessionRow(session) }
             }
+        }
+    }
+
+    private var sidebarRows: [(session: SessionSummary, caption: String?)] {
+        // TAL-1534: the server will ship the group; until then the caption follows its pinned-first order.
+        var hasRecentsCaption = false
+        return sessions.enumerated().map { index, session in
+            let caption: String?
+            if session.pinned != true, !hasRecentsCaption {
+                caption = String(localized: "Recents")
+                hasRecentsCaption = true
+            } else if index == 0, session.pinned == true {
+                caption = String(localized: "Pinned")
+            } else {
+                caption = nil
+            }
+            return (session, caption)
         }
     }
 

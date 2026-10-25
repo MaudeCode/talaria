@@ -1,30 +1,52 @@
 import SwiftUI
 import TalariaKit
 
-/// A list row selecting a page within a section or Settings.
-struct SectionSelectionRow<Item: Hashable, Label: View>: View {
-    let item: Item
-    @Binding var selection: Item?
-    @ViewBuilder let label: Label
+/// One selectable row for section lists and the sidebar panel, including optional leading content and chevron.
+struct SectionSelectionRow<Label: View, Icon: View>: View {
+    let isSelected: Bool
+    let isListRow: Bool
+    let showsChevron: Bool
+    let action: () -> Void
+    let icon: Icon
+    let label: Label
+
+    init(isSelected: Bool, isListRow: Bool = true, showsChevron: Bool = true,
+         action: @escaping () -> Void, @ViewBuilder icon: () -> Icon, @ViewBuilder label: () -> Label) {
+        self.isSelected = isSelected
+        self.isListRow = isListRow
+        self.showsChevron = showsChevron
+        self.action = action
+        self.icon = icon()
+        self.label = label()
+    }
 
     var body: some View {
-        Button {
-            selection = item
-        } label: {
-            HStack(spacing: 8) {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                icon
                 label
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.forward")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-                    .accessibilityHidden(true)
+                if showsChevron {
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.forward")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                        .accessibilityHidden(true)
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .sidebarRowPadding()
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .foregroundStyle(.primary)
-        .sidebarRow(isSelected: selection == item)
+        .foregroundStyle(isSelected ? Color.accentColor : .primary)
+        .sidebarRow(isSelected: isSelected, isListRow: isListRow)
+    }
+}
+
+extension SectionSelectionRow where Icon == EmptyView {
+    init<Item: Hashable>(item: Item, selection: Binding<Item?>, @ViewBuilder label: () -> Label) {
+        self.init(isSelected: selection.wrappedValue == item,
+                  action: { selection.wrappedValue = item }, icon: { EmptyView() }, label: label)
     }
 }
 
@@ -154,13 +176,18 @@ extension View {
             .frame(minHeight: 44)
     }
 
-    /// A `SidebarList` row's insets and selection tint, with the trait VoiceOver reads.
-    func sidebarRow(isSelected: Bool) -> some View {
-        background(
+    /// The shared selection chrome and VoiceOver trait, with optional List-specific insets.
+    @ViewBuilder
+    func sidebarRow(isSelected: Bool, isListRow: Bool = true) -> some View {
+        let row = background(
             isSelected ? Color.accentColor.opacity(0.12) : Color.clear,
             in: RoundedRectangle(cornerRadius: 12, style: .continuous)
         )
         .accessibilityAddTraits(isSelected ? .isSelected : [])
-        .sessionsScreenListRow(insets: EdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12))
+        if isListRow {
+            row.sessionsScreenListRow(insets: EdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12))
+        } else {
+            row
+        }
     }
 }

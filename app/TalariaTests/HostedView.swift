@@ -29,14 +29,21 @@ extension HostedAccessibility {
         var result: [UIBarButtonItem] = []
         var visited: Set<ObjectIdentifier> = []
         func visit(_ controller: UIViewController) {
-            guard visited.insert(ObjectIdentifier(controller)).inserted else { return }
-            let navigationItems = [controller.navigationItem] + ((controller as? UINavigationController)?.navigationBar.items ?? [])
+            guard visited.insert(ObjectIdentifier(controller)).inserted,
+                  let view = controller.viewIfLoaded, view.window != nil,
+                  !view.isHidden, !view.accessibilityElementsHidden else { return }
+            let navigation = controller as? UINavigationController
+            let navigationItems = [controller.navigationItem] + [navigation?.navigationBar.topItem].compactMap { $0 }
             result += controller.toolbarItems ?? []
             for item in navigationItems {
                 result += (item.leftBarButtonItems ?? []) + (item.rightBarButtonItems ?? [])
                 result += (item.leadingItemGroups + item.trailingItemGroups).flatMap(\.barButtonItems)
             }
-            controller.children.forEach(visit)
+            if let navigation, let visible = navigation.visibleViewController {
+                visit(visible)
+            } else {
+                controller.children.forEach(visit)
+            }
             if let presented = controller.presentedViewController { visit(presented) }
         }
         visit(root)
@@ -47,14 +54,36 @@ extension HostedAccessibility {
     /// The regular-width split view; the chat's inspector is a split view controller of its own.
     static func splitViewController(under controller: UIViewController?) -> UISplitViewController? {
         guard let controller else { return nil }
-        if let split = controller as? UISplitViewController, !NSStringFromClass(type(of: split)).contains("Inspector") {
-            return split
+        var candidates: [UISplitViewController] = []
+        func collect(_ current: UIViewController) {
+            if let split = current as? UISplitViewController { candidates.append(split) }
+            current.children.forEach(collect)
         }
-        return controller.children.lazy.compactMap { splitViewController(under: $0) }.first
+        collect(controller)
+        // The detail-level inspector also uses UISplitViewController, with its own default 320pt primary.
+        // Identify the app split by its sidebar, preferring it over an inspector that wraps the app split.
+        if let appSplit = candidates.reversed().first(where: { split in
+            guard let primary = split.viewController(for: .primary), primary.isViewLoaded else { return false }
+            return primary.view.firstView(ofType: UICollectionView.self, where: { $0.accessibilityIdentifier == "app-sidebar" }) != nil
+        }) { return appSplit }
+        return candidates.first { !NSStringFromClass(type(of: $0)).contains("Inspector") }
     }
 
     static func toolbarItem(_ title: String, in window: UIWindow) -> UIBarButtonItem? {
-        toolbarItems(in: window).first { $0.title == title || $0.accessibilityLabel == title }
+        toolbarItems(in: window).first { $0.title == title || $0.accessibilityLabel == title || $0.primaryAction?.title == title }
+    }
+
+    /// The system may move an action into its overflow menu instead of mounting a visible bar control.
+    static func toolbarAction(_ title: String, in window: UIWindow) -> NSObject? {
+        if let item = toolbarItem(title, in: window) { return item }
+        func action(in menu: UIMenu) -> UIAction? {
+            for child in menu.children {
+                if let action = child as? UIAction, action.title == title { return action }
+                if let nested = child as? UIMenu, let found = action(in: nested) { return found }
+            }
+            return nil
+        }
+        return toolbarItems(in: window).compactMap(\.menu).lazy.compactMap { action(in: $0) }.first
     }
 }
 
@@ -85,6 +114,9 @@ extension XCTestCase {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(origin: .zero, size: size)
+        // A synthetic phone window must not inherit the unfolded Duo/iPad scene's regular size class.
+        window.traitOverrides.horizontalSizeClass = size.width >= 600 && size.height >= 600 ? .regular : .compact
+        window.traitOverrides.verticalSizeClass = size.height >= 600 ? .regular : .compact
         traits(&window.traitOverrides)
         window.rootViewController = UIHostingController(rootView: view.transaction {
             $0.disablesAnimations = !animationsEnabled
@@ -196,12 +228,31 @@ enum HostedAccessibility {
     /// Performs the element's default action, as a VoiceOver double tap does, then lets the result reach the tree.
     @discardableResult
     static func activate(_ element: NSObject) -> Bool {
-        let handled = element.accessibilityActivate()
+        let handled: Bool
+        if let item = element as? UIBarButtonItem {
+            guard item.isEnabled else { return false }
+            if let primary = item.primaryAction { return activate(primary) }
+            guard let action = item.action else { return false }
+            handled = UIApplication.shared.sendAction(action, to: item.target, from: item, for: nil)
+        } else if let action = element as? UIAction {
+            guard !action.attributes.contains(.disabled) else { return false }
+            let control = UIControl()
+            control.addAction(action, for: .primaryActionTriggered)
+            control.sendActions(for: .primaryActionTriggered)
+            handled = true
+        } else if let control = element as? UIControl {
+            control.sendActions(for: .touchUpInside)
+            handled = true
+        } else {
+            handled = element.accessibilityActivate()
+        }
         RunLoop.current.run(until: Date().addingTimeInterval(0.05))
         return handled
     }
 
     private static func visit(_ object: NSObject, into found: inout [NSObject]) {
+        // UIKit keeps offscreen hosts mounted. VoiceOver deliberately excludes their hidden accessibility subtrees.
+        guard !object.accessibilityElementsHidden, (object as? UIView)?.isHidden != true else { return }
         if object.isAccessibilityElement { found.append(object) }
         if let children = object.accessibilityElements as? [NSObject], !children.isEmpty {
             children.forEach { visit($0, into: &found) }
@@ -227,6 +278,16 @@ extension UIView {
         if let match = self as? View, predicate(match) { return match }
         for child in subviews {
             if let match = child.firstView(ofType: type, where: predicate) { return match }
+        }
+        return nil
+    }
+}
+
+extension UIViewController {
+    func firstDescendant<Controller: UIViewController>(ofType type: Controller.Type) -> Controller? {
+        if let match = self as? Controller { return match }
+        for child in children + [presentedViewController].compactMap({ $0 }) {
+            if let match = child.firstDescendant(ofType: type) { return match }
         }
         return nil
     }

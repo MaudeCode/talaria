@@ -50,7 +50,8 @@ public enum SessionRowPresentation {
 
     public static func accessibilityStateLabels(
         for session: SessionSummary,
-        isViewingCachedData: Bool
+        isViewingCachedData: Bool,
+        pinned: Bool? = nil
     ) -> [String] {
         var labels: [String] = []
 
@@ -58,7 +59,7 @@ public enum SessionRowPresentation {
             labels.append(String(localized: "Streaming"))
         }
 
-        if session.pinned == true {
+        if (pinned ?? session.pinned) == true {
             labels.append(String(localized: "Pinned"))
         }
 

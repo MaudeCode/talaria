@@ -739,10 +739,13 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             // "new chat in <profile>" entry point pinned the session (TAL-77).
             let body = requestJSON(request)
             let requestedProfile = body["profile"] as? String
-            let created = session(
+            var created = session(
                 id: newSessionID,
                 title: requestedProfile.map { "New Fixture Chat (\($0))" } ?? "New Fixture Chat"
             )
+            for key in ["model", "model_provider", "workspace", "enabled_toolsets"] {
+                if let value = body[key] { created[key] = value }
+            }
             if let mode = body["execution_mode"] as? String {
                 return json(["session": diagnosticSession(created, mode: mode)])
             }
