@@ -3,27 +3,6 @@ import UIKit
 import TalariaKit
 
 
-@MainActor
-final class NavigationBarLeadingMarginViewController: UIViewController {
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        view.isUserInteractionEnabled = false
-        view.accessibilityElementsHidden = true
-    }
-
-    override func viewWillLayoutSubviews() {
-        super.viewWillLayoutSubviews()
-        applyMargin()
-    }
-
-    func applyMargin() {
-        guard let navigationBar = navigationController?.navigationBar else { return }
-        var margins = navigationBar.directionalLayoutMargins
-        margins.leading = 16
-        navigationBar.directionalLayoutMargins = margins
-    }
-}
-
 struct SessionListRowActions {
     let retryLoad: () -> Void
     let open: (SessionSummary) -> Void
@@ -76,6 +55,13 @@ struct SessionListHingeReader: ViewModifier {
 }
 
 enum SessionListMotion {
+    /// The sidebar column and its rigid chat pane move on this curve.
+    static let foldDuration: TimeInterval = 0.35
+
+    static func foldAnimation(reduceMotion: Bool) -> Animation {
+        reduceMotion ? .easeInOut(duration: 0.15) : .smooth(duration: foldDuration, extraBounce: 0)
+    }
+
     static func disclosureAnimation(reduceMotion: Bool) -> Animation? {
         reduceMotion ? nil : .smooth(duration: 0.28, extraBounce: 0)
     }
@@ -138,12 +124,6 @@ struct SessionArchiveUndoToast: View {
     }
 }
 
-/// Long-press menu on the session-list avatar: switch the active server (the
-/// active one marked + disabled, mirroring `SessionProjectMoveMenu`'s checkmark
-/// idiom), plus shortcuts into #17's add-server flow and the Settings server
-/// list (#283). Holds no switching logic — it calls back into the tested #17
-/// `AuthManager.switchActiveServer` action and the existing navigation.
-
 extension View {
     func sessionsScreenListRow(insets: EdgeInsets = EdgeInsets()) -> some View {
         listRowInsets(insets)
@@ -151,20 +131,6 @@ extension View {
             .listRowBackground(Color(.systemBackground))
     }
 
-    func sessionsChromeGlass<S: InsettableShape>(
-        isInteractive: Bool = false,
-        tint: Color? = nil,
-        fallbackMaterial: Material = .ultraThinMaterial,
-        in shape: S
-    ) -> some View {
-        adaptiveGlass(
-            .regular,
-            isInteractive: isInteractive,
-            tint: tint,
-            fallbackMaterial: fallbackMaterial,
-            in: shape
-        )
-    }
 }
 
 /// Sheet item for a finished session export: the temp file offered to the
@@ -174,61 +140,6 @@ struct SessionExportShareItem: Identifiable {
 
     var id: String { fileURL.absoluteString }
 }
-
-/// Minimal `UIActivityViewController` wrapper — the app has no other share
-/// surface and `ShareLink` can't be presented programmatically after an async
-/// download finishes. Cleanup of the temp file happens in the sheet's
-/// `onDismiss`, which runs after the activity UI is gone in both the
-/// completed and cancelled paths.
-
-struct SessionListFloatingChatButtonStyle: ButtonStyle {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.isEnabled) private var isEnabled
-
-    func makeBody(configuration: Configuration) -> some View {
-        let isPressed = isEnabled && configuration.isPressed
-
-        configuration.label
-            .scaleEffect(reduceMotion ? 1 : (isPressed ? 0.975 : 1))
-            .opacity(isPressed ? 0.96 : 1)
-            .shadow(
-                color: .black.opacity(isPressed ? 0.10 : 0.18),
-                radius: isPressed ? 8 : 18,
-                y: isPressed ? 3 : 8
-            )
-            .animation(SessionListMotion.pressAnimation(reduceMotion: reduceMotion), value: isPressed)
-    }
-}
-
-
-
-struct SidebarSubrowSelectionStyle: ViewModifier {
-    let isSelected: Bool
-
-    func body(content: Content) -> some View {
-        content
-            .padding(.leading, 18)
-            .padding(.trailing, 10)
-            .background {
-                if isSelected {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(Color.accentColor.opacity(0.10))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .stroke(Color.accentColor.opacity(0.20), lineWidth: 1)
-                        }
-                }
-            }
-    }
-}
-
-extension View {
-    func sidebarSubrowSelectionStyle(isSelected: Bool) -> some View {
-        modifier(SidebarSubrowSelectionStyle(isSelected: isSelected))
-    }
-}
-
-
 
 extension Color {
     init?(hexString: String?) {

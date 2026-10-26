@@ -11,6 +11,8 @@ public struct PendingNewChatRoute: Identifiable, Hashable {
     public let id = UUID()
     public let initialDraft: String
     public let initialAttachments: [SharedAttachmentImport]
+    /// Explicit compose/intent routes focus the composer; every route waits for Send or Files to create a session.
+    public let isExplicit: Bool
     /// When true, the composer auto-starts voice dictation on appear (#338).
     public let autoStartsVoiceInput: Bool
     /// When set, the new session is created pinned to this profile (#339).
@@ -24,6 +26,7 @@ public struct PendingNewChatRoute: Identifiable, Hashable {
     public init(
         initialDraft: String = "",
         initialAttachments: [SharedAttachmentImport] = [],
+        isExplicit: Bool = true,
         autoStartsVoiceInput: Bool = false,
         profileName: String? = nil,
         providerID: String? = nil,
@@ -32,6 +35,7 @@ public struct PendingNewChatRoute: Identifiable, Hashable {
     ) {
         self.initialDraft = initialDraft
         self.initialAttachments = initialAttachments
+        self.isExplicit = isExplicit
         self.autoStartsVoiceInput = autoStartsVoiceInput
         self.profileName = profileName
         self.providerID = providerID

@@ -125,7 +125,6 @@
 		C05100000000000000000004 /* ChatTranscriptSupportingViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C05100000000000000000014 /* ChatTranscriptSupportingViews.swift */; };
 		1A2B3C4D5E6F7000000000D0 /* SessionRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000D2 /* SessionRowView.swift */; };
 		A04300000000000000000001 /* SessionListComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04300000000000000000011 /* SessionListComponents.swift */; };
-		C107K0000000000000000001 /* NavigationBarLeadingMarginObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000101 /* NavigationBarLeadingMarginObserver.swift */; };
 		C107K0000000000000000002 /* SessionFilterControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000102 /* SessionFilterControls.swift */; };
 		C107K0000000000000000003 /* SessionFilterChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000103 /* SessionFilterChip.swift */; };
 		C107K0000000000000000004 /* SessionListRowsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000104 /* SessionListRowsSection.swift */; };
@@ -139,13 +138,10 @@
 		C107K0000000000000000011 /* SessionExportShareSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000111 /* SessionExportShareSheet.swift */; };
 		C107K0000000000000000012 /* SidebarNavButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000112 /* SidebarNavButton.swift */; };
 		C107K0000000000000000013 /* AppSidebarContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000113 /* AppSidebarContainer.swift */; };
-		C107K0000000000000000014 /* AppSidebarDrawer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000114 /* AppSidebarDrawer.swift */; };
+		C107K0000000000000000014 /* AppSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000114 /* AppSidebar.swift */; };
 		C107K0000000000000000015 /* SidebarDisclosureButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000115 /* SidebarDisclosureButton.swift */; };
 		C107K0000000000000000016 /* SidebarDisclosureChevron.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000116 /* SidebarDisclosureChevron.swift */; };
 		C107K0000000000000000017 /* SidebarUtilityIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000117 /* SidebarUtilityIcon.swift */; };
-		C107K0000000000000000018 /* SidebarSelectedSubrowIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000118 /* SidebarSelectedSubrowIndicator.swift */; };
-		C107K0000000000000000019 /* ActiveProfilePickerRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000119 /* ActiveProfilePickerRow.swift */; };
-		C107K0000000000000000020 /* ProjectFilterRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000120 /* ProjectFilterRow.swift */; };
 		C107K0000000000000000021 /* CompactStatusRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000121 /* CompactStatusRow.swift */; };
 		C107K0000000000000000022 /* SessionListStatusRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000122 /* SessionListStatusRow.swift */; };
 		C107K0000000000000000023 /* SessionRowSkeletonView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000123 /* SessionRowSkeletonView.swift */; };
@@ -556,7 +552,6 @@
 		C05100000000000000000014 /* ChatTranscriptSupportingViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTranscriptSupportingViews.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000D2 /* SessionRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRowView.swift; sourceTree = "<group>"; };
 		A04300000000000000000011 /* SessionListComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListComponents.swift; sourceTree = "<group>"; };
-		C107K0000000000000000101 /* NavigationBarLeadingMarginObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationBarLeadingMarginObserver.swift; sourceTree = "<group>"; };
 		C107K0000000000000000102 /* SessionFilterControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionFilterControls.swift; sourceTree = "<group>"; };
 		C107K0000000000000000103 /* SessionFilterChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionFilterChip.swift; sourceTree = "<group>"; };
 		C107K0000000000000000104 /* SessionListRowsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListRowsSection.swift; sourceTree = "<group>"; };
@@ -570,13 +565,10 @@
 		C107K0000000000000000111 /* SessionExportShareSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionExportShareSheet.swift; sourceTree = "<group>"; };
 		C107K0000000000000000112 /* SidebarNavButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarNavButton.swift; sourceTree = "<group>"; };
 		C107K0000000000000000113 /* AppSidebarContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSidebarContainer.swift; sourceTree = "<group>"; };
-		C107K0000000000000000114 /* AppSidebarDrawer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSidebarDrawer.swift; sourceTree = "<group>"; };
+		C107K0000000000000000114 /* AppSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSidebar.swift; sourceTree = "<group>"; };
 		C107K0000000000000000115 /* SidebarDisclosureButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarDisclosureButton.swift; sourceTree = "<group>"; };
 		C107K0000000000000000116 /* SidebarDisclosureChevron.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarDisclosureChevron.swift; sourceTree = "<group>"; };
 		C107K0000000000000000117 /* SidebarUtilityIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarUtilityIcon.swift; sourceTree = "<group>"; };
-		C107K0000000000000000118 /* SidebarSelectedSubrowIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarSelectedSubrowIndicator.swift; sourceTree = "<group>"; };
-		C107K0000000000000000119 /* ActiveProfilePickerRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveProfilePickerRow.swift; sourceTree = "<group>"; };
-		C107K0000000000000000120 /* ProjectFilterRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectFilterRow.swift; sourceTree = "<group>"; };
 		C107K0000000000000000121 /* CompactStatusRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompactStatusRow.swift; sourceTree = "<group>"; };
 		C107K0000000000000000122 /* SessionListStatusRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListStatusRow.swift; sourceTree = "<group>"; };
 		C107K0000000000000000123 /* SessionRowSkeletonView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRowSkeletonView.swift; sourceTree = "<group>"; };
@@ -1114,7 +1106,6 @@
 				C107L0000000000000000124 /* PendingNewChatView.swift */,
 				C107L0000000000000001145 /* NewChatModeMenu.swift */,
 				A04300000000000000000011 /* SessionListComponents.swift */,
-				C107K0000000000000000101 /* NavigationBarLeadingMarginObserver.swift */,
 				C107K0000000000000000102 /* SessionFilterControls.swift */,
 				C107K0000000000000000103 /* SessionFilterChip.swift */,
 				C107K0000000000000000104 /* SessionListRowsSection.swift */,
@@ -1128,13 +1119,10 @@
 				C107K0000000000000000111 /* SessionExportShareSheet.swift */,
 				C107K0000000000000000112 /* SidebarNavButton.swift */,
 				C107K0000000000000000113 /* AppSidebarContainer.swift */,
-				C107K0000000000000000114 /* AppSidebarDrawer.swift */,
+				C107K0000000000000000114 /* AppSidebar.swift */,
 				C107K0000000000000000115 /* SidebarDisclosureButton.swift */,
 				C107K0000000000000000116 /* SidebarDisclosureChevron.swift */,
 				C107K0000000000000000117 /* SidebarUtilityIcon.swift */,
-				C107K0000000000000000118 /* SidebarSelectedSubrowIndicator.swift */,
-				C107K0000000000000000119 /* ActiveProfilePickerRow.swift */,
-				C107K0000000000000000120 /* ProjectFilterRow.swift */,
 				C107K0000000000000000121 /* CompactStatusRow.swift */,
 				C107K0000000000000000122 /* SessionListStatusRow.swift */,
 				C107K0000000000000000123 /* SessionRowSkeletonView.swift */,
@@ -1943,7 +1931,6 @@
 				031031031031031031031009 /* DisplayMathView.swift in Sources */,
 				1A2B3C4D5E6F7000000000D0 /* SessionRowView.swift in Sources */,
 				A04300000000000000000001 /* SessionListComponents.swift in Sources */,
-				C107K0000000000000000001 /* NavigationBarLeadingMarginObserver.swift in Sources */,
 				C107K0000000000000000002 /* SessionFilterControls.swift in Sources */,
 				C107K0000000000000000003 /* SessionFilterChip.swift in Sources */,
 				C107K0000000000000000004 /* SessionListRowsSection.swift in Sources */,
@@ -1957,13 +1944,10 @@
 				C107K0000000000000000011 /* SessionExportShareSheet.swift in Sources */,
 				C107K0000000000000000012 /* SidebarNavButton.swift in Sources */,
 				C107K0000000000000000013 /* AppSidebarContainer.swift in Sources */,
-				C107K0000000000000000014 /* AppSidebarDrawer.swift in Sources */,
+				C107K0000000000000000014 /* AppSidebar.swift in Sources */,
 				C107K0000000000000000015 /* SidebarDisclosureButton.swift in Sources */,
 				C107K0000000000000000016 /* SidebarDisclosureChevron.swift in Sources */,
 				C107K0000000000000000017 /* SidebarUtilityIcon.swift in Sources */,
-				C107K0000000000000000018 /* SidebarSelectedSubrowIndicator.swift in Sources */,
-				C107K0000000000000000019 /* ActiveProfilePickerRow.swift in Sources */,
-				C107K0000000000000000020 /* ProjectFilterRow.swift in Sources */,
 				C107K0000000000000000021 /* CompactStatusRow.swift in Sources */,
 				C107K0000000000000000022 /* SessionListStatusRow.swift in Sources */,
 				C107K0000000000000000023 /* SessionRowSkeletonView.swift in Sources */,

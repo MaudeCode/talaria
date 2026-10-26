@@ -471,6 +471,38 @@ final class ChatHostedTests: XCTestCase {
         XCTAssertEqual(draft.text, "Newer draft")
     }
 
+    func testForegroundReturnRealizesZeroUnchangedTranscriptRows() async throws {
+        let fixture = try FixtureApp(for: self)
+        let session = try await fixture.session()
+        let model = ChatViewModel(
+            session: session, server: UITestFixtureEnvironment.serverURL, client: fixture.client,
+            liveActivityManager: SpyChatLiveActivityManager()
+        )
+        let retained = RetainedChat(viewModel: model, session: session)
+        let window = try hostWindow(NavigationStack {
+            ChatView(session: session, server: UITestFixtureEnvironment.serverURL, onAPIError: { _ in },
+                draftStore: fixture.environment.draftStore, retained: retained)
+        }.environment(\.scenePhase, .active).modelContainer(fixture.cache))
+        _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
+        let observer = try XCTUnwrap(window.firstView(ofType: ChatScrollObserver.ObserverView.self))
+        let idle = await awaitCondition { observer.coordinator?.scrollPositionController?.isRealizingRows == false }
+        XCTAssertTrue(idle)
+        settle(0.5)
+        let before = retained.rows.realizationCount
+        let beforeFrame = try await requireElement(in: window, label: "Fixture link request").accessibilityFrame
+        let reads = UITestFixtureURLProtocol.answeredPaths.withLock { $0.filter { $0 == "/api/session" }.count }
+        NotificationCenter.default.post(name: .talariaReturnedToForeground, object: nil)
+        let reloaded = await awaitCondition {
+            UITestFixtureURLProtocol.answeredPaths.withLock { $0.filter { $0 == "/api/session" }.count } > reads
+                && !model.isLoading
+        }
+        XCTAssertTrue(reloaded, "The foreground sync must finish before measuring row realization")
+        settle(0.5)
+        XCTAssertEqual(retained.rows.realizationCount - before, 0, "Unchanged foreground sync reconstructed transcript rows")
+        let afterFrame = try await requireElement(in: window, label: "Fixture link request").accessibilityFrame
+        XCTAssertEqual(afterFrame, beforeFrame, "The unchanged row moved after foreground sync")
+    }
+
     func testCachedReopenKeepsLatestContentStationaryWhenSyncFinishes() async throws {
         let fixture = try FixtureApp([UITestFixtureEnvironment.holdTranscriptReloadsArgument], for: self)
         let response = try await fixture.client.session(id: UITestFixtureURLProtocol.sessionID)
@@ -482,6 +514,7 @@ final class ChatHostedTests: XCTestCase {
         )
 
         let reopened = try hostWindow(fixture.sessionList(), size: CGSize(width: 402, height: 874), animationsEnabled: true)
+        try await openSidebar(in: reopened)
         let row = try await requireElement(in: reopened) { $0.accessibilityLabel?.hasPrefix(UITestFixtureURLProtocol.sessionTitle) == true }
         XCTAssertTrue(HostedAccessibility.activate(row))
         _ = try await requireElement(in: reopened, label: "Syncing messages with the server")

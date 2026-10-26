@@ -4,6 +4,7 @@ import TalariaKit
 /// How a session row lays out: the regular list row, or a run card for the Duo's tent pose (TAL-1460).
 enum SessionRowStyle: Equatable {
     case regular
+    case sidebar
     case monitor(ChatActiveRunStatusPresentation)
 }
 
@@ -11,13 +12,12 @@ struct SessionRowView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .caption2) private var pinnedIconSize: CGFloat = 11
     @ScaledMetric(relativeTo: .body) private var verticalPadding: CGFloat = 8
+    @ScaledMetric(relativeTo: .body) private var sidebarMinimumHeight: CGFloat = 44
     /// Two run cards fill the outer display's landscape list.
     @ScaledMetric(relativeTo: .title2) private var monitorMinimumHeight: CGFloat = 150
     @ScaledMetric(relativeTo: .title2) private var monitorIconSize: CGFloat = 36
 
     let session: SessionSummary
-    var showsMessageCount = true
-    var showsWorkspace = true
     var isViewingCachedData = false
     /// Server-redacted excerpt around a content-search hit (TAL-164); nil for
     /// title-only matches and rows outside a search.
@@ -29,6 +29,8 @@ struct SessionRowView: View {
 
     var body: some View {
         switch style {
+        case .sidebar:
+            sidebarRow
         case .regular:
             regularRow
                 .transition(.opacity)
@@ -44,6 +46,33 @@ struct SessionRowView: View {
                     .transition(.opacity)
             }
         }
+    }
+
+    private var sidebarRow: some View {
+        HStack(spacing: 8) {
+            Text(displayTitle)
+                .font(.body)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+                .truncationMode(.tail)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if SessionRowPresentation.isActiveStreaming(session) {
+                ActiveSessionStreamingIndicator()
+            }
+            if isPinned {
+                Image(systemName: "pin.fill")
+                    .font(.system(size: pinnedIconSize, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .accessibilityHidden(true)
+            }
+        }
+        .foregroundStyle(.primary)
+        .padding(.horizontal, 12)
+        .padding(.vertical, verticalPadding)
+        .frame(minHeight: sidebarMinimumHeight)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel([accessibilitySummary, pendingStatus].compactMap { $0 }.joined(separator: ", "))
     }
 
     /// Title at `.title2`, phase and elapsed time at `.title3`, the provider icon, and "Needs you" while the run waits.
@@ -106,26 +135,25 @@ struct SessionRowView: View {
         .frame(minHeight: rowMinimumHeight, alignment: .center)
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel([accessibilitySummary, pendingChange?.status].compactMap { $0 }.joined(separator: ", "))
+        .accessibilityLabel([accessibilitySummary, pendingStatus].compactMap { $0 }.joined(separator: ", "))
     }
 
     private var displayTitle: String {
         pendingChange?.title ?? SessionRowPresentation.displayTitle(for: session)
     }
 
+    private var isPinned: Bool { (pendingChange?.pinned ?? session.pinned) == true }
+    private var pendingStatus: String? { pendingChange?.pinned == nil ? pendingChange?.status : nil }
+
     private var metadataLabel: String? {
-        SessionRowPresentation.metadataLabel(
-            for: session,
-            showsMessageCount: showsMessageCount,
-            showsWorkspace: showsWorkspace
-        )
+        SessionRowPresentation.metadataLabel(for: session)
     }
 
     private var rowContent: some View {
         VStack(alignment: .leading, spacing: rowContentSpacing) {
             titleArea
-            if let pendingChange {
-                Text(pendingChange.status)
+            if let pendingStatus {
+                Text(pendingStatus)
                     .font(AppFont.caption())
                     .foregroundStyle(.secondary)
             }
@@ -180,14 +208,14 @@ struct SessionRowView: View {
     }
 
     private var showsTrailingMeta: Bool {
-        session.pinned == true || relativeDate != nil
+        isPinned || relativeDate != nil
     }
 
     /// The pin sits beside the timestamp so every pinned row shows it in the same place,
     /// however the title wraps (TAL-482).
     private var trailingMeta: some View {
         HStack(alignment: .firstTextBaseline, spacing: 4) {
-            if session.pinned == true {
+            if isPinned {
                 Image(systemName: "pin.fill")
                     .font(.system(size: pinnedIconSize, weight: .semibold))
                     .foregroundStyle(Color.accentColor)
@@ -301,11 +329,13 @@ struct SessionRowView: View {
     private var accessibilitySummary: String {
         var parts = [displayTitle]
 
-        parts.append(contentsOf: SessionRowPresentation.accessibilityStateLabels(for: session, isViewingCachedData: isViewingCachedData))
+        parts.append(contentsOf: SessionRowPresentation.accessibilityStateLabels(for: session, isViewingCachedData: isViewingCachedData,
+                                                                               pinned: pendingChange?.pinned))
 
-        if let metadataLabel {
-            parts.append(metadataLabel)
-        }
+        let spokenMetadata = style == .sidebar
+            ? SessionRowPresentation.metadataLabel(for: session)
+            : metadataLabel
+        if let spokenMetadata { parts.append(spokenMetadata) }
 
         if let matchPreview {
             parts.append(matchPreview)

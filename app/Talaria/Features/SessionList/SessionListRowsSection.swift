@@ -2,6 +2,7 @@ import SwiftUI
 import TalariaKit
 
 struct SessionListRowsSection: View {
+    @Environment(\.sessionRowStyle) private var rowStyle
     let viewModel: SessionListViewModel
 
     let sessions: [SessionSummary]
@@ -9,14 +10,18 @@ struct SessionListRowsSection: View {
     let emptyDescription: String?
     let isSearchActive: Bool
     let searchText: String
-    let showsMessageCount: Bool
-    let showsWorkspace: Bool
     let selectedSessionID: String?
     let actions: SessionListRowActions
     var suppressEmptyState = false
+    var showsHeading = true
 
     var body: some View {
-        sessionsHeaderRow
+        if rowStyle != .sidebar && (showsHeading || viewModel.isSearchingRemoteSessions) {
+            sessionsHeaderRow
+        } else if viewModel.isSearchingRemoteSessions {
+            ProgressView().controlSize(.small).accessibilityLabel("Searching sessions")
+                .sessionsScreenListRow()
+        }
 
         if viewModel.isLoading && viewModel.sessions.isEmpty {
             sessionLoadingSkeletonRows
@@ -32,22 +37,48 @@ struct SessionListRowsSection: View {
                 .padding(.horizontal, 24)
                 .sessionsScreenListRow()
         } else {
-            ForEach(sessions) { session in
-                SessionInteractiveRow(
-                    viewModel: viewModel,
-                    session: session,
-                    showsMessageCount: showsMessageCount,
-                    showsWorkspace: showsWorkspace,
-                    selectedSessionID: selectedSessionID,
-                    actions: actions,
-                    searchText: searchText
-                )
+            if rowStyle == .sidebar {
+                ForEach(sidebarRows, id: \.session.id) { row in
+                    if showsHeading, let caption = row.caption {
+                        SidebarSectionHeader(title: caption, isCompact: true) { EmptyView() }
+                    }
+                    sessionRow(row.session)
+                }
+            } else {
+                ForEach(sessions) { session in sessionRow(session) }
             }
         }
     }
 
+    private var sidebarRows: [(session: SessionSummary, caption: String?)] {
+        // TAL-1534: the server will ship the group; until then the caption follows its pinned-first order.
+        var hasRecentsCaption = false
+        return sessions.enumerated().map { index, session in
+            let caption: String?
+            if session.pinned != true, !hasRecentsCaption {
+                caption = String(localized: "Recents")
+                hasRecentsCaption = true
+            } else if index == 0, session.pinned == true {
+                caption = String(localized: "Pinned")
+            } else {
+                caption = nil
+            }
+            return (session, caption)
+        }
+    }
+
+    private func sessionRow(_ session: SessionSummary) -> some View {
+        SessionInteractiveRow(
+            viewModel: viewModel,
+            session: session,
+            selectedSessionID: selectedSessionID,
+            actions: actions,
+            searchText: searchText
+        )
+    }
+
     private var sessionsHeaderRow: some View {
-        SidebarSectionHeader(title: isSearchActive ? nil : String(localized: "Sessions")) {
+        SidebarSectionHeader(title: isSearchActive || !showsHeading ? nil : String(localized: "Sessions"), topPadding: 8) {
             if viewModel.isSearchingRemoteSessions {
                 ProgressView()
                     .controlSize(.small)
@@ -59,9 +90,7 @@ struct SessionListRowsSection: View {
     private var sessionLoadingSkeletonRows: some View {
         ForEach(Array(SessionRowSkeletonConfiguration.loadingRows.enumerated()), id: \.element.id) { index, row in
             SessionRowSkeletonView(
-                configuration: row,
-                showsMessageCount: showsMessageCount,
-                showsWorkspace: showsWorkspace
+                configuration: row
             )
             .sessionsScreenListRow(insets: EdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12))
             .accessibilityElement(children: .ignore)

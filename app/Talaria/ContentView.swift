@@ -141,6 +141,7 @@ struct ContentView: View {
             SessionListView(
                 authManager: authManager,
                 server: server,
+                modelContext: modelContext,
                 pendingSharedImport: $sharedImports.pendingImport,
                 didRoutePendingSharedImport: { sharedImports.didRoute($0) },
                 hasWaitingSharedImport: sharedImports.hasWaitingImport,

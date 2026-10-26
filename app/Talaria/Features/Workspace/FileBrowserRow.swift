@@ -39,7 +39,7 @@ struct FileBrowserRow: View {
                     .accessibilityHidden(true)
             }
         }
-        .padding(.vertical, 2)
+        .frame(minHeight: 44)
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
@@ -55,7 +55,7 @@ struct FileBrowserRow: View {
 
     private var detailText: String? {
         if isDirectory {
-            return entry.path
+            return entry.path == displayName ? nil : entry.path
         }
 
         guard let size = entry.size else {

@@ -1,5 +1,12 @@
 #!/bin/zsh
 
+if [[ "${1:-}" == --help || "${1:-}" == -h ]]; then
+    print 'Usage: scripts/test-ios [test-identifier ...]'
+    print 'Runs the identifiers once through the shared simulator pool; defaults to TalariaTests.'
+    print 'Set IOS_SIMULATOR_ID to lease a specific disposable simulator.'
+    exit 0
+fi
+
 set -euo pipefail
 
 repo_root=${0:A:h:h}

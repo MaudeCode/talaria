@@ -12,8 +12,8 @@ final class SessionRowWorkspaceNameTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            SessionRowPresentation.metadataLabel(for: row, showsMessageCount: false, showsWorkspace: true),
-            "Talaria"
+            SessionRowPresentation.metadataLabel(for: row),
+            "2 messages • Talaria"
         )
     }
 }

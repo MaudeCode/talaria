@@ -36,9 +36,12 @@ enum FixtureLaunchArguments {
 /// A test hosts the App's screens against it with one offline cache, so a second host sees what the first one cached,
 /// the way a reopen or relaunch does.
 @MainActor
+@Observable
 final class FixtureApp {
     let environment: UITestFixtureEnvironment
     let cache: ModelContainer
+    var pendingSessionID: String?
+    var opensQuotaWidgetSettings = false
     /// A screen's refresh task can still write its cache after its test ends; SwiftData traps on a context whose
     /// container is gone, so every hosted test's in-memory cache lives for the rest of the run.
     private static var retainedCaches: [ModelContainer] = []
@@ -52,6 +55,12 @@ final class FixtureApp {
         ActiveChatStreamSnapshotStore.shared.removeAll(for: UITestFixtureEnvironment.serverURL)
         ChatViewModel.forgetCompanionPages()
         environment = UITestFixtureEnvironment.make()
+        // Each hosted journey owns its sidebar choices; a second window within it still exercises persistence.
+        for key in [SessionSidebarDisclosureSettings.regularPortraitVisibilityKey,
+                    SessionSidebarDisclosureSettings.regularLandscapeVisibilityKey,
+                    SessionNavigationPersistence.key(for: UITestFixtureEnvironment.serverURL)] {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
         cache = try ModelContainer(
             for: CachedSession.self, CachedMessage.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none)
@@ -104,6 +113,9 @@ final class FixtureApp {
         SessionListView(
             authManager: environment.authManager,
             server: UITestFixtureEnvironment.serverURL,
+            modelContext: cache.mainContext,
+            pendingDeepLinkedSessionID: Binding(get: { self.pendingSessionID }, set: { self.pendingSessionID = $0 }),
+            opensProviderQuotaWidgetSettings: Binding(get: { self.opensQuotaWidgetSettings }, set: { self.opensQuotaWidgetSettings = $0 }),
             draftStore: environment.draftStore,
             chats: chats
         )
@@ -129,6 +141,37 @@ extension XCTestCase {
     @MainActor
     func attachHistoryImage(_ window: UIWindow, name: String) {
         attachHostedScreenshot(window, name: name)
+    }
+
+    /// Opens the one shared panel, whether the window uses a tiled column or an overlay drawer.
+    @MainActor
+    func openSidebar(in window: UIWindow, file: StaticString = #filePath, line: UInt = #line) async throws {
+        func isOpen() -> Bool {
+            if let split = HostedAccessibility.splitViewController(under: window.rootViewController),
+               split.displayMode == .oneBesideSecondary { return true }
+            return HostedAccessibility.element(in: window, label: "Close navigation") != nil
+        }
+        let regular = window.traitCollection.horizontalSizeClass == .regular
+        let title = regular ? "Sidebar" : "Open navigation"
+        // Wait for layout admission, not the provisional root's toolbar. A forced book column needs no toggle.
+        let available = await awaitCondition {
+            if isOpen() { return true }
+            guard let host = window.rootViewController?.firstDescendant(ofType: AppSidebarController.self) else { return false }
+            if regular, SidebarPresentation(isRegularWidth: true, splitSize: window.bounds.size,
+                                            hasVerticalBar: false, storedChoice: false).tiled, host.isEnabled { return false }
+            return HostedAccessibility.toolbarItem(title, in: window) != nil
+        }
+        XCTAssertTrue(available, "The sidebar presentation never became available", file: file, line: line)
+        if isOpen() { return }
+        let control = window.firstView(ofType: UIControl.self, where: { $0.accessibilityLabel == title })
+        if let control {
+            control.sendActions(for: .touchUpInside)
+        } else {
+            let item = try XCTUnwrap(HostedAccessibility.toolbarItem(title, in: window), file: file, line: line)
+            XCTAssertTrue(HostedAccessibility.activate(item), "The native sidebar action did not run", file: file, line: line)
+        }
+        let opened = await awaitCondition { isOpen() }
+        XCTAssertTrue(opened, "The sidebar did not open", file: file, line: line)
     }
 
     /// Waits for an element that satisfies `match` to appear in `window`'s accessibility tree. It sleeps between looks

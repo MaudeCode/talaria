@@ -18,12 +18,10 @@ struct SessionListView: View {
     @Binding private var requestedNewChat: NewChatRequest?
 
     @Environment(\.modelContext) private var modelContext
-    @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.horizontalSizeClass) private var observedHorizontalSizeClass
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @Environment(\.layoutDirection) private var layoutDirection
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.scenePhase) private var scenePhase
     @State private var viewModel: SessionListViewModel
     @State private var quotaViewModel: ProvidersViewModel
@@ -32,15 +30,23 @@ struct SessionListView: View {
     /// The open chat, kept above both width layouts so opening or closing an iPhone Duo hands it over (TAL-1477).
     @State private var chats: ChatViewModelCache
     @State private var navigationState: SessionNavigationState
-    /// The detail root a page was pushed over (TAL-643).
-    @State private var coveredRegularDetail: RegularDetailIdentity?
-    @State private var regularSplitRevision = 0
+    @State private var isPresentingSettings = false
+    @State private var settingsPath: [SettingsPane] = []
+    @State private var pendingSettingsPath: [SettingsPane]?
+    @State private var reopensSidebarAfterSettings = false
     /// The regular-width split view's own width, which sizes its columns (TAL-1453).
-    @State private var splitGeometry = DivisionRegionGeometry()
+    @State private var observedSidebarLayout = SidebarLayoutInputs()
+    @State private var appliedSidebarLayout: SidebarLayoutInputs?
+    @State private var sidebarLayoutSettlement = DivisionRegionSettlement<SidebarLayoutInputs>()
+    @State private var sidebarLayoutResumeTask: Task<Void, Never>?
+    @State private var isResumingSidebarLayout = false
+    @State private var restoredSidebarIsLandscape: Bool?
+    private var horizontalSizeClass: UserInterfaceSizeClass? {
+        appliedSidebarLayout?.sizeClass ?? observedHorizontalSizeClass
+    }
+    private var splitGeometry: DivisionRegionGeometry { appliedSidebarLayout?.geometry ?? DivisionRegionGeometry() }
     private var regularSplitWidth: CGFloat { splitGeometry.frame.width }
-#if DEBUG
     @Environment(\.chatDivisionFramesForTesting) private var divisionFramesForTesting
-#endif
     /// Read live by the chat being replaced, whose own environment still says regular (TAL-1477).
     @State private var isCompactWidth = false
 
@@ -48,13 +54,36 @@ struct SessionListView: View {
         DivisionRegionLayout.sidebarWidth(in: splitGeometry.frame, divisions: splitGeometry.divisions,
             layoutDirection: layoutDirection)
     }
+    /// The native primary includes the hinge gap; its visible sidebar content stays in the usable leading pane.
+    private var foldedColumnWidth: CGFloat? {
+        guard foldedSidebarWidth != nil else { return nil }
+        let chat = DivisionRegionLayout.availableFrame(in: splitGeometry.frame, divisions: splitGeometry.divisions,
+            layoutDirection: layoutDirection, avoidsHorizontalDivisions: false)
+        return regularSplitWidth - chat.width
+    }
     /// The split view's height with its bars and the keyboard: whether a chat's companion page fits beside it reads it
     /// as the page's arrangement measures itself, so the keyboard showing does not bring the sidebar back (TAL-1458).
-    @State private var regularSplitFullHeight: CGFloat = 0
-    /// Whether the detail column's bar items sit in the iPhone Duo's vertical bar (TAL-1528).
-    @State private var detailHasVerticalBar = false
-    /// Persists `navigationState.filesInspectorPresented` for the window (TAL-479).
-    @SceneStorage(SplitFilesInspector.storageKey) private var storedFilesInspectorPresented = false
+    private var regularSplitFullSize: CGSize { appliedSidebarLayout?.splitSize ?? .zero }
+    private var detailHasVerticalBar: Bool { appliedSidebarLayout?.hasVerticalBar ?? false }
+    @State private var nativeFilesInspectorPresented = false
+    @State private var detailHasInspectorRoom = false
+    @State private var filesInspectorOpeningIsLandscape: Bool?
+    @State private var nativeColumnVisibility = NavigationSplitViewVisibility.detailOnly
+    @State private var targetChatWidth: CGFloat?
+    @State private var measuredSidebarWidth: CGFloat?
+    @State private var columnFoldWidth: CGFloat?
+    @State private var columnUpdateRevision = 0
+    @State private var isPreparingColumn = false
+    @State private var isApplyingSidebarLayout = false
+    private var regularSplitFullHeight: CGFloat { regularSplitFullSize.height }
+    @AppStorage(SessionSidebarDisclosureSettings.regularPortraitVisibilityKey)
+    private var portraitSidebarVisibility = ""
+    @AppStorage(SessionSidebarDisclosureSettings.regularLandscapeVisibilityKey)
+    private var landscapeSidebarVisibility = ""
+    @State private var emptyChatRoute = PendingNewChatRoute(isExplicit: false)
+    /// Re-reported after unfolding, once the regular chat and its header have mounted.
+    @State private var regularWidthChat: SessionSummary?
+    @State private var chatShowsEmptyTranscript = true
     @State private var sessionPendingRename: SessionSummary?
     @State private var sessionPendingDeletion: SessionSummary?
     @State private var isConfirmingBulkDelete = false
@@ -64,40 +93,40 @@ struct SessionListView: View {
     @State private var isPresentingAddServer = false
     @State private var projectPendingDeletion: ProjectSummary?
     @State private var projectPendingRename: ProjectSummary?
-    @State private var searchText = ""
-    @State private var isSearchPresented = false
+    @State private var appSidebarQuotaSources: [ProviderQuotaWidgetSource] = []
+    @AppStorage(ProviderQuotaSidebarSettings.firstSourceKey) private var firstSidebarQuotaSourceID = ""
+    @AppStorage(ProviderQuotaSidebarSettings.secondSourceKey) private var secondSidebarQuotaSourceID = ""
+    @AppStorage(ProviderQuotaVisibilitySettings.storageKey) private var hiddenProviderData = Data()
+    @State private var sidebarSearch = SidebarSearchPull()
+    private var searchText: String { sidebarSearch.text }
     @State private var selectedProjectID: String?
     @State private var sidebarScrollPosition: String?
     /// The app's one hinge read (TAL-1460), for the tent pose's run cards.
-    @State private var hingeStatus: SessionRunMonitor.HingeStatus?
+    @State private var observedHingeStatus: SessionRunMonitor.HingeStatus?
+    private var hingeStatus: SessionRunMonitor.HingeStatus? {
+        if let appliedSidebarLayout { return appliedSidebarLayout.hingeStatus }
+        return observedHingeStatus
+    }
     @State private var appSidebar = AppSidebarPresentation()
     @State private var isPresentingUpdateNotifications: Bool
     @AccessibilityFocusState private var openNavigationIsFocused: Bool
     @AccessibilityFocusState private var archiveUndoIsFocused: Bool
     @State private var didCompleteInitialLoad = false
     @State private var immediateRefreshID: UUID?
-    @State private var appSidebarQuotaSources: [ProviderQuotaWidgetSource] = []
     @AppStorage(SessionSidebarDisclosureSettings.scheduledSessionsAreExpandedKey)
     private var scheduledSessionsAreExpanded = SessionSidebarDisclosureSettings.defaultScheduledSessionsAreExpanded
     @AppStorage(SessionSidebarDisclosureSettings.webhookSessionsAreExpandedKey)
     private var webhookSessionsAreExpanded = SessionSidebarDisclosureSettings.defaultWebhookSessionsAreExpanded
-    @AppStorage(SessionRowDisplaySettings.showMessageCountKey) private var showsSessionMessageCount = true
-    @AppStorage(SessionRowDisplaySettings.showWorkspaceKey) private var showsSessionWorkspace = true
     @AppStorage(SessionRowDisplaySettings.showCronSessionsKey) private var showsCronSessions = true
     @AppStorage(SessionRowDisplaySettings.showWebhookSessionsKey)
     private var showsWebhookSessions = SessionRowDisplaySettings.showsWebhookSessions()
     @AppStorage(SessionRowDisplaySettings.showSubagentSessionsKey)
     private var showsSubagentSessions = SessionRowDisplaySettings.defaultShowsSubagentSessions
-    @AppStorage(SectionVisibilitySettings.activeProfileKey) private var showsActiveProfileSection = true
-    @AppStorage(SectionVisibilitySettings.projectsKey) private var showsProjectsSection = true
     @AppStorage(SectionVisibilitySettings.tasksKey) private var showsTasksSection = true
     @AppStorage(SectionVisibilitySettings.kanbanKey) private var showsKanbanSection = true
     @AppStorage(SectionVisibilitySettings.skillsKey) private var showsSkillsSection = true
     @AppStorage(SectionVisibilitySettings.memoryKey) private var showsMemorySection = true
     @AppStorage(SectionVisibilitySettings.insightsKey) private var showsInsightsSection = true
-    @AppStorage(ProviderQuotaSidebarSettings.firstSourceKey) private var firstSidebarQuotaSourceID = ""
-    @AppStorage(ProviderQuotaSidebarSettings.secondSourceKey) private var secondSidebarQuotaSourceID = ""
-    @AppStorage(ProviderQuotaVisibilitySettings.storageKey) private var hiddenProviderData = Data()
     @AppStorage(ProviderQuotaRefreshInterval.storageKey)
     private var quotaRefreshIntervalSeconds = ProviderQuotaRefreshInterval.defaultValue.rawValue
     // Per-server key (#19): the CLI toggle mirrors the active server's
@@ -107,14 +136,12 @@ struct SessionListView: View {
     @AppStorage private var showsClaudeCodeSessions: Bool
     @AppStorage(HeaderLogoColor.storageKey) private var headerLogoColorHex = HeaderLogoColor.defaultHex
     @AppStorage(PrimaryActionTintSettings.isEnabledKey) private var tintsPrimaryActions = false
-    @AppStorage(GlassPreference.isEnabledKey) private var isGlassEnabled = GlassPreference.defaultIsEnabled
-    @AppStorage(SessionIdentitySettings.displayNameKey) private var identityDisplayName = ""
-    @AppStorage(SessionIdentitySettings.initialsKey) private var identityInitials = ""
     @AppStorage(AppHaptics.isEnabledKey) private var isHapticsEnabled = true
 
     init(
         authManager: AuthManager,
         server: URL,
+        modelContext: ModelContext? = nil,
         pendingSharedImport: Binding<SharedImportReservation?> = .constant(nil),
         didRoutePendingSharedImport: @escaping (SharedImportReservation) -> Void = { _ in },
         hasWaitingSharedImport: Bool = false,
@@ -143,11 +170,13 @@ struct SessionListView: View {
             archiveUndoLifetime = .seconds(24 * 60 * 60)
         }
         #endif
-        _viewModel = State(initialValue: SessionListViewModel(
+        let list = SessionListViewModel(
             server: server,
             responseCache: .app(server: server),
             archiveUndoLifetime: archiveUndoLifetime
-        ))
+        )
+        if let modelContext { list.paintCachedStateIfEmpty(modelContext: modelContext) }
+        _viewModel = State(initialValue: list)
         _quotaViewModel = State(initialValue: ProvidersViewModel(server: server))
         _updateNotificationViewModel = State(initialValue: UpdateNotificationCenterViewModel(server: server))
         _sectionViewModels = State(initialValue: SectionViewModels(server: server))
@@ -159,11 +188,20 @@ struct SessionListView: View {
         #else
         _isPresentingUpdateNotifications = State(initialValue: false)
         #endif
-        _navigationState = State(
-            initialValue: SessionNavigationState(
-                lastSelectedSessionID: SessionNavigationPersistence.load(for: server)
-            )
-        )
+        var navigation = SessionNavigationState(lastSelectedSessionID: SessionNavigationPersistence.load(for: server))
+        let hasExplicitRoute = pendingSharedImport.wrappedValue != nil
+            || requestedNewChat.wrappedValue != nil || pendingQuotaSourceID.wrappedValue != nil
+            || opensProviderQuotaWidgetSettings.wrappedValue || hasWaitingSharedImport
+            || AppIntentRouter.shared.pendingDeepLink != nil
+        if let session = navigation.sessionToRestore(
+            from: list.sessions,
+            allowsAutomaticRestore: !hasExplicitRoute,
+            clearsMissingSelection: false,
+            pendingDeepLinkedSessionID: pendingDeepLinkedSessionID.wrappedValue
+        ) {
+            navigation.select(session)
+        }
+        _navigationState = State(initialValue: navigation)
         _showsCliSessions = AppStorage(
             wrappedValue: SessionRowDisplaySettings.showsCliSessions(for: server),
             SessionRowDisplaySettings.showCliSessionsKey(for: server)
@@ -175,51 +213,29 @@ struct SessionListView: View {
     }
 
     var body: some View {
-        AppSidebarContainer(presentation: appSidebar, onPresentationChange: appSidebarPresentationChanged) { isPresented in
-            AppSidebarDrawer(
-                isPresented: isPresented,
-                selection: appSidebarSelection,
-                sectionVisibility: appSidebarSectionVisibility,
-                serverName: appSidebarServerName,
-                activeProfileName: appSidebarProfileName,
-                quotaSources: appSidebarQuotaSources,
-                newChat: { closeAppSidebar(then: openNewChat) },
-                select: selectAppSidebarDestination,
-                close: { appSidebar.isPresented = false }
-            )
-        } content: {
-            ZStack {
-                Color(.systemBackground)
-                navigationContainer
-                    .environment(\.divisionRegionGeometry, splitGeometry)
-                    .onGeometryChange(for: DivisionRegionGeometry.self) { geometry in
-#if DEBUG
-                        DivisionRegionGeometry(geometry, divisions: divisionFramesForTesting)
-#else
-                        DivisionRegionGeometry(geometry)
-#endif
-                    } action: { splitGeometry = $0 }
-            }
-            .onChange(of: navigationState.destination?.selectedSessionID) { _, sessionID in
+        sidebarLayout
+            .onChange(of: navigationState.lastSelectedSessionID) { _, sessionID in
                 chats.keepOnly(sessionID: sessionID)
-            }
-            .onChange(of: horizontalSizeClass, initial: true) { _, sizeClass in
-                isCompactWidth = sizeClass == .compact
-            }
-            .onChange(of: horizontalSizeClass) { _, sizeClass in
-                // Closing an iPhone Duo or narrowing an iPad window keeps the open page (TAL-643).
-                guard sizeClass == .compact else { return }
-                navigationState.pinDisplayedItem()
             }
             .onChange(of: viewModel.activeProfileName) {
                 sectionViewModels = SectionViewModels(server: server)
             }
-            .modifier(SessionListHingeReader(status: $hingeStatus))
-        }
-        .safeAreaInset(edge: .top, spacing: 0) {
-            if hasWaitingSharedImport { waitingSharedImportBanner }
-        }
-            .sheet(isPresented: $isPresentingUpdateNotifications) {
+            .modifier(SessionListHingeReader(status: $observedHingeStatus))
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if hasWaitingSharedImport { waitingSharedImportBanner }
+            }
+            .sheet(isPresented: $isPresentingSettings, onDismiss: settingsDidDismiss) {
+                settingsNavigationStack
+                    .presentationDetents([.large])
+                    .adaptivePagePresentation(width: horizontalSizeClass == .regular && regularSplitWidth > 0
+                        ? min(650, max(0, regularSplitWidth - 48)) : nil)
+                    .presentationCompactAdaptation(.fullScreenCover)
+            }
+            .sheet(isPresented: $isPresentingUpdateNotifications, onDismiss: {
+                guard let path = pendingSettingsPath else { return }
+                pendingSettingsPath = nil
+                presentSettings(path: path)
+            }) {
                 UpdateNotificationsSheet(
                     viewModel: updateNotificationViewModel,
                     onAPIError: { authManager.handleAPIError($0, server: server) },
@@ -332,9 +348,8 @@ struct SessionListView: View {
             }
             .task {
                 // Start the normal refresh immediately so a slow direct session
-                // request cannot leave the sidebar empty. Deep-link resolution still
-                // owns navigation precedence and is awaited before stored selection
-                // restoration.
+                // request cannot leave the sidebar empty. The launch root was already
+                // resolved from local data; only explicit deep links can navigate here.
                 await SessionListInitialLoad.run(
                     resolvePendingDeepLink: {
                         await openPendingDeepLinkedSessionIfNeeded()
@@ -345,9 +360,6 @@ struct SessionListView: View {
                 )
                 guard !Task.isCancelled else { return }
                 didCompleteInitialLoad = true
-                // Ordered after the deep link so the restore sees the explicit
-                // destination and leaves the stored selection alone.
-                await restoreLastSelectedSessionIfNeeded()
             }
             .task(id: remoteSearchTaskID) {
                 await viewModel.searchSessions(
@@ -405,6 +417,7 @@ struct SessionListView: View {
                 // TAL-437: the last-known chats, projects and profile show at once; the initial
                 // load then replaces them.
                 viewModel.paintCachedStateIfEmpty(modelContext: modelContext)
+                reloadAppSidebarQuotaSources()
                 openPendingSharedImportIfNeeded()
                 openPendingQuotaSourceIfNeeded()
                 openProviderQuotaWidgetSettingsIfNeeded()
@@ -430,16 +443,11 @@ struct SessionListView: View {
             .onChange(of: requestedNewChat) {
                 openRequestedNewChatIfNeeded()
             }
-            .onAppear { navigationState.filesInspectorPresented = storedFilesInspectorPresented }
             .onChange(of: navigationState.filesInspectorPresented) { _, presented in
-                storedFilesInspectorPresented = presented
+                if !presented { setFilesInspectorPresented(false) }
             }
-            .onChange(of: showsProjectsSection) {
-                // The "All" button that clears a project filter lives in the
-                // Projects header, so hiding the section mid-filter would strand
-                // the list on one project with no way back (#189).
-                guard !showsProjectsSection else { return }
-                selectedProjectID = nil
+            .onChange(of: nativeFilesInspectorPresented) { _, presented in
+                if !presented || !sidebarPresentation.showsFilesInspector { setFilesInspectorPresented(false) }
             }
             .onReceive(
                 NotificationCenter.default.publisher(for: .talariaSessionNotificationArrived)
@@ -477,6 +485,188 @@ struct SessionListView: View {
             }
     }
 
+    private var sidebarLayout: some View {
+        AppSidebarContainer(
+            presentation: appSidebar,
+            fillsSafeArea: isDuoOuterSidebar,
+            isEnabled: sidebarDrawerIsEnabled,
+            overlaysContent: sidebarPresentation.overlaysContent,
+            collapsesNativeSidebar: !sidebarPresentation.tiled,
+            onPresentationChange: appSidebarPresentationChanged
+        ) { presented in
+            if !sidebarPresentation.tiled {
+                sharedSidebar(isPresented: presented, isDrawer: true)
+            }
+        } content: {
+            navigationSurface
+        }
+        .onGeometryChange(for: CGSize.self) { geometry in
+            CGSize(width: geometry.size.width + geometry.safeAreaInsets.leading + geometry.safeAreaInsets.trailing,
+                   height: geometry.sizeIncludingSafeArea.height)
+        } action: { size in
+            observeSidebarLayout { $0.splitSize = size }
+        }
+        .onAppear { observeSidebarLayout() }
+        .onChange(of: observedHorizontalSizeClass) { observeSidebarLayout() }
+        .onChange(of: observedHingeStatus) { previous, status in
+            // A fold always closes Files. Dismiss the native inspector as soon as the hinge leaves fully open,
+            // before the collapsing split can carry the presentation onto the outer display as an empty sheet;
+            // layout admission settles too late for that.
+            if previous == .fullyOpen, status != .fullyOpen, nativeFilesInspectorPresented {
+                withTransaction(.unanimated) {
+                    navigationState.filesInspectorPresented = false
+                    navigationState.chatShowsFilesInspector = false
+                    nativeFilesInspectorPresented = false
+                }
+            }
+            observeSidebarLayout()
+        }
+        .onChange(of: scenePhase, initial: true) {
+            sidebarLayoutResumeTask?.cancel()
+            columnUpdateRevision += 1
+            isPreparingColumn = false
+            if scenePhase == .active { observeSidebarLayout() }
+            else { isResumingSidebarLayout = appliedSidebarLayout != nil }
+        }
+        .onChange(of: sidebarPresentation, initial: true) { updateSidebarColumn() }
+        .onDisappear { sidebarLayoutResumeTask?.cancel() }
+    }
+
+    private var sidebarDrawerIsEnabled: Bool { sidebarPresentation.drawerEnabled }
+
+    /// A hinge context is present on the Duo, including its folded outer display.
+    private var isDuoOuterSidebar: Bool {
+        horizontalSizeClass == .compact && hingeStatus != nil
+    }
+
+    private var navigationSurface: some View {
+        ZStack {
+            Color(.systemBackground)
+            navigationContainer
+                .environment(\.divisionRegionGeometry, splitGeometry)
+                .environment(\.holdsForegroundLayout, scenePhase != .active || isResumingSidebarLayout)
+                .environment(\.targetChatLayoutWidth, targetChatWidth)
+                .onSettledGeometryChange(for: DivisionRegionGeometry.self, hingeStatus: hingeStatus,
+                    requiresSettlement: { $1.needsHingeSettlement(comparedTo: $0) }) { geometry in
+                    DivisionRegionGeometry(geometry, divisions: divisionFramesForTesting)
+                } action: { geometry in
+                    observeSidebarLayout { $0.geometry = geometry }
+                }
+        }
+    }
+
+    private func sharedSidebar(isPresented: Bool = false, isDrawer: Bool = false) -> some View {
+        AppSidebar(
+            presentation: appSidebar,
+            searchPull: sidebarSearch,
+            searchUsesBottomBar: horizontalSizeClass == .compact,
+            isActive: isDrawer ? sidebarPresentation.drawerEnabled && isPresented : sidebarPresentation.showsColumn,
+            quotaSources: appSidebarQuotaSources,
+            selectedQuotaSourceID: insightsQuotaSourceID,
+            selection: navigationState.section,
+            sectionVisibility: appSidebarSectionVisibility,
+            select: openSection
+        ) { header, searchPull in
+            sessionListSurface(sidebarHeader: header, searchPull: searchPull)
+        } actions: { isSearching in
+            if #available(iOS 27.1, *) {
+                if !isSearching {
+                    ToolbarItem(placement: .principal) { sidebarWordmark }
+                        .sharedBackgroundVisibility(.hidden)
+                        .axisBehavior(.horizontalOnly)
+                }
+                if !detailHostsSidebarActions {
+                    ToolbarItem(placement: horizontalSizeClass == .compact ? .bottomBar : .topBarTrailing) { settingsButton }
+                        .axisBehavior(horizontalSizeClass == .compact ? .verticalPreferred : .horizontalOnly)
+                        .visibilityPriority(.high)
+                }
+            } else {
+                if !isSearching {
+                    if #available(iOS 26.0, *) {
+                        ToolbarItem(placement: .principal) { sidebarWordmark }
+                            .sharedBackgroundVisibility(.hidden)
+                    } else {
+                        ToolbarItem(placement: .principal) { sidebarWordmark }
+                    }
+                }
+                ToolbarItem(placement: horizontalSizeClass == .compact ? .bottomBar : .topBarTrailing) { settingsButton }
+            }
+            if sidebarDrawerIsEnabled {
+                ToolbarItem(placement: .topBarLeading) { sidebarButton(isPresented: isPresented) }
+                    .overflowPriority(.drawer, includesHorizontal: true)
+            }
+            if viewModel.isSelectingSessions {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done", action: viewModel.endSelectingSessions)
+                        .disabled(viewModel.isPerformingBulkAction)
+                }
+                .overflowPriority(.done, includesHorizontal: true)
+            } else if !detailHostsSidebarActions {
+                ToolbarItem(placement: .topBarTrailing) {
+                    regularNewChatButton
+                        .buttonStyle(.borderedProminent)
+                        .tint(newSessionButtonUsesThemeColor ? selectedHeaderLogoColor : .accentColor)
+                }
+                .overflowPriority(.newChat, includesHorizontal: true)
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                sidebarFilters
+            }
+            .overflowPriority(.filters, includesHorizontal: true)
+        }
+        .environment(\.sessionRowStyle, .sidebar)
+        .onChange(of: quotaViewModel.quotaSources) { reloadAppSidebarQuotaSources() }
+        .onChange(of: quotaViewModel.quotaProfileID) { reloadAppSidebarQuotaSources() }
+        .onChange(of: firstSidebarQuotaSourceID) { reloadAppSidebarQuotaSources() }
+        .onChange(of: secondSidebarQuotaSourceID) { reloadAppSidebarQuotaSources() }
+        .onChange(of: hiddenProviderData) { reloadAppSidebarQuotaSources() }
+    }
+
+    private func reloadAppSidebarQuotaSources() {
+        let selectedIDs = ProviderQuotaSidebarSettings.sourceIDs(
+            first: firstSidebarQuotaSourceID, second: secondSidebarQuotaSourceID
+        )
+        // The shared quota owner writes this snapshot; never show another server/profile's accounts.
+        let sources: [ProviderQuotaWidgetSource]
+        if let snapshot = ProviderQuotaWidgetSnapshotStore().load(),
+           let profileID = quotaViewModel.quotaProfileID,
+           snapshot.serverID == ResponseCache.serverIdentity(for: server), snapshot.profileID == profileID {
+            sources = snapshot.sources
+        } else {
+            sources = []
+        }
+        let hiddenProviderIDs = ProviderQuotaVisibilitySettings.hiddenProviderIDs(from: hiddenProviderData)
+        let byID = Dictionary(uniqueKeysWithValues: sources.map { ($0.sourceID, $0) })
+        let quotaSources = selectedIDs.compactMap { byID[$0] }.filter { source in
+            guard let providerID = source.providerID?.lowercased() else { return true }
+            return !hiddenProviderIDs.contains(providerID)
+        }
+        if appSidebarQuotaSources != quotaSources { appSidebarQuotaSources = quotaSources }
+    }
+
+    private var sidebarWordmark: some View {
+        Image("TalariaWordmark")
+            .resizable()
+            .scaledToFit()
+            .frame(width: 90, height: 22)
+            .accessibilityLabel("Talaria")
+    }
+
+    private var sidebarFilters: some View {
+        SessionFilterControls(
+            viewModel: viewModel,
+            selectedProjectID: $selectedProjectID,
+            projectPendingDeletion: $projectPendingDeletion,
+            projectPendingRename: $projectPendingRename,
+            switchActiveProfile: { profile in
+                Task { await switchActiveProfile(profile) }
+            },
+            presentProjectCreation: {
+                isPresentingProjectCreation = true
+            }
+        )
+    }
+
     private var waitingSharedImportBanner: some View {
         HStack(spacing: 12) {
             Image(systemName: "square.and.arrow.down")
@@ -508,137 +698,302 @@ struct SessionListView: View {
     @ViewBuilder
     private var navigationContainer: some View {
         if horizontalSizeClass == .regular {
-            // The section decides both columns (TAL-643). The drawer button leads the first visible
-            // column, so the system sidebar toggle stays hidden (TAL-482).
             NavigationSplitView(columnVisibility: regularColumnVisibility) {
-                regularWidthSidebar
+                sharedSidebar()
+                    .frame(width: foldedSidebarWidth)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(.systemBackground))
+                    .clipped()
                     .toolbar(removing: .sidebarToggle)
-                    .environment(\.detailHostsListActions, detailHostsSidebarActions)
-                    // Every section's sidebar shares this one column width.
+                    .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { width in
+                        guard scenePhase == .active, !isResumingSidebarLayout,
+                              foldedSidebarWidth == nil, columnFoldWidth == nil,
+                              width > 0, width <= regularSplitWidth - RegularSplitLayout.detailMinWidth,
+                              measuredSidebarWidth != width else { return }
+                        measuredSidebarWidth = width
+                        updateSidebarColumn()
+                    }
                     .navigationSplitViewColumnWidth(
-                        min: foldedSidebarWidth ?? RegularSplitLayout.sidebarMinWidth,
-                        ideal: foldedSidebarWidth ?? RegularSplitLayout.sidebarIdealWidth(splitWidth: regularSplitWidth),
-                        max: foldedSidebarWidth ?? RegularSplitLayout.sidebarMaxWidth
+                        min: columnFoldWidth ?? RegularSplitLayout.sidebarMinWidth,
+                        ideal: columnFoldWidth ?? sidebarColumnWidth,
+                        max: columnFoldWidth ?? RegularSplitLayout.sidebarMaxWidth
                     )
             } detail: {
-                // Only the detail rebuilds for a new destination or item, so the sidebar keeps its
-                // scroll position, search text and selection.
-                NavigationStack {
-                    regularDetailRoot
-                }
-                .foldAvoidingPlacement(avoidsHorizontalDivisions: false, isEnabled: !hidesSidebarColumn)
-                // Without a minimum, UIKit lays the sidebar over a detail narrower than about 448pt, as on the
-                // iPhone Duo inner display and iPad in portrait.
-                .navigationSplitViewColumnWidth(
-                    min: RegularSplitLayout.detailMinWidth,
-                    ideal: RegularSplitLayout.detailMinWidth
-                )
-                .id(regularDetailIdentity)
-            }
-            .onChange(of: regularDetailIdentity) { oldIdentity, _ in
-                // The split view keeps pages pushed in its detail column across a new root, so a
-                // detail that changes under a pushed page needs the whole split view rebuilt.
-                guard coveredRegularDetail == oldIdentity else { return }
-                coveredRegularDetail = nil
-                regularSplitRevision += 1
-            }
-            .navigationSplitViewStyle(.balanced)
-            .onGeometryChange(for: CGFloat.self) { $0.sizeIncludingSafeArea.height } action: { regularSplitFullHeight = $0 }
-            // Starts fresh when its columns change, since showing the sidebar column again after a
-            // full-width section left it without its navigation bar, and to drop covered pages. A split
-            // built before its width was measured, as opening an iPhone Duo builds one, keeps the sidebar
-            // it started with, so it also starts fresh once its width decides where Files goes (TAL-1477).
-            .id(RegularSplitIdentity(
-                isFullWidth: navigationState.section.isFullWidth,
-                widensForFilesInspector: widensForFilesInspector,
-                revision: regularSplitRevision
-            ))
-            .environment(\.openArchivedSession) { session in
-                selectSession(session, in: .archived)
-            }
-        } else if let utility = navigationState.destination?.compactRootUtility {
-            NavigationStack(path: compactSectionPath) {
-                withDrawerButton(sectionRoot(AppSection(utility)))
-                    .background(NavigationBarLeadingMarginObserver())
-                    .navigationDestination(for: CompactSectionPage.self) { page in
-                        switch page {
-                        case .item(let item):
-                            sectionItemPage(item)
-                        case .providerQuotaWidget:
-                            ProviderQuotaWidgetAppearanceView()
+                conversationStack
+                    // The live size class, not the admitted layout: a fold that is still settling must not let the
+                    // collapsing split re-present the inspector as an empty sheet on the outer display.
+                    .inspector(isPresented: Binding(
+                        get: { nativeFilesInspectorPresented && observedHorizontalSizeClass == .regular },
+                        set: { nativeFilesInspectorPresented = $0 }
+                    )) {
+                        if let regularWidthChat {
+                            FilesInspectorContent(
+                                session: regularWidthChat,
+                                server: server,
+                                onAPIError: { authManager.handleAPIError($0, server: server) },
+                                onClose: { splitFilesInspector.isPresented.wrappedValue = false },
+                                isPresented: sidebarPresentation.showsFilesInspector
+                            )
+                            .id(regularWidthChat.id)
+                            .background(Color(.secondarySystemBackground).ignoresSafeArea())
+                            .ignoresSafeArea(.container, edges: [.top, .bottom])
+                            .presentationBackground(Color(.secondarySystemBackground))
+                            .presentationCornerRadius(0)
+                            .inspectorColumnWidth(min: 280, ideal: 340, max: 520)
                         }
                     }
-            }
-        } else {
-            NavigationStack {
-                withDrawerButton(sessionListSurface)
-                    .background(NavigationBarLeadingMarginObserver())
-                    .navigationDestination(item: navigationDestinationBinding) { destination in
-                        navigationDestination(destination)
+                    .onGeometryChange(for: Bool?.self, of: { geometry in
+                        geometry.size.width > 0 ? geometry.size.width >= RegularSplitLayout.filesInspectorChatWidth : nil
+                    }) { hasRoom in
+                        guard let hasRoom, scenePhase == .active, !isResumingSidebarLayout else { return }
+                        detailHasInspectorRoom = hasRoom
+                        reconcileFilesInspector()
                     }
+                    .foldAvoidingPlacement(avoidsHorizontalDivisions: false,
+                        isEnabled: !hidesSidebarColumn && foldedSidebarWidth == nil)
+                    .navigationSplitViewColumnWidth(
+                        min: RegularSplitLayout.detailMinWidth,
+                        ideal: RegularSplitLayout.detailMinWidth
+                    )
+            }
+            .navigationSplitViewStyle(.balanced)
+        } else {
+            conversationStack
+        }
+    }
+
+    /// Both widths show the selected root and push only its inner pages.
+    private var conversationStack: some View {
+        NavigationStack(path: sectionPath) {
+            withDrawerButton(navigationDestination(navigationState.destination ?? .newChat(emptyChatRoute)))
+                .toolbar {
+                    if showsDetailNewChatButton {
+                        ToolbarItem(placement: .topBarTrailing) { regularNewChatButton }
+                            .overflowPriority(.newChat)
+                    }
+                    updateNotificationsToolbar
+                    if #available(iOS 27.1, *), detailHostsSidebarActions {
+                        ToolbarItem(placement: .bottomBar) { settingsButton }
+                            .axisBehavior(.verticalPreferred)
+                            .visibilityPriority(.high)
+                    }
+                }
+                .navigationDestination(for: CompactPage.self) { page in sectionStackPage(page) }
+        }
+        .id(regularDetailIdentity)
+        .onToolbarVerticalEdgeChange { hasVerticalBar in
+            observeSidebarLayout { $0.hasVerticalBar = hasVerticalBar }
+        }
+    }
+
+    @ViewBuilder
+    private func sectionStackPage(_ page: CompactPage) -> some View {
+        Group {
+            switch page {
+            case .item(let item): sectionItemPage(item)
+            case .session(let session):
+                navigationDestination(.session(session))
+                    .toolbar { updateNotificationsToolbar }
             }
         }
     }
 
-    /// Records when a page is pushed over the detail root, which hides it without replacing it.
-    private var regularDetailRoot: some View {
-        let identity = regularDetailIdentity
-        return regularWidthDetail
-            .toolbar {
-                // The drawer button leads the first visible column, or joins the detail column's vertical bar.
-                if hidesSidebarColumn || detailHostsSidebarActions {
-                    drawerToolbarItem
+    @ToolbarContentBuilder
+    private var updateNotificationsToolbar: some ToolbarContent {
+        if updateNotificationViewModel.supportsNotifications {
+            if #available(iOS 27.1, *) {
+                ToolbarItem(placement: detailHasVerticalBar ? .bottomBar : .topBarTrailing) {
+                    updateNotificationsButton
                 }
-                if detailHostsSidebarActions {
-                    if navigationState.section.chatList != nil {
-                        returnToChatsItem
-                    }
-                    if navigationState.section == .chats {
-                        chatsColumnActions
-                        // Standard priority here: where the bar runs short, the open chat's own actions keep their slots.
-                        ToolbarItem(placement: .topBarTrailing) {
-                            regularNewChatButton
-                        }
-                    } else if navigationState.section == .tasks {
-                        TasksListActions(viewModel: sectionViewModels.tasks, onAPIError: handleAPIError)
-                    } else if navigationState.section == .skills {
-                        SkillsListActions(viewModel: sectionViewModels.skills, onAPIError: handleAPIError)
-                    }
-                }
+                .axisBehavior(.verticalPreferred)
+                .overflowPriority(.notifications, includesHorizontal: true)
+            } else {
+                ToolbarItem(placement: .topBarTrailing) { updateNotificationsButton }
             }
-            .onToolbarVerticalEdgeChange { detailHasVerticalBar = $0 }
-            .onAppear {
-                if coveredRegularDetail == identity { coveredRegularDetail = nil }
-            }
-            .onDisappear {
-                // A replaced root disappears too; only one still current is covered.
-                guard identity == regularDetailIdentity else { return }
-                coveredRegularDetail = identity
-            }
+        }
     }
 
-    private var regularDetailIdentity: RegularDetailIdentity {
-        RegularDetailIdentity(rootRevision: navigationState.rootRevision, item: navigationState.displayedItem)
+    private var regularDetailIdentity: Int { navigationState.chatRootRevision }
+
+    /// Admit geometry and toolbar traits together; app-switch snapshots cannot choose a layout or save a preference.
+    private func observeSidebarLayout(_ update: (inout SidebarLayoutInputs) -> Void = { _ in }) {
+        update(&observedSidebarLayout)
+        observedSidebarLayout.sizeClass = observedHorizontalSizeClass
+        observedSidebarLayout.hingeStatus = observedHingeStatus
+        sidebarLayoutResumeTask?.cancel()
+        guard scenePhase == .active, observedSidebarLayout.isValid else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        _ = sidebarLayoutSettlement.observe(observedSidebarLayout, at: now)
+        guard isResumingSidebarLayout, appliedSidebarLayout != nil else {
+            _ = sidebarLayoutSettlement.settle(at: now, hingeIsSettled: true)
+            applySidebarLayout(observedSidebarLayout)
+            return
+        }
+        sidebarLayoutResumeTask = Task { @MainActor in
+            do { try await Task.sleep(for: .seconds(DivisionRegionSettlement<SidebarLayoutInputs>.quietPeriod)) }
+            catch { return }
+            guard !Task.isCancelled, scenePhase == .active, observedSidebarLayout.isValid else { return }
+            _ = sidebarLayoutSettlement.settle(at: ProcessInfo.processInfo.systemUptime)
+            guard let layout = sidebarLayoutSettlement.applied, layout == observedSidebarLayout else { return }
+            isResumingSidebarLayout = false
+            withTransaction(.unanimated) { applySidebarLayout(layout) }
+        }
+    }
+
+    private func applySidebarLayout(_ layout: SidebarLayoutInputs) {
+        let previouslyTiled = sidebarPresentation.tiled
+        if splitGeometry.frame.width != layout.geometry.frame.width || splitGeometry.divisions != layout.geometry.divisions {
+            chats.prepareForWidthChange()
+        }
+        isApplyingSidebarLayout = true
+        defer { isApplyingSidebarLayout = false }
+        withTransaction(.unanimated) {
+            appliedSidebarLayout = layout
+            isCompactWidth = layout.sizeClass == .compact
+            if isCompactWidth {
+                splitFilesInspector.isPresented.wrappedValue = false
+                regularWidthChat = nil
+                restoredSidebarIsLandscape = nil
+            } else {
+                let isLandscape = SidebarPresentation.isLandscape(layout.splitSize)
+                // Tiling consumes drawer intent, not the user's per-orientation choice.
+                if sidebarPresentation.tiled {
+                    appSidebar.isPresented = false
+                } else if restoredSidebarIsLandscape != isLandscape || previouslyTiled {
+                    appSidebar.isPresented = regularSidebarIsShown
+                }
+                restoredSidebarIsLandscape = isLandscape
+            }
+            reconcileSidebarColumn(previouslyTiled: previouslyTiled)
+            reconcileFilesInspector()
+        }
+        updateSidebarColumn()
+    }
+
+    private var regularSidebarIsLandscape: Bool { SidebarPresentation.isLandscape(regularSplitFullSize) }
+
+    private var sidebarPresentation: SidebarPresentation { sidebarPresentation(storedChoice: regularSidebarIsShown) }
+
+    private func sidebarPresentation(storedChoice: Bool) -> SidebarPresentation {
+        SidebarPresentation(
+            isRegularWidth: horizontalSizeClass == .regular,
+            splitSize: regularSplitFullSize,
+            hasVerticalBar: detailHasVerticalBar,
+            storedChoice: storedChoice,
+            drawerIsPresented: appSidebar.isPresented,
+            columnIsVisible: nativeColumnVisibility != .detailOnly,
+            hidesSidebarColumn: navigationState.chatShowsCompanionPage && widensForCompanionPage,
+            hasVerticalDivision: foldedSidebarWidth != nil,
+            filesInspectorPresented: navigationState.filesInspectorPresented,
+            filesInspectorIsEligible: regularWidthChat != nil
+                && (navigationState.section == .chats || navigationState.selectedSectionSession != nil)
+                && !(navigationState.chatShowsCompanionPage && RegularSplitLayout.splitsCompanionPage(
+                    width: regularSplitWidth, height: regularSplitFullHeight)),
+            filesInspectorOpeningIsLandscape: filesInspectorOpeningIsLandscape
+        )
+    }
+
+    private var regularSidebarIsShown: Bool {
+        let stored = regularSidebarIsLandscape ? landscapeSidebarVisibility : portraitSidebarVisibility
+        return stored.isEmpty
+            ? regularSidebarIsLandscape && UIDevice.current.userInterfaceIdiom == .pad && hingeStatus == nil
+            : stored == "all"
     }
 
     private var regularColumnVisibility: Binding<NavigationSplitViewVisibility> {
-        .constant(hidesSidebarColumn ? .detailOnly : .all)
+        Binding {
+            sidebarPresentation.tiled ? nativeColumnVisibility : .detailOnly
+        } set: { visibility in
+            if sidebarPresentation.tiled { updateSidebarColumn(observedVisibility: visibility) }
+            else { reconcileSidebarColumn() }
+        }
     }
 
-    /// Kanban and Insights have no list, so they take the whole width, and a chat takes it while its Files
-    /// inspector or companion page needs the room.
+    private func reconcileSidebarColumn(previouslyTiled: Bool = false) {
+        guard sidebarPresentation.requiresColumnCollapse(
+            previouslyTiled: previouslyTiled, nativeColumnIsVisible: nativeColumnVisibility != .detailOnly
+        ) else { return }
+        // Cancel a queued landscape toggle before admitting the portrait layout in this same transaction.
+        columnUpdateRevision += 1
+        isPreparingColumn = false
+        nativeColumnVisibility = .detailOnly
+    }
+
+    /// Native layout feedback and reader choices use the same transaction in both directions.
+    private func updateSidebarColumn(storedChoice: Bool? = nil,
+                                     observedVisibility: NavigationSplitViewVisibility? = nil) {
+        guard scenePhase == .active, !isResumingSidebarLayout, appliedSidebarLayout != nil else { return }
+        // A native callback during preparation must not put the previous target back.
+        guard !isPreparingColumn || observedVisibility == nil || storedChoice != nil else { return }
+        if let observedVisibility { nativeColumnVisibility = observedVisibility }
+        withTransaction(.unanimated) {
+            if storedChoice == true, widensForFilesInspector {
+                navigationState.filesInspectorPresented = false
+                navigationState.chatShowsFilesInspector = false
+            }
+            reconcileFilesInspector()
+        }
+        let presentation = sidebarPresentation(storedChoice: storedChoice ?? regularSidebarIsShown)
+        let visibility: NavigationSplitViewVisibility = presentation.showsColumn ? .all : .detailOnly
+        let width = regularChatLayoutWidth(for: presentation)
+        let foldWidth = foldedColumnWidth
+        // A hiding column keeps its folded width: a narrower column would snap its edge ahead of the sliding chat.
+        let columnWidth = visibility == .detailOnly ? columnFoldWidth : foldWidth
+        guard targetChatWidth != width || columnFoldWidth != columnWidth
+                || nativeColumnVisibility != visibility || storedChoice != nil else { return }
+        columnUpdateRevision += 1
+        let revision = columnUpdateRevision
+        // Render one destination layout before UIKit moves the pane. Its leading placement carries the fixed
+        // transcript and composer together; interpolating their width would re-wrap text during the move.
+        // The transcript preserves its reader when its viewport width lands, not before: a hold armed ahead of
+        // the re-wrap left the old offset on screen for several frames and then corrected it (TAL-1532).
+        withTransaction(.unanimated) {
+            isPreparingColumn = true
+            targetChatWidth = width
+        }
+        // Render the final chat once; only the next turn moves the native boundary.
+        DispatchQueue.main.async {
+            guard columnUpdateRevision == revision, scenePhase == .active, !isResumingSidebarLayout else { return }
+            var transition = Transaction(animation: reduceMotion ? nil : SessionListMotion.foldAnimation(reduceMotion: false))
+            transition.disablesAnimations = reduceMotion
+            withTransaction(transition) {
+                if let storedChoice, !presentation.columnIsForced {
+                    let stored = storedChoice ? "all" : "detailOnly"
+                    if regularSidebarIsLandscape { landscapeSidebarVisibility = stored }
+                    else { portraitSidebarVisibility = stored }
+                }
+                columnFoldWidth = columnWidth
+                nativeColumnVisibility = visibility
+                isPreparingColumn = false
+            }
+            // The column hide is what makes room for a pending Files presentation; admit it on the following turn.
+            if visibility == .detailOnly, navigationState.filesInspectorPresented, !nativeFilesInspectorPresented {
+                DispatchQueue.main.async {
+                    guard columnUpdateRevision == revision else { return }
+                    reconcileFilesInspector()
+                }
+            }
+        }
+    }
+
+    private func regularChatLayoutWidth(for presentation: SidebarPresentation) -> CGFloat? {
+        guard presentation.tiled, regularSplitWidth > 0,
+              !navigationState.filesInspectorPresented, !navigationState.chatShowsCompanionPage else { return nil }
+        if let foldedColumnWidth { return regularSplitWidth - foldedColumnWidth }
+        return max(0, regularSplitWidth - (presentation.showsColumn
+            ? sidebarColumnWidth : 0))
+    }
+
+    private var sidebarColumnWidth: CGFloat {
+        measuredSidebarWidth ?? RegularSplitLayout.sidebarIdealWidth(splitWidth: regularSplitWidth)
+    }
+
+    private var detailHostsSidebarActions: Bool { sidebarPresentation.hostsSidebarActionsInDetail }
+
+    /// A chat takes the whole width while its Files inspector or companion page needs the room.
     private var hidesSidebarColumn: Bool {
-        navigationState.section.isFullWidth
-            || (navigationState.chatShowsFilesInspector && widensForFilesInspector)
+        (sidebarPresentation.showsFilesInspector && widensForFilesInspector)
             || (navigationState.chatShowsCompanionPage && widensForCompanionPage)
-    }
-
-    /// Only the detail column moves into the iPhone Duo's vertical bar, so beside one the sidebar column's drawer button
-    /// and list actions join it rather than keep a horizontal row over the list (TAL-1528). A page pushed over the
-    /// detail root shows its own items, so the sidebar keeps them meanwhile.
-    private var detailHostsSidebarActions: Bool {
-        horizontalSizeClass == .regular && !hidesSidebarColumn && detailHasVerticalBar
-            && coveredRegularDetail != regularDetailIdentity
     }
 
     /// Whether hiding the sidebar column is what lets a chat's companion page split beside it (TAL-1458).
@@ -657,72 +1012,90 @@ struct SessionListView: View {
             isPresented: Binding {
                 navigationState.filesInspectorPresented
             } set: { presented in
-                // Closing an iPhone Duo collapses the inspector without the reader closing Files; it shows again once
-                // there is room (TAL-1477).
-                guard presented || !isCompactWidth else { return }
-                navigationState.filesInspectorPresented = presented
+                setFilesInspectorPresented(presented)
             },
-            widensChat: widensForFilesInspector,
+            widensChat: sidebarPresentation.filesInspectorFits,
             reportShown: { navigationState.chatShowsFilesInspector = $0 },
+            reportSession: { session in
+                if horizontalSizeClass == .regular { regularWidthChat = session }
+            },
             offersCompanionPage: horizontalSizeClass == .regular,
-            reportCompanionPage: { navigationState.chatShowsCompanionPage = $0 }
+            reportCompanionPage: { navigationState.chatShowsCompanionPage = $0 },
+            reportEmptyTranscript: { chatShowsEmptyTranscript = $0 }
         )
     }
 
-    @ViewBuilder
-    private var regularWidthSidebar: some View {
-        let section = navigationState.section
-        Group {
-            if section == .chats {
-                sessionListSurface
-            } else if section.isFullWidth {
-                Color.clear
-            } else {
-                sectionRoot(section)
-            }
-        }
-        // Loading, empty and error states sit on the lists' background, not the column's gray.
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(.systemBackground))
-        .toolbar {
-            // A hidden column, or one whose detail hosts it, must not hold a second drawer button.
-            if !hidesSidebarColumn && !detailHostsSidebarActions {
-                drawerToolbarItem
-            }
-            if section.chatList != nil && !detailHostsSidebarActions {
-                returnToChatsItem
-            }
+    /// UIKit keeps the same inspector content mounted while its presentation closes across a rotation.
+    /// Intent, the chat's report, and the split width target are reconciled before the native boundary moves.
+    private func setFilesInspectorPresented(_ presented: Bool) {
+        withTransaction(.unanimated) {
+            navigationState.filesInspectorPresented = presented
+            filesInspectorOpeningIsLandscape = presented ? regularSidebarIsLandscape : nil
+            if !presented { navigationState.chatShowsFilesInspector = false }
+            reconcileFilesInspector()
+            updateSidebarColumn()
         }
     }
 
-    private var returnToChatsItem: some ToolbarContent {
-        ToolbarItem(placement: .topBarLeading) {
-            Button {
-                navigationState.returnToChats()
-            } label: {
-                Label("Chats", systemImage: "chevron.backward")
-                    .labelStyle(.titleAndIcon)
-            }
+    private func reconcileFilesInspector() {
+        let presentation = sidebarPresentation
+        if presentation.dismissesFilesInspector {
+            navigationState.filesInspectorPresented = false
+            navigationState.chatShowsFilesInspector = false
         }
+        if !navigationState.filesInspectorPresented { filesInspectorOpeningIsLandscape = nil }
+        // Admit only after the column is hidden and the detail has widened; once shown, the inspector itself narrows
+        // that measurement. A room measurement left over from before a fold must not present over a visible column:
+        // UIKit dismisses that presentation at once, which reads as the tap doing nothing.
+        nativeFilesInspectorPresented = presentation.showsFilesInspector
+            && (nativeFilesInspectorPresented || !widensForFilesInspector
+                || (detailHasInspectorRoom && nativeColumnVisibility == .detailOnly))
     }
 
+    private var regularSidebarToggleButton: some View {
+        Button {
+            guard !sidebarPresentation.columnIsForced else { return }
+            switch sidebarPresentation.toggleTarget {
+            case .column:
+                let opensColumn = navigationState.filesInspectorPresented && widensForFilesInspector
+                updateSidebarColumn(storedChoice: opensColumn || !regularSidebarIsShown)
+            case .drawer:
+                if sidebarPresentation.drawerEnabled { appSidebar.isPresented.toggle() }
+            }
+        } label: {
+            Image(systemName: "sidebar.leading")
+        }
+        .accessibilityLabel("Sidebar")
+    }
+
+    @ToolbarContentBuilder
     private var drawerToolbarItem: some ToolbarContent {
-        ToolbarItem(placement: .topBarLeading) { sidebarButton }
-            .overflowPriority(.drawer)
+        if !sidebarPresentation.columnIsForced && sectionPath.wrappedValue.isEmpty {
+            if horizontalSizeClass == .regular {
+                if #available(iOS 27.1, *) {
+                    ToolbarItem(placement: .topBarLeading) { regularSidebarToggleButton }
+                        .axisBehavior(.verticalPreferred)
+                        .visibilityPriority(.high)
+                } else {
+                    ToolbarItem(placement: .topBarLeading) { regularSidebarToggleButton }
+                }
+            } else {
+                ToolbarItem(placement: .topBarLeading) { sidebarButton() }
+                    .overflowPriority(.drawer)
+            }
+        }
     }
 
     private func withDrawerButton(_ content: some View) -> some View {
-        content.toolbar {
-            drawerToolbarItem
-        }
+        content.toolbar { drawerToolbarItem }
     }
 
-    private var sessionListSurface: some View {
+    private func sessionListSurface(sidebarHeader: some View, searchPull: SidebarSearchPull) -> some View {
         ZStack(alignment: .bottomTrailing) {
             Color(.systemBackground)
                 .ignoresSafeArea()
 
-            content
+            content(sidebarHeader: sidebarHeader, searchPull: searchPull)
 
             VStack(alignment: .trailing, spacing: 12) {
                 if let archiveUndo = viewModel.archiveUndo {
@@ -735,77 +1108,9 @@ struct SessionListView: View {
                     .padding(.horizontal, 16)
                     .transition(SessionListMotion.toastTransition(reduceMotion: reduceMotion))
                 }
-
-                if showsFloatingNewChatButton {
-                    newSessionButton
-                        .padding(.trailing, 24)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
             }
-            .padding(.bottom, showsFloatingNewChatButton ? 22 : 12)
+            .padding(.bottom, 12)
             .animation(SessionListMotion.sessionMutationAnimation(reduceMotion: reduceMotion), value: viewModel.archiveUndo)
-        }
-        .navigationTitle("Chats")
-        .searchable(
-            text: $searchText,
-            isPresented: $isSearchPresented,
-            prompt: "Search sessions"
-        )
-        .minimizingSearchToolbar(!detailHostsSidebarActions)
-        .toolbar {
-            if !detailHostsSidebarActions {
-                chatsColumnActions
-
-                // In regular width the floating button would cover rows in the narrow
-                // column, so New Chat moves to the column's bottom bar (TAL-482).
-                if horizontalSizeClass == .regular {
-                    ToolbarItemGroup(placement: .bottomBar) {
-                        Spacer()
-                        regularNewChatButton
-                    }
-                    .overflowPriority(.newChat)
-                }
-            }
-
-            // iOS 26 minimizes search into the bottom bar, so New Chat joins that row instead
-            // of floating above the list (TAL-461).
-            if #available(iOS 26, *) {
-                if horizontalSizeClass != .regular {
-                    DefaultToolbarItem(kind: .search, placement: .bottomBar)
-                    ToolbarSpacer(.flexible, placement: .bottomBar)
-
-                    ToolbarItem(placement: .bottomBar) {
-                        newChatToolbarButton
-                    }
-                    .overflowPriority(.newChat)
-                }
-            }
-        }
-    }
-
-    /// The Chats list's bar actions; the detail column shows them beside the iPhone Duo's vertical bar (TAL-1528).
-    @ToolbarContentBuilder
-    private var chatsColumnActions: some ToolbarContent {
-        if updateNotificationViewModel.supportsNotifications {
-            ToolbarItem(placement: .topBarTrailing) {
-                updateNotificationsButton
-            }
-        }
-
-        if viewModel.supportsBulkActions {
-            ToolbarItem(placement: .topBarTrailing) {
-                selectChatsButton
-            }
-            .overflowPriority(.selectChats)
-        }
-
-        let settingsItem = ToolbarItem(placement: .topBarTrailing) {
-            settingsButton
-        }
-        if #available(iOS 27.1, *) {
-            settingsItem.axisBehavior(.verticalPreferred)
-        } else {
-            settingsItem
         }
     }
 
@@ -817,65 +1122,20 @@ struct SessionListView: View {
         }
         .disabled(isNewChatDisabled)
         .accessibilityLabel("New Chat")
-        .newChatModeMenu(viewModel.newChatExecutionModes, isDisabled: isNewChatDisabled, onSelect: openNewChat(in:))
+        .newChatModeMenu(viewModel.newChatExecutionModes, isDisabled: isNewChatDisabled) { mode in
+            openNewChat(in: mode)
+        }
     }
 
     private var isNewChatDisabled: Bool {
-        viewModel.isViewingCachedData || navigationState.isCreatingNewChat
+        viewModel.isViewingCachedData
     }
 
-    private var showsFloatingNewChatButton: Bool {
-        if #available(iOS 26, *) { return false }
-        return !isSearchingSessions && horizontalSizeClass != .regular && !viewModel.isSelectingSessions
-    }
-
-    private var selectChatsButton: some View {
-        Button {
-            if viewModel.isSelectingSessions {
-                viewModel.endSelectingSessions()
-            } else {
-                viewModel.beginSelectingSessions()
-            }
-        } label: {
-            Image(systemName: viewModel.isSelectingSessions ? "xmark" : "checkmark.circle")
-        }
-        .disabled(viewModel.isViewingCachedData || viewModel.isPerformingBulkAction)
-        .accessibilityLabel(viewModel.isSelectingSessions ? Text("Cancel") : Text("Select Chats"))
-    }
-
-    @ViewBuilder
-    private var regularWidthDetail: some View {
-        let section = navigationState.section
-        if section.isFullWidth {
-            sectionRoot(section)
-        } else if let item = navigationState.displayedItem {
-            sectionItemPage(item)
-                .navigationDestination(isPresented: $navigationState.pushesProviderQuotaWidget) {
-                    ProviderQuotaWidgetAppearanceView()
-                }
-        } else if section == .skills {
-            ContentUnavailableView("Select a Skill", systemImage: "hammer")
-        } else if section == .tasks {
-            ContentUnavailableView("Select a Task", systemImage: "calendar.badge.clock")
-        } else if let chat = regularWidthChat {
-            navigationDestination(chat)
-        } else {
-            ContentUnavailableView {
-                Label("Select a Chat", systemImage: "bubble.left.and.bubble.right")
-            } description: {
-                Text("Choose a session from the sidebar or start a new chat.")
-            } actions: {
-                Button("New Chat", action: openNewChat)
-                    .buttonStyle(.borderedProminent)
-                    .newChatModeMenu(viewModel.newChatExecutionModes, isDisabled: isNewChatDisabled, onSelect: openNewChat(in:))
-            }
-        }
-    }
-
-    /// The chat or new chat beside a chat list; a list's own destination leaves nothing open yet.
-    private var regularWidthChat: SessionNavigationDestination? {
-        if case .utility = navigationState.destination { return nil }
-        return navigationState.destination
+    /// An empty chat needs no compose button, even after its session has been created.
+    private var showsDetailNewChatButton: Bool {
+        let showsChat = navigationState.section == .chats || navigationState.selectedSectionSession != nil
+        return !(showsChat && chatShowsEmptyTranscript)
+            && (horizontalSizeClass != .regular || !sidebarPresentation.showsColumn || detailHostsSidebarActions)
     }
 
     @ViewBuilder
@@ -898,6 +1158,7 @@ struct SessionListView: View {
             PendingNewChatView(
                 initialDraft: route.initialDraft,
                 initialAttachments: route.initialAttachments,
+                isExplicit: route.isExplicit,
                 autoStartsVoiceInput: route.autoStartsVoiceInput,
                 profileName: route.profileName,
                 providerID: route.providerID,
@@ -908,16 +1169,19 @@ struct SessionListView: View {
                 onAPIError: { authManager.handleAPIError($0, server: server) },
                 onSessionCreated: rememberCreatedSession,
                 draftStore: draftStore,
-                splitFilesInspector: splitFilesInspector
+                splitFilesInspector: splitFilesInspector,
+                retained: chats.pendingChat(for: route, server: server) { provisional in
+                    ChatView.makeViewModel(session: provisional, server: server, sessionListOwner: viewModel)
+                },
+                routeID: route.id
             )
             .id(route.id)
         case .utility(let destination):
-            sectionRoot(AppSection(destination))
+            if let section = AppSection(destination) { sectionRoot(section) }
         }
     }
 
-    /// A section's list, or its whole screen when it has none: the sidebar column at regular
-    /// width and the stack root at compact width (TAL-643).
+    /// A sidebar destination replaces the root at either width.
     @ViewBuilder
     private func sectionRoot(_ section: AppSection) -> some View {
         Group {
@@ -925,8 +1189,6 @@ struct SessionListView: View {
             case .chats:
                 // The sessions list is its own surface in both width branches.
                 EmptyView()
-            case .settings:
-                SettingsView(server: server, selection: sectionSelection)
             case .memory:
                 MemoryView(viewModel: sectionViewModels.memory, selection: sectionSelection, onAPIError: handleAPIError)
             case .skills:
@@ -941,7 +1203,7 @@ struct SessionListView: View {
                     quotaViewModel: quotaViewModel,
                     initialQuotaSourceID: insightsQuotaSourceID,
                     openProviderSettings: {
-                        navigationState.select(.settings(.providerQuotas))
+                        openSection(.settings(.providerQuotas))
                     },
                     onAPIError: handleAPIError
                 )
@@ -949,8 +1211,9 @@ struct SessionListView: View {
                 ArchivedSessionsView(
                     server: server,
                     onAPIError: handleAPIError,
-                    selectedSessionID: horizontalSizeClass == .regular ? navigationState.selectedSessionID : nil
+                    selectedSessionID: navigationState.selectedSectionSession?.sessionId
                 )
+                .environment(\.openArchivedSession) { session in navigationState.pushSectionSession(session) }
             case .scheduled:
                 GroupedSessionsView(
                     title: String(localized: "Scheduled sessions"),
@@ -958,11 +1221,7 @@ struct SessionListView: View {
                     emptySystemImage: "calendar.badge.clock",
                     includes: { $0.isCronSession && !$0.isWebhookSession },
                     viewModel: viewModel,
-                    showsMessageCount: showsSessionMessageCount,
-                    showsWorkspace: showsSessionWorkspace,
-                    selectedSessionID: horizontalSizeClass == .regular
-                        ? navigationState.selectedSessionID
-                        : nil,
+                    selectedSessionID: navigationState.selectedSectionSession?.sessionId,
                     actions: sessionRowActions(in: .scheduled)
                 )
             case .webhook:
@@ -972,28 +1231,21 @@ struct SessionListView: View {
                     emptySystemImage: "bolt.horizontal.circle",
                     includes: { $0.isWebhookSession },
                     viewModel: viewModel,
-                    showsMessageCount: showsSessionMessageCount,
-                    showsWorkspace: showsSessionWorkspace,
-                    selectedSessionID: horizontalSizeClass == .regular
-                        ? navigationState.selectedSessionID
-                        : nil,
+                    selectedSessionID: navigationState.selectedSectionSession?.sessionId,
                     actions: sessionRowActions(in: .webhook)
                 )
             }
         }
         // Each screen reads its profile's data; a switch rebuilds it for the new profile (TAL-553).
         .id(viewModel.activeProfileName)
-        .adaptiveSecondaryNavigationTitle()
+        .adaptiveSecondaryNavigationTitle(title: section == .kanban ? nil : section.title)
     }
 
-    /// The page a section list's item opens: beside the list at regular width, pushed over it at
-    /// compact width.
+    /// A selected section item, pushed above its list at either width.
     @ViewBuilder
     private func sectionItemPage(_ item: SectionItem) -> some View {
         Group {
             switch item {
-            case .settings(let pane):
-                SettingsPaneView(authManager: authManager, server: server, pane: pane)
             case .memory(let file):
                 MemoryFileView(viewModel: sectionViewModels.memory, file: file, onAPIError: handleAPIError)
             case .skill(let id):
@@ -1022,34 +1274,32 @@ struct SessionListView: View {
         .adaptiveSecondaryNavigationTitle()
     }
 
-    /// A section list's selection. At regular width it includes the default item the detail
-    /// column shows; at compact width it is only the pushed item.
     private var sectionSelection: Binding<SectionItem?> {
-        Binding(
-            get: {
-                horizontalSizeClass == .regular ? navigationState.displayedItem : navigationState.selectedItem
-            },
-            set: { navigationState.selectedItem = $0 }
-        )
+        Binding(get: { navigationState.selectedItem }, set: { navigationState.selectedItem = $0 })
     }
 
-    /// The compact section stack: the selected item, then the quota widget page over its
-    /// category. One path, because a push requested inside another initial push is dropped.
-    private var compactSectionPath: Binding<[CompactSectionPage]> {
-        Binding(
-            get: {
-                guard let item = navigationState.selectedItem else { return [] }
-                return navigationState.pushesProviderQuotaWidget ? [.item(item), .providerQuotaWidget] : [.item(item)]
-            },
-            set: { path in
-                guard case .item(let item)? = path.first else {
-                    navigationState.selectedItem = nil
-                    return
-                }
-                navigationState.selectedItem = item
-                navigationState.pushesProviderQuotaWidget = path.count > 1
-            }
-        )
+    private var sectionPath: Binding<[CompactPage]> {
+        let revision = navigationState.rootRevision
+        let chatRevision = navigationState.chatRootRevision
+        let compact = horizontalSizeClass != .regular
+        return Binding {
+            guard case .utility = navigationState.destination else { return [] }
+            var path: [CompactPage] = []
+            if let item = navigationState.selectedItem { path.append(.item(item)) }
+            if let session = navigationState.selectedSectionSession { path.append(.session(session)) }
+            return path
+        } set: { path in
+            guard revision == navigationState.rootRevision, chatRevision == navigationState.chatRootRevision,
+                  compact == isCompactWidth else { return }
+            navigationState.selectedItem = path.compactMap { page in
+                if case .item(let item) = page { return item }
+                return nil
+            }.first
+            navigationState.selectedSectionSession = path.compactMap { page in
+                if case .session(let session) = page { return session }
+                return nil
+            }.first
+        }
     }
 
     private var insightsQuotaSourceID: String? {
@@ -1059,16 +1309,6 @@ struct SessionListView: View {
 
     private func handleAPIError(_ error: Error) {
         authManager.handleAPIError(error, server: server)
-    }
-
-    private var navigationDestinationBinding: Binding<SessionNavigationDestination?> {
-        Binding(
-            get: { navigationState.destination?.compactPushedDestination },
-            set: { destination in
-                guard destination == nil else { return }
-                navigationState.clearDestination()
-            }
-        )
     }
 
     /// The Duo's tent pose with a run going (TAL-1460).
@@ -1081,9 +1321,16 @@ struct SessionListView: View {
         )
     }
 
-    private var content: some View {
+    private func content(sidebarHeader: some View, searchPull: SidebarSearchPull) -> some View {
         let groups = scheduledSessionGroups
+        let showsScheduled = groups.showsDisclosure(isSearchActive: hasSearchQuery)
+        let showsWebhook = groups.showsWebhookDisclosure(isSearchActive: hasSearchQuery)
         return SidebarList {
+            if !searchPull.isSearchPresented {
+                sidebarHeader
+                    .sessionsScreenListRow()
+            }
+
             if let reason = viewModel.cachedDataReason {
                 CachedDataBanner(reason: reason)
                     .padding(.top, 16)
@@ -1094,24 +1341,21 @@ struct SessionListView: View {
                 .padding(.top, 16)
                 .sessionsScreenListRow()
 
-            if !hasSearchQuery {
-                SessionFilterControls(
-                    viewModel: viewModel,
-                    showsProfile: showsActiveProfileSection,
-                    showsProjects: showsProjectsSection,
-                    selectedProjectID: $selectedProjectID,
-                    projectPendingDeletion: $projectPendingDeletion,
-                    projectPendingRename: $projectPendingRename,
-                    switchActiveProfile: { profile in
-                        Task { await switchActiveProfile(profile) }
-                    },
-                    presentProjectCreation: {
-                        isPresentingProjectCreation = true
-                    }
-                )
-            }
+            SessionListRowsSection(
+                viewModel: viewModel,
+                sessions: groups.ordinary,
+                emptyTitle: emptySessionsTitle,
+                emptyDescription: emptySessionsDescription,
+                isSearchActive: hasSearchQuery,
+                searchText: searchText,
+                selectedSessionID: navigationState.selectedSessionID,
+                actions: sessionRowActions(),
+                suppressEmptyState: !groups.scheduled.isEmpty
+                    || !groups.webhook.isEmpty,
+                showsHeading: !searchPull.isSearchPresented
+            )
 
-            if groups.showsDisclosure(isSearchActive: hasSearchQuery) {
+            if showsScheduled {
                 GroupedSessionsDisclosure(
                     title: String(localized: "Scheduled sessions"),
                     assetImage: "LucideCalendarClock",
@@ -1122,20 +1366,17 @@ struct SessionListView: View {
                     sessions: groups.scheduled,
                     totalCount: groups.totalScheduledCount,
                     countIsPartial: groups.scheduledCountIsPartial,
-                    isSearchActive: hasSearchQuery,
+                    isSearchActive: searchPull.isSearchPresented || hasSearchQuery,
                     searchText: searchText,
-                    showsMessageCount: showsSessionMessageCount,
-                    showsWorkspace: showsSessionWorkspace,
-                    selectedSessionID: horizontalSizeClass == .regular
-                        ? navigationState.selectedSessionID
-                        : nil,
+                    selectedSessionID: navigationState.selectedSessionID,
                     userIsExpanded: $scheduledSessionsAreExpanded,
                     actions: sessionRowActions(),
-                    viewAll: { navigationState.select(.scheduled) }
+                    viewAll: { openSection(.scheduled) },
+                    showsHeading: !searchPull.isSearchPresented
                 )
             }
 
-            if groups.showsWebhookDisclosure(isSearchActive: hasSearchQuery) {
+            if showsWebhook {
                 GroupedSessionsDisclosure(
                     title: String(localized: "Webhook sessions"),
                     assetImage: nil,
@@ -1146,52 +1387,62 @@ struct SessionListView: View {
                     sessions: groups.webhook,
                     totalCount: groups.totalWebhookCount,
                     countIsPartial: groups.webhookCountIsPartial,
-                    isSearchActive: hasSearchQuery,
+                    isSearchActive: searchPull.isSearchPresented || hasSearchQuery,
                     searchText: searchText,
-                    showsMessageCount: showsSessionMessageCount,
-                    showsWorkspace: showsSessionWorkspace,
-                    selectedSessionID: horizontalSizeClass == .regular
-                        ? navigationState.selectedSessionID
-                        : nil,
+                    selectedSessionID: navigationState.selectedSessionID,
                     userIsExpanded: $webhookSessionsAreExpanded,
                     actions: sessionRowActions(),
-                    viewAll: { navigationState.select(.webhook) }
+                    viewAll: { openSection(.webhook) },
+                    showsHeading: !searchPull.isSearchPresented
                 )
             }
 
-            SessionListRowsSection(
-                viewModel: viewModel,
-                sessions: groups.ordinary,
-                emptyTitle: emptySessionsTitle,
-                emptyDescription: emptySessionsDescription,
-                isSearchActive: hasSearchQuery,
-                searchText: searchText,
-                showsMessageCount: showsSessionMessageCount,
-                showsWorkspace: showsSessionWorkspace,
-                selectedSessionID: horizontalSizeClass == .regular
-                    ? navigationState.selectedSessionID
-                    : nil,
-                actions: sessionRowActions(),
-                suppressEmptyState: !groups.scheduled.isEmpty
-                    || !groups.webhook.isEmpty
-            )
-
-            if showsArchivedEntry {
-                archivedEntryRow
-                    .sessionsScreenListRow()
+            if !searchPull.isSearchPresented {
+                NavigationLink {
+                    GroupedSessionsView(
+                        title: String(localized: "Recents"),
+                        isEnabled: true,
+                        emptySystemImage: "bubble.left",
+                        includes: { _ in true },
+                        viewModel: viewModel,
+                        selectedSessionID: navigationState.selectedSessionID,
+                        actions: sessionRowActions()
+                    )
+                    .environment(\.sessionRowStyle, .regular)
+                } label: {
+                    HStack {
+                        Text("See all…")
+                        Spacer()
+                        Image(systemName: "chevron.forward")
+                            .font(.caption.weight(.semibold))
+                    }
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 24)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .navigationLinkIndicatorVisibility(.hidden)
+                .sessionsScreenListRow()
             }
 
-            Color.clear
-                .frame(height: 104)
-                .sessionsScreenListRow()
-                .accessibilityHidden(true)
         }
+        .contentMargins(.top, 0, for: .scrollContent)
         .scrollPosition(id: $sidebarScrollPosition)
         .environment(\.sessionRowsMonitorRuns, monitorsRuns)
         .animation(SessionListMotion.rowStyleAnimation(reduceMotion: reduceMotion), value: monitorsRuns)
         .scrollDismissesKeyboard(.interactively)
-        .refreshable {
-            await refreshSessionsAndActiveProfile()
+        .onScrollGeometryChange(for: CGFloat.self) { geometry in
+            max(0, -(geometry.contentOffset.y + geometry.contentInsets.top))
+        } action: { _, distance in
+            searchPull.update(distance: distance)
+        }
+        .onScrollPhaseChange { oldPhase, newPhase in
+            if searchPull.phaseChanged(from: oldPhase, to: newPhase, reduceMotion: reduceMotion), !searchPull.isSearchPresented {
+                HapticButtonHaptics.tap(style: .medium, isEnabled: isHapticsEnabled)
+                searchPull.isSearchPresented = true
+            }
         }
         .animation(SessionListMotion.disclosureAnimation(reduceMotion: reduceMotion), value: scheduledSessionsAreExpanded)
         .animation(SessionListMotion.disclosureAnimation(reduceMotion: reduceMotion), value: webhookSessionsAreExpanded)
@@ -1207,29 +1458,23 @@ struct SessionListView: View {
         }
     }
 
+    private func openSidebarSettings() {
+        openSection(.settings(nil))
+    }
+
     private var settingsButton: some View {
-        HapticButton(feedbackStyle: .medium) {
-            navigationState.select(.settings(nil))
-        } label: {
-            Text(settingsInitials)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(initialsAvatarForegroundColor)
-                .frame(width: 28, height: 28)
-                .background(selectedHeaderLogoColor, in: Circle())
-                .overlay(Circle().stroke(.white.opacity(0.18), lineWidth: 1))
+        HapticButton(feedbackStyle: .medium, action: openSidebarSettings) {
+            Image(systemName: "gearshape")
         }
         .accessibilityLabel("Settings")
-        .accessibilityHint("Opens Settings. Long press to switch servers.")
-        // Keep the existing long-press server switcher while the avatar moves
-        // into the native toolbar.
+        .accessibilityValue(appSidebarServerName)
+        .accessibilityHint("Long press to switch servers.")
         .contextMenu {
             AvatarServerSwitcherMenu(
                 model: avatarServerSwitcherModel,
-                switchToServer: { account in
-                    authManager.switchActiveServer(to: account)
-                },
+                switchToServer: { account in authManager.switchActiveServer(to: account) },
                 addServer: { isPresentingAddServer = true },
-                manageServers: { navigationState.select(.settings(.servers)) }
+                manageServers: { openSection(.settings(.servers)) }
             )
         }
     }
@@ -1238,7 +1483,7 @@ struct SessionListView: View {
         Button {
             isPresentingUpdateNotifications = true
         } label: {
-            Image(systemName: updateNotificationViewModel.unreadCount > 0 ? "bell.badge.fill" : "bell")
+            Label("Notifications", systemImage: updateNotificationViewModel.unreadCount > 0 ? "bell.badge.fill" : "bell")
                 .symbolRenderingMode(.hierarchical)
         }
         .accessibilityLabel("Notifications")
@@ -1257,8 +1502,7 @@ struct SessionListView: View {
 
     private func openNotificationDestination(_ destination: UpdateNotificationDestination) {
         guard destination.key == "settings.system" else { return }
-        isPresentingUpdateNotifications = false
-        navigationState.select(.settings(.system))
+        openSection(.settings(.system))
     }
 
     private func refreshUpdateNotificationsWhileActive() async {
@@ -1274,32 +1518,15 @@ struct SessionListView: View {
         }
     }
 
-    private var sidebarButton: some View {
+    private func sidebarButton(isPresented: Bool = false) -> some View {
         Button {
-            appSidebar.isPresented = true
+            appSidebar.isPresented.toggle()
         } label: {
-            Label("Open navigation", systemImage: "sidebar.left")
+            Image(systemName: isPresented ? "xmark" : "sidebar.leading")
                 .font(.body.weight(.semibold))
         }
-        .accessibilityLabel("Open navigation")
+        .accessibilityLabel(isPresented ? "Close navigation" : "Open navigation")
         .accessibilityFocused($openNavigationIsFocused)
-    }
-
-    private var appSidebarSelection: AppSidebarDestination {
-        guard case .utility(let destination) = navigationState.destination else {
-            return .chats
-        }
-
-        switch destination {
-        case .tasks: return .tasks
-        case .kanban: return .kanban
-        case .skills: return .skills
-        case .memory: return .memory
-        case .insights: return .insights
-        case .settings, .providerQuotaWidgetSettings: return .settings
-        case .providers(let sourceID): return sourceID.map(AppSidebarDestination.quota) ?? .insights
-        case .archived, .scheduled, .webhook: return .chats
-        }
     }
 
     private var avatarServerSwitcherModel: AvatarServerSwitcherModel {
@@ -1315,85 +1542,44 @@ struct SessionListView: View {
             ?? server.absoluteString
     }
 
-    private var appSidebarProfileName: String? {
-        let profileName = (viewModel.activeProfileDisplayName ?? viewModel.activeProfileName)?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return profileName?.isEmpty == false ? profileName : nil
-    }
-
     private var appSidebarSectionVisibility: SidebarSectionVisibility {
         SidebarSectionVisibility(
             tasks: showsTasksSection,
             kanban: showsKanbanSection,
             skills: showsSkillsSection,
             memory: showsMemorySection,
-            insights: showsInsightsSection,
-            activeProfile: showsActiveProfileSection,
-            projects: showsProjectsSection
+            insights: showsInsightsSection
         )
     }
 
-    private func selectAppSidebarDestination(_ destination: AppSidebarDestination) {
-        closeAppSidebar { navigate(to: destination) }
-    }
-
-    /// Closing first hands the slide to the render server before the next screen builds, so the
-    /// slide keeps moving while it does (TAL-477).
+    /// Commit the destination beneath an open drawer before starting its own slide (TAL-477).
+    /// A tiled column keeps the navigation stack's normal push animation.
     private func closeAppSidebar(then navigate: () -> Void) {
-        appSidebar.isPresented = false
-        navigate()
-    }
-
-    private func navigate(to destination: AppSidebarDestination) {
-        switch destination {
-        case .chats:
-            navigationState.clearDestination()
-        case .tasks:
-            navigationState.select(.tasks)
-        case .kanban:
-            navigationState.select(.kanban)
-        case .skills:
-            navigationState.select(.skills)
-        case .memory:
-            navigationState.select(.memory)
-        case .insights:
-            navigationState.select(.insights)
-        case .quota(let sourceID):
-            navigationState.select(.providers(sourceID))
-        case .settings:
-            navigationState.select(.settings(nil))
+        isPresentingSettings = false
+        reopensSidebarAfterSettings = false
+        pendingSettingsPath = nil
+        guard sidebarDrawerIsEnabled, appSidebar.isPresented else {
+            navigate()
+            return
         }
+        withTransaction(.unanimated) { navigate() }
+        DispatchQueue.main.async { appSidebar.isPresented = false }
     }
 
     private func appSidebarPresentationChanged(_ isPresented: Bool) {
+        guard scenePhase == .active, !isResumingSidebarLayout else { return }
         if isPresented {
             reloadAppSidebarQuotaSources()
-            return
+            splitFilesInspector.isPresented.wrappedValue = false
         }
+        if !isApplyingSidebarLayout, horizontalSizeClass == .regular, sidebarPresentation.drawerEnabled, regularSplitFullSize != .zero {
+            updateSidebarColumn(storedChoice: isPresented)
+        }
+        if isPresented { return }
         Task { @MainActor in
             await Task.yield()
             guard !appSidebar.isPresented else { return }
             openNavigationIsFocused = true
-        }
-    }
-
-    private func reloadAppSidebarQuotaSources() {
-        let selectedIDs = ProviderQuotaSidebarSettings.sourceIDs(
-            first: firstSidebarQuotaSourceID,
-            second: secondSidebarQuotaSourceID
-        )
-        let sources = ProviderQuotaWidgetSnapshotStore().load()?.sources ?? []
-        let hiddenProviderIDs = ProviderQuotaVisibilitySettings.hiddenProviderIDs(from: hiddenProviderData)
-        let byID = Dictionary(uniqueKeysWithValues: sources.map { ($0.sourceID, $0) })
-        let quotaSources = selectedIDs
-            .compactMap { byID[$0] }
-            .filter { source in
-                guard let providerID = source.providerID?.lowercased() else { return true }
-                return !hiddenProviderIDs.contains(providerID)
-            }
-        // Opening the sidebar reloads these; an unchanged list must not redraw the whole screen.
-        if quotaSources != appSidebarQuotaSources {
-            appSidebarQuotaSources = quotaSources
         }
     }
 
@@ -1405,11 +1591,9 @@ struct SessionListView: View {
         SessionListAutoRefresh.TaskID(
             server: server,
             isSceneActive: scenePhase == .active,
-            // In regular width the list keeps polling in every section, as it did
-            // while it stayed beside them, so returning to Chats needs no restart;
-            // in compact width it is off screen once a destination replaces or
-            // covers it.
+            // Compact width refreshes the conversation list while its drawer is open.
             isListVisible: horizontalSizeClass == .regular
+                || appSidebar.isPresented
                 || navigationState.destination == nil
                 || navigationState.destination?.showsSessionListRows == true
         )
@@ -1423,50 +1607,6 @@ struct SessionListView: View {
     /// Restarts the session-change subscription when the scene's activity or the server changes.
     private var sessionEventsTaskID: String {
         "\(server.absoluteString)|\(scenePhase == .active)"
-    }
-
-    private var newSessionButton: some View {
-        HapticButton(feedbackStyle: .medium) {
-            openNewChat()
-        } label: {
-            Image(systemName: "square.and.pencil")
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(newSessionButtonForegroundColor)
-                .frame(width: 52, height: 52)
-                .contentShape(Circle())
-                .background {
-                    if let fill = newSessionButtonSolidThemeFill {
-                        Circle().fill(fill)
-                    }
-                }
-                .sessionsChromeGlass(
-                    isInteractive: true,
-                    tint: newSessionButtonGlassTint,
-                    fallbackMaterial: .regularMaterial,
-                    in: Circle()
-                )
-        }
-        .buttonStyle(SessionListFloatingChatButtonStyle())
-        .disabled(isNewChatDisabled)
-        .opacity(viewModel.isViewingCachedData ? 0.45 : 1)
-        .accessibilityLabel("New Chat")
-        .newChatModeMenu(viewModel.newChatExecutionModes, isDisabled: isNewChatDisabled, onSelect: openNewChat(in:))
-    }
-
-    @available(iOS 26, *)
-    private var newChatToolbarButton: some View {
-        HapticButton(feedbackStyle: .medium) {
-            openNewChat()
-        } label: {
-            Label("New Chat", systemImage: "square.and.pencil")
-                .foregroundStyle(newSessionButtonForegroundColor)
-        }
-        .buttonStyle(.glassProminent)
-        .tint(newSessionButtonGlassTint)
-        .disabled(isNewChatDisabled)
-        .opacity(viewModel.isViewingCachedData ? 0.45 : 1)
-        .accessibilityLabel("New Chat")
-        .newChatModeMenu(viewModel.newChatExecutionModes, isDisabled: isNewChatDisabled, onSelect: openNewChat(in:))
     }
 
     private var visibleSessions: [SessionSummary] {
@@ -1495,57 +1635,6 @@ struct SessionListView: View {
         )
     }
 
-    /// Bottom-of-list entry to the Archived screen (issue #17). Hidden once a
-    /// search query is typed, offline (cached data cannot fetch archived rows),
-    /// and when the server reports zero archived sessions or omits
-    /// `archived_count` (older server) — so the list is unchanged for users
-    /// with nothing archived.
-    private var showsArchivedEntry: Bool {
-        guard !hasSearchQuery, !viewModel.isViewingCachedData else { return false }
-        return (viewModel.archivedCount ?? 0) > 0
-    }
-
-    private var archivedEntryRow: some View {
-        HapticButton {
-            navigationState.select(.archived)
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: "archivebox")
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 24)
-                    .accessibilityHidden(true)
-
-                Text("Archived Chats")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-
-                if let archivedCount = viewModel.archivedCount {
-                    Text("\(archivedCount)")
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 2)
-                        .background(.thinMaterial, in: Capsule())
-                }
-
-                Spacer(minLength: 0)
-
-                Image(systemName: "chevron.forward")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-            }
-            .padding(.horizontal, 24)
-            .frame(minHeight: 44)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .padding(.top, 12)
-        .accessibilityHint("Shows archived sessions.")
-    }
-
     private var emptySessionsTitle: String {
         if hasActiveSessionFilter {
             return String(localized: "No matching sessions")
@@ -1566,24 +1655,6 @@ struct SessionListView: View {
         selectedProjectID != nil || !normalizedSearchText.isEmpty
     }
 
-    private func isActiveProfile(_ profile: ProfileSummary) -> Bool {
-        guard let profileName = profile.normalizedName else { return false }
-
-        if let activeProfileName = viewModel.activeProfileName {
-            return profileName == activeProfileName
-        }
-
-        return profile.isActive == true
-    }
-
-    private var settingsInitials: String {
-        SessionIdentitySettings.displayInitials(
-            displayName: identityDisplayName,
-            storedInitials: identityInitials,
-            fallbackFullName: NSFullUserName()
-        )
-    }
-
     private var selectedHeaderLogoColor: Color {
         HeaderLogoColor.color(for: headerLogoColorHex)
     }
@@ -1595,57 +1666,10 @@ struct SessionListView: View {
         )
     }
 
-    private var newSessionButtonSurface: AdaptiveGlassSurface {
-        AdaptiveGlassSurface.resolve(
-            liquidGlassAvailable: GlassPreference.isLiquidGlassSupported,
-            isGlassEnabled: isGlassEnabled,
-            reduceTransparency: reduceTransparency
-        )
-    }
-
-    // The glass tint is dropped on the material/opaque fallback surfaces, so a
-    // themed button would otherwise show its contrast-picked foreground over a
-    // neutral material (e.g. black-on-dark for a light theme color). Draw a
-    // solid header-color fill there so the button stays themed and readable;
-    // the liquid-glass surface keeps tinting via `newSessionButtonGlassTint`.
-    private var newSessionButtonSolidThemeFill: Color? {
-        guard newSessionButtonUsesThemeColor, newSessionButtonSurface != .liquidGlass else {
-            return nil
-        }
-
-        return selectedHeaderLogoColor
-    }
-
-    private var newSessionButtonGlassTint: Color {
-        if newSessionButtonUsesThemeColor {
-            return selectedHeaderLogoColor
-        }
-
-        return colorScheme == .dark ? .white : .black
-    }
-
-    private var newSessionButtonForegroundColor: Color {
-        if newSessionButtonUsesThemeColor {
-            return HeaderLogoColor.prefersDarkForeground(for: headerLogoColorHex) ? .black : .white
-        }
-
-        return colorScheme == .dark ? .black : .white
-    }
-
-    private var initialsAvatarForegroundColor: Color {
-        HeaderLogoColor.prefersDarkForeground(for: headerLogoColorHex) ? .black : .white
-    }
-
     private var normalizedSearchText: String {
         searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
-    private var isSearchingSessions: Bool {
-        isSearchPresented || hasSearchQuery
-    }
-
-    /// The list reshapes for results only once there is a query, so opening an
-    /// empty search leaves it in place (TAL-461).
     private var hasSearchQuery: Bool {
         !normalizedSearchText.isEmpty
     }
@@ -1668,7 +1692,7 @@ struct SessionListView: View {
         )
     }
 
-    /// `list` is the chat list the rows belong to; a chat opened from it keeps it in the sidebar.
+    /// Sidebar rows replace the root; section-owned lists push their chats above the list.
     private func sessionRowActions(in list: AppSection = .chats) -> SessionListRowActions {
         SessionListRowActions(
             retryLoad: {
@@ -1727,27 +1751,24 @@ struct SessionListView: View {
 
     private var sceneActions: TalariaSceneActions {
         TalariaSceneActions(
-            canCreateNewChat: !viewModel.isViewingCachedData && !navigationState.isCreatingNewChat,
+            canCreateNewChat: !isNewChatDisabled,
             createNewChat: openNewChatFromKeyboard,
             searchSessions: openSearchFromKeyboard
         )
     }
 
     private func openNewChatFromKeyboard() {
-        guard !viewModel.isViewingCachedData, !navigationState.isCreatingNewChat else { return }
+        guard !isNewChatDisabled else { return }
         openNewChat()
     }
 
     private func openSearchFromKeyboard() {
-        if horizontalSizeClass != .regular {
-            navigationState.clearDestination()
-        } else if navigationState.section != .chats {
-            navigationState.returnToChats()
-        }
+        if sidebarDrawerIsEnabled { appSidebar.isPresented = true }
+        else { updateSidebarColumn(storedChoice: true) }
 
         Task { @MainActor in
             await Task.yield()
-            isSearchPresented = true
+            appSidebar.searchRequested = true
         }
     }
 
@@ -1973,7 +1994,7 @@ struct SessionListView: View {
             return
         }
 
-        navigationState.select(
+        openNewChat(
             PendingNewChatRoute(
                 initialDraft: draft,
                 initialAttachments: sharedImport.attachments
@@ -1982,9 +2003,7 @@ struct SessionListView: View {
         didRoutePendingSharedImport(reservation)
     }
 
-    /// Awaited (not fire-and-forget) so the cold-start `.task` can resolve it before
-    /// `restoreLastSelectedSessionIfNeeded()` — otherwise the restore races the deep
-    /// link's network load and wins with the previous session.
+    /// Awaited while the sidebar refreshes. Launch restoration is already resolved, so only this explicit route navigates.
     private func openPendingDeepLinkedSessionIfNeeded() async {
         guard !Task.isCancelled else { return }
 
@@ -2023,7 +2042,7 @@ struct SessionListView: View {
     private func openRequestedNewChatIfNeeded() {
         guard let request = requestedNewChat else { return }
         requestedNewChat = nil
-        navigationState.select(
+        openNewChat(
             PendingNewChatRoute(
                 autoStartsVoiceInput: request.autoStartsVoiceInput,
                 profileName: request.profileName,
@@ -2035,23 +2054,91 @@ struct SessionListView: View {
     private func openPendingQuotaSourceIfNeeded() {
         guard let sourceID = pendingQuotaSourceID else { return }
         pendingQuotaSourceID = nil
-        navigationState.select(.providers(sourceID))
+        openSection(.providers(sourceID))
     }
 
     private func openProviderQuotaWidgetSettingsIfNeeded() {
         guard opensProviderQuotaWidgetSettings else { return }
         opensProviderQuotaWidgetSettings = false
-        navigationState.select(.providerQuotaWidgetSettings)
+        openSection(.providerQuotaWidgetSettings)
     }
 
-    /// A chat started under a project filter joins that project (TAL-455).
+    /// Every sidebar, notification and deep-link utility route enters here.
+    private func openSection(_ utility: SessionListUtilityDestination) {
+        switch utility {
+        case .settings(let anchor):
+            presentSettings(path: anchor.map { [.category($0.category)] } ?? [])
+        case .providerQuotaWidgetSettings:
+            presentSettings(path: [.category(.liveActivitiesAndWidgets), .providerQuotaWidget])
+        default:
+            closeAppSidebar { navigationState.select(utility) }
+        }
+    }
+
+    private func presentSettings(path: [SettingsPane]) {
+        // Modal navigation supersedes a session load/import without replacing the underlying root.
+        _ = navigationState.beginOpen()
+        if isPresentingUpdateNotifications {
+            pendingSettingsPath = path
+            isPresentingUpdateNotifications = false
+            return
+        }
+        if isPresentingSettings {
+            settingsPath = path
+            return
+        }
+        let reopensSidebar = appSidebar.isPresented
+        closeAppSidebar {
+            reopensSidebarAfterSettings = reopensSidebar
+            settingsPath = path
+            isPresentingSettings = true
+        }
+    }
+
+    private func settingsDidDismiss() {
+        guard !isPresentingSettings else { return }
+        settingsPath = []
+        if reopensSidebarAfterSettings, sidebarDrawerIsEnabled {
+            DispatchQueue.main.async { appSidebar.isPresented = true }
+        }
+        reopensSidebarAfterSettings = false
+    }
+
+    private var settingsNavigationStack: some View {
+        NavigationStack(path: $settingsPath) {
+            settingsModalPage(SettingsView(server: server, selection: Binding {
+                settingsPath.first
+            } set: { pane in
+                settingsPath = pane.map { [$0] } ?? []
+            }))
+            .navigationDestination(for: SettingsPane.self) { pane in
+                settingsModalPage(SettingsPaneView(authManager: authManager, server: server, pane: pane))
+            }
+        }
+    }
+
+    /// NavigationStack does not install a toolbar on its hosted pages; the root and pushed pages share this wrapper.
+    private func settingsModalPage<Content: View>(_ content: Content) -> some View {
+        content.adaptiveSecondaryNavigationTitle().toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button { isPresentingSettings = false } label: { Image(systemName: "xmark") }
+                    .accessibilityLabel("Close")
+            }
+            .overflowPriority(.done, includesHorizontal: true)
+        }
+    }
+
+    private func openNewChat(_ route: PendingNewChatRoute) {
+        closeAppSidebar { navigationState.select(route) }
+    }
+
     private func openNewChat() {
-        navigationState.select(PendingNewChatRoute(projectID: selectedProjectID))
+        openNewChat(PendingNewChatRoute(projectID: selectedProjectID))
     }
 
-    /// The server creates the chat in `mode` as it opens (TAL-1045).
+    /// Carries the chosen mode to the first Send or Files request (TAL-1045).
     private func openNewChat(in mode: ExecutionMode) {
-        navigationState.select(viewModel.diagnosticChatRoute(mode, projectID: selectedProjectID))
+        openNewChat(viewModel.diagnosticChatRoute(mode, projectID: selectedProjectID))
     }
 
     private func openSession(_ session: SessionSummary, in list: AppSection = .chats) async {
@@ -2060,7 +2147,8 @@ struct SessionListView: View {
 
     /// A failed load or import stays on the list and surfaces through the
     /// action-error alert; a destination chosen meanwhile is never replaced.
-    private func openSession(in list: AppSection = .chats, load: () async -> SessionSummary?) async {
+    private func openSession(in list: AppSection = .chats,
+                             load: () async -> SessionSummary?) async {
         let outcome = await SessionListOpen.resolve(
             beginOpen: { navigationState.beginOpen() },
             openRevision: { navigationState.openRevision },
@@ -2069,8 +2157,8 @@ struct SessionListView: View {
         )
         switch outcome {
         case let .open(session):
-            // A compact chat pushes over the Chats list whichever list it came from.
-            selectSession(session, in: horizontalSizeClass == .regular ? list : .chats)
+            // Sidebar rows replace the root; section-owned lists push a chat above their list.
+            selectSession(session, in: list)
         case .failed:
             guard !Task.isCancelled else { return }
             // Forwards an expired session/cookie to the auth manager the same way
@@ -2082,7 +2170,13 @@ struct SessionListView: View {
     }
 
     private func selectSession(_ session: SessionSummary, in list: AppSection = .chats) {
-        navigationState.select(session, in: list)
+        closeAppSidebar {
+            if list != .chats, case .utility = navigationState.destination {
+                navigationState.pushSectionSession(session)
+            } else {
+                navigationState.select(session)
+            }
+        }
         persistLastSelectedSession()
     }
 
@@ -2096,41 +2190,11 @@ struct SessionListView: View {
         persistLastSelectedSession()
     }
 
-    /// The restored row takes the same path as a tapped one, so an external session
-    /// is imported before it is shown instead of opening with the list's stale
-    /// writability. A failed import leaves the list showing, like a failed tap.
-    private func restoreLastSelectedSessionIfNeeded() async {
-        let session = navigationState.sessionToRestore(
-            from: viewModel.sessions,
-            allowsAutomaticRestore: horizontalSizeClass == .regular,
-            clearsMissingSelection: viewModel.sessionLoadError == nil,
-            pendingDeepLinkedSessionID: pendingDeepLinkedSessionID
-        )
-        persistLastSelectedSession()
-        guard let session else { return }
-        await openSession(session)
-    }
-
     private func persistLastSelectedSession() {
         SessionNavigationPersistence.save(navigationState.lastSelectedSessionID, for: server)
     }
 
 }
-
-private extension View {
-    @ViewBuilder
-    func minimizingSearchToolbar(_ minimizes: Bool) -> some View {
-        if #available(iOS 26, *) {
-            // Keeping the navigation bar up stops the list jumping under the search field. Beside the iPhone Duo's
-            // vertical bar the field stays in the list's column, where no other bar actions remain (TAL-1528).
-            searchToolbarBehavior(minimizes ? .minimize : .automatic)
-                .searchPresentationToolbarBehavior(.avoidHidingContent)
-        } else {
-            self
-        }
-    }
-}
-
 
 private struct SessionSearchTaskID: Hashable {
     let query: String
@@ -2145,8 +2209,8 @@ private struct ActiveSessionMonitorTaskID: Hashable {
     let isViewingCachedData: Bool
 }
 
-/// View models a section's list and its item page share, so both columns at regular width read
-/// one load (TAL-643). Rebuilt when the active profile changes, with the screens (TAL-553).
+/// A section root and its pushed pages share one load at both widths (TAL-643).
+/// Rebuilt when the active profile changes, with the screens (TAL-553).
 @MainActor
 private struct SectionViewModels {
     let memory: MemoryViewModel
@@ -2160,18 +2224,19 @@ private struct SectionViewModels {
     }
 }
 
-private enum CompactSectionPage: Hashable {
+private enum CompactPage: Hashable {
+    case session(SessionSummary)
     case item(SectionItem)
-    case providerQuotaWidget
 }
 
-private struct RegularDetailIdentity: Hashable {
-    let rootRevision: Int
-    let item: SectionItem?
-}
-
-private struct RegularSplitIdentity: Hashable {
-    let isFullWidth: Bool
-    let widensForFilesInspector: Bool
-    let revision: Int
+extension View {
+    @ViewBuilder
+    func minimizingSearchToolbar() -> some View {
+        if #available(iOS 26, *) {
+            searchToolbarBehavior(.minimize)
+                .searchPresentationToolbarBehavior(.avoidHidingContent)
+        } else {
+            self
+        }
+    }
 }

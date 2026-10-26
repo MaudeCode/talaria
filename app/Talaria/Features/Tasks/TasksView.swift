@@ -8,15 +8,12 @@ struct TasksView: View {
     @Binding var selection: SectionItem?
     let onAPIError: (Error) -> Void
 
-    @Environment(\.detailHostsListActions) private var detailHostsListActions
 
     var body: some View {
         content
             .navigationTitle("Tasks")
             .toolbar {
-                if !detailHostsListActions {
-                    TasksListActions(viewModel: viewModel, onAPIError: onAPIError)
-                }
+                TasksListActions(viewModel: viewModel, onAPIError: onAPIError)
             }
             .sheet(isPresented: Bindable(viewModel).isPresentingCreateTask) {
                 CronJobEditorSheet(

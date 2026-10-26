@@ -18,6 +18,8 @@ struct ChatTranscriptView: View {
     @Environment(\.openURL) private var openURL
     @State private var scrollPositionController = ChatScrollPositionController(usesLazyLayout: true)
     @State private var initialScrollAnchor: UnitPoint? = .bottom
+    @State private var previousViewportWidth: CGFloat?
+    @State private var preparedWidthChange = false
     @State private var didRestoreReadingRow = false
     @State private var nativeScrollRevision = 0
     @State private var scrollDestination: (id: String, anchor: UnitPoint, animation: Animation?)?
@@ -68,6 +70,7 @@ struct ChatTranscriptView: View {
     let transcriptMessageSpacing: CGFloat
     let transcriptBlockSpacing: CGFloat
     let transcriptBottomInsetHeight: CGFloat
+    var confinesToDivisionPane = false
     /// Bumped by the scroll-to-latest chip above the composer.
     let scrollToBottomRequest: Int
     /// Bumped when a follow blocked by a settling disclosure is due.
@@ -121,6 +124,7 @@ struct ChatTranscriptView: View {
     var onOpenTurnFileDiff: (GitFile) -> Void = { _ in }
     /// Row state the session list keeps across a navigation rebuild, such as expanded disclosures (TAL-1477).
     var retainedRowCache: ChatTranscriptRowCache? = nil
+    var retainedChat: RetainedChat? = nil
     /// The row to reopen at the top, for a reader who had scrolled away from the latest message before the rebuild.
     var restoredReadingRowID: String? = nil
     /// Reports each move of the reader, with the row at the top computed only when asked for, so a rebuild in the
@@ -152,12 +156,18 @@ struct ChatTranscriptView: View {
                     Task { await onLoadMessages() }
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.bottom, transcriptBottomInsetHeight)
         } else if messages.isEmpty && clarificationPrompt == nil {
             ContentUnavailableView {
                 Image(systemName: "bubble.left.and.bubble.right")
             } description: {
                 Text("Send a message to start the conversation.")
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.bottom, transcriptBottomInsetHeight)
             .contentShape(Rectangle())
             .onTapGesture {
                 onDismissKeyboard()
@@ -211,7 +221,11 @@ struct ChatTranscriptView: View {
                                 scrollCommands.scrollTo(id: id, anchor: anchor)
                             }
                         }
-                        scrollPositionController.onPreservationEnded = releaseUnownedRowPins
+                        retainedChat?.widthChangePreparation = (ObjectIdentifier(scrollPositionController), preserveReaderForWidthChange)
+                        scrollPositionController.onPreservationEnded = {
+                            preparedWidthChange = false
+                            releaseUnownedRowPins()
+                        }
                         scrollPositionController.onNativeScrollLayoutComplete = { revision in
                             guard revision == nativeScrollRevision, scrollDestinationNeedsMount,
                                   let destination = scrollDestination,
@@ -228,6 +242,9 @@ struct ChatTranscriptView: View {
                         }
                     }
                     .onDisappear {
+                        if retainedChat?.widthChangePreparation?.owner == ObjectIdentifier(scrollPositionController) {
+                            retainedChat?.widthChangePreparation = nil
+                        }
                         scrollPositionController.onHoldAnchor = nil
                         scrollPositionController.onPreservationEnded = nil
                         scrollPositionController.onNativeScrollLayoutComplete = nil
@@ -243,12 +260,9 @@ struct ChatTranscriptView: View {
                         }
                     }
                     .scrollDismissesKeyboard(.interactively)
-                    .safeAreaInset(edge: .bottom, spacing: 0) {
-                        Color.clear
-                            .frame(height: transcriptBottomInsetHeight)
-                            .accessibilityHidden(true)
-                    }
-                    .adaptiveSoftScrollEdges()
+                    .contentMargins(.bottom, transcriptBottomInsetHeight, for: .scrollContent)
+                    .ignoresSafeArea(.container, edges: confinesToDivisionPane ? [] : .bottom)
+                    .adaptiveSoftScrollEdges(emphasizesTop: true)
                     .simultaneousGesture(
                         TapGesture().onEnded {
                             guard clarificationPrompt == nil else { return }
@@ -256,7 +270,15 @@ struct ChatTranscriptView: View {
                         }
                     )
                 }
+                .frame(width: confinesToDivisionPane ? viewport.size.width : nil,
+                       height: confinesToDivisionPane ? viewport.size.height : nil, alignment: .topLeading)
                 .background(Color(.systemBackground))
+                .onGeometryChange(for: CGFloat.self, of: { max(0, $0.size.width) }) { width in
+                    guard width > 0, width != previousViewportWidth else { return }
+                    if previousViewportWidth != nil, !preparedWidthChange { preserveReaderForWidthChange() }
+                    preparedWidthChange = false
+                    previousViewportWidth = width
+                }
                 .onChange(of: messages.map { [$0.displayExcerpt, $0.activityScene?.finalAnswerExcerpt] }) {
                     guard !shouldFollowLatestMessage else { return }
                     scrollPositionController.holdVisiblePosition {
@@ -337,6 +359,17 @@ struct ChatTranscriptView: View {
     /// Identifies the whole transcript content so a scroll to its top can be
     /// expressed through SwiftUI.
     private var transcriptContentID: String { "chat-transcript-content" }
+
+    private func preserveReaderForWidthChange() {
+        guard !preparedWidthChange else { return }
+        if retainedChat?.readingRowID == nil {
+            onReaderMoved { scrollPositionController.readingAnchorRowID }
+        }
+        scrollPositionController.preserveForWidthChange(isFollowingLatest: isFollowingLatestContent)
+        pinnedRowIDs = scrollPositionController.realizedRowsNearViewport
+        if let id = scrollPositionController.preservationAnchorRowID { pinnedRowIDs.insert(id) }
+        preparedWidthChange = scrollPositionController.isPreservingPosition
+    }
 
     /// A tapped row is about to grow or shrink. Pin the reader to that row's top
     /// so a default anchor SwiftUI re-applies on the size change (seen at the
@@ -438,13 +471,25 @@ struct ChatTranscriptView: View {
                         contentRevision: historyLayoutRevision,
                         nativeScrollRevision: nativeScrollRevision,
                         onFollowEvent: { event in
+                            if case .contentScrolled(_, let isUserScrolling, _, _) = event, !isUserScrolling,
+                               (restoredReadingRowID != nil && !didRestoreReadingRow
+                                || scrollPositionController.isNavigating || scrollPositionController.isPreservingPosition
+                                || scrollPositionController.isUserInteracting) {
+                                // Initial bottom anchoring and width compensation are not a reader returning to the live edge.
+                                return
+                            }
                             if case .userScrollBegin = event {
                                 initialScrollAnchor = nil
                                 scrollDestination = nil
                                 scrollDestinationNeedsMount = false
                             }
                             onFollowEvent(event)
-                            onReaderMoved { scrollPositionController.readingAnchorRowID }
+                            switch event {
+                            case .reset, .userScrollBegin, .userScrollEnd,
+                                 .contentScrolled(_, true, _, _), .contentScrolled(_, false, true, _):
+                                onReaderMoved { scrollPositionController.readingAnchorRowID }
+                            default: break
+                            }
                         }
                     ) { metrics in
                         isHistoryNearTop = scrollPositionController.shouldPrefetchHistory()

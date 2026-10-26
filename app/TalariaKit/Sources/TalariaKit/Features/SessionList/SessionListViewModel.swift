@@ -880,7 +880,7 @@ public final class SessionListViewModel {
         modelContext: ModelContext? = nil,
         animation: Animation? = nil
     ) async -> Bool {
-        await changeSession(session, label: pinned ? String(localized: "Pin") : String(localized: "Unpin"), modelContext: modelContext, animation: animation) { id in
+        await changeSession(session, label: pinned ? String(localized: "Pin") : String(localized: "Unpin"), pinned: pinned, modelContext: modelContext, animation: animation) { id in
             try await self.sessionMutator.setPinned(pinned, sessionID: id)
         }
     }
@@ -1455,7 +1455,9 @@ public final class SessionListViewModel {
         provider: String? = nil,
         projectID: String? = nil,
         executionMode: ExecutionMode? = nil,
-        requestID: String? = nil
+        requestID: String? = nil,
+        settings: ChatDraftSettings? = nil,
+        enabledToolsets: [String]? = nil
     ) async -> ChatSessionStartResult {
         var didRequestCreation = false
         isCreatingSession = true
@@ -1465,10 +1467,10 @@ public final class SessionListViewModel {
 
         do {
             let workspaces = try await client.workspaces()
-            let workspace = workspaces.last ?? workspaces.workspaces?.compactMap(\.path).first
+            let workspace = settings?.workspacePath ?? workspaces.last ?? workspaces.workspaces?.compactMap(\.path).first
             let requestedProvider = Self.nonEmpty(provider)
             let requestedModel: ModelCatalogOption?
-            if let requestedProvider,
+            if settings?.modelID == nil, let requestedProvider,
                let models = try? await client.models() {
                 requestedModel = models.catalogGroups
                     .first(where: { $0.providerID == requestedProvider })?
@@ -1480,10 +1482,11 @@ public final class SessionListViewModel {
             didRequestCreation = true
             let response = try await client.createSession(
                 workspace: workspace,
-                model: requestedModel?.id,
-                modelProvider: requestedModel?.providerID,
-                profile: Self.nonEmpty(profile),
+                model: settings?.modelID ?? requestedModel?.id,
+                modelProvider: settings?.modelProviderID ?? requestedModel?.providerID,
+                profile: Self.nonEmpty(settings?.profileName) ?? Self.nonEmpty(profile),
                 projectID: Self.nonEmpty(projectID),
+                enabledToolsets: enabledToolsets,
                 executionMode: executionMode,
                 requestID: requestID
             )
@@ -1767,6 +1770,7 @@ public final class SessionListViewModel {
         _ session: SessionSummary,
         label: String,
         title: String? = nil,
+        pinned: Bool? = nil,
         removing: Bool = false,
         moving: Bool = false,
         clearTranscript: Bool = false,
@@ -1785,7 +1789,7 @@ public final class SessionListViewModel {
         let scope = resourceGeneration
         var released = false
         defer { if !released && scope == resourceGeneration { endSessionMutation(id) } }
-        return await changeResource(key: "session:\(id)", label: label, title: title, releaseAfterWrite: offerUndo, isMoving: moving, awaitsSessionSnapshot: reload && !offerUndo) {
+        return await changeResource(key: "session:\(id)", label: label, title: title, pinned: pinned, releaseAfterWrite: offerUndo, reconcileFailure: pinned != nil, isMoving: moving, awaitsSessionSnapshot: reload && !offerUndo) {
             try await operation(id)
         } confirmed: { _ in
             self.metadataVersions[id, default: 0] += 1
@@ -1807,6 +1811,7 @@ public final class SessionListViewModel {
         label: String,
         title: String? = nil,
         color: String? = nil,
+        pinned: Bool? = nil,
         releaseAfterWrite: Bool = false,
         reconcileFailure: Bool = false,
         isMoving: Bool = false,
@@ -1817,7 +1822,7 @@ public final class SessionListViewModel {
     ) async -> Bool {
         guard !isViewingCachedData, !isSwitchingActiveProfile, pendingChanges[key] == nil else { return false }
         let scope = resourceGeneration
-        let change = PendingResourceChange(label: label, title: title, color: color, isMoving: isMoving)
+        let change = PendingResourceChange(label: label, title: title, color: color, pinned: pinned, isMoving: isMoving)
         pendingChanges[key] = change
         actionErrorMessage = nil
         lastError = nil
@@ -1888,6 +1893,7 @@ public struct PendingResourceChange: Equatable {
     public let label: String
     public let title: String?
     public let color: String?
+    public var pinned: Bool? = nil
     var isMoving = false
     public internal(set) var requiresRefresh = false
     var snapshotClaim: Int? = nil

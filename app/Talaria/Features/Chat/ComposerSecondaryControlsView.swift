@@ -226,6 +226,7 @@ struct ComposerStripScrollRow<Content: View>: View {
     @ViewBuilder let content: Content
 
     @State private var edgeFades = ComposerStripEdgeFades(leading: false, trailing: false)
+    @Environment(\.layoutDirection) private var layoutDirection
 
     var body: some View {
         ScrollView(.horizontal) {
@@ -255,6 +256,7 @@ struct ComposerStripScrollRow<Content: View>: View {
                     .frame(width: edgeFades.trailing ? edgeFadeWidth : 0)
             }
         }
+        .clipShape(PaneEdgeClip())
     }
 
     private var edgeFadeWidth: CGFloat { 18 }

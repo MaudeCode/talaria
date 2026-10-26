@@ -739,10 +739,13 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             // "new chat in <profile>" entry point pinned the session (TAL-77).
             let body = requestJSON(request)
             let requestedProfile = body["profile"] as? String
-            let created = session(
+            var created = session(
                 id: newSessionID,
                 title: requestedProfile.map { "New Fixture Chat (\($0))" } ?? "New Fixture Chat"
             )
+            for key in ["model", "model_provider", "workspace", "enabled_toolsets"] {
+                if let value = body[key] { created[key] = value }
+            }
             if let mode = body["execution_mode"] as? String {
                 return json(["session": diagnosticSession(created, mode: mode)])
             }
@@ -919,6 +922,9 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                 title: index == 0 ? sessionTitle : String(format: "Fixture Session %02d", index)
             )
         }.filter { !archivedIDs.contains($0["session_id"] as? String ?? "") }
+        if ProcessInfo.processInfo.arguments.contains("--ui-test-scheduled-sessions") {
+            for index in sessions.indices { sessions[index]["source_kind"] = "cron" }
+        }
         if ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.runMonitorArgument) {
             // The server lists active sessions first (TAL-306).
             var active: [[String: Any]] = []

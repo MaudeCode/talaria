@@ -1,22 +1,35 @@
 import Foundation
 
 /// The part of the app the drawer opened. At regular width (iPad, the iPhone Duo inner display)
-/// it decides what each split-view column shows; compact width pushes the same lists (TAL-643).
+/// its root and inner pages are shared with compact width.
 public enum AppSection: Hashable {
     case chats
     case archived
     case scheduled
     case webhook
-    case settings
     case memory
     case skills
     case tasks
     case kanban
     case insights
 
-    public init(_ utility: SessionListUtilityDestination) {
+    public var title: String {
+        switch self {
+        case .chats: String(localized: "Chats")
+        case .archived: String(localized: "Archived Chats")
+        case .scheduled: String(localized: "Scheduled sessions")
+        case .webhook: String(localized: "Webhook sessions")
+        case .memory: String(localized: "Memory")
+        case .skills: String(localized: "Skills")
+        case .tasks: String(localized: "Tasks")
+        case .kanban: String(localized: "Kanban")
+        case .insights: String(localized: "Insights")
+        }
+    }
+
+    public init?(_ utility: SessionListUtilityDestination) {
         switch utility {
-        case .settings, .providerQuotaWidgetSettings: self = .settings
+        case .settings, .providerQuotaWidgetSettings: return nil
         case .providers, .insights: self = .insights
         case .tasks: self = .tasks
         case .kanban: self = .kanban
@@ -25,31 +38,6 @@ public enum AppSection: Hashable {
         case .archived: self = .archived
         case .scheduled: self = .scheduled
         case .webhook: self = .webhook
-        }
-    }
-
-    /// Kanban and Insights have no list of their own, so they hide the sidebar column.
-    public var isFullWidth: Bool {
-        self == .kanban || self == .insights
-    }
-
-    /// The chat lists other than Chats. Their sidebar leads back to Chats, and a chat opened from
-    /// one keeps that list beside it.
-    public var chatList: SessionListUtilityDestination? {
-        switch self {
-        case .archived: .archived
-        case .scheduled: .scheduled
-        case .webhook: .webhook
-        default: nil
-        }
-    }
-
-    /// The item the regular-width detail column shows before the user picks one.
-    public var defaultItem: SectionItem? {
-        switch self {
-        case .settings: SettingsCategory.rootCategories.first.map { .settings(.category($0)) }
-        case .memory: .memory(.section(.memory))
-        default: nil
         }
     }
 }
@@ -92,27 +80,68 @@ public enum RegularSplitLayout {
     }
 }
 
-/// An item a section's list selects. Its page shows beside the list at regular width and is
-/// pushed over it at compact width. Device-local UI state, never sent to the server.
+/// One device-local decision for the split column, drawer and toolbar ownership.
+public struct SidebarPresentation: Equatable {
+    public enum ToggleTarget: Equatable { case column, drawer }
+
+    public let isLandscape: Bool
+    public let tiled: Bool
+    public let showsColumn: Bool
+    public let columnIsForced: Bool
+    public let drawerEnabled: Bool
+    public let overlaysContent: Bool
+    public let hostsSidebarActionsInDetail: Bool
+    public let toggleTarget: ToggleTarget
+    /// Whether the Files inspector can sit beside the chat at all: regular width, no fold through the split, and
+    /// room for the chat. A Files tap opens the inspector only when this holds; otherwise it pushes the browser.
+    public let filesInspectorFits: Bool
+    public let showsFilesInspector: Bool
+    public let dismissesFilesInspector: Bool
+
+    public init(isRegularWidth: Bool, splitSize: CGSize, hasVerticalBar: Bool, storedChoice: Bool,
+                drawerIsPresented: Bool = false, columnIsVisible: Bool = false,
+                hidesSidebarColumn: Bool = false, hasVerticalDivision: Bool = false,
+                filesInspectorPresented: Bool = false, filesInspectorIsEligible: Bool = true,
+                filesInspectorOpeningIsLandscape: Bool? = nil) {
+        isLandscape = Self.isLandscape(splitSize)
+        columnIsForced = isRegularWidth && hasVerticalDivision
+        tiled = isRegularWidth && (columnIsForced || (isLandscape && splitSize.width >= 900))
+        // Rotation consumes this explicit presentation; a Files tap can reopen it in the new layout.
+        filesInspectorFits = isRegularWidth && !hasVerticalDivision
+            && splitSize.width >= RegularSplitLayout.filesInspectorChatWidth
+        showsFilesInspector = filesInspectorPresented && filesInspectorIsEligible && filesInspectorFits
+            && (filesInspectorOpeningIsLandscape == nil || filesInspectorOpeningIsLandscape == isLandscape)
+        dismissesFilesInspector = filesInspectorPresented && !showsFilesInspector
+        let filesNeedsRoom = showsFilesInspector && RegularSplitLayout.hidesSidebarForFilesInspector(splitWidth: splitSize.width)
+        showsColumn = columnIsForced || (tiled && storedChoice && !hidesSidebarColumn && !filesNeedsRoom && !drawerIsPresented)
+        drawerEnabled = !tiled && !columnIsVisible
+        overlaysContent = isRegularWidth
+        hostsSidebarActionsInDetail = tiled && hasVerticalBar
+        toggleTarget = tiled ? .column : .drawer
+    }
+
+    public static func isLandscape(_ size: CGSize) -> Bool {
+        size.height > 0 && size.width > size.height
+    }
+
+    /// Leaving a tiled layout consumes its native primary column, including a late UIKit visibility report.
+    public func requiresColumnCollapse(previouslyTiled: Bool, nativeColumnIsVisible: Bool) -> Bool {
+        !tiled && (previouslyTiled || nativeColumnIsVisible)
+    }
+}
+
+/// A page pushed within the current section root at either width. Device-local UI state.
 public enum SectionItem: Hashable {
-    case settings(SettingsPane)
     case memory(MemoryFile)
     case skill(id: String)
     case task(id: String)
-
-    init?(entering utility: SessionListUtilityDestination) {
-        switch utility {
-        case .settings(let anchor?): self = .settings(.category(anchor.category))
-        case .providerQuotaWidgetSettings: self = .settings(.category(.liveActivitiesAndWidgets))
-        default: return nil
-        }
-    }
 }
 
 /// A row of the Settings root list.
 public enum SettingsPane: Hashable {
     case userProfile
     case appleAccount
+    case providerQuotaWidget
     case category(SettingsCategory)
 }
 

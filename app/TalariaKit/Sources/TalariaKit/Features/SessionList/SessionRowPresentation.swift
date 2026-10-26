@@ -13,14 +13,10 @@ public enum SessionRowPresentation {
         session.isStreaming == true
     }
 
-    public static func metadataLabel(
-        for session: SessionSummary,
-        showsMessageCount: Bool,
-        showsWorkspace: Bool
-    ) -> String? {
+    public static func metadataLabel(for session: SessionSummary) -> String? {
         let parts = [
-            messageCountLabel(for: session, showsMessageCount: showsMessageCount),
-            workspaceLabel(for: session, showsWorkspace: showsWorkspace)
+            messageCountLabel(for: session),
+            workspaceLabel(for: session)
         ].compactMap(\.self)
 
         return parts.isEmpty ? nil : parts.joined(separator: " • ")
@@ -50,7 +46,8 @@ public enum SessionRowPresentation {
 
     public static func accessibilityStateLabels(
         for session: SessionSummary,
-        isViewingCachedData: Bool
+        isViewingCachedData: Bool,
+        pinned: Bool? = nil
     ) -> [String] {
         var labels: [String] = []
 
@@ -58,7 +55,7 @@ public enum SessionRowPresentation {
             labels.append(String(localized: "Streaming"))
         }
 
-        if session.pinned == true {
+        if (pinned ?? session.pinned) == true {
             labels.append(String(localized: "Pinned"))
         }
 
@@ -69,16 +66,14 @@ public enum SessionRowPresentation {
         return labels
     }
 
-    private static func messageCountLabel(for session: SessionSummary, showsMessageCount: Bool) -> String? {
-        guard showsMessageCount else { return nil }
+    private static func messageCountLabel(for session: SessionSummary) -> String? {
         guard let count = session.messageCount, count >= 0 else { return nil }
         return String(localized: "\(count) messages")
     }
 
     /// The server names the workspace (TAL-303); a row without a name shows none.
-    private static func workspaceLabel(for session: SessionSummary, showsWorkspace: Bool) -> String? {
-        guard showsWorkspace,
-              let name = session.workspaceName?.trimmingCharacters(in: .whitespacesAndNewlines),
+    private static func workspaceLabel(for session: SessionSummary) -> String? {
+        guard let name = session.workspaceName?.trimmingCharacters(in: .whitespacesAndNewlines),
               !name.isEmpty
         else {
             return nil

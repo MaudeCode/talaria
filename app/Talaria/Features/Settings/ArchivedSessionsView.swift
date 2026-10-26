@@ -14,8 +14,6 @@ struct ArchivedSessionsView: View {
     @Environment(\.openArchivedSession) private var openArchivedSession
     @State private var viewModel: ArchivedSessionsViewModel
     @State private var openedSession: SessionSummary?
-    @AppStorage(SessionRowDisplaySettings.showMessageCountKey) private var showsSessionMessageCount = true
-    @AppStorage(SessionRowDisplaySettings.showWorkspaceKey) private var showsSessionWorkspace = true
     @AppStorage(AppHaptics.isEnabledKey) private var isHapticsEnabled = true
 
     init(server: URL, onAPIError: @escaping (Error) -> Void, selectedSessionID: String? = nil) {
@@ -115,8 +113,6 @@ struct ArchivedSessionsView: View {
             } label: {
                 SessionRowView(
                     session: session,
-                    showsMessageCount: showsSessionMessageCount,
-                    showsWorkspace: showsSessionWorkspace
                 )
             }
             .buttonStyle(.plain)

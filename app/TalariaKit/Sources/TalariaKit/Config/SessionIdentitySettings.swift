@@ -42,8 +42,6 @@ public enum SessionIdentitySettings {
 }
 
 public enum SessionRowDisplaySettings {
-    public static let showMessageCountKey = "sessionRow.showMessageCount"
-    public static let showWorkspaceKey = "sessionRow.showWorkspace"
     // Cron, webhook, and CLI sessions default to shown; delegated subagents default to
     // hidden. Each kind has an independent visibility control.
     public static let showCronSessionsKey = "sessionRow.showCronSessions"

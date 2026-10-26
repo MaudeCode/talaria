@@ -37,3 +37,11 @@ public enum ChatMotion {
         reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top))
     }
 }
+
+extension Transaction {
+    public static var unanimated: Transaction {
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        return transaction
+    }
+}

@@ -4,15 +4,15 @@ import TalariaKit
 extension EnvironmentValues {
     /// The Duo's tent pose holds (TAL-1460): running and waiting rows render as run cards.
     @Entry var sessionRowsMonitorRuns = false
+    @Entry var sessionRowStyle = SessionRowStyle.regular
 }
 
 struct SessionInteractiveRow: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.sessionRowsMonitorRuns) private var monitorsRuns
+    @Environment(\.sessionRowStyle) private var rowStyle
     let viewModel: SessionListViewModel
     let session: SessionSummary
-    let showsMessageCount: Bool
-    let showsWorkspace: Bool
     let selectedSessionID: String?
     let actions: SessionListRowActions
     var searchText = ""
@@ -31,6 +31,12 @@ struct SessionInteractiveRow: View {
             }
             .contextMenu {
                 if !viewModel.isSelectingSessions {
+                    if canEnterSelection {
+                        Button { viewModel.beginSelectingSessions() } label: {
+                            Label("Select Chats…", systemImage: "checkmark.circle")
+                        }
+                        .disabled(selectionIsDisabled)
+                    }
                     SessionRowContextMenu(
                         session: session,
                         projects: viewModel.projects,
@@ -45,7 +51,18 @@ struct SessionInteractiveRow: View {
                     )
                 }
             }
+            .accessibilityActions {
+                if canEnterSelection, !selectionIsDisabled {
+                    Button("Select Chats…") { viewModel.beginSelectingSessions() }
+                }
+            }
     }
+
+    private var canEnterSelection: Bool {
+        rowStyle == .sidebar && viewModel.supportsBulkActions && !viewModel.isSelectingSessions
+    }
+
+    private var selectionIsDisabled: Bool { viewModel.isViewingCachedData || viewModel.isPerformingBulkAction }
 
     /// A run card keeps Stop beside the button that opens the chat, so VoiceOver reaches it and tapping it stops the
     /// run instead of opening the chat.
@@ -59,7 +76,7 @@ struct SessionInteractiveRow: View {
                 }
             }
         } else {
-            openButton(style: .regular)
+            openButton(style: rowStyle)
         }
     }
 
@@ -80,8 +97,6 @@ struct SessionInteractiveRow: View {
                 }
                 SessionRowView(
                     session: session,
-                    showsMessageCount: showsMessageCount,
-                    showsWorkspace: showsWorkspace,
                     isViewingCachedData: viewModel.isViewingCachedData,
                     matchPreview: viewModel.contentMatchPreview(for: session, searchText: searchText),
                     searchText: searchText,

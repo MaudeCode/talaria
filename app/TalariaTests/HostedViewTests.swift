@@ -8,6 +8,34 @@ import TalariaKit
 /// tree, activating one runs its action, and the in-process fixture answers the App's requests.
 @MainActor
 final class HostedViewTests: XCTestCase {
+    func testNativePrimaryActionRunsOnceAndDisabledItemsDoNotRun() {
+        var invocations = 0
+        let item = UIBarButtonItem(primaryAction: UIAction(title: "Fixture action") { _ in invocations += 1 })
+        XCTAssertTrue(HostedAccessibility.activate(item))
+        XCTAssertEqual(invocations, 1)
+        item.isEnabled = false
+        XCTAssertFalse(HostedAccessibility.activate(item))
+        XCTAssertEqual(invocations, 1)
+    }
+
+    func testCoveredNavigationPagesDoNotSupplyToolbarActions() throws {
+        let root = UIViewController()
+        root.navigationItem.rightBarButtonItem = UIBarButtonItem(primaryAction: UIAction(title: "Covered action") { _ in })
+        let top = UIViewController()
+        var invocations = 0
+        top.navigationItem.rightBarButtonItem = UIBarButtonItem(primaryAction: UIAction(title: "Visible action") { _ in invocations += 1 })
+        let window = try hostWindow(Color.clear)
+        let navigation = UINavigationController(rootViewController: root)
+        window.rootViewController = navigation
+        navigation.pushViewController(top, animated: false)
+        window.layoutIfNeeded()
+        settle()
+        XCTAssertNil(HostedAccessibility.toolbarItem("Covered action", in: window))
+        let action = try XCTUnwrap(HostedAccessibility.toolbarItem("Visible action", in: window))
+        XCTAssertTrue(HostedAccessibility.activate(action))
+        XCTAssertEqual(invocations, 1)
+    }
+
     func testAlertActionWaitsForManualDismissalBeforeRequestingAnotherWarning() throws {
         let alert = UIAlertController(title: "Model warning", message: nil, preferredStyle: .alert)
         var refreshRequests = 0

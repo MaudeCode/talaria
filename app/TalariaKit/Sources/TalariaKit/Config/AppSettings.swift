@@ -162,8 +162,6 @@ public enum SectionVisibilitySettings {
     public static let skillsKey = "sectionVisibility.skills"
     public static let memoryKey = "sectionVisibility.memory"
     public static let insightsKey = "sectionVisibility.insights"
-    public static let activeProfileKey = "sectionVisibility.activeProfile"
-    public static let projectsKey = "sectionVisibility.projects"
     public static let chatFilesKey = "sectionVisibility.chatFiles"
     public static let chatGitKey = "sectionVisibility.chatGit"
 

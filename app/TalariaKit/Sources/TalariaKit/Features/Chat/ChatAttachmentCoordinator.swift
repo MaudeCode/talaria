@@ -38,6 +38,9 @@ final class ChatAttachmentCoordinator {
     private var stagingCount = 0
     private var generation = 0
     private var stagedContexts: [UUID: String] = [:]
+    private var startupAttachmentIDs = Set<UUID>()
+    var composerAttachments: [PendingAttachment] { pendingAttachments.filter { !startupAttachmentIDs.contains($0.id) } }
+    var sessionStartupAttachments: [PendingAttachment] { pendingAttachments.filter { startupAttachmentIDs.contains($0.id) } }
     private var uploadingIDs = Set<UUID>()
     private var isDraining = false
     private(set) var uploadStartGeneration = 0
@@ -46,7 +49,7 @@ final class ChatAttachmentCoordinator {
 
     var isUploadingAttachment: Bool {
         stagingCount > 0
-            || pendingAttachments.contains { $0.uploadPhase == .staged || $0.uploadPhase == .uploading }
+            || pendingAttachments.contains { $0.uploadPhase == .uploading || ($0.uploadPhase == .staged && delegate?.attachmentSessionID != nil) }
     }
 
     var uploadInFlightCount: Int {
@@ -176,6 +179,7 @@ final class ChatAttachmentCoordinator {
 
     /// Called once after a selection is staged, preserving the existing sequential upload policy.
     func uploadStagedAttachments(ids: [UUID]? = nil) async {
+        guard delegate?.attachmentSessionID != nil else { return }
         let selected = Set(ids ?? pendingAttachments.map(\.id))
         for index in pendingAttachments.indices where selected.contains(pendingAttachments[index].id) && pendingAttachments[index].uploadPhase == .staged {
             pendingAttachments[index].uploadPhase = .uploading
@@ -185,6 +189,13 @@ final class ChatAttachmentCoordinator {
         defer { isDraining = false }
         while let id = pendingAttachments.first(where: { $0.uploadPhase == .uploading && !uploadingIDs.contains($0.id) })?.id {
             _ = await retryAttachment(id: id)
+        }
+    }
+
+    /// Creating the first session transfers this composer's locally staged files, without changing their identities.
+    func adoptSessionContext(from previous: String) {
+        for id in pendingAttachments.map(\.id) where stagedContexts[id] == previous {
+            stagedContexts[id] = delegate?.attachmentContextID
         }
     }
 
@@ -268,13 +279,17 @@ final class ChatAttachmentCoordinator {
         let thumbnail = draftAttachment.isImage ? await ImagePreviewDownsampler.previewDataAsync(
             from: data, maxPixelSize: ImagePreviewDownsampler.attachmentMaxPixelSize
         ) : nil
+        // A new chat has no session to upload against until its first send: the record stays a staged local
+        // file, and the send's staged-upload drain carries it once the created session is adopted.
+        let hasSession = delegate?.attachmentSessionID != nil
         let staged = PendingAttachment(
             id: draftAttachment.id, name: draftAttachment.name, path: "local-attachment:\(draftAttachment.id)", mime: draftAttachment.mime,
             size: draftAttachment.size, isImage: draftAttachment.isImage, thumbnailData: thumbnail,
-            draftFileName: file, uploadPhase: .uploading
+            draftFileName: file, uploadPhase: hasSession ? .uploading : .staged
         )
         setPendingAttachment(staged)
         stagedContexts[staged.id] = delegate?.attachmentContextID
+        guard hasSession else { return staged }
         return await retryAttachment(id: staged.id, data: data, reportsErrors: false)
     }
 
@@ -395,11 +410,13 @@ final class ChatAttachmentCoordinator {
     func clearPendingAttachments() {
         generation += 1
         stagedContexts.removeAll()
+        startupAttachmentIDs.removeAll()
         pendingAttachments.removeAll()
         setUploadAttachmentError(nil)
     }
 
     func removePendingAttachment(id: UUID) {
+        startupAttachmentIDs.remove(id)
         let file = pendingAttachments.first(where: { $0.id == id })?.draftFileName
         stagedContexts[id] = nil
         if uploadErrorAttachmentID == id { setUploadAttachmentError(nil) }
@@ -473,7 +490,8 @@ final class ChatAttachmentCoordinator {
     }
 
     /// Sends `queued` files when given (a queued message's own), leaving the composer's staged files alone.
-    func prepareForSend(_ queued: [PendingAttachment]? = nil, localMessageID: String) -> ChatAttachmentSendPreparation {
+    func prepareForSend(_ queued: [PendingAttachment]? = nil, localMessageID: String,
+                        keepsPendingAttachments: Bool = false) -> ChatAttachmentSendPreparation {
         let attachmentsForSend = queued ?? pendingAttachments
         let messageAttachments = attachmentsForSend.map { pending in
             MessageAttachment(
@@ -496,8 +514,13 @@ final class ChatAttachmentCoordinator {
         }
 
         if queued == nil {
-            for attachment in attachmentsForSend { stagedContexts[attachment.id] = nil }
-            pendingAttachments.removeAll()
+            if keepsPendingAttachments {
+                startupAttachmentIDs.formUnion(attachmentsForSend.map(\.id))
+            } else {
+                for attachment in attachmentsForSend { stagedContexts[attachment.id] = nil }
+                pendingAttachments.removeAll()
+                startupAttachmentIDs.removeAll()
+            }
         }
         return ChatAttachmentSendPreparation(
             attachments: attachmentsForSend,
@@ -507,13 +530,18 @@ final class ChatAttachmentCoordinator {
 
     func restorePendingAttachments(_ attachments: [PendingAttachment]) {
         guard !attachments.isEmpty else { return }
-        pendingAttachments = boundedPendingAttachments(attachments + pendingAttachments)
+        let restoredIDs = Set(attachments.map(\.id))
+        startupAttachmentIDs.subtract(restoredIDs)
+        let current = Dictionary(uniqueKeysWithValues: pendingAttachments.map { ($0.id, $0) })
+        pendingAttachments = boundedPendingAttachments(attachments.map { current[$0.id] ?? $0 }
+            + pendingAttachments.filter { !restoredIDs.contains($0.id) })
     }
 
     func consumePendingAttachments() -> [PendingAttachment] {
         let attachments = pendingAttachments
         for attachment in attachments { stagedContexts[attachment.id] = nil }
         pendingAttachments.removeAll()
+        startupAttachmentIDs.removeAll()
         return attachments
     }
 

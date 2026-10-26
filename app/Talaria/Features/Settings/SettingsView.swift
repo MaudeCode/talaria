@@ -1,20 +1,19 @@
 import SwiftUI
 import TalariaKit
 
-/// The Settings root list. A row selects its page, which the section shows beside the list at
-/// regular width and pushes at compact width (TAL-643).
+/// The category directory at the root of the Settings modal.
 struct SettingsView: View {
     let server: URL
-    @Binding var selection: SectionItem?
+    @Binding var selection: SettingsPane?
 
     var body: some View {
         SidebarList {
-            SectionSelectionRow(item: .settings(.userProfile), selection: $selection) {
+            SectionSelectionRow(item: .userProfile, selection: $selection) {
                 UserProfileSettingsRow(server: server)
             }
             .accessibilityIdentifier("settings-user-profile")
 
-            SectionSelectionRow(item: .settings(.appleAccount), selection: $selection) {
+            SectionSelectionRow(item: .appleAccount, selection: $selection) {
                 AppleAccountSettingsRow()
             }
             .accessibilityHint("Opens Apple account, iCloud sync, and Talaria Relay settings.")
@@ -23,7 +22,7 @@ struct SettingsView: View {
             SidebarSectionHeader(String(localized: "Categories"))
 
             ForEach(SettingsCategory.rootCategories) { category in
-                SectionSelectionRow(item: .settings(.category(category)), selection: $selection) {
+                SectionSelectionRow(item: .category(category), selection: $selection) {
                     Label {
                         Text(category.title)
                     } icon: {
@@ -35,6 +34,7 @@ struct SettingsView: View {
             }
         }
         .navigationTitle("Settings")
+        .adaptiveSecondaryNavigationTitle(title: String(localized: "Settings"))
     }
 }
 
@@ -50,6 +50,8 @@ struct SettingsPaneView: View {
             UserProfileSettingsView(authManager: authManager)
         case .appleAccount:
             AppleAccountSettingsView(authManager: authManager, server: server)
+        case .providerQuotaWidget:
+            ProviderQuotaWidgetAppearanceView()
         case .category(let category):
             categoryPage(category)
         }

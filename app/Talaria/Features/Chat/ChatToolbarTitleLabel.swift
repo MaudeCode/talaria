@@ -7,7 +7,7 @@ struct ChatToolbarTitleLabel: View {
     let subtitle: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 1) {
+        VStack(alignment: .center, spacing: 1) {
             Text(title)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.primary)
@@ -22,8 +22,8 @@ struct ChatToolbarTitleLabel: View {
                     .truncationMode(.middle)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .multilineTextAlignment(.leading)
+        .frame(maxWidth: .infinity, alignment: .center)
+        .multilineTextAlignment(.center)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
     }

@@ -12,6 +12,7 @@ struct PendingNewChatView: View {
     let onAPIError: (Error) -> Void
     let onSessionCreated: (SessionSummary) -> Void
     let initialAttachments: [SharedAttachmentImport]
+    let isExplicit: Bool
     let autoStartsVoiceInput: Bool
     let profileName: String?
     let providerID: String?
@@ -19,10 +20,11 @@ struct PendingNewChatView: View {
     let executionMode: ExecutionMode?
     let draftStore: ChatDraftStore
     let splitFilesInspector: SplitFilesInspector?
+    @State private var retained: RetainedChat
 
     @State private var createdSession: SessionSummary?
     @State private var createdDetail: SessionDetail?
-    /// One diagnostic creation's identity (TAL-1045): Retry after a lost response gets back the chat the owner made.
+    /// One creation identity across retries and layout handoffs; the server deduplicates diagnostic creations.
     @State private var creationID = UUID().uuidString
     @State private var unconfirmedCreationMessage: String?
     @State private var draftMessage = ""
@@ -34,6 +36,7 @@ struct PendingNewChatView: View {
     init(
         initialDraft: String = "",
         initialAttachments: [SharedAttachmentImport] = [],
+        isExplicit: Bool = true,
         autoStartsVoiceInput: Bool = false,
         profileName: String? = nil,
         providerID: String? = nil,
@@ -44,13 +47,16 @@ struct PendingNewChatView: View {
         onAPIError: @escaping (Error) -> Void,
         onSessionCreated: @escaping (SessionSummary) -> Void = { _ in },
         draftStore: ChatDraftStore? = nil,
-        splitFilesInspector: SplitFilesInspector? = nil
+        splitFilesInspector: SplitFilesInspector? = nil,
+        retained: RetainedChat? = nil,
+        routeID: UUID? = nil
     ) {
         self.server = server
         self.viewModel = viewModel
         self.onAPIError = onAPIError
         self.onSessionCreated = onSessionCreated
         self.initialAttachments = initialAttachments
+        self.isExplicit = isExplicit
         self.autoStartsVoiceInput = autoStartsVoiceInput
         self.profileName = profileName
         self.providerID = providerID
@@ -58,6 +64,15 @@ struct PendingNewChatView: View {
         self.executionMode = executionMode
         self.draftStore = draftStore ?? .shared
         self.splitFilesInspector = splitFilesInspector
+        let provisional = retained?.session ?? SessionSummary(title: String(localized: "New Chat"),
+            modelProvider: providerID, profile: profileName)
+        _retained = State(initialValue: retained ?? RetainedChat(
+            viewModel: ChatView.makeViewModel(session: provisional, server: server, sessionListOwner: viewModel),
+            session: provisional))
+        _provisionalSession = State(initialValue: provisional)
+        _createdSession = State(initialValue: provisional.sessionId == nil ? nil : provisional)
+        _didStartConversation = State(initialValue: retained?.didStartConversation ?? false)
+        _creationID = State(initialValue: routeID?.uuidString ?? UUID().uuidString)
         _draftMessage = State(initialValue: initialDraft)
     }
 
@@ -70,11 +85,13 @@ struct PendingNewChatView: View {
             initialAttachments: initialAttachments,
             loadsInitialMessages: false,
             autoStartsVoiceInput: autoStartsVoiceInput,
+            isExplicitNewChat: isExplicit,
             draftStore: draftStore,
             restoresDraftSettings: true,
             startSession: createSession,
             onConversationStarted: markConversationStarted,
-            splitFilesInspector: splitFilesInspector
+            splitFilesInspector: splitFilesInspector,
+            retained: retained
         )
         .onChange(of: scenePhase) {
             if scenePhase != .active {
@@ -99,7 +116,9 @@ struct PendingNewChatView: View {
             provider: providerID,
             projectID: projectID,
             executionMode: executionMode,
-            requestID: creationID
+            requestID: creationID,
+            settings: retained.viewModel.newSessionSettings,
+            enabledToolsets: retained.viewModel.sessionToolsets?.names
         )
         guard !Task.isCancelled else { return .failed(String(localized: "Chat creation was cancelled.")) }
         let session: SessionSummary
@@ -117,6 +136,7 @@ struct PendingNewChatView: View {
             return .failed(message, canRetry: canRetry, error: error)
         }
         SessionHaptics.sessionCreated(isEnabled: isHapticsEnabled)
+        retained.session = session
         onSessionCreated(session)
         createdSession = session
         return .started(session, detail: createdDetail)
@@ -138,6 +158,7 @@ struct PendingNewChatView: View {
 
     private func markConversationStarted() {
         didStartConversation = true
+        retained.didStartConversation = true
     }
 
     private func restoreAbandonedDraftIfNeeded() {

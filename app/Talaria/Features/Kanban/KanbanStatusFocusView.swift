@@ -4,6 +4,7 @@ import TalariaKit
 struct KanbanStatusFocusView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.divisionRegionGeometry) private var divisionGeometry
+    @State private var hasVerticalBar = false
     @Bindable var model: KanbanFeatureState
     @State private var showsFilters = false
     @State private var showsBoardManagement = false
@@ -70,6 +71,7 @@ struct KanbanStatusFocusView: View {
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $model.searchText, prompt: Text("Search Cards"))
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { barWidth = $0 }
+        .onToolbarVerticalEdgeChange { hasVerticalBar = $0 }
         .toolbar { toolbarContent }
         .sheet(isPresented: $showsFilters) {
             KanbanFiltersView(model: model)
@@ -1203,7 +1205,8 @@ struct KanbanStatusFocusView: View {
                 HStack(spacing: 4) {
                     Text(model.selectedBoard?.name ?? model.selectedBoardSlug ?? String(localized: "Board"))
                         .lineLimit(1)
-                        .frame(maxWidth: toolbarLayout.boardNameWidth, alignment: .leading)
+                        .frame(maxWidth: hasVerticalBar ? max(0, barWidth - toolbarControlWidth - 80) : toolbarLayout.boardNameWidth,
+                               alignment: .center)
                     Image(systemName: "chevron.down")
                         .font(.caption2)
                 }

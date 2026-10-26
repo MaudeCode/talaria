@@ -1,33 +1,121 @@
 import SwiftUI
+import UIKit
 import TalariaKit
 
-/// Files in the inspector beside a wide chat (TAL-479). The inspector sits inside the chat's
-/// navigation stack, and SwiftUI links inside it, even in a nested `NavigationStack` or hosting
-/// controller, push onto that stack and replace the chat. A navigation controller of its own
-/// pushes each opened file inside the inspector instead.
+extension EnvironmentValues {
+    @Entry var workspaceSurface = Color(.systemBackground)
+}
+
+/// Files owns its navigation controller so previews push inside the inspector, beside the chat.
 struct FilesInspectorContent: UIViewControllerRepresentable {
     let session: SessionSummary
     let server: URL
     let onAPIError: (Error) -> Void
+    let onClose: () -> Void
+    let isPresented: Bool
 
-    func makeUIViewController(context: Context) -> UINavigationController {
-        let navigation = UINavigationController()
-        let browser = FileBrowserView(session: session, server: server, onAPIError: onAPIError) { [weak navigation] entry in
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeUIViewController(context: Context) -> NavigationController {
+        let navigation = NavigationController()
+        navigation.inspectorIsPresented = isPresented
+        navigation.view.backgroundColor = .secondarySystemBackground
+        let appearance = UINavigationBarAppearance()
+        appearance.configureWithTransparentBackground()
+        appearance.shadowColor = .clear
+        navigation.navigationBar.standardAppearance = appearance
+        navigation.navigationBar.scrollEdgeAppearance = appearance
+        navigation.navigationBar.compactAppearance = appearance
+        navigation.navigationBar.compactScrollEdgeAppearance = appearance
+        navigation.navigationBar.isTranslucent = true
+        let browser = FileBrowserView(
+            session: session, server: server, onAPIError: onAPIError,
+            inspectorSearch: context.coordinator
+        ) { [weak navigation] entry in
             let preview = FilePreviewView(session: session, server: server, entry: entry, onAPIError: onAPIError)
-            navigation?.pushViewController(UIHostingController(rootView: preview), animated: true)
+            navigation?.pushViewController(Self.host(preview, appearance: appearance), animated: true)
         }
-        navigation.viewControllers = [UIHostingController(rootView: browser)]
+        let host = Self.host(browser, appearance: appearance)
+        host.navigationItem.title = String(localized: "Files")
+        host.navigationItem.largeTitleDisplayMode = .never
+        let search = UISearchController(searchResultsController: nil)
+        search.searchBar.placeholder = String(localized: "Search files")
+        search.obscuresBackgroundDuringPresentation = false
+        search.searchResultsUpdater = context.coordinator
+        host.navigationItem.searchController = search
+        host.definesPresentationContext = true
+        if #available(iOS 26, *) {
+            host.navigationItem.preferredSearchBarPlacement = .integratedButton
+            host.navigationItem.searchBarPlacementAllowsToolbarIntegration = false
+        }
+        let close = UIBarButtonItem(image: UIImage(systemName: "xmark"), primaryAction: UIAction { _ in onClose() })
+        close.accessibilityLabel = String(localized: "Close Files")
+        host.navigationItem.rightBarButtonItems = [close]
+        navigation.viewControllers = [host]
         return navigation
     }
 
-    // The chat recreates its inspector for another session, so nothing here changes in place.
-    func updateUIViewController(_ controller: UINavigationController, context: Context) {}
+    /// Browser and every pushed page use the same full-height inspector surface. The column already
+    /// excludes the window toolbar; neither its trailing nor bottom inset should shrink a hosted page.
+    private static func host(_ content: some View, appearance: UINavigationBarAppearance) -> UIViewController {
+        let host = UIHostingController(rootView: content
+            .environment(\.workspaceSurface, Color(.secondarySystemBackground))
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color(.secondarySystemBackground).ignoresSafeArea())
+            .ignoresSafeArea(.container, edges: [.trailing, .bottom])
+            .toolbarBackground(.hidden, for: .navigationBar))
+        host.view.backgroundColor = .secondarySystemBackground
+        host.navigationItem.standardAppearance = appearance
+        host.navigationItem.scrollEdgeAppearance = appearance
+        host.navigationItem.compactAppearance = appearance
+        host.navigationItem.compactScrollEdgeAppearance = appearance
+        return host
+    }
+
+    // The detail column recreates the inspector for another session.
+    func updateUIViewController(_ controller: NavigationController, context: Context) {
+        controller.inspectorIsPresented = isPresented
+        controller.reconcilePresentation()
+    }
+
+    /// Extends the inspector's existing navigation controller to consume the same presentation decision
+    /// after UIKit restores its column during rotation. This changes no SwiftUI navigation identity.
+    final class NavigationController: UINavigationController {
+        var inspectorIsPresented = false
+        private var isReconciling = false
+
+        override func viewDidLayoutSubviews() {
+            super.viewDidLayoutSubviews()
+            reconcilePresentation()
+        }
+
+        func reconcilePresentation() {
+            guard #available(iOS 26, *), let split = splitViewController else { return }
+            // The outer split also owns the reserved vertical-bar background.
+            split.view.backgroundColor = inspectorIsPresented ? .secondarySystemBackground : .systemBackground
+            guard !inspectorIsPresented, !isReconciling, split.isShowing(.inspector) else { return }
+            isReconciling = true
+            UIView.performWithoutAnimation { split.hide(.inspector) }
+            isReconciling = false
+        }
+    }
+
+    @Observable
+    final class Coordinator: NSObject, UISearchResultsUpdating {
+        var searchText = ""
+
+        func updateSearchResults(for searchController: UISearchController) {
+            searchText = searchController.searchBar.text ?? ""
+        }
+    }
 }
 
 struct FileBrowserView: View {
     let onAPIError: (Error) -> Void
     /// Opens a file in place of a navigation link, for a host that pushes it itself.
     private let onOpenFile: ((WorkspaceEntry) -> Void)?
+    @Environment(\.workspaceSurface) private var background
+    private let inspectorSearch: FilesInspectorContent.Coordinator?
     /// The directory the browser opens at, and where it reports each one it shows, for a host that keeps it (TAL-1458).
     private let initialPath: String
     private let onPathChange: ((String) -> Void)?
@@ -43,6 +131,7 @@ struct FileBrowserView: View {
         onAPIError: @escaping (Error) -> Void,
         initialPath: String = ".",
         onPathChange: ((String) -> Void)? = nil,
+        inspectorSearch: FilesInspectorContent.Coordinator? = nil,
         onOpenFile: ((WorkspaceEntry) -> Void)? = nil
     ) {
         self.session = session
@@ -51,24 +140,41 @@ struct FileBrowserView: View {
         self.initialPath = initialPath
         self.onPathChange = onPathChange
         self.onOpenFile = onOpenFile
+        self.inspectorSearch = inspectorSearch
         _viewModel = State(initialValue: FileBrowserViewModel(session: session, server: server))
     }
 
     var body: some View {
+        Group {
+            if inspectorSearch != nil {
+                if #available(iOS 26, *) {
+                    browserSurface.scrollEdgeEffectHidden(true, for: .top)
+                } else {
+                    browserSurface
+                }
+            } else {
+                browserSurface
+                    .navigationTitle("Files")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .searchable(text: $searchText, placement: .toolbar, prompt: "Search files")
+                    .minimizingSearchToolbar()
+            }
+        }
+        .task { await loadInitialRootIfNeeded() }
+        .onChange(of: viewModel.currentPath) { _, path in onPathChange?(path) }
+    }
+
+    private var browserSurface: some View {
         VStack(spacing: 0) {
             pathHeader
-            searchBar
-
             content
                 .adaptiveReadableScrollContent(maxWidth: AdaptiveReadableContentWidth.workspace)
         }
-            .navigationTitle("Files")
-            .navigationBarTitleDisplayMode(.inline)
-            .task {
-                await loadInitialRootIfNeeded()
-            }
-            .onChange(of: viewModel.currentPath) { _, path in onPathChange?(path) }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(background.ignoresSafeArea())
     }
+
+    private var query: String { inspectorSearch?.searchText ?? searchText }
 
     @ViewBuilder
     private var content: some View {
@@ -87,13 +193,13 @@ struct FileBrowserView: View {
             }
         } else if visibleEntries.isEmpty {
             ContentUnavailableView {
-                Label(searchText.isEmpty ? "No Files" : "No Matches", systemImage: searchText.isEmpty ? "folder" : "magnifyingglass")
+                Label(query.isEmpty ? "No Files" : "No Matches", systemImage: query.isEmpty ? "folder" : "magnifyingglass")
             } description: {
-                if searchText.isEmpty {
+                if query.isEmpty && !viewModel.isAtRoot {
                     Text(viewModel.currentPath)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
-                } else {
+                } else if !query.isEmpty {
                     Text("Try a different file name or path.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
@@ -101,30 +207,36 @@ struct FileBrowserView: View {
             }
         } else {
             List(visibleEntries) { entry in
-                if entry.isBrowsableDirectory {
-                    Button {
-                        Task { await load(path: entry.path ?? ".") }
-                    } label: {
-                        FileBrowserRow(entry: entry, showsDisclosure: true)
-                    }
-                    .buttonStyle(.plain)
-                } else if entry.path != nil, let onOpenFile {
-                    Button {
-                        onOpenFile(entry)
-                    } label: {
-                        FileBrowserRow(entry: entry, showsDisclosure: true)
-                    }
-                    .buttonStyle(.plain)
-                } else if entry.path != nil {
-                    NavigationLink {
-                        FilePreviewView(session: session, server: server, entry: entry, onAPIError: onAPIError)
-                    } label: {
+                Group {
+                    if entry.isBrowsableDirectory {
+                        Button {
+                            Task { await load(path: entry.path ?? ".") }
+                        } label: {
+                            FileBrowserRow(entry: entry, showsDisclosure: true)
+                        }
+                        .buttonStyle(.plain)
+                    } else if entry.path != nil, let onOpenFile {
+                        Button {
+                            onOpenFile(entry)
+                        } label: {
+                            FileBrowserRow(entry: entry, showsDisclosure: true)
+                        }
+                        .buttonStyle(.plain)
+                    } else if entry.path != nil {
+                        NavigationLink {
+                            FilePreviewView(session: session, server: server, entry: entry, onAPIError: onAPIError)
+                        } label: {
+                            FileBrowserRow(entry: entry, showsDisclosure: false)
+                        }
+                    } else {
                         FileBrowserRow(entry: entry, showsDisclosure: false)
                     }
-                } else {
-                    FileBrowserRow(entry: entry, showsDisclosure: false)
                 }
+                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+                .listRowBackground(Color.clear)
             }
+            .scrollContentBackground(.hidden)
+            .environment(\.defaultMinListRowHeight, 44)
             .refreshable {
                 await reloadCurrentPath()
             }
@@ -166,130 +278,40 @@ struct FileBrowserView: View {
     }
 
     private var pathHeader: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("Location")
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.secondary)
-
-                Text(viewModel.displayPath)
-                    .font(.caption)
-                    .fontDesign(.monospaced)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .foregroundStyle(.primary)
-
-                Spacer(minLength: 8)
-            }
-
-            HStack(spacing: 8) {
-                // Icons alone when the titles cannot fit whole in their share of the row, as at
-                // accessibility text sizes; the labels still name them for VoiceOver (TAL-466).
-                ViewThatFits(in: .horizontal) {
-                    rootAndUpButtons
-                    rootAndUpButtons.labelStyle(.iconOnly)
-                }
-
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        ForEach(Array(viewModel.breadcrumbs.enumerated()), id: \.element.id) { index, breadcrumb in
-                            if index > 0 {
-                                Image(systemName: "chevron.forward")
-                                    .font(.caption2)
-                                    .foregroundStyle(.tertiary)
-                                    .accessibilityHidden(true)
-                            }
-
-                            Button {
-                                Task { await load(path: breadcrumb.path) }
-                            } label: {
-                                Text(breadcrumb.title)
-                                    .font(.caption)
-                                    .lineLimit(1)
-                            }
-                            .disabled(breadcrumb.path == viewModel.currentPath)
-                            .accessibilityLabel("Open \(breadcrumb.title)")
-                        }
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(Array(viewModel.breadcrumbs.enumerated()), id: \.element.id) { index, breadcrumb in
+                    if index > 0 {
+                        Image(systemName: "chevron.forward")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                            .accessibilityHidden(true)
                     }
-                    .frame(height: 30)
+                    Button {
+                        Task { await load(path: breadcrumb.path) }
+                    } label: {
+                        Text(breadcrumb.title)
+                            .font(.caption)
+                            .lineLimit(1)
+                    }
+                    .disabled(breadcrumb.path == viewModel.currentPath)
+                    .accessibilityLabel("Open \(breadcrumb.title)")
                 }
-                .frame(height: 30)
-                .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
+            .frame(height: 30)
+            .padding(.horizontal, 16)
         }
-        .padding(.horizontal)
-        .padding(.vertical, 10)
-        .background(Color(.systemBackground))
-    }
-
-    private var rootAndUpButtons: some View {
-        HStack(spacing: 8) {
-            Button {
-                Task { await loadRoot() }
-            } label: {
-                Label("Root", systemImage: "house")
-            }
-            .disabled(viewModel.isAtRoot)
-
-            Button {
-                guard let parentPath = viewModel.parentPath else { return }
-                Task { await load(path: parentPath) }
-            } label: {
-                Label("Up", systemImage: "arrow.up")
-            }
-            .disabled(viewModel.parentPath == nil)
-        }
-    }
-
-    private var searchBar: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            TextField("Search files", text: $searchText)
-                .font(.subheadline)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-
-            if !searchText.isEmpty {
-                Button {
-                    searchText = ""
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Clear file search")
-            }
-        }
-        .padding(.horizontal, 12)
-        .frame(height: 40)
-        .background(Color(.tertiarySystemFill).opacity(0.5), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .padding(.horizontal)
-        .padding(.bottom, 10)
-        .background(Color(.systemBackground))
-        .overlay(alignment: .bottom) {
-            Divider()
-        }
+        .frame(height: 30)
+        .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
     }
 
     private var visibleEntries: [WorkspaceEntry] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let query = self.query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return viewModel.entries }
 
         return viewModel.entries.filter { entry in
             entry.searchableText.localizedCaseInsensitiveContains(query)
         }
-    }
-
-    private func loadRoot() async {
-        await viewModel.loadRoot()
-        handleLastError()
     }
 
     private func loadInitialRootIfNeeded() async {

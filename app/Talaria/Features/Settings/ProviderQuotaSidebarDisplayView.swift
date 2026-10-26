@@ -11,7 +11,7 @@ struct ProviderQuotaSidebarDisplayView: View {
 
     var body: some View {
         Form {
-            Section("Content") {
+            Section("Quotas Group") {
                 Picker("Detail", selection: $detailRawValue) {
                     ForEach(ProviderQuotaSidebarDetail.allCases) { detail in
                         Text(detail.title).tag(detail.rawValue)
@@ -28,10 +28,11 @@ struct ProviderQuotaSidebarDisplayView: View {
             Section {
                 Toggle("Color by State", isOn: $colorsByState)
             } footer: {
-                Text("Sidebar rows remain the same height. These controls only choose which compact presentation fields are shown.")
+                Text("Pinned accounts appear in the Quotas group below the sidebar destinations. Rows stay the same height; these controls choose their detail, rail and icon.")
             }
         }
-        .navigationTitle("Sidebar Display")
+        .navigationTitle("Sidebar Quotas")
+        .adaptiveSecondaryNavigationTitle(title: String(localized: "Sidebar Quotas"))
         .navigationBarTitleDisplayMode(.inline)
     }
 }

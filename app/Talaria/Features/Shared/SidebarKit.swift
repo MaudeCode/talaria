@@ -1,31 +1,52 @@
 import SwiftUI
 import TalariaKit
 
-/// A section-list row that selects its item. The item's page shows beside the list at regular
-/// width and is pushed over it at compact width (TAL-643).
-struct SectionSelectionRow<Label: View>: View {
-    let item: SectionItem
-    @Binding var selection: SectionItem?
-    @ViewBuilder let label: Label
+/// One selectable row for section lists and the sidebar panel, including optional leading content and chevron.
+struct SectionSelectionRow<Label: View, Icon: View>: View {
+    let isSelected: Bool
+    let isListRow: Bool
+    let showsChevron: Bool
+    let action: () -> Void
+    let icon: Icon
+    let label: Label
+
+    init(isSelected: Bool, isListRow: Bool = true, showsChevron: Bool = true,
+         action: @escaping () -> Void, @ViewBuilder icon: () -> Icon, @ViewBuilder label: () -> Label) {
+        self.isSelected = isSelected
+        self.isListRow = isListRow
+        self.showsChevron = showsChevron
+        self.action = action
+        self.icon = icon()
+        self.label = label()
+    }
 
     var body: some View {
-        Button {
-            selection = item
-        } label: {
-            HStack(spacing: 8) {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                icon
                 label
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.forward")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-                    .accessibilityHidden(true)
+                if showsChevron {
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.forward")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                        .accessibilityHidden(true)
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .sidebarRowPadding()
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .foregroundStyle(.primary)
-        .sidebarRow(isSelected: selection == item)
+        .foregroundStyle(isSelected ? Color.accentColor : .primary)
+        .sidebarRow(isSelected: isSelected, isListRow: isListRow)
+    }
+}
+
+extension SectionSelectionRow where Icon == EmptyView {
+    init<Item: Hashable>(item: Item, selection: Binding<Item?>, @ViewBuilder label: () -> Label) {
+        self.init(isSelected: selection.wrappedValue == item,
+                  action: { selection.wrappedValue = item }, icon: { EmptyView() }, label: label)
     }
 }
 
@@ -53,6 +74,8 @@ struct SidebarList<Content: View>: View {
 /// A section heading inside a `SidebarList`, styled like Chats' "Sessions".
 struct SidebarSectionHeader<Trailing: View>: View {
     let title: String?
+    var topPadding: CGFloat = 16
+    var isCompact = false
     /// Makes the heading a button, for a collapsible section.
     var toggle: (() -> Void)?
     @ViewBuilder let trailing: Trailing
@@ -77,16 +100,18 @@ struct SidebarSectionHeader<Trailing: View>: View {
         HStack(spacing: 10) {
             if let title {
                 Text(title)
-                    .font(.title3.bold())
-                    .foregroundStyle(.primary)
+                    .font(isCompact ? .footnote.weight(.semibold) : .title3.bold())
+                    .foregroundStyle(isCompact ? Color.secondary : .primary)
+                    .textCase(nil)
                     .accessibilityAddTraits(.isHeader)
             }
             Spacer()
             trailing
         }
+        .frame(minHeight: isCompact && toggle != nil ? 24 : 0)
         .padding(.horizontal, 24)
-        .padding(.top, 16)
-        .padding(.bottom, 8)
+        .padding(.top, isCompact ? 16 : topPadding)
+        .padding(.bottom, isCompact ? 4 : 8)
     }
 }
 
@@ -151,13 +176,18 @@ extension View {
             .frame(minHeight: 44)
     }
 
-    /// A `SidebarList` row's insets and selection tint, with the trait VoiceOver reads.
-    func sidebarRow(isSelected: Bool) -> some View {
-        background(
+    /// The shared selection chrome and VoiceOver trait, with optional List-specific insets.
+    @ViewBuilder
+    func sidebarRow(isSelected: Bool, isListRow: Bool = true) -> some View {
+        let row = background(
             isSelected ? Color.accentColor.opacity(0.12) : Color.clear,
             in: RoundedRectangle(cornerRadius: 12, style: .continuous)
         )
         .accessibilityAddTraits(isSelected ? .isSelected : [])
-        .sessionsScreenListRow(insets: EdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12))
+        if isListRow {
+            row.sessionsScreenListRow(insets: EdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12))
+        } else {
+            row
+        }
     }
 }

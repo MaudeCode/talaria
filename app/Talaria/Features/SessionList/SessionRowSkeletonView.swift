@@ -6,8 +6,6 @@ struct SessionRowSkeletonView: View {
     @ScaledMetric(relativeTo: .body) private var verticalPadding: CGFloat = 8
 
     let configuration: SessionRowSkeletonConfiguration
-    let showsMessageCount: Bool
-    let showsWorkspace: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: rowContentSpacing) {
@@ -72,8 +70,8 @@ struct SessionRowSkeletonView: View {
 
     private var metadataLabel: String? {
         let parts = [
-            showsMessageCount ? configuration.messageCount : nil,
-            showsWorkspace ? configuration.workspace : nil
+            configuration.messageCount,
+            configuration.workspace
         ].compactMap(\.self)
 
         return parts.isEmpty ? nil : parts.joined(separator: " • ")

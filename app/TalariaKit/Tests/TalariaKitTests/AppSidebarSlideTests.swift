@@ -23,6 +23,16 @@ final class AppSidebarSlideTests: XCTestCase {
         }
     }
 
+    func testFullWidthOverlayClosesTowardItsOriginIncludingBothInsets() {
+        let full = AppSidebarSlide(revealWidth: 382, leadingInset: 12, presentsOver: true, trailingInset: 72)
+        XCTAssertEqual(full.sidebarOffset(progress: 1), 0)
+        XCTAssertEqual(full.sidebarOffset(progress: 0), -466)
+        for progress in [0, 0.25, 0.5, 0.75, 1] as [CGFloat] {
+            XCTAssertEqual(full.surfaceOffset(progress: progress), 0)
+            XCTAssertEqual(full.progress(movingOffset: full.sidebarOffset(progress: progress)), progress, accuracy: 1e-9)
+        }
+    }
+
     func testOffsetMapsBackToProgress() {
         for progress in [0, 0.25, 0.5, 1] as [CGFloat] {
             let pushed = push.surfaceOffset(progress: progress)

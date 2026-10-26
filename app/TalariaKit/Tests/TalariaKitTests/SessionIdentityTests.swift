@@ -48,7 +48,7 @@ final class SessionIdentityTests: XCTestCase {
         XCTAssertFalse(SessionRowPresentation.isActiveStreaming(SessionSummary(sessionId: "blank-stream", activeStreamId: "   ")))
     }
 
-    func testSessionRowMetadataLabelUsesVisiblePartsAndTheServerWorkspaceName() {
+    func testSessionRowMetadataLabelUsesMessageCountAndTheServerWorkspaceName() {
         let session = SessionSummary(
             sessionId: "metadata",
             workspace: "/Users/example/talaria-main",
@@ -57,37 +57,26 @@ final class SessionIdentityTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            SessionRowPresentation.metadataLabel(for: session, showsMessageCount: true, showsWorkspace: true),
+            SessionRowPresentation.metadataLabel(for: session),
             "2 messages • Talaria"
-        )
-        XCTAssertEqual(
-            SessionRowPresentation.metadataLabel(for: session, showsMessageCount: true, showsWorkspace: false),
-            "2 messages"
-        )
-        XCTAssertEqual(
-            SessionRowPresentation.metadataLabel(for: session, showsMessageCount: false, showsWorkspace: true),
-            "Talaria"
         )
         // A row from a server that predates `workspace_name` shows no workspace rather than the folder name (TAL-303).
         XCTAssertEqual(
             SessionRowPresentation.metadataLabel(
-                for: SessionSummary(sessionId: "older", workspace: "/Users/example/talaria-main", messageCount: 2),
-                showsMessageCount: true,
-                showsWorkspace: true
+                for: SessionSummary(sessionId: "older", workspace: "/Users/example/talaria-main", messageCount: 2)
             ),
             "2 messages"
         )
     }
 
-    func testSessionRowMetadataLabelOmitsHiddenOrUnavailableParts() {
+    func testSessionRowMetadataLabelOmitsUnavailableParts() {
         let session = SessionSummary(
             sessionId: "metadata-empty",
             workspace: "   ",
             messageCount: -1
         )
 
-        XCTAssertNil(SessionRowPresentation.metadataLabel(for: session, showsMessageCount: true, showsWorkspace: true))
-        XCTAssertNil(SessionRowPresentation.metadataLabel(for: session, showsMessageCount: false, showsWorkspace: false))
+        XCTAssertNil(SessionRowPresentation.metadataLabel(for: session))
     }
 
     func testSessionRowAccessibilityStateLabelsIncludeStreamingPinnedAndCachedState() {
@@ -216,34 +205,22 @@ final class SessionSidebarDisclosureSettingsTests: XCTestCase {
     }
 
     func testDisclosureStatesDefaultToCollapsedWhenUnset() {
-        XCTAssertNil(defaults.object(forKey: SessionSidebarDisclosureSettings.profilesAreExpandedKey))
-        XCTAssertNil(defaults.object(forKey: SessionSidebarDisclosureSettings.projectsAreExpandedKey))
         XCTAssertNil(defaults.object(forKey: SessionSidebarDisclosureSettings.scheduledSessionsAreExpandedKey))
         XCTAssertNil(defaults.object(forKey: SessionSidebarDisclosureSettings.webhookSessionsAreExpandedKey))
-        XCTAssertFalse(SessionSidebarDisclosureSettings.profilesAreExpanded(in: defaults))
-        XCTAssertFalse(SessionSidebarDisclosureSettings.projectsAreExpanded(in: defaults))
         XCTAssertFalse(SessionSidebarDisclosureSettings.scheduledSessionsAreExpanded(in: defaults))
         XCTAssertFalse(SessionSidebarDisclosureSettings.webhookSessionsAreExpanded(in: defaults))
     }
 
     func testDisclosureStatesRoundTripThroughUserDefaults() {
-        defaults.set(true, forKey: SessionSidebarDisclosureSettings.profilesAreExpandedKey)
-        defaults.set(false, forKey: SessionSidebarDisclosureSettings.projectsAreExpandedKey)
         defaults.set(true, forKey: SessionSidebarDisclosureSettings.scheduledSessionsAreExpandedKey)
         defaults.set(true, forKey: SessionSidebarDisclosureSettings.webhookSessionsAreExpandedKey)
 
-        XCTAssertTrue(SessionSidebarDisclosureSettings.profilesAreExpanded(in: defaults))
-        XCTAssertFalse(SessionSidebarDisclosureSettings.projectsAreExpanded(in: defaults))
         XCTAssertTrue(SessionSidebarDisclosureSettings.scheduledSessionsAreExpanded(in: defaults))
         XCTAssertTrue(SessionSidebarDisclosureSettings.webhookSessionsAreExpanded(in: defaults))
 
-        defaults.set(false, forKey: SessionSidebarDisclosureSettings.profilesAreExpandedKey)
-        defaults.set(true, forKey: SessionSidebarDisclosureSettings.projectsAreExpandedKey)
         defaults.set(false, forKey: SessionSidebarDisclosureSettings.scheduledSessionsAreExpandedKey)
         defaults.set(false, forKey: SessionSidebarDisclosureSettings.webhookSessionsAreExpandedKey)
 
-        XCTAssertFalse(SessionSidebarDisclosureSettings.profilesAreExpanded(in: defaults))
-        XCTAssertTrue(SessionSidebarDisclosureSettings.projectsAreExpanded(in: defaults))
         XCTAssertFalse(SessionSidebarDisclosureSettings.scheduledSessionsAreExpanded(in: defaults))
         XCTAssertFalse(SessionSidebarDisclosureSettings.webhookSessionsAreExpanded(in: defaults))
     }
@@ -397,8 +374,6 @@ final class SectionVisibilitySettingsTests: XCTestCase {
         SectionVisibilitySettings.skillsKey,
         SectionVisibilitySettings.memoryKey,
         SectionVisibilitySettings.insightsKey,
-        SectionVisibilitySettings.activeProfileKey,
-        SectionVisibilitySettings.projectsKey,
         SectionVisibilitySettings.chatFilesKey,
         SectionVisibilitySettings.chatGitKey
     ]
@@ -457,37 +432,15 @@ final class SidebarSectionVisibilityTests: XCTestCase {
         XCTAssertTrue(visibility.skills)
         XCTAssertTrue(visibility.memory)
         XCTAssertTrue(visibility.insights)
-        XCTAssertTrue(visibility.activeProfile)
-        XCTAssertTrue(visibility.projects)
-        XCTAssertTrue(visibility.showsAnyUtilityLink)
     }
 
-    func testUtilityLinkRowSurvivesWhileAnySingleLinkIsShown() {
+    func testDestinationFlagsAreIndependent() {
         var visibility = SidebarSectionVisibility.showAll
         visibility.tasks = false
-        visibility.kanban = false
-        visibility.skills = false
-        visibility.memory = false
-
-        XCTAssertTrue(visibility.showsAnyUtilityLink)
-    }
-
-    func testUtilityLinkRowDropsOnlyWhenAllFiveAreHidden() {
-        var visibility = SidebarSectionVisibility.showAll
-        visibility.tasks = false
-        visibility.kanban = false
-        visibility.skills = false
-        visibility.memory = false
-        visibility.insights = false
-
-        XCTAssertFalse(visibility.showsAnyUtilityLink)
-    }
-
-    func testProfileAndProjectRowsDoNotAffectTheUtilityLinkRow() {
-        var visibility = SidebarSectionVisibility.showAll
-        visibility.activeProfile = false
-        visibility.projects = false
-
-        XCTAssertTrue(visibility.showsAnyUtilityLink)
+        XCTAssertFalse(visibility.tasks)
+        XCTAssertTrue(visibility.kanban)
+        XCTAssertTrue(visibility.skills)
+        XCTAssertTrue(visibility.memory)
+        XCTAssertTrue(visibility.insights)
     }
 }

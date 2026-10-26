@@ -137,7 +137,7 @@ struct TalariaApp: App {
         // fatal there too. The offline cache is device-local: the CloudKit
         // entitlement (TAL-91 configuration sync) must not turn on SwiftData's
         // automatic mirroring, which also rejects the cache's unique keys.
-        var cacheConfiguration = ModelConfiguration(isStoredInMemoryOnly: usesUITestFixture, cloudKitDatabase: .none)
+        let cacheConfiguration = ModelConfiguration(isStoredInMemoryOnly: usesUITestFixture, cloudKitDatabase: .none)
         let cacheContainer = try! ModelContainer(
             for: CachedSession.self, CachedMessage.self,
             configurations: cacheConfiguration

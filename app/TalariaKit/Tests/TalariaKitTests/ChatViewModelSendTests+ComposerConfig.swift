@@ -698,29 +698,30 @@ extension ChatViewModelSendTests {
     }
 
     @MainActor
-    func testSelectingCustomComposerModelWithNilSessionIDIsBlocked() async throws {
-        let session = SessionSummary(
-            sessionId: nil,
-            title: "Planning",
-            workspace: "/tmp/workspace",
-            model: "gpt-5.4",
-            modelProvider: "openai",
-            profile: "work"
-        )
+    func testSelectingCustomComposerModelBeforeFirstSendStaysLocal() async throws {
+        let session = SessionSummary(title: "New Chat", workspace: "/tmp/workspace", profile: "work")
+        var paths: [String] = []
         let viewModel = try makeViewModel(sessionSummary: session) { request in
-            XCTFail("Selecting a composer model without a session ID must not call \(request.url?.path ?? "nil").")
-            throw URLError(.badURL)
+            paths.append(request.url?.path ?? "")
+            switch request.url?.path {
+            case "/api/profiles": return apiTestJSONResponse(#"{"active":"work","profiles":[{"name":"work"}]}"#, for: request)
+            case "/api/models": return apiTestJSONResponse(#"{"groups":[],"default_model":"gpt-5.4"}"#, for: request)
+            case "/api/workspaces": return apiTestJSONResponse(#"{"workspaces":[{"path":"/tmp/workspace"}]}"#, for: request)
+            case "/api/reasoning": return apiTestJSONResponse(#"{"reasoning_effort":"medium"}"#, for: request)
+            case "/api/commands": return apiTestJSONResponse(#"{"commands":[]}"#, for: request)
+            default: XCTFail("Choosing a draft model must not mutate or create: \(request.url?.path ?? "nil")"); throw URLError(.badURL)
+            }
         }
-
-        await viewModel.selectComposerModel(ModelCatalogOption(
-            id: "moonshotai/kimi-k2-0905",
-            displayName: "moonshotai/kimi-k2-0905",
-            providerID: "openrouter"
-        ))
-
-        XCTAssertEqual(viewModel.selectedModelID, "gpt-5.4")
-        XCTAssertEqual(viewModel.selectedModelProviderID, "openai")
-        XCTAssertEqual(viewModel.composerConfigurationErrorMessage, "The server did not provide a session ID.")
+        let chosen = await viewModel.selectComposerModel(ModelCatalogOption(
+            id: "fixture/custom-model", displayName: "Fixture Custom", providerID: "fixture-provider"))
+        XCTAssertTrue(chosen)
+        XCTAssertFalse(viewModel.hasSession)
+        XCTAssertEqual(viewModel.selectedModelID, "fixture/custom-model")
+        XCTAssertEqual(viewModel.newSessionSettings.modelID, "fixture/custom-model")
+        XCTAssertEqual(viewModel.newSessionSettings.modelProviderID, "fixture-provider")
+        XCTAssertNil(viewModel.composerConfigurationErrorMessage)
+        XCTAssertFalse(paths.contains("/api/session/new"))
+        XCTAssertFalse(paths.contains("/api/session/update"))
     }
 
     @MainActor

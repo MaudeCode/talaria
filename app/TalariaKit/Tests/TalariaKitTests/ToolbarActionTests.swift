@@ -5,7 +5,8 @@ final class ToolbarActionTests: XCTestCase {
     func testEveryActionHasExactlyTheApprovedPriority() {
         let expected: [ToolbarAction: ToolbarAction.Priority] = [
             .chatGoal: .high, .chatFiles: .high, .chatGit: .standard,
-            .newChat: .high, .drawer: .high, .notifications: .standard,
+            .newChat: .highest, .search: .highest, .drawer: .high, .account: .high,
+            .filters: .standard, .notifications: .high,
             .selectChats: .low, .chatsRefresh: .low,
             .create: .high, .refresh: .standard, .secondary: .low,
             .commit: .high, .done: .high, .share: .low,

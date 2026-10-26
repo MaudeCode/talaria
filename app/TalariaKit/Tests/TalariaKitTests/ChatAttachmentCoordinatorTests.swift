@@ -10,6 +10,55 @@ final class ChatAttachmentCoordinatorTests: APIClientTestCase {
         super.tearDown()
     }
 
+    func testFirstSendOwnsLocalFilesUntilSessionAdoptionUploadsThem() async throws {
+        var requests = 0
+        let client = makeClient { request in
+            requests += 1
+            return apiTestJSONResponse(#"{"path":"/uploads/first.txt","mime":"text/plain","is_image":false}"#, for: request)
+        }
+        let coordinator = ChatAttachmentCoordinator(client: client, draftAttachmentStore: RecordingAttachmentStore())
+        let delegate = ChatAttachmentCoordinatorDelegateSpy()
+        delegate.attachmentSessionID = nil
+        coordinator.delegate = delegate
+        let file = await coordinator.stageAttachment(data: Data("owned fixture bytes".utf8), filename: "first.txt")
+        let staged = try XCTUnwrap(file)
+        await coordinator.uploadStagedAttachments()
+        XCTAssertEqual(requests, 0)
+        XCTAssertFalse(coordinator.isUploadingAttachment)
+        XCTAssertEqual(coordinator.composerAttachments.map(\.id), [staged.id])
+        let pending = coordinator.prepareForSend(localMessageID: "first", keepsPendingAttachments: true)
+        XCTAssertEqual(pending.messageAttachments.map(\.name), ["first.txt"])
+        XCTAssertTrue(coordinator.composerAttachments.isEmpty, "Send moves ownership to the optimistic row")
+        XCTAssertEqual(coordinator.sessionStartupAttachments.map(\.id), [staged.id])
+        delegate.attachmentSessionID = "created"
+        coordinator.adoptSessionContext(from: "")
+        await coordinator.uploadStagedAttachments()
+        XCTAssertEqual(requests, 1)
+        XCTAssertTrue(coordinator.sessionStartupAttachments.allSatisfy(\.isReadyToSend))
+        let post = coordinator.prepareForSend(coordinator.sessionStartupAttachments, localMessageID: "first")
+        XCTAssertEqual(post.messageAttachments.map(\.path), ["/uploads/first.txt"])
+        for file in post.attachments { coordinator.removePendingAttachment(id: file.id) }
+        XCTAssertTrue(coordinator.sessionStartupAttachments.isEmpty)
+    }
+
+    func testFailedCreationReturnsEachOwnedLocalFileToTheComposerOnce() async throws {
+        let coordinator = ChatAttachmentCoordinator(client: makeClient { request in
+            XCTFail("A sessionless file must not upload")
+            throw URLError(.badURL)
+        }, draftAttachmentStore: RecordingAttachmentStore())
+        let delegate = ChatAttachmentCoordinatorDelegateSpy()
+        delegate.attachmentSessionID = nil
+        coordinator.delegate = delegate
+        let file = await coordinator.stageAttachment(data: Data("fixture bytes".utf8), filename: "retry.txt")
+        let staged = try XCTUnwrap(file)
+        let first = coordinator.prepareForSend(localMessageID: "first", keepsPendingAttachments: true)
+        coordinator.restorePendingAttachments(first.attachments)
+        coordinator.restorePendingAttachments(first.attachments)
+        XCTAssertEqual(coordinator.composerAttachments.map(\.id), [staged.id])
+        XCTAssertTrue(coordinator.sessionStartupAttachments.isEmpty)
+        XCTAssertEqual(coordinator.pendingAttachments.count, 1)
+    }
+
     func testAttachmentIsVisibleBeforeUploadCompletes() async throws {
         let started = expectation(description: "upload held")
         let state = DeferredUploadState()
@@ -560,6 +609,36 @@ final class ChatAttachmentCoordinatorTests: APIClientTestCase {
         XCTAssertEqual(restored?.path, "/tmp/workspace/notes.txt")
         XCTAssertNil(coordinator.uploadAttachmentErrorMessage)
         XCTAssertEqual(coordinator.pendingAttachments.map(\.id), [record.id])
+    }
+
+    func testRestoredDraftAttachmentWithoutASessionStaysStagedUntilAdoption() async throws {
+        let record = ChatDraftAttachment(id: UUID(), name: "notes.txt", mime: "text/plain", size: 5, isImage: false, file: "abc-notes.txt")
+        var requests = 0
+        let client = makeClient { request in
+            requests += 1
+            return apiTestJSONResponse(#"{"path":"/uploads/notes.txt","mime":"text/plain","is_image":false}"#, for: request)
+        }
+        let coordinator = ChatAttachmentCoordinator(client: client, draftAttachmentStore: RecordingAttachmentStore())
+        let delegate = ChatAttachmentCoordinatorDelegateSpy()
+        delegate.attachmentSessionID = nil
+        coordinator.delegate = delegate
+
+        let restored = await coordinator.reuploadDraftAttachment(data: Data("notes".utf8), draftAttachment: record)
+
+        XCTAssertEqual(requests, 0, "A new chat has nothing to upload against before its first send")
+        XCTAssertEqual(restored?.id, record.id)
+        XCTAssertEqual(restored?.uploadPhase, .staged)
+        XCTAssertEqual(restored?.draftFileName, "abc-notes.txt")
+        XCTAssertEqual(coordinator.pendingAttachments.map(\.id), [record.id])
+        XCTAssertFalse(coordinator.pendingAttachments.contains { if case .failed = $0.uploadPhase { true } else { false } })
+
+        delegate.attachmentSessionID = "created"
+        coordinator.adoptSessionContext(from: "")
+        await coordinator.uploadStagedAttachments()
+
+        XCTAssertEqual(requests, 1)
+        XCTAssertEqual(coordinator.pendingAttachments.map(\.id), [record.id], "Adoption keeps the draft record's identity")
+        XCTAssertTrue(coordinator.pendingAttachments.allSatisfy(\.isReadyToSend))
     }
 
     func testReuploadDraftAttachmentFailureStaysQuiet() async throws {

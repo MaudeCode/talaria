@@ -19,7 +19,7 @@ struct SessionRowContextMenu: View {
 
         Section("Full Title") {
             Text(fullTitle)
-            if let pendingChange { Text(pendingChange.status) }
+            if let pendingChange, pendingChange.pinned == nil { Text(pendingChange.status) }
 
             Button {
                 UIPasteboard.general.string = fullTitle

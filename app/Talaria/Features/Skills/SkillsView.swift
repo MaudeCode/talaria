@@ -9,16 +9,13 @@ struct SkillsView: View {
     let onAPIError: (Error) -> Void
 
     @State private var searchText = ""
-    @Environment(\.detailHostsListActions) private var detailHostsListActions
 
     var body: some View {
         content
             .adaptiveReadableScrollContent(maxWidth: AdaptiveReadableContentWidth.secondaryDestination)
             .navigationTitle("Skills")
             .toolbar {
-                if !detailHostsListActions {
-                    SkillsListActions(viewModel: viewModel, onAPIError: onAPIError)
-                }
+                SkillsListActions(viewModel: viewModel, onAPIError: onAPIError)
             }
             .task {
                 await loadSkills()

@@ -33,7 +33,7 @@ struct BottomComposerMaterialFade: View {
                 )
             )
         }
-        .ignoresSafeArea(edges: .bottom)
+        .ignoresSafeArea(.container, edges: [.horizontal, .bottom])
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }

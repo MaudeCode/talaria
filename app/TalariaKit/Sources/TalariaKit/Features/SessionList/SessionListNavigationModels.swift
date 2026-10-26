@@ -9,17 +9,13 @@ public struct SidebarSectionVisibility: Equatable {
     public var skills: Bool
     public var memory: Bool
     public var insights: Bool
-    var activeProfile: Bool
-    public var projects: Bool
 
-    public init(tasks: Bool, kanban: Bool, skills: Bool, memory: Bool, insights: Bool, activeProfile: Bool, projects: Bool) {
+    public init(tasks: Bool, kanban: Bool, skills: Bool, memory: Bool, insights: Bool) {
         self.tasks = tasks
         self.kanban = kanban
         self.skills = skills
         self.memory = memory
         self.insights = insights
-        self.activeProfile = activeProfile
-        self.projects = projects
     }
 
     /// Show every row, primarily for previews and tests.
@@ -28,16 +24,9 @@ public struct SidebarSectionVisibility: Equatable {
         kanban: true,
         skills: true,
         memory: true,
-        insights: true,
-        activeProfile: true,
-        projects: true
+        insights: true
     )
 
-    /// The five plain links share one List row, so that row is dropped entirely
-    /// once all of them are hidden rather than leaving an empty padded gap.
-    var showsAnyUtilityLink: Bool {
-        tasks || kanban || skills || memory || insights
-    }
 }
 
 /// Pure, testable backing model for the session-list avatar's long-press server
@@ -73,17 +62,6 @@ public struct AvatarServerSwitcherModel: Equatable {
     }
 }
 
-public enum AppSidebarDestination: Hashable {
-    case chats
-    case tasks
-    case kanban
-    case skills
-    case memory
-    case insights
-    case quota(String)
-    case settings
-}
-
 /// Where the screen and the sidebar sit as the sidebar goes from closed (0) to open (1), in
 /// leading-edge points. The screen slides aside to reveal the sidebar, except beside a vertical
 /// bar: the bar is window chrome that cannot move with the screen, so there the sidebar slides
@@ -92,17 +70,19 @@ public struct AppSidebarSlide: Equatable {
     public var revealWidth: CGFloat
     public var leadingInset: CGFloat
     public var presentsOver: Bool
+    public var trailingInset: CGFloat
 
-    public init(revealWidth: CGFloat, leadingInset: CGFloat, presentsOver: Bool) {
+    public init(revealWidth: CGFloat, leadingInset: CGFloat, presentsOver: Bool, trailingInset: CGFloat = 0) {
         self.revealWidth = revealWidth
         self.leadingInset = leadingInset
         self.presentsOver = presentsOver
+        self.trailingInset = trailingInset
     }
 
     /// How far the moving view travels: the screen by the reveal width, or the sidebar by its
     /// whole width, leading inset included.
     private var travel: CGFloat {
-        presentsOver ? leadingInset + revealWidth : revealWidth
+        presentsOver ? leadingInset + revealWidth + trailingInset : revealWidth
     }
 
     public func surfaceOffset(progress: CGFloat) -> CGFloat {

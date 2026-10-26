@@ -96,6 +96,7 @@ struct MemoryFileView: View {
             }
         }
         .navigationTitle(title)
+        .adaptiveSecondaryNavigationTitle(title: title)
         .toolbar {
             if case .section(let section) = file {
                 ToolbarItem(placement: .topBarTrailing) {

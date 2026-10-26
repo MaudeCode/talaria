@@ -21,14 +21,10 @@ struct ChatsSettingsView: View {
     @AppStorage(StreamedTextAnimationSettings.isEnabledKey) private var isStreamedTextAnimationEnabled = true
     @AppStorage(SectionVisibilitySettings.chatFilesKey) private var showsChatFilesButton = true
     @AppStorage(SectionVisibilitySettings.chatGitKey) private var showsChatGitControls = true
-    @AppStorage(SectionVisibilitySettings.activeProfileKey) private var showsActiveProfileSection = true
-    @AppStorage(SectionVisibilitySettings.projectsKey) private var showsProjectsSection = true
     @AppStorage(ComposerVisibilitySettings.workspaceKey) private var showsComposerWorkspace = true
     @AppStorage(ComposerVisibilitySettings.profileKey) private var showsComposerProfile = true
     @AppStorage(ComposerVisibilitySettings.gitBranchKey) private var showsComposerGitBranch = true
     @AppStorage(ComposerVisibilitySettings.contextUsageKey) private var showsComposerContextUsage = true
-    @AppStorage(SessionRowDisplaySettings.showMessageCountKey) private var showsSessionMessageCount = true
-    @AppStorage(SessionRowDisplaySettings.showWorkspaceKey) private var showsSessionWorkspace = true
     @AppStorage(SessionRowDisplaySettings.showCronSessionsKey) private var showsCronSessions = true
     @AppStorage(SessionRowDisplaySettings.showWebhookSessionsKey)
     private var showsWebhookSessions = SessionRowDisplaySettings.showsWebhookSessions()
@@ -230,40 +226,6 @@ struct ChatsSettingsView: View {
 
                 // swiftlint:disable:next line_length
                 SettingsFootnote(String(localized: "Covers the git menu, composer branch picker, and the turn-end Commit & Push button and File changes recap."))
-            }
-
-            SettingsCard(title: String(localized: "Chat List")) {
-                SettingsToggleRow(
-                    title: String(localized: "Active Profile"),
-                    systemImage: "person.crop.circle",
-                    isOn: $showsActiveProfileSection
-                )
-
-                SettingsDivider()
-
-                SettingsToggleRow(
-                    title: String(localized: "Projects"),
-                    systemImage: "folder.badge.gearshape",
-                    isOn: $showsProjectsSection
-                )
-
-                SettingsDivider()
-
-                SettingsToggleRow(
-                    title: String(localized: "Message Count"),
-                    systemImage: "number",
-                    isOn: $showsSessionMessageCount
-                )
-
-                SettingsDivider()
-
-                SettingsToggleRow(
-                    title: String(localized: "Workspace"),
-                    systemImage: "folder",
-                    isOn: $showsSessionWorkspace
-                )
-
-                SettingsFootnote(String(localized: "Choose which details and filters appear in the chat list."))
             }
 
             SettingsCard(title: String(localized: "Included Chats")) {
