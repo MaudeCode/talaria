@@ -42,10 +42,20 @@ final class ChatHostedTests: XCTestCase {
         }
         let ready = await awaitCondition { retained.hasLoaded }
         XCTAssertTrue(ready, "Chat startup must finish before measuring the list refresh")
-        // Finish row layout before measuring only the list refresh.
-        try await Task.sleep(for: .milliseconds(500))
         _ = try await fixture.client.archiveSession(id: "ui-fixture-session-17", archived: true)
-        let before = retained.rows.realizationCount
+        // Lazy layout can realize another row after startup, especially on CI.
+        var before = retained.rows.realizationCount
+        let clock = ContinuousClock()
+        var lastRealization = clock.now
+        let rowsSettled = await awaitCondition {
+            let count = retained.rows.realizationCount
+            if count != before {
+                before = count
+                lastRealization = clock.now
+            }
+            return clock.now - lastRealization >= .milliseconds(500)
+        }
+        XCTAssertTrue(rowsSettled, "Transcript row realization must be quiet before measuring the list refresh")
         evaluations.reset()
         let loaded = await list.load(modelContext: fixture.cache.mainContext)
         XCTAssertTrue(loaded)
