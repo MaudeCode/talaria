@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 import UIKit
 import TalariaKit
 
@@ -171,6 +172,11 @@ final class SessionActionContext {
     let actions: SessionListRowActions
     let onAPIError: (Error) -> Void
     let filesInspector: SplitFilesInspector
+    var modelContext: ModelContext?
+    var layoutDirection: LayoutDirection = .leftToRight
+    var reduceMotion = false
+    var scenePhase: ScenePhase = .inactive
+    var horizontalSizeClass: UserInterfaceSizeClass?
 
     init(viewModel: SessionListViewModel, actions: SessionListRowActions,
          onAPIError: @escaping (Error) -> Void, filesInspector: SplitFilesInspector) {

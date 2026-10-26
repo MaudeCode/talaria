@@ -17,17 +17,20 @@ struct SessionListView: View {
     @Binding private var opensProviderQuotaWidgetSettings: Bool
     @Binding private var requestedNewChat: NewChatRequest?
 
-    @Environment(\.modelContext) private var modelContext
+    @Environment(\.modelContext) private var observedModelContext
     @Environment(\.horizontalSizeClass) private var observedHorizontalSizeClass
     @Environment(\.verticalSizeClass) private var verticalSizeClass
-    @Environment(\.layoutDirection) private var layoutDirection
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.layoutDirection) private var observedLayoutDirection
+    @Environment(\.accessibilityReduceMotion) private var observedReduceMotion
+    @Environment(\.scenePhase) private var observedScenePhase
     @State private var viewModel: SessionListViewModel
     // Installed once after State bindings are mounted; its immutable handlers share this list's lifetime.
     @State private var sessionActionContext: SessionActionContext?
-    // Cached handlers read the live preference through State, rather than freezing their captured environment.
-    @State private var sessionActionReduceMotion = false
+    // Cached handlers read current environment inputs through the stable, non-observed context.
+    private var modelContext: ModelContext { sessionActionContext?.modelContext ?? observedModelContext }
+    private var layoutDirection: LayoutDirection { sessionActionContext?.layoutDirection ?? observedLayoutDirection }
+    private var reduceMotion: Bool { sessionActionContext?.reduceMotion ?? observedReduceMotion }
+    private var scenePhase: ScenePhase { sessionActionContext?.scenePhase ?? observedScenePhase }
     @State private var quotaViewModel: ProvidersViewModel
     @State private var updateNotificationViewModel: UpdateNotificationCenterViewModel
     @State private var sectionViewModels: SectionViewModels
@@ -51,7 +54,9 @@ struct SessionListView: View {
     @State private var isResumingSidebarLayout = false
     @State private var restoredSidebarIsLandscape: Bool?
     private var horizontalSizeClass: UserInterfaceSizeClass? {
-        appliedSidebarLayout?.sizeClass ?? observedHorizontalSizeClass
+        if let sizeClass = appliedSidebarLayout?.sizeClass { return sizeClass }
+        if let sessionActionContext { return sessionActionContext.horizontalSizeClass }
+        return observedHorizontalSizeClass
     }
     private var splitGeometry: DivisionRegionGeometry { appliedSidebarLayout?.geometry ?? DivisionRegionGeometry() }
     private var regularSplitWidth: CGFloat { splitGeometry.frame.width }
@@ -222,13 +227,12 @@ struct SessionListView: View {
         )
     }
 
-    var body: some View {
+    private var sessionListWithPresentations: some View {
         sidebarLayout
             .environment(\.sessionActions, sessionActionContext)
-            .onChange(of: reduceMotion, initial: true) { _, value in sessionActionReduceMotion = value }
             .onChange(of: viewModel.removingSessionIDs) { _, ids in reconcileRemovedSessionNavigation(ids) }
-            .onChange(of: navigationState.lastSelectedSessionID) { _, sessionID in
-                chats.keepOnly(sessionID: sessionID)
+            .onChange(of: retainedChatSessionIDs) { _, sessionIDs in
+                chats.keepOnly(sessionIDs: sessionIDs)
             }
             .onChange(of: viewModel.activeProfileName) {
                 sectionViewModels = SectionViewModels(server: server)
@@ -359,6 +363,11 @@ struct SessionListView: View {
                 // rebuilds this stack via ContentView's `.id(server)` (#283).
                 AddServerView(authManager: authManager)
             }
+    }
+
+    var body: some View {
+        refreshSessionActionInputs()
+        return sessionListWithPresentations
             .task {
                 // Start the normal refresh immediately so a slow direct session
                 // request cannot leave the sidebar empty. The launch root was already
@@ -433,6 +442,7 @@ struct SessionListView: View {
                         onAPIError: { authManager.handleAPIError($0, server: server) },
                         filesInspector: makeSplitFilesInspector()
                     )
+                    refreshSessionActionInputs()
                 }
                 // TAL-437: the last-known chats, projects and profile show at once; the initial
                 // load then replaces them.
@@ -1856,8 +1866,21 @@ struct SessionListView: View {
         await loadSessions()
     }
 
+    private func refreshSessionActionInputs() {
+        sessionActionContext?.modelContext = observedModelContext
+        sessionActionContext?.layoutDirection = observedLayoutDirection
+        sessionActionContext?.reduceMotion = observedReduceMotion
+        sessionActionContext?.scenePhase = observedScenePhase
+        sessionActionContext?.horizontalSizeClass = observedHorizontalSizeClass
+    }
+
+    private var retainedChatSessionIDs: Set<String> {
+        Set([navigationState.lastSelectedSessionID, navigationState.selectedSessionID,
+             navigationState.selectedSectionSession?.sessionId].compactMap { $0 })
+    }
+
     private var sessionActionAnimation: Animation? {
-        SessionListMotion.sessionMutationAnimation(reduceMotion: sessionActionReduceMotion)
+        SessionListMotion.sessionMutationAnimation(reduceMotion: reduceMotion)
     }
 
     private func loadSessions() async {

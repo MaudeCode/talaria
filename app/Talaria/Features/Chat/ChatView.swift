@@ -1014,6 +1014,9 @@ struct ChatView: View {
                 ChatView(session: session, server: server, onAPIError: onAPIError,
                          sessionListOwner: sessionActions?.viewModel, splitFilesInspector: splitFilesInspector)
             }
+            .onChange(of: forkedSession) { _, fork in
+                if fork == nil { splitFilesInspector?.reportSession(session) }
+            }
             .onChange(of: sessionActions?.viewModel.removingSessionIDs) { _, ids in
                 reconcileRemovedFork(ids ?? [])
             }

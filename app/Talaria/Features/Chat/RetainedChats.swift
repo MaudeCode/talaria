@@ -107,8 +107,13 @@ final class ChatViewModelCache {
         }
     }
 
-    /// Drops every chat but the one navigation shows: a deleted, archived or closed chat is not kept.
-    func keepOnly(sessionID: String?) {
-        entries.removeAll { $0.key.sessionID != sessionID && $0.chat.session?.sessionId != sessionID }
+    /// A removed parent stays while its mounted navigation stack still depends on it.
+    func keepOnly(sessionIDs: Set<String>) {
+        entries.removeAll { entry in
+            guard !sessionIDs.contains(entry.key.sessionID) else { return false }
+            // An empty selection can still show a pending New Chat, which has no server ID yet.
+            guard let sessionID = entry.chat.session?.sessionId else { return !sessionIDs.isEmpty }
+            return !sessionIDs.contains(sessionID)
+        }
     }
 }
