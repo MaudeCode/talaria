@@ -428,7 +428,6 @@ final class SessionListHostedTests: XCTestCase {
             UITestFixtureURLProtocol.answeredPaths.withLock { $0.filter { $0 == "/api/session/new" }.count }
         }
         XCTAssertEqual(creates(), 0)
-        XCTAssertNil(HostedAccessibility.element(in: window, label: "Starting chat…"))
         XCTAssertNil(HostedAccessibility.toolbarItem("New Chat", in: window), "An empty chat needs no detail compose item")
         let files = try await requireElement(in: window, label: "Files")
         XCTAssertTrue(HostedAccessibility.activate(files))
@@ -814,21 +813,28 @@ final class SessionListHostedTests: XCTestCase {
         }
     }
 
-    /// A New Chat whose session fails to start says so in its composer, with Send off, and Retry starts it (TAL-636).
-    func testNewChatReportsAFailedStartInItsComposerAndRetries() async throws {
+    /// A New Chat whose session fails to start says so in an error notice above the composer, and Send starts it
+    /// again with the restored prompt (TAL-1543).
+    func testNewChatReportsAFailedStartInANoticeAndSendRetries() async throws {
         let fixture = try FixtureApp(["--ui-test-refuse-first-session-creation"], for: self)
         let window = try hostWindow(fixture.sessionList())
         try await openSidebar(in: window)
         HostedAccessibility.activate(try await requireElement(in: window, label: "New Chat"))
-        XCTAssertEqual(UITestFixtureURLProtocol.answeredPaths.withLock { $0.filter { $0 == "/api/session/new" }.count }, 0)
+        func count(_ path: String) -> Int { UITestFixtureURLProtocol.answeredPaths.withLock { $0.filter { $0 == path }.count } }
+        XCTAssertEqual(count("/api/session/new"), 0)
         try await sendFromComposer("Synthetic first prompt", in: window)
 
-        let retry = try await requireElement(in: window, label: "Retry", "The composer does not offer Retry after a failed start")
-        let send = HostedAccessibility.element(in: window, label: "Send")
-        XCTAssertTrue(send?.accessibilityTraits.contains(.notEnabled) ?? true, "Send is enabled before the chat started")
-        HostedAccessibility.activate(retry)
-        _ = try await requireElement(in: window, label: "Select model", "Retry did not start the chat")
+        let notice = await awaitElement(in: window) { $0.accessibilityValue == "Error" }
+        XCTAssertNotNil(notice, "The failed start shows as an error notice")
         XCTAssertNil(HostedAccessibility.element(in: window, label: "Retry"))
+        let restored = await awaitCondition { self.composerDraftText(in: window) == "Synthetic first prompt" }
+        XCTAssertTrue(restored)
+        let send = try await requireElement(in: window, label: "Send")
+        XCTAssertFalse(send.accessibilityTraits.contains(.notEnabled), "Send retries a refused start")
+        HostedAccessibility.activate(send)
+        let sent = await awaitCondition { count("/api/chat/start") == 1 }
+        XCTAssertTrue(sent, "Send did not start the chat")
+        XCTAssertEqual(count("/api/session/new"), 2)
     }
 
     func testUnconfirmedCreationDoesNotOfferNonIdempotentRetry() async throws {
@@ -838,13 +844,13 @@ final class SessionListHostedTests: XCTestCase {
         HostedAccessibility.activate(try await requireElement(in: window, label: "New Chat"))
         XCTAssertEqual(UITestFixtureURLProtocol.answeredPaths.withLock { $0.filter { $0 == "/api/session/new" }.count }, 0)
         try await sendFromComposer("Synthetic first prompt", in: window)
-        let resolved = await awaitCondition {
-            HostedAccessibility.elements(in: window).contains {
-                $0.accessibilityLabel == "Retry" || $0.accessibilityLabel?.contains("Check Chats") == true
-            }
-        }
-        XCTAssertTrue(resolved, "The creation result must have reached its failure strip")
-        XCTAssertNil(HostedAccessibility.element(in: window, label: "Retry"), "A lost creation result cannot safely create another session")
+        let notice = await awaitElement(in: window) { $0.accessibilityLabel?.contains("Check Chats") == true }
+        XCTAssertEqual(notice?.accessibilityValue, "Error", "The creation result must have reached its error notice")
+        let restored = await awaitCondition { self.composerDraftText(in: window) == "Synthetic first prompt" }
+        XCTAssertTrue(restored)
+        let send = try await requireElement(in: window, label: "Send")
+        XCTAssertTrue(send.accessibilityTraits.contains(.notEnabled), "A lost creation result cannot safely create another session")
+        XCTAssertNil(HostedAccessibility.element(in: window, label: "Retry"))
     }
 
     func testFirstSendConsumesDraftAndShowsOneRowWhileCreationIsHeld() async throws {
@@ -873,8 +879,6 @@ final class SessionListHostedTests: XCTestCase {
         try await sendFromComposer("Safe mode first prompt", in: window)
         let header = await awaitElement(in: window) { ($0.accessibilityLabel ?? "").contains("Safe Mode") }
         XCTAssertNotNil(header, "The header shows the mode the server froze")
-        let started = await awaitNoElement(in: window) { $0.accessibilityLabel == "Starting chat…" }
-        XCTAssertTrue(started)
         XCTAssertNil(HostedAccessibility.element(in: window, label: "This session is read-only."), "The attached owner takes input")
         settle(0.3)
         attachHostedScreenshot(window, name: "safe-mode-new-chat-phone")
@@ -946,7 +950,7 @@ final class SessionListHostedTests: XCTestCase {
         creation = nil
         if partialImportFailure {
             let settled = await awaitCondition {
-                UITestFixtureHold.shared.pendingCount > 0 || HostedAccessibility.element(in: window, label: "Retry") != nil
+                UITestFixtureHold.shared.pendingCount > 0 || self.composerDraftText(in: window) == "First pending prompt"
             }
             XCTAssertTrue(settled)
             XCTAssertEqual(UITestFixtureHold.shared.pendingCount, 0, "A failed import followed by a success must not post a partial first message")
@@ -958,14 +962,19 @@ final class SessionListHostedTests: XCTestCase {
             let restored = await awaitCondition { self.composerDraftText(in: window) == "First pending prompt" }
             XCTAssertTrue(restored)
             attachHostedScreenshot(window, name: "mixed-import-blocked-phone")
-            HostedAccessibility.activate(try await requireElement(in: window, label: "Retry"))
+            // TAL-1543: the failed import retries from its own row, then Send posts on the created session.
+            let retryUpload = try await requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Retry upload first-fails.txt") == true }
+            HostedAccessibility.activate(retryUpload)
             let retried = await awaitCondition { UITestFixtureURLProtocol.initialUploadAttemptCount == 3 }
             XCTAssertTrue(retried, "Retry must upload the retained failed initial file")
             guard retried else { return }
-            _ = try await requireElement(in: window, label: "Select model")
+            let sendable = await awaitCondition {
+                HostedAccessibility.element(in: window, label: "Send")?.accessibilityTraits.contains(.notEnabled) == false
+            }
+            XCTAssertTrue(sendable)
+            HostedAccessibility.activate(try await requireElement(in: window, label: "Send"))
             XCTAssertEqual(creationCount, 1, "Retrying imports must reuse the created session")
             XCTAssertEqual(UITestFixtureURLProtocol.initialUploadAttemptCount, 3, "Only the failed import should retry")
-            HostedAccessibility.activate(try await requireElement(in: window, label: "Send"))
         }
         if withImportedFile || pendingSlash {
             let posted = await awaitCondition { UITestFixtureHold.shared.pendingCount > 0 }
@@ -1037,23 +1046,58 @@ final class SessionListHostedTests: XCTestCase {
         guard durableDraft?.text == submittedDraft else { return }
         let pending = await awaitElement(in: window, label: message)
         XCTAssertNotNil(pending)
+        // TAL-1543: the floating run status chip says the chat is starting; the controls stay under the composer.
+        XCTAssertNil(HostedAccessibility.element(in: window, label: "Starting chat…"), "Nothing replaces the controls under the composer")
+        let starting = await awaitElement(in: window) { ($0.accessibilityLabel ?? "").hasSuffix("is starting a response") }
+        XCTAssertNotNil(starting, "The run status chip shows the start")
+        XCTAssertNotNil(HostedAccessibility.element(in: window, label: "Select model"))
+        settle(0.5)
+        attachHostedScreenshot(window, name: "session-starting-phone")
         try await typeIntoComposer("Newer draft", in: window)
         let heldDraft = await fixture.environment.draftStore.draft(for: .newChat(server: UITestFixtureEnvironment.serverURL))
         XCTAssertEqual(heldDraft?.text, "Newer draft\n\n\(submittedDraft)", "Both drafts must stay durable while creation is unresolved")
         creation?.resume(returning: .failed("Synthetic refusal"))
         creation = nil
-        let retry = try await requireElement(in: window, label: "Retry")
+        let notice = await awaitElement(in: window, label: "Synthetic refusal")
+        XCTAssertEqual(notice?.accessibilityValue, "Error", "The refusal shows as an error notice above the composer")
+        XCTAssertNil(HostedAccessibility.element(in: window, label: "Retry"), "Send retries; the composer has no Retry strip")
+        settle(0.5)
+        attachHostedScreenshot(window, name: "session-start-failed-phone")
         let restored = await awaitCondition { self.composerDraftText(in: window) == "Newer draft\n\n\(submittedDraft)" }
         XCTAssertTrue(restored)
-        HostedAccessibility.activate(retry)
-        HostedAccessibility.activate(retry)
+        let send = try await requireElement(in: window, label: "Send")
+        XCTAssertFalse(send.accessibilityTraits.contains(.notEnabled), "A retryable refusal leaves Send enabled")
+        HostedAccessibility.activate(send)
+        HostedAccessibility.activate(send)
         let retried = await awaitCondition { creation != nil }
         XCTAssertTrue(retried)
-        XCTAssertEqual(creationCount, 2, "Repeated Retry must join the one replacement creation")
+        XCTAssertEqual(creationCount, 2, "Repeated Send must join the one replacement creation")
         creation?.resume(returning: .started(session))
         creation = nil
-        _ = try await requireElement(in: window, label: "Select model")
-        XCTAssertEqual(composerDraftText(in: window), "Newer draft\n\n\(submittedDraft)")
+        let sent = await awaitCondition {
+            UITestFixtureURLProtocol.answeredPaths.withLock { $0.filter { $0 == "/api/chat/start" }.count } == 1
+        }
+        XCTAssertTrue(sent, "Send retries creation and sends the restored draft")
+        XCTAssertEqual(composerDraftText(in: window), "")
+    }
+
+    func testNonRetryableSessionStartRefusalKeepsSendDisabled() async throws {
+        let fixture = try FixtureApp(for: self)
+        let window = try hostWindow(ChatView(
+            session: SessionSummary(title: "New Chat"),
+            server: UITestFixtureEnvironment.serverURL,
+            onAPIError: { _ in },
+            loadsInitialMessages: false,
+            draftStore: fixture.environment.draftStore,
+            startSession: { .failed("Synthetic permanent refusal", canRetry: false) }
+        ).environment(\.scenePhase, .active).modelContainer(fixture.cache))
+        try await sendFromComposer("Refused prompt", in: window)
+        let notice = await awaitElement(in: window, label: "Synthetic permanent refusal")
+        XCTAssertEqual(notice?.accessibilityValue, "Error")
+        let restored = await awaitCondition { self.composerDraftText(in: window) == "Refused prompt" }
+        XCTAssertTrue(restored)
+        let send = try await requireElement(in: window, label: "Send")
+        XCTAssertTrue(send.accessibilityTraits.contains(.notEnabled), "A refusal that cannot be retried keeps Send disabled")
     }
 
     func testLeavingAnUncreatedChatFencesLateAdoptionAndDraftMigration() async throws {

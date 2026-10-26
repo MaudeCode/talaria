@@ -539,7 +539,6 @@ struct ChatView: View {
             },
             sessionStart: isOpeningFiles && !viewModel.isSubmittingMessage ? nil : sessionStart,
             hasSession: viewModel.hasSession,
-            onRetrySessionStart: retrySessionStart,
             sessionToolsets: viewModel.sessionToolsets,
             onLoadToolsets: { try await viewModel.loadToolsetsCatalog() },
             onSaveToolsets: { names in
@@ -955,10 +954,7 @@ struct ChatView: View {
         isOpeningFiles = true
         defer { isOpeningFiles = false }
         guard await startPendingSession() else {
-            if case .failed(let message, _) = sessionStart {
-                viewModel.setSendErrorMessage(message)
-                sessionStart = nil
-            }
+            if case .failed = sessionStart { sessionStart = nil }
             return
         }
         splitFilesInspector?.reportSession(session)
@@ -1928,7 +1924,8 @@ struct ChatView: View {
 
     private var activeRunStatusPresentation: ChatActiveRunStatusPresentation? {
         ChatActiveRunStatusPolicy.presentation(
-            isStartingChat: viewModel.isSubmittingMessage,
+            // The Files button shows its own start.
+            isStartingChat: viewModel.isSubmittingMessage || (sessionStart == .starting && !isOpeningFiles),
             hasActiveStream: viewModel.activeStreamID != nil,
             activeStreamRecoveryState: viewModel.activeStreamRecoveryState,
             isCancellingStream: viewModel.isCancellingStream,
@@ -2107,8 +2104,9 @@ struct ChatView: View {
                     await viewModel.restoreDraftSettings(settings,
                         expectedInteractionGeneration: pendingCreationInteractionGeneration ?? viewModel.composerConfigurationInteractionGeneration)
                     guard !Task.isCancelled, generation == sessionStartGeneration else { return false }
-                    if let error = viewModel.composerConfigurationErrorMessage {
-                        sessionStart = .failed(error)
+                    if viewModel.composerConfigurationErrorMessage != nil {
+                        // The composer's status line shows the configuration error.
+                        failSessionStart()
                         return false
                     }
                     pendingCreationSettings = nil
@@ -2116,15 +2114,20 @@ struct ChatView: View {
                 }
                 let importFailure = initialAttachments.isEmpty && (viewModel.sessionStartupAttachments + viewModel.pendingAttachments).allSatisfy(\.isReadyToSend) ? nil
                     : String(localized: "Couldn't upload every attachment. Retry before sending.")
-                if let error = viewModel.uploadAttachmentErrorMessage ?? importFailure ?? (!draftAttachmentsPendingRetry.isEmpty
+                if viewModel.uploadAttachmentErrorMessage != nil {
+                    // The composer's status line shows the upload error.
+                    failSessionStart()
+                    return false
+                }
+                if let error = importFailure ?? (!draftAttachmentsPendingRetry.isEmpty
                     ? draftRestoreFailureMessage(retryCount: draftAttachmentsPendingRetry.count, droppedCount: 0) : nil) {
-                    sessionStart = .failed(error)
+                    failSessionStart(error)
                     return false
                 }
                 sessionStart = nil
                 return true
             case .failed(let message, let canRetry, _):
-                sessionStart = .failed(message, canRetry: canRetry)
+                failSessionStart(message, canRetry: canRetry)
                 return false
             }
         }
@@ -2134,14 +2137,11 @@ struct ChatView: View {
         return started
     }
 
-    private func retrySessionStart() {
-        Task {
-            guard await startPendingSession() else { return }
-            if let note = viewModel.pendingVoiceDraft {
-                await viewModel.retryVoiceNote(messageID: note.id, modelContext: modelContext)
-            }
-            // Recovery keeps the text draft ready for Send, including any typing added after the refusal.
-        }
+    /// A failed start shows its message, when the composer's status line doesn't already, as an error notice above
+    /// the composer (TAL-1543). Send, or a voice note's Retry, starts it again while it can be retried.
+    private func failSessionStart(_ message: String? = nil, canRetry: Bool = true) {
+        sessionStart = .failed(canRetry: canRetry)
+        if let message { viewModel.showNotice(message, level: .error) }
     }
 
     private var needsSessionStart: Bool {
@@ -2492,7 +2492,8 @@ struct ChatView: View {
         }
         if awaitedSession { pendingFirstDraft = nil }
         if !didStart, isFirstSend, sessionStart == nil {
-            sessionStart = .failed(viewModel.sendErrorMessage ?? String(localized: "Couldn't send the message. Try again."))
+            // The composer's status line shows a send error.
+            failSessionStart(viewModel.sendErrorMessage == nil ? String(localized: "Couldn't send the message. Try again.") : nil)
         }
         pendingSubmissionAttachmentIDs = []
         guard generation == sessionStartGeneration else { return didStart }

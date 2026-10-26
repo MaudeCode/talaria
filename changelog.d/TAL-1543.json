@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A new chat shows that it is starting in the status chip above the composer, and a failed start shows as an error notice that Send retries, instead of a strip replacing the composer's controls.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}
