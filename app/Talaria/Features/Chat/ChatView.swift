@@ -836,7 +836,10 @@ struct ChatView: View {
     }
 
     private var chatWithToolbar: some View {
-        chatWithVisibility
+        let sessionMenu: SessionRowContextMenu? = if viewModel.hasSession, let sessionActions {
+            SessionRowContextMenu(viewModel: sessionActions.viewModel, session: sessionActions.session, actions: sessionActions.actions)
+        } else { nil }
+        return chatWithVisibility
             .onChange(of: !viewModel.hasMessages && viewModel.clarificationPrompt == nil && viewModel.activeStreamID == nil,
                       initial: true) { _, isEmpty in splitFilesInspector?.reportEmptyTranscript(isEmpty) }
             .onChange(of: showsFilesInspector, initial: true) { splitFilesInspector?.reportShown(showsFilesInspector) }
@@ -852,24 +855,22 @@ struct ChatView: View {
             .navigationTitle(displayTitle)
             .navigationBarTitleDisplayMode(.inline)
             .onToolbarVerticalEdgeChange { hasVerticalToolbar = $0 }
-            .toolbarTitleMenu {
-                if viewModel.hasSession, let sessionActions { sessionActions }
-            }
+            .toolbarTitleMenu { sessionMenu }
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     let title = ChatToolbarTitleLabel(title: displayTitle, subtitle: headerSubtitle)
-                    if viewModel.hasSession, let sessionActions {
+                    if let sessionMenu {
                         // A custom principal title replaces UIKit's title button; keep it actionable too.
-                        Menu { sessionActions } label: { title }
+                        Menu { sessionMenu } label: { title }
                             .accessibilityIdentifier("chat-session-actions-title")
                     } else {
                         title
                     }
                 }
 
-                if viewModel.hasSession, hasVerticalToolbar, let sessionActions {
+                if hasVerticalToolbar, let sessionMenu {
                     ToolbarItem(placement: .topBarTrailing) {
-                        Menu { sessionActions } label: {
+                        Menu { sessionMenu } label: {
                             Label("More", systemImage: "ellipsis.circle")
                         }
                         .accessibilityIdentifier("chat-session-actions-more")

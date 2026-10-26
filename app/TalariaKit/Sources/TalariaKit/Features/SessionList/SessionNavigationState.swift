@@ -214,6 +214,11 @@ public struct SessionNavigationState: Equatable {
         }
 
         if lastSelectedSessionID == sessionID {
+            if case .utility = destination, selectedSectionSession == nil {
+                rootRevision += 1
+                chatRootRevision += 1
+                selectedItem = nil
+            }
             lastSelectedSessionID = nil
         }
     }

@@ -142,6 +142,12 @@ public final class SessionListViewModel {
     public private(set) var pendingChanges: [String: PendingResourceChange] = [:] {
         didSet { invalidateSessionPresentation() }
     }
+    public var removingSessionIDs: Set<String> {
+        Set(pendingChanges.compactMap { key, change in
+            guard change.removing, key.hasPrefix("session:") else { return nil }
+            return String(key.dropFirst("session:".count))
+        })
+    }
     private var resourceGeneration = 0
     private var removedRows: [String: Int] = [:]
     private var resourceCacheContext = UUID()

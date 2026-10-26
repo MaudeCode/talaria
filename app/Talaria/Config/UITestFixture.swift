@@ -41,6 +41,8 @@ struct UITestFixtureEnvironment {
     /// Fails the first `/api/session/new` with a server error, so a UI test can see a new chat's
     /// composer report it and retry (TAL-636).
     nonisolated static let failFirstSessionCreationArgument = "--ui-test-fail-first-session-creation"
+    nonisolated static let holdSessionRemovalArgument = "--ui-test-hold-session-removal"
+    nonisolated static let refuseSessionRemovalArgument = "--ui-test-refuse-session-removal"
     /// Keeps a chat archive's Undo offered for the whole test, so the five-second expiry cannot run
     /// out while a slow runner snapshots the list before tapping Undo (TAL-650). TalariaKit's
     /// `SessionListArchiveUndoTests` covers the expiry itself.
@@ -453,6 +455,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     private static let sessionToolsets = OSAllocatedUnfairLock<[String]?>(initialState: nil)
     nonisolated(unsafe) private static var transcriptReads = 0
     nonisolated(unsafe) private static var archivedSessionIDs: Set<String> = []
+    nonisolated(unsafe) private static var deletedSessionIDs: Set<String> = []
     nonisolated(unsafe) private static var cancelledMonitorStreamIDs: Set<String> = []
     /// The `--ui-test-run-monitor` rows: running, running, waiting on an approval.
     static let monitorSessionTitles = ["Fixture Session 01", "Fixture Session 02", "Fixture Session 03"]
@@ -489,6 +492,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         answeredPaths.withLock { $0 = [] }
         transcriptReads = 0
         archivedSessionIDs = []
+        deletedSessionIDs = []
         cancelledMonitorStreamIDs = []
         backgroundDismissed.withLock { $0 = false }
         ownerSettledAdmissions.withLock { $0 = [] }
@@ -554,7 +558,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         let holdsCancel = url.path == "/api/chat/cancel"
             && ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.holdChatCancelArgument)
         let holdsSessionRemoval = Self.sessionRemovalPaths.contains(url.path)
-            && ProcessInfo.processInfo.arguments.contains("--ui-test-hold-session-removal")
+            && ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.holdSessionRemovalArgument)
         let holdsPanel = Self.isFullWidthPanelLoad(url) && Self.panelScenario == UITestFixtureEnvironment.panelLoadingArgument
         if Self.holdsTranscriptReload(for: url) || holdsSessionList || holdsUpload || holdsSteer || holdsStart || holdsCancel || holdsPanel || holdsSessionRemoval {
             UITestFixtureHold.shared.hold(request: request) { [weak self] in
@@ -606,11 +610,12 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             client?.urlProtocol(self, didFailWithError: URLError(code))
             return
         }
+        let refusesRemoval = Self.sessionRemovalPaths.contains(url.path)
+            && ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.refuseSessionRemovalArgument)
         let statusCode: Int
         if case .status(let code) = listFailure { statusCode = code }
         else if Self.isFullWidthPanelLoad(url), Self.panelScenario == UITestFixtureEnvironment.panelUnavailableArgument { statusCode = 503 }
-        else if Self.sessionRemovalPaths.contains(url.path),
-                ProcessInfo.processInfo.arguments.contains("--ui-test-refuse-session-removal") { statusCode = 409 }
+        else if refusesRemoval { statusCode = 409 }
         else if Self.failsInitialUpload(url) { statusCode = 500 }
         else if Self.failsSessionCreation(url) {
             statusCode = ProcessInfo.processInfo.arguments.contains("--ui-test-refuse-first-session-creation") ? 409 : 500
@@ -627,7 +632,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             client?.urlProtocol(self, didLoad: Data(": fixture heartbeat\n\n".utf8))
             return
         }
-        if statusCode == 409, ProcessInfo.processInfo.arguments.contains("--ui-test-refuse-session-removal") {
+        if refusesRemoval {
             client?.urlProtocol(self, didLoad: Self.json(["error": "Synthetic session removal refusal"]))
         } else {
             client?.urlProtocol(self, didLoad: Self.responseData(for: request))
@@ -684,7 +689,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             return sessionsResponse()
         case "/api/session/delete":
             if let id = requestJSON(request)["session_id"] as? String {
-                recoveryState.withLock { _ = archivedSessionIDs.insert(id) }
+                recoveryState.withLock { _ = deletedSessionIDs.insert(id) }
             }
             return json(["ok": true])
         case "/api/session/archive":
@@ -930,13 +935,13 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     private static func sessionsResponse() -> Data {
-        let (archivedIDs, cancelledStreams) = recoveryState.withLock { (archivedSessionIDs, cancelledMonitorStreamIDs) }
+        let (removedIDs, cancelledStreams) = recoveryState.withLock { (archivedSessionIDs.union(deletedSessionIDs), cancelledMonitorStreamIDs) }
         var sessions: [[String: Any]] = (0..<18).map { index in
             session(
                 id: index == 0 ? sessionID : "ui-fixture-session-\(index)",
                 title: index == 0 ? sessionTitle : String(format: "Fixture Session %02d", index)
             )
-        }.filter { !archivedIDs.contains($0["session_id"] as? String ?? "") }
+        }.filter { !removedIDs.contains($0["session_id"] as? String ?? "") }
         if ProcessInfo.processInfo.arguments.contains("--ui-test-scheduled-sessions") {
             for index in sessions.indices { sessions[index]["source_kind"] = "cron" }
         }

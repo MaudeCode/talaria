@@ -39,11 +39,13 @@ final class SessionListPendingChangeTests: XCTestCase {
             await fulfillment(of: [arrived], timeout: 5)
             XCTAssertTrue(viewModel.visibleSessions(searchText: "", selectedProjectID: nil).isEmpty)
             XCTAssertEqual(viewModel.sessions.first?.sessionId, session.sessionId, "Canonical rows wait for the server")
+            XCTAssertEqual(viewModel.removingSessionIDs, ["same"])
             requests.request(at: 0).complete(withJSON: #"{"error":"Synthetic refusal"}"#, statusCode: 409)
             let accepted = await removal.value
             XCTAssertFalse(accepted)
             XCTAssertEqual(viewModel.visibleSessions(searchText: "", selectedProjectID: nil).count, 1)
             XCTAssertNil(viewModel.pendingChange(for: session))
+            XCTAssertTrue(viewModel.removingSessionIDs.isEmpty)
             XCTAssertNotNil(viewModel.actionErrorMessage)
         }
     }
@@ -72,6 +74,7 @@ final class SessionListPendingChangeTests: XCTestCase {
             XCTAssertEqual(accepted, deleted)
             XCTAssertEqual(viewModel.visibleSessions(searchText: "", selectedProjectID: nil).isEmpty, deleted)
             XCTAssertNil(viewModel.pendingChange(for: session))
+            XCTAssertTrue(viewModel.removingSessionIDs.isEmpty)
             XCTAssertEqual(requests.count, 2, "A removal is never replayed blindly")
         }
     }

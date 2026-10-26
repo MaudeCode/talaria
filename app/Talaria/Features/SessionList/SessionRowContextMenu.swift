@@ -4,7 +4,7 @@ import TalariaKit
 
 struct SessionRowContextMenu: View {
     enum Placement {
-        case menu, leadingSwipe, trailingSwipe, selection
+        case menu, leadingSwipe, trailingSwipe
     }
 
     let viewModel: SessionListViewModel
@@ -107,40 +107,13 @@ struct SessionRowContextMenu: View {
             .disabled(!canExportSession || isMutating)
         }
 
-        if placement != .leadingSwipe,
-           placement == .selection || SessionRowActionPolicy.canArchive(session),
-           placement == .menu || placement == .selection || isLiveServerSession {
-            Button {
-                actions.archive(session)
-            } label: {
-                Label("Archive", systemImage: "archivebox")
-            }
-            .disabled(
-                placement == .selection
-                    ? !viewModel.canPerformBulkAction(.archive) : !isLiveServerSession || isMutating
+        if placement != .leadingSwipe, placement == .menu || isLiveServerSession {
+            SessionRemovalButtons(
+                isDisabled: { _ in !isLiveServerSession || isMutating },
+                archive: SessionRowActionPolicy.canArchive(session) ? { actions.archive(session) } : nil,
+                delete: SessionRowActionPolicy.canDelete(session) ? { actions.delete(session) } : nil,
+                isSwipe: placement == .trailingSwipe
             )
-            .frame(
-                minWidth: placement == .selection ? 44 : nil, minHeight: placement == .selection ? 44 : nil
-            )
-            .tint(placement == .trailingSwipe ? .orange : nil)
-        }
-
-        if placement != .leadingSwipe,
-           placement == .selection || SessionRowActionPolicy.canDelete(session),
-           placement == .menu || placement == .selection || isLiveServerSession {
-            Button(role: .destructive) {
-                actions.delete(session)
-            } label: {
-                Label("Delete", systemImage: "trash")
-            }
-            .disabled(
-                placement == .selection
-                    ? !viewModel.canPerformBulkAction(.delete) : !isLiveServerSession || isMutating
-            )
-            .frame(
-                minWidth: placement == .selection ? 44 : nil, minHeight: placement == .selection ? 44 : nil
-            )
-            .tint(placement == .trailingSwipe ? .red : nil)
         }
     }
 
@@ -153,7 +126,45 @@ struct SessionRowContextMenu: View {
     }
 }
 
+/// The removal labels are shared by individual session actions and the selection bar.
+struct SessionRemovalButtons: View {
+    let isDisabled: (SessionBulkAction) -> Bool
+    let archive: (() -> Void)?
+    let delete: (() -> Void)?
+    var isSwipe = false
+
+    var body: some View {
+        if let archive {
+            Button(action: archive) {
+                Label("Archive", systemImage: "archivebox")
+            }
+            .disabled(isDisabled(.archive))
+            .tint(isSwipe ? .orange : nil)
+        }
+        if let delete {
+            // A destructive swipe removes the row before its confirmation alert is answered.
+            Button(role: isSwipe ? nil : .destructive, action: delete) {
+                Label("Delete", systemImage: "trash")
+            }
+            .disabled(isDisabled(.delete))
+            .tint(isSwipe ? .red : nil)
+        }
+    }
+}
+
+/// Data for the current chat's menu, using the list's stable mutation owner.
+struct SessionActionContext: Equatable {
+    let session: SessionSummary
+    let viewModel: SessionListViewModel
+    let actions: SessionListRowActions
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        // The same list owner supplies the same handlers across list refreshes.
+        lhs.session == rhs.session && lhs.viewModel === rhs.viewModel
+    }
+}
+
 extension EnvironmentValues {
-    /// The list owns every session write, including chats created by the idle composer.
-    @Entry var sessionActions: SessionRowContextMenu?
+    /// The current chat's session and list-owned handlers; the chat builds its own menu.
+    @Entry var sessionActions: SessionActionContext?
 }

@@ -29,22 +29,26 @@ struct SessionInteractiveRow: View {
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                 sessionActions(placement: .trailingSwipe)
             }
-            .contextMenu {
-                if !viewModel.isSelectingSessions {
-                    if canEnterSelection {
-                        Button { viewModel.beginSelectingSessions() } label: {
-                            Label("Select Chats…", systemImage: "checkmark.circle")
-                        }
-                        .disabled(selectionIsDisabled)
-                    }
-                    sessionActions(placement: .menu)
-                }
-            }
+            .contextMenu { contextMenuContent(includesSelection: canEnterSelection) }
             .accessibilityActions {
                 if canEnterSelection, !selectionIsDisabled {
                     Button("Select Chats…") { viewModel.beginSelectingSessions() }
                 }
             }
+    }
+
+    /// Select is a row-only prefix; all session actions use the same menu placement as the chat.
+    @ViewBuilder
+    func contextMenuContent(includesSelection: Bool) -> some View {
+        if !viewModel.isSelectingSessions {
+            if includesSelection {
+                Button { viewModel.beginSelectingSessions() } label: {
+                    Label("Select Chats…", systemImage: "checkmark.circle")
+                }
+                .disabled(selectionIsDisabled)
+            }
+            sessionActions(placement: .menu)
+        }
     }
 
     private var canEnterSelection: Bool {

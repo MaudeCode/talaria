@@ -2,6 +2,27 @@ import XCTest
 @testable import TalariaKit
 
 final class SessionNavigationStateTests: XCTestCase {
+    func testRemovingALocallyPushedSectionChatReturnsToTheSectionRoot() {
+        for section: SessionListUtilityDestination in [.archived, .scheduled, .webhook] {
+            var state = SessionNavigationState()
+            state.select(section)
+            let session = SessionSummary(sessionId: "local-section-chat")
+            // A local navigationDestination can push a chat without selectedSectionSession.
+            state.remember(session)
+            XCTAssertNil(state.selectedSectionSession)
+            let previous = state
+            state.remove(sessionID: session.sessionId)
+            XCTAssertEqual(state.destination, .utility(section))
+            XCTAssertEqual(state.section, AppSection(section))
+            XCTAssertNil(state.selectedItem)
+            XCTAssertNil(state.lastSelectedSessionID)
+            XCTAssertGreaterThan(state.chatRootRevision, previous.chatRootRevision, "Rebuild the stack to drop its local push")
+            state.restoreAfterRemoval(previous, ifUnchangedAt: state.openRevision)
+            XCTAssertEqual(state.lastSelectedSessionID, session.sessionId)
+            XCTAssertEqual(state.destination, previous.destination)
+        }
+    }
+
     func testRefusedRemovalRestoresItsRootAndYieldsToNewerNavigation() {
         let session = SessionSummary(sessionId: "removed", title: "Removed")
         var state = SessionNavigationState()

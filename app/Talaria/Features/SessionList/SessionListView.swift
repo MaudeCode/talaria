@@ -29,7 +29,11 @@ struct SessionListView: View {
     @State private var sectionViewModels: SectionViewModels
     /// The open chat, kept above both width layouts so opening or closing an iPhone Duo hands it over (TAL-1477).
     @State private var chats: ChatViewModelCache
-    @State private var removedSessionNavigation: [String: (state: SessionNavigationState, revision: Int)] = [:]
+    private struct RemovedSessionNavigation {
+        let state: SessionNavigationState
+        let revision: Int
+    }
+    @State private var removedSessionNavigation: [String: RemovedSessionNavigation] = [:]
     @State private var navigationState: SessionNavigationState
     @State private var isPresentingSettings = false
     @State private var settingsPath: [SettingsPane] = []
@@ -216,7 +220,7 @@ struct SessionListView: View {
     var body: some View {
         sidebarLayout
             .environment(\.sessionActions, currentSessionActions)
-            .onChange(of: viewModel.pendingChanges) { _, changes in reconcileRemovedSessionNavigation(changes) }
+            .onChange(of: viewModel.removingSessionIDs) { _, ids in reconcileRemovedSessionNavigation(ids) }
             .onChange(of: navigationState.lastSelectedSessionID) { _, sessionID in
                 chats.keepOnly(sessionID: sessionID)
             }
@@ -1454,7 +1458,6 @@ struct SessionListView: View {
                 SessionSelectionBar(
                     viewModel: viewModel,
                     sessions: groups.ordinary,
-                    actions: sessionRowActions(),
                     archive: { Task { await performBulkAction(.archive) } },
                     delete: { isConfirmingBulkDelete = true }
                 )
@@ -1696,14 +1699,14 @@ struct SessionListView: View {
         )
     }
 
-    private var currentSessionActions: SessionRowContextMenu? {
+    private var currentSessionActions: SessionActionContext? {
         let selected: SessionSummary?
         if let session = navigationState.selectedSectionSession { selected = session }
         else if case .session(let session) = navigationState.destination { selected = session }
         else { selected = viewModel.sessions.first { $0.sessionId == navigationState.selectedSessionID } }
         guard let selected else { return nil }
         let current = viewModel.sessions.first { $0.sessionId == selected.sessionId } ?? selected
-        return SessionRowContextMenu(viewModel: viewModel, session: current, actions: sessionRowActions())
+        return SessionActionContext(session: current, viewModel: viewModel, actions: sessionRowActions())
     }
 
     /// Sidebar rows replace the root; section-owned lists push their chats above the list.
@@ -2199,17 +2202,17 @@ struct SessionListView: View {
         persistLastSelectedSession()
     }
 
-    private func reconcileRemovedSessionNavigation(_ changes: [String: PendingResourceChange]) {
-        for (key, change) in changes where change.removing {
-            let id = String(key.dropFirst("session:".count))
+    private func reconcileRemovedSessionNavigation(_ removingSessionIDs: Set<String>) {
+        for id in removingSessionIDs {
             guard removedSessionNavigation[id] == nil,
-                  navigationState.selectedSessionID == id || navigationState.selectedSectionSession?.sessionId == id else { continue }
+                  navigationState.selectedSessionID == id || navigationState.selectedSectionSession?.sessionId == id
+                    || navigationState.lastSelectedSessionID == id else { continue }
             let previous = navigationState
             navigationState.remove(sessionID: id)
-            removedSessionNavigation[id] = (previous, navigationState.openRevision)
+            removedSessionNavigation[id] = RemovedSessionNavigation(state: previous, revision: navigationState.openRevision)
             persistLastSelectedSession()
         }
-        for (id, removed) in removedSessionNavigation where changes["session:\(id)"] == nil {
+        for (id, removed) in removedSessionNavigation where !removingSessionIDs.contains(id) {
             if viewModel.sessions.contains(where: { $0.sessionId == id }) {
                 navigationState.restoreAfterRemoval(removed.state, ifUnchangedAt: removed.revision)
                 persistLastSelectedSession()
