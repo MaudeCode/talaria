@@ -152,19 +152,12 @@ struct SessionRemovalButtons: View {
     }
 }
 
-/// Data for the current chat's menu, using the list's stable mutation owner.
-struct SessionActionContext: Equatable {
-    let session: SessionSummary
+/// List-owned handlers shared by every chat, including locally pushed forks.
+struct SessionActionContext {
     let viewModel: SessionListViewModel
     let actions: SessionListRowActions
-
-    static func == (lhs: Self, rhs: Self) -> Bool {
-        // The same list owner supplies the same handlers across list refreshes.
-        lhs.session == rhs.session && lhs.viewModel === rhs.viewModel
-    }
 }
 
 extension EnvironmentValues {
-    /// The current chat's session and list-owned handlers; the chat builds its own menu.
     @Entry var sessionActions: SessionActionContext?
 }

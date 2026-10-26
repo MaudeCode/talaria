@@ -196,8 +196,7 @@ public struct SessionNavigationState: Equatable {
         return session
     }
 
-    /// Invalidates both the visible detail and stored restoration target when the
-    /// removed session is the selected or most recently selected session.
+    /// Removes displayed chats and clears a matching restoration target without changing unrelated pages.
     public mutating func remove(sessionID: String?) {
         guard let sessionID = Self.normalized(sessionID) else { return }
 
@@ -214,11 +213,6 @@ public struct SessionNavigationState: Equatable {
         }
 
         if lastSelectedSessionID == sessionID {
-            if case .utility = destination, selectedSectionSession == nil {
-                rootRevision += 1
-                chatRootRevision += 1
-                selectedItem = nil
-            }
             lastSelectedSessionID = nil
         }
     }

@@ -5,6 +5,12 @@
       "summary": "Manage the current chat from its title menu, with the same actions available in the sidebar.",
       "highlight": false,
       "components": ["app"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "Forked chats act on their own session and return to the parent when removed. Removing another chat preserves your open page.",
+      "highlight": false,
+      "components": ["app"]
     }
   ]
 }

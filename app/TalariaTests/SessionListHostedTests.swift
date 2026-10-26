@@ -1791,6 +1791,9 @@ extension SessionListHostedTests {
 
     private func titleMenu(in window: UIWindow) -> UIMenu? {
         func find(_ controller: UIViewController) -> UIMenu? {
+            if let navigation = controller as? UINavigationController, let top = navigation.topViewController {
+                return find(top)
+            }
             if let menu = controller.navigationItem.titleMenuProvider?([]), !menu.children.isEmpty { return menu }
             for child in controller.children {
                 if let menu = find(child) { return menu }
@@ -1905,6 +1908,44 @@ extension SessionListHostedTests {
                 window.isHidden = true
                 window.rootViewController = nil
             }
+        }
+    }
+
+    func testLocallyPushedForkMenuTargetsTheForkAndRemovalReturnsToItsParent() async throws {
+        for (holdsRemoval, refusesRemoval) in [(true, false), (true, true), (false, false)] {
+            var scenario = [UITestFixtureEnvironment.forkSessionArgument]
+            if holdsRemoval { scenario.append(UITestFixtureEnvironment.holdSessionRemovalArgument) }
+            if refusesRemoval { scenario.append(UITestFixtureEnvironment.refuseSessionRemovalArgument) }
+            let fixture = try FixtureApp(scenario, for: self)
+            let window = try await openChat(fixture, size: HostedSize.phone)
+            try await sendFromComposer("/branch", in: window)
+            _ = try await requireElement(in: window, label: "Fork fixture reply")
+            let ready = await awaitCondition {
+                self.titleMenu(in: window)?.children.contains { ($0 as? UIMenu)?.title == "Full Title" } == true
+            }
+            XCTAssertTrue(ready)
+            let menu = try XCTUnwrap(titleMenu(in: window))
+            let copyLink = try XCTUnwrap(actions(in: menu).first { $0.title == "Copy Deeplink" })
+            HostedAccessibility.activate(copyLink)
+            XCTAssertTrue(UIPasteboard.general.string?.contains(UITestFixtureURLProtocol.forkSessionID) == true,
+                          "The fork's title menu still targets the parent")
+
+            HostedAccessibility.activate(try XCTUnwrap(actions(in: menu).first { $0.title == "Archive" }))
+            let popped = await awaitNoElement(in: window) { $0.accessibilityLabel == "Fork fixture reply" }
+            XCTAssertTrue(popped, "Removing a local fork must pop it before the response")
+            _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
+            fixture.releaseHeldLoads()
+            if refusesRemoval {
+                _ = try await requireElement(in: window, label: "Fork fixture reply")
+            } else {
+                let answered = await awaitCondition {
+                    UITestFixtureURLProtocol.answeredPaths.withLock { $0.contains("/api/session/archive") }
+                }
+                XCTAssertTrue(answered)
+                XCTAssertNil(HostedAccessibility.element(in: window, label: "Fork fixture reply"))
+            }
+            window.isHidden = true
+            window.rootViewController = nil
         }
     }
 

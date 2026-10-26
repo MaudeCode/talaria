@@ -180,6 +180,7 @@ struct ChatView: View {
     /// the cache-first → network reconcile re-pins to the bottom without a jump (#289).
     @State private var cacheFirstSnapUntil: Date?
     @State private var forkedSession: SessionSummary?
+    @State private var removedForkedSession: SessionSummary?
     @State private var editContext: MessageActionContext?
     @State private var editDraft = ""
     @State private var showEditSheet = false
@@ -837,7 +838,11 @@ struct ChatView: View {
 
     private var chatWithToolbar: some View {
         let sessionMenu: SessionRowContextMenu? = if viewModel.hasSession, let sessionActions {
-            SessionRowContextMenu(viewModel: sessionActions.viewModel, session: sessionActions.session, actions: sessionActions.actions)
+            SessionRowContextMenu(
+                viewModel: sessionActions.viewModel,
+                session: sessionActions.viewModel.sessions.first { $0.sessionId == session.sessionId } ?? session,
+                actions: sessionActions.actions
+            )
         } else { nil }
         return chatWithVisibility
             .onChange(of: !viewModel.hasMessages && viewModel.clarificationPrompt == nil && viewModel.activeStreamID == nil,
@@ -1003,7 +1008,11 @@ struct ChatView: View {
             .environment(\.retryPendingAttachment) { id in Task { await viewModel.retryAttachment(id: id) } }
             .navigationDestination(item: $forkedSession) { session in
                 // A fork opens in the same column, so the same split view makes room for its Files.
-                ChatView(session: session, server: server, onAPIError: onAPIError, splitFilesInspector: splitFilesInspector)
+                ChatView(session: session, server: server, onAPIError: onAPIError,
+                         sessionListOwner: sessionActions?.viewModel, splitFilesInspector: splitFilesInspector)
+            }
+            .onChange(of: sessionActions?.viewModel.removingSessionIDs) { _, ids in
+                reconcileRemovedFork(ids ?? [])
             }
             .fullScreenCover(item: $selectableResponseText) { selectableText in
                 SelectableTextPresentationView(selection: selectableText)
@@ -2498,6 +2507,19 @@ struct ChatView: View {
         )
         if draftRevision != submittedDraftRevision, !submittedDraft.isEmpty {
             appendReturnedComposerText(submittedDraft)
+        }
+    }
+
+    private func reconcileRemovedFork(_ removingSessionIDs: Set<String>) {
+        if let fork = forkedSession, let id = fork.sessionId, removingSessionIDs.contains(id) {
+            removedForkedSession = fork
+            forkedSession = nil
+        }
+        if let removed = removedForkedSession, let id = removed.sessionId, !removingSessionIDs.contains(id) {
+            if forkedSession == nil, sessionActions?.viewModel.sessions.contains(where: { $0.sessionId == id }) == true {
+                forkedSession = removed
+            }
+            removedForkedSession = nil
         }
     }
 

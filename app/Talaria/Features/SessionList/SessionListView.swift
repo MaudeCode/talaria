@@ -219,7 +219,7 @@ struct SessionListView: View {
 
     var body: some View {
         sidebarLayout
-            .environment(\.sessionActions, currentSessionActions)
+            .environment(\.sessionActions, SessionActionContext(viewModel: viewModel, actions: sessionRowActions()))
             .onChange(of: viewModel.removingSessionIDs) { _, ids in reconcileRemovedSessionNavigation(ids) }
             .onChange(of: navigationState.lastSelectedSessionID) { _, sessionID in
                 chats.keepOnly(sessionID: sessionID)
@@ -1699,16 +1699,6 @@ struct SessionListView: View {
         )
     }
 
-    private var currentSessionActions: SessionActionContext? {
-        let selected: SessionSummary?
-        if let session = navigationState.selectedSectionSession { selected = session }
-        else if case .session(let session) = navigationState.destination { selected = session }
-        else { selected = viewModel.sessions.first { $0.sessionId == navigationState.selectedSessionID } }
-        guard let selected else { return nil }
-        let current = viewModel.sessions.first { $0.sessionId == selected.sessionId } ?? selected
-        return SessionActionContext(session: current, viewModel: viewModel, actions: sessionRowActions())
-    }
-
     /// Sidebar rows replace the root; section-owned lists push their chats above the list.
     private func sessionRowActions(in list: AppSection = .chats) -> SessionListRowActions {
         SessionListRowActions(
@@ -2205,8 +2195,7 @@ struct SessionListView: View {
     private func reconcileRemovedSessionNavigation(_ removingSessionIDs: Set<String>) {
         for id in removingSessionIDs {
             guard removedSessionNavigation[id] == nil,
-                  navigationState.selectedSessionID == id || navigationState.selectedSectionSession?.sessionId == id
-                    || navigationState.lastSelectedSessionID == id else { continue }
+                  navigationState.selectedSessionID == id || navigationState.selectedSectionSession?.sessionId == id else { continue }
             let previous = navigationState
             navigationState.remove(sessionID: id)
             removedSessionNavigation[id] = RemovedSessionNavigation(state: previous, revision: navigationState.openRevision)

@@ -41,6 +41,7 @@ struct UITestFixtureEnvironment {
     /// Fails the first `/api/session/new` with a server error, so a UI test can see a new chat's
     /// composer report it and retry (TAL-636).
     nonisolated static let failFirstSessionCreationArgument = "--ui-test-fail-first-session-creation"
+    nonisolated static let forkSessionArgument = "--ui-test-fork-session"
     nonisolated static let holdSessionRemovalArgument = "--ui-test-hold-session-removal"
     nonisolated static let refuseSessionRemovalArgument = "--ui-test-refuse-session-removal"
     /// Keeps a chat archive's Undo offered for the whole test, so the five-second expiry cannot run
@@ -447,6 +448,7 @@ private final class UITestChatFixtureState: @unchecked Sendable {
 }
 
 final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
+    static let forkSessionID = "ui-fixture-session-1"
     static let sessionID = "ui-fixture-session"
     static let sessionTitle = "UI Fixture Session"
     private static let recoveryState = NSLock()
@@ -687,6 +689,8 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             return archivedSessionsResponse()
         case "/api/sessions":
             return sessionsResponse()
+        case "/api/session/branch" where ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.forkSessionArgument):
+            return json(["session_id": forkSessionID])
         case "/api/session/delete":
             if let id = requestJSON(request)["session_id"] as? String {
                 recoveryState.withLock { _ = deletedSessionIDs.insert(id) }
@@ -1011,6 +1015,13 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     private static func sessionResponse(_ url: URL) -> Data {
+        if ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.forkSessionArgument),
+           URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
+            .contains(where: { $0.name == "session_id" && $0.value == forkSessionID }) == true {
+            var detail = session(id: forkSessionID, title: "Fixture Session 01")
+            detail["messages"] = [["role": "assistant", "content": "Fork fixture reply", "_ts": 2_000_000_001]]
+            return json(["session": detail])
+        }
         if ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.historyPagingArgument) {
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
             let end = min(2_000, Int(items.first { $0.name == "msg_before" }?.value ?? "") ?? 2_000)

@@ -2,23 +2,42 @@ import XCTest
 @testable import TalariaKit
 
 final class SessionNavigationStateTests: XCTestCase {
-    func testRemovingALocallyPushedSectionChatReturnsToTheSectionRoot() {
+    func testRemovingARememberedChatPreservesAnUnrelatedSectionPage() {
+        let session = SessionSummary(sessionId: "remembered-chat")
+        var state = SessionNavigationState()
+        state.select(session)
+        state.select(.memory)
+        state.selectedItem = .memory(.section(.user))
+        let previous = state
+
+        state.remove(sessionID: session.sessionId)
+
+        XCTAssertEqual(state.destination, previous.destination)
+        XCTAssertEqual(state.section, previous.section)
+        XCTAssertEqual(state.selectedItem, previous.selectedItem)
+        XCTAssertEqual(state.selectedSectionSession, previous.selectedSectionSession)
+        XCTAssertEqual(state.rootRevision, previous.rootRevision)
+        XCTAssertEqual(state.chatRootRevision, previous.chatRootRevision)
+        XCTAssertNil(state.lastSelectedSessionID)
+    }
+
+    func testRemovingASectionChatPopsItsActualSectionPath() {
         for section: SessionListUtilityDestination in [.archived, .scheduled, .webhook] {
             var state = SessionNavigationState()
             state.select(section)
-            let session = SessionSummary(sessionId: "local-section-chat")
-            // A local navigationDestination can push a chat without selectedSectionSession.
-            state.remember(session)
-            XCTAssertNil(state.selectedSectionSession)
+            let session = SessionSummary(sessionId: "section-chat")
+            state.pushSectionSession(session)
             let previous = state
+
             state.remove(sessionID: session.sessionId)
+
             XCTAssertEqual(state.destination, .utility(section))
             XCTAssertEqual(state.section, AppSection(section))
+            XCTAssertNil(state.selectedSectionSession)
             XCTAssertNil(state.selectedItem)
             XCTAssertNil(state.lastSelectedSessionID)
-            XCTAssertGreaterThan(state.chatRootRevision, previous.chatRootRevision, "Rebuild the stack to drop its local push")
             state.restoreAfterRemoval(previous, ifUnchangedAt: state.openRevision)
-            XCTAssertEqual(state.lastSelectedSessionID, session.sessionId)
+            XCTAssertEqual(state.selectedSectionSession, session)
             XCTAssertEqual(state.destination, previous.destination)
         }
     }
