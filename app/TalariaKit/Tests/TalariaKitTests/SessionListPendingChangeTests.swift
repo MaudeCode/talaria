@@ -79,8 +79,10 @@ final class SessionListPendingChangeTests: XCTestCase {
                 if request.request.url?.path == "/api/session/delete" {
                     _ = requests.append(request)
                     arrived.fulfill()
-                } else if requests.count == 0 { request.complete(withJSON: self.baseline) }
-                else { _ = requests.append(request); reconcile.fulfill() }
+                } else if request.request.url?.path == "/api/session" {
+                    _ = requests.append(request)
+                    reconcile.fulfill()
+                } else { request.complete(withJSON: requests.count > 0 && deleted ? #"{"sessions":[]}"# : self.baseline) }
             }
             _ = await viewModel.load()
             let session = try XCTUnwrap(viewModel.sessions.first)
@@ -89,13 +91,83 @@ final class SessionListPendingChangeTests: XCTestCase {
             requests.request(at: 0).fail(with: URLError(.networkConnectionLost))
             await fulfillment(of: [reconcile], timeout: 5)
             XCTAssertTrue(viewModel.visibleSessions(searchText: "", selectedProjectID: nil).isEmpty)
-            requests.request(at: 1).complete(withJSON: deleted ? #"{"sessions":[]}"# : baseline)
+            requests.request(at: 1).complete(withJSON: deleted ? #"{"error":"Session not found"}"# : #"{"session":{"session_id":"same","title":"Original"}}"#,
+                                            statusCode: deleted ? 404 : 200)
             let accepted = await removal.value
             XCTAssertEqual(accepted, deleted)
             XCTAssertEqual(viewModel.visibleSessions(searchText: "", selectedProjectID: nil).isEmpty, deleted)
             XCTAssertNil(viewModel.pendingChange(for: session))
             XCTAssertTrue(viewModel.removingSessionIDs.isEmpty)
             XCTAssertEqual(requests.count, 2, "A removal is never replayed blindly")
+        }
+    }
+
+    func testUnknownArchivedDeleteUsesDetailBeforeRestoringOrPurgingTheChat() async throws {
+        for deleted in [false, true] {
+            for serverError in [false, true] {
+                let requests = DeferredRequests()
+                let arrived = expectation(description: "archived delete held")
+                let reconciled = expectation(description: "archived detail read")
+                let archived = #"{"session_id":"same","title":"Archived chat","archived":true,"can_delete":true}"#
+                let viewModel = model { request in
+                    switch request.request.url?.path {
+                    case "/api/session/delete":
+                        _ = requests.append(request)
+                        arrived.fulfill()
+                    case "/api/session":
+                        _ = requests.append(request)
+                        reconciled.fulfill()
+                    default:
+                        request.complete(withJSON: requests.count > 0 && deleted ? #"{"sessions":[]}"# : "{\"sessions\":[\(archived)]}")
+                    }
+                }
+                let container = try ModelContainer(for: CachedSession.self, CachedMessage.self,
+                    configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none))
+                let context = container.mainContext
+                let server = try XCTUnwrap(lastServer)
+                let session = SessionSummary(sessionId: "same", title: "Archived chat", archived: true)
+                let decoder = JSONDecoder()
+                decoder.keyDecodingStrategy = .convertFromSnakeCase
+                let message = try decoder.decode(ChatMessage.self, from: Data(#"{"role":"user","content":"Cached archived transcript"}"#.utf8))
+                _ = await viewModel.load()
+                XCTAssertTrue(viewModel.sessions.isEmpty, "The sidebar excludes archived chats")
+                try CacheStore.cacheMessages([message], serverURL: server, sessionID: "same", in: context)
+                let version = viewModel.resourceCacheVersion(for: "same")
+                var navigation = SessionNavigationState()
+                navigation.select(session)
+                let previous = navigation
+                let removal = Task { await viewModel.delete(session, modelContext: context) }
+                await fulfillment(of: [arrived], timeout: 5)
+                navigation.remove(sessionID: "same")
+                let revision = navigation.openRevision
+                XCTAssertNil(navigation.selectedSessionID)
+                XCTAssertEqual(viewModel.removingSessionIDs, ["same"])
+                if serverError {
+                    requests.request(at: 0).complete(withJSON: #"{"error":"Synthetic unknown outcome"}"#, statusCode: 503)
+                } else {
+                    requests.request(at: 0).fail(with: URLError(.timedOut))
+                }
+                await fulfillment(of: [reconciled], timeout: 5)
+                XCTAssertEqual(requests.count, 2)
+                guard requests.count >= 2 else { return }
+                XCTAssertEqual(viewModel.resourceCacheVersion(for: "same"), version, "No purge before reconciliation")
+                requests.request(at: 1).complete(withJSON: deleted ? #"{"error":"Session not found"}"# : "{\"session\":\(archived)}",
+                                                statusCode: deleted ? 404 : 200)
+                let accepted = await removal.value
+                XCTAssertEqual(accepted, deleted)
+                if viewModel.shouldRestoreSessionAfterRemoval("same") {
+                    navigation.restoreAfterRemoval(previous, ifUnchangedAt: revision)
+                }
+                XCTAssertEqual(navigation.selectedSessionID, deleted ? nil : "same", "An existing archived chat must reopen")
+                XCTAssertEqual(navigation.destination, deleted ? nil : .session(session), "Restore the archived chat's summary")
+                let archivedRows = try await XCTUnwrap(lastClient).sessions(includeArchived: true)
+                XCTAssertEqual(archivedRows.sessions?.contains { $0.sessionId == "same" }, !deleted, "The archived row still exists on rollback")
+                XCTAssertEqual(try CacheStore.cachedMessages(serverURL: server, sessionID: "same", in: context).count, deleted ? 0 : 1)
+                XCTAssertEqual(viewModel.resourceCacheVersion(for: "same") == version, !deleted)
+                XCTAssertNil(viewModel.pendingChange(for: session))
+                XCTAssertTrue(viewModel.removingSessionIDs.isEmpty)
+                XCTAssertEqual(requests.count, 2, "Delete is never replayed")
+            }
         }
     }
 
@@ -111,7 +183,7 @@ final class SessionListPendingChangeTests: XCTestCase {
                 removalHeld.fulfill()
             case "/api/profiles/switch":
                 request.complete(withJSON: #"{"active":"other","profiles":[{"name":"other"}]}"#)
-            case "/api/sessions" where requests.count == 1:
+            case "/api/session" where requests.count == 1:
                 _ = requests.append(request)
                 reconcileHeld.fulfill()
             default:
@@ -129,7 +201,7 @@ final class SessionListPendingChangeTests: XCTestCase {
         let switched = await viewModel.switchActiveProfile(profile)
         XCTAssertTrue(switched)
         let replacementCacheVersion = viewModel.resourceCacheVersion(for: "same")
-        requests.request(at: 1).complete(withJSON: empty)
+        requests.request(at: 1).complete(withJSON: #"{"error":"Session not found"}"#, statusCode: 404)
         let accepted = await removal.value
         XCTAssertFalse(accepted, "An obsolete profile cannot confirm a removal")
         XCTAssertEqual(viewModel.resourceCacheVersion(for: "same"), replacementCacheVersion,

@@ -8,7 +8,7 @@
     },
     {
       "category": "Fixed",
-      "summary": "Chat actions follow display and accessibility changes, and archiving a parent chat keeps its open fork intact.",
+      "summary": "Chat actions follow display and accessibility changes, and archiving a parent chat keeps its open fork intact. If deleting an archived chat loses its connection, the chat returns when the server still has it.",
       "highlight": false,
       "components": ["app"]
     }

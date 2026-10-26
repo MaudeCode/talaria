@@ -1819,6 +1819,30 @@ public final class SessionListViewModel {
             }
         } reconcile: { committed in
             if !reload && committed { return true }
+            if removing, clearTranscript, !committed {
+                // The sidebar excludes archived chats, so only detail can confirm deletion.
+                let deleted: Bool
+                do {
+                    _ = try await self.client.session(id: id, includeMessages: false, messageLimit: nil)
+                    deleted = false
+                } catch APIError.http(statusCode: 404, body: _) {
+                    deleted = true
+                } catch {
+                    return false
+                }
+                guard scope == self.resourceGeneration,
+                      ServerCacheGeneration.current(for: self.server) == self.cacheGeneration else { return false }
+                if deleted {
+                    self.removeConfirmedRows([id], clearTranscript: true, modelContext: modelContext)
+                    removalReconciled = true
+                } else {
+                    self.refusedSessionRemovalIDs.insert(id)
+                }
+                // Detail settled the outcome even if the sidebar refresh fails.
+                self.pendingChanges["session:\(id)"]?.snapshotClaim = nil
+                _ = await self.load(modelContext: modelContext, animation: animation)
+                return true
+            }
             let loaded = await self.load(modelContext: modelContext, animation: animation)
             if loaded, scope == self.resourceGeneration, removing, !committed, !self.sessions.contains(where: { $0.sessionId == id }) {
                 self.removeConfirmedRows([id], clearTranscript: clearTranscript, modelContext: modelContext)
@@ -1826,7 +1850,9 @@ public final class SessionListViewModel {
             }
             return loaded
         }
-        return changed || removalReconciled
+        return scope == resourceGeneration
+            && ServerCacheGeneration.current(for: server) == cacheGeneration
+            && (changed || removalReconciled)
     }
 
     private func changeResource<Result>(
