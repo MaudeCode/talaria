@@ -5,12 +5,6 @@
       "summary": "Manage the chat you are reading from its title menu, or from More in the Duo's vertical bar, with the same actions as the sidebar row: pin, duplicate, rename, move, export, archive and delete. Archive and delete apply at once and roll back if the server refuses.",
       "highlight": true,
       "components": ["app"]
-    },
-    {
-      "category": "Fixed",
-      "summary": "Chat actions follow display and accessibility changes, and archiving a parent chat keeps its open fork intact. If deleting an archived chat loses its connection, the chat returns when the server still has it.",
-      "highlight": false,
-      "components": ["app"]
     }
   ]
 }
