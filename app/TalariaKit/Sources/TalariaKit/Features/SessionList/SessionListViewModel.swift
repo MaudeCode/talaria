@@ -1828,6 +1828,11 @@ public final class SessionListViewModel {
                 } catch APIError.http(statusCode: 404, body: _) {
                     deleted = true
                 } catch {
+                    guard scope == self.resourceGeneration,
+                          ServerCacheGeneration.current(for: self.server) == self.cacheGeneration else { return false }
+                    // Restore display, but block another write until a fresh list reconciles.
+                    self.refusedSessionRemovalIDs.insert(id)
+                    self.pendingChanges["session:\(id)"]?.removing = false
                     return false
                 }
                 guard scope == self.resourceGeneration,
