@@ -24,6 +24,10 @@ struct SessionListView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @State private var viewModel: SessionListViewModel
+    // Installed once after State bindings are mounted; its immutable handlers share this list's lifetime.
+    @State private var sessionActionContext: SessionActionContext?
+    // Cached handlers read the live preference through State, rather than freezing their captured environment.
+    @State private var sessionActionReduceMotion = false
     @State private var quotaViewModel: ProvidersViewModel
     @State private var updateNotificationViewModel: UpdateNotificationCenterViewModel
     @State private var sectionViewModels: SectionViewModels
@@ -156,7 +160,8 @@ struct SessionListView: View {
         opensProviderQuotaWidgetSettings: Binding<Bool> = .constant(false),
         requestedNewChat: Binding<NewChatRequest?> = .constant(nil),
         draftStore: ChatDraftStore? = nil,
-        chats: ChatViewModelCache? = nil
+        chats: ChatViewModelCache? = nil,
+        viewModel: SessionListViewModel? = nil
     ) {
         self.authManager = authManager
         self.server = server
@@ -175,7 +180,7 @@ struct SessionListView: View {
             archiveUndoLifetime = .seconds(24 * 60 * 60)
         }
         #endif
-        let list = SessionListViewModel(
+        let list = viewModel ?? SessionListViewModel(
             server: server,
             responseCache: .app(server: server),
             archiveUndoLifetime: archiveUndoLifetime
@@ -219,7 +224,8 @@ struct SessionListView: View {
 
     var body: some View {
         sidebarLayout
-            .environment(\.sessionActions, SessionActionContext(viewModel: viewModel, actions: sessionRowActions()))
+            .environment(\.sessionActions, sessionActionContext)
+            .onChange(of: reduceMotion, initial: true) { _, value in sessionActionReduceMotion = value }
             .onChange(of: viewModel.removingSessionIDs) { _, ids in reconcileRemovedSessionNavigation(ids) }
             .onChange(of: navigationState.lastSelectedSessionID) { _, sessionID in
                 chats.keepOnly(sessionID: sessionID)
@@ -421,6 +427,13 @@ struct SessionListView: View {
                 )
             }
             .onAppear {
+                if sessionActionContext == nil {
+                    sessionActionContext = SessionActionContext(
+                        viewModel: viewModel, actions: makeSessionRowActions(),
+                        onAPIError: { authManager.handleAPIError($0, server: server) },
+                        filesInspector: makeSplitFilesInspector()
+                    )
+                }
                 // TAL-437: the last-known chats, projects and profile show at once; the initial
                 // load then replaces them.
                 viewModel.paintCachedStateIfEmpty(modelContext: modelContext)
@@ -1015,6 +1028,13 @@ struct SessionListView: View {
     }
 
     private var splitFilesInspector: SplitFilesInspector {
+        var inspector = sessionActionContext?.filesInspector ?? makeSplitFilesInspector()
+        inspector.widensChat = sidebarPresentation.filesInspectorFits
+        inspector.offersCompanionPage = horizontalSizeClass == .regular
+        return inspector
+    }
+
+    private func makeSplitFilesInspector() -> SplitFilesInspector {
         SplitFilesInspector(
             isPresented: Binding {
                 navigationState.filesInspectorPresented
@@ -1024,6 +1044,7 @@ struct SessionListView: View {
             widensChat: sidebarPresentation.filesInspectorFits,
             reportShown: { navigationState.chatShowsFilesInspector = $0 },
             reportSession: { session in
+                navigationState.reportDisplayedSession(session)
                 if horizontalSizeClass == .regular { regularWidthChat = session }
             },
             offersCompanionPage: horizontalSizeClass == .regular,
@@ -1149,18 +1170,16 @@ struct SessionListView: View {
     private func navigationDestination(_ destination: SessionNavigationDestination) -> some View {
         switch destination {
         case .session(let session):
-            ChatView(
-                session: session,
-                server: server,
-                onAPIError: { authManager.handleAPIError($0, server: server) },
-                draftStore: draftStore,
-                sessionListOwner: viewModel,
-                splitFilesInspector: splitFilesInspector,
+            SessionChatDestination(
+                session: session, server: server, authManager: authManager,
+                draftStore: draftStore, viewModel: viewModel, context: sessionActionContext,
+                inspectorFits: sidebarPresentation.filesInspectorFits,
+                offersCompanionPage: horizontalSizeClass == .regular,
                 retained: chats.chat(for: session, server: server) {
                     ChatView.makeViewModel(session: session, server: server, sessionListOwner: viewModel)
                 }
             )
-                .id(session.id)
+            .id(session.id)
         case .newChat(let route):
             PendingNewChatView(
                 initialDraft: route.initialDraft,
@@ -1173,7 +1192,7 @@ struct SessionListView: View {
                 executionMode: route.executionMode,
                 server: server,
                 viewModel: viewModel,
-                onAPIError: { authManager.handleAPIError($0, server: server) },
+                onAPIError: sessionActionContext?.onAPIError ?? { authManager.handleAPIError($0, server: server) },
                 onSessionCreated: rememberCreatedSession,
                 draftStore: draftStore,
                 splitFilesInspector: splitFilesInspector,
@@ -1701,6 +1720,11 @@ struct SessionListView: View {
 
     /// Sidebar rows replace the root; section-owned lists push their chats above the list.
     private func sessionRowActions(in list: AppSection = .chats) -> SessionListRowActions {
+        if list == .chats, let sessionActionContext { return sessionActionContext.actions }
+        return makeSessionRowActions(in: list)
+    }
+
+    private func makeSessionRowActions(in list: AppSection = .chats) -> SessionListRowActions {
         SessionListRowActions(
             retryLoad: {
                 Task { await refreshSessionsAndActiveProfile() }
@@ -1832,6 +1856,10 @@ struct SessionListView: View {
         await loadSessions()
     }
 
+    private var sessionActionAnimation: Animation? {
+        SessionListMotion.sessionMutationAnimation(reduceMotion: sessionActionReduceMotion)
+    }
+
     private func loadSessions() async {
         // Rows carry `sessionRowTransition`, but it only plays when the array is
         // replaced inside an animation. The first population has nothing to move,
@@ -1839,7 +1867,7 @@ struct SessionListView: View {
         // sorted place instead of popping it in.
         let animation = viewModel.sessions.isEmpty
             ? nil
-            : SessionListMotion.sessionMutationAnimation(reduceMotion: reduceMotion)
+            : sessionActionAnimation
         await viewModel.load(modelContext: modelContext, animation: animation)
         guard !Task.isCancelled else { return }
         handleLastError()
@@ -1856,7 +1884,7 @@ struct SessionListView: View {
             !(session.pinned ?? false),
             for: session,
             modelContext: modelContext,
-            animation: SessionListMotion.sessionMutationAnimation(reduceMotion: reduceMotion)
+            animation: sessionActionAnimation
         )
         handleLastError()
 
@@ -1869,7 +1897,7 @@ struct SessionListView: View {
         let didArchive = await viewModel.archive(
             session,
             modelContext: modelContext,
-            animation: SessionListMotion.sessionMutationAnimation(reduceMotion: reduceMotion)
+            animation: sessionActionAnimation
         )
         handleLastError()
 
@@ -1885,7 +1913,7 @@ struct SessionListView: View {
     private func undoArchive() async {
         _ = await viewModel.undoArchive(
             modelContext: modelContext,
-            animation: SessionListMotion.sessionMutationAnimation(reduceMotion: reduceMotion)
+            animation: sessionActionAnimation
         )
         handleLastError()
     }
@@ -1894,7 +1922,7 @@ struct SessionListView: View {
         let didDelete = await viewModel.delete(
             session,
             modelContext: modelContext,
-            animation: SessionListMotion.sessionMutationAnimation(reduceMotion: reduceMotion)
+            animation: sessionActionAnimation
         )
         handleLastError()
 
@@ -1910,7 +1938,7 @@ struct SessionListView: View {
         let changed = await viewModel.performBulkAction(
             action,
             modelContext: modelContext,
-            animation: SessionListMotion.sessionMutationAnimation(reduceMotion: reduceMotion)
+            animation: sessionActionAnimation
         )
         handleLastError()
         guard !changed.isEmpty else { return }
@@ -2195,14 +2223,15 @@ struct SessionListView: View {
     private func reconcileRemovedSessionNavigation(_ removingSessionIDs: Set<String>) {
         for id in removingSessionIDs {
             guard removedSessionNavigation[id] == nil,
-                  navigationState.selectedSessionID == id || navigationState.selectedSectionSession?.sessionId == id else { continue }
+                  navigationState.selectedSessionID == id || navigationState.selectedSectionSession?.sessionId == id
+                    || navigationState.lastSelectedSessionID == id else { continue }
             let previous = navigationState
             navigationState.remove(sessionID: id)
             removedSessionNavigation[id] = RemovedSessionNavigation(state: previous, revision: navigationState.openRevision)
             persistLastSelectedSession()
         }
         for (id, removed) in removedSessionNavigation where !removingSessionIDs.contains(id) {
-            if viewModel.sessions.contains(where: { $0.sessionId == id }) {
+            if viewModel.shouldRestoreSessionAfterRemoval(id) {
                 navigationState.restoreAfterRemoval(removed.state, ifUnchangedAt: removed.revision)
                 persistLastSelectedSession()
             }
@@ -2219,6 +2248,33 @@ struct SessionListView: View {
         SessionNavigationPersistence.save(navigationState.lastSelectedSessionID, for: server)
     }
 
+}
+
+/// The existing-session sibling of PendingNewChatView; it has no session-creation lifecycle.
+/// Explicit inputs keep list-only updates from constructing the retained chat again.
+@MainActor
+private struct SessionChatDestination: View {
+    let session: SessionSummary
+    let server: URL
+    let authManager: AuthManager
+    let draftStore: ChatDraftStore
+    let viewModel: SessionListViewModel
+    let context: SessionActionContext?
+    let inspectorFits: Bool
+    let offersCompanionPage: Bool
+    let retained: RetainedChat
+
+    var body: some View {
+        var inspector = context?.filesInspector
+        inspector?.widensChat = inspectorFits
+        inspector?.offersCompanionPage = offersCompanionPage
+        return ChatView(
+            session: session, server: server,
+            onAPIError: context?.onAPIError ?? { authManager.handleAPIError($0, server: server) },
+            draftStore: draftStore, sessionListOwner: viewModel,
+            splitFilesInspector: inspector, retained: retained
+        )
+    }
 }
 
 private struct SessionSearchTaskID: Hashable {

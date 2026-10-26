@@ -109,7 +109,8 @@ final class FixtureApp {
         .modelContainer(cache)
     }
 
-    func sessionList(scenePhase: ScenePhase = .active, chats: ChatViewModelCache? = nil) -> some View {
+    func sessionList(scenePhase: ScenePhase = .active, chats: ChatViewModelCache? = nil,
+                     viewModel: SessionListViewModel? = nil) -> some View {
         SessionListView(
             authManager: environment.authManager,
             server: UITestFixtureEnvironment.serverURL,
@@ -117,7 +118,8 @@ final class FixtureApp {
             pendingDeepLinkedSessionID: Binding(get: { self.pendingSessionID }, set: { self.pendingSessionID = $0 }),
             opensProviderQuotaWidgetSettings: Binding(get: { self.opensQuotaWidgetSettings }, set: { self.opensQuotaWidgetSettings = $0 }),
             draftStore: environment.draftStore,
-            chats: chats
+            chats: chats,
+            viewModel: viewModel
         )
         .environment(\.scenePhase, scenePhase)
         .modelContainer(cache)

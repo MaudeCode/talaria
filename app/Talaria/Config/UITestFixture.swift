@@ -448,7 +448,7 @@ private final class UITestChatFixtureState: @unchecked Sendable {
 }
 
 final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
-    static let forkSessionID = "ui-fixture-session-1"
+    static let forkSessionID = "ui-fixture-fresh-fork"
     static let sessionID = "ui-fixture-session"
     static let sessionTitle = "UI Fixture Session"
     private static let recoveryState = NSLock()

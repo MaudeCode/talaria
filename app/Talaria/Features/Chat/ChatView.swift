@@ -75,7 +75,7 @@ private enum TurnDiffPresentation: Identifiable {
 /// current session and whether Files or a companion page needs that room (TAL-1458).
 struct SplitFilesInspector {
     let isPresented: Binding<Bool>
-    let widensChat: Bool
+    var widensChat: Bool
     let reportShown: (Bool) -> Void
     var reportSession: (SessionSummary) -> Void = { _ in }
     var offersCompanionPage = false
@@ -836,11 +836,16 @@ struct ChatView: View {
             }
     }
 
+    private func reportFilesInspector() {
+        splitFilesInspector?.reportSession(session)
+        splitFilesInspector?.reportShown(showsFilesInspector)
+    }
+
     private var chatWithToolbar: some View {
         let sessionMenu: SessionRowContextMenu? = if viewModel.hasSession, let sessionActions {
             SessionRowContextMenu(
                 viewModel: sessionActions.viewModel,
-                session: sessionActions.viewModel.sessions.first { $0.sessionId == session.sessionId } ?? session,
+                session: session,
                 actions: sessionActions.actions
             )
         } else { nil }
@@ -849,10 +854,8 @@ struct ChatView: View {
                       initial: true) { _, isEmpty in splitFilesInspector?.reportEmptyTranscript(isEmpty) }
             .onChange(of: showsFilesInspector, initial: true) { splitFilesInspector?.reportShown(showsFilesInspector) }
             .onChange(of: showsCompanionPage, initial: true) { splitFilesInspector?.reportCompanionPage(showsCompanionPage) }
-            .onAppear {
-                splitFilesInspector?.reportSession(session)
-                splitFilesInspector?.reportShown(showsFilesInspector)
-            }
+            .onAppear(perform: reportFilesInspector)
+            .onChange(of: splitFilesInspector != nil) { reportFilesInspector() }
             .onChange(of: session) { _, session in splitFilesInspector?.reportSession(session) }
             .navigationDestination(isPresented: $showsFilesBrowser) {
                 FileBrowserView(session: session, server: server, onAPIError: onAPIError)
@@ -2516,7 +2519,7 @@ struct ChatView: View {
             forkedSession = nil
         }
         if let removed = removedForkedSession, let id = removed.sessionId, !removingSessionIDs.contains(id) {
-            if forkedSession == nil, sessionActions?.viewModel.sessions.contains(where: { $0.sessionId == id }) == true {
+            if forkedSession == nil, sessionActions?.viewModel.shouldRestoreSessionAfterRemoval(id) == true {
                 forkedSession = removed
             }
             removedForkedSession = nil

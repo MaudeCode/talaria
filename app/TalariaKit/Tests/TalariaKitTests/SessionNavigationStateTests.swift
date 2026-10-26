@@ -19,6 +19,27 @@ final class SessionNavigationStateTests: XCTestCase {
         XCTAssertEqual(state.rootRevision, previous.rootRevision)
         XCTAssertEqual(state.chatRootRevision, previous.chatRootRevision)
         XCTAssertNil(state.lastSelectedSessionID)
+        state.restoreAfterRemoval(previous, ifUnchangedAt: state.openRevision)
+        XCTAssertEqual(state, previous)
+    }
+
+    func testRemovingTheRootUnderADisplayedForkKeepsItsStack() {
+        var state = SessionNavigationState()
+        let parent = SessionSummary(sessionId: "parent")
+        let fork = SessionSummary(sessionId: "fork")
+        state.select(parent)
+        state.reportDisplayedSession(fork)
+        let previous = state
+
+        state.remove(sessionID: parent.sessionId)
+
+        XCTAssertEqual(state.destination, .session(parent))
+        XCTAssertEqual(state.displayedSessionID, fork.sessionId)
+        XCTAssertEqual(state.rootRevision, previous.rootRevision)
+        XCTAssertEqual(state.chatRootRevision, previous.chatRootRevision)
+        XCTAssertNil(state.lastSelectedSessionID)
+        state.restoreAfterRemoval(previous, ifUnchangedAt: state.openRevision)
+        XCTAssertEqual(state, previous)
     }
 
     func testRemovingASectionChatPopsItsActualSectionPath() {
@@ -62,6 +83,18 @@ final class SessionNavigationStateTests: XCTestCase {
         state.select(other)
         state.restoreAfterRemoval(previous, ifUnchangedAt: removedRevision)
         XCTAssertEqual(state.destination, .session(other))
+    }
+
+    func testRefusedRemovalRestoresAChatCreatedOnTheImplicitRoot() {
+        var state = SessionNavigationState()
+        let session = SessionSummary(sessionId: "created")
+        state.remember(session)
+        let previous = state
+        state.remove(sessionID: session.sessionId)
+        XCTAssertNil(state.selectedSessionID)
+        state.restoreAfterRemoval(previous, ifUnchangedAt: state.openRevision)
+        XCTAssertEqual(state.selectedSessionID, session.sessionId)
+        XCTAssertEqual(state.lastSelectedSessionID, session.sessionId)
     }
 
     func testRefusedRemovalDoesNotReplaceAChatCreatedOnItsNewChatRoot() {

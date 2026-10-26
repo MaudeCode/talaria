@@ -50,6 +50,26 @@ final class SessionListPendingChangeTests: XCTestCase {
         }
     }
 
+    func testFreshForkRemovalOutcomeDoesNotDependOnListMembership() async throws {
+        for deleting in [false, true] {
+            for refused in [false, true] {
+                let viewModel = model { request in
+                    if request.request.url?.path == (deleting ? "/api/session/delete" : "/api/session/archive") {
+                        request.complete(withJSON: refused ? #"{"error":"Synthetic refusal"}"# : #"{"ok":true}"#,
+                                         statusCode: refused ? 409 : 200)
+                    } else { request.complete(withJSON: self.baseline) }
+                }
+                _ = await viewModel.load()
+                let fork = SessionSummary(sessionId: "fresh-fork")
+                XCTAssertFalse(viewModel.sessions.contains { $0.sessionId == fork.sessionId })
+                let accepted = deleting ? await viewModel.delete(fork) : await viewModel.archive(fork)
+                XCTAssertEqual(accepted, !refused)
+                XCTAssertEqual(viewModel.shouldRestoreSessionAfterRemoval("fresh-fork"), refused)
+                XCTAssertTrue(viewModel.removingSessionIDs.isEmpty)
+            }
+        }
+    }
+
     func testUnknownRemovalReconcilesBeforeKeepingOrRollingBackTheRow() async throws {
         for deleted in [false, true] {
             let requests = DeferredRequests()

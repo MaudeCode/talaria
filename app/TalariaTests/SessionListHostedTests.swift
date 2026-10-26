@@ -1918,6 +1918,9 @@ extension SessionListHostedTests {
             if refusesRemoval { scenario.append(UITestFixtureEnvironment.refuseSessionRemovalArgument) }
             let fixture = try FixtureApp(scenario, for: self)
             let window = try await openChat(fixture, size: HostedSize.phone)
+            let listed = try await fixture.client.sessions().sessions ?? []
+            XCTAssertFalse(listed.contains { $0.sessionId == UITestFixtureURLProtocol.forkSessionID },
+                           "A fresh branch must not already be listed")
             try await sendFromComposer("/branch", in: window)
             _ = try await requireElement(in: window, label: "Fork fixture reply")
             let ready = await awaitCondition {
@@ -1947,6 +1950,74 @@ extension SessionListHostedTests {
             window.isHidden = true
             window.rootViewController = nil
         }
+    }
+
+    func testSidebarRemovalOfTheParentKeepsItsDisplayedFork() async throws {
+        for refused in [false, true] {
+            var scenario = [UITestFixtureEnvironment.forkSessionArgument, UITestFixtureEnvironment.holdSessionRemovalArgument]
+            if refused { scenario.append(UITestFixtureEnvironment.refuseSessionRemovalArgument) }
+            let fixture = try FixtureApp(scenario, for: self)
+            let window = try await openChat(fixture, size: HostedSize.duoInnerLandscape)
+            try await sendFromComposer("/branch", in: window)
+            _ = try await requireElement(in: window, label: "Fork fixture reply")
+            try await openSidebar(in: window)
+            let parent = try await requireElement(in: window) {
+                $0.accessibilityLabel?.hasPrefix(UITestFixtureURLProtocol.sessionTitle) == true
+                    && $0.accessibilityCustomActions?.contains { $0.name == "Archive" } == true
+            }
+            let archive = try XCTUnwrap(parent.accessibilityCustomActions?.first { $0.name == "Archive" })
+            XCTAssertTrue(archive.actionHandler?(archive) ?? false)
+            let held = await awaitCondition { UITestFixtureHold.shared.pendingCount > 0 }
+            XCTAssertTrue(held)
+            _ = try await requireElement(in: window, label: "Fork fixture reply")
+            fixture.releaseHeldLoads()
+            let answered = await awaitCondition {
+                UITestFixtureURLProtocol.answeredPaths.withLock { $0.contains("/api/session/archive") }
+            }
+            XCTAssertTrue(answered)
+            _ = try await requireElement(in: window, label: "Fork fixture reply")
+            if refused {
+                _ = try await requireElement(in: window) {
+                    $0.accessibilityLabel?.hasPrefix(UITestFixtureURLProtocol.sessionTitle) == true
+                        && $0.accessibilityCustomActions?.contains { $0.name == "Archive" } == true
+                }
+            } else {
+                let gone = await awaitNoElement(in: window) {
+                    $0.accessibilityLabel?.hasPrefix(UITestFixtureURLProtocol.sessionTitle) == true
+                        && $0.accessibilityCustomActions?.contains { $0.name == "Archive" } == true
+                }
+                XCTAssertTrue(gone)
+            }
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+    }
+
+    func testSidebarRemovalOfAnUndisplayedRememberedChatClearsRestoreAndRetainedChat() async throws {
+        let fixture = try FixtureApp(for: self)
+        let chats = ChatViewModelCache()
+        let window = try hostWindow(fixture.sessionList(chats: chats))
+        try await openSidebar(in: window)
+        HostedAccessibility.activate(try await requireElement(in: window) {
+            $0.accessibilityLabel?.hasPrefix(UITestFixtureURLProtocol.sessionTitle) == true
+        })
+        _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
+        XCTAssertEqual(chats.count, 1)
+        try await openSidebar(in: window)
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Memory"))
+        _ = try await requireElement(in: window, label: "User Profile")
+        try await openSidebar(in: window)
+        let parent = try await requireElement(in: window) {
+            $0.accessibilityLabel?.hasPrefix(UITestFixtureURLProtocol.sessionTitle) == true
+        }
+        let archive = try XCTUnwrap(parent.accessibilityCustomActions?.first { $0.name == "Archive" })
+        XCTAssertTrue(archive.actionHandler?(archive) ?? false)
+        let cleared = await awaitCondition {
+            SessionNavigationPersistence.load(for: UITestFixtureEnvironment.serverURL) == nil && chats.count == 0
+        }
+        XCTAssertTrue(cleared, "The removed chat stayed retained or eligible for launch restore")
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Close navigation"))
+        _ = try await requireElement(in: window, label: "User Profile")
     }
 
     func testRefusedArchiveRestoresTheOpenChat() async throws {

@@ -23,6 +23,38 @@ final class ChatHostedTests: XCTestCase {
         }
     }
 
+    func testUnrelatedSessionListRefreshDoesNotEvaluateTheOpenChatBody() async throws {
+        let fixture = try FixtureApp(for: self)
+        let list = SessionListViewModel(server: UITestFixtureEnvironment.serverURL, client: fixture.client)
+        let chats = ChatViewModelCache()
+        let evaluations = ChatBodyEvaluationRecorder()
+        let window = try hostWindow(fixture.sessionList(chats: chats, viewModel: list)
+            .environment(\.chatBodyEvaluation, evaluations))
+        try await openSidebar(in: window)
+        HostedAccessibility.activate(try await requireElement(in: window) {
+            $0.accessibilityLabel?.hasPrefix(UITestFixtureURLProtocol.sessionTitle) == true
+        })
+        _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
+        let summary = try await fixture.session()
+        let retained = chats.chat(for: summary, server: UITestFixtureEnvironment.serverURL) {
+            XCTFail("The open chat must already be retained")
+            return ChatView.makeViewModel(session: summary, server: UITestFixtureEnvironment.serverURL)
+        }
+        let ready = await awaitCondition { retained.hasLoaded }
+        XCTAssertTrue(ready, "Chat startup must finish before measuring the list refresh")
+        // Finish row layout before measuring only the list refresh.
+        try await Task.sleep(for: .milliseconds(500))
+        _ = try await fixture.client.archiveSession(id: "ui-fixture-session-17", archived: true)
+        let before = retained.rows.realizationCount
+        evaluations.reset()
+        let loaded = await list.load(modelContext: fixture.cache.mainContext)
+        XCTAssertTrue(loaded)
+        XCTAssertFalse(list.sessions.contains { $0.sessionId == "ui-fixture-session-17" })
+        settle(0.5)
+        XCTAssertEqual(evaluations.counts["chat", default: 0], 0, "An unrelated list refresh evaluated ChatView.body")
+        XCTAssertEqual(retained.rows.realizationCount, before, "An unrelated list refresh realized transcript rows")
+    }
+
     func testBookFoldMovesComposerAndUnfoldingRetainsItsEditorAndDraft() async throws {
         let fixture = try FixtureApp(for: self)
         let session = try await fixture.session()

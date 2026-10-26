@@ -150,6 +150,11 @@ public final class SessionListViewModel {
     }
     private var resourceGeneration = 0
     private var removedRows: [String: Int] = [:]
+    private var refusedSessionRemovalIDs: Set<String> = []
+    /// A refused fresh fork has no list row to restore from.
+    public func shouldRestoreSessionAfterRemoval(_ sessionID: String) -> Bool {
+        refusedSessionRemovalIDs.contains(sessionID) || sessions.contains { $0.sessionId == sessionID }
+    }
     private var resourceCacheContext = UUID()
     private var resourceCacheVersions: [String: UUID] = [:]
     public func resourceCacheVersion(for id: String) -> UUID { resourceCacheVersions[id] ?? resourceCacheContext }
@@ -1739,6 +1744,7 @@ public final class SessionListViewModel {
             mutatingSessionIDs = []
             claimedRows = [:]
             removedRows = [:]
+            refusedSessionRemovalIDs = []
             metadataVersions = [:]
             resourceCacheContext = UUID()
             resourceCacheVersions = [:]
@@ -1759,6 +1765,7 @@ public final class SessionListViewModel {
         for id in removedIDs {
             claimCount += 1
             removedRows[id] = claimCount
+            refusedSessionRemovalIDs.remove(id)
             claimedRows.removeValue(forKey: id)
             selectedSessionsByID.removeValue(forKey: id)
             if clearTranscript { resourceCacheVersions[id] = UUID() }
@@ -1841,6 +1848,7 @@ public final class SessionListViewModel {
         let scope = resourceGeneration
         let change = PendingResourceChange(label: label, title: title, color: color, pinned: pinned, isMoving: isMoving, removing: removing)
         pendingChanges[key] = change
+        if removing { refusedSessionRemovalIDs.remove(String(key.dropFirst("session:".count))) }
         actionErrorMessage = nil
         lastError = nil
         defer {
@@ -1876,6 +1884,7 @@ public final class SessionListViewModel {
                 default: refused = false
                 }
             } else { refused = error is SessionMoveWhileStreamingError || (removing && error is ResourceMutationError) }
+            if removing, refused { refusedSessionRemovalIDs.insert(String(key.dropFirst("session:".count))) }
             if removing, !refused {
                 claimCount += 1
                 pendingChanges[key]?.snapshotClaim = claimCount

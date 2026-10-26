@@ -8,15 +8,28 @@ struct SessionRowContextMenu: View {
     }
 
     let viewModel: SessionListViewModel
-    let session: SessionSummary
+    private let originalSession: SessionSummary
     let actions: SessionListRowActions
     var placement: Placement = .menu
+
+    init(viewModel: SessionListViewModel, session: SessionSummary, actions: SessionListRowActions, placement: Placement = .menu) {
+        self.viewModel = viewModel
+        originalSession = session
+        self.actions = actions
+        self.placement = placement
+    }
+
+    // Menu metadata observes list updates here, without invalidating the enclosing chat body.
+    private var session: SessionSummary {
+        viewModel.sessions.first { $0.sessionId == originalSession.sessionId } ?? originalSession
+    }
 
     private var isViewingCachedData: Bool { viewModel.isViewingCachedData }
     private var isMutating: Bool { viewModel.isMutating(session) }
     private var pendingChange: PendingResourceChange? { viewModel.pendingChange(for: session) }
 
     var body: some View {
+        let session = self.session
         let fullTitle = pendingChange?.title ?? SessionRowPresentation.displayTitle(for: session)
 
         if placement == .menu {
@@ -153,9 +166,19 @@ struct SessionRemovalButtons: View {
 }
 
 /// List-owned handlers shared by every chat, including locally pushed forks.
-struct SessionActionContext {
+final class SessionActionContext {
     let viewModel: SessionListViewModel
     let actions: SessionListRowActions
+    let onAPIError: (Error) -> Void
+    let filesInspector: SplitFilesInspector
+
+    init(viewModel: SessionListViewModel, actions: SessionListRowActions,
+         onAPIError: @escaping (Error) -> Void, filesInspector: SplitFilesInspector) {
+        self.viewModel = viewModel
+        self.actions = actions
+        self.onAPIError = onAPIError
+        self.filesInspector = filesInspector
+    }
 }
 
 extension EnvironmentValues {
