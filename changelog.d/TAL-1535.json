@@ -2,14 +2,8 @@
   "entries": [
     {
       "category": "Added",
-      "summary": "Manage the current chat from its title menu, with the same actions available in the sidebar.",
-      "highlight": false,
-      "components": ["app"]
-    },
-    {
-      "category": "Fixed",
-      "summary": "Forked chats act on their own session and return to the parent when removed. Removing another chat preserves your open page.",
-      "highlight": false,
+      "summary": "Manage the chat you are reading from its title menu, or from More in the Duo's vertical bar, with the same actions as the sidebar row: pin, duplicate, rename, move, export, archive and delete. Archive and delete apply at once and roll back if the server refuses.",
+      "highlight": true,
       "components": ["app"]
     }
   ]
