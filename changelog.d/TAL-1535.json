@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Manage the current chat from its title menu, with the same actions available in the sidebar.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

@@ -521,6 +521,8 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
 
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
+    private static let sessionRemovalPaths = ["/api/session/archive", "/api/session/delete"]
+
     override func startLoading() {
         guard let url = request.url else {
             client?.urlProtocol(self, didFailWithError: URLError(.badURL))
@@ -551,8 +553,10 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             && ProcessInfo.processInfo.arguments.contains("--ui-test-hold-chat-start")
         let holdsCancel = url.path == "/api/chat/cancel"
             && ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.holdChatCancelArgument)
+        let holdsSessionRemoval = Self.sessionRemovalPaths.contains(url.path)
+            && ProcessInfo.processInfo.arguments.contains("--ui-test-hold-session-removal")
         let holdsPanel = Self.isFullWidthPanelLoad(url) && Self.panelScenario == UITestFixtureEnvironment.panelLoadingArgument
-        if Self.holdsTranscriptReload(for: url) || holdsSessionList || holdsUpload || holdsSteer || holdsStart || holdsCancel || holdsPanel {
+        if Self.holdsTranscriptReload(for: url) || holdsSessionList || holdsUpload || holdsSteer || holdsStart || holdsCancel || holdsPanel || holdsSessionRemoval {
             UITestFixtureHold.shared.hold(request: request) { [weak self] in
                 guard let self, !self.isStopped else { return }
                 self.sendResponse(for: url)
@@ -605,6 +609,8 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         let statusCode: Int
         if case .status(let code) = listFailure { statusCode = code }
         else if Self.isFullWidthPanelLoad(url), Self.panelScenario == UITestFixtureEnvironment.panelUnavailableArgument { statusCode = 503 }
+        else if Self.sessionRemovalPaths.contains(url.path),
+                ProcessInfo.processInfo.arguments.contains("--ui-test-refuse-session-removal") { statusCode = 409 }
         else if Self.failsInitialUpload(url) { statusCode = 500 }
         else if Self.failsSessionCreation(url) {
             statusCode = ProcessInfo.processInfo.arguments.contains("--ui-test-refuse-first-session-creation") ? 409 : 500
@@ -621,7 +627,11 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             client?.urlProtocol(self, didLoad: Data(": fixture heartbeat\n\n".utf8))
             return
         }
-        client?.urlProtocol(self, didLoad: Self.responseData(for: request))
+        if statusCode == 409, ProcessInfo.processInfo.arguments.contains("--ui-test-refuse-session-removal") {
+            client?.urlProtocol(self, didLoad: Self.json(["error": "Synthetic session removal refusal"]))
+        } else {
+            client?.urlProtocol(self, didLoad: Self.responseData(for: request))
+        }
         client?.urlProtocolDidFinishLoading(self)
     }
 
@@ -672,6 +682,11 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             return archivedSessionsResponse()
         case "/api/sessions":
             return sessionsResponse()
+        case "/api/session/delete":
+            if let id = requestJSON(request)["session_id"] as? String {
+                recoveryState.withLock { _ = archivedSessionIDs.insert(id) }
+            }
+            return json(["ok": true])
         case "/api/session/archive":
             let body = requestJSON(request)
             if let id = body["session_id"] as? String, let archived = body["archived"] as? Bool {

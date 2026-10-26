@@ -21,6 +21,99 @@ final class SessionListPendingChangeTests: XCTestCase {
     }
     private let baseline = #"{"sessions":[{"session_id":"same","title":"Original","pinned":false,"can_delete":true,"can_archive":true}]}"#
 
+    func testRemovalsHideImmediatelyAndRefusalsRestoreTheRow() async throws {
+        for deleting in [false, true] {
+            let requests = DeferredRequests()
+            let arrived = expectation(description: "removal held")
+            let viewModel = model { request in
+                if request.request.url?.path == (deleting ? "/api/session/delete" : "/api/session/archive") {
+                    _ = requests.append(request)
+                    arrived.fulfill()
+                } else { request.complete(withJSON: self.baseline) }
+            }
+            _ = await viewModel.load()
+            let session = try XCTUnwrap(viewModel.sessions.first)
+            // Prime the visible-row cache before starting the write.
+            XCTAssertEqual(viewModel.visibleSessions(searchText: "", selectedProjectID: nil).count, 1)
+            let removal = Task { deleting ? await viewModel.delete(session) : await viewModel.archive(session) }
+            await fulfillment(of: [arrived], timeout: 5)
+            XCTAssertTrue(viewModel.visibleSessions(searchText: "", selectedProjectID: nil).isEmpty)
+            XCTAssertEqual(viewModel.sessions.first?.sessionId, session.sessionId, "Canonical rows wait for the server")
+            requests.request(at: 0).complete(withJSON: #"{"error":"Synthetic refusal"}"#, statusCode: 409)
+            let accepted = await removal.value
+            XCTAssertFalse(accepted)
+            XCTAssertEqual(viewModel.visibleSessions(searchText: "", selectedProjectID: nil).count, 1)
+            XCTAssertNil(viewModel.pendingChange(for: session))
+            XCTAssertNotNil(viewModel.actionErrorMessage)
+        }
+    }
+
+    func testUnknownRemovalReconcilesBeforeKeepingOrRollingBackTheRow() async throws {
+        for deleted in [false, true] {
+            let requests = DeferredRequests()
+            let arrived = expectation(description: "removal held")
+            let reconcile = expectation(description: "reconcile held")
+            let viewModel = model { request in
+                if request.request.url?.path == "/api/session/delete" {
+                    _ = requests.append(request)
+                    arrived.fulfill()
+                } else if requests.count == 0 { request.complete(withJSON: self.baseline) }
+                else { _ = requests.append(request); reconcile.fulfill() }
+            }
+            _ = await viewModel.load()
+            let session = try XCTUnwrap(viewModel.sessions.first)
+            let removal = Task { await viewModel.delete(session) }
+            await fulfillment(of: [arrived], timeout: 5)
+            requests.request(at: 0).fail(with: URLError(.networkConnectionLost))
+            await fulfillment(of: [reconcile], timeout: 5)
+            XCTAssertTrue(viewModel.visibleSessions(searchText: "", selectedProjectID: nil).isEmpty)
+            requests.request(at: 1).complete(withJSON: deleted ? #"{"sessions":[]}"# : baseline)
+            let accepted = await removal.value
+            XCTAssertEqual(accepted, deleted)
+            XCTAssertEqual(viewModel.visibleSessions(searchText: "", selectedProjectID: nil).isEmpty, deleted)
+            XCTAssertNil(viewModel.pendingChange(for: session))
+            XCTAssertEqual(requests.count, 2, "A removal is never replayed blindly")
+        }
+    }
+
+    func testProfileSwitchFencesAnUnknownRemovalReconciliation() async throws {
+        let requests = DeferredRequests()
+        let removalHeld = expectation(description: "removal held")
+        let reconcileHeld = expectation(description: "old profile reconciliation held")
+        let empty = #"{"sessions":[]}"#
+        let viewModel = model { request in
+            switch request.request.url?.path {
+            case "/api/session/delete":
+                _ = requests.append(request)
+                removalHeld.fulfill()
+            case "/api/profiles/switch":
+                request.complete(withJSON: #"{"active":"other","profiles":[{"name":"other"}]}"#)
+            case "/api/sessions" where requests.count == 1:
+                _ = requests.append(request)
+                reconcileHeld.fulfill()
+            default:
+                request.complete(withJSON: empty)
+            }
+        }
+        _ = await viewModel.load()
+        // An open/deep-linked chat can be absent from the current list snapshot.
+        let session = SessionSummary(sessionId: "same")
+        let removal = Task { await viewModel.delete(session) }
+        await fulfillment(of: [removalHeld], timeout: 5)
+        requests.request(at: 0).fail(with: URLError(.networkConnectionLost))
+        await fulfillment(of: [reconcileHeld], timeout: 5)
+        let profile = try JSONDecoder().decode(ProfileSummary.self, from: Data(#"{"name":"other"}"#.utf8))
+        let switched = await viewModel.switchActiveProfile(profile)
+        XCTAssertTrue(switched)
+        let replacementCacheVersion = viewModel.resourceCacheVersion(for: "same")
+        requests.request(at: 1).complete(withJSON: empty)
+        let accepted = await removal.value
+        XCTAssertFalse(accepted, "An obsolete profile cannot confirm a removal")
+        XCTAssertEqual(viewModel.resourceCacheVersion(for: "same"), replacementCacheVersion,
+                       "The obsolete reconciliation must not purge the replacement profile's transcript")
+        XCTAssertEqual(viewModel.activeProfileName, "other")
+    }
+
     func testPinIntentSurvivesACoalescedReloadUntilAFreshSnapshotApplies() async throws {
         let requests = DeferredRequests()
         let pinHeld = expectation(description: "pin held")

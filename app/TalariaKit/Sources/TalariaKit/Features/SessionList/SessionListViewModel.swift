@@ -139,7 +139,9 @@ public final class SessionListViewModel {
     /// it is made — not when its request began — so a list load that started while
     /// that request was still pending is treated as older.
     private var claimCount = 0
-    public private(set) var pendingChanges: [String: PendingResourceChange] = [:]
+    public private(set) var pendingChanges: [String: PendingResourceChange] = [:] {
+        didSet { invalidateSessionPresentation() }
+    }
     private var resourceGeneration = 0
     private var removedRows: [String: Int] = [:]
     private var resourceCacheContext = UUID()
@@ -233,6 +235,7 @@ public final class SessionListViewModel {
         let query = Self.normalizedSearchQuery(rawSearchText)
         // Cache hits must still register the dependencies of a SwiftUI body.
         _ = sessions
+        _ = pendingChanges
         _ = activeRemoteSearch
         _ = remoteSearchResults
         if let cachedVisibleSessions,
@@ -243,7 +246,7 @@ public final class SessionListViewModel {
         }
         let rows = computeVisibleSessions(
             query: query, selectedProjectID: selectedProjectID, automatedVisibility: automatedVisibility
-        )
+        ).filter { pendingChange(for: $0)?.removing != true }
         cachedVisibleSessions = (query, selectedProjectID, automatedVisibility, rows)
         cachedSessionGroups = nil
         return rows
@@ -1789,7 +1792,8 @@ public final class SessionListViewModel {
         let scope = resourceGeneration
         var released = false
         defer { if !released && scope == resourceGeneration { endSessionMutation(id) } }
-        return await changeResource(key: "session:\(id)", label: label, title: title, pinned: pinned, releaseAfterWrite: offerUndo, reconcileFailure: pinned != nil, isMoving: moving, awaitsSessionSnapshot: reload && !offerUndo) {
+        var removalReconciled = false
+        let changed = await changeResource(key: "session:\(id)", label: label, title: title, pinned: pinned, releaseAfterWrite: offerUndo, reconcileFailure: pinned != nil || removing, isMoving: moving, removing: removing, awaitsSessionSnapshot: reload && !offerUndo) {
             try await operation(id)
         } confirmed: { _ in
             self.metadataVersions[id, default: 0] += 1
@@ -1802,8 +1806,14 @@ public final class SessionListViewModel {
             }
         } reconcile: { committed in
             if !reload && committed { return true }
-            return await self.load(modelContext: modelContext, animation: animation)
+            let loaded = await self.load(modelContext: modelContext, animation: animation)
+            if loaded, scope == self.resourceGeneration, removing, !committed, !self.sessions.contains(where: { $0.sessionId == id }) {
+                self.removeConfirmedRows([id], clearTranscript: clearTranscript, modelContext: modelContext)
+                removalReconciled = true
+            }
+            return loaded
         }
+        return changed || removalReconciled
     }
 
     private func changeResource<Result>(
@@ -1815,6 +1825,7 @@ public final class SessionListViewModel {
         releaseAfterWrite: Bool = false,
         reconcileFailure: Bool = false,
         isMoving: Bool = false,
+        removing: Bool = false,
         awaitsSessionSnapshot: Bool = false,
         operation: () async throws -> Result,
         confirmed: (Result) -> Void,
@@ -1822,7 +1833,7 @@ public final class SessionListViewModel {
     ) async -> Bool {
         guard !isViewingCachedData, !isSwitchingActiveProfile, pendingChanges[key] == nil else { return false }
         let scope = resourceGeneration
-        let change = PendingResourceChange(label: label, title: title, color: color, pinned: pinned, isMoving: isMoving)
+        let change = PendingResourceChange(label: label, title: title, color: color, pinned: pinned, isMoving: isMoving, removing: removing)
         pendingChanges[key] = change
         actionErrorMessage = nil
         lastError = nil
@@ -1858,7 +1869,11 @@ public final class SessionListViewModel {
                 case .http(let status, _): refused = (400..<500).contains(status) && status != 408
                 default: refused = false
                 }
-            } else { refused = error is SessionMoveWhileStreamingError }
+            } else { refused = error is SessionMoveWhileStreamingError || (removing && error is ResourceMutationError) }
+            if removing, !refused {
+                claimCount += 1
+                pendingChanges[key]?.snapshotClaim = claimCount
+            }
             let loaded: Bool
             if refused || !reconcileFailure { loaded = true } else { loaded = await reconcile(false) }
             guard scope == resourceGeneration else { return false }
@@ -1895,6 +1910,7 @@ public struct PendingResourceChange: Equatable {
     public let color: String?
     public var pinned: Bool? = nil
     var isMoving = false
+    public var removing = false
     public internal(set) var requiresRefresh = false
     var snapshotClaim: Int? = nil
     public var status: String { String(localized: "Pending: \(label)") }

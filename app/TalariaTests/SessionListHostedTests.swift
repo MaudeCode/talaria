@@ -32,7 +32,8 @@ final class ToolbarPriorityHostedTests: XCTestCase {
     private func landscapeScene() async throws -> UIWindowScene {
         guard #available(iOS 27.1, *) else { throw XCTSkip("Requires the vertical-bar SDK") }
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        try XCTSkipUnless(scene.traitCollection.verticalBarEdge != .unspecified, "Requires the Duo cover's native vertical bar")
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["SIMULATOR_MODEL_IDENTIFIER"] == "iPhone19,4",
+                         "Requires the iPhone Duo simulator")
         scene.requestGeometryUpdate(.iOS(interfaceOrientations: .landscapeRight))
         let rotated = await awaitCondition { scene.interfaceOrientation == .landscapeRight }
         XCTAssertTrue(rotated)
@@ -41,6 +42,8 @@ final class ToolbarPriorityHostedTests: XCTestCase {
             let restored = await self.awaitCondition { scene.interfaceOrientation == .portrait }
             XCTAssertTrue(restored)
         }
+        let vertical = await awaitCondition { scene.traitCollection.verticalBarEdge != .unspecified }
+        XCTAssertTrue(vertical, "The landscape Duo did not expose its native vertical bar")
         return scene
     }
 
@@ -93,13 +96,39 @@ final class ToolbarPriorityHostedTests: XCTestCase {
         attachHostedScreenshot(window, name: "duo-inner-toolbar-ownership")
     }
 
+    func testChatMoreFoldsBeforeTheBellOnDuoInnerLandscape() async throws {
+        guard #available(iOS 27.1, *) else { throw XCTSkip("Requires the vertical-bar SDK") }
+        _ = try await landscapeScene()
+        let fixture = try FixtureApp(for: self)
+        let window = try hostWindow(fixture.sessionList(), size: HostedSize.duoInnerLandscape) {
+            $0.horizontalSizeClass = .regular
+            $0.verticalSizeClass = .regular
+        }
+        try await openSidebar(in: window)
+        HostedAccessibility.activate(try await requireElement(in: window) {
+            $0.accessibilityLabel?.hasPrefix(UITestFixtureURLProtocol.sessionTitle) == true
+        })
+        _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
+        func moreItem() -> UIBarButtonItem? {
+            HostedAccessibility.toolbarItems(in: window).first { $0.accessibilityIdentifier == "chat-session-actions-more" }
+        }
+        let ready = await awaitCondition { moreItem() != nil }
+        XCTAssertTrue(ready)
+        let more = try XCTUnwrap(moreItem())
+        let bell = try XCTUnwrap(HostedAccessibility.toolbarItem("Notifications", in: window))
+        XCTAssertEqual(more.visibilityPriority, .low)
+        XCTAssertEqual(bell.visibilityPriority, .init(higherThan: .high))
+        XCTAssertLessThan(more.visibilityPriority.rawValue, bell.visibilityPriority.rawValue)
+        _ = try await requireElement(in: window, label: "Notifications")
+    }
+
     func testChatsPrioritiesReachTheNativeToolbar() async throws {
         guard #available(iOS 27.1, *) else { throw XCTSkip("Requires the vertical-bar SDK") }
         _ = try await landscapeScene()
         let fixture = try FixtureApp(for: self)
         let window = try hostWindow(fixture.sessionList(), size: HostedSize.duoOuterLandscape)
         _ = try await requireElement(in: window, label: "Notifications")
-        XCTAssertEqual(try XCTUnwrap(HostedAccessibility.toolbarItem("Notifications", in: window)).visibilityPriority, .high)
+        XCTAssertEqual(try XCTUnwrap(HostedAccessibility.toolbarItem("Notifications", in: window)).visibilityPriority, .init(higherThan: .high))
         try await openSidebar(in: window)
         for title in ["New Chat", "Search", "Settings", "Close navigation"] {
             _ = try await requireElement(in: window, label: title)
@@ -379,8 +408,7 @@ final class SessionListHostedTests: XCTestCase {
         XCTAssertTrue(dismissed)
         // Settings reopens its invoking panel; dismissing it reveals the unchanged Insights root.
         let close = try await requireElement(in: window, label: "Close navigation")
-        if let control = close as? UIControl { control.sendActions(for: .touchUpInside) }
-        else { HostedAccessibility.activate(close) }
+        XCTAssertTrue(HostedAccessibility.activate(HostedAccessibility.toolbarAction("Close navigation", in: window) ?? close))
         _ = try await requireElement(in: window, label: "Open navigation")
         XCTAssertTrue(stacks().allSatisfy { $0.viewControllers.count == 1 })
     }
@@ -439,7 +467,7 @@ final class SessionListHostedTests: XCTestCase {
         let viewModel = SessionListViewModel(server: server, client: APIClient(baseURL: server, session: URLSession(configuration: configuration)))
         _ = await viewModel.load()
         let session = try XCTUnwrap(viewModel.sessions.first)
-        let actions = SessionListRowActions(retryLoad: {}, open: { _ in }, togglePinned: { _ in }, archive: { _ in }, delete: { _ in }, rename: { _ in }, duplicate: { _ in }, move: { _, _ in }, createProject: { _ in }, refreshProjects: {}, export: { _, _ in }, stopRun: { _ in })
+        let actions = fixtureRowActions
         let window = try hostWindow(ObservedSessionRow(viewModel: viewModel, actions: actions))
         let before = XCTAttachment(image: UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
             window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
@@ -1752,5 +1780,126 @@ private struct ScenePhasedSessionList: View {
 
     var body: some View {
         fixture.sessionList(scenePhase: scene.phase)
+    }
+}
+
+@MainActor
+extension SessionListHostedTests {
+    private var fixtureRowActions: SessionListRowActions {
+        SessionListRowActions(retryLoad: {}, open: { _ in }, togglePinned: { _ in }, archive: { _ in }, delete: { _ in }, rename: { _ in }, duplicate: { _ in }, move: { _, _ in }, createProject: { _ in }, refreshProjects: {}, export: { _, _ in }, stopRun: { _ in })
+    }
+
+    private func titleMenu(in window: UIWindow) -> UIMenu? {
+        func find(_ controller: UIViewController) -> UIMenu? {
+            if let menu = controller.navigationItem.titleMenuProvider?([]), !menu.children.isEmpty { return menu }
+            for child in controller.children {
+                if let menu = find(child) { return menu }
+            }
+            return nil
+        }
+        return window.rootViewController.flatMap(find)
+    }
+
+    private func actions(in menu: UIMenu) -> [UIAction] {
+        menu.children.flatMap { element -> [UIAction] in
+            // SwiftUI represents the informational full title as a disabled, imageless item.
+            if let action = element as? UIAction {
+                return action.image == nil && action.attributes.contains(.disabled) ? [] : [action]
+            }
+            if let nested = element as? UIMenu { return actions(in: nested) }
+            return []
+        }
+    }
+
+    private func openChat(_ fixture: FixtureApp, size: CGSize) async throws -> UIWindow {
+        let window = try hostWindow(fixture.sessionList(), size: size)
+        try await openSidebar(in: window)
+        HostedAccessibility.activate(try await requireElement(in: window) {
+            $0.accessibilityLabel?.hasPrefix(UITestFixtureURLProtocol.sessionTitle) == true
+        })
+        _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
+        let ready = await awaitCondition { self.titleMenu(in: window) != nil }
+        XCTAssertTrue(ready, "The open chat has no title menu")
+        return window
+    }
+
+    func testSwipePlacementsFilterTheSharedMenu() async throws {
+        let fixture = try FixtureApp(for: self)
+        let model = SessionListViewModel(server: UITestFixtureEnvironment.serverURL, client: fixture.client)
+        let row = SessionInteractiveRow(viewModel: model, session: try await fixture.session(), selectedSessionID: nil, actions: fixtureRowActions)
+        var titles: [[String]] = []
+        for placement in [SessionRowContextMenu.Placement.menu, .leadingSwipe, .trailingSwipe] {
+            let window = try hostWindow(NavigationStack {
+                Color.clear.navigationTitle("Fixture")
+                    .toolbarTitleMenu { row.sessionActions(placement: placement) }
+            })
+            let ready = await awaitCondition { self.titleMenu(in: window) != nil }
+            XCTAssertTrue(ready)
+            titles.append(actions(in: try XCTUnwrap(titleMenu(in: window))).map(\.title))
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+        XCTAssertEqual(titles[1], ["Pin"])
+        XCTAssertEqual(titles[2], ["Archive", "Delete"])
+        XCTAssertTrue(Set(titles[1] + titles[2]).isSubset(of: Set(titles[0])))
+    }
+
+    func testChatTitleAndRowContextContentExposeIdenticalActions() async throws {
+        let fixture = try FixtureApp(for: self)
+        let window = try await openChat(fixture, size: HostedSize.phone)
+        let chatTitles = actions(in: try XCTUnwrap(titleMenu(in: window))).map(\.title)
+        XCTAssertFalse(chatTitles.isEmpty)
+        let model = SessionListViewModel(server: UITestFixtureEnvironment.serverURL, client: fixture.client)
+        _ = await model.load()
+        await model.loadProjects()
+        let row = SessionInteractiveRow(viewModel: model, session: try await fixture.session(), selectedSessionID: nil, actions: fixtureRowActions)
+        // Resolve the row's exact context content through UIKit's title-menu provider, the same projection as the chat.
+        let rowWindow = try hostWindow(NavigationStack {
+            Color.clear.navigationTitle("Fixture")
+                .toolbarTitleMenu { row.sessionActions(placement: .menu) }
+        })
+        let ready = await awaitCondition { self.titleMenu(in: rowWindow) != nil }
+        XCTAssertTrue(ready)
+        let rowMenu = try XCTUnwrap(titleMenu(in: rowWindow))
+        XCTAssertEqual(chatTitles, actions(in: rowMenu).map(\.title))
+    }
+
+    func testArchiveAndDeleteImmediatelyReplaceTheOpenChatAtBothWidths() async throws {
+        for size in [HostedSize.phone, HostedSize.duoInnerLandscape] {
+            for title in ["Archive", "Delete"] {
+                let fixture = try FixtureApp(["--ui-test-hold-session-removal"], for: self)
+                let window = try await openChat(fixture, size: size)
+                let action = try XCTUnwrap(actions(in: try XCTUnwrap(titleMenu(in: window))).first { $0.title == title })
+                HostedAccessibility.activate(action)
+                if title == "Delete" {
+                    let presented = await presentedAlert(in: window)
+                    let alert = try XCTUnwrap(presented)
+                    XCTAssertTrue(HostedAccessibility.tap("Delete", in: alert))
+                }
+                _ = try await requireElement(in: window, label: "Send", "The removal left no New Chat composer")
+                let removed = await awaitNoElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
+                XCTAssertTrue(removed, "The open chat waited for the server's \(title) response")
+                XCTAssertNil(titleMenu(in: window), "An idle New Chat offers session actions")
+                XCTAssertGreaterThan(UITestFixtureHold.shared.pendingCount, 0)
+                fixture.releaseHeldLoads()
+                let answered = await awaitCondition { UITestFixtureURLProtocol.answeredPaths.withLock { $0.contains(title == "Archive" ? "/api/session/archive" : "/api/session/delete") } }
+                XCTAssertTrue(answered)
+                window.isHidden = true
+                window.rootViewController = nil
+            }
+        }
+    }
+
+    func testRefusedArchiveRestoresTheOpenChat() async throws {
+        let fixture = try FixtureApp(["--ui-test-hold-session-removal", "--ui-test-refuse-session-removal"], for: self)
+        let window = try await openChat(fixture, size: HostedSize.phone)
+        let archive = try XCTUnwrap(actions(in: try XCTUnwrap(titleMenu(in: window))).first { $0.title == "Archive" })
+        HostedAccessibility.activate(archive)
+        let removed = await awaitNoElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
+        XCTAssertTrue(removed)
+        fixture.releaseHeldLoads()
+        _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
+        let restored = await awaitCondition { self.titleMenu(in: window) != nil }
+        XCTAssertTrue(restored)
     }
 }

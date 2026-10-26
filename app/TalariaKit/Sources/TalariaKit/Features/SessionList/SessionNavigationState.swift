@@ -201,8 +201,12 @@ public struct SessionNavigationState: Equatable {
     public mutating func remove(sessionID: String?) {
         guard let sessionID = Self.normalized(sessionID) else { return }
 
-        if selectedSectionSession?.sessionId == sessionID { selectedSectionSession = nil }
+        if selectedSectionSession?.sessionId == sessionID {
+            rootRevision += 1
+            selectedSectionSession = nil
+        }
         if destination?.selectedSessionID == sessionID || newChatSessionID == sessionID {
+            rootRevision += 1
             chatRootRevision += 1
             destination = nil
             section = .chats
@@ -212,6 +216,16 @@ public struct SessionNavigationState: Equatable {
         if lastSelectedSessionID == sessionID {
             lastSelectedSessionID = nil
         }
+    }
+
+    /// A refused write restores its root only while the user has stayed on the optimistic replacement.
+    public mutating func restoreAfterRemoval(_ previous: Self, ifUnchangedAt revision: Int) {
+        guard openRevision == revision, selectedSessionID == nil, selectedSectionSession == nil else { return }
+        var restored = previous
+        restored.rootRevision = rootRevision + 1
+        restored.chatRootRevision = chatRootRevision + 1
+        restored.startedOpens = startedOpens
+        self = restored
     }
 
     private static func normalized(_ sessionID: String?) -> String? {

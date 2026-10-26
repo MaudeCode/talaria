@@ -6,6 +6,7 @@ import TalariaKit
 struct SessionSelectionBar: View {
     let viewModel: SessionListViewModel
     let sessions: [SessionSummary]
+    let actions: SessionListRowActions
     let archive: () -> Void
     let delete: () -> Void
 
@@ -28,19 +29,14 @@ struct SessionSelectionBar: View {
 
             Spacer(minLength: 0)
 
-            Button(action: archive) {
-                Image(systemName: "archivebox")
-            }
-            .frame(minWidth: 44, minHeight: 44)
-            .disabled(!viewModel.canPerformBulkAction(.archive))
-            .accessibilityLabel("Archive")
-
-            Button(role: .destructive, action: delete) {
-                Image(systemName: "trash")
-            }
-            .frame(minWidth: 44, minHeight: 44)
-            .disabled(!viewModel.canPerformBulkAction(.delete))
-            .accessibilityLabel("Delete")
+            SessionRowContextMenu(
+                viewModel: viewModel,
+                session: SessionSummary(),
+                actions: selectionActions,
+                placement: .selection
+            )
+            .labelStyle(.iconOnly)
+            .controlSize(.large)
         }
         .padding(.horizontal)
         .padding(.vertical, 4)
@@ -48,5 +44,12 @@ struct SessionSelectionBar: View {
         .overlay(alignment: .top) { Divider() }
         .disabled(viewModel.isPerformingBulkAction)
         .accessibilityElement(children: .contain)
+    }
+
+    private var selectionActions: SessionListRowActions {
+        var result = actions
+        result.archive = { _ in archive() }
+        result.delete = { _ in delete() }
+        return result
     }
 }

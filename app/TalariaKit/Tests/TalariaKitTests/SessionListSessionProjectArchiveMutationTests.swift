@@ -955,7 +955,7 @@ extension SessionListMutationTests {
     }
 
     @MainActor
-    func testMutationErrorSurfacesMessageWithoutReloadingOrCorruptingSessions() async throws {
+    func testUnknownArchiveOutcomeReconcilesWithoutCorruptingSessions() async throws {
         var loadCount = 0
         let viewModel = try makeViewModel { request in
             switch request.url?.path {
@@ -981,7 +981,7 @@ extension SessionListMutationTests {
         let didArchive = await viewModel.archive(try XCTUnwrap(viewModel.sessions.first))
 
         XCTAssertFalse(didArchive)
-        XCTAssertEqual(loadCount, 1)
+        XCTAssertEqual(loadCount, 2, "A 5xx outcome must reconcile before restoring the row")
         XCTAssertEqual(viewModel.sessions, before)
         XCTAssertNotNil(viewModel.actionErrorMessage)
         XCTAssertNotNil(viewModel.lastError)

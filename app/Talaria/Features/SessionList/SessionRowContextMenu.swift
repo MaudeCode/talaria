@@ -3,119 +3,144 @@ import UIKit
 import TalariaKit
 
 struct SessionRowContextMenu: View {
+    enum Placement {
+        case menu, leadingSwipe, trailingSwipe, selection
+    }
+
+    let viewModel: SessionListViewModel
     let session: SessionSummary
-    let projects: [ProjectSummary]
-    let isViewingCachedData: Bool
-    let isRenamingSession: Bool
-    let isCreatingProject: Bool
-    let isMovingSession: Bool
-    let isLoadingProjects: Bool
-    let isMutating: Bool
-    var pendingChange: PendingResourceChange? = nil
     let actions: SessionListRowActions
+    var placement: Placement = .menu
+
+    private var isViewingCachedData: Bool { viewModel.isViewingCachedData }
+    private var isMutating: Bool { viewModel.isMutating(session) }
+    private var pendingChange: PendingResourceChange? { viewModel.pendingChange(for: session) }
 
     var body: some View {
         let fullTitle = pendingChange?.title ?? SessionRowPresentation.displayTitle(for: session)
 
-        Section("Full Title") {
-            Text(fullTitle)
-            if let pendingChange, pendingChange.pinned == nil { Text(pendingChange.status) }
+        if placement == .menu {
+            Section("Full Title") {
+                Text(fullTitle)
 
-            Button {
-                UIPasteboard.general.string = fullTitle
-            } label: {
-                Label("Copy Full Title", systemImage: "doc.on.doc")
+                Button {
+                    UIPasteboard.general.string = fullTitle
+                } label: {
+                    Label("Copy Full Title", systemImage: "doc.on.doc")
+                }
             }
         }
 
-        if SessionRowActionPolicy.canPin(session) {
+        if (placement == .menu || placement == .leadingSwipe), SessionRowActionPolicy.canPin(session),
+           placement == .menu || isLiveServerSession {
             Button {
                 actions.togglePinned(session)
             } label: {
-                Label(session.pinned == true ? "Unpin" : "Pin", systemImage: "pin")
+                Label((pendingChange?.pinned ?? session.pinned) == true ? "Unpin" : "Pin", systemImage: "pin")
             }
             .disabled(!isLiveServerSession || isMutating)
+            .tint(placement == .leadingSwipe ? .accentColor : nil)
         }
 
-        if SessionRowActionPolicy.canDuplicate(session) {
-            Button {
-                actions.duplicate(session)
-            } label: {
-                Label("Duplicate", systemImage: "doc.on.doc")
-            }
-            .disabled(isViewingCachedData || session.sessionId == nil || isMutating)
-        }
-
-        if SessionRowActionPolicy.offersMutationActions(for: session) {
-            Button {
-                actions.rename(session)
-            } label: {
-                Label("Rename", systemImage: "pencil")
-            }
-            .disabled(isViewingCachedData || isRenamingSession || !hasServerSessionID(session))
-
-            Menu {
-                SessionProjectMoveMenu(
-                    session: session,
-                    projects: projects,
-                    isCreatingProject: isCreatingProject,
-                    isMovingSession: isMovingSession,
-                    isLoadingProjects: isLoadingProjects,
-                    actions: actions
-                )
-            } label: {
-                Label("Move to Project", systemImage: "folder")
-            }
-            .disabled(isViewingCachedData || session.sessionId == nil || isMutating)
-        }
-
-        // Export works for any session the server can see, including read-only
-        // and foreign/CLI rows; it only needs a live server session ID.
-        Menu {
-            Button {
-                actions.export(session, .html)
-            } label: {
-                Label("Export as HTML", systemImage: "doc.richtext")
-            }
-
-            Button {
-                actions.export(session, .json)
-            } label: {
-                Label("Export as JSON", systemImage: "curlybraces")
-            }
-
-            if let deepLinkURL = SessionRowActionPolicy.deepLinkURL(
-                for: session,
-                isViewingCachedData: isViewingCachedData,
-                isMutating: isMutating
-            ) {
+        if placement == .menu {
+            if SessionRowActionPolicy.canDuplicate(session) {
                 Button {
-                    UIPasteboard.general.string = deepLinkURL.absoluteString
+                    actions.duplicate(session)
                 } label: {
-                    Label("Copy Deeplink", systemImage: "doc.on.doc")
+                    Label("Duplicate", systemImage: "doc.on.doc")
                 }
+                .disabled(isViewingCachedData || session.sessionId == nil || isMutating)
             }
-        } label: {
-            Label("Export", systemImage: "square.and.arrow.up")
-        }
-        .disabled(!canExportSession || isMutating)
 
-        if SessionRowActionPolicy.canArchive(session) {
+            if SessionRowActionPolicy.offersMutationActions(for: session) {
+                Button {
+                    actions.rename(session)
+                } label: {
+                    Label("Rename", systemImage: "pencil")
+                }
+                .disabled(isViewingCachedData || isMutating || !hasServerSessionID(session))
+
+                Menu {
+                    SessionProjectMoveMenu(
+                        session: session,
+                        projects: viewModel.projects,
+                        isCreatingProject: viewModel.isCreatingProject,
+                        isMovingSession: isMutating,
+                        isLoadingProjects: viewModel.isLoadingProjects,
+                        actions: actions
+                    )
+                } label: {
+                    Label("Move to Project", systemImage: "folder")
+                }
+                .disabled(isViewingCachedData || session.sessionId == nil || isMutating)
+            }
+
+            // Export works for any session the server can see, including read-only
+            // and foreign/CLI rows; it only needs a live server session ID.
+            Menu {
+                Button {
+                    actions.export(session, .html)
+                } label: {
+                    Label("Export as HTML", systemImage: "doc.richtext")
+                }
+
+                Button {
+                    actions.export(session, .json)
+                } label: {
+                    Label("Export as JSON", systemImage: "curlybraces")
+                }
+
+                if let deepLinkURL = SessionRowActionPolicy.deepLinkURL(
+                    for: session,
+                    isViewingCachedData: isViewingCachedData,
+                    isMutating: isMutating
+                ) {
+                    Button {
+                        UIPasteboard.general.string = deepLinkURL.absoluteString
+                    } label: {
+                        Label("Copy Deeplink", systemImage: "doc.on.doc")
+                    }
+                }
+            } label: {
+                Label("Export", systemImage: "square.and.arrow.up")
+            }
+            .disabled(!canExportSession || isMutating)
+        }
+
+        if placement != .leadingSwipe,
+           placement == .selection || SessionRowActionPolicy.canArchive(session),
+           placement == .menu || placement == .selection || isLiveServerSession {
             Button {
                 actions.archive(session)
             } label: {
                 Label("Archive", systemImage: "archivebox")
             }
-            .disabled(!isLiveServerSession || isMutating)
+            .disabled(
+                placement == .selection
+                    ? !viewModel.canPerformBulkAction(.archive) : !isLiveServerSession || isMutating
+            )
+            .frame(
+                minWidth: placement == .selection ? 44 : nil, minHeight: placement == .selection ? 44 : nil
+            )
+            .tint(placement == .trailingSwipe ? .orange : nil)
         }
 
-        if SessionRowActionPolicy.canDelete(session) {
+        if placement != .leadingSwipe,
+           placement == .selection || SessionRowActionPolicy.canDelete(session),
+           placement == .menu || placement == .selection || isLiveServerSession {
             Button(role: .destructive) {
                 actions.delete(session)
             } label: {
                 Label("Delete", systemImage: "trash")
             }
-            .disabled(!isLiveServerSession || isMutating)
+            .disabled(
+                placement == .selection
+                    ? !viewModel.canPerformBulkAction(.delete) : !isLiveServerSession || isMutating
+            )
+            .frame(
+                minWidth: placement == .selection ? 44 : nil, minHeight: placement == .selection ? 44 : nil
+            )
+            .tint(placement == .trailingSwipe ? .red : nil)
         }
     }
 
@@ -126,4 +151,9 @@ struct SessionRowContextMenu: View {
     private var canExportSession: Bool {
         SessionRowActionPolicy.canExport(session, isViewingCachedData: isViewingCachedData)
     }
+}
+
+extension EnvironmentValues {
+    /// The list owns every session write, including chats created by the idle composer.
+    @Entry var sessionActions: SessionRowContextMenu?
 }

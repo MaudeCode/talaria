@@ -237,6 +237,9 @@ struct ChatView: View {
     @State private var lastSyncedDraftAttachments: [ChatDraftAttachment] = []
     @State private var restoredDraftSettings: ChatDraftSettings?
     @State private var didApplyRestoredDraftSettings = false
+    @Environment(\.sessionActions) private var sessionActions
+    @State private var hasVerticalToolbar = false
+
     @State private var didCompleteInitialAppearance = false
     @State private var isInitialComposerFocusContentReady = false
     @State private var didApplyInitialComposerFocusPolicy = false
@@ -848,12 +851,30 @@ struct ChatView: View {
             }
             .navigationTitle(displayTitle)
             .navigationBarTitleDisplayMode(.inline)
+            .onToolbarVerticalEdgeChange { hasVerticalToolbar = $0 }
+            .toolbarTitleMenu {
+                if viewModel.hasSession, let sessionActions { sessionActions }
+            }
             .toolbar {
                 ToolbarItem(placement: .principal) {
-                    ChatToolbarTitleLabel(
-                        title: displayTitle,
-                        subtitle: headerSubtitle
-                    )
+                    let title = ChatToolbarTitleLabel(title: displayTitle, subtitle: headerSubtitle)
+                    if viewModel.hasSession, let sessionActions {
+                        // A custom principal title replaces UIKit's title button; keep it actionable too.
+                        Menu { sessionActions } label: { title }
+                            .accessibilityIdentifier("chat-session-actions-title")
+                    } else {
+                        title
+                    }
+                }
+
+                if viewModel.hasSession, hasVerticalToolbar, let sessionActions {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Menu { sessionActions } label: {
+                            Label("More", systemImage: "ellipsis.circle")
+                        }
+                        .accessibilityIdentifier("chat-session-actions-more")
+                    }
+                    .overflowPriority(.chatMore)
                 }
 
                 // One item per action so each bridges to a system bar button: iOS 26+ groups

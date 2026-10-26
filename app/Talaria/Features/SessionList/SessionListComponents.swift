@@ -7,8 +7,8 @@ struct SessionListRowActions {
     let retryLoad: () -> Void
     let open: (SessionSummary) -> Void
     let togglePinned: (SessionSummary) -> Void
-    let archive: (SessionSummary) -> Void
-    let delete: (SessionSummary) -> Void
+    var archive: (SessionSummary) -> Void
+    var delete: (SessionSummary) -> Void
     let rename: (SessionSummary) -> Void
     let duplicate: (SessionSummary) -> Void
     let move: (SessionSummary, String?) -> Void

@@ -2,6 +2,41 @@ import XCTest
 @testable import TalariaKit
 
 final class SessionNavigationStateTests: XCTestCase {
+    func testRefusedRemovalRestoresItsRootAndYieldsToNewerNavigation() {
+        let session = SessionSummary(sessionId: "removed", title: "Removed")
+        var state = SessionNavigationState()
+        state.select(session)
+        let previous = state
+        state.remove(sessionID: session.sessionId)
+        let revision = state.openRevision
+        XCTAssertNil(state.destination)
+        XCTAssertNil(state.lastSelectedSessionID)
+        state.restoreAfterRemoval(previous, ifUnchangedAt: revision)
+        XCTAssertEqual(state.destination, .session(session))
+        XCTAssertEqual(state.lastSelectedSessionID, session.sessionId)
+        XCTAssertGreaterThan(state.openRevision, revision)
+
+        state.remove(sessionID: session.sessionId)
+        let removedRevision = state.openRevision
+        let other = SessionSummary(sessionId: "other")
+        state.select(other)
+        state.restoreAfterRemoval(previous, ifUnchangedAt: removedRevision)
+        XCTAssertEqual(state.destination, .session(other))
+    }
+
+    func testRefusedRemovalDoesNotReplaceAChatCreatedOnItsNewChatRoot() {
+        let removed = SessionSummary(sessionId: "removed")
+        var state = SessionNavigationState()
+        state.select(removed)
+        let previous = state
+        state.remove(sessionID: removed.sessionId)
+        let revision = state.openRevision
+        state.remember(SessionSummary(sessionId: "created"))
+        state.restoreAfterRemoval(previous, ifUnchangedAt: revision)
+        XCTAssertNil(state.destination)
+        XCTAssertEqual(state.selectedSessionID, "created")
+    }
+
     func testSelectingSessionUpdatesDestinationAndRestorationID() {
         let session = SessionSummary(sessionId: "session-1", title: "One")
         var state = SessionNavigationState()
