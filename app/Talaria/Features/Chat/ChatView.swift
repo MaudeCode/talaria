@@ -1504,6 +1504,7 @@ struct ChatView: View {
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: viewModel.pinnedBackgroundTasks)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: viewModel.queuedMessagePreviews)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: ownerAdmissions)
+            .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: showsWorkChips)
         }
     }
 
@@ -1533,7 +1534,7 @@ struct ChatView: View {
             ForEach(visibleSessionNotices, id: \.self) { notice in
                 NoticeChip(text: notice.text, level: notice.level) { dismissedSessionNotices.insert(notice) }
             }
-            if !viewModel.pinnedBackgroundTasks.isEmpty {
+            if showsWorkChips, !viewModel.pinnedBackgroundTasks.isEmpty {
                 backgroundTasksChip(viewModel.pinnedBackgroundTasks)
             }
             if let goalChipPresentation {
@@ -1562,7 +1563,7 @@ struct ChatView: View {
                 }
                 .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
             }
-            if queuedMessagesCount > 0 {
+            if showsQueuedMessagesChip {
                 queuedMessagesChip
             }
         }
@@ -1570,8 +1571,20 @@ struct ChatView: View {
 
     /// What waits to send after this response (TAL-630); tapping opens the queue sheet.
     private var showsSheetChipRow: Bool {
-        !viewModel.pinnedBackgroundTasks.isEmpty || queuedMessagesCount > 0
+        (showsWorkChips && !viewModel.pinnedBackgroundTasks.isEmpty) || showsQueuedMessagesChip
     }
+
+    /// The Duo's vertical bar already shows background tasks and queued messages as badged items, so their chips step
+    /// aside there (TAL-1542). The keyboard shrinks that bar until those items fold into its overflow menu, so the chips
+    /// return while the composer is focused.
+    private var showsWorkChips: Bool { !hasVerticalToolbar || composerIsFocused }
+
+    /// A badge cannot say "Outcome unknown", so that warning keeps its chip beside the vertical bar too.
+    private var showsQueuedMessagesChip: Bool {
+        queuedMessagesCount > 0 && (showsWorkChips || hasUnknownOwnerAdmission)
+    }
+
+    private var hasUnknownOwnerAdmission: Bool { ownerAdmissions.contains(where: \.isOutcomeUnknown) }
 
     private func backgroundTasksAction() {
         showsBackgroundWorkSheet = true
@@ -1593,7 +1606,7 @@ struct ChatView: View {
 
     /// An owner input with an unknown outcome blocks sending until it is retried or discarded, so it says so (TAL-1043).
     private var queuedMessagesChip: some View {
-        let unknown = ownerAdmissions.contains(where: \.isOutcomeUnknown)
+        let unknown = hasUnknownOwnerAdmission
         return Button(action: queuedMessagesAction) {
             StatusChip(
                 label: unknown ? String(localized: "Outcome unknown") : String(localized: "\(queuedMessagesCount) queued"),

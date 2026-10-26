@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "On the iPhone Duo, background tasks and queued messages show once, as badged buttons in the vertical bar, instead of also as chips above the composer.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

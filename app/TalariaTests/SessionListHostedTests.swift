@@ -95,6 +95,65 @@ final class ToolbarPriorityHostedTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(HostedAccessibility.toolbarItem("Files", in: window)).visibilityPriority, .high)
     }
 
+    /// The vertical bar's badged work items replace their chips above the composer (TAL-1542). The keyboard folds those
+    /// items into the bar's overflow menu, so the chips return while the composer is focused.
+    func testVerticalBarWorkItemsReplaceTheirComposerChips() async throws {
+        guard #available(iOS 27.1, *) else { throw XCTSkip("Requires the vertical-bar SDK") }
+        _ = try await landscapeScene()
+        let fixture = try FixtureApp(["--ui-test-background-updates", "--ui-test-chat-controls"], for: self)
+        let session = try await fixture.session()
+        let model = ChatViewModel(
+            session: session, server: UITestFixtureEnvironment.serverURL, client: fixture.client,
+            liveActivityManager: SpyChatLiveActivityManager()
+        )
+        await model.refreshBackgroundTasks()
+        await model.dismissBackgroundTask(taskID: "bg-ui")
+        XCTAssertEqual(model.pinnedBackgroundTasks.count, 1)
+        let window = try hostWindow(fixture.chat(session, viewModel: model), size: HostedSize.duoOuterLandscape)
+        let started = await model.sendMessage("Run the deterministic fixture")
+        XCTAssertTrue(started)
+        _ = try await requireElement(in: window, label: "Stop response")
+        try await sendFromComposer("/queue First queued message", in: window)
+        try await sendFromComposer("/queue Second queued message", in: window)
+        let badged = await awaitCondition {
+            HostedAccessibility.toolbarItem("Background tasks", in: window)?.badge?.stringValue == "1"
+                && HostedAccessibility.toolbarItem("Queued messages", in: window)?.badge?.stringValue == "2"
+        }
+        XCTAssertTrue(badged, "Items: \(HostedAccessibility.toolbarItems(in: window).map { $0.title ?? $0.accessibilityLabel ?? "?" })")
+        _ = try await requireElement(in: window, label: "2 queued")
+        window.endEditing(true)
+        let stepped = await awaitNoElement(in: window) {
+            $0.accessibilityLabel == "Background tasks · 1" || $0.accessibilityLabel == "2 queued"
+        }
+        settle(0.3)
+        attachHostedScreenshot(window, name: "duo-work-items-without-chips")
+        XCTAssertTrue(stepped, "The bar already shows background tasks and queued messages")
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Message"))
+        _ = try await requireElement(in: window, label: "Background tasks · 1")
+        _ = try await requireElement(in: window, label: "2 queued")
+        settle(0.3)
+        attachHostedScreenshot(window, name: "duo-work-chips-while-typing")
+        _ = await model.cancelActiveStream()
+    }
+
+    /// A badge cannot say "Outcome unknown", so that chip stays beside the vertical bar until the input settles.
+    func testVerticalBarKeepsTheUnknownOutcomeChip() async throws {
+        guard #available(iOS 27.1, *) else { throw XCTSkip("Requires the vertical-bar SDK") }
+        _ = try await landscapeScene()
+        let window = try await hostFixtureChat([UITestFixtureURLProtocol.ownerChatArgument], size: HostedSize.duoOuterLandscape)
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Outcome unknown"))
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Discard"))
+        let reduced = await awaitCondition {
+            HostedAccessibility.toolbarItem("Queued messages", in: window)?.badge?.stringValue == "1"
+        }
+        XCTAssertTrue(reduced, "Discard must reduce the owner queue badge")
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Done"))
+        let closed = await awaitCondition { window.rootViewController?.presentedViewController == nil }
+        XCTAssertTrue(closed)
+        let gone = await awaitNoElement(in: window) { $0.accessibilityLabel == "1 queued" || $0.accessibilityLabel == "Outcome unknown" }
+        XCTAssertTrue(gone, "A settled queue shows only the bar's badge")
+    }
+
     /// Only a split view's detail column moves into the vertical bar, so beside one the sidebar's actions join the detail
     /// column instead of keeping a horizontal row over the list (TAL-1528).
     func testSidebarActionsJoinTheDetailColumnBesideTheVerticalBar() async throws {
