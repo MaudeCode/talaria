@@ -226,7 +226,7 @@ final class DuoFoldHostedTests: XCTestCase {
             }
             return files != nil
         }
-        (try XCTUnwrap(files as? UIControl, "The chat has no Files button")).sendActions(for: .touchUpInside)
+        XCTAssertTrue(HostedAccessibility.activate(try XCTUnwrap(files, "The chat has no Files button")))
         let opened = await awaitCondition { self.showsFiles(in: window) }
         XCTAssertTrue(opened, "Files did not open beside the chat")
 

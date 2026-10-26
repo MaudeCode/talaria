@@ -343,8 +343,7 @@ final class SessionListHostedTests: XCTestCase {
         XCTAssertNil(HostedAccessibility.element(in: window, label: "Starting chat…"))
         XCTAssertNil(HostedAccessibility.toolbarItem("New Chat", in: window), "An empty chat needs no detail compose item")
         let files = try await requireElement(in: window, label: "Files")
-        if let control = files as? UIControl { control.sendActions(for: .touchUpInside) }
-        else { HostedAccessibility.activate(files) }
+        XCTAssertTrue(HostedAccessibility.activate(files))
         _ = try await requireElement(in: window, label: "Search files")
         XCTAssertEqual(creates(), 1)
         XCTAssertEqual(UITestFixtureURLProtocol.answeredPaths.withLock { $0.filter { $0 == "/api/chat/start" }.count }, 0)
@@ -406,9 +405,9 @@ final class SessionListHostedTests: XCTestCase {
         let dismissed = await awaitCondition { window.rootViewController?.presentedViewController == nil }
         XCTAssertTrue(dismissed)
         // Settings reopens its invoking panel; dismissing it reveals the unchanged Insights root.
-        let close = try await requireElement(in: window, label: "Close navigation")
-        if let control = close as? UIControl { control.sendActions(for: .touchUpInside) }
-        else { HostedAccessibility.activate(close) }
+        _ = try await requireElement(in: window, label: "Close navigation")
+        let close = try XCTUnwrap(HostedAccessibility.toolbarItem("Close navigation", in: window))
+        XCTAssertTrue(HostedAccessibility.activate(close))
         _ = try await requireElement(in: window, label: "Open navigation")
         XCTAssertTrue(stacks().allSatisfy { $0.viewControllers.count == 1 })
     }

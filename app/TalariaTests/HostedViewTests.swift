@@ -8,6 +8,20 @@ import TalariaKit
 /// tree, activating one runs its action, and the in-process fixture answers the App's requests.
 @MainActor
 final class HostedViewTests: XCTestCase {
+    func testControlActivationUsesItsRegisteredEventOnceAndHonorsDisabledState() {
+        let eventSets: [UIControl.Event] = [.touchUpInside, .primaryActionTriggered, [.touchUpInside, .primaryActionTriggered]]
+        for events in eventSets {
+            var invocations = 0
+            let control = UIControl()
+            control.addAction(UIAction { _ in invocations += 1 }, for: events)
+            XCTAssertTrue(HostedAccessibility.activate(control))
+            XCTAssertEqual(invocations, 1, "The control's default action must run exactly once for \(events)")
+            control.isEnabled = false
+            XCTAssertFalse(HostedAccessibility.activate(control))
+            XCTAssertEqual(invocations, 1, "A disabled control must not run its action")
+        }
+    }
+
     func testNativePrimaryActionRunsOnceAndDisabledItemsDoNotRun() {
         var invocations = 0
         let item = UIBarButtonItem(primaryAction: UIAction(title: "Fixture action") { _ in invocations += 1 })
