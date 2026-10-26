@@ -1338,7 +1338,9 @@ struct MessageComposerView: View {
         }
         if ownerAttachment?.canSubmit == false { return true }
 
-        if sessionStart != nil, trimmedDraftMessage.hasPrefix("/") {
+        // While creation runs, only a slash command that sends a message can wait for it; after a refusal,
+        // Send retries the start for any command.
+        if sessionStart == .starting, trimmedDraftMessage.hasPrefix("/") {
             guard !isWaitingForStream,
                   let message = SlashCommandExecutor.parse(trimmedDraftMessage, catalog: agentCommands)?.messageForIdleSend,
                   !message.isEmpty || !pendingAttachments.isEmpty else { return true }

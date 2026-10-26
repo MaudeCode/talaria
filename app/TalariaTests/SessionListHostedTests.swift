@@ -1081,6 +1081,33 @@ final class SessionListHostedTests: XCTestCase {
         XCTAssertEqual(composerDraftText(in: window), "")
     }
 
+    /// A slash command that runs rather than sends keeps its draft when the start fails, and Send retries the start.
+    func testRefusedStartLetsSendRetryANonMessageSlashCommand() async throws {
+        let fixture = try FixtureApp(for: self)
+        let session = try await fixture.session()
+        var creationCount = 0
+        let window = try hostWindow(ChatView(
+            session: SessionSummary(title: "New Chat"),
+            server: UITestFixtureEnvironment.serverURL,
+            onAPIError: { _ in },
+            loadsInitialMessages: false,
+            draftStore: fixture.environment.draftStore,
+            startSession: {
+                creationCount += 1
+                return creationCount == 1 ? .failed("Synthetic refusal") : .started(session)
+            }
+        ).environment(\.scenePhase, .active).modelContainer(fixture.cache))
+        try await sendFromComposer("/model fixture-model", in: window)
+        let notice = await awaitElement(in: window, label: "Synthetic refusal")
+        XCTAssertEqual(notice?.accessibilityValue, "Error")
+        XCTAssertEqual(composerDraftText(in: window), "/model fixture-model")
+        let send = try await requireElement(in: window, label: "Send")
+        XCTAssertFalse(send.accessibilityTraits.contains(.notEnabled), "Send retries the refused start for a slash command")
+        HostedAccessibility.activate(send)
+        let retried = await awaitCondition { creationCount == 2 }
+        XCTAssertTrue(retried, "Send did not retry the start")
+    }
+
     func testNonRetryableSessionStartRefusalKeepsSendDisabled() async throws {
         let fixture = try FixtureApp(for: self)
         let window = try hostWindow(ChatView(
