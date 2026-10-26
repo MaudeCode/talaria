@@ -20,6 +20,32 @@ enum HostedSize {
 
 /// Reads the public UIKit items SwiftUI emits, including grouped and bottom-bar actions.
 extension HostedAccessibility {
+    /// The page supplying the visible title menu, beyond sidebar and inspector navigation wrappers.
+    static func titleMenuController(in window: UIWindow) -> UIViewController? {
+        func find(_ controller: UIViewController) -> UIViewController? {
+            if let navigation = controller as? UINavigationController, let top = navigation.topViewController {
+                return find(top)
+            }
+            if let menu = controller.navigationItem.titleMenuProvider?([]), !menu.children.isEmpty { return controller }
+            for child in controller.children {
+                if let page = find(child) { return page }
+            }
+            return nil
+        }
+        return window.rootViewController.flatMap(find)
+    }
+
+    static func menuActions(in menu: UIMenu) -> [UIAction] {
+        menu.children.flatMap { element -> [UIAction] in
+            // SwiftUI represents the informational full title as a disabled, imageless item.
+            if let action = element as? UIAction {
+                return action.image == nil && action.attributes.contains(.disabled) ? [] : [action]
+            }
+            if let nested = element as? UIMenu { return menuActions(in: nested) }
+            return []
+        }
+    }
+
     static func toolbarItems(in window: UIWindow) -> [UIBarButtonItem] {
         window.rootViewController.map(toolbarItems(under:)) ?? []
     }

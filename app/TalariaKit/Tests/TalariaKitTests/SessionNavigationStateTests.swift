@@ -2,6 +2,114 @@ import XCTest
 @testable import TalariaKit
 
 final class SessionNavigationStateTests: XCTestCase {
+    func testRemovingARememberedChatPreservesAnUnrelatedSectionPage() {
+        let session = SessionSummary(sessionId: "remembered-chat")
+        var state = SessionNavigationState()
+        state.select(session)
+        state.select(.memory)
+        state.selectedItem = .memory(.section(.user))
+        let previous = state
+
+        state.remove(sessionID: session.sessionId)
+
+        XCTAssertEqual(state.destination, previous.destination)
+        XCTAssertEqual(state.section, previous.section)
+        XCTAssertEqual(state.selectedItem, previous.selectedItem)
+        XCTAssertEqual(state.selectedSectionSession, previous.selectedSectionSession)
+        XCTAssertEqual(state.rootRevision, previous.rootRevision)
+        XCTAssertEqual(state.chatRootRevision, previous.chatRootRevision)
+        XCTAssertNil(state.lastSelectedSessionID)
+        state.restoreAfterRemoval(previous, ifUnchangedAt: state.openRevision)
+        XCTAssertEqual(state, previous)
+    }
+
+    func testRemovingTheRootUnderADisplayedForkKeepsItsStack() {
+        var state = SessionNavigationState()
+        let parent = SessionSummary(sessionId: "parent")
+        let fork = SessionSummary(sessionId: "fork")
+        state.select(parent)
+        state.reportDisplayedSession(fork)
+        let previous = state
+
+        state.remove(sessionID: parent.sessionId)
+
+        XCTAssertEqual(state.destination, .session(parent))
+        XCTAssertEqual(state.displayedSessionID, fork.sessionId)
+        XCTAssertEqual(state.rootRevision, previous.rootRevision)
+        XCTAssertEqual(state.chatRootRevision, previous.chatRootRevision)
+        XCTAssertNil(state.lastSelectedSessionID)
+        state.restoreAfterRemoval(previous, ifUnchangedAt: state.openRevision)
+        XCTAssertEqual(state, previous)
+    }
+
+    func testRemovingASectionChatPopsItsActualSectionPath() {
+        for section: SessionListUtilityDestination in [.archived, .scheduled, .webhook] {
+            var state = SessionNavigationState()
+            state.select(section)
+            let session = SessionSummary(sessionId: "section-chat")
+            state.pushSectionSession(session)
+            let previous = state
+
+            state.remove(sessionID: session.sessionId)
+
+            XCTAssertEqual(state.destination, .utility(section))
+            XCTAssertEqual(state.section, AppSection(section))
+            XCTAssertNil(state.selectedSectionSession)
+            XCTAssertNil(state.selectedItem)
+            XCTAssertNil(state.lastSelectedSessionID)
+            state.restoreAfterRemoval(previous, ifUnchangedAt: state.openRevision)
+            XCTAssertEqual(state.selectedSectionSession, session)
+            XCTAssertEqual(state.destination, previous.destination)
+        }
+    }
+
+    func testRefusedRemovalRestoresItsRootAndYieldsToNewerNavigation() {
+        let session = SessionSummary(sessionId: "removed", title: "Removed")
+        var state = SessionNavigationState()
+        state.select(session)
+        let previous = state
+        state.remove(sessionID: session.sessionId)
+        let revision = state.openRevision
+        XCTAssertNil(state.destination)
+        XCTAssertNil(state.lastSelectedSessionID)
+        state.restoreAfterRemoval(previous, ifUnchangedAt: revision)
+        XCTAssertEqual(state.destination, .session(session))
+        XCTAssertEqual(state.lastSelectedSessionID, session.sessionId)
+        XCTAssertGreaterThan(state.openRevision, revision)
+
+        state.remove(sessionID: session.sessionId)
+        let removedRevision = state.openRevision
+        let other = SessionSummary(sessionId: "other")
+        state.select(other)
+        state.restoreAfterRemoval(previous, ifUnchangedAt: removedRevision)
+        XCTAssertEqual(state.destination, .session(other))
+    }
+
+    func testRefusedRemovalRestoresAChatCreatedOnTheImplicitRoot() {
+        var state = SessionNavigationState()
+        let session = SessionSummary(sessionId: "created")
+        state.remember(session)
+        let previous = state
+        state.remove(sessionID: session.sessionId)
+        XCTAssertNil(state.selectedSessionID)
+        state.restoreAfterRemoval(previous, ifUnchangedAt: state.openRevision)
+        XCTAssertEqual(state.selectedSessionID, session.sessionId)
+        XCTAssertEqual(state.lastSelectedSessionID, session.sessionId)
+    }
+
+    func testRefusedRemovalDoesNotReplaceAChatCreatedOnItsNewChatRoot() {
+        let removed = SessionSummary(sessionId: "removed")
+        var state = SessionNavigationState()
+        state.select(removed)
+        let previous = state
+        state.remove(sessionID: removed.sessionId)
+        let revision = state.openRevision
+        state.remember(SessionSummary(sessionId: "created"))
+        state.restoreAfterRemoval(previous, ifUnchangedAt: revision)
+        XCTAssertNil(state.destination)
+        XCTAssertEqual(state.selectedSessionID, "created")
+    }
+
     func testSelectingSessionUpdatesDestinationAndRestorationID() {
         let session = SessionSummary(sessionId: "session-1", title: "One")
         var state = SessionNavigationState()

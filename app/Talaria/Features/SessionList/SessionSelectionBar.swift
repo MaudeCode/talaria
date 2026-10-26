@@ -28,19 +28,14 @@ struct SessionSelectionBar: View {
 
             Spacer(minLength: 0)
 
-            Button(action: archive) {
-                Image(systemName: "archivebox")
-            }
+            SessionRemovalButtons(
+                isDisabled: { !viewModel.canPerformBulkAction($0) },
+                archive: archive,
+                delete: delete
+            )
             .frame(minWidth: 44, minHeight: 44)
-            .disabled(!viewModel.canPerformBulkAction(.archive))
-            .accessibilityLabel("Archive")
-
-            Button(role: .destructive, action: delete) {
-                Image(systemName: "trash")
-            }
-            .frame(minWidth: 44, minHeight: 44)
-            .disabled(!viewModel.canPerformBulkAction(.delete))
-            .accessibilityLabel("Delete")
+            .labelStyle(.iconOnly)
+            .controlSize(.large)
         }
         .padding(.horizontal)
         .padding(.vertical, 4)

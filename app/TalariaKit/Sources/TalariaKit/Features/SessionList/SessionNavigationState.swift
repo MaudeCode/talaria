@@ -28,6 +28,7 @@ public struct SessionNavigationState: Equatable {
     public private(set) var destination: SessionNavigationDestination? {
         // The chat a destination opens reports its own Files inspector and companion page when it appears.
         didSet {
+            displayedSessionID = nil
             launchRestoreResolved = true
             filesInspectorPresented = false
             chatShowsFilesInspector = false
@@ -43,6 +44,12 @@ public struct SessionNavigationState: Equatable {
     /// to make room (TAL-1458).
     public var chatShowsCompanionPage = false
     public private(set) var lastSelectedSessionID: String?
+    /// The mounted chat reports itself, including a fork pushed above the root.
+    public private(set) var displayedSessionID: String?
+
+    public mutating func reportDisplayedSession(_ session: SessionSummary) {
+        displayedSessionID = Self.normalized(session.sessionId)
+    }
     /// Consumed synchronously from local summaries before a launch root is displayed, including a cache miss.
     public private(set) var launchRestoreResolved = false
     public private(set) var rootRevision = 0
@@ -196,13 +203,17 @@ public struct SessionNavigationState: Equatable {
         return session
     }
 
-    /// Invalidates both the visible detail and stored restoration target when the
-    /// removed session is the selected or most recently selected session.
+    /// Removes displayed chats and clears a matching restoration target without changing unrelated pages.
     public mutating func remove(sessionID: String?) {
         guard let sessionID = Self.normalized(sessionID) else { return }
 
-        if selectedSectionSession?.sessionId == sessionID { selectedSectionSession = nil }
-        if destination?.selectedSessionID == sessionID || newChatSessionID == sessionID {
+        if selectedSectionSession?.sessionId == sessionID {
+            rootRevision += 1
+            selectedSectionSession = nil
+        }
+        if (destination?.selectedSessionID == sessionID || newChatSessionID == sessionID),
+           displayedSessionID == nil || displayedSessionID == sessionID {
+            rootRevision += 1
             chatRootRevision += 1
             destination = nil
             section = .chats
@@ -212,6 +223,22 @@ public struct SessionNavigationState: Equatable {
         if lastSelectedSessionID == sessionID {
             lastSelectedSessionID = nil
         }
+    }
+
+    /// A refused write restores its root only while the user has stayed on the optimistic replacement.
+    public mutating func restoreAfterRemoval(_ previous: Self, ifUnchangedAt revision: Int) {
+        guard openRevision == revision else { return }
+        // Removing a remembered chat only changes launch restoration, never the page above it.
+        if rootRevision == previous.rootRevision, chatRootRevision == previous.chatRootRevision {
+            lastSelectedSessionID = previous.lastSelectedSessionID
+            return
+        }
+        guard selectedSessionID == nil, selectedSectionSession == nil else { return }
+        var restored = previous
+        restored.rootRevision = rootRevision + 1
+        restored.chatRootRevision = chatRootRevision + 1
+        restored.startedOpens = startedOpens
+        self = restored
     }
 
     private static func normalized(_ sessionID: String?) -> String? {

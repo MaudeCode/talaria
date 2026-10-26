@@ -41,6 +41,8 @@ final class ToolbarPriorityHostedTests: XCTestCase {
             let restored = await self.awaitCondition { scene.interfaceOrientation == .portrait }
             XCTAssertTrue(restored)
         }
+        let vertical = await awaitCondition { scene.traitCollection.verticalBarEdge != .unspecified }
+        XCTAssertTrue(vertical, "The landscape Duo did not expose its native vertical bar")
         return scene
     }
 
@@ -93,13 +95,39 @@ final class ToolbarPriorityHostedTests: XCTestCase {
         attachHostedScreenshot(window, name: "duo-inner-toolbar-ownership")
     }
 
+    func testChatMoreFoldsBeforeTheBellOnDuoInnerLandscape() async throws {
+        guard #available(iOS 27.1, *) else { throw XCTSkip("Requires the vertical-bar SDK") }
+        _ = try await landscapeScene()
+        let fixture = try FixtureApp(for: self)
+        let window = try hostWindow(fixture.sessionList(), size: HostedSize.duoInnerLandscape) {
+            $0.horizontalSizeClass = .regular
+            $0.verticalSizeClass = .regular
+        }
+        try await openSidebar(in: window)
+        HostedAccessibility.activate(try await requireElement(in: window) {
+            $0.accessibilityLabel?.hasPrefix(UITestFixtureURLProtocol.sessionTitle) == true
+        })
+        _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
+        func moreItem() -> UIBarButtonItem? {
+            HostedAccessibility.toolbarItems(in: window).first { $0.accessibilityIdentifier == "chat-session-actions-more" }
+        }
+        let ready = await awaitCondition { moreItem() != nil }
+        XCTAssertTrue(ready)
+        let more = try XCTUnwrap(moreItem())
+        let bell = try XCTUnwrap(HostedAccessibility.toolbarItem("Notifications", in: window))
+        XCTAssertEqual(more.visibilityPriority, .low)
+        XCTAssertEqual(bell.visibilityPriority, .init(higherThan: .high))
+        XCTAssertLessThan(more.visibilityPriority.rawValue, bell.visibilityPriority.rawValue)
+        _ = try await requireElement(in: window, label: "Notifications")
+    }
+
     func testChatsPrioritiesReachTheNativeToolbar() async throws {
         guard #available(iOS 27.1, *) else { throw XCTSkip("Requires the vertical-bar SDK") }
         _ = try await landscapeScene()
         let fixture = try FixtureApp(for: self)
         let window = try hostWindow(fixture.sessionList(), size: HostedSize.duoOuterLandscape)
         _ = try await requireElement(in: window, label: "Notifications")
-        XCTAssertEqual(try XCTUnwrap(HostedAccessibility.toolbarItem("Notifications", in: window)).visibilityPriority, .high)
+        XCTAssertEqual(try XCTUnwrap(HostedAccessibility.toolbarItem("Notifications", in: window)).visibilityPriority, .init(higherThan: .high))
         try await openSidebar(in: window)
         for title in ["New Chat", "Search", "Settings", "Close navigation"] {
             _ = try await requireElement(in: window, label: title)
@@ -439,7 +467,7 @@ final class SessionListHostedTests: XCTestCase {
         let viewModel = SessionListViewModel(server: server, client: APIClient(baseURL: server, session: URLSession(configuration: configuration)))
         _ = await viewModel.load()
         let session = try XCTUnwrap(viewModel.sessions.first)
-        let actions = SessionListRowActions(retryLoad: {}, open: { _ in }, togglePinned: { _ in }, archive: { _ in }, delete: { _ in }, rename: { _ in }, duplicate: { _ in }, move: { _, _ in }, createProject: { _ in }, refreshProjects: {}, export: { _, _ in }, stopRun: { _ in })
+        let actions = fixtureRowActions
         let window = try hostWindow(ObservedSessionRow(viewModel: viewModel, actions: actions))
         let before = XCTAttachment(image: UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
             window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
@@ -1752,5 +1780,279 @@ private struct ScenePhasedSessionList: View {
 
     var body: some View {
         fixture.sessionList(scenePhase: scene.phase)
+    }
+}
+
+@MainActor
+extension SessionListHostedTests {
+    private var fixtureRowActions: SessionListRowActions {
+        SessionListRowActions(retryLoad: {}, open: { _ in }, togglePinned: { _ in }, archive: { _ in }, delete: { _ in }, rename: { _ in }, duplicate: { _ in }, move: { _, _ in }, createProject: { _ in }, refreshProjects: {}, export: { _, _ in }, stopRun: { _ in })
+    }
+
+    private func titleMenu(in window: UIWindow) -> UIMenu? {
+        HostedAccessibility.titleMenuController(in: window)?.navigationItem.titleMenuProvider?([])
+    }
+
+    private func actions(in menu: UIMenu) -> [UIAction] {
+        HostedAccessibility.menuActions(in: menu)
+    }
+
+    private func openChat(_ fixture: FixtureApp, size: CGSize, chats: ChatViewModelCache? = nil) async throws -> UIWindow {
+        let window = try hostWindow(fixture.sessionList(chats: chats), size: size)
+        try await openSidebar(in: window)
+        HostedAccessibility.activate(try await requireElement(in: window) {
+            $0.accessibilityLabel?.hasPrefix(UITestFixtureURLProtocol.sessionTitle) == true
+        })
+        _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
+        let ready = await awaitCondition { self.titleMenu(in: window) != nil }
+        XCTAssertTrue(ready, "The open chat has no title menu")
+        return window
+    }
+
+    func testSwipePlacementsFilterTheSharedMenu() async throws {
+        let fixture = try FixtureApp(for: self)
+        let model = SessionListViewModel(server: UITestFixtureEnvironment.serverURL, client: fixture.client)
+        let row = SessionInteractiveRow(viewModel: model, session: try await fixture.session(), selectedSessionID: nil, actions: fixtureRowActions)
+        var titles: [[String]] = []
+        for placement in [SessionRowContextMenu.Placement.menu, .leadingSwipe, .trailingSwipe] {
+            let window = try hostWindow(NavigationStack {
+                Color.clear.navigationTitle("Fixture")
+                    .toolbarTitleMenu { row.sessionActions(placement: placement) }
+            })
+            let ready = await awaitCondition { self.titleMenu(in: window) != nil }
+            XCTAssertTrue(ready)
+            let menuActions = actions(in: try XCTUnwrap(titleMenu(in: window)))
+            titles.append(menuActions.map(\.title))
+            if let delete = menuActions.first(where: { $0.title == "Delete" }) {
+                XCTAssertEqual(delete.attributes.contains(.destructive), placement == .menu)
+            }
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+        XCTAssertEqual(titles[1], ["Pin"])
+        XCTAssertEqual(titles[2], ["Archive", "Delete"])
+        XCTAssertTrue(Set(titles[1] + titles[2]).isSubset(of: Set(titles[0])))
+    }
+
+    func testChatTitleAndRowContextContentExposeIdenticalActions() async throws {
+        let fixture = try FixtureApp(for: self)
+        let window = try await openChat(fixture, size: HostedSize.phone)
+        let chatTitles = actions(in: try XCTUnwrap(titleMenu(in: window))).map(\.title)
+        XCTAssertFalse(chatTitles.isEmpty)
+        let model = SessionListViewModel(server: UITestFixtureEnvironment.serverURL, client: fixture.client)
+        _ = await model.load()
+        await model.loadProjects()
+        let row = SessionInteractiveRow(viewModel: model, session: try await fixture.session(), selectedSessionID: nil, actions: fixtureRowActions)
+        // Project the real row contextMenu call site, including its row-only Select prefix.
+        // contextMenuContent composes sessionActions(placement: .menu), exactly as the chat does.
+        let rowWindow = try hostWindow(NavigationStack {
+            Color.clear.navigationTitle("Fixture")
+                .toolbarTitleMenu { row.contextMenuContent(includesSelection: true) }
+        })
+        let ready = await awaitCondition { self.titleMenu(in: rowWindow) != nil }
+        XCTAssertTrue(ready)
+        let rowMenu = try XCTUnwrap(titleMenu(in: rowWindow))
+        let rowTitles = actions(in: rowMenu).map(\.title)
+        XCTAssertEqual(rowTitles.first, "Select Chats…")
+        XCTAssertEqual(chatTitles, Array(rowTitles.dropFirst()))
+    }
+
+    func testArchiveAndDeleteImmediatelyReplaceTheOpenChatAtBothWidths() async throws {
+        for size in [HostedSize.phone, HostedSize.duoInnerLandscape] {
+            for title in ["Archive", "Delete"] {
+                let fixture = try FixtureApp([UITestFixtureEnvironment.holdSessionRemovalArgument], for: self)
+                let window = try await openChat(fixture, size: size)
+                let action = try XCTUnwrap(actions(in: try XCTUnwrap(titleMenu(in: window))).first { $0.title == title })
+                HostedAccessibility.activate(action)
+                if title == "Delete" {
+                    let presented = await presentedAlert(in: window)
+                    let alert = try XCTUnwrap(presented)
+                    XCTAssertTrue(HostedAccessibility.tap("Delete", in: alert))
+                }
+                _ = try await requireElement(in: window, label: "Send", "The removal left no New Chat composer")
+                let removed = await awaitNoElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
+                XCTAssertTrue(removed, "The open chat waited for the server's \(title) response")
+                XCTAssertNil(titleMenu(in: window), "An idle New Chat offers session actions")
+                if size == HostedSize.duoInnerLandscape {
+                    let split = try XCTUnwrap(HostedAccessibility.splitViewController(under: window.rootViewController))
+                    let columnVisible = await awaitCondition { split.displayMode == .oneBesideSecondary }
+                    XCTAssertTrue(columnVisible, "Removal hid the column beside New Chat")
+                    let primary = try XCTUnwrap(split.viewController(for: .primary))
+                    let detail = try XCTUnwrap(split.viewController(for: .secondary))
+                    XCTAssertTrue(primary.view.window === window)
+                    XCTAssertTrue(detail.view.window === window)
+                    XCTAssertLessThanOrEqual(primary.view.convert(primary.view.bounds, to: window).maxX,
+                                             detail.view.convert(detail.view.bounds, to: window).minX + 1)
+                }
+                XCTAssertGreaterThan(UITestFixtureHold.shared.pendingCount, 0)
+                fixture.releaseHeldLoads()
+                let answered = await awaitCondition { UITestFixtureURLProtocol.answeredPaths.withLock { $0.contains(title == "Archive" ? "/api/session/archive" : "/api/session/delete") } }
+                XCTAssertTrue(answered)
+                window.isHidden = true
+                window.rootViewController = nil
+            }
+        }
+    }
+
+    func testLocallyPushedForkMenuTargetsTheForkAndRemovalReturnsToItsParent() async throws {
+        for (holdsRemoval, refusesRemoval) in [(true, false), (true, true), (false, false)] {
+            var scenario = [UITestFixtureEnvironment.forkSessionArgument]
+            if holdsRemoval { scenario.append(UITestFixtureEnvironment.holdSessionRemovalArgument) }
+            if refusesRemoval { scenario.append(UITestFixtureEnvironment.refuseSessionRemovalArgument) }
+            let fixture = try FixtureApp(scenario, for: self)
+            let window = try await openChat(fixture, size: HostedSize.phone)
+            let listed = try await fixture.client.sessions().sessions ?? []
+            XCTAssertFalse(listed.contains { $0.sessionId == UITestFixtureURLProtocol.forkSessionID },
+                           "A fresh branch must not already be listed")
+            try await sendFromComposer("/branch", in: window)
+            _ = try await requireElement(in: window, label: "Fork fixture reply")
+            let ready = await awaitCondition {
+                self.titleMenu(in: window)?.children.contains { ($0 as? UIMenu)?.title == "Full Title" } == true
+            }
+            XCTAssertTrue(ready)
+            let menu = try XCTUnwrap(titleMenu(in: window))
+            let copyLink = try XCTUnwrap(actions(in: menu).first { $0.title == "Copy Deeplink" })
+            HostedAccessibility.activate(copyLink)
+            XCTAssertTrue(UIPasteboard.general.string?.contains(UITestFixtureURLProtocol.forkSessionID) == true,
+                          "The fork's title menu still targets the parent")
+
+            HostedAccessibility.activate(try XCTUnwrap(actions(in: menu).first { $0.title == "Archive" }))
+            let popped = await awaitNoElement(in: window) { $0.accessibilityLabel == "Fork fixture reply" }
+            XCTAssertTrue(popped, "Removing a local fork must pop it before the response")
+            _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
+            fixture.releaseHeldLoads()
+            if refusesRemoval {
+                _ = try await requireElement(in: window, label: "Fork fixture reply")
+            } else {
+                let answered = await awaitCondition {
+                    UITestFixtureURLProtocol.answeredPaths.withLock { $0.contains("/api/session/archive") }
+                }
+                XCTAssertTrue(answered)
+                XCTAssertNil(HostedAccessibility.element(in: window, label: "Fork fixture reply"))
+            }
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+    }
+
+    func testSidebarRemovalOfTheParentKeepsItsDisplayedFork() async throws {
+        for refused in [false, true] {
+            var scenario = [UITestFixtureEnvironment.forkSessionArgument, UITestFixtureEnvironment.holdSessionRemovalArgument]
+            if refused { scenario.append(UITestFixtureEnvironment.refuseSessionRemovalArgument) }
+            let fixture = try FixtureApp(scenario, for: self)
+            let chats = ChatViewModelCache()
+            let window = try await openChat(fixture, size: HostedSize.duoInnerLandscape, chats: chats)
+            let summary = try await fixture.session()
+            func retainedParent() -> RetainedChat {
+                chats.chat(for: summary, server: UITestFixtureEnvironment.serverURL) {
+                    XCTFail("The mounted parent's view model was created again")
+                    return ChatView.makeViewModel(session: summary, server: UITestFixtureEnvironment.serverURL)
+                }
+            }
+            let retained = retainedParent()
+            XCTAssertEqual(chats.count, 1)
+            try await sendFromComposer("/branch", in: window)
+            _ = try await requireElement(in: window, label: "Fork fixture reply")
+            try await openSidebar(in: window)
+            let parent = try await requireElement(in: window) {
+                $0.accessibilityLabel?.hasPrefix(UITestFixtureURLProtocol.sessionTitle) == true
+                    && $0.accessibilityCustomActions?.contains { $0.name == "Archive" } == true
+            }
+            let archive = try XCTUnwrap(parent.accessibilityCustomActions?.first { $0.name == "Archive" })
+            XCTAssertTrue(archive.actionHandler?(archive) ?? false)
+            let held = await awaitCondition { UITestFixtureHold.shared.pendingCount > 0 }
+            XCTAssertTrue(held)
+            _ = try await requireElement(in: window, label: "Fork fixture reply")
+            XCTAssertEqual(chats.count, 1, "Removing a parent under its fork must not create another retained chat")
+            XCTAssertTrue(retainedParent() === retained, "The fork still depends on its mounted parent's retained chat")
+            fixture.releaseHeldLoads()
+            let answered = await awaitCondition {
+                UITestFixtureURLProtocol.answeredPaths.withLock { $0.contains("/api/session/archive") }
+            }
+            XCTAssertTrue(answered)
+            _ = try await requireElement(in: window, label: "Fork fixture reply")
+            XCTAssertEqual(chats.count, 1)
+            XCTAssertTrue(retainedParent().viewModel === retained.viewModel, "The archive response replaced the parent's view model")
+            if refused {
+                _ = try await requireElement(in: window) {
+                    $0.accessibilityLabel?.hasPrefix(UITestFixtureURLProtocol.sessionTitle) == true
+                        && $0.accessibilityCustomActions?.contains { $0.name == "Archive" } == true
+                }
+            } else {
+                let gone = await awaitNoElement(in: window) {
+                    $0.accessibilityLabel?.hasPrefix(UITestFixtureURLProtocol.sessionTitle) == true
+                        && $0.accessibilityCustomActions?.contains { $0.name == "Archive" } == true
+                }
+                XCTAssertTrue(gone)
+                HostedAccessibility.activate(try await requireElement(in: window, label: "Memory"))
+                let released = await awaitCondition { chats.count == 0 }
+                XCTAssertTrue(released, "Replacing the parent root must release its archived retained chat")
+            }
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+    }
+
+    func testPoppingAForkMakesParentRemovalReplaceTheRoot() async throws {
+        let fixture = try FixtureApp([UITestFixtureEnvironment.forkSessionArgument,
+                                      UITestFixtureEnvironment.holdSessionRemovalArgument], for: self)
+        let window = try await openChat(fixture, size: HostedSize.phone)
+        try await sendFromComposer("/branch", in: window)
+        _ = try await requireElement(in: window, label: "Fork fixture reply")
+        let navigation = try XCTUnwrap(HostedAccessibility.titleMenuController(in: window)?.navigationController)
+        XCTAssertEqual(navigation.viewControllers.count, 2)
+        navigation.popViewController(animated: false)
+        let popped = await awaitNoElement(in: window) { $0.accessibilityLabel == "Fork fixture reply" }
+        XCTAssertTrue(popped)
+        _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
+        let ready = await awaitCondition { self.titleMenu(in: window) != nil }
+        XCTAssertTrue(ready)
+        let menu = try XCTUnwrap(titleMenu(in: window))
+        HostedAccessibility.activate(try XCTUnwrap(actions(in: menu).first { $0.title == "Archive" }))
+        let removed = await awaitNoElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
+        XCTAssertTrue(removed, "Popping a fork must stop reporting it as displayed before removing the parent")
+        _ = try await requireElement(in: window, label: "Send")
+        XCTAssertNil(titleMenu(in: window))
+        fixture.releaseHeldLoads()
+    }
+
+    func testSidebarRemovalOfAnUndisplayedRememberedChatClearsRestoreAndRetainedChat() async throws {
+        let fixture = try FixtureApp(for: self)
+        let chats = ChatViewModelCache()
+        let window = try hostWindow(fixture.sessionList(chats: chats))
+        try await openSidebar(in: window)
+        HostedAccessibility.activate(try await requireElement(in: window) {
+            $0.accessibilityLabel?.hasPrefix(UITestFixtureURLProtocol.sessionTitle) == true
+        })
+        _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
+        XCTAssertEqual(chats.count, 1)
+        try await openSidebar(in: window)
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Memory"))
+        _ = try await requireElement(in: window, label: "User Profile")
+        try await openSidebar(in: window)
+        let parent = try await requireElement(in: window) {
+            $0.accessibilityLabel?.hasPrefix(UITestFixtureURLProtocol.sessionTitle) == true
+        }
+        let archive = try XCTUnwrap(parent.accessibilityCustomActions?.first { $0.name == "Archive" })
+        XCTAssertTrue(archive.actionHandler?(archive) ?? false)
+        let cleared = await awaitCondition {
+            SessionNavigationPersistence.load(for: UITestFixtureEnvironment.serverURL) == nil && chats.count == 0
+        }
+        XCTAssertTrue(cleared, "The removed chat stayed retained or eligible for launch restore")
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Close navigation"))
+        _ = try await requireElement(in: window, label: "User Profile")
+    }
+
+    func testRefusedArchiveRestoresTheOpenChat() async throws {
+        let fixture = try FixtureApp([UITestFixtureEnvironment.holdSessionRemovalArgument, UITestFixtureEnvironment.refuseSessionRemovalArgument], for: self)
+        let window = try await openChat(fixture, size: HostedSize.phone)
+        let archive = try XCTUnwrap(actions(in: try XCTUnwrap(titleMenu(in: window))).first { $0.title == "Archive" })
+        HostedAccessibility.activate(archive)
+        let removed = await awaitNoElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
+        XCTAssertTrue(removed)
+        fixture.releaseHeldLoads()
+        _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
+        let restored = await awaitCondition { self.titleMenu(in: window) != nil }
+        XCTAssertTrue(restored)
     }
 }

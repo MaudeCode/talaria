@@ -24,38 +24,31 @@ struct SessionInteractiveRow: View {
             .sidebarRow(isSelected: !viewModel.isSelectingSessions && session.sessionId == selectedSessionID)
             .transition(SessionListMotion.sessionRowTransition(reduceMotion: reduceMotion))
             .swipeActions(edge: .leading, allowsFullSwipe: false) {
-                sessionLeadingSwipeActions(for: session)
+                sessionActions(placement: .leadingSwipe)
             }
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                sessionTrailingSwipeActions(for: session)
+                sessionActions(placement: .trailingSwipe)
             }
-            .contextMenu {
-                if !viewModel.isSelectingSessions {
-                    if canEnterSelection {
-                        Button { viewModel.beginSelectingSessions() } label: {
-                            Label("Select Chats…", systemImage: "checkmark.circle")
-                        }
-                        .disabled(selectionIsDisabled)
-                    }
-                    SessionRowContextMenu(
-                        session: session,
-                        projects: viewModel.projects,
-                        isViewingCachedData: viewModel.isViewingCachedData,
-                        isRenamingSession: viewModel.isMutating(session),
-                        isCreatingProject: viewModel.isCreatingProject,
-                        isMovingSession: viewModel.isMutating(session),
-                        isLoadingProjects: viewModel.isLoadingProjects,
-                        isMutating: viewModel.isMutating(session),
-                        pendingChange: viewModel.pendingChange(for: session),
-                        actions: actions
-                    )
-                }
-            }
+            .contextMenu { contextMenuContent(includesSelection: canEnterSelection) }
             .accessibilityActions {
                 if canEnterSelection, !selectionIsDisabled {
                     Button("Select Chats…") { viewModel.beginSelectingSessions() }
                 }
             }
+    }
+
+    /// Select is a row-only prefix; all session actions use the same menu placement as the chat.
+    @ViewBuilder
+    func contextMenuContent(includesSelection: Bool) -> some View {
+        if !viewModel.isSelectingSessions {
+            if includesSelection {
+                Button { viewModel.beginSelectingSessions() } label: {
+                    Label("Select Chats…", systemImage: "checkmark.circle")
+                }
+                .disabled(selectionIsDisabled)
+            }
+            sessionActions(placement: .menu)
+        }
     }
 
     private var canEnterSelection: Bool {
@@ -132,42 +125,9 @@ struct SessionInteractiveRow: View {
     }
 
     @ViewBuilder
-    private func sessionLeadingSwipeActions(for session: SessionSummary) -> some View {
-        if !viewModel.isSelectingSessions, SessionRowActionPolicy.canPin(session), isLiveServerSession(session) {
-            Button {
-                actions.togglePinned(session)
-            } label: {
-                Label(session.pinned == true ? "Unpin" : "Pin", systemImage: "pin")
-            }
-            .disabled(viewModel.isMutating(session))
-            .tint(.accentColor)
+    func sessionActions(placement: SessionRowContextMenu.Placement) -> some View {
+        if !viewModel.isSelectingSessions {
+            SessionRowContextMenu(viewModel: viewModel, session: session, actions: actions, placement: placement)
         }
-    }
-
-    @ViewBuilder
-    private func sessionTrailingSwipeActions(for session: SessionSummary) -> some View {
-        if !viewModel.isSelectingSessions, SessionRowActionPolicy.canArchive(session), isLiveServerSession(session) {
-            Button {
-                actions.archive(session)
-            } label: {
-                Label("Archive", systemImage: "archivebox")
-            }
-            .disabled(viewModel.isMutating(session))
-            .tint(.orange)
-        }
-
-        if !viewModel.isSelectingSessions, SessionRowActionPolicy.canDelete(session), isLiveServerSession(session) {
-            Button {
-                actions.delete(session)
-            } label: {
-                Label("Delete", systemImage: "trash")
-            }
-            .disabled(viewModel.isMutating(session))
-            .tint(.red)
-        }
-    }
-
-    private func isLiveServerSession(_ session: SessionSummary) -> Bool {
-        !viewModel.isViewingCachedData && hasServerSessionID(session)
     }
 }

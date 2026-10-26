@@ -75,7 +75,7 @@ private enum TurnDiffPresentation: Identifiable {
 /// current session and whether Files or a companion page needs that room (TAL-1458).
 struct SplitFilesInspector {
     let isPresented: Binding<Bool>
-    let widensChat: Bool
+    var widensChat: Bool
     let reportShown: (Bool) -> Void
     var reportSession: (SessionSummary) -> Void = { _ in }
     var offersCompanionPage = false
@@ -180,6 +180,7 @@ struct ChatView: View {
     /// the cache-first → network reconcile re-pins to the bottom without a jump (#289).
     @State private var cacheFirstSnapUntil: Date?
     @State private var forkedSession: SessionSummary?
+    @State private var removedForkedSession: SessionSummary?
     @State private var editContext: MessageActionContext?
     @State private var editDraft = ""
     @State private var showEditSheet = false
@@ -237,6 +238,9 @@ struct ChatView: View {
     @State private var lastSyncedDraftAttachments: [ChatDraftAttachment] = []
     @State private var restoredDraftSettings: ChatDraftSettings?
     @State private var didApplyRestoredDraftSettings = false
+    @Environment(\.sessionActions) private var sessionActions
+    @State private var hasVerticalToolbar = false
+
     @State private var didCompleteInitialAppearance = false
     @State private var isInitialComposerFocusContentReady = false
     @State private var didApplyInitialComposerFocusPolicy = false
@@ -832,28 +836,54 @@ struct ChatView: View {
             }
     }
 
+    private func reportFilesInspector() {
+        splitFilesInspector?.reportSession(session)
+        splitFilesInspector?.reportShown(showsFilesInspector)
+    }
+
     private var chatWithToolbar: some View {
-        chatWithVisibility
+        let sessionMenu: SessionRowContextMenu? = if viewModel.hasSession, let sessionActions {
+            SessionRowContextMenu(
+                viewModel: sessionActions.viewModel,
+                session: session,
+                actions: sessionActions.actions
+            )
+        } else { nil }
+        return chatWithVisibility
             .onChange(of: !viewModel.hasMessages && viewModel.clarificationPrompt == nil && viewModel.activeStreamID == nil,
                       initial: true) { _, isEmpty in splitFilesInspector?.reportEmptyTranscript(isEmpty) }
             .onChange(of: showsFilesInspector, initial: true) { splitFilesInspector?.reportShown(showsFilesInspector) }
             .onChange(of: showsCompanionPage, initial: true) { splitFilesInspector?.reportCompanionPage(showsCompanionPage) }
-            .onAppear {
-                splitFilesInspector?.reportSession(session)
-                splitFilesInspector?.reportShown(showsFilesInspector)
-            }
+            .onAppear(perform: reportFilesInspector)
+            .onChange(of: splitFilesInspector != nil) { reportFilesInspector() }
             .onChange(of: session) { _, session in splitFilesInspector?.reportSession(session) }
             .navigationDestination(isPresented: $showsFilesBrowser) {
                 FileBrowserView(session: session, server: server, onAPIError: onAPIError)
             }
             .navigationTitle(displayTitle)
             .navigationBarTitleDisplayMode(.inline)
+            .onToolbarVerticalEdgeChange { hasVerticalToolbar = $0 }
+            .toolbarTitleMenu { sessionMenu }
             .toolbar {
                 ToolbarItem(placement: .principal) {
-                    ChatToolbarTitleLabel(
-                        title: displayTitle,
-                        subtitle: headerSubtitle
-                    )
+                    let title = ChatToolbarTitleLabel(title: displayTitle, subtitle: headerSubtitle)
+                    if let sessionMenu {
+                        // A custom principal title replaces UIKit's title button; keep it actionable too.
+                        Menu { sessionMenu } label: { title }
+                            .accessibilityIdentifier("chat-session-actions-title")
+                    } else {
+                        title
+                    }
+                }
+
+                if hasVerticalToolbar, let sessionMenu {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Menu { sessionMenu } label: {
+                            Label("More", systemImage: "ellipsis.circle")
+                        }
+                        .accessibilityIdentifier("chat-session-actions-more")
+                    }
+                    .overflowPriority(.chatMore)
                 }
 
                 // One item per action so each bridges to a system bar button: iOS 26+ groups
@@ -981,7 +1011,14 @@ struct ChatView: View {
             .environment(\.retryPendingAttachment) { id in Task { await viewModel.retryAttachment(id: id) } }
             .navigationDestination(item: $forkedSession) { session in
                 // A fork opens in the same column, so the same split view makes room for its Files.
-                ChatView(session: session, server: server, onAPIError: onAPIError, splitFilesInspector: splitFilesInspector)
+                ChatView(session: session, server: server, onAPIError: onAPIError,
+                         sessionListOwner: sessionActions?.viewModel, splitFilesInspector: splitFilesInspector)
+            }
+            .onChange(of: forkedSession) { _, fork in
+                if fork == nil { splitFilesInspector?.reportSession(session) }
+            }
+            .onChange(of: sessionActions?.viewModel.removingSessionIDs) { _, ids in
+                reconcileRemovedFork(ids ?? [])
             }
             .fullScreenCover(item: $selectableResponseText) { selectableText in
                 SelectableTextPresentationView(selection: selectableText)
@@ -2476,6 +2513,19 @@ struct ChatView: View {
         )
         if draftRevision != submittedDraftRevision, !submittedDraft.isEmpty {
             appendReturnedComposerText(submittedDraft)
+        }
+    }
+
+    private func reconcileRemovedFork(_ removingSessionIDs: Set<String>) {
+        if let fork = forkedSession, let id = fork.sessionId, removingSessionIDs.contains(id) {
+            removedForkedSession = fork
+            forkedSession = nil
+        }
+        if let removed = removedForkedSession, let id = removed.sessionId, !removingSessionIDs.contains(id) {
+            if forkedSession == nil, sessionActions?.viewModel.shouldRestoreSessionAfterRemoval(id) == true {
+                forkedSession = removed
+            }
+            removedForkedSession = nil
         }
     }
 

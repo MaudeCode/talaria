@@ -55,6 +55,29 @@ final class DuoFoldHostedTests: XCTestCase {
         XCTAssertEqual(showsSplit, !closed, closed ? "Closing the Duo kept the split view" : "Opening the Duo kept the stack")
     }
 
+    func testArchivingAfterFoldingUsesTheCompactNewChatRoot() async throws {
+        let folding = try await openChatOnInnerDisplay([UITestFixtureEnvironment.holdSessionRemovalArgument])
+        let window = folding.window
+        _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
+        fold(folding, closed: true)
+        _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
+        let ready = await awaitCondition { HostedAccessibility.titleMenuController(in: window) != nil }
+        XCTAssertTrue(ready)
+        let page = try XCTUnwrap(HostedAccessibility.titleMenuController(in: window))
+        let navigation = try XCTUnwrap(page.navigationController)
+        let menu = try XCTUnwrap(page.navigationItem.titleMenuProvider?([]))
+        HostedAccessibility.activate(try XCTUnwrap(HostedAccessibility.menuActions(in: menu).first { $0.title == "Archive" }))
+        let removed = await awaitNoElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
+        XCTAssertTrue(removed, "Archiving after a fold must immediately replace the compact chat")
+        _ = try await requireElement(in: window, label: "Send")
+        XCTAssertNil(HostedAccessibility.splitViewController(under: window.rootViewController))
+        XCTAssertEqual(navigation.viewControllers.count, 1, "New Chat must be the compact root")
+        XCTAssertNil(HostedAccessibility.titleMenuController(in: window))
+        let held = await awaitCondition { UITestFixtureHold.shared.pendingCount > 0 }
+        XCTAssertTrue(held, "The compact root must change before the archive response")
+        folding.fixture.releaseHeldLoads()
+    }
+
     private func chatRequests() -> [String] {
         UITestFixtureURLProtocol.answeredPaths.withLock { $0.filter(Self.chatPaths.contains) }
     }
@@ -374,10 +397,28 @@ final class ChatViewModelCacheTests: XCTestCase {
         let cache = ChatViewModelCache()
         _ = cache.chat(for: session("a"), server: server) { viewModel("a") }
         _ = cache.chat(for: session("b"), server: server) { viewModel("b") }
-        cache.keepOnly(sessionID: "b")
+        cache.keepOnly(sessionIDs: ["b"])
         XCTAssertEqual(cache.count, 1)
-        cache.keepOnly(sessionID: nil)
+        cache.keepOnly(sessionIDs: [])
         XCTAssertEqual(cache.count, 0)
+    }
+
+    func testClearingTheSelectedSessionKeepsThePendingNewChatRoot() {
+        let cache = ChatViewModelCache()
+        _ = cache.chat(for: session("a"), server: server) { viewModel("a") }
+        let route = PendingNewChatRoute()
+        let pending = cache.pendingChat(for: route, server: server) { provisional in
+            ChatViewModel(session: provisional, server: server)
+        }
+
+        cache.keepOnly(sessionIDs: [])
+
+        XCTAssertEqual(cache.count, 1)
+        let kept = cache.pendingChat(for: route, server: server) { provisional in
+            XCTFail("The mounted pending root's view model was created again")
+            return ChatViewModel(session: provisional, server: server)
+        }
+        XCTAssertTrue(kept === pending)
     }
 
     func testAViewTakesOverAChatOnlyWhileItIsLive() async {
