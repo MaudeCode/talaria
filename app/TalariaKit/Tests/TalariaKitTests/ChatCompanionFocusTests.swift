@@ -80,6 +80,30 @@ final class ChatCompanionFocusTests: XCTestCase {
         XCTAssertEqual(rebuilt.companionFocus.browserPath, "Sources")
     }
 
+    /// TAL-1539: a page the reader hid stays hidden through new files and the chat a fold rebuilds.
+    func testAHiddenPageStaysHiddenThroughNewFilesAndRebuilds() throws {
+        let chat = try makeChat()
+        chat.streamCoordinatorAppendToolCall(try frame("tool_a"))
+        XCTAssertFalse(chat.companionFocus.isHidden)
+        chat.setCompanionPageHidden(true)
+        chat.streamCoordinatorAppendToolCall(try frame("tool_b"))
+        XCTAssertTrue(chat.companionFocus.isHidden, "A new file reopened the page")
+        XCTAssertTrue(try makeChat().companionFocus.isHidden, "The rebuilt chat showed the hidden page")
+
+        chat.setCompanionPageHidden(false)
+        XCTAssertFalse(try makeChat().companionFocus.isHidden)
+    }
+
+    /// TAL-1539: with Open the Agent's File Automatically off, a chat starts with its page hidden.
+    func testTheAutoOpenSettingDecidesWhetherANewChatStartsHidden() throws {
+        let suite = "ChatCompanionFocusTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+        XCTAssertFalse(try makeChat(defaults: defaults, id: "on").companionFocus.isHidden, "The setting is on by default")
+        defaults.set(false, forKey: ChatTranscriptDisplaySettings.opensCompanionPageKey)
+        XCTAssertTrue(try makeChat(defaults: defaults, id: "off").companionFocus.isHidden)
+    }
+
     func testTheSessionDetailCarriesItsLastFile() throws {
         let session = try fixture()["session"] as? [String: Any]
         var detail = try XCTUnwrap(session)
@@ -93,15 +117,15 @@ final class ChatCompanionFocusTests: XCTestCase {
 
     private let editDiffJSON = #"{"added": 1, "removed": 0, "diff": "+struct Alpha {}", "truncated": false, "hunks": []}"#
 
-    private func makeChat() throws -> ChatViewModel {
+    private func makeChat(defaults: UserDefaults? = nil, id: String = "") throws -> ChatViewModel {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
-        let summary = try decoder.decode(SessionSummary.self, from: Data(#"{"session_id": "companion-\#(name)", "title": "Demo"}"#.utf8))
+        let summary = try decoder.decode(SessionSummary.self, from: Data(#"{"session_id": "companion-\#(name)\#(id)", "title": "Demo"}"#.utf8))
         return ChatViewModel(
             session: summary,
             server: server,
             draftAttachmentStore: RecordingSendDraftAttachmentStore(),
-            userDefaults: try XCTUnwrap(UserDefaults(suiteName: "ChatCompanionFocusTests.\(UUID().uuidString)"))
+            userDefaults: try defaults ?? XCTUnwrap(UserDefaults(suiteName: "ChatCompanionFocusTests.\(UUID().uuidString)"))
         )
     }
 

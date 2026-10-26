@@ -43,16 +43,8 @@ final class DuoFoldHostedTests: XCTestCase {
         return Folding(fixture: fixture, window: window, display: display, inner: inner)
     }
 
-    /// Closes the Duo onto its outer display (compact) or opens it onto the inner one (regular), as the device does:
-    /// the same window takes the other display's size and size class.
     private func fold(_ folding: Folding, closed: Bool) {
-        folding.window.frame = CGRect(origin: .zero, size: closed ? HostedSize.duoOuter : folding.inner)
-        folding.window.traitOverrides.horizontalSizeClass = closed ? .compact : .regular
-        folding.display.sizeClass = closed ? .compact : .regular
-        folding.window.layoutIfNeeded()
-        settle(0.3)
-        let showsSplit = HostedAccessibility.splitViewController(under: folding.window.rootViewController) != nil
-        XCTAssertEqual(showsSplit, !closed, closed ? "Closing the Duo kept the split view" : "Opening the Duo kept the stack")
+        foldDuo(folding.window, display: folding.display, inner: folding.inner, closed: closed)
     }
 
     func testArchivingAfterFoldingUsesTheCompactNewChatRoot() async throws {
@@ -313,7 +305,23 @@ final class HostedDuoDisplay {
     var sizeClass: UserInterfaceSizeClass = .regular
 }
 
-private struct FoldingDisplay: View {
+extension XCTestCase {
+    /// Closes the Duo onto its outer display (compact) or opens it onto the inner one (regular), as the device does:
+    /// the same window takes the other display's size and size class.
+    @MainActor
+    func foldDuo(_ window: UIWindow, display: HostedDuoDisplay, inner: CGSize, closed: Bool) {
+        window.frame = CGRect(origin: .zero, size: closed ? HostedSize.duoOuter : inner)
+        window.traitOverrides.horizontalSizeClass = closed ? .compact : .regular
+        display.sizeClass = closed ? .compact : .regular
+        window.layoutIfNeeded()
+        settle(0.3)
+        let showsSplit = HostedAccessibility.splitViewController(under: window.rootViewController) != nil
+        XCTAssertEqual(showsSplit, !closed, closed ? "Closing the Duo kept the split view" : "Opening the Duo kept the stack")
+    }
+}
+
+/// The Duo's displays as SwiftUI sees them: closing it makes the content compact.
+struct FoldingDisplay: View {
     let display: HostedDuoDisplay
     let content: AnyView
 

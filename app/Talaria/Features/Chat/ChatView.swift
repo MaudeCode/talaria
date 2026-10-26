@@ -107,6 +107,9 @@ struct ChatView: View {
     @Environment(\.scenePhase) private var scenePhase
     /// The chat's frame, bars included: the size the companion page's split rule reads (TAL-1458).
     @State private var arrangementSize: CGSize = .zero
+    /// TAL-1539: the companion page's opacity as it fades, and whether a hidden page stays until it has faded out.
+    @State private var companionPageOpacity = 0.0
+    @State private var companionPageFadesOut = false
     @Environment(\.holdsForegroundLayout) private var holdsForegroundLayout
     @Environment(\.targetChatLayoutWidth) private var targetChatLayoutWidth
     @State private var lastActiveLayoutSize: CGSize = .zero
@@ -897,13 +900,25 @@ struct ChatView: View {
                 }
 
                 // Files creates an idle chat on demand; companion pages keep their own browser action.
-                if showsFilesButton, !companionPageIsBeside {
+                if showsFilesButton, !companionPageFits {
                     ToolbarItem(placement: .topBarTrailing) {
                         filesButton
                             .disabled(viewModel.isViewingCachedData)
                             .accessibilityLabel("Files")
                     }
                     .overflowPriority(.chatFiles)
+                }
+
+                // Shows and hides the companion page where it fits (TAL-1539); on the Duo it joins the vertical bar.
+                if #available(iOS 27.1, *), companionPageFits {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Toggle(isOn: companionPageShown) {
+                            Label("Companion Page", systemImage: "sidebar.trailing")
+                        }
+                        .toggleStyle(.button)
+                    }
+                    .axisBehavior(.verticalPreferred)
+                    .overflowPriority(.chatCompanionPage)
                 }
 
                 if showsGitControls, viewModel.hasSession, gitAvailabilityViewModel.hasRepository {
@@ -977,7 +992,7 @@ struct ChatView: View {
 
     /// Whether this chat shows Files beside it once it has the width. The companion page takes its place.
     private var showsFilesInspector: Bool {
-        isFilesInspectorPresented && showsFilesButton && viewModel.hasSession && !companionPageIsBeside
+        isFilesInspectorPresented && showsFilesButton && viewModel.hasSession && !companionPageFits
     }
 
     /// Whether the chat has a companion page to show beside it (TAL-1458): an iOS 27.1 arrangement at regular width,
@@ -987,10 +1002,39 @@ struct ChatView: View {
         return viewModel.hasSession && viewModel.selectedWorkspacePath != nil && viewModel.companionFocus.path != nil
     }
 
-    /// Whether the companion page shows beside the chat: where the arrangement splits, as wide as tall. A page it could
+    /// Whether the companion page fits beside the chat: where the arrangement splits, as wide as tall. A page it could
     /// not split for would still narrow the chat's column, so it shows only there.
-    private var companionPageIsBeside: Bool {
+    private var companionPageFits: Bool {
         showsCompanionPage && RegularSplitLayout.splitsCompanionPage(width: arrangementSize.width, height: arrangementSize.height)
+    }
+
+    /// Whether the companion page shows beside the chat: where it fits, unless the reader hid it (TAL-1539).
+    private var companionPageIsBeside: Bool {
+        companionPageFits && !viewModel.companionFocus.isHidden
+    }
+
+    private var companionPageShown: Binding<Bool> {
+        Binding(get: { !viewModel.companionFocus.isHidden }, set: { viewModel.setCompanionPageHidden(!$0) })
+    }
+
+    /// The page fades in shortly after it is inserted; one still fading out turns back from where it is.
+    private func fadeInCompanionPage() {
+        guard companionPageIsBeside else { return }
+        let returns = companionPageFadesOut
+        companionPageFadesOut = false
+        guard let animation = ChatMotion.companionPage(reduceMotion: reduceMotion) else { return companionPageOpacity = 1 }
+        withAnimation(returns ? animation : animation.delay(0.12)) { companionPageOpacity = 1 }
+    }
+
+    /// A hidden page fades out before it leaves; one the chat can no longer split for (a fold or rotation) leaves at once.
+    private func fadeOutCompanionPage() {
+        guard companionPageFits, companionPageOpacity > 0, let animation = ChatMotion.companionPage(reduceMotion: reduceMotion) else {
+            companionPageOpacity = 0
+            companionPageFadesOut = false
+            return
+        }
+        companionPageFadesOut = true
+        withAnimation(animation) { companionPageOpacity = 0 } completion: { companionPageFadesOut = false }
     }
 
     /// The chat with its companion page beside it where the arrangement can split, and alone where it cannot (portrait,
@@ -1000,16 +1044,21 @@ struct ChatView: View {
     private func withCompanionPage(_ chat: some View) -> some View {
         if #available(iOS 27.1, *), splitFilesInspector?.offersCompanionPage == true {
             Group {
-                if companionPageIsBeside {
+                if companionPageIsBeside || companionPageFadesOut {
                     ArrangementView {
                         chat
                     } secondary: {
                         ChatCompanionPage(viewModel: viewModel, session: session, server: server, onAPIError: onAPIError)
+                            // Reduce Motion shows the page on its first frame.
+                            .opacity(reduceMotion ? 1 : companionPageOpacity)
                     }
                     .arrangementViewStyle(.split.axes(.horizontal))
                 } else {
                     chat
                 }
+            }
+            .onChange(of: companionPageIsBeside, initial: true) { _, isBeside in
+                if isBeside { fadeInCompanionPage() } else { fadeOutCompanionPage() }
             }
             .onGeometryChange(for: CGSize.self, of: {
                 holdsForegroundLayout && arrangementSize != .zero ? arrangementSize : $0.sizeIncludingSafeArea

@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "On iPhone Duo and iPad, a Companion Page button in the chat's toolbar hides and shows the file beside the chat, and a chat setting turns off opening it automatically.",
+      "highlight": false,
+      "components": ["app"]
+    },
+    {
+      "category": "Changed",
+      "summary": "The companion page fades in beside the chat instead of appearing all at once, and appears without motion under Reduce Motion.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

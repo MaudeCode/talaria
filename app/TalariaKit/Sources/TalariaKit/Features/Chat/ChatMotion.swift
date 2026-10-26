@@ -17,6 +17,11 @@ public enum ChatMotion {
         reduceMotion ? .easeOut(duration: 0.12) : .smooth(duration: 0.22, extraBounce: 0)
     }
 
+    /// TAL-1539: the companion page fading in beside the chat, and out when hidden. Reduce Motion shows it at once.
+    public static func companionPage(reduceMotion: Bool) -> Animation? {
+        reduceMotion ? nil : .smooth(duration: 0.35, extraBounce: 0)
+    }
+
     public static func scrollToLatest(reduceMotion: Bool) -> Animation? {
         reduceMotion ? nil : .easeOut(duration: 0.20)
     }
