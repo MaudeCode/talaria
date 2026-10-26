@@ -1,1 +1,10 @@
-{"skip":"Hosted-test geometry and native-control activation fixes only; no shipped app behavior changes."}
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Keep long drafts below the fold in tabletop mode.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

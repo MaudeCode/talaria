@@ -4,6 +4,13 @@ import UIKit
 import UniformTypeIdentifiers
 
 struct ComposerTextInputView: View {
+    struct FramePreference: PreferenceKey {
+        static var defaultValue: Anchor<CGRect>? { nil }
+        static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
+            value = nextValue() ?? value
+        }
+    }
+
     @Binding var text: String
     let revision: Int
     @Binding var isFocused: Bool
@@ -47,6 +54,7 @@ struct ComposerTextInputView: View {
                 caret: caret
             )
             .frame(height: min(inputHeight, maximumInputHeight))
+            .anchorPreference(key: FramePreference.self, value: .bounds) { $0 }
             .padding(.vertical, verticalPadding)
             .padding(.horizontal, 16)
 
