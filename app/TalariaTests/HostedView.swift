@@ -267,7 +267,9 @@ enum HostedAccessibility {
             control.sendActions(for: .primaryActionTriggered)
             handled = true
         } else if let control = element as? UIControl {
-            control.sendActions(for: .touchUpInside)
+            guard control.isEnabled else { return false }
+            control.sendActions(for: control.allControlEvents.contains(.primaryActionTriggered)
+                ? .primaryActionTriggered : .touchUpInside)
             handled = true
         } else {
             handled = element.accessibilityActivate()

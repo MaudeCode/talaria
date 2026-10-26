@@ -109,7 +109,11 @@ final class ChatHostedTests: XCTestCase {
         let fold = CGRect(x: -100, y: 330, width: 2000, height: 40)
         let recorder = ChatBodyEvaluationRecorder()
         var transcriptFrame: CGRect { recorder.transcriptFrame }
-        let chat = fixture.chat(session).environment(\.chatBodyEvaluation, recorder)
+        // A pushed page in an oversized window inherits the physical cover's bottom inset on iOS 27.1.
+        // This geometry fixture owns its full canvas; navigation is covered by the book-fold and section tests.
+        let chat = fixture.chat(session, asNavigationDestination: false)
+            .ignoresSafeArea(.container)
+            .environment(\.chatBodyEvaluation, recorder)
         let window = try hostWindow(FoldHost(content: AnyView(chat), division: fold),
                                     size: CGSize(width: 900, height: 900))
         _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
@@ -230,20 +234,26 @@ final class ChatHostedTests: XCTestCase {
         let fixture = try FixtureApp(for: self)
         let session = try await fixture.session()
         // Both overlays request fixed physical frames, so RTL must choose the left pane.
+        let recorder = ChatBodyEvaluationRecorder()
+        let division = CGRect(x: 300, y: -100, width: 40, height: 2000)
         let chat = fixture.chat(session).environment(\.layoutDirection, .rightToLeft)
+            .environment(\.chatBodyEvaluation, recorder)
         let window = try hostWindow(FoldHost(content: AnyView(chat),
-            division: CGRect(x: 300, y: -100, width: 40, height: 2000)),
+            division: division),
             size: CGSize(width: 900, height: 700))
         _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
+        XCTAssertFalse(recorder.transcriptFrame.isNull)
+        // The injected division is chat-local; native vertical bars can move that origin in the window.
+        let foldInWindow = division.offsetBy(dx: recorder.transcriptFrame.minX, dy: recorder.transcriptFrame.minY)
         try await typeIntoComposer("Retained RTL draft", in: window)
         let loadedEditor = await composerTextView(in: window)
         let editor = try XCTUnwrap(loadedEditor)
-        XCTAssertGreaterThan(editor.convert(editor.bounds, to: window).maxX, 340)
+        XCTAssertGreaterThan(editor.convert(editor.bounds, to: window).maxX, foldInWindow.maxX)
         HostedAccessibility.activate(try await requireElement(in: window, label: "Toggle fixture fold"))
-        let displaced = await awaitCondition { editor.convert(editor.bounds, to: window).maxX <= 300 }
+        let displaced = await awaitCondition { editor.convert(editor.bounds, to: window).maxX <= foldInWindow.minX }
         XCTAssertTrue(displaced, "The RTL composer must fit left of the physical division")
         let send = try await requireElement(in: window, label: "Send")
-        XCTAssertLessThanOrEqual(window.convert(send.accessibilityFrame, from: nil).maxX, 300)
+        XCTAssertLessThanOrEqual(window.convert(send.accessibilityFrame, from: nil).maxX, foldInWindow.minX)
         XCTAssertEqual(editor.text, "Retained RTL draft")
         XCTAssertGreaterThan(try transcriptScrollView(in: window).bounds.width, 800)
         settle(0.3)

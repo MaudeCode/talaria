@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Keep long drafts below the fold in tabletop mode.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

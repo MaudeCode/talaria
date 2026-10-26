@@ -138,6 +138,7 @@ struct MessageComposerView: View {
     @State private var textFieldHeight: CGFloat = 0
     @State private var composerSurfaceHeight: CGFloat = 110
     @State private var twoRowComposerHeight: CGFloat = 0
+    @State private var twoRowComposerChromeHeight: CGFloat = 0
     @GestureState private var clarificationResizeTranslation: CGFloat = 0
     @State private var textInputHeight: CGFloat = 22
     @State private var noticeMessage: String?
@@ -365,19 +366,23 @@ struct MessageComposerView: View {
                 .animation(ChatMotion.composerChrome(reduceMotion: reduceMotion), value: pendingPhotos.isEmpty)
             }
         }
-        .background(
+        .backgroundPreferenceValue(ComposerTextInputView.FramePreference.self) { inputBounds in
             GeometryReader { proxy in
+                let inputHeight = inputBounds.map { proxy[$0].height }
                 Color.clear
                     .onAppear {
-                        recordTwoRowComposerHeight(proxy.size.height)
+                        recordTwoRowComposerHeight(proxy.size.height, inputHeight: inputHeight)
                         onHeightChange(proxy.size.height)
                     }
                     .onChange(of: proxy.size.height) { _, newHeight in
-                        recordTwoRowComposerHeight(newHeight)
+                        recordTwoRowComposerHeight(newHeight, inputHeight: inputHeight)
                         onHeightChange(newHeight)
                     }
+                    .onChange(of: inputHeight) { _, newHeight in
+                        recordTwoRowComposerHeight(proxy.size.height, inputHeight: newHeight)
+                    }
             }
-        )
+        }
         .task(id: slashAutocompleteLoadKey) {
             await loadSlashAutocompleteSubArgsIfNeeded()
         }
@@ -754,8 +759,7 @@ struct MessageComposerView: View {
     private var maximumTextInputHeight: CGFloat {
         if usesOneRowCard { return 22 }
         guard let tabletopHeight else { return 96 }
-        let chromeHeight = max(0, twoRowComposerHeight - textInputHeight)
-        return max(22, tabletopHeight - chromeHeight - 8)
+        return max(22, tabletopHeight - twoRowComposerChromeHeight - 8)
     }
 
     /// A pane too short for the two-row composer and the transcript's minimum, as on an iPhone in landscape with
@@ -767,8 +771,14 @@ struct MessageComposerView: View {
         return availableHeight - twoRowComposerHeight < Self.minimumTranscriptHeight
     }
 
-    private func recordTwoRowComposerHeight(_ height: CGFloat) {
-        if !usesSingleLineShell, !usesOneRowCard { twoRowComposerHeight = height }
+    private func recordTwoRowComposerHeight(_ height: CGFloat, inputHeight: CGFloat?) {
+        if !usesSingleLineShell, !usesOneRowCard {
+            twoRowComposerHeight = height
+            // Resolve both bounds in the same layout pass; the input binding can already describe the next one.
+            if let inputHeight, inputHeight > 0 {
+                twoRowComposerChromeHeight = max(0, height - inputHeight)
+            }
+        }
     }
 
     private var voiceButton: some View {

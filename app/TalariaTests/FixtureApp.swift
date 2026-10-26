@@ -91,17 +91,23 @@ final class FixtureApp {
         return try XCTUnwrap(sessions.first { $0.sessionId == sessionID }, "The fixture lists no \(sessionID)")
     }
 
-    /// The chat pushed the way the session list pushes it: it starts its loads once its push has finished.
-    func chat(_ session: SessionSummary, viewModel: ChatViewModel? = nil) -> some View {
-        NavigationStack {
-            Color.clear.navigationDestination(isPresented: .constant(true)) {
-                ChatView(
-                    session: session,
-                    server: UITestFixtureEnvironment.serverURL,
-                    onAPIError: { _ in },
-                    draftStore: self.environment.draftStore,
-                    viewModel: viewModel
-                )
+    /// Pushes the chat as the session list does; pure canvas fixtures can omit the navigation container.
+    func chat(_ session: SessionSummary, viewModel: ChatViewModel? = nil,
+              asNavigationDestination: Bool = true) -> some View {
+        let chat = ChatView(
+            session: session,
+            server: UITestFixtureEnvironment.serverURL,
+            onAPIError: { _ in },
+            draftStore: self.environment.draftStore,
+            viewModel: viewModel
+        )
+        return Group {
+            if asNavigationDestination {
+                NavigationStack {
+                    Color.clear.navigationDestination(isPresented: .constant(true)) { chat }
+                }
+            } else {
+                chat
             }
         }
         // A window outside SwiftUI's scene lifecycle reports no scene phase of its own; the App's runs in the foreground.
@@ -167,7 +173,7 @@ extension XCTestCase {
         if isOpen() { return }
         let control = window.firstView(ofType: UIControl.self, where: { $0.accessibilityLabel == title })
         if let control {
-            control.sendActions(for: .touchUpInside)
+            XCTAssertTrue(HostedAccessibility.activate(control), "The native sidebar action did not run", file: file, line: line)
         } else {
             let item = try XCTUnwrap(HostedAccessibility.toolbarItem(title, in: window), file: file, line: line)
             XCTAssertTrue(HostedAccessibility.activate(item), "The native sidebar action did not run", file: file, line: line)
