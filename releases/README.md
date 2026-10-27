@@ -69,7 +69,7 @@ dependency:
 | Workflow | Job | Native dependency |
 |---|---|---|
 | `app-tests.yml` | `app-build` | `app/ci/build-for-testing` once, uploaded as the `app-test-build` artifact for the test job |
-| `app-tests.yml` | `app-test` | `xcodebuild test-without-building` in the simulator: the hosted unit tests (TalariaTests) on pull requests, main pushes and at release |
+| `app-tests.yml` | `app-test` | `xcodebuild test-without-building` in the simulator: the hosted unit tests (TalariaTests) in four class shards (`app/ci/hosted-test-shard`) on pull requests, main pushes and at release |
 | `app-tests.yml` | `package-test` | `swift test` for TalariaKit (every native contract class and the live Web contract test); a release's hosted-tests call leaves it to `contracts` |
 | `ci.yml` | `app-tooling` | exercises the macOS `lockf`/`simctl` runner scripts with fakes |
 | `fuzz-soak.yml` | `soak` | `swift test` for TalariaKit's fuzz soak class |
@@ -77,48 +77,80 @@ dependency:
 | `release-set.yml` | `contracts` | both App contract gates at once: the selected App against every supported Web, plus its whole TalariaKit suite when it ships, and the previously released App against the selected Web; `swift test`, or the simulator for an App from before TAL-399 |
 | `release-set.yml` | `app-dry-build` | unsigned `xcodebuild archive` |
 
-A release that ships the App runs its simulator-hosted unit tests on the exact
-release source (`app-hosted-tests`: `app-tests.yml` in pull-request mode, the App
-build and one TalariaTests job), dry runs included. `build-gate` requires that
-job to succeed when the App ships and to be skipped otherwise.
+A release that ships the App needs the App's simulator-hosted unit tests to
+have passed on the exact release source, dry runs included (TAL-1550).
+`release.yml` already waited for main CI on that commit, so
+`app-hosted-tests-lookup` (`app/ci/find-hosted-tests-run`) looks for a
+completed, successful main-push CI run of `ci.yml` on exactly that SHA whose
+`App / App hosted tests` job succeeded, and records that job's URL in the
+summary. Only then is `app-hosted-tests` (`app-tests.yml` in pull-request mode:
+the App build and four TalariaTests shards) skipped; otherwise it runs. Main CI
+leaves out the App jobs when a push does not touch the App, so a release on such
+a commit tests again. Runs on other commits never count, and a lookup that
+fails or errors skips the suite and fails `build-gate` rather than counting as
+reuse. `build-gate` requires the lookup to succeed when the App ships and
+exactly one of reuse (the suite skipped) or a successful suite run.
 
-The organization runs at most five macOS jobs at once, and a release needs at
-most four (TAL-414):
+`app-tests.yml` splits TalariaTests by class into four simulator jobs that
+share the one build (`app/ci/hosted-test-shard`): three fixed, measured sets of
+the slowest classes and a last shard that runs every other class, so a new
+class always runs. Its `App hosted tests` job then requires each shard's list
+of the classes it ran to show every class exactly once. Main CI measured
+1147 s of tests on one simulator (run 40494770210): about 25 minutes for the
+job. The shards hold about 300 s of tests each, so the suite should finish
+about 11 minutes after it starts. The App package tests start once the build
+ends, so the build and the four shards fill the five macOS slots.
+
+The pinned Agent gate runs one `agent-release` job per supported Agent release
+of the selected Web source (TAL-1550). `prepare` lists them
+(`scripts/check-release-agent.py --list`); each job checks its release with the
+runner's whole worker budget (`--release`) and writes its own receipt through
+`cli.py gate`. `agent` then requires the jobs to have covered exactly the
+supported releases (`--expect`) and writes the one `agentCompatibility`
+receipt the manifest records. A failed release job skips `agent`, which fails
+`build-gate`. On one runner the three releases took 26 minutes (release run
+40498046778); one release alone takes about 11 to 17 minutes in CI's sidecar
+matrix.
+
+The organization runs at most five macOS jobs at once. A release that reuses
+main CI's hosted tests needs two:
 
 - `contracts` runs both App contract gates on one runner, at once, each with its
-  own receipt. With `swift test` they take about five minutes together; with
-  an App from before TAL-399, which builds and tests in the simulator, about ten.
-- The hosted tests' build and its test job take two more: the test job queues
-  once the build holds a runner (TAL-413) and boots its simulator while it builds.
+  own receipt. With `swift test` they took 9 minutes together in release run
+  40498046778; with an App from before TAL-399, which builds and tests in the
+  simulator, longer.
 - The package tests run in `contracts` instead of on another runner:
   `contracts` already builds the release source's TalariaKit tests, so the whole
   package suite adds about 30 seconds there (`--package-suite`).
 - The App build (signed, or `app-dry-build` on a dry run) starts with the gates.
+- When the hosted tests run, their build and four shards need five more. The
+  shards queue once the build holds a runner (TAL-413) and boot while it
+  builds; whichever do not fit start as `contracts` and the App build free their
+  slots.
 - The signed build cannot reuse the hosted tests' compiled work: one is a
   Release archive for devices signed for distribution, the other a Debug build
   for the simulator, signed ad hoc with the `.xctest` identifier suffix, so no
   compiled file is valid for both.
 
-The planned critical path, in minutes from the cutover run's start (the tag
-push is about a minute earlier, while `release.yml` starts the cutover). The
-times are estimates from the measured jobs of dry runs 36555256618 and
-36561319994 and release run 36358838255; the `timeline` job measures each run:
+The planned critical path of a release that reuses main CI's hosted tests, in
+minutes from the cutover run's start (the tag push is about a minute earlier
+when main CI on the tag commit is already green). The times come from the
+measured jobs of release run 40498046778 and CI's sidecar matrix; the
+`timeline` job measures each run:
 
 | Time | Event |
 |---|---|
-| 0:00-0:50 | `authorization`, then `prepare` |
-| 0:50 | `contracts`, the hosted tests' build and the App build start; the hosted test job starts and boots |
-| 4:05 | the hosted tests' build uploads; the test job runs about a minute of tests |
-| 6:00 | `contracts` done with `swift test` (next release: about 11:00, see below) |
-| 6:25 | App build done; `build-gate` |
-| 6:50 | `relay-publish` starts (about 1:30) |
-| 8:20 | `web-publish` (about 3:00) and `app-publish` (upload and processing to VALID, about 4:30) start |
-| 12:50 | `app-publish` done |
-| 13:40 | `publish-set` published the manifest (about 14:40 after the tag push) |
+| 0:00-1:10 | `authorization`, then `prepare` (plan and Agent release list) |
+| 1:10 | every gate and build starts; `app-hosted-tests-lookup` finds main CI's hosted tests within a minute |
+| 8:10 | App build done; `web-build` done at about 9:20 |
+| 11:40 | `contracts` done (its two gates at 11:10) |
+| about 16:00 | the slowest `agent-release` job done (setup, the selected server build, then 11 to 17 minutes for its release) |
+| 17:00 | `agent`, then `build-gate`; `relay-publish` starts (about 0:50) |
+| 17:55 | `web-publish` (about 7:10) and `app-publish` (about 3:30) start |
+| 26:00 | `publish-set` published the manifest (about 27 minutes after the tag push) |
 
-The next release still tests a previous App from before TAL-399, so `contracts`
-finishes at about 11:20 and moves `build-gate` to about 11:30 and the manifest
-to about 18:45 (about 20 minutes after the tag push). Queue time does not count
+The Agent release check is now the critical path; the 20-minute target of
+TAL-414 also needs it and `contracts` shortened. Queue time does not count
 toward a job's timeout. A release may overlap pull-request CI, and whichever
 macOS jobs then do not fit start as slots free up. A job that holds a macOS
 slot never waits for a queued macOS job, so the plan cannot deadlock. The
@@ -290,8 +322,9 @@ or stale predecessor once a release set exists. Changed tags must point to
 `sourceRevision`; unchanged tags must match the previous manifest.
 
 The cutover repeats every gate (selected-source and previous-App contracts,
-the App's hosted unit tests on the release source when the App ships, pinned
-Agent compatibility, component builds), then deploys Relay, publishes Web and
+the App's hosted unit tests on the release source when the App ships, reused
+from main CI when it already passed them there, pinned Agent compatibility, one
+job per supported release, component builds), then deploys Relay, publishes Web and
 uploads the App at once, and publishes the manifest last. Nothing publishes
 before `build-gate` has every gate and build. The ordering keeps only the
 constraints that hold (TAL-414):

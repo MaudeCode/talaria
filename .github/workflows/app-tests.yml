@@ -6,10 +6,10 @@
 #       94% of the unit tests, including every native contract class (TAL-399).
 #       That run measures TalariaKit/Sources coverage: the job summary shows it and the app-package-coverage
 #       artifact keeps the per-file and per-line report (TAL-67).
-#       pull-request: plus the App build for testing (App, extensions and the hosted test bundle) and one simulator
-#       job running the hosted unit tests (TalariaTests: UIKit views, App Intents and widget configuration types,
-#       visual references, performance budgets, App bundle resources). Pull requests, main pushes and the release
-#       gate run it.
+#       pull-request: plus the App build for testing (App, extensions and the hosted test bundle) and four simulator
+#       jobs running the hosted unit tests (TalariaTests: UIKit views, App Intents and widget configuration types,
+#       visual references, performance budgets, App bundle resources), split by class (ci/hosted-test-shard,
+#       TAL-1550). Pull requests, main pushes and the release gate run it.
 #       contracts: the package tests alone; a contract-only change leaves the App sources alone.
 #     contracts: true | false  - the package job also waits for this run's "Web contract probe" job and runs the
 #       live decoding test against its contract-fixture artifact.
@@ -17,12 +17,14 @@
 #     package_tests: false leaves out the package tests job (default true); a release runs the same suite in its
 #       contracts job instead (TAL-414).
 #   No outputs: the calling job's result is the suite's result.
-# Jobs are named "App build"/"App build started"/"App hosted tests"/"App package tests"; the build artifact is
-# app-test-build.
-# The test job boots its simulator while the build runs on another runner (TAL-380): hosted macOS allows five
+# Jobs are named "App build"/"App build started"/"App hosted tests N"/"App hosted tests"/"App package tests"; the
+# build artifact is app-test-build. "App hosted tests" passes only once every shard passed and each class ran exactly
+# once; a release reuses main CI's (ci/find-hosted-tests-run).
+# Each test job boots its simulator while the build runs on another runner (TAL-380): hosted macOS allows five
 # concurrent jobs, and a simulator's first boot beside a build on one three-core runner slowed both. It polls the
 # jobs API for the build's upload from before its boot (TAL-405), and queues only once the build holds a runner
-# (TAL-413), so it never holds a macOS slot its own build is still queued for.
+# (TAL-413), so it never holds a macOS slot its own build is still queued for. The build and the four shards fill the
+# five slots, so the package tests start once the build ends.
 
 name: App tests
 
@@ -101,10 +103,12 @@ jobs:
 
   package-test:
     # TalariaKit (models, networking, persistence, sync, view models) tests on macOS with `swift test`: no
-    # simulator and no app host (TAL-399). It runs beside the build; only the live contract test waits for the
-    # Web probe. The fuzz soak class belongs to the scheduled Fuzz Soak workflow.
+    # simulator and no app host (TAL-399). It takes the build's macOS slot once the build ends, whatever its result,
+    # and finishes well before the hosted test shards; a contract-only run has no build, so it starts at once. Only the
+    # live contract test waits for the Web probe. The fuzz soak class belongs to the scheduled Fuzz Soak workflow.
     name: App package tests
-    if: inputs.package_tests
+    needs: app-build
+    if: ${{ !cancelled() && inputs.package_tests }}
     runs-on: xcode-27
     timeout-minutes: 30
     permissions:
@@ -203,10 +207,16 @@ jobs:
 
   app-test:
     # Boots its simulator to completion while the build runs on another runner and a background poll watches for the
-    # build's upload, then downloads the build and runs the hosted unit tests (TalariaTests).
-    name: App hosted tests
+    # build's upload, then downloads the build and runs its shard of the hosted unit tests (TalariaTests). Each shard
+    # is a fixed set of classes (ci/hosted-test-shard), balanced from measured class times, and the last runs every
+    # other class.
+    name: App hosted tests ${{ matrix.shard }}
     needs: build-started
     if: inputs.mode != 'contracts'
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     runs-on: xcode-27
     # The test step's own limit ends the tests, and this one only backs it up: setup takes up to about 15 minutes
     # before that step, and a loaded runner took 9 minutes over a single report after it (TAL-670).
@@ -218,7 +228,9 @@ jobs:
       # ci/report-test-failures posts each failing test as a commit status while the job runs (TAL-673).
       statuses: write
     env:
-      FAILURE_STATUS: App hosted test failures
+      # One commit status per shard: a passing shard's success must not replace another shard's failure.
+      FAILURE_STATUS: App hosted test failures ${{ matrix.shard }}
+      SHARD: ${{ matrix.shard }}
       RESULT_BUNDLE_PATH: TestResults.xcresult
       # Relative to app/, like the result bundle; the memory log uploads on every run (TAL-419).
       MEMORY_LOG: memory.log
@@ -331,6 +343,8 @@ jobs:
           ci/report-test-failures "${XCODEBUILD_LOG}" "$(git rev-parse HEAD)" "${FAILURE_STATUS}" < /dev/null &
           reporter=$!
           trap 'kill "${reporter}" 2>/dev/null || true' EXIT
+          selection=$(ci/hosted-test-shard args "${SHARD}")
+          mapfile -t selection <<< "${selection}"
           start_seconds=${SECONDS}
           xctestrun=(Build/Products/*.xctestrun)
           # No run collects the simulator's diagnostics: on a hosted runner that waited 600 s on every run, passing or
@@ -339,7 +353,7 @@ jobs:
           xcodebuild test-without-building \
             -xctestrun "${xctestrun[0]}" \
             -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" \
-            -only-testing:TalariaTests \
+            "${selection[@]}" \
             -testLanguage en \
             -testRegion US \
             -resultBundlePath "${RESULT_BUNDLE_PATH}" \
@@ -347,8 +361,11 @@ jobs:
             -test-timeouts-enabled YES \
             -parallel-testing-enabled NO 2>&1 | tee -a "${XCODEBUILD_LOG}" || status=$?
           duration_seconds=$((SECONDS - start_seconds))
-          echo "### App hosted tests" >> "${GITHUB_STEP_SUMMARY}"
+          echo "### App hosted tests ${SHARD}" >> "${GITHUB_STEP_SUMMARY}"
           echo "- Test without building: ${duration_seconds}s" >> "${GITHUB_STEP_SUMMARY}"
+          # The classes this shard ran, for "App hosted tests" to prove each class ran exactly once.
+          mkdir -p hosted-classes
+          ci/hosted-test-shard classes "${XCODEBUILD_LOG}" > "hosted-classes/shard-${SHARD}.txt"
           # A passing run replaces an earlier run's failure status on this commit with success.
           [[ "${status}" != 0 ]] || ci/report-test-failures --passed "$(git rev-parse HEAD)" "${FAILURE_STATUS}"
           # CoreSimulator's own log says what booted or shut down a simulator mid-test, which no result bundle records
@@ -363,13 +380,23 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
-          name: app-test-results
+          name: app-test-results-${{ matrix.shard }}
           path: |
             app/TestResults.xcresult
             app/CoreSimulator.log
           retention-days: 14
           overwrite: true
           if-no-files-found: ignore
+
+      - name: Upload the classes this shard ran
+        timeout-minutes: 5
+        uses: actions/upload-artifact@v7
+        with:
+          name: app-hosted-classes-${{ matrix.shard }}
+          path: app/hosted-classes/
+          retention-days: 1
+          overwrite: true
+          if-no-files-found: error
 
       - name: Report memory
         timeout-minutes: 3
@@ -387,7 +414,7 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
-          name: app-test-memory
+          name: app-test-memory-${{ matrix.shard }}
           path: app/${{ env.MEMORY_LOG }}
           retention-days: 30
           overwrite: true
@@ -456,10 +483,36 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
-          name: app-performance-metrics
+          name: app-performance-metrics-${{ matrix.shard }}
           path: |
             app/performance-metrics.json
             app/performance-metrics.txt
           retention-days: 30
           overwrite: true
           if-no-files-found: ignore
+
+  app-test-gate:
+    # The suite's one result: every shard passed and each TalariaTests class ran in exactly one of them. A release
+    # reuses main CI's "App / App hosted tests" job on the exact release source rather than testing again (TAL-1550).
+    name: App hosted tests
+    needs: app-test
+    if: inputs.mode != 'contracts'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          sparse-checkout: app/ci
+
+      - name: Download the classes each shard ran
+        uses: actions/download-artifact@v8
+        with:
+          pattern: app-hosted-classes-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/hosted-classes
+
+      - name: Require every class to run exactly once
+        run: |
+          set -euo pipefail
+          ci/hosted-test-shard check "${RUNNER_TEMP}/hosted-classes" | tee -a "${GITHUB_STEP_SUMMARY}"

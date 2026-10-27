@@ -51,6 +51,7 @@ jobs:
       web_changed: ${{ steps.plan.outputs.web_changed }}
       relay_changed: ${{ steps.plan.outputs.relay_changed }}
       app_version: ${{ steps.plan.outputs.app_version }}
+      agent_releases: ${{ steps.agents.outputs.releases }}
       artifacts: ${{ steps.store.outputs.artifacts }}
     steps:
     - name: Check publication authority
@@ -88,6 +89,13 @@ jobs:
         fi
         if [[ "$DRY_RUN" == true ]]; then options+=(--dry-run); fi
         "$RELEASE_PYTHON" releases/cli.py prepare --request "$RUNNER_TEMP/request.json" --output "$RUNNER_TEMP/release-plan" "${options[@]}"
+    - name: List the selected Web source's supported Agent releases
+      # One agent-release job each (TAL-1550); agent requires them to have covered exactly these releases.
+      id: agents
+      run: |
+        set -euo pipefail
+        releases=$("$RELEASE_PYTHON" scripts/check-release-agent.py --plan "$RUNNER_TEMP/release-plan/plan.json" --list)
+        echo "releases=${releases}" >> "$GITHUB_OUTPUT"
     - name: Stage release-plan for other jobs
       id: store
       run: '"$RELEASE_PYTHON" releases/artifacts.py put release-plan "$RUNNER_TEMP/release-plan"'
@@ -99,12 +107,49 @@ jobs:
         if-no-files-found: error
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
-  app-hosted-tests:
-    # The App's simulator-hosted unit tests (app-tests.yml in pull-request mode: the App build and one TalariaTests
-    # job) on the exact release source whenever the App ships, dry runs included. The contracts job runs the package
-    # tests instead (TAL-414).
+  app-hosted-tests-lookup:
+    # A release that ships the App reuses main CI's successful "App / App hosted tests" job on exactly the release
+    # source instead of running the hosted tests again (TAL-1550, after TAL-408): release.yml already waited for that
+    # run. Read-only; a lookup error fails this job, which skips the suite call and fails build-gate: it never counts
+    # as "no run found".
     needs: prepare
     if: needs.prepare.outputs.app_changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      reused: ${{ steps.lookup.outputs.reused }}
+      job_url: ${{ steps.lookup.outputs.job_url }}
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        sparse-checkout: app/ci
+    - name: Find main CI's successful hosted tests on the release source
+      id: lookup
+      env:
+        GH_TOKEN: ${{ github.token }}
+        SOURCE: ${{ needs.prepare.outputs.source }}
+      run: |
+        set -euo pipefail
+        url=$(app/ci/find-hosted-tests-run "$SOURCE")
+        if [[ -n "$url" ]]; then
+          printf 'reused=true\njob_url=%s\n' "$url" >> "$GITHUB_OUTPUT"
+          printf '### App hosted tests\n\nReused the successful main CI hosted tests on %s: %s\n' "$SOURCE" "$url" | tee -a "$GITHUB_STEP_SUMMARY"
+        else
+          echo "reused=false" >> "$GITHUB_OUTPUT"
+          printf '### App hosted tests\n\nMain CI has no successful hosted tests on %s; running them.\n' "$SOURCE" | tee -a "$GITHUB_STEP_SUMMARY"
+        fi
+  app-hosted-tests:
+    # The App's simulator-hosted unit tests (app-tests.yml in pull-request mode: the App build and the TalariaTests
+    # shards) on the exact release source whenever the App ships, dry runs included, unless app-hosted-tests-lookup
+    # found main CI's to reuse; build-gate requires one or the other. The contracts job runs the package tests instead
+    # (TAL-414).
+    needs:
+    - prepare
+    - app-hosted-tests-lookup
+    if: needs.prepare.outputs.app_changed == 'true' && needs.app-hosted-tests-lookup.outputs.reused == 'false'
     permissions:
       contents: read
       actions: read
@@ -261,10 +306,18 @@ jobs:
         if-no-files-found: ignore
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
-  agent:
+  agent-release:
+    # One job per supported Agent release of the selected Web source (TAL-1550), so the gate takes about as long as its
+    # slowest release instead of every release sharing one runner's cores. Each checks its release with the runner's
+    # whole worker budget and writes its own receipt through `cli.py gate`; agent joins them.
+    name: agent ${{ matrix.release }}
     needs: prepare
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        release: ${{ fromJSON(needs.prepare.outputs.agent_releases) }}
     steps:
     - uses: actions/checkout@v7
       with:
@@ -281,21 +334,48 @@ jobs:
       env:
         GH_TOKEN: ${{ github.token }}
       run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan'
-    - name: Verify recorded Web and Agent identity and every supported Agent release
+    - name: Verify recorded Web and Agent identity and this supported Agent release
       env:
         # Read-only, for the Agent release API's published-release check.
         GITHUB_TOKEN: ${{ github.token }}
+        RELEASE: ${{ matrix.release }}
       run: |
-        "$RELEASE_PYTHON" releases/cli.py gate --plan "$RUNNER_TEMP/release-plan/plan.json" --name agentCompatibility --output "$RUNNER_TEMP/agent-receipts/agentCompatibility.json" -- \
-          "$RELEASE_PYTHON" scripts/check-release-agent.py --plan "$RUNNER_TEMP/release-plan/plan.json" --receipts "$RUNNER_TEMP/agent-compatibility"
+        "$RELEASE_PYTHON" releases/cli.py gate --plan "$RUNNER_TEMP/release-plan/plan.json" --name agentCompatibility --output "$RUNNER_TEMP/agent-compatibility/${RELEASE}.gate.json" -- \
+          "$RELEASE_PYTHON" scripts/check-release-agent.py --plan "$RUNNER_TEMP/release-plan/plan.json" --release "$RELEASE" --receipts "$RUNNER_TEMP/agent-compatibility"
     - name: Retain Agent compatibility receipts
       if: always()
       uses: actions/upload-artifact@v7
       with:
-        name: agent-compatibility-${{ github.run_attempt }}
+        name: agent-compatibility-${{ matrix.release }}-${{ github.run_attempt }}
         path: ${{ runner.temp }}/agent-compatibility
         retention-days: 30
         if-no-files-found: ignore
+    env:
+      RELEASE_NEEDS: ${{ toJSON(needs) }}
+  agent:
+    # Joins agent-release: a failed release job skips this one, which fails build-gate. It writes the release's one
+    # agentCompatibility receipt only once the jobs covered exactly the selected source's supported releases.
+    needs:
+    - prepare
+    - agent-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: ${{ needs.prepare.outputs.source }}
+        fetch-depth: 0
+    - uses: ./.github/actions/release-python
+    - name: Restore release-plan
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan'
+    - name: Require a passing job for every supported Agent release
+      env:
+        RELEASES: ${{ needs.prepare.outputs.agent_releases }}
+      run: |
+        "$RELEASE_PYTHON" releases/cli.py gate --plan "$RUNNER_TEMP/release-plan/plan.json" --name agentCompatibility --output "$RUNNER_TEMP/agent-receipts/agentCompatibility.json" -- \
+          "$RELEASE_PYTHON" scripts/check-release-agent.py --plan "$RUNNER_TEMP/release-plan/plan.json" --expect "$RELEASES"
     - name: Stage agent-receipts for other jobs
       id: store
       run: '"$RELEASE_PYTHON" releases/artifacts.py put agent-receipts "$RUNNER_TEMP/agent-receipts"'
@@ -746,7 +826,9 @@ jobs:
     - prepare
     - contracts
     - component-contracts
+    - agent-release
     - agent
+    - app-hosted-tests-lookup
     - app-hosted-tests
     - relay-build
     - web-build

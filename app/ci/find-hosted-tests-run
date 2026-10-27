@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Usage: ci/find-hosted-tests-run SHA
+# Print the URL of the successful "App / App hosted tests" job of a completed, successful main-push CI run (ci.yml)
+# that tested exactly SHA, or nothing when there is none (TAL-1550, after TAL-408's UI suite lookup). A release
+# reuses it instead of running the hosted tests again; main CI skips the App jobs when a push leaves the App alone, so
+# a green run without that job does not count, and neither does a run on any other commit.
+# Read-only; ci/gh-api-poll retries transient API errors, and any lookup failure exits non-zero rather than
+# reporting "none". Needs GH_TOKEN with actions: read and GITHUB_REPOSITORY.
+set -euo pipefail
+
+sha=${1:?usage: ci/find-hosted-tests-run SHA}
+[[ "${sha}" =~ ^[0-9a-f]{40}$ ]] || { echo "Expected a full 40-character commit SHA, got '${sha}'." >&2; exit 2; }
+poll="$(dirname "$0")/gh-api-poll"
+export HOSTED_TESTS_SHA="${sha}"
+# The queries filter by commit, branch and event already; the jq filters check every field again rather than trust them.
+# shellcheck disable=SC2016 # jq, not the shell, expands $ENV.
+runs=$("${poll}" --paginate -H "Cache-Control: no-cache" \
+  "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${sha}&branch=main&event=push&status=completed&per_page=100" \
+  --jq '.workflow_runs[] | select(.head_sha == $ENV.HOSTED_TESTS_SHA and .head_branch == "main" and .event == "push"
+      and .path == ".github/workflows/ci.yml" and .status == "completed" and .conclusion == "success") | .id')
+for run in ${runs}; do
+  # shellcheck disable=SC2016 # jq, not the shell, expands $ENV.
+  jobs=$("${poll}" --paginate -H "Cache-Control: no-cache" "repos/${GITHUB_REPOSITORY}/actions/runs/${run}/jobs?filter=latest&per_page=100" \
+    --jq '.jobs[] | select(.name == "App / App hosted tests" and .head_sha == $ENV.HOSTED_TESTS_SHA and .status == "completed"
+        and .conclusion == "success") | .html_url')
+  [[ -z "${jobs}" ]] || { head -n 1 <<< "${jobs}"; exit 0; }
+done

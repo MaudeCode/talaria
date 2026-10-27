@@ -35,7 +35,8 @@ class TestIOSRunnerTest < Minitest::Test
     assert_includes(test["run"], 'ci/report-test-failures "${XCODEBUILD_LOG}" "$(git rev-parse HEAD)" "${FAILURE_STATUS}"')
     assert_includes(test["run"], %q(trap 'kill "${reporter}" 2>/dev/null || true' EXIT))
     assert_includes(test["run"], '[[ "${status}" != 0 ]] || ci/report-test-failures --passed "$(git rev-parse HEAD)" "${FAILURE_STATUS}"')
-    assert_equal("App hosted test failures", shard["env"]["FAILURE_STATUS"])
+    # One status per shard, so a passing shard never replaces another shard's failure (TAL-1550).
+    assert_equal("App hosted test failures ${{ matrix.shard }}", shard["env"]["FAILURE_STATUS"])
     assert_equal("${{ github.token }}", test["env"]["GH_TOKEN"])
     assert_equal("write", shard["permissions"]["statuses"])
     { "ci.yml" => "app", "release-set.yml" => "app-hosted-tests" }.each do |file, job|
@@ -74,7 +75,9 @@ class TestIOSRunnerTest < Minitest::Test
       refute_match(Regexp.new(local), workflow)
     end
     assert_equal(1, workflow.scan('platform=iOS Simulator,id=${SIMULATOR_ID}').length)
-    assert_includes(workflow, "-only-testing:TalariaTests")
+    # Each shard runs the selection ci/hosted-test-shard prints for it (TAL-1550).
+    assert_includes(workflow, 'selection=$(ci/hosted-test-shard args "${SHARD}")')
+    assert_includes(workflow, '"${selection[@]}" \\')
     assert_equal(1, workflow.scan('ci/build-for-testing "${BUILD_DESTINATION}"').length)
     build = File.read(File.expand_path("build-for-testing", __dir__), encoding: "UTF-8")
     assert_includes(build, '-destination "${destination}"')
@@ -218,10 +221,12 @@ class TestIOSRunnerTest < Minitest::Test
 
   def test_package_job_runs_the_live_test_without_a_simulator
     package, probe = workflow_jobs("app-tests.yml").fetch("package-test"), workflow_jobs("ci.yml").fetch("contracts")
-    # TalariaKit's tests run with `swift test` on hosted macOS beside the build: no simulator, no app host (TAL-399).
-    assert_nil(package["needs"])
+    # TalariaKit's tests run with `swift test` on hosted macOS: no simulator, no app host (TAL-399). They take the
+    # build's macOS slot once it ends, whatever its result, so the build and four hosted test shards fit the five
+    # slots (TAL-1550); a contract-only run skips the build and runs them at once.
+    assert_equal("app-build", package["needs"])
     # Every caller runs it but a release's hosted-tests call, whose contracts job runs the same suite (TAL-414).
-    assert_equal("inputs.package_tests", package["if"])
+    assert_equal("${{ !cancelled() && inputs.package_tests }}", package["if"])
     assert_equal({"type" => "boolean", "default" => true},
                  YAML.safe_load_file(File.join(WORKFLOWS, "app-tests.yml"), aliases: true)[true]["workflow_call"]["inputs"]["package_tests"])
     assert_equal("xcode-27", package["runs-on"])
@@ -276,12 +281,25 @@ class TestIOSRunnerTest < Minitest::Test
     assert_equal(%w[mode contracts ref package_tests], app_tests[true]["workflow_call"]["inputs"].keys)
     jobs = app_tests["jobs"]
     shard = jobs.fetch("app-test")
-    assert_nil(shard["strategy"])
+    # Four simulator jobs share the one build, each running a fixed set of classes; every shard runs to the end.
+    assert_equal({ "fail-fast" => false, "matrix" => { "shard" => [1, 2, 3, 4] } }, shard["strategy"])
+    assert_equal("App hosted tests ${{ matrix.shard }}", shard["name"])
+    shard["steps"].select { |step| step["uses"].to_s.start_with?("actions/upload-artifact@") }.each do |upload|
+      assert_match(/-\$\{\{ matrix\.shard \}\}\z/, upload["with"]["name"], "shards overwrite each other's #{upload["name"]}")
+    end
+    # "App hosted tests" is the suite's one result, the job a release reuses: every shard passed and each class ran in
+    # exactly one of them.
+    gate = jobs.fetch("app-test-gate")
+    assert_equal(["App hosted tests", "app-test", "inputs.mode != 'contracts'", "ubuntu-latest"],
+                 gate.values_at("name", "needs", "if", "runs-on"))
+    assert_equal("app-hosted-classes-*", gate["steps"].find { |step| step["uses"].to_s.start_with?("actions/download-artifact@") }["with"]["pattern"])
+    assert_includes(gate["steps"].last["run"], "set -euo pipefail")
+    assert_includes(gate["steps"].last["run"], 'ci/hosted-test-shard check "${RUNNER_TEMP}/hosted-classes"')
     # A contract-only change has no App build or hosted tests, and the package job runs its contract classes in every
     # mode.
     assert_equal("inputs.mode != 'contracts'", shard["if"])
     assert_equal("inputs.mode != 'contracts'", jobs.fetch("app-build")["if"])
-    assert_equal([nil] * 2, jobs.values_at("app-build", "package-test").map { |job| job["needs"] })
+    assert_nil(jobs.fetch("app-build")["needs"])
     # Every mode with hosted tests packages and uploads its build for them; the build itself always runs to the end.
     build_steps = jobs.fetch("app-build")["steps"].map { |step| [step["name"] || step["uses"], step] }.to_h
     assert_equal(["inputs.mode != 'contracts'"] * 2, build_steps.values_at("Package the test build", "Upload the test build").map { |step| step["if"] })

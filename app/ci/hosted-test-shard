@@ -1,0 +1,92 @@
+#!/usr/bin/env python3
+"""Split the App hosted tests (TalariaTests) into parallel simulator jobs by test class (TAL-1550).
+
+  ci/hosted-test-shard args SHARD     print the xcodebuild selection for SHARD (1-based), one argument per line
+  ci/hosted-test-shard classes LOG    print the test classes an xcodebuild log ran, one per line
+  ci/hosted-test-shard check DIR      require DIR's shard-N.txt class lists to cover every class exactly once
+
+The split is fixed here, so every run of a commit shards the same way. Each listed shard runs only its classes; the
+last shard runs every other class, so a new class always runs. `check` proves each run: no class ran in two shards,
+every listed class ran in its own shard (a renamed class fails rather than silently running nowhere), and the last
+shard ran none of the listed ones.
+"""
+
+import re
+import sys
+from pathlib import Path
+
+TARGET = "TalariaTests"
+# Measured on main CI run 40494770210 (1147 s of tests on one simulator): Transcript 295 s, Chat 251, SessionList 239,
+# Stream 108, RegularSplit 64, DuoFold 61, every other class together about 130. Rebalance from a run's "Test Suite"
+# timings when a shard's job outgrows the others.
+SHARDS = (
+    ("TranscriptHostedTests",),
+    ("ChatHostedTests", "DuoFoldHostedTests"),
+    ("SessionListHostedTests", "RegularSplitHostedTests"),
+)
+COUNT = len(SHARDS) + 1
+LISTED = [name for shard in SHARDS for name in shard]
+SUITE = re.compile(r"^Test Suite '([^']+)' started at ")
+AGGREGATES = {"All tests", "Selected tests"}
+
+
+def selection(shard):
+    if not 1 <= shard <= COUNT:
+        raise ValueError(f"shard {shard} is not between 1 and {COUNT}")
+    if shard < COUNT:
+        return [f"-only-testing:{TARGET}/{name}" for name in SHARDS[shard - 1]]
+    return [f"-only-testing:{TARGET}", *(f"-skip-testing:{TARGET}/{name}" for name in LISTED)]
+
+
+def classes(log):
+    names = []
+    for line in log.splitlines():
+        match = SUITE.match(line.strip())
+        if match and match[1] not in AGGREGATES and not match[1].endswith(".xctest"):
+            names.append(match[1])
+    return names
+
+
+def check(ran):
+    """ran maps each shard number to the classes it ran."""
+    if sorted(ran) != list(range(1, COUNT + 1)):
+        raise ValueError(f"expected class lists for shards 1-{COUNT}, got {sorted(ran)}")
+    seen = {}
+    for shard, names in sorted(ran.items()):
+        for name in names:
+            if name in seen:
+                raise ValueError(f"{name} ran in shard {seen[name]} and shard {shard}")
+            seen[name] = shard
+    for shard, names in enumerate(SHARDS, start=1):
+        missing = sorted(set(names) - set(ran[shard]))
+        if missing:
+            raise ValueError(f"shard {shard} did not run {', '.join(missing)}")
+        extra = sorted(set(ran[shard]) - set(names))
+        if extra:
+            raise ValueError(f"shard {shard} ran unlisted {', '.join(extra)}")
+    if not ran[COUNT]:
+        raise ValueError(f"shard {COUNT} ran no classes")
+    return seen
+
+
+def main(argv):
+    command, value = argv
+    if command == "args":
+        print("\n".join(selection(int(value))))
+    elif command == "classes":
+        print("\n".join(classes(Path(value).read_text(errors="replace"))))
+    elif command == "check":
+        ran = {int(path.stem.removeprefix("shard-")): path.read_text().split() for path in Path(value).glob("shard-*.txt")}
+        seen = check(ran)
+        for shard in range(1, COUNT + 1):
+            print(f"- Shard {shard}: {sum(owner == shard for owner in seen.values())} classes")
+        print(f"- Every one of {len(seen)} classes ran exactly once.")
+    else:
+        raise ValueError(f"unknown command {command}")
+
+
+if __name__ == "__main__":
+    try:
+        main(sys.argv[1:])
+    except ValueError as error:
+        sys.exit(f"hosted-test-shard: {error}")

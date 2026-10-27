@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Run Agent compatibility for every supported release against the Web ref selected by the release plan."""
+"""Run Agent compatibility for every supported release against the Web ref selected by the release plan.
+
+``--list`` prints the selected source's supported releases. A release fans them out as one job each (TAL-1550):
+``--release TAG`` checks that one release with the whole worker budget, and ``--expect JSON`` requires the jobs to
+have covered exactly the supported releases."""
 
 import argparse
 import json
@@ -26,6 +30,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--plan", type=Path, required=True)
     parser.add_argument("--receipts", type=Path, help="Directory for each release's receipt and JUnit report.")
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument("--list", action="store_true", help="Print the supported releases as JSON and stop.")
+    selection.add_argument("--release", help="Check only this supported release.")
+    selection.add_argument("--expect", help="Require exactly these releases (JSON list) to be the supported ones.")
     args = parser.parse_args()
     plan = json.loads(args.plan.read_text())
     source = plan["components"]["web"]["sourceRevision"]
@@ -67,6 +75,18 @@ def main():
         # The selected source's own record names its supported releases and requires its active pin among them.
         releases = json.loads(subprocess.check_output(["python3", str(listing / "scripts/check-agent-compatibility.py"), "--list"],
                                                       cwd=listing))
+        if args.list:
+            print(json.dumps(releases))
+            return
+        if args.expect is not None:
+            if sorted(json.loads(args.expect)) != sorted(releases):
+                raise ValueError(f"checked Agent releases {args.expect} are not the supported releases {json.dumps(releases)}")
+            print(f"Every supported Agent release was checked: {', '.join(releases)}")
+            return
+        if args.release is not None:
+            if args.release not in releases:
+                raise ValueError(f"Agent {args.release} is not a supported release of the selected source")
+            releases = [args.release]
         # Native environment recovery includes a real server/sidecar boundary.
         # Build this exact selected source once; all release checkouts share only read-only artifacts.
         for command in (["npm", "ci", "--no-audit", "--no-fund"],

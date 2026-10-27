@@ -397,37 +397,60 @@ class PublicationTests(unittest.TestCase):
         jobs = json.loads(subprocess.check_output([
             "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
             str(root / ".github/workflows/release-set.yml")], text=True))["jobs"]
-        gates = ("contracts", "component-contracts", "agent", "app-hosted-tests")
-        agent_steps = jobs['agent']['steps']
+        gates = ("contracts", "component-contracts", "agent-release", "agent", "app-hosted-tests-lookup", "app-hosted-tests")
+        agent_steps = jobs['agent-release']['steps']
         node = [(index, step) for index, step in enumerate(agent_steps) if step.get('uses', '').startswith('actions/setup-node@')]
         self.assertEqual(len(node), 1, 'the Agent gate must provision Node for its selected server build')
         self.assertEqual(node[0][1]['with']['node-version-file'], 'web/.nvmrc')
         self.assertLess(node[0][0], next(index for index, step in enumerate(agent_steps) if 'check-release-agent.py' in step.get('run', '')))
         builds = ("relay-build", "web-build", "app-dry-build", "app-signed-build")
         # Every gate and build starts once prepare has the plan; both App contract gates share the contracts runner
-        # (TAL-414).
+        # (TAL-414). The Agent join waits for its release jobs, and the hosted tests for their lookup (TAL-1550).
+        joins = {"agent": ["prepare", "agent-release"], "app-hosted-tests": ["prepare", "app-hosted-tests-lookup"]}
         for name in (*gates, *builds):
             with self.subTest(job=name):
-                self.assertEqual(jobs[name]["needs"], "prepare")
+                self.assertEqual(jobs[name]["needs"], joins.get(name, "prepare"))
+        # One job per supported Agent release, listed by prepare from the selected source; each writes its own receipt
+        # through cli.py gate, and agent writes the manifest's receipt once the jobs covered exactly those releases.
+        release = jobs["agent-release"]
+        self.assertEqual(release["strategy"], {"fail-fast": False,
+                                               "matrix": {"release": "${{ fromJSON(needs.prepare.outputs.agent_releases) }}"}})
+        self.assertEqual(jobs["prepare"]["outputs"]["agent_releases"], "${{ steps.agents.outputs.releases }}")
+        listing = next(step["run"] for step in jobs["prepare"]["steps"] if step.get("id") == "agents")
+        self.assertIn('scripts/check-release-agent.py --plan "$RUNNER_TEMP/release-plan/plan.json" --list', listing)
+        leg = next(step for step in agent_steps if "check-release-agent.py" in step.get("run", ""))
+        self.assertIn('releases/cli.py gate --plan "$RUNNER_TEMP/release-plan/plan.json" --name agentCompatibility', leg["run"])
+        self.assertIn('--release "$RELEASE"', leg["run"])
+        self.assertEqual(leg["env"]["RELEASE"], "${{ matrix.release }}")
+        join = next(step for step in jobs["agent"]["steps"] if "check-release-agent.py" in step.get("run", ""))
+        self.assertIn('--output "$RUNNER_TEMP/agent-receipts/agentCompatibility.json"', join["run"])
+        self.assertIn('--expect "$RELEASES"', join["run"])
+        self.assertEqual(join["env"]["RELEASES"], "${{ needs.prepare.outputs.agent_releases }}")
+        self.assertNotIn("if", jobs["agent"])
+        # The lookup runs the workflow's own read-only script; its answer selects the suite, and a failed lookup skips it.
+        lookup = jobs["app-hosted-tests-lookup"]
+        self.assertEqual(lookup["if"], "needs.prepare.outputs.app_changed == 'true'")
+        self.assertEqual(lookup["permissions"], {"contents": "read", "actions": "read"})
+        self.assertIn('url=$(app/ci/find-hosted-tests-run "$SOURCE")', next(step["run"] for step in lookup["steps"] if "run" in step))
         self.assertNotIn("previous-app-contracts", jobs)
         gate = next(step["run"] for step in jobs["contracts"]["steps"] if "cli.py gate" in step.get("run", ""))
         for name in ("currentContracts", "previousAppContracts"):
             self.assertIn(f"--name {name}", gate)
         # The App's hosted unit tests run on the release source whenever the App ships, dry runs included, through
-        # app-tests.yml's pull-request mode: the App build and one TalariaTests job. The contracts job runs the
+        # app-tests.yml's pull-request mode: the App build and the TalariaTests shards. The contracts job runs the
         # package tests (--package-suite).
         hosted = jobs["app-hosted-tests"]
         self.assertEqual(hosted["uses"], "./.github/workflows/app-tests.yml")
         self.assertEqual(hosted["with"], {"mode": "pull-request", "ref": "${{ needs.prepare.outputs.source }}",
                                           "package_tests": False})
-        self.assertEqual(hosted["if"], "needs.prepare.outputs.app_changed == 'true'")
+        self.assertEqual(hosted["if"], "needs.prepare.outputs.app_changed == 'true' && needs.app-hosted-tests-lookup.outputs.reused == 'false'")
         # The test job posts failing tests as commit statuses while it runs (TAL-673).
         self.assertEqual(hosted["permissions"], {"contents": "read", "actions": "read", "statuses": "write"})
         app_tests = json.loads(subprocess.check_output([
             "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
             str(root / ".github/workflows/app-tests.yml")], text=True))
         self.assertEqual(app_tests["jobs"]["app-test"]["if"], "inputs.mode != 'contracts'")
-        self.assertEqual(app_tests["jobs"]["package-test"]["if"], "inputs.package_tests")
+        self.assertEqual(app_tests["jobs"]["package-test"]["if"], "${{ !cancelled() && inputs.package_tests }}")
         check = (root / "scripts/check-release-contracts.py").read_text()
         self.assertIn('*(["--package-suite"] if index == 0 and plan["changed"]["app"] else [])', check)
         self.assertEqual(set(jobs["build-gate"]["needs"]), {"prepare", *gates, *builds})
@@ -499,7 +522,8 @@ class PublicationTests(unittest.TestCase):
     def test_selected_jobs_must_succeed(self):
         for dry, app, web, relay_changed in product((False, True), repeat=4):
             for stage in ("build", "publication"):
-                needs = {name: {"result": "success"} for name in ("prepare", "contracts", "component-contracts", "agent", "build-gate")}
+                needs = {name: {"result": "success"} for name in ("prepare", "contracts", "component-contracts", "agent-release", "agent",
+                                                                  "build-gate")}
                 needs["prepare"]["outputs"] = {
                     name + "_changed": str(changed).lower()
                     for name, changed in zip(("app", "web", "relay"), (app, web, relay_changed))
@@ -512,14 +536,16 @@ class PublicationTests(unittest.TestCase):
                     needs[job] = {"result": "success" if changed else "skipped"}
                 if stage == "build":
                     needs["app-signed-build" if dry else "app-dry-build"] = {"result": "skipped"}
+                    needs["app-hosted-tests-lookup"] = {"result": "success" if app else "skipped", "outputs": {"reused": "false"}}
                     needs["app-hosted-tests"] = {"result": "success" if app else "skipped"}
-                    jobs.append("app-hosted-tests")
+                    jobs += ["app-hosted-tests-lookup", "app-hosted-tests"]
                 if stage == "publication" and dry:
                     with self.assertRaises(ValueError):
                         check(needs, stage, dry)
                     continue
                 check(needs, stage, dry)
-                for job in jobs + (["prepare", "contracts", "component-contracts", "agent"] if stage == "build" else ["prepare", "build-gate"]):
+                for job in jobs + (["prepare", "contracts", "component-contracts", "agent-release", "agent"] if stage == "build"
+                                   else ["prepare", "build-gate"]):
                     for result in ("failure", "cancelled", "skipped", "success"):
                         if result == needs[job]["result"]:
                             continue
@@ -531,22 +557,60 @@ class PublicationTests(unittest.TestCase):
 
     def test_app_hosted_tests_gate_every_release_that_ships_the_app(self):
         # The App's hosted unit tests gate every release that ships the App, dry runs included, and never run otherwise.
+        # Main CI's successful hosted tests on the exact source are reused; without them the suite runs (TAL-1550).
+        url = "https://github.com/MaudeCode/talaria/actions/runs/7/job/71"
         base = {name: {"result": "success"} for name in ("prepare", "contracts", "component-contracts",
-                                                          "agent", "app-dry-build")}
+                                                          "agent-release", "agent", "app-dry-build")}
         base["prepare"]["outputs"] = {"app_changed": "true", "web_changed": "false", "relay_changed": "false"}
         base.update({name: {"result": "skipped"} for name in ("relay-build", "web-build", "app-signed-build")})
-        check({**base, "app-hosted-tests": {"result": "success"}}, "build", True)
+        reused = {**base, "app-hosted-tests-lookup": {"result": "success", "outputs": {"reused": "true", "job_url": url}},
+                  "app-hosted-tests": {"result": "skipped"}}
+        fallback = {**base, "app-hosted-tests-lookup": {"result": "success", "outputs": {"reused": "false", "job_url": ""}},
+                    "app-hosted-tests": {"result": "success"}}
+        check(reused, "build", True)
+        check(fallback, "build", True)
+        # Reused evidence never runs the suite, and a run suite must have passed.
+        for result in ("success", "failure", "cancelled"):
+            with self.subTest(reused=result), self.assertRaisesRegex(ValueError, "app-hosted-tests"):
+                check({**reused, "app-hosted-tests": {"result": result}}, "build", True)
         for result in ("failure", "cancelled", "skipped"):
-            with self.subTest(result=result), self.assertRaisesRegex(ValueError, "app-hosted-tests"):
-                check({**base, "app-hosted-tests": {"result": result}}, "build", True)
-        with self.assertRaisesRegex(ValueError, "app-hosted-tests"):
+            with self.subTest(fallback=result), self.assertRaisesRegex(ValueError, "app-hosted-tests"):
+                check({**fallback, "app-hosted-tests": {"result": result}}, "build", True)
+        # Reuse needs a job URL in this repository; a fallback that reports one is inconsistent.
+        for outputs in ({"reused": "true", "job_url": ""}, {"reused": "true", "job_url": "https://example.com/job/1"},
+                        {"reused": "true"}, {"reused": "false", "job_url": url}, {}, {"reused": "maybe", "job_url": url}):
+            with self.subTest(outputs=outputs), self.assertRaisesRegex(ValueError, "app-hosted-tests"):
+                check({**reused, "app-hosted-tests-lookup": {"result": "success", "outputs": outputs}}, "build", True)
+        # A lookup that failed, was cancelled or never ran fails the gate: it never counts as reuse, whatever the suite did.
+        for lookup in ("failure", "cancelled", "skipped"):
+            for suite in ("skipped", "success"):
+                with self.subTest(lookup=lookup, suite=suite), self.assertRaisesRegex(ValueError, "app-hosted-tests-lookup"):
+                    check({**reused, "app-hosted-tests-lookup": {"result": lookup, "outputs": {"reused": "true", "job_url": url}},
+                           "app-hosted-tests": {"result": suite}}, "build", True)
+        with self.assertRaisesRegex(ValueError, "app-hosted-tests-lookup"):
             check(base, "build", True)
         unchanged = deepcopy(base)
         unchanged["prepare"]["outputs"]["app_changed"] = "false"
         unchanged["app-dry-build"] = {"result": "skipped"}
-        check({**unchanged, "app-hosted-tests": {"result": "skipped"}}, "build", True)
-        with self.assertRaisesRegex(ValueError, "app-hosted-tests"):
-            check({**unchanged, "app-hosted-tests": {"result": "success"}}, "build", True)
+        skipped = {"app-hosted-tests-lookup": {"result": "skipped"}, "app-hosted-tests": {"result": "skipped"}}
+        check({**unchanged, **skipped}, "build", True)
+        for job in skipped:
+            with self.subTest(unchanged=job), self.assertRaisesRegex(ValueError, "app-hosted-tests"):
+                check({**unchanged, **skipped, job: {"result": "success"}}, "build", True)
+
+    def test_agent_gate_requires_every_release_job(self):
+        # Each supported Agent release runs in its own agent-release job; agent writes the one agentCompatibility
+        # receipt only after they all passed and covered exactly the supported releases (TAL-1550).
+        needs = {name: {"result": "success"} for name in ("prepare", "contracts", "component-contracts", "agent-release",
+                                                          "agent", "relay-build", "app-dry-build")}
+        needs["prepare"]["outputs"] = {"app_changed": "false", "web_changed": "false", "relay_changed": "true"}
+        needs.update({name: {"result": "skipped"} for name in ("web-build", "app-signed-build", "app-dry-build",
+                                                               "app-hosted-tests-lookup", "app-hosted-tests")})
+        check(needs, "build", True)
+        for job in ("agent-release", "agent"):
+            for result in ("failure", "cancelled", "skipped"):
+                with self.subTest(job=job, result=result), self.assertRaisesRegex(ValueError, job):
+                    check({**needs, job: {"result": result}}, "build", True)
 
     def test_production_requires_trusted_main_dispatch_and_exact_source(self):
         plan = {"dryRun": False, "releaseSet": "a" * 40}
