@@ -154,6 +154,18 @@
 .composer-strip{display:flex;align-items:center;gap:calc(var(--space-1) / 2);padding:calc(var(--space-1) / 2) calc(var(--space-1) * 1.5);border-top:0;border-radius:0 0 var(--r-lg) var(--r-lg);overflow-x:auto;scrollbar-width:none}
 .composer-strip::-webkit-scrollbar{display:none}
 @media (max-width:640px){.composer-strip{width:calc(100% - var(--space-3) * 2)}}
+/* Pending images (TAL-1552, after the App's TAL-634): the same strip hung from the card's top edge, the card's outline
+   closing it. Each image is just its thumbnail, with a remove badge on the corner. */
+.composer-strip--top{gap:var(--space-2);padding:calc(var(--space-1) * 1.5) var(--space-2) var(--space-1);border-top:1px solid var(--composer-border-color);border-bottom:0;border-radius:var(--r-lg) var(--r-lg) 0 0;list-style:none}
+.attach-thumb{position:relative;flex:none;padding:5px 5px 0 0}
+.attach-thumb-image{position:relative;display:block;width:44px;height:44px;padding:0;overflow:hidden;border:1px solid var(--composer-border-color);border-radius:9px;background:var(--hover-bg);cursor:zoom-in}
+.attach-thumb-image img{display:block;width:100%;height:100%;object-fit:cover}
+.attach-thumb-image:disabled{cursor:progress}
+.attach-thumb[data-status="error"] .attach-thumb-image{border-color:var(--error);color:var(--error);cursor:pointer}
+.attach-thumb-overlay{position:absolute;inset:0;display:grid;place-items:center;background:color-mix(in srgb,var(--composer-bg) 55%,transparent);color:inherit}
+.attach-thumb .attach-thumb-remove{position:absolute;top:0;right:0;width:16px;height:16px;border:1px solid var(--composer-border-color);border-radius:50%;background:var(--composer-bg);color:var(--text)}
+.attach-thumb .attach-thumb-remove:hover{background:var(--hover-bg)}
+.attach-thumb .attach-thumb-remove::after{content:"";position:absolute;inset:-6px}
 .composer-model-wrap,.composer-reasoning-wrap{position:relative;flex:0 0 auto}
 .composer-footer.cf-burger .composer-left > .composer-model-wrap,.composer-footer.cf-burger .composer-left > .composer-reasoning-wrap{display:none !important}
 /* Resting composer (T3 Code): above phone width, a hand scroll of the transcript flattens the card to one row: the

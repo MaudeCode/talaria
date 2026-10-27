@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Images you attach in the composer show as thumbnails in a strip above the message box, like on iPhone; click one to see it full size.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

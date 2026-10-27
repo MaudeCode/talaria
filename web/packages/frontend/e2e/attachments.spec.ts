@@ -58,6 +58,23 @@ test('picked images show as chips in an existing chat and send without text', as
   await expect(chips(page)).toHaveCount(0)
 })
 
+test('a picked image shows its picture in a strip on the card\'s top edge; a file stays in the card (TAL-1552)', async ({ page }) => {
+  await mockSession(page, 'thumbs')
+  await page.goto('/session/thumbs')
+  await page.locator('#fileInput').setInputFiles([image('shot.png'), { name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('notes') }])
+  const thumb = page.locator('.composer-strip--top img')
+  await expect(thumb).toHaveCount(1)
+  await expect(thumb).toBeVisible()
+  await expect(thumb).toHaveAttribute('src', /^blob:/)
+  expect(await thumb.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0)
+  await expect(page.locator('#composerBox .composer-strip--top')).toHaveCount(0)
+  await expect(page.locator('#composerBox .attach-tray li')).toHaveText(/notes\.txt/)
+  const [strip, card] = await Promise.all([page.locator('.composer-strip--top').boundingBox(), page.locator('#composerBox').boundingBox()])
+  expect(Math.abs(strip!.y + strip!.height - card!.y)).toBeLessThanOrEqual(1)
+  await page.getByRole('button', { name: 'Enlarge shot.png' }).click()
+  await expect(page.getByRole('dialog', { name: 'shot.png' })).toBeVisible()
+})
+
 test('a pasted image shows as a chip, and its accompanying text pastes as text', async ({ page }) => {
   await mockSession(page, 'pasted')
   await page.goto('/session/pasted')
@@ -144,7 +161,7 @@ test('a chip removed while the new chat is created stays removed', async ({ page
   await page.getByRole('button', { name: 'Remove drop.png' }).click()
   release()
   await expect(page).toHaveURL(/\/session\/removed-new$/)
-  await expect(chips(page).and(page.locator('[data-status="done"]'))).toHaveText(/keep\.png/)
+  await expect(chips(page).and(page.locator('[data-status="done"]')).getByRole('button', { name: 'Enlarge keep.png' })).toBeVisible()
   await expect(chips(page)).toHaveCount(1)
   expect(uploads).toEqual(['removed-new'])
 })
@@ -211,7 +228,7 @@ test('a failed upload stays as an error chip that can be retried or removed', as
   await expect(chips(page).and(page.locator('[data-status="error"]'))).toHaveCount(2)
   fail = false
   await page.getByRole('button', { name: 'Retry flaky.png' }).click()
-  await expect(chips(page).and(page.locator('[data-status="done"]'))).toHaveText(/flaky\.png/)
+  await expect(chips(page).and(page.locator('[data-status="done"]')).getByRole('button', { name: 'Enlarge flaky.png' })).toBeVisible()
   await page.getByRole('button', { name: 'Remove gone.png' }).click()
   await expect(chips(page)).toHaveCount(1)
   // The synthetic 500s are the point of this test.
