@@ -43,19 +43,6 @@ cat > "$fake_bin/xcrun" <<'EOF'
 #!/bin/zsh
 if [[ "$*" == "simctl list devices available --json" ]]; then
     <"${TALARIA_DEVICE_FIXTURE:?}"
-elif [[ "$1 $2 $3 $4" == "xcresulttool get test-results summary" ]]; then
-    bundle=""
-    for (( index = 1; index <= $#; index++ )); do
-        [[ "${@[index]}" == --path ]] && bundle="${@[index + 1]}"
-    done
-    hang='{"failureText":"The test runner hung before establishing connection.","testName":"Talaria (1) encountered an error"}'
-    if [[ -e "$bundle/hang-with-failure" ]]; then
-        print -r -- "{\"failedTests\":2,\"testFailures\":[$hang,{\"failureText\":\"XCTAssertTrue failed\",\"testName\":\"testSomething()\"}]}"
-    elif [[ -e "$bundle/hang" ]]; then
-        print -r -- "{\"failedTests\":1,\"testFailures\":[$hang]}"
-    else
-        print -r -- '{"failedTests":0,"testFailures":[]}'
-    fi
 fi
 EOF
 cat > "$fake_bin/xcodebuild" <<'EOF'
@@ -63,8 +50,10 @@ cat > "$fake_bin/xcodebuild" <<'EOF'
 set -euo pipefail
 
 state=${TALARIA_TEST_STATE:?}
+[[ "$1" == test-without-building ]] || exit 0  # build-for-testing has nothing to fake
 destination=""
 result_bundle=""
+result_stream=""
 parallel=""
 exit_status=0
 typeset -a selectors=()
@@ -79,6 +68,10 @@ for (( index = 1; index <= ${#args}; index++ )); do
             (( index++ ))
             result_bundle="${args[index]}"
             ;;
+        -resultStreamPath)
+            (( index++ ))
+            result_stream="${args[index]}"
+            ;;
         -parallel-testing-enabled)
             (( index++ ))
             parallel="${args[index]}"
@@ -90,6 +83,14 @@ for (( index = 1; index <= ${#args}; index++ )); do
     esac
 done
 
+# Synthetic runners that never connect: ConnectsOnRelaunch connects on its second launch.
+previous_runs=$(grep -c -- "${selectors[1]:-}" "$state/runs" || true)
+if [[ "${selectors[1]:-}" == *NeverConnects* ]] || [[ "${selectors[1]:-}" == *ConnectsOnRelaunch* && $previous_runs == 0 ]]; then
+    print -r -- "$destination|$result_bundle|${(j: :)selectors}|$parallel" >> "$state/runs"
+    exec sleep 30
+fi
+# The runner connects and reports its first suite.
+print -r -- '{"name":{"_value":"testSuiteStarted"}}' >> "$result_stream"
 [[ ! -e TalariaTests/VisualReferences/.record ]] || print -r -- "${selectors[1]:-}" >> "$state/recorded"
 if [[ -e .codex-tmp/xctest/native-history-drag ]]; then
     print -r -- "$(<.codex-tmp/xctest/native-history-drag)|${selectors[1]:-}" >> "$state/native-drag"
@@ -107,14 +108,6 @@ rmdir "$lock"
 
 sleep "${TALARIA_FAKE_XCODEBUILD_SECONDS:-0.08}"
 mkdir -p "$result_bundle"
-# Synthetic pre-test runner hangs: HangOnce recovers on its second run,
-# HangTwice never does, HangWithFailure also carries a real test failure.
-previous_runs=$(grep -c -- "${selectors[1]:-}" "$state/runs" || true)
-case "${selectors[1]:-}" in
-    *HangWithFailure*) touch "$result_bundle/hang-with-failure"; exit_status=65 ;;
-    *HangTwice*) touch "$result_bundle/hang"; exit_status=65 ;;
-    *HangOnce*) (( previous_runs > 1 )) || { touch "$result_bundle/hang"; exit_status=65; } ;;
-esac
 
 while ! mkdir "$lock" 2>/dev/null; do sleep 0.01; done
 read -r active < "$state/active"
@@ -208,26 +201,24 @@ fi
 runs_for() { grep -c -- "$1" "$state/runs" || true; }
 [[ $(runs_for TalariaTests/Failure) == 1 ]]  # A real failure never retries.
 
-# A pre-test runner hang with no failed test case retries exactly once.
-"$repo/scripts/test-ios" TalariaTests/HangOnce > "$state/hang-once.log" 2>&1
-[[ $(runs_for TalariaTests/HangOnce) == 2 ]]
-grep -Eq "retrying once" "$state/hang-once.log"
-[[ $(sed -n 's/^\([^|]*\)|.*HangOnce.*$/\1/p' "$state/runs" | sort -u | wc -l | tr -d ' ') == 1 ]]  # re-leased a pool device
-if "$repo/scripts/test-ios" TalariaTests/HangTwice > "$state/hang-twice.log" 2>&1; then
-    print -u2 "Expected a repeated runner hang to fail."
+# A runner that never connects gets one relaunch on a rebooted simulator, then stops the run with its name, without
+# waiting out xcodebuild.
+started=$SECONDS
+if TALARIA_RUNNER_CONNECT_TIMEOUT=1 "$repo/scripts/test-ios" TalariaTests/NeverConnects > "$state/never-connects.log" 2>&1; then
+    print -u2 "Expected a runner that never connects to fail the run."
     exit 1
 else
-    [[ $? == 65 ]]
+    [[ $? == 70 ]]
 fi
-[[ $(runs_for TalariaTests/HangTwice) == 2 ]]
-if "$repo/scripts/test-ios" TalariaTests/HangWithFailure > "$state/hang-with-failure.log" 2>&1; then
-    print -u2 "Expected a runner hang alongside a test failure to fail without retrying."
+(( SECONDS - started < 15 )) || {
+    print -u2 "A runner that never connected held the run for $(( SECONDS - started ))s."
     exit 1
-else
-    [[ $? == 65 ]]
-fi
-[[ $(runs_for TalariaTests/HangWithFailure) == 1 ]]
-! grep -Eq "retrying once" "$state/hang-with-failure.log"
+}
+grep -Eq "The test runner on iOS Test [12] \([A-F-]+\) did not connect within 1s; rebooting" "$state/never-connects.log"
+grep -Eq "The test runner on iOS Test [12] \([A-F-]+\) did not connect within 1s after a reboot; stopping" "$state/never-connects.log"
+[[ $(runs_for TalariaTests/NeverConnects) == 2 ]]
+TALARIA_RUNNER_CONNECT_TIMEOUT=1 "$repo/scripts/test-ios" TalariaTests/ConnectsOnRelaunch > "$state/connects-on-relaunch.log" 2>&1
+[[ $(runs_for TalariaTests/ConnectsOnRelaunch) == 2 ]]
 
 lock_file="$repo/.codex-tmp/xctest/runner.lock"
 sleep 0.01 &
@@ -331,4 +322,4 @@ TALARIA_NATIVE_HISTORY_DRAG=second "$repo/scripts/test-ios" TalariaTests/NativeF
 }
 [[ ! -e "$native_marker" ]]
 
-print "test-ios worktree admission, selection, runner-hang retry and cleanup checks passed ($rounds concurrent rounds)."
+print "test-ios worktree admission, selection, runner connection and cleanup checks passed ($rounds concurrent rounds)."

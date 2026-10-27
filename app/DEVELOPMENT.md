@@ -124,9 +124,9 @@ Agent/MCP flow:
 - Use `scripts/test-ios [test-identifier ...]` for XCTest validation; with no
   identifier it runs `TalariaTests`. It serializes
   XCTest within one worktree; worktrees run concurrently, each on its own lease
-  from the cross-project pool, which erases each device on release. If the test host never connects ("The test
-  runner hung before establishing connection") and no test case failed, the
-  runner re-leases a device and retries that pass exactly once; real failures never retry.
+  from the cross-project pool, which erases each device on release. If the test host has not connected within
+  `TALARIA_RUNNER_CONNECT_TIMEOUT` seconds (default 30), the runner reboots the simulator and launches once more,
+  then stops the run naming the simulator; test failures never retry.
   Tests run in process under the isolated `.xctest` app and app-group identity,
   with in-memory authentication, draft, and cache state; they do not read
   simulator login state or contact an external server. See
@@ -192,6 +192,7 @@ Recognized variables:
 
 - `IOS_SIMULATOR_POOL_SIZE` — simulator count for `scripts/setup-ios-test-pool`.
 - `IOS_SIMULATOR_ID` — shared simulator selection, with `TALARIA_SIMULATOR_ID` as an alias for `scripts/test-ios`.
+- `TALARIA_RUNNER_CONNECT_TIMEOUT` — seconds `scripts/test-ios` waits for the test host to connect before rebooting the simulator for its one relaunch (default 30).
 - `TALARIA_LIVE_CONTRACT_RESPONSES` — path to a live-response manifest for the TalariaKit live decoding test, supplied by `scripts/validate-upstream-contract` and CI, not a persistent local setting.
 - `TALARIA_DEVICE_ID` — physical iPhone selection for `scripts/run-ios-device`,
   as either the hardware UDID or the CoreDevice identifier from

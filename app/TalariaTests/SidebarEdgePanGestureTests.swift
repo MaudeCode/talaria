@@ -172,7 +172,7 @@ final class AppSidebarPresentationTests: XCTestCase {
 private func makeSidebarController(
     _ presentation: AppSidebarPresentation
 ) throws -> (UIWindow, AppSidebarController) {
-    let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+    let scene = try HostedScene.current()
     let window = UIWindow(windowScene: scene)
     let controller = AppSidebarController(presentation: presentation)
     controller.setRoots(sidebar: AnyView(Color.clear), content: AnyView(Color.clear))
