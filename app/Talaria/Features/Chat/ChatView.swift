@@ -79,6 +79,10 @@ struct SplitFilesInspector {
     let reportShown: (Bool) -> Void
     var reportSession: (SessionSummary) -> Void = { _ in }
     var offersCompanionPage = false
+    /// Hiding the sidebar column would give a companion page room beside the chat (TAL-1539).
+    var widensForCompanionPage = false
+    /// Counts the split's requests to hide the companion page: opening the sidebar column takes its room (TAL-1539).
+    var companionPageHideRequest = 0
     var reportCompanionPage: (Bool) -> Void = { _ in }
     var reportEmptyTranscript: (Bool) -> Void = { _ in }
 }
@@ -859,7 +863,13 @@ struct ChatView: View {
             .onChange(of: !viewModel.hasMessages && viewModel.clarificationPrompt == nil && viewModel.activeStreamID == nil,
                       initial: true) { _, isEmpty in splitFilesInspector?.reportEmptyTranscript(isEmpty) }
             .onChange(of: showsFilesInspector, initial: true) { splitFilesInspector?.reportShown(showsFilesInspector) }
-            .onChange(of: showsCompanionPage, initial: true) { splitFilesInspector?.reportCompanionPage(showsCompanionPage) }
+            .onChange(of: showsCompanionPage && !viewModel.companionFocus.isHidden, initial: true) { _, needsRoom in
+                splitFilesInspector?.reportCompanionPage(needsRoom)
+            }
+            .onChange(of: splitFilesInspector?.companionPageHideRequest) { old, new in
+                guard let old, let new, new > old else { return }
+                viewModel.setCompanionPageHidden(true)
+            }
             .onAppear(perform: reportFilesInspector)
             .onChange(of: splitFilesInspector != nil) { reportFilesInspector() }
             .onChange(of: session) { _, session in splitFilesInspector?.reportSession(session) }
@@ -903,7 +913,7 @@ struct ChatView: View {
                 }
 
                 // Files creates an idle chat on demand; companion pages keep their own browser action.
-                if showsFilesButton, !companionPageFits {
+                if showsFilesButton, !companionPageOffered {
                     ToolbarItem(placement: .topBarTrailing) {
                         filesButton
                             .disabled(viewModel.isViewingCachedData)
@@ -913,7 +923,7 @@ struct ChatView: View {
                 }
 
                 // Shows and hides the companion page where it fits (TAL-1539); on the Duo it joins the vertical bar.
-                if #available(iOS 27.1, *), companionPageFits {
+                if #available(iOS 27.1, *), companionPageOffered {
                     ToolbarItem(placement: .topBarTrailing) {
                         Toggle(isOn: companionPageShown) {
                             Label("Companion Page", systemImage: "sidebar.trailing")
@@ -995,7 +1005,7 @@ struct ChatView: View {
 
     /// Whether this chat shows Files beside it once it has the width. The companion page takes its place.
     private var showsFilesInspector: Bool {
-        isFilesInspectorPresented && showsFilesButton && viewModel.hasSession && !companionPageFits
+        isFilesInspectorPresented && showsFilesButton && viewModel.hasSession && !companionPageOffered
     }
 
     /// Whether the chat has a companion page to show beside it (TAL-1458): an iOS 27.1 arrangement at regular width,
@@ -1009,6 +1019,12 @@ struct ChatView: View {
     /// not split for would still narrow the chat's column, so it shows only there.
     private var companionPageFits: Bool {
         showsCompanionPage && RegularSplitLayout.splitsCompanionPage(width: arrangementSize.width, height: arrangementSize.height)
+    }
+
+    /// Whether the chat offers its companion page: where it fits, or would once the split hides its sidebar column, as
+    /// it does for a page the reader shows (TAL-1539).
+    private var companionPageOffered: Bool {
+        showsCompanionPage && (companionPageFits || splitFilesInspector?.widensForCompanionPage == true)
     }
 
     /// Whether the companion page shows beside the chat: where it fits, unless the reader hid it (TAL-1539).

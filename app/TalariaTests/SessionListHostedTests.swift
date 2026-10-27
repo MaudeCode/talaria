@@ -1599,6 +1599,49 @@ extension RegularSplitHostedTests {
                        file: file, line: line)
     }
 
+    /// TAL-1539: the Sidebar button keeps working beside the companion page. While the page shows, opening the column
+    /// takes the page's room and hides it, as it does Files; once the page is hidden the button opens and closes the
+    /// column again.
+    func testTheSidebarButtonStillWorksBesideTheCompanionPage() async throws {
+        try requireArrangement()
+        let window = try await openCompanionChat(["--ui-test-chat-companion"], size: HostedSize.duoInnerLandscape)
+        let alpha = await companionTitle("Alpha.swift", in: window)
+        XCTAssertNotNil(alpha, "The companion page never showed")
+        let split = try XCTUnwrap(HostedAccessibility.splitViewController(under: window.rootViewController))
+        func showsSidebar() -> Bool { split.displayMode == .oneBesideSecondary }
+        let sidebarHidden = await awaitCondition { !showsSidebar() }
+        XCTAssertTrue(sidebarHidden, "The page did not take the sidebar column's room")
+        window.endEditing(true)
+
+        func pressSidebar() async throws {
+            let button = await barButton("Sidebar", in: window) { window.bounds.contains($0) }
+            press(try XCTUnwrap(button, "The chat has no Sidebar button"))
+        }
+        try await pressSidebar()
+        let opened = await awaitCondition { showsSidebar() }
+        XCTAssertTrue(opened, "The Sidebar button did nothing beside the companion page")
+        let pageHid = await awaitCondition { self.companionPage(in: window) == nil }
+        XCTAssertTrue(pageHid, "The sidebar column opened over the companion page")
+        XCTAssertEqual(companionPageItem(in: window)?.isSelected, false, "The Companion Page button reads pressed")
+
+        try await pressCompanionPageButton(in: window)
+        let shown = await companionTitle("Alpha.swift", in: window)
+        XCTAssertNotNil(shown, "The Companion Page button did not bring the page back")
+        let closedForPage = await awaitCondition { !showsSidebar() }
+        XCTAssertTrue(closedForPage, "The page came back without its room")
+
+        try await pressCompanionPageButton(in: window)
+        _ = await awaitCondition { self.companionPage(in: window) == nil }
+        for opens in [!showsSidebar(), showsSidebar()] {
+            try await pressSidebar()
+            let toggled = await awaitCondition { showsSidebar() == opens }
+            XCTAssertTrue(toggled, "After hiding the page the Sidebar button did not \(opens ? "open" : "close") the column")
+        }
+        UITestFixtureURLProtocol.advanceCompanionRun()
+        UITestFixtureURLProtocol.advanceCompanionRun()
+        UITestFixtureURLProtocol.advanceCompanionRun()
+    }
+
     /// TAL-1539: with Open the Agent's File Automatically off, a chat opens without its page until the button.
     func testWithAutoOpenOffAChatShowsNoPageUntilTheButton() async throws {
         try requireArrangement()

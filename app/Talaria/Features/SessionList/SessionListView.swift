@@ -961,6 +961,11 @@ struct SessionListView: View {
                 navigationState.filesInspectorPresented = false
                 navigationState.chatShowsFilesInspector = false
             }
+            // The column takes the companion page's room, as it does Files'; the chat hides its page (TAL-1539).
+            if storedChoice == true, navigationState.chatShowsCompanionPage, widensForCompanionPage {
+                navigationState.companionPageHideRequest += 1
+                navigationState.chatShowsCompanionPage = false
+            }
             reconcileFilesInspector()
         }
         let presentation = sidebarPresentation(storedChoice: storedChoice ?? regularSidebarIsShown)
@@ -1041,6 +1046,8 @@ struct SessionListView: View {
         var inspector = sessionActionContext?.filesInspector ?? makeSplitFilesInspector()
         inspector.widensChat = sidebarPresentation.filesInspectorFits
         inspector.offersCompanionPage = horizontalSizeClass == .regular
+        inspector.widensForCompanionPage = widensForCompanionPage
+        inspector.companionPageHideRequest = navigationState.companionPageHideRequest
         return inspector
     }
 
@@ -1095,7 +1102,8 @@ struct SessionListView: View {
             guard !sidebarPresentation.columnIsForced else { return }
             switch sidebarPresentation.toggleTarget {
             case .column:
-                let opensColumn = navigationState.filesInspectorPresented && widensForFilesInspector
+                let opensColumn = (navigationState.filesInspectorPresented && widensForFilesInspector)
+                    || (navigationState.chatShowsCompanionPage && widensForCompanionPage)
                 updateSidebarColumn(storedChoice: opensColumn || !regularSidebarIsShown)
             case .drawer:
                 if sidebarPresentation.drawerEnabled { appSidebar.isPresented.toggle() }
@@ -1185,6 +1193,8 @@ struct SessionListView: View {
                 draftStore: draftStore, viewModel: viewModel, context: sessionActionContext,
                 inspectorFits: sidebarPresentation.filesInspectorFits,
                 offersCompanionPage: horizontalSizeClass == .regular,
+                widensForCompanionPage: widensForCompanionPage,
+                companionPageHideRequest: navigationState.companionPageHideRequest,
                 retained: chats.chat(for: session, server: server) {
                     ChatView.makeViewModel(session: session, server: server, sessionListOwner: viewModel)
                 }
@@ -2285,12 +2295,16 @@ private struct SessionChatDestination: View {
     let context: SessionActionContext?
     let inspectorFits: Bool
     let offersCompanionPage: Bool
+    let widensForCompanionPage: Bool
+    let companionPageHideRequest: Int
     let retained: RetainedChat
 
     var body: some View {
         var inspector = context?.filesInspector
         inspector?.widensChat = inspectorFits
         inspector?.offersCompanionPage = offersCompanionPage
+        inspector?.widensForCompanionPage = widensForCompanionPage
+        inspector?.companionPageHideRequest = companionPageHideRequest
         return ChatView(
             session: session, server: server,
             onAPIError: context?.onAPIError ?? { authManager.handleAPIError($0, server: server) },
