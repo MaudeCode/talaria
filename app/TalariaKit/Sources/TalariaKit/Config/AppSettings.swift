@@ -81,6 +81,13 @@ public enum ChatTranscriptDisplaySettings {
     public static let showsAssistantTurnTimestampsKey = "chatTranscript.showsAssistantTurnTimestamps"
     public static let showsResponseSpeedKey = "chatTranscript.showsResponseSpeed"
     public static let wrapsCodeBlockLinesKey = "chatTranscript.wrapsCodeBlockLines"
+    /// TAL-1539: whether a chat's companion page opens on its own for the agent's file; off starts it hidden.
+    public static let opensCompanionPageKey = "chatTranscript.opensCompanionPage"
+
+    /// On unless the reader turned it off, as before the setting existed.
+    public static func opensCompanionPage(in defaults: UserDefaults = .standard) -> Bool {
+        defaults.object(forKey: opensCompanionPageKey) as? Bool ?? true
+    }
 
     /// Backs the Settings → Chat "Right-to-Left Chat Layout" toggle (issue #259).
     /// Local-only: there is no server settings object to mirror an `rtl` flag

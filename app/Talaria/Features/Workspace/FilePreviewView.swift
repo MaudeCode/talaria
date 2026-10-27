@@ -2,12 +2,26 @@ import SwiftUI
 import UIKit
 import TalariaKit
 
+private extension View {
+    /// The title, inline, when there is one; none leaves the bar's own.
+    @ViewBuilder
+    func inlineNavigationTitle(_ title: String?) -> some View {
+        if let title {
+            navigationTitle(title).navigationBarTitleDisplayMode(.inline)
+        } else {
+            self
+        }
+    }
+}
+
 struct FilePreviewView: View {
     let onAPIError: (Error) -> Void
     @Environment(\.workspaceSurface) private var background
 
     private let entry: WorkspaceEntry
     private let initialLine: Int?
+    /// Off where the host names the file itself and the bar's title is someone else's, as beside a chat (TAL-1539).
+    private let showsNavigationTitle: Bool
     @State private var viewModel: FilePreviewViewModel
     @State private var selectableText: SelectableTextPresentation?
     @State private var exportPayload: FileExportPayload?
@@ -22,10 +36,12 @@ struct FilePreviewView: View {
         server: URL,
         entry: WorkspaceEntry,
         initialLine: Int? = nil,
+        showsNavigationTitle: Bool = true,
         onAPIError: @escaping (Error) -> Void
     ) {
         self.entry = entry
         self.initialLine = initialLine
+        self.showsNavigationTitle = showsNavigationTitle
         self.onAPIError = onAPIError
         _viewModel = State(initialValue: FilePreviewViewModel(session: session, server: server, path: entry.path ?? ""))
     }
@@ -56,8 +72,7 @@ struct FilePreviewView: View {
             }
         }
         .adaptiveReadableScrollContent(maxWidth: AdaptiveReadableContentWidth.workspace)
-        .navigationTitle(displayName)
-        .navigationBarTitleDisplayMode(.inline)
+        .inlineNavigationTitle(showsNavigationTitle ? displayName : nil)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 if isSourcePreview {

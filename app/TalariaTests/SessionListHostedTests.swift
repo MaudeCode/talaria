@@ -1471,9 +1471,19 @@ extension RegularSplitHostedTests {
     }
 
     /// The fixture chat opened from the sidebar in a window of `size`, with the companion run started when `writes`.
-    private func openCompanionChat(_ scenario: [String], size: CGSize, compact: Bool = false, writes: Bool = true) async throws -> UIWindow {
+    /// A `display` lets the test fold the Duo; `reducesMotion` forces Reduce Motion on.
+    private func openCompanionChat(
+        _ scenario: [String],
+        size: CGSize,
+        compact: Bool = false,
+        writes: Bool = true,
+        display: HostedDuoDisplay? = nil,
+        reducesMotion: Bool = false
+    ) async throws -> UIWindow {
         let fixture = try FixtureApp(scenario, for: self)
-        let window = try hostWindow(fixture.sessionList(), size: size) {
+        let list = AnyView(fixture.sessionList().environment(\._accessibilityReduceMotion, reducesMotion))
+        let content = display.map { AnyView(FoldingDisplay(display: $0, content: list)) } ?? list
+        let window = try hostWindow(content, size: size) {
             $0.horizontalSizeClass = compact ? .compact : .regular
             $0.verticalSizeClass = .regular
         }
@@ -1505,6 +1515,71 @@ extension RegularSplitHostedTests {
         await awaitElement(in: window) { $0.accessibilityLabel?.contains(text) == true }
     }
 
+    /// The companion page's heading, the name of the file it shows, right of the chat (TAL-1539).
+    private func companionPage(in window: UIWindow) -> NSObject? {
+        let names = Set(UITestFixtureURLProtocol.companionFiles.map { ($0 as NSString).lastPathComponent })
+        return elements(in: window).first {
+            names.contains($0.accessibilityLabel ?? "") && $0.accessibilityTraits.contains(.header) && !($0 is UIControl)
+                && $0.accessibilityFrame.minX > window.bounds.width / 3
+        }
+    }
+
+    /// The page's opacity as drawn: every view above the file's scroll view, below its heading.
+    private func companionPageOpacity(in window: UIWindow) -> Float? {
+        guard let heading = companionPage(in: window)?.accessibilityFrame else { return nil }
+        func scrollView(in view: UIView) -> UIScrollView? {
+            if let scroll = view as? UIScrollView, view.window != nil {
+                let frame = scroll.convert(scroll.bounds, to: nil)
+                if frame.minX >= heading.minX - 32, frame.minY >= heading.maxY - 8 { return scroll }
+            }
+            for subview in view.subviews {
+                if let scroll = scrollView(in: subview) { return scroll }
+            }
+            return nil
+        }
+        guard let file = scrollView(in: window) else { return nil }
+        return sequence(first: file as UIView, next: \.superview).reduce(Float(1)) { $0 * ($1.layer.presentation() ?? $1.layer).opacity }
+    }
+
+    /// A bar button drawn in the window, not one folded away or left on a bar the system does not show.
+    private func drawnBarButton(_ label: String, in window: UIWindow, timeout: TimeInterval = 5) async -> UIControl? {
+        var found: UIControl?
+        _ = await awaitCondition(timeout: timeout) {
+            found = self.barButtonDrawn(label, in: window)
+            return found != nil
+        }
+        return found
+    }
+
+    private func barButtonDrawn(_ label: String, in window: UIWindow) -> UIControl? {
+        elements(in: window).lazy.compactMap { $0 as? UIControl }.first {
+            $0.accessibilityLabel == label && $0.bounds.width > 0 && window.bounds.intersects($0.accessibilityFrame)
+        }
+    }
+
+    private func isBarButtonDrawn(_ label: String, in window: UIWindow) -> Bool { barButtonDrawn(label, in: window) != nil }
+
+    /// The chat's Companion Page item among the detail column's bar items.
+    private func companionPageItem(in window: UIWindow) -> UIBarButtonItem? {
+        guard let detail = HostedAccessibility.splitViewController(under: window.rootViewController)?.viewController(for: .secondary)
+        else { return nil }
+        return HostedAccessibility.toolbarItems(under: detail).first {
+            $0.title == "Companion Page" || $0.accessibilityLabel == "Companion Page" || $0.primaryAction?.title == "Companion Page"
+        }
+    }
+
+    private func barItemTitles(in window: UIWindow) -> [String] {
+        HostedAccessibility.toolbarItems(in: window).compactMap { $0.title ?? $0.accessibilityLabel ?? $0.primaryAction?.title }.sorted()
+    }
+
+    private func pressCompanionPageButton(in window: UIWindow) async throws {
+        // The keyboard the send left up would cover the bar's lower items.
+        window.endEditing(true)
+        // A crowded bar folds the item into its overflow menu, as it does Files.
+        let button: NSObject? = await drawnBarButton("Companion Page", in: window, timeout: 2)
+        press(try XCTUnwrap(button ?? HostedAccessibility.toolbarAction("Companion Page", in: window), "The chat has no Companion Page button"))
+    }
+
     func testDuoInnerLandscapeShowsTheFileTheAgentWritesBesideTheChat() async throws {
         try requireArrangement()
         let window = try await openCompanionChat(["--ui-test-chat-companion"], size: HostedSize.duoInnerLandscape)
@@ -1524,6 +1599,163 @@ extension RegularSplitHostedTests {
         attachHostedScreenshot(window, name: "duo-inner-landscape-companion-beta")
         UITestFixtureURLProtocol.advanceCompanionRun()
         UITestFixtureURLProtocol.advanceCompanionRun()
+    }
+
+    /// TAL-1539: the bar's Companion Page button hides the page and shows it again; neither a new file nor a fold
+    /// reopens a page the reader hid. While the page shows, the chat keeps the Duo's vertical bar, the button and the
+    /// page's own controls in it.
+    func testTheCompanionPageButtonHidesThePageUntilPressedAgain() async throws {
+        try requireArrangement()
+        let display = HostedDuoDisplay()
+        let window = try await openCompanionChat(["--ui-test-chat-companion"], size: HostedSize.duoInnerLandscape, display: display)
+        let alpha = frame(await companionTitle("Alpha.swift", in: window))
+        XCTAssertFalse(alpha.isEmpty, "The companion page never showed the first file")
+        let ready = await awaitCondition { self.companionPageItem(in: window) != nil }
+        XCTAssertTrue(ready, "Detail items: \(barItemTitles(in: window))")
+        // The keyboard the send left up would fold the bar's items into its overflow menu.
+        window.endEditing(true)
+        try await assertTheChatKeepsTheBar(in: window, pageShows: true, "the first file")
+
+        let answeredBeforeHiding = UITestFixtureURLProtocol.answeredPaths.withLock { $0.count }
+        try await pressCompanionPageButton(in: window)
+        // The page fades out before it leaves, its controls with it.
+        let hidden = await awaitCondition { self.companionPage(in: window) == nil && !self.isBarButtonDrawn("Follow", in: window) }
+        XCTAssertTrue(hidden, "The button did not hide the page")
+        let prompt = frame(await transcriptText("Write the demo files", in: window))
+        XCTAssertGreaterThan(prompt.maxX, alpha.minX + 50, "The chat did not fill the pane the page left")
+        try await assertTheChatKeepsTheBar(in: window, pageShows: false, "hiding the page")
+        attachHostedScreenshot(window, name: "duo-inner-landscape-companion-hidden")
+
+        try await pressCompanionPageButton(in: window)
+        let alphaAgain = await companionTitle("Alpha.swift", in: window)
+        XCTAssertNotNil(alphaAgain, "Pressing the button again did not show the page")
+        try await assertTheChatKeepsTheBar(in: window, pageShows: true, "showing the page again")
+        // A rebuilt chat reloads its session, and a reload mid-run can drop rows the stream just added.
+        let reloads = UITestFixtureURLProtocol.answeredPaths.withLock { $0.dropFirst(answeredBeforeHiding).filter { $0 == "/api/session" } }
+        XCTAssertEqual(reloads, [], "Hiding and showing the page reloaded the chat")
+        attachHostedScreenshot(window, name: "duo-inner-landscape-companion-shown-again")
+        try await pressCompanionPageButton(in: window)
+        let hiddenAgain = await awaitCondition { self.companionPage(in: window) == nil && !self.isBarButtonDrawn("Follow", in: window) }
+        XCTAssertTrue(hiddenAgain, "The button did not hide the page a second time")
+
+        UITestFixtureURLProtocol.advanceCompanionRun()
+        _ = try await requireElement(in: window, "The run stopped") { $0.accessibilityLabel?.contains("Writing Beta.swift.") == true }
+        settle(0.5)
+        XCTAssertNil(companionPage(in: window), "A new file reopened the hidden page")
+
+        foldDuo(window, display: display, inner: HostedSize.duoInnerLandscape, closed: true)
+        foldDuo(window, display: display, inner: HostedSize.duoInnerLandscape, closed: false)
+        _ = try await requireElement(in: window, "Opening the Duo lost the chat") { $0.accessibilityLabel?.contains("Writing Beta.swift.") == true }
+        settle(0.5)
+        XCTAssertNil(companionPage(in: window), "Folding reopened the hidden page")
+
+        try await pressCompanionPageButton(in: window)
+        let beta = await companionTitle("Beta.swift", in: window)
+        XCTAssertNotNil(beta, "Pressing the button again did not show the page")
+        try await assertTheChatKeepsTheBar(in: window, pageShows: true, "showing the page after a fold")
+        UITestFixtureURLProtocol.advanceCompanionRun()
+        UITestFixtureURLProtocol.advanceCompanionRun()
+    }
+
+    /// The chat's bar is the one drawn, its Companion Page button reading whether the page shows, with the page's Follow
+    /// beside it while it does.
+    private func assertTheChatKeepsTheBar(in window: UIWindow, pageShows: Bool, _ moment: String,
+                                          file: StaticString = #filePath, line: UInt = #line) async throws {
+        let button = await drawnBarButton("Companion Page", in: window)
+        XCTAssertNotNil(button, "After \(moment) the chat's Companion Page button is not drawn", file: file, line: line)
+        XCTAssertEqual(companionPageItem(in: window)?.isSelected, pageShows,
+                       "After \(moment) the button reads \(pageShows ? "unpressed" : "pressed")", file: file, line: line)
+        let follow = await drawnBarButton("Follow", in: window, timeout: pageShows ? 5 : 0.5)
+        XCTAssertEqual(follow != nil, pageShows, "After \(moment) the page's Follow is \(pageShows ? "not " : "")drawn",
+                       file: file, line: line)
+    }
+
+    /// TAL-1539: the Sidebar button keeps working beside the companion page. While the page shows, opening the column
+    /// takes the page's room and hides it, as it does Files; once the page is hidden the button opens and closes the
+    /// column again.
+    func testTheSidebarButtonStillWorksBesideTheCompanionPage() async throws {
+        try requireArrangement()
+        let window = try await openCompanionChat(["--ui-test-chat-companion"], size: HostedSize.duoInnerLandscape)
+        let alpha = await companionTitle("Alpha.swift", in: window)
+        XCTAssertNotNil(alpha, "The companion page never showed")
+        let split = try XCTUnwrap(HostedAccessibility.splitViewController(under: window.rootViewController))
+        func showsSidebar() -> Bool { split.displayMode == .oneBesideSecondary }
+        let sidebarHidden = await awaitCondition { !showsSidebar() }
+        XCTAssertTrue(sidebarHidden, "The page did not take the sidebar column's room")
+        window.endEditing(true)
+
+        func pressSidebar() async throws {
+            let button = await barButton("Sidebar", in: window) { window.bounds.contains($0) }
+            press(try XCTUnwrap(button, "The chat has no Sidebar button"))
+        }
+        try await pressSidebar()
+        let opened = await awaitCondition { showsSidebar() }
+        XCTAssertTrue(opened, "The Sidebar button did nothing beside the companion page")
+        let pageHid = await awaitCondition { self.companionPage(in: window) == nil }
+        XCTAssertTrue(pageHid, "The sidebar column opened over the companion page")
+        XCTAssertEqual(companionPageItem(in: window)?.isSelected, false, "The Companion Page button reads pressed")
+
+        try await pressCompanionPageButton(in: window)
+        let shown = await companionTitle("Alpha.swift", in: window)
+        XCTAssertNotNil(shown, "The Companion Page button did not bring the page back")
+        let closedForPage = await awaitCondition { !showsSidebar() }
+        XCTAssertTrue(closedForPage, "The page came back without its room")
+
+        try await pressCompanionPageButton(in: window)
+        _ = await awaitCondition { self.companionPage(in: window) == nil }
+        for opens in [!showsSidebar(), showsSidebar()] {
+            try await pressSidebar()
+            let toggled = await awaitCondition { showsSidebar() == opens }
+            XCTAssertTrue(toggled, "After hiding the page the Sidebar button did not \(opens ? "open" : "close") the column")
+        }
+        UITestFixtureURLProtocol.advanceCompanionRun()
+        UITestFixtureURLProtocol.advanceCompanionRun()
+        UITestFixtureURLProtocol.advanceCompanionRun()
+    }
+
+    /// TAL-1539: with Open the Agent's File Automatically off, a chat opens without its page until the button.
+    func testWithAutoOpenOffAChatShowsNoPageUntilTheButton() async throws {
+        try requireArrangement()
+        let key = ChatTranscriptDisplaySettings.opensCompanionPageKey
+        UserDefaults.standard.set(false, forKey: key)
+        addTeardownBlock { UserDefaults.standard.removeObject(forKey: key) }
+        let window = try await openCompanionChat([UITestFixtureEnvironment.companionFocusArgument], size: HostedSize.duoInnerLandscape, writes: false)
+        _ = try await requireElement(in: window, "The transcript never loaded", where: FixtureApp.isLoadedTranscriptRow)
+        let offered = await awaitCondition { self.companionPageItem(in: window) != nil }
+        XCTAssertTrue(offered, "The chat offers no Companion Page button")
+        XCTAssertNil(companionPage(in: window), "The chat opened its page with the setting off")
+        XCTAssertEqual(companionPageItem(in: window)?.isSelected, false)
+
+        try await pressCompanionPageButton(in: window)
+        let gamma = await companionTitle("Gamma.swift", in: window)
+        XCTAssertNotNil(gamma, "The button did not show the page")
+    }
+
+    /// TAL-1539: the page fades in rather than popping in on its first frame.
+    func testTheCompanionPageFadesIn() async throws {
+        try requireArrangement()
+        let window = try await openCompanionChat([UITestFixtureEnvironment.companionFocusArgument], size: HostedSize.duoInnerLandscape, writes: false)
+        var first: Float?
+        _ = await awaitCondition(timeout: 10) {
+            first = self.companionPageOpacity(in: window)
+            return first != nil
+        }
+        XCTAssertLessThan(try XCTUnwrap(first, "The companion page never showed"), 1, "The page popped in at full opacity")
+        let opaque = await awaitCondition(timeout: 3) { (self.companionPageOpacity(in: window) ?? 0) >= 0.999 }
+        XCTAssertTrue(opaque, "The page never finished fading in: \(String(describing: companionPageOpacity(in: window)))")
+    }
+
+    /// TAL-1539: under Reduce Motion the page appears at full opacity.
+    func testUnderReduceMotionTheCompanionPageAppearsWithoutFading() async throws {
+        try requireArrangement()
+        let window = try await openCompanionChat([UITestFixtureEnvironment.companionFocusArgument], size: HostedSize.duoInnerLandscape,
+                                                 writes: false, reducesMotion: true)
+        var first: Float?
+        _ = await awaitCondition(timeout: 10) {
+            first = self.companionPageOpacity(in: window)
+            return first != nil
+        }
+        XCTAssertEqual(try XCTUnwrap(first, "The companion page never showed"), 1, accuracy: 0.001, "The page faded under Reduce Motion")
     }
 
     func testAFileChosenInTheBrowserHoldsUntilFollowResumes() async throws {
@@ -1571,6 +1803,7 @@ extension RegularSplitHostedTests {
         settle(0.5)
         let found3 = await companionTitle("Alpha.swift", in: window, timeout: 1)
         XCTAssertNil(found3, "A portrait chat split for its companion page")
+        XCTAssertNil(HostedAccessibility.toolbarAction("Companion Page", in: window), "A portrait chat offered a companion page")
         press(try await filesButton(in: window))
         let found4 = await element("Search files", in: window)
         XCTAssertNotNil(found4, "Files did not open")
@@ -1589,6 +1822,7 @@ extension RegularSplitHostedTests {
         XCTAssertNil(found5, "A phone chat offered a companion page")
         let found6 = await companionTitle("Alpha.swift", in: window, timeout: 1)
         XCTAssertNil(found6, "A phone chat showed a companion page")
+        XCTAssertNil(HostedAccessibility.toolbarAction("Companion Page", in: window), "A phone chat offered a companion page")
         UITestFixtureURLProtocol.advanceCompanionRun()
         UITestFixtureURLProtocol.advanceCompanionRun()
         UITestFixtureURLProtocol.advanceCompanionRun()

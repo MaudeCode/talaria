@@ -19,8 +19,12 @@ public struct ChatCompanionFocus: Equatable {
     private var latestCallID: String?
     /// The directory the page's file browser shows; nil when the page shows its file.
     public var browserPath: String?
+    /// TAL-1539: the reader hid the page. New files and runs leave it hidden until the reader shows it again.
+    public internal(set) var isHidden = false
 
-    public init() {}
+    public init(isHidden: Bool = false) {
+        self.isHidden = isHidden
+    }
 
     /// The file the page shows.
     public var path: String? { pinnedPath ?? followedPath }

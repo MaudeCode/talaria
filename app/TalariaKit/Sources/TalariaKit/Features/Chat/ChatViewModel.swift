@@ -319,6 +319,7 @@ public final class ChatViewModel {
     public func pinCompanionFile(_ path: String) { companionFocus.pin(path, runID: activeStreamID) }
     public func followCompanionFocus() { companionFocus.resumeFollowing() }
     public func showCompanionBrowser(at path: String?) { companionFocus.browserPath = path }
+    public func setCompanionPageHidden(_ isHidden: Bool) { companionFocus.isHidden = isHidden }
     /// The cached link paints with the cached transcript; a failed read shows none.
     private func restoreCachedBranchedFrom(sessionID: String, modelContext: ModelContext) {
         branchedFrom = try? CacheStore.cachedBranchedFrom(serverURL: server, sessionID: sessionID, in: modelContext)
@@ -678,6 +679,8 @@ public final class ChatViewModel {
         if let key = Self.companionMemoryKey(server: server, sessionID: session.sessionId), var remembered = Self.companionMemory[key] {
             remembered.forgetLiveCalls()
             companionFocus = remembered
+        } else {
+            companionFocus = ChatCompanionFocus(isHidden: !ChatTranscriptDisplaySettings.opensCompanionPage(in: userDefaults))
         }
         currentWorkspace = session.workspace
         serverWorkspacePath = session.workspace

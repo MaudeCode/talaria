@@ -21,6 +21,7 @@ struct ChatsSettingsView: View {
     @AppStorage(StreamedTextAnimationSettings.isEnabledKey) private var isStreamedTextAnimationEnabled = true
     @AppStorage(SectionVisibilitySettings.chatFilesKey) private var showsChatFilesButton = true
     @AppStorage(SectionVisibilitySettings.chatGitKey) private var showsChatGitControls = true
+    @AppStorage(ChatTranscriptDisplaySettings.opensCompanionPageKey) private var opensCompanionPage = true
     @AppStorage(ComposerVisibilitySettings.workspaceKey) private var showsComposerWorkspace = true
     @AppStorage(ComposerVisibilitySettings.profileKey) private var showsComposerProfile = true
     @AppStorage(ComposerVisibilitySettings.gitBranchKey) private var showsComposerGitBranch = true
@@ -214,6 +215,14 @@ struct ChatsSettingsView: View {
                     title: String(localized: "Files Button"),
                     systemImage: "folder",
                     isOn: $showsChatFilesButton
+                )
+
+                SettingsDivider()
+
+                SettingsToggleRow(
+                    title: String(localized: "Open the Agent's File Automatically"),
+                    systemImage: "sidebar.trailing",
+                    isOn: $opensCompanionPage
                 )
 
                 SettingsDivider()

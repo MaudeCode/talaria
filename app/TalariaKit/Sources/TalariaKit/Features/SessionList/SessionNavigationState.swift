@@ -43,6 +43,8 @@ public struct SessionNavigationState: Equatable {
     /// Whether the open chat has a companion page to show beside it, which can hide the regular-width sidebar column
     /// to make room (TAL-1458).
     public var chatShowsCompanionPage = false
+    /// Counts requests that the open chat hide its companion page: the sidebar column takes its room (TAL-1539).
+    public var companionPageHideRequest = 0
     public private(set) var lastSelectedSessionID: String?
     /// The mounted chat reports itself, including a fork pushed above the root.
     public private(set) var displayedSessionID: String?
