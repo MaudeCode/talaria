@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A running chat no longer loses its latest step when the agent's file opens beside it.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

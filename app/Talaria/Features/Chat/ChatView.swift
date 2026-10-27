@@ -723,8 +723,10 @@ struct ChatView: View {
         divisionGeometry?.divisions.contains { $0.height > $0.width } == true
     }
 
-    private var chatWithLifecycle: some View {
-        chatLayout
+    /// The chat's session work and lifecycle, outside the companion page's wrap: the page's first split rebuilds only
+    /// the chat's views, so it cannot cancel a first load and start another mid-run (TAL-1546).
+    private func withLifecycle(_ chat: some View) -> some View {
+        chat
         .onChange(of: viewModel.clarificationPrompt?.requestID, initial: true) { _, requestID in
             guard requestID != nil else { return }
             clarificationPanelHeight = 320
@@ -788,8 +790,8 @@ struct ChatView: View {
             }
     }
 
-    private var chatWithVisibility: some View {
-        chatWithLifecycle
+    private func withVisibility(_ chat: some View) -> some View {
+        withLifecycle(chat)
             .onDisappear {
                 sessionStartGeneration &+= 1
                 sessionStartTask?.cancel()
@@ -855,7 +857,7 @@ struct ChatView: View {
                 actions: sessionActions.actions
             )
         } else { nil }
-        return chatWithVisibility
+        return chatLayout
             .onChange(of: !viewModel.hasMessages && viewModel.clarificationPrompt == nil && viewModel.activeStreamID == nil,
                       initial: true) { _, isEmpty in splitFilesInspector?.reportEmptyTranscript(isEmpty) }
             .onChange(of: showsFilesInspector, initial: true) { splitFilesInspector?.reportShown(showsFilesInspector) }
@@ -1089,7 +1091,7 @@ struct ChatView: View {
         // Keep invalidation reasons in XCTest's console when this test-only probe is installed.
         let _ = recordBodyEvaluation == nil ? () : Self._printChanges()
 #endif
-        withCompanionPage(chatWithToolbar)
+        withVisibility(withCompanionPage(chatWithToolbar))
             .environment(\.retryPendingAttachment) { id in Task { await viewModel.retryAttachment(id: id) } }
             .navigationDestination(item: $forkedSession) { session in
                 // A fork opens in the same column, so the same split view makes room for its Files.
