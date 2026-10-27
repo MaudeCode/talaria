@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Switching chats no longer pauses on the audio system when you never played a reply aloud, so the next chat's messages load sooner.",
+      "highlight": false
+    }
+  ]
+}

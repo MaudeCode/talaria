@@ -553,6 +553,8 @@ public final class ChatViewModel {
     private let liveActivityManager: any AgentLiveActivityManaging
     private let speechSynthesizerFactory: () -> any ChatSpeechSynthesizing
     private let listenAudioSession: any ListenAudioSessionControlling
+    /// Whether Listen activated the shared session since it last released it.
+    private var listenHoldsAudioSession = false
     private let listenRemoteControlCenter: any ListenRemoteControlControlling
     private let userDefaults: UserDefaults
     private let pollingIntervals: ChatPollingIntervals
@@ -6373,9 +6375,16 @@ public final class ChatViewModel {
         listenAudioPlayer = nil
         listeningMessageID = nil
         clearListenPlaybackState()
-        // Release the shared session so any audio we interrupted can resume. Safe to
-        // call when nothing was speaking: `setActive(false)` no-ops via `try?`.
+        // Release the shared session so any audio we interrupted can resume. A chat whose Listen never
+        // played skips it: closing every chat would otherwise block the main thread on the audio server (TAL-1549).
+        guard listenHoldsAudioSession else { return }
+        listenHoldsAudioSession = false
         listenAudioSession.deactivate()
+    }
+
+    private func activateListenAudioSession() {
+        listenHoldsAudioSession = true
+        listenAudioSession.activate()
     }
 
     private func beginListenPlaybackPreparation(for context: MessageActionContext) {
@@ -6404,7 +6413,7 @@ public final class ChatViewModel {
         // speech starts — not when the Listen tap lands — so a slow `/api/tts` fetch
         // never interrupts other audio while Talaria is silent (review on #35).
         // Released again in `finishListening()` once playback ends. See #252.
-        listenAudioSession.activate()
+        activateListenAudioSession()
         let speechSynthesizer = speechSynthesizerForListening()
         let utterance = AVSpeechUtterance(string: text)
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate
@@ -6436,7 +6445,7 @@ public final class ChatViewModel {
         // before playback, so the network wait never held it (review on #35). If
         // `play()` still fails, the on-device fallback re-activates for itself —
         // `activate()` is idempotent, and `finishListening()` releases it either way.
-        listenAudioSession.activate()
+        activateListenAudioSession()
         guard player.play() else {
             return false
         }
@@ -6462,7 +6471,7 @@ public final class ChatViewModel {
     private func resumeListenPlayback() {
         guard listenPlaybackPhase == .paused, let player = listenAudioPlayer else { return }
         player.rate = Float(listenPlaybackSpeed.rawValue)
-        listenAudioSession.activate()
+        activateListenAudioSession()
         guard player.play() else { return }
         listenPlaybackPhase = .playing
         startListenPlaybackTicker()
