@@ -2,6 +2,7 @@ import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from '
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from './fixtures'
+import { openStateDb } from './server'
 
 test.use({ serviceWorkers: 'block' })
 
@@ -56,14 +57,13 @@ test('the Checkpoints page lists, diffs and restores a workspace checkpoint', as
 
 /** Native policy/transport are faked at the sidecar boundary; HTTP routing and the built UI are real. */
 test('native checkpoint reads show project provenance and partial output without restore', async ({ page, errors }, testInfo) => {
-  const { DatabaseSync } = await import('node:sqlite')
   const { bootTestServer } = await import('../../server/dist/test/harness.js')
   const { FakeSidecar } = await import('../../server/dist/sidecar/fake.js')
   const fixture = JSON.parse(readFileSync(new URL('../../server/src/test/fixtures/canonical-ownership.json', import.meta.url), 'utf8')) as { sessions: { cli: string }; schema: string[]; inserts: string[] }
   const comparison = JSON.parse(readFileSync(new URL('../../../../contracts/fixtures/native-checkpoint-diff.json', import.meta.url), 'utf8')) as { diff: string; comparison: { provenance: 'native_owner'; baseline: 'earliest_retained_project_checkpoint'; available: boolean; reason: 'no_baseline' | null; truncated: boolean } }
   const sidecar = new FakeSidecar()
   const server = await bootTestServer({ sidecar, env: { HERMES_WEBUI_SKIP_ONBOARDING: '1' } })
-  const db = new DatabaseSync(join(server.state, 'state.db'))
+  const db = openStateDb(server.state)
   const sid = fixture.sessions.cli
   sidecar.respond('gateway.session', (_params, _emit, opts) => {
     if (_params.action === 'checkpoint_diff') return { state: 'attached', reason: null, snapshot: null, receipt: null, checkpoint_diff: { ...comparison, stat: '1 file changed' } }

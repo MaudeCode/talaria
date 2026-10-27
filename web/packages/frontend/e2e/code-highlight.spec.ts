@@ -1,6 +1,4 @@
 import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
-import { DatabaseSync } from 'node:sqlite'
 import type { Locator } from '@playwright/test'
 import type { GatewaySnapshot } from '@maudecode/talaria-web-contracts'
 import { bootTestServer } from '../../server/dist/test/harness.js'
@@ -9,6 +7,7 @@ import type { StreamFrame } from '../../server/dist/sidecar/client.js'
 import { hydrateAnchorActivityScenes, withTurnIds } from '../../server/dist/sessions/anchor.js'
 import { redactSessionData } from '../../server/dist/redact.js'
 import { expect, test } from './fixtures'
+import { openStateDb } from './server'
 
 test.use({ serviceWorkers: 'block' })
 
@@ -41,7 +40,7 @@ test('a streaming code fence highlights each line as it completes', async ({ pag
   const sid = fixture.sessions.cli
   const sidecar = new FakeSidecar()
   const server = await bootTestServer({ sidecar, env: { HERMES_WEBUI_SKIP_ONBOARDING: '1' } })
-  const db = new DatabaseSync(join(server.state, 'state.db'))
+  const db = openStateDb(server.state)
   let emit: ((frame: Omit<StreamFrame, 'seq'>) => void) | undefined
   let snap: GatewaySnapshot = { session_id: sid, stored_session_id: sid, messages: [{ role: 'user', content: 'Write some code', message_id: 'code-input' }],
     message_count: 1, running: true, authority_epoch: 1, replay_epoch: 'owner-epoch', last_sequence: 0, subscription_id: 'viewer', revision: 1, execution_generation: 1,

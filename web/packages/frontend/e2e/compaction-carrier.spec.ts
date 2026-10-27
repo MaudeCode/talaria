@@ -1,8 +1,7 @@
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from './fixtures'
-import { openServerState } from './server'
+import { openServerState, openStateDb } from './server'
 import carrier from '../../server/src/test/fixtures/compaction-carrier.json' with { type: 'json' }
 
 test.use({ serviceWorkers: 'block' })
@@ -12,7 +11,7 @@ test('a kept-message summary renders once as a compaction card and survives refr
   const state = openServerState()
   const sid = `${carrier.sessionId}-${testInfo.project.name}`
   const dbPath = join(state, 'state.db')
-  const db = new DatabaseSync(dbPath)
+  const db = openStateDb(state)
   const sessionPath = join(state, 'sessions', `${sid}.json`)
   try {
     db.exec('PRAGMA foreign_keys = OFF; DROP TABLE IF EXISTS messages; DROP TABLE IF EXISTS sessions; DROP TABLE IF EXISTS system_prompts')

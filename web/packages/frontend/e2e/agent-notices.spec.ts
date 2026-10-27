@@ -1,12 +1,11 @@
 import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
-import { DatabaseSync } from 'node:sqlite'
 import type { GatewaySnapshot } from '@maudecode/talaria-web-contracts'
 import { bootTestServer } from '../../server/dist/test/harness.js'
 import { FakeSidecar } from '../../server/dist/sidecar/fake.js'
 import type { StreamFrame } from '../../server/dist/sidecar/client.js'
 import { createServer, type ServerResponse } from 'node:http'
 import { expect, test } from './fixtures'
+import { openStateDb } from './server'
 
 test.use({ serviceWorkers: 'block' })
 
@@ -87,7 +86,7 @@ test('idle native plugin notices refresh both viewers through one observation', 
   const sid = fixture.sessions.cli
   const sidecar = new FakeSidecar()
   const server = await bootTestServer({ sidecar, env: { HERMES_WEBUI_SKIP_ONBOARDING: '1' } })
-  const db = new DatabaseSync(join(server.state, 'state.db'))
+  const db = openStateDb(server.state)
   let emit: ((frame: Omit<StreamFrame, 'seq'>) => void) | undefined
   let aborted = false
   const snap: GatewaySnapshot = { session_id: sid, stored_session_id: sid, messages: [{ role: 'user', content: 'Check the project' }, { role: 'assistant', content: 'The project is ready.' }],

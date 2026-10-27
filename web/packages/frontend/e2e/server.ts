@@ -2,6 +2,7 @@ import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { existsSync, mkdtempSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 
 /** `web/` (the npm workspaces root). */
 export const REPO_ROOT = resolve(import.meta.dirname, '..', '..', '..')
@@ -88,6 +89,9 @@ export function saveHandles(handles: ServerHandle[]): void { writeFileSync(STATE
 /** Disposable server state for specs that seed server-read files. */
 export function serverState(kind: 'open' | 'authenticated'): string { return (JSON.parse(readFileSync(STATE_FILE, 'utf8')) as ServerHandle[])[kind === 'open' ? 0 : 1]!.state }
 export function openServerState(): string { return serverState('open') }
+
+/** A spec's own handle on a server's Agent state.db. The server reads the same file while it runs, so writes wait out its lock instead of failing with "database is locked". */
+export function openStateDb(state: string): DatabaseSync { return new DatabaseSync(join(state, 'state.db'), { timeout: 5000 }) }
 
 export function stopServers(): void {
   let handles: ServerHandle[] = []
