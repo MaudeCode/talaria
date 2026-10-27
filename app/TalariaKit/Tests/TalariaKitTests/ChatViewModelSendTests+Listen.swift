@@ -173,6 +173,22 @@ extension ChatViewModelSendTests {
         XCTAssertNil(viewModel.listeningMessageID)
     }
 
+    /// Closing a chat stops Listen; one that never played must leave the shared session alone, since
+    /// deactivating it is a blocking main-thread call to the audio server that held a switched-to chat's
+    /// transcript load past a hosted test's wait on a slow runner (TAL-1549).
+    @MainActor
+    func testStoppingListenThatNeverPlayedLeavesAudioSessionAlone() throws {
+        let audioSession = SpyListenAudioSession()
+        let viewModel = try makeViewModel(listenAudioSession: audioSession) { request in
+            XCTFail("Stopping Listen should not request \(request.url?.path ?? "")")
+            return apiTestJSONResponse("{}", for: request)
+        }
+
+        viewModel.stopListening()
+
+        XCTAssertEqual(audioSession.deactivateCount, 0)
+    }
+
     @MainActor
     func testListenPrefersServerTTSAndPlaysReturnedAudio() async throws {
         let audioSession = SpyListenAudioSession()
