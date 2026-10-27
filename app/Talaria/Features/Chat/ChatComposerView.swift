@@ -123,11 +123,10 @@ struct MessageComposerView: View {
     var onToggleClarificationChoice: (String) -> Void = { _ in }
     var onSelectClarificationQuestion: (Int) -> Void = { _ in }
     var onSubmitClarification: (String) -> Void = { _ in }
-    /// Set while a new chat's session is being created, or failed to be (TAL-636): the strip shows
-    /// it in place of the controls, and nothing that needs the session can be used yet.
+    /// Set while a new chat's session is being created, or failed to be (TAL-636): nothing that needs the
+    /// session can be used yet.
     var sessionStart: ComposerSessionStart? = nil
     var hasSession = true
-    var onRetrySessionStart: () -> Void = {}
     /// The session's toolset override (TAL-631); nil, before a session reports it, hides the control.
     var sessionToolsets: SessionToolsets? = nil
     var onLoadToolsets: () async throws -> ToolsetsCatalog? = { throw URLError(.unsupportedURL) }
@@ -902,13 +901,10 @@ struct MessageComposerView: View {
     /// Every configuration control, one tap away in the strip under the card (TAL-629). It stays up
     /// with the keyboard and in the one-line shell; a clarification or a read-only session hides it, and
     /// so does the chevron beside +, until it is tapped again (TAL-630), and a short pane's one-row card
-    /// (TAL-680). A new chat's start status shows either way.
+    /// (TAL-680).
     @ViewBuilder
     private var controlStrip: some View {
-        if showsControlStrip, let sessionStart {
-            ComposerSessionStartStrip(state: sessionStart, onRetry: onRetrySessionStart)
-                .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
-        } else if showsControlStrip {
+        if showsControlStrip {
             ComposerSecondaryControlsView(
                 state: secondaryControlsState,
                 onChooseWorkspace: {
@@ -959,7 +955,7 @@ struct MessageComposerView: View {
     }
 
     private var showsStripUnderCard: Bool {
-        showsControlStrip && (sessionStart != nil || showsControlStripContent)
+        showsControlStrip && showsControlStripContent
     }
 
     /// The chevron's choice, except in the one-row card, which has no room for the strip (TAL-680).
@@ -973,7 +969,7 @@ struct MessageComposerView: View {
         if !isAnsweringClarification {
             composerPlusMenu
         }
-        if showsControlStrip, sessionStart == nil, !usesOneRowCard {
+        if showsControlStrip, !usesOneRowCard {
             controlStripToggle
         }
     }
@@ -1331,7 +1327,7 @@ struct MessageComposerView: View {
     private var isActionButtonDisabled: Bool {
         // A new chat accepts local intent while creation runs; the shared send owns the pending row.
         if isReadOnly { return true }
-        if case .some(.failed) = sessionStart { return true }
+        if sessionStart == .failed(canRetry: false) { return true }
 
         if isAnsweringClarification {
             return (trimmedDraftMessage.isEmpty && clarificationSelectedChoices.isEmpty) || isSending
@@ -1342,7 +1338,9 @@ struct MessageComposerView: View {
         }
         if ownerAttachment?.canSubmit == false { return true }
 
-        if sessionStart != nil, trimmedDraftMessage.hasPrefix("/") {
+        // While creation runs, only a slash command that sends a message can wait for it; after a refusal,
+        // Send retries the start for any command.
+        if sessionStart == .starting, trimmedDraftMessage.hasPrefix("/") {
             guard !isWaitingForStream,
                   let message = SlashCommandExecutor.parse(trimmedDraftMessage, catalog: agentCommands)?.messageForIdleSend,
                   !message.isEmpty || !pendingAttachments.isEmpty else { return true }

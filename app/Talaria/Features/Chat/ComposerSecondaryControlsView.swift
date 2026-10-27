@@ -129,56 +129,11 @@ struct ComposerSecondaryControlsView<Leading: View>: View {
     }
 }
 
-/// A new chat's session as the composer shows it while the server creates it (TAL-636).
+/// A new chat's session while the server creates it (TAL-636). The run status chip shows the start and an error
+/// notice its failure (TAL-1543); a failure Send can retry leaves Send enabled.
 enum ComposerSessionStart: Equatable {
     case starting
-    case failed(String, canRetry: Bool = true)
-}
-
-/// The control strip while a new chat's session is starting: a spinner, or the error with Retry,
-/// in place of the controls, which need the session.
-struct ComposerSessionStartStrip: View {
-    let state: ComposerSessionStart
-    let onRetry: () -> Void
-
-    var body: some View {
-        // One footnote line, padded like the controls row, so the strip keeps its height when the
-        // controls replace it; Retry's 44 pt target reaches past the line without taking space.
-        HStack(spacing: 8) {
-            switch state {
-            case .starting:
-                ProgressView()
-                    .controlSize(.mini)
-                Text("Starting chat…")
-                    .font(AppFont.footnote())
-                    .foregroundStyle(.secondary)
-            case .failed(let message, let canRetry):
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(AppFont.footnote())
-                    .foregroundStyle(.orange)
-                Text(message)
-                    .font(AppFont.footnote())
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                Spacer(minLength: 0)
-                if canRetry {
-                    Button(action: onRetry) {
-                        Text("Retry")
-                            .font(AppFont.footnote().weight(.semibold))
-                            .chatMinimumHitTarget(horizontalPadding: 12, verticalPadding: ComposerMetaControlLabel.hitPadding, in: Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.tint)
-                }
-            }
-        }
-        .lineLimit(1)
-        .padding(.horizontal, 12)
-        .padding(.vertical, ComposerControlStrip.verticalPadding)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .contain)
-        .composerStripChrome(hangingFrom: .bottom)
-    }
+    case failed(canRetry: Bool)
 }
 
 /// Which edge of the composer card a strip hangs from: the controls hang below it, the pending
