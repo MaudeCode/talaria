@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Watching a running reply in an open Talaria Web tab keeps your phone quiet for the whole turn, instead of starting a Live Activity after two minutes without input.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

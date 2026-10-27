@@ -27,6 +27,7 @@ vi.mock('./ChatSidePanel', async (original) => {
   return { ChatSidePanel: typeof ChatSidePanel === 'function' ? body : { ...(ChatSidePanel as object), type: body } }
 })
 vi.mock('./useMarkViewed', () => ({ useMarkViewed: () => undefined }))
+vi.mock('../presence/presence', () => ({ setWatchingRun: vi.fn() }))
 vi.mock('../toast/toast', async (original) => ({ ...await original<object>(), showToast: vi.fn() }))
 vi.mock('../../api/endpoints', async (original) => ({
   ...await original<object>(),
@@ -52,6 +53,7 @@ vi.mock('./MessageRow', async (original) => {
 const { ChatView } = await import('./ChatView')
 const { showToast } = await import('../toast/toast')
 const api = await import('../../api/endpoints')
+const { setWatchingRun } = await import('../presence/presence')
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -324,4 +326,17 @@ it('brings the transcript back when /clear is refused (TAL-1384)', async () => {
   await act(async () => { refuse(new ApiError({ kind: 'http', status: 409, path: '/x', message: 'Busy' })); await Promise.resolve() })
   expect(await screen.findByText('Persisted answer')).toBeInTheDocument()
   await expect(result).resolves.toBe('refused')
+})
+
+it('reports a running turn in the open chat as watched, and clears it when the turn ends or the chat closes (TAL-1554)', async () => {
+  const { unmount } = chat()
+  await screen.findByText('Persisted answer')
+  expect(vi.mocked(setWatchingRun).mock.lastCall).toEqual([true])
+  act(() => dispatch({ type: 'event', sessionId: 'memo-chat', streamId: 'live-run', event: { event: 'cancel', data: {} }, lastEventId: 'live-run:1', now: Date.now() }))
+  expect(vi.mocked(setWatchingRun).mock.lastCall).toEqual([false])
+  vi.mocked(setWatchingRun).mockClear()
+  dispatch({ type: 'start', sessionId: 'memo-chat', streamId: 'live-run-2', turnId: null, userMessageId: null, userText: 'Again', now: Date.now() })
+  await waitFor(() => expect(vi.mocked(setWatchingRun).mock.lastCall).toEqual([true]))
+  unmount()
+  expect(vi.mocked(setWatchingRun).mock.lastCall).toEqual([false])
 })

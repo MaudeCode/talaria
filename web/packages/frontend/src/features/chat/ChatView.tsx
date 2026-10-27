@@ -32,6 +32,7 @@ import { ConnectCard } from '../connectors/ConnectCard'
 import { useClarify } from './useClarify'
 import { VaultPromptCard, useVaultPrompt } from './VaultPromptCard'
 import { useMarkViewed } from './useMarkViewed'
+import { setWatchingRun } from '../presence/presence'
 import { TerminalPanelFrame } from '../terminal/TerminalPanelFrame'
 import { ChatSidePanel } from './ChatSidePanel'
 import { setSidePanelOpen, toggleSidePanel, useShellState } from '../../shell/useShellState'
@@ -90,6 +91,11 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   const clarify = useClarify(sessionId, live)
   const vaultPrompt = useVaultPrompt(sessionId, live)
   useMarkViewed(sessionId, !session?.owner_attachment && (query.isFetchedAfterMount || (query.isSuccess && !query.isStale)), live && isTerminal(live.status) ? live.streamId : null)
+  const watchingRun = !!live && !isTerminal(live.status)
+  useEffect(() => {
+    setWatchingRun(watchingRun)
+    return () => setWatchingRun(false)
+  }, [sessionId, watchingRun])
   const [terminalOpen, setTerminalOpen] = useState(false)
   const onToggleTerminal = useCallback(() => setTerminalOpen((t) => !t), [])
   const { sidePanelOpen } = useShellState()

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 vi.mock(import('../../api/client'), async (importOriginal) => ({ ...(await importOriginal()), post: vi.fn(() => Promise.resolve({ ok: true, lease_seconds: 90 }) as never) }))
 import { post } from '../../api/client'
 import { tabId } from '../../app/tabBuild'
-import { IDLE_MS, RENEW_MS, startPresence } from './presence'
+import { IDLE_MS, RENEW_MS, setWatchingRun, startPresence } from './presence'
 
 let visibility: DocumentVisibilityState = 'visible'
 let focused = true
@@ -19,7 +19,7 @@ beforeEach(() => {
   vi.spyOn(document, 'hasFocus').mockImplementation(() => focused)
   vi.mocked(post).mockClear()
 })
-afterEach(() => { stop(); vi.useRealTimers(); vi.restoreAllMocks() })
+afterEach(() => { stop(); setWatchingRun(false); vi.useRealTimers(); vi.restoreAllMocks() })
 
 it('holds a lease while the tab is in active use and renews it before it lapses', () => {
   stop = startPresence()
@@ -93,4 +93,45 @@ it('stops listening and releases the lease when stopped', () => {
   window.dispatchEvent(new Event('pointerdown'))
   vi.advanceTimersByTime(IDLE_MS)
   expect(actives()).toEqual([true, false])
+})
+
+it('keeps renewing without input for a whole watched run (TAL-1554)', () => {
+  stop = startPresence()
+  setWatchingRun(true)
+  vi.advanceTimersByTime(5 * 60_000)
+  expect(actives().every(Boolean)).toBe(true)
+  expect(actives().length).toBeGreaterThanOrEqual(10)
+})
+
+it('starts the idle window when the watched run ends, then revokes (TAL-1554)', () => {
+  stop = startPresence()
+  setWatchingRun(true)
+  vi.advanceTimersByTime(5 * 60_000)
+  setWatchingRun(false)
+  vi.advanceTimersByTime(IDLE_MS - 1_000)
+  expect(actives().every(Boolean)).toBe(true)
+  vi.advanceTimersByTime(1_000)
+  expect(actives().at(-1)).toBe(false)
+})
+
+it('revokes at once when a watched tab is hidden or loses focus (TAL-1554)', () => {
+  stop = startPresence()
+  setWatchingRun(true)
+  visibility = 'hidden'
+  document.dispatchEvent(new Event('visibilitychange'))
+  expect(actives()).toEqual([true, false])
+  vi.advanceTimersByTime(IDLE_MS)
+  expect(actives()).toEqual([true, false])
+  visibility = 'visible'
+  document.dispatchEvent(new Event('visibilitychange'))
+  focused = false
+  window.dispatchEvent(new Event('blur'))
+  expect(actives()).toEqual([true, false, true, false])
+})
+
+it('revokes with keepalive when the page goes away mid-run (TAL-1554)', () => {
+  stop = startPresence()
+  setWatchingRun(true)
+  window.dispatchEvent(new Event('pagehide'))
+  expect(sent().at(-1)).toMatchObject({ active: false, keepalive: true })
 })

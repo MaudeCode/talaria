@@ -4,6 +4,8 @@
  * lease, which marks relay snapshots alert-ineligible so the phone stays quiet
  * and starts no Live Activity. Going idle, hidden, unfocused, or away revokes
  * the lease so phone alerts resume. The server owns the lease and its effect.
+ * Watching a running turn in the open chat counts as use without input
+ * (TAL-1554); the idle window starts again when that turn ends.
  */
 import { z } from 'zod'
 import { post } from '../../api/client'
@@ -15,6 +17,16 @@ export const RENEW_MS = 30_000
 const LeaseSchema = z.object({ ok: z.literal(true), lease_seconds: z.number() })
 // Not `scroll`: a streaming transcript scrolls itself, and user scrolling arrives as wheel, touch, key, or pointer input.
 const INPUT_EVENTS = ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart']
+
+let watching = false
+let onWatching: (() => void) | undefined
+
+/** ChatView reports whether its open chat shows a running turn. */
+export function setWatchingRun(active: boolean): void {
+  if (watching === active) return
+  watching = active
+  onWatching?.()
+}
 
 export function startPresence(): () => void {
   // Seeded per page load so a reload never reuses an older sequence.
@@ -34,12 +46,12 @@ export function startPresence(): () => void {
   const tick = (): void => {
     clearTimeout(timer)
     const now = Date.now()
-    if (!shown() || now - lastInput >= IDLE_MS) {
+    if (!shown() || (!watching && now - lastInput >= IDLE_MS)) {
       if (active) send(false)
       return
     }
     if (!active || now - lastSent >= RENEW_MS) send(true)
-    timer = setTimeout(tick, Math.max(0, Math.min(lastSent + RENEW_MS, lastInput + IDLE_MS) - Date.now()))
+    timer = setTimeout(tick, Math.max(0, Math.min(lastSent + RENEW_MS, watching ? Infinity : lastInput + IDLE_MS) - Date.now()))
   }
   const onInput = (): void => {
     if (!shown()) return
@@ -56,6 +68,11 @@ export function startPresence(): () => void {
     if (active) send(false, true)
   }
 
+  onWatching = () => {
+    lastInput = Date.now()
+    tick()
+  }
+
   for (const event of INPUT_EVENTS) window.addEventListener(event, onInput, { capture: true, passive: true })
   window.addEventListener('focus', onShow)
   window.addEventListener('blur', tick)
@@ -64,6 +81,7 @@ export function startPresence(): () => void {
   tick()
 
   return () => {
+    onWatching = undefined
     for (const event of INPUT_EVENTS) window.removeEventListener(event, onInput, { capture: true })
     window.removeEventListener('focus', onShow)
     window.removeEventListener('blur', tick)
