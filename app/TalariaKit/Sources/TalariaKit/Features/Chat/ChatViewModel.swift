@@ -1828,6 +1828,9 @@ public final class ChatViewModel {
                 isConfirmingRunState = false
                 return
             }
+            // The run kept streaming during the read, so its snapshot from the load's start misses those rows; the
+            // stream's rows win until the run ends (TAL-1546).
+            streamCoordinatorSaveSnapshotIfNeeded()
             streamCoordinator.applySessionActivityPhase(session?.activityPhase)
             // After load arbitration only: a superseded response must not leave its
             // read-only flag behind once its transcript has been rejected.

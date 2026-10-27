@@ -428,6 +428,73 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(viewModel.messages.last?.content, "Partial live answer.")
     }
 
+    /// TAL-1546: a session detail read before the run's latest step keeps the rows that step streamed during the read.
+    @MainActor
+    func testLoadMessagesDuringActiveStreamKeepsTheStepStreamedWhileTheDetailWasInFlight() async throws {
+        let streamClient = SpySSEStreamingClient()
+        let sessionRequested = DispatchSemaphore(value: 0)
+        let releaseSession = DispatchSemaphore(value: 0)
+        defer { releaseSession.signal() }
+        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+            switch request.url?.path {
+            case "/api/chat/start":
+                return apiTestJSONResponse("""
+                {
+                  "session_id": "session-abc",
+                  "stream_id": "stream-123"
+                }
+                """, for: request)
+            case "/api/session":
+                sessionRequested.signal()
+                releaseSession.wait()
+                return apiTestJSONResponse("""
+                {
+                  "session": {
+                    "session_id": "session-abc",
+                    "title": "Planning",
+                    "active_stream_id": "stream-123",
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": "Keep working",
+                        "timestamp": 1770000100,
+                        "message_id": "user-1"
+                      }
+                    ]
+                  }
+                }
+                """, for: request)
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        let didStart = await viewModel.sendMessage("Keep working")
+        XCTAssertTrue(didStart)
+        streamClient.emit(.token("Writing Alpha.swift."))
+
+        let load = Task { @MainActor in await viewModel.loadMessages() }
+        await Task.detached { sessionRequested.wait() }.value
+
+        // The next step streams while the detail is in flight; the detail does not have it.
+        streamClient.emit(.toolStarted(ToolStreamEvent(
+            eventType: "tool.started",
+            name: "write_file",
+            preview: "Edited Sources/Demo/Beta.swift",
+            args: ["path": .string("Sources/Demo/Beta.swift")],
+            duration: nil,
+            isError: nil
+        )))
+        streamClient.emit(.token(" Writing Beta.swift."))
+        releaseSession.signal()
+        await load.value
+
+        XCTAssertEqual(viewModel.activeStreamID, "stream-123")
+        XCTAssertEqual(viewModel.messages.last?.content, "Writing Alpha.swift. Writing Beta.swift.")
+        XCTAssertEqual(viewModel.liveToolCalls.map(\.name), ["write_file"])
+    }
+
     @MainActor
     func testTransportReconnectUsesReplayWhenInactiveStreamHasJournal() async throws {
         let streamClient = SpySSEStreamingClient()

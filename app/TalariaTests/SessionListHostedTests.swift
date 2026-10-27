@@ -1597,6 +1597,9 @@ extension RegularSplitHostedTests {
         XCTAssertFalse(streamed.isEmpty, "The transcript stopped streaming")
         XCTAssertLessThanOrEqual(streamed.maxX, beta.minX + 1, "The companion page overlaps the chat")
         attachHostedScreenshot(window, name: "duo-inner-landscape-companion-beta")
+        // TAL-1546: the page's first split keeps the chat, so its first load is the only one until the run ends.
+        let loads = UITestFixtureURLProtocol.answeredPaths.withLock { $0.filter { $0 == "/api/session" } }
+        XCTAssertEqual(loads.count, 1, "The companion page reloaded the running chat")
         UITestFixtureURLProtocol.advanceCompanionRun()
         UITestFixtureURLProtocol.advanceCompanionRun()
     }
