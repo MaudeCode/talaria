@@ -288,9 +288,7 @@ extension XCTestCase {
     /// teardown.
     @MainActor
     func hostInOwnWindow(_ view: some View, size: CGSize) throws {
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        let window = UIWindow(windowScene: scene)
-        window.frame = CGRect(origin: .zero, size: size)
+        let window = try HostedScene.window(size: size)
         window.rootViewController = UIHostingController(rootView: view.frame(width: size.width))
         window.isHidden = false
         window.layoutIfNeeded()

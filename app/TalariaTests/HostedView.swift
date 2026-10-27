@@ -18,6 +18,67 @@ enum HostedSize {
     static let duoInnerLandscape = CGSize(width: 951, height: 669)
 }
 
+/// The test host's scene, which hosted windows share. The host shows whichever display the device is on: an iPhone
+/// Duo simulator under `xcodebuild test` boots closed, onto its compact cover. A hosted window lays out the display it
+/// is sized for instead, whatever the device's posture (TAL-1547).
+@MainActor
+enum HostedScene {
+    /// The host's scene once it is in the foreground; a test can start before the scene connects.
+    static func current(file: StaticString = #filePath, line: UInt = #line) throws -> UIWindowScene {
+        func scene() -> UIWindowScene? {
+            UIApplication.shared.connectedScenes.lazy.compactMap { $0 as? UIWindowScene }
+                .first { $0.activationState == .foregroundActive }
+        }
+        let deadline = Date().addingTimeInterval(10)
+        while scene() == nil, Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        let states = UIApplication.shared.connectedScenes.map { "\($0.activationState.rawValue)" }
+        return try XCTUnwrap(scene(), "The test host's scene never reached the foreground; scene states \(states)",
+                             file: file, line: line)
+    }
+
+    /// A window in the host's scene, `size` points or the display's own size. A window sized for another display takes
+    /// none of this display's vertical bar: a closed Duo's cover places one, which an inner-display or phone window
+    /// would otherwise inherit and lay its bars out against.
+    static func window(size: CGSize? = nil, file: StaticString = #filePath, line: UInt = #line) throws -> UIWindow {
+        _ = silencesHinge
+        let scene = try current(file: file, line: line)
+        let window = UIWindow(windowScene: scene)
+        guard let size, size != scene.coordinateSpace.bounds.size else { return window }
+        window.frame = CGRect(origin: .zero, size: size)
+        suppressVerticalBar(in: window)
+        return window
+    }
+
+    /// Hosted screens see no hinge, as on a phone: a closed Duo's hinge, delivered after the screen's first layout,
+    /// re-admits a regular-width split and drops a Sidebar press queued meanwhile. SwiftUI's `onHingeChange` observes
+    /// through `UIHingeInteraction`, so every interaction's handler is replaced with one that ignores updates.
+    private static let silencesHinge: Void = {
+        guard #available(iOS 27.1, *) else { return }
+        let selector = NSSelectorFromString("initWithUpdateHandler:")
+        guard let method = class_getInstanceMethod(UIHingeInteraction.self, selector) else { return }
+        typealias Initialize = @convention(c) (AnyObject, Selector, AnyObject) -> AnyObject
+        let initialize = unsafeBitCast(method_getImplementation(method), to: Initialize.self)
+        let ignoresUpdates: @convention(block) (AnyObject, AnyObject) -> Void = { _, _ in }
+        let replacement: @convention(block) (AnyObject, AnyObject) -> AnyObject = { interaction, _ in
+            initialize(interaction, selector, ignoresUpdates as AnyObject)
+        }
+        method_setImplementation(method, imp_implementationWithBlock(replacement))
+    }()
+
+    /// UIKit derives the public `verticalBarEdge` from private traits and offers no public override; this sets the
+    /// one that suppresses the bar, through the window's trait overrides.
+    private static func suppressVerticalBar(in window: UIWindow) {
+        guard let trait = NSClassFromString("_UITraitVerticalBarSuppressed") else { return }
+        let overrides = window.value(forKey: "traitOverrides") as AnyObject
+        let selector = NSSelectorFromString("setNSIntegerValue:forTrait:")
+        guard let method = class_getInstanceMethod(object_getClass(overrides), selector) else { return }
+        typealias SetValue = @convention(c) (AnyObject, Selector, Int, AnyClass) -> Void
+        unsafeBitCast(method_getImplementation(method), to: SetValue.self)(overrides, selector, 1, trait)
+    }
+}
+
 /// Reads the public UIKit items SwiftUI emits, including grouped and bottom-bar actions.
 extension HostedAccessibility {
     /// The page supplying the visible title menu, beyond sidebar and inspector navigation wrappers.
@@ -137,9 +198,7 @@ extension XCTestCase {
         traits: (inout UITraitOverrides) -> Void = { _ in }
     ) throws -> UIWindow {
         _ = HostedAccessibility.enableAutomation
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        let window = UIWindow(windowScene: scene)
-        window.frame = CGRect(origin: .zero, size: size)
+        let window = try HostedScene.window(size: size)
         // A synthetic phone window must not inherit the unfolded Duo/iPad scene's regular size class.
         window.traitOverrides.horizontalSizeClass = size.width >= 600 && size.height >= 600 ? .regular : .compact
         window.traitOverrides.verticalSizeClass = size.height >= 600 ? .regular : .compact
@@ -318,5 +377,43 @@ extension UIViewController {
             if let match = child.firstDescendant(ofType: type) { return match }
         }
         return nil
+    }
+}
+
+/// A hosted window lays out the display it is sized for, whatever the device's posture (TAL-1547).
+@MainActor
+final class HostedWindowTests: XCTestCase {
+    /// A closed iPhone Duo's cover places a vertical bar; an inner-display or phone window must not take it.
+    func testAWindowSizedForAnotherDisplayTakesNoVerticalBar() throws {
+        guard #available(iOS 27.1, *) else { throw XCTSkip("Requires the vertical-bar SDK") }
+        for size in [HostedSize.phone, HostedSize.duoInnerLandscape] {
+            let window = try hostWindow(Color.clear, size: size)
+            let scene = try XCTUnwrap(window.windowScene)
+            guard size != scene.coordinateSpace.bounds.size else { continue }
+            XCTAssertEqual(window.traitCollection.verticalBarEdge, .unspecified,
+                           "A \(size) window took its display's vertical bar")
+        }
+    }
+
+    /// A window the size of its display is that display, bar and all.
+    func testAWindowTheSizeOfItsDisplayKeepsItsVerticalBar() throws {
+        guard #available(iOS 27.1, *) else { throw XCTSkip("Requires the vertical-bar SDK") }
+        let probe = try hostWindow(Color.clear)
+        let scene = try XCTUnwrap(probe.windowScene)
+        let window = try hostWindow(Color.clear, size: scene.coordinateSpace.bounds.size)
+        XCTAssertEqual(window.traitCollection.verticalBarEdge, scene.traitCollection.verticalBarEdge)
+    }
+}
+
+extension HostedWindowTests {
+    /// A closed Duo's hinge must not reach a hosted screen, whose first update would re-admit its layout mid-test.
+    func testAHostedWindowReportsNoHinge() async throws {
+        guard #available(iOS 27.1, *) else { throw XCTSkip("Requires the hinge SDK") }
+        var hinges: [DeviceHinge] = []
+        try hostWindow(Color.clear.onHingeChange { _, context in
+            if let hinge = context.hinge { hinges.append(hinge) }
+        }, size: HostedSize.duoInnerLandscape)
+        _ = await awaitCondition(timeout: 2) { !hinges.isEmpty }
+        XCTAssertEqual(hinges, [], "A hosted window read the device's hinge")
     }
 }

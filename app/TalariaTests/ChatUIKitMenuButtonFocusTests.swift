@@ -56,7 +56,7 @@ final class ChatUIKitMenuButtonFocusTests: XCTestCase {
     func testAMenuButtonAppearingBesideTheFocusedComposerKeepsItsFocus() throws {
         let model = Model()
         let textView = UITextView()
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let scene = try HostedScene.current()
         window = UIWindow(windowScene: scene)
         window.rootViewController = UIHostingController(rootView: Screen(model: model, textView: textView))
         window.makeKeyAndVisible()

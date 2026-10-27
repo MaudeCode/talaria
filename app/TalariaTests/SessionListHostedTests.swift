@@ -9,7 +9,7 @@ import TalariaKit
 final class ToolbarPriorityHostedTests: XCTestCase {
     func testHorizontalWorkBadgesKeepHighPriorityInANarrowChat() async throws {
         guard #available(iOS 27.1, *) else { throw XCTSkip("Requires horizontal work-item priorities") }
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let scene = try HostedScene.current()
         try XCTSkipUnless(scene.traitCollection.verticalBarEdge == .unspecified, "Requires a horizontal toolbar")
         let window = try await hostFixtureChat(
             ["--ui-test-background-updates", "--ui-test-chat-controls"],
@@ -38,7 +38,7 @@ final class ToolbarPriorityHostedTests: XCTestCase {
 
     func testHorizontalBarsUseTheApprovedActionPriorities() async throws {
         guard #available(iOS 27.1, *) else { throw XCTSkip("Requires bar-item visibility priorities") }
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let scene = try HostedScene.current()
         try XCTSkipIf(scene.traitCollection.verticalBarEdge != .unspecified, "Covered by native vertical-bar tests")
         for size in [HostedSize.phone, HostedSize.padLandscape] {
             let fixture = try FixtureApp(for: self)
@@ -60,7 +60,7 @@ final class ToolbarPriorityHostedTests: XCTestCase {
 
     private func landscapeScene() async throws -> UIWindowScene {
         guard #available(iOS 27.1, *) else { throw XCTSkip("Requires the vertical-bar SDK") }
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let scene = try HostedScene.current()
         try XCTSkipUnless(scene.traitCollection.verticalBarEdge != .unspecified, "Requires the Duo cover's native vertical bar")
         scene.requestGeometryUpdate(.iOS(interfaceOrientations: .landscapeRight))
         let rotated = await awaitCondition { scene.interfaceOrientation == .landscapeRight }
@@ -250,7 +250,7 @@ final class SessionListHostedTests: XCTestCase {
             ProcessInfo.processInfo.environment["SIMULATOR_MODEL_IDENTIFIER"] == "iPhone19,4",
             "Requires the iPhone Duo simulator's native vertical toolbar"
         )
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let scene = try HostedScene.current()
         let panel = scene.screen.nativeBounds.size
         let viewport = scene.coordinateSpace.bounds.size
         let cover = [HostedSize.duoOuter.width, HostedSize.duoOuter.height].sorted()
