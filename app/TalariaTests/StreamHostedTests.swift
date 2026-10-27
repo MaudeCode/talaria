@@ -140,6 +140,28 @@ final class StreamHostedTests: XCTestCase {
         XCTAssertTrue(composer != nil || input != nil, "The composer went away")
     }
 
+    /// A run that ends while its chat is on screen counts as seen through its end, so the relay acknowledges its
+    /// completion and its Live Activity ends without leaving the chat (TAL-1553).
+    func testRunEndingOnScreenAcknowledgesItsCompletion() async throws {
+        let fixture = try FixtureApp(["--ui-test-chat-controls"], for: self)
+        var stamps: [Date] = []
+        let window = try hostWindow(fixture.chat(try await fixture.session())
+            .environment(\.acknowledgeViewedCompletionsForTesting) { through in
+                stamps.append(through)
+                return []
+            })
+        _ = try await startControlsRun(in: window)
+        let opened = await awaitCondition { !stamps.isEmpty }
+        XCTAssertTrue(opened, "Opening the chat acknowledged nothing")
+
+        let ending = Date()
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Stop response"))
+        let stopped = await awaitNoElement(in: window, timeout: 5, where: label("Stop response"))
+        XCTAssertTrue(stopped)
+        let acknowledged = await awaitCondition { stamps.contains { $0 >= ending } }
+        XCTAssertTrue(acknowledged, "The run that ended on screen was never acknowledged; stamps \(stamps), ended \(ending)")
+    }
+
     /// A batch of questions shows its choices inside the composer without raising the keyboard, resizes, steps between
     /// questions keeping each answer, and submits typed and selected answers together (TAL-367).
     func testBatchClarificationShowsChoicesAndDeliversTypedAndMultiSelectAnswers() async throws {

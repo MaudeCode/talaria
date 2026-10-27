@@ -36,6 +36,11 @@ extension EnvironmentValues {
 }
 #endif
 
+extension EnvironmentValues {
+    /// Replaces the relay acknowledgement of the chat's viewed completions in hosted tests.
+    @Entry var acknowledgeViewedCompletionsForTesting: ViewedCompletionAcknowledger.Acknowledge? = nil
+}
+
 private enum GitChatAlert: Identifiable {
     case confirmRemote(GitRemoteAction)
     case dirtyCheckout(GitCheckoutTarget)
@@ -100,9 +105,8 @@ struct ChatView: View {
     private let composerAccessoryVerticalSpacing: CGFloat = 8
 
     @State private var modelSwitchAlert: ModelSwitchConfirmation?
-    @State private var completionAcknowledgementTask: Task<Void, Never>?
-    @State private var completionAcknowledgementGeneration = 0
-    @State private var viewedCompletionsThrough: Date?
+    @State private var completionAcknowledger = ViewedCompletionAcknowledger()
+    @Environment(\.acknowledgeViewedCompletionsForTesting) private var acknowledgeViewedCompletionsForTesting
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.layoutDirection) private var layoutDirection
     @Environment(\.dismiss) private var dismiss
@@ -740,8 +744,8 @@ struct ChatView: View {
         .onChange(of: scenePhase) {
                 handleScenePhaseChange(scenePhase)
             }
-            .onChange(of: viewModel.activeStreamID) {
-                handleActiveStreamChange()
+            .onChange(of: viewModel.activeStreamID) { endedStreamID, _ in
+                handleActiveStreamChange(endedStreamID: endedStreamID)
             }
             .onChange(of: viewModel.cacheFirstReconcileScrollToken) {
                 // Open a brief snap window so the cache-first reconcile re-pin (and any
@@ -781,8 +785,7 @@ struct ChatView: View {
             }
             .onChange(of: viewModel.isViewingCachedData) {
                 if !viewModel.isViewingCachedData {
-                    viewedCompletionsThrough = Date()
-                    scheduleCompletionAcknowledgement()
+                    acknowledgeViewedCompletions()
                 }
             }
             .onChange(of: TalariaCompletionStore.shared.completions) {
@@ -796,10 +799,7 @@ struct ChatView: View {
                 sessionStartGeneration &+= 1
                 sessionStartTask?.cancel()
                 sessionStartTask = nil
-                viewedCompletionsThrough = nil
-                completionAcknowledgementGeneration += 1
-                completionAcknowledgementTask?.cancel()
-                completionAcknowledgementTask = nil
+                completionAcknowledger.cancel(leavesChat: true)
                 if didHydrateDraft { draftStore.setVoiceNote(viewModel.pendingVoiceDraft, for: draftKey) }
                 flushDraftsBestEffort()
                 activeStreamStatusRefreshTask?.cancel()
@@ -2109,8 +2109,7 @@ struct ChatView: View {
         await hydrateDraftIfNeeded()
         guard !resumesLoadedChat else {
             // The chat is loaded and its work runs already; nothing is fetched again (TAL-1477).
-            viewedCompletionsThrough = Date()
-            scheduleCompletionAcknowledgement()
+            acknowledgeViewedCompletions()
             isInitialComposerFocusContentReady = true
             applyInitialComposerFocusPolicyIfNeeded()
             return
@@ -2223,8 +2222,7 @@ struct ChatView: View {
             await loadMessages(appliesInitialFocus: false, joinsLoadInFlight: true)
             guard !Task.isCancelled else { return }
         }
-        viewedCompletionsThrough = Date()
-        scheduleCompletionAcknowledgement()
+        acknowledgeViewedCompletions()
         if initialAttachments.isEmpty {
             isInitialComposerFocusContentReady = true
             applyInitialComposerFocusPolicyIfNeeded()
@@ -3279,22 +3277,25 @@ struct ChatView: View {
         return nil
     }
 
+    /// The chat is on screen now: its completions through this instant count as seen.
+    private func acknowledgeViewedCompletions() {
+        completionAcknowledger.markViewed()
+        scheduleCompletionAcknowledgement()
+    }
+
     private func scheduleCompletionAcknowledgement() {
-        guard completionAcknowledgementTask == nil, scenePhase == .active,
-              didCompleteInitialAppearance, viewModel.errorMessage == nil,
-              !viewModel.isViewingCachedData,
-              let viewedAt = viewedCompletionsThrough, let sessionID = session.sessionId,
-              let credentials = TalariaRelayConfigurationStore.load() else { return }
-        completionAcknowledgementGeneration += 1
-        let generation = completionAcknowledgementGeneration
-        completionAcknowledgementTask = Task {
-            defer {
-                if generation == completionAcknowledgementGeneration { completionAcknowledgementTask = nil }
-            }
+        guard scenePhase == .active, didCompleteInitialAppearance, viewModel.errorMessage == nil,
+              !viewModel.isViewingCachedData, let sessionID = session.sessionId else { return }
+        if let acknowledgeViewedCompletionsForTesting {
+            return completionAcknowledger.schedule(acknowledgeViewedCompletionsForTesting)
+        }
+        guard let credentials = TalariaRelayConfigurationStore.load() else { return }
+        let server = server
+        completionAcknowledger.schedule { viewedAt in
             guard let acknowledged = await TalariaCompletionStore.shared.acknowledgeViewedSession(
                 publisherURL: server, sessionID: sessionID, through: viewedAt
-            ) else { return }
-            guard !Task.isCancelled, TalariaRelayConfigurationStore.load() == credentials else { return }
+            ) else { return nil }
+            guard !Task.isCancelled, TalariaRelayConfigurationStore.load() == credentials else { return nil }
             // Retry aggregate cleanup on later thread opens even when an earlier
             // acknowledgement succeeded but its snapshot request failed.
             await AgentLiveActivityManager.shared.reconcileAcknowledgedCompletions(
@@ -3302,14 +3303,13 @@ struct ChatView: View {
                 viewedSessionID: sessionID, through: viewedAt
             )
             try? await TalariaAggregateLiveActivityManager.shared.reconcileAfterAcknowledgement(credentials: credentials)
+            return acknowledged
         }
     }
 
     private func handleScenePhaseChange(_ phase: ScenePhase) {
         if phase != .active {
-            completionAcknowledgementGeneration += 1
-            completionAcknowledgementTask?.cancel()
-            completionAcknowledgementTask = nil
+            completionAcknowledger.cancel()
             flushDraftsBestEffort()
         }
 
@@ -3324,9 +3324,8 @@ struct ChatView: View {
             endResponseCompletionBackgroundTask()
             Task {
                 await viewModel.reconnectStreamIfNeeded(modelContext: modelContext)
-                if viewedCompletionsThrough != nil {
-                    viewedCompletionsThrough = Date()
-                    scheduleCompletionAcknowledgement()
+                if completionAcknowledger.viewedThrough != nil {
+                    acknowledgeViewedCompletions()
                 }
 
                 if let lastError = viewModel.lastError {
@@ -3340,10 +3339,16 @@ struct ChatView: View {
         }
     }
 
-    private func handleActiveStreamChange() {
+    private func handleActiveStreamChange(endedStreamID: String? = nil) {
         guard let activeStreamID = viewModel.activeStreamID else {
             activeStreamStatusRefreshTask?.cancel()
             activeStreamStatusRefreshTask = nil
+
+            // A run that ends on screen is seen, so its Live Activity ends here, as Web does (TAL-1553).
+            if let endedStreamID {
+                completionAcknowledger.runEnded(streamID: endedStreamID, sceneIsActive: scenePhase == .active)
+                scheduleCompletionAcknowledgement()
+            }
 
             if responseCompletionNotificationTracker.shouldEndBackgroundTaskOnStreamInactive(
                 completionTrigger: viewModel.responseCompletionHapticTrigger

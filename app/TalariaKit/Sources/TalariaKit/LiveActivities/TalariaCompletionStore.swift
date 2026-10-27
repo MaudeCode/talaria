@@ -148,3 +148,74 @@ public final class TalariaCompletionStore {
         }
     }
 }
+
+/// One open chat's acknowledgement of its finished runs (TAL-1553). The chat stamps the instant it was last seen on
+/// screen, on open and whenever a run in it ends there; every stamp is acknowledged, after any acknowledgement still
+/// in flight, and a run that just ended is awaited until the relay's inbox holds its completion.
+@MainActor
+public final class ViewedCompletionAcknowledger {
+    /// Acknowledges the chat's completions through an instant, returning those it acknowledged.
+    public typealias Acknowledge = @MainActor (_ through: Date) async -> [TalariaRelayClient.Completion]?
+
+    /// The last instant the chat was seen on screen; nil while it is off screen.
+    public private(set) var viewedThrough: Date?
+    private var endedStreamID: String?
+    private(set) var task: Task<Void, Never>?
+    private let retryDelays: [Duration]
+    private let now: () -> Date
+
+    // ponytail: the publisher sends a run's completion within a snapshot round trip; a relay slower than
+    // these 15 s leaves the row for the next open, as before.
+    public init(retryDelays: [Duration] = [.seconds(1), .seconds(2), .seconds(4), .seconds(8)],
+                now: @escaping () -> Date = Date.init) {
+        self.retryDelays = retryDelays
+        self.now = now
+    }
+
+    /// The chat is on screen now.
+    public func markViewed() {
+        viewedThrough = now()
+    }
+
+    /// A run in the chat ended. It counts as seen only while the chat is on screen in the foreground app.
+    public func runEnded(streamID: String, sceneIsActive: Bool) {
+        guard sceneIsActive, viewedThrough != nil else { return }
+        markViewed()
+        endedStreamID = streamID
+    }
+
+    /// Stops acknowledging; `leavesChat` also forgets that the chat was seen.
+    public func cancel(leavesChat: Bool = false) {
+        task?.cancel()
+        task = nil
+        guard leavesChat else { return }
+        viewedThrough = nil
+        endedStreamID = nil
+    }
+
+    public func schedule(_ acknowledge: @escaping Acknowledge) {
+        // The task in flight acknowledges a newer stamp when it finishes.
+        guard task == nil, let through = viewedThrough else { return }
+        let awaited = endedStreamID
+        let retryDelays = retryDelays
+        let now = now
+        task = Task { [weak self] in
+            var stamp = through
+            var acknowledged = Set((await acknowledge(stamp) ?? []).compactMap(\.row.streamId))
+            // The relay records the completion once the publisher's next snapshot lands; still on screen, the chat
+            // re-reads its inbox through a fresh stamp until the row arrives.
+            for delay in retryDelays where awaited.map(acknowledged.contains) == false {
+                try? await Task.sleep(for: delay)
+                guard !Task.isCancelled, let self else { return }
+                stamp = now()
+                viewedThrough = stamp
+                acknowledged.formUnion((await acknowledge(stamp) ?? []).compactMap(\.row.streamId))
+            }
+            guard !Task.isCancelled, let self else { return }
+            task = nil
+            if let ended = endedStreamID, ended == awaited || acknowledged.contains(ended) { endedStreamID = nil }
+            // A stamp or run end that arrived meanwhile gets its own acknowledgement.
+            if viewedThrough != stamp || endedStreamID != nil { schedule(acknowledge) }
+        }
+    }
+}
