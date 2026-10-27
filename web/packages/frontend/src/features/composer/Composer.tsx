@@ -706,8 +706,10 @@ export const Composer = memo(function Composer(props: ComposerProps) {
   const controls = { sessionId, session, settings, pendingChoices, onExecutionModeChange, onModelChange, onReasoningChange, reasoning, reasoningLevels, reasoningSupported, onWorkspaceChange, onNewWorktreeChat, onRemoveWorktree, onToolsetsChange, terminalOpen, onToggleTerminal, answering, stage, phone, collapsed, configOpen, setConfigOpen, context }
 
   return (
-    <div className="composer-wrap" id="composerWrap">
+    // Drops land anywhere on the composer, the image strip above the card included (TAL-1552).
+    <div className="composer-wrap" id="composerWrap" onDragOver={(e) => { e.preventDefault(); wake(); if (!clarify) setDragOver(true) }} onDragLeave={() => setDragOver(false)} onDrop={onDrop}>
       <ComposerNotices key={sessionId ?? ''} notices={chipNotices} fallbackFocus={textarea} />
+      {!clarify && <AttachmentTray files={files} placement="strip" onRemove={removeFile} onRetry={retryFile} />}
       <div
         className={cn('composer-box relative z-[2] flex flex-col mx-auto max-w-(--msg-max) border-(length:--composer-border-width) border-(--composer-border-color) rounded-(--composer-radius) shadow-(--composer-shadow) transition-[border-color,box-shadow] duration-(--dur) ease-(--ease) focus-within:border-(--composer-focus-border) focus-within:shadow-(--composer-focus-shadow) focus-within:outline-none max-[641px]:rounded-(--composer-radius-phone)', dragOver && 'drag-over', clarify && 'clarify-active', resting && 'is-resting')}
         id="composerBox"
@@ -715,13 +717,10 @@ export const Composer = memo(function Composer(props: ComposerProps) {
         onFocus={() => { setFocusWithin(true); wake() }}
         onPointerDown={wake}
         onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setFocusWithin(false) }}
-        onDragOver={(e) => { e.preventDefault(); wake(); if (!clarify) setDragOver(true) }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={onDrop}
       >
         {palette.open && <CommandPaletteList items={palette.items} active={palette.active} listId={palette.listId} onPick={applySuggestion} onHover={palette.setActive} />}
         {dragOver && <div className="drop-hint active" id="dropHint" aria-hidden="true">{m.drop_files_to_attach()}</div>}
-        {!clarify && <AttachmentTray files={files} onRemove={removeFile} onRetry={retryFile} />}
+        {!clarify && <AttachmentTray files={files} placement="card" onRemove={removeFile} onRetry={retryFile} />}
         <textarea
           ref={textarea}
           id="msg"

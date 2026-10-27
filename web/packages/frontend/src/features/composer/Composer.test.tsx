@@ -176,6 +176,41 @@ describe('Composer', () => {
     expect(document.querySelector('.attach-tray')).toBeNull()
   })
 
+  it('shows pending images as thumbnails in a strip on the card\'s top edge, files in the card, and revokes each preview (TAL-1552)', async () => {
+    const created: string[] = []
+    const createObjectURL = vi.fn((file: Blob) => { const url = `blob:synthetic/${(file as File).name}`; created.push(url); return url })
+    const revokeObjectURL = vi.fn()
+    vi.stubGlobal('URL', Object.assign(class extends URL {}, { createObjectURL, revokeObjectURL }))
+    try {
+      vi.mocked(api.uploadFile).mockImplementation((_id, file) => Promise.resolve({ filename: file.name, path: `/synthetic/${file.name}`, size: 1, mime: file.type }))
+      const view = renderComposer({ ...writable, session_id: 'thumbs' })
+      const files = [new File(['x'], 'shot.png', { type: 'image/png', lastModified: 1 }), new File(['y'], 'other.png', { type: 'image/png', lastModified: 1 }), new File(['z'], 'notes.txt', { type: 'text/plain', lastModified: 1 })]
+      fireEvent.change(document.querySelector<HTMLInputElement>('#fileInput')!, { target: { files } })
+      const card = document.querySelector<HTMLElement>('#composerBox')!
+      await waitFor(() => expect(document.querySelectorAll('.composer-strip--top img')).toHaveLength(2))
+      const strip = document.querySelector<HTMLElement>('.composer-strip--top')!
+      expect(card.contains(strip)).toBe(false)
+      expect(strip.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect([...strip.querySelectorAll('img')].map((img) => img.getAttribute('src'))).toEqual(['blob:synthetic/shot.png', 'blob:synthetic/other.png'])
+      expect(within(card).queryByText('shot.png')).toBeNull()
+      expect(within(card).getByText('notes.txt')).toBeVisible()
+      await waitFor(() => expect(strip.querySelectorAll('[data-status="done"]')).toHaveLength(2))
+      await userEvent.click(screen.getByRole('button', { name: 'Enlarge other.png' }))
+      expect(await screen.findByRole('dialog', { name: 'other.png' })).toBeVisible()
+      await userEvent.keyboard('{Escape}')
+      await userEvent.click(screen.getByRole('button', { name: 'Remove shot.png' }))
+      expect(revokeObjectURL).toHaveBeenCalledExactlyOnceWith('blob:synthetic/shot.png')
+      expect(strip.querySelectorAll('img')).toHaveLength(1)
+      // The strip takes drops like the card does.
+      fireEvent.drop(strip, { dataTransfer: { files: [new File(['w'], 'dropped.png', { type: 'image/png', lastModified: 1 })] } })
+      await waitFor(() => expect(strip.querySelectorAll('img')).toHaveLength(2))
+      view.unmount()
+      expect(revokeObjectURL.mock.calls.map(([url]) => url as string).sort()).toEqual([...created].sort())
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('loads the saved draft before persisting a newly resolved identity', async () => {
     const session_id = 'loading-draft'
     localStorage.setItem(`hermes-draft:${session_id}`, JSON.stringify({ text: 'Draft 日本', updatedAt: Date.now() }))
