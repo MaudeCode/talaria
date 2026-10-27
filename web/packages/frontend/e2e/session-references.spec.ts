@@ -1,6 +1,4 @@
-import { DatabaseSync } from 'node:sqlite'
-import { join } from 'node:path'
-import { serverState } from './server'
+import { openStateDb, serverState } from './server'
 import { expect, test } from './fixtures'
 
 test.use({ serviceWorkers: 'block' })
@@ -11,7 +9,7 @@ test('selects earlier conversations and retains accepted references on lazy crea
   expect(imported.ok()).toBe(true)
   const { session: source } = await imported.json() as { session: { session_id: string } }
   // The replay sidecar never writes Agent state.db. Own this synthetic retained source explicitly.
-  const db = new DatabaseSync(join(serverState('open'), 'state.db'))
+  const db = openStateDb(serverState('open'))
   db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, title TEXT, started_at REAL, parent_session_id TEXT, ended_at REAL, end_reason TEXT); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
   db.prepare('INSERT INTO sessions (id, source, title, started_at) VALUES (?, ?, ?, ?)').run(source.session_id, 'webui', title, Date.now() / 1000)
   db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(source.session_id, 'assistant', 'Earlier answer', Date.now() / 1000)
