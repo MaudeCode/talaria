@@ -249,9 +249,6 @@ struct ChatView: View {
     @State private var hasVerticalToolbar = false
 
     @State private var didCompleteInitialAppearance = false
-    /// The session work of the chat's first appearance finished. Wrapping the chat beside its companion page, or
-    /// unwrapping it, rebuilds it and runs the appearance task again; a reload then could drop rows a run is streaming.
-    @State private var didLoadSession = false
     @State private var isInitialComposerFocusContentReady = false
     @State private var didApplyInitialComposerFocusPolicy = false
     @State private var shouldRestoreComposerFocusAfterPreview = false
@@ -2104,10 +2101,9 @@ struct ChatView: View {
         }
     }
 
-    /// A taken-over chat whose first load finished, or this chat rebuilt after its own: everything it shows is loaded
-    /// and running already.
+    /// A taken-over chat whose first load finished: everything it shows is loaded and running already.
     private var resumesLoadedChat: Bool {
-        didLoadSession || (takesOverLiveChat && retained?.hasLoaded == true)
+        takesOverLiveChat && retained?.hasLoaded == true
     }
 
     private func handleInitialAppearanceTask() async {
@@ -2138,9 +2134,7 @@ struct ChatView: View {
         async let gitAvailability: Void = loadInitialGitAvailability()
         async let draftAttachments: Void = restoreDraftAttachmentsIfNeeded()
         _ = await (chatStartup, gitAvailability, draftAttachments)
-        guard !Task.isCancelled else { return }
-        retained?.hasLoaded = true
-        didLoadSession = true
+        if !Task.isCancelled { retained?.hasLoaded = true }
     }
 
     /// Creates a new chat's session and takes it on in place, so the composer the user is already
