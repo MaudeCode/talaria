@@ -11,6 +11,12 @@
       "summary": "The companion page fades in beside the chat instead of appearing all at once, and appears without motion under Reduce Motion.",
       "highlight": false,
       "components": ["app"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "On iPhone Duo, the chat's toolbar buttons stay in the side bar while the companion page shows; the page's Follow and Files buttons join them.",
+      "highlight": false,
+      "components": ["app"]
     }
   ]
 }
