@@ -1,6 +1,6 @@
 # Pull requests and main pushes run suites selected by the complete changed-path diff. App changes run
 # the TalariaKit package tests with `swift test`, build the App, its extensions and test bundle for
-# testing, and run the simulator-hosted unit tests (TalariaTests) in one simulator job.
+# testing, and run the simulator-hosted unit tests (TalariaTests) in four simulator jobs split by class.
 # Release metadata always validates; uncertain classification runs every suite.
 # The always-reporting CI Gate is the required check, including skipped jobs.
 #
