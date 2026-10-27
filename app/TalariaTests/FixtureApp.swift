@@ -260,6 +260,23 @@ extension XCTestCase {
         return condition()
     }
 
+    /// Waits until no transcript row has realized for 500 ms and returns the settled count, or nil if rows kept
+    /// realizing. Lazy layout can shift the mounted window once more after startup, especially on CI (TAL-1544).
+    @MainActor
+    func awaitQuietRowRealization(_ rows: ChatTranscriptRowCache) async -> Int? {
+        var count = rows.realizationCount
+        let clock = ContinuousClock()
+        var lastRealization = clock.now
+        let settled = await awaitCondition {
+            if rows.realizationCount != count {
+                count = rows.realizationCount
+                lastRealization = clock.now
+            }
+            return clock.now - lastRealization >= .milliseconds(500)
+        }
+        return settled ? count : nil
+    }
+
     /// Reads either composer presentation; a missing composer is not an empty draft.
     @MainActor
     func composerDraftText(in window: UIWindow) -> String? {

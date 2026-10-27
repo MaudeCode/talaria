@@ -43,19 +43,8 @@ final class ChatHostedTests: XCTestCase {
         let ready = await awaitCondition { retained.hasLoaded }
         XCTAssertTrue(ready, "Chat startup must finish before measuring the list refresh")
         _ = try await fixture.client.archiveSession(id: "ui-fixture-session-17", archived: true)
-        // Lazy layout can realize another row after startup, especially on CI.
-        var before = retained.rows.realizationCount
-        let clock = ContinuousClock()
-        var lastRealization = clock.now
-        let rowsSettled = await awaitCondition {
-            let count = retained.rows.realizationCount
-            if count != before {
-                before = count
-                lastRealization = clock.now
-            }
-            return clock.now - lastRealization >= .milliseconds(500)
-        }
-        XCTAssertTrue(rowsSettled, "Transcript row realization must be quiet before measuring the list refresh")
+        let settled = await awaitQuietRowRealization(retained.rows)
+        let before = try XCTUnwrap(settled, "Transcript row realization must be quiet before measuring the list refresh")
         evaluations.reset()
         let loaded = await list.load(modelContext: fixture.cache.mainContext)
         XCTAssertTrue(loaded)
@@ -539,8 +528,8 @@ final class ChatHostedTests: XCTestCase {
         let observer = try XCTUnwrap(window.firstView(ofType: ChatScrollObserver.ObserverView.self))
         let idle = await awaitCondition { observer.coordinator?.scrollPositionController?.isRealizingRows == false }
         XCTAssertTrue(idle)
-        settle(0.5)
-        let before = retained.rows.realizationCount
+        let settled = await awaitQuietRowRealization(retained.rows)
+        let before = try XCTUnwrap(settled, "Transcript row realization must be quiet before the foreground sync")
         let beforeFrame = try await requireElement(in: window, label: "Fixture link request").accessibilityFrame
         let reads = UITestFixtureURLProtocol.answeredPaths.withLock { $0.filter { $0 == "/api/session" }.count }
         NotificationCenter.default.post(name: .talariaReturnedToForeground, object: nil)
