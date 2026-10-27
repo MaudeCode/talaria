@@ -211,6 +211,22 @@ describe('Composer', () => {
     }
   })
 
+  it('keeps the enlarged pending image open when an earlier one finishes uploading (TAL-1552)', async () => {
+    vi.stubGlobal('URL', Object.assign(class extends URL {}, { createObjectURL: (file: Blob) => `blob:synthetic/${(file as File).name}`, revokeObjectURL: vi.fn() }))
+    try {
+      const first = deferred<Awaited<ReturnType<typeof api.uploadFile>>>()
+      vi.mocked(api.uploadFile).mockImplementation((_id, file) => file.name === 'first.png' ? first.promise : Promise.resolve({ filename: file.name, path: `/synthetic/${file.name}`, size: 1, mime: file.type }))
+      renderComposer({ ...writable, session_id: 'enlarged' })
+      fireEvent.change(document.querySelector<HTMLInputElement>('#fileInput')!, { target: { files: ['first.png', 'second.png'].map((name) => new File(['x'], name, { type: 'image/png', lastModified: 1 })) } })
+      await userEvent.click(await screen.findByRole('button', { name: 'Enlarge second.png' }))
+      expect(await screen.findByRole('dialog', { name: 'second.png' })).toBeVisible()
+      await act(async () => { first.resolve({ filename: 'first.png', path: '/synthetic/first.png', size: 1, mime: 'image/png' }); await first.promise })
+      expect(screen.getByRole('dialog', { name: 'second.png' })).toBeVisible()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('loads the saved draft before persisting a newly resolved identity', async () => {
     const session_id = 'loading-draft'
     localStorage.setItem(`hermes-draft:${session_id}`, JSON.stringify({ text: 'Draft 日本', updatedAt: Date.now() }))

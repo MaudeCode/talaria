@@ -52,8 +52,10 @@ export const AttachmentTray = memo(function AttachmentTray({ files, placement, o
 
 function ImageStrip({ images, onRemove, onRetry }: { images: PendingFile[]; onRemove: (key: string) => void; onRetry: (key: string) => void }) {
   const urls = useObjectUrls(useMemo(() => images.map((f) => f.file), [images]))
-  const [enlarged, setEnlarged] = useState<number | null>(null)
+  // The enlarged image by key: an earlier upload finishing reorders `ready` but never switches the open image.
+  const [enlarged, setEnlarged] = useState<string | null>(null)
   const ready = images.flatMap((f) => { const src = urls.get(f.file); return f.status === 'done' && src ? [{ key: f.key, src, name: f.file.name }] : [] })
+  const index = ready.findIndex((r) => r.key === enlarged)
   return (
     <>
       <ul className="attach-tray composer-strip composer-strip--top" aria-label={m.attachments_label()}>
@@ -63,7 +65,7 @@ function ImageStrip({ images, onRemove, onRetry }: { images: PendingFile[]; onRe
           return (
             <li key={f.key} className="attach-thumb" data-status={f.status}>
               <button type="button" className="attach-thumb-image" aria-label={label} title={f.error ?? label} aria-busy={f.status === 'uploading' || undefined} disabled={f.status === 'uploading'}
-                onClick={() => { if (f.status === 'error') onRetry(f.key); else { const i = ready.findIndex((r) => r.key === f.key); if (i >= 0) setEnlarged(i) } }}>
+                onClick={() => { if (f.status === 'error') onRetry(f.key); else setEnlarged(f.key) }}>
                 {src && <img src={src} alt="" draggable={false} />}
                 {f.status === 'uploading' && <span className="attach-thumb-overlay"><LoaderCircle size={16} className="animate-spin motion-reduce:animate-none" aria-hidden="true" /></span>}
                 {f.status === 'error' && <span className="attach-thumb-overlay"><RotateCw size={16} aria-hidden="true" /></span>}
@@ -73,7 +75,7 @@ function ImageStrip({ images, onRemove, onRetry }: { images: PendingFile[]; onRe
           )
         })}
       </ul>
-      <ImageLightbox images={ready} index={enlarged !== null && enlarged < ready.length ? enlarged : null} onIndexChange={setEnlarged} />
+      <ImageLightbox images={ready} index={index >= 0 ? index : null} onIndexChange={(i) => setEnlarged(i === null ? null : ready[i]?.key ?? null)} />
     </>
   )
 }
