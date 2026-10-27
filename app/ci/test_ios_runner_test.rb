@@ -76,7 +76,10 @@ class TestIOSRunnerTest < Minitest::Test
     end
     assert_equal(1, workflow.scan('platform=iOS Simulator,id=${SIMULATOR_ID}').length)
     # Each shard runs the selection ci/hosted-test-shard prints for it (TAL-1550).
-    assert_includes(workflow, 'selection=$(ci/hosted-test-shard args "${SHARD}")')
+    assert_includes(workflow, 'arguments=$(ci/hosted-test-shard args "${SHARD}")')
+    assert_includes(workflow, 'while IFS= read -r argument; do selection+=("${argument}"); done <<< "${arguments}"')
+    # macOS's Bash 3.2 has no mapfile or readarray.
+    refute_match(/mapfile|readarray/, workflow)
     assert_includes(workflow, '"${selection[@]}" \\')
     assert_equal(1, workflow.scan('ci/build-for-testing "${BUILD_DESTINATION}"').length)
     build = File.read(File.expand_path("build-for-testing", __dir__), encoding: "UTF-8")

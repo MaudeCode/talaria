@@ -343,8 +343,10 @@ jobs:
           ci/report-test-failures "${XCODEBUILD_LOG}" "$(git rev-parse HEAD)" "${FAILURE_STATUS}" < /dev/null &
           reporter=$!
           trap 'kill "${reporter}" 2>/dev/null || true' EXIT
-          selection=$(ci/hosted-test-shard args "${SHARD}")
-          mapfile -t selection <<< "${selection}"
+          # A read loop: macOS ships Bash 3.2, which has no array-reading builtin.
+          arguments=$(ci/hosted-test-shard args "${SHARD}")
+          selection=()
+          while IFS= read -r argument; do selection+=("${argument}"); done <<< "${arguments}"
           start_seconds=${SECONDS}
           xctestrun=(Build/Products/*.xctestrun)
           # No run collects the simulator's diagnostics: on a hosted runner that waited 600 s on every run, passing or
