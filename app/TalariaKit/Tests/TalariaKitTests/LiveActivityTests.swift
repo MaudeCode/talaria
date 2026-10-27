@@ -174,6 +174,124 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertEqual(alreadyAcknowledged?.count, 0)
     }
 
+    /// The relay's inbox for one viewed chat: acknowledging through an instant removes the completions that ended by it.
+    @MainActor
+    private final class ViewedCompletionInbox {
+        var pending: [TalariaRelayClient.Completion] = []
+        var stamps: [Date] = []
+        var hold: CheckedContinuation<Void, Never>?
+        var holdsNext = false
+
+        func complete(_ streamID: String, at seconds: Double) {
+            var row = TalariaAggregateActivityAttributes.ContentState.Row(
+                publisherId: "https://hermes.example", publisherLabel: "Hermes", sessionId: "viewed", title: "viewed",
+                phase: "completed", status: "Done", updatedAt: seconds * 1_000, deepLink: "/sessions/viewed"
+            )
+            row.streamId = streamID
+            pending.append(.init(id: streamID, row: row))
+        }
+
+        func acknowledge(through: Date) async -> [TalariaRelayClient.Completion]? {
+            stamps.append(through)
+            if holdsNext {
+                holdsNext = false
+                await withCheckedContinuation { hold = $0 }
+            }
+            let viewed = pending.filter { $0.row.updatedAt <= through.timeIntervalSince1970 * 1_000 }
+            pending.removeAll { viewed.contains($0) }
+            return viewed
+        }
+    }
+
+    private func settle(_ acknowledger: ViewedCompletionAcknowledger) async {
+        while let task = acknowledger.task { await task.value }
+    }
+
+    func testRunEndingOnScreenIsAcknowledgedThroughItsEnd() async {
+        var clock = Date(timeIntervalSince1970: 10)
+        let inbox = ViewedCompletionInbox()
+        let acknowledger = ViewedCompletionAcknowledger(retryDelays: [], now: { clock })
+        acknowledger.markViewed()
+        acknowledger.schedule(inbox.acknowledge)
+        await settle(acknowledger)
+
+        clock = Date(timeIntervalSince1970: 20)
+        inbox.complete("run", at: 15)
+        acknowledger.runEnded(streamID: "run", sceneIsActive: true)
+        acknowledger.schedule(inbox.acknowledge)
+        await settle(acknowledger)
+
+        XCTAssertEqual(inbox.stamps, [Date(timeIntervalSince1970: 10), Date(timeIntervalSince1970: 20)])
+        XCTAssertTrue(inbox.pending.isEmpty, "The run that ended on screen was left unacknowledged")
+    }
+
+    func testRunEndingInTheBackgroundOrAfterLeavingIsNotAcknowledged() async {
+        var clock = Date(timeIntervalSince1970: 10)
+        let inbox = ViewedCompletionInbox()
+        let acknowledger = ViewedCompletionAcknowledger(retryDelays: [], now: { clock })
+        acknowledger.markViewed()
+
+        clock = Date(timeIntervalSince1970: 20)
+        inbox.complete("background", at: 15)
+        acknowledger.runEnded(streamID: "background", sceneIsActive: false)
+        acknowledger.schedule(inbox.acknowledge)
+        await settle(acknowledger)
+        XCTAssertEqual(inbox.stamps, [Date(timeIntervalSince1970: 10)])
+
+        acknowledger.cancel(leavesChat: true)
+        acknowledger.runEnded(streamID: "background", sceneIsActive: true)
+        acknowledger.schedule(inbox.acknowledge)
+        await settle(acknowledger)
+        XCTAssertEqual(inbox.stamps, [Date(timeIntervalSince1970: 10)])
+        XCTAssertEqual(inbox.pending.map(\.id), ["background"])
+    }
+
+    func testBackToBackRunsAreBothAcknowledgedPastAnAcknowledgementInFlight() async {
+        var clock = Date(timeIntervalSince1970: 10)
+        let inbox = ViewedCompletionInbox()
+        let acknowledger = ViewedCompletionAcknowledger(retryDelays: [], now: { clock })
+        acknowledger.markViewed()
+        inbox.holdsNext = true
+        acknowledger.schedule(inbox.acknowledge)
+        while inbox.hold == nil { await Task.yield() }
+
+        clock = Date(timeIntervalSince1970: 20)
+        inbox.complete("first", at: 15)
+        acknowledger.runEnded(streamID: "first", sceneIsActive: true)
+        acknowledger.schedule(inbox.acknowledge)
+        clock = Date(timeIntervalSince1970: 30)
+        inbox.complete("second", at: 25)
+        acknowledger.runEnded(streamID: "second", sceneIsActive: true)
+        acknowledger.schedule(inbox.acknowledge)
+        inbox.hold?.resume()
+        await settle(acknowledger)
+
+        XCTAssertEqual(inbox.stamps, [Date(timeIntervalSince1970: 10), Date(timeIntervalSince1970: 30)])
+        XCTAssertTrue(inbox.pending.isEmpty, "A run that ended during an acknowledgement in flight was dropped")
+    }
+
+    func testCompletionReachingTheRelayAfterTheRunEndsIsAcknowledgedOnceItArrives() async {
+        var clock = Date(timeIntervalSince1970: 10)
+        let inbox = ViewedCompletionInbox()
+        let acknowledger = ViewedCompletionAcknowledger(retryDelays: Array(repeating: .milliseconds(1), count: 4),
+                                                        now: { clock })
+        acknowledger.markViewed()
+        clock = Date(timeIntervalSince1970: 20)
+        acknowledger.runEnded(streamID: "late", sceneIsActive: true)
+        inbox.holdsNext = true
+        acknowledger.schedule(inbox.acknowledge)
+        while inbox.hold == nil { await Task.yield() }
+        // The publisher's snapshot, stamped by the server's clock past the chat's, lands during its first read.
+        clock = Date(timeIntervalSince1970: 22)
+        inbox.complete("late", at: 21)
+        inbox.hold?.resume()
+        await settle(acknowledger)
+
+        XCTAssertTrue(inbox.pending.isEmpty, "The completion that reached the relay late was never acknowledged")
+        XCTAssertEqual(inbox.stamps, [Date(timeIntervalSince1970: 20), Date(timeIntervalSince1970: 22)],
+                       "The chat must re-read once and stop after the completion was acknowledged")
+    }
+
     func testCompletionRefreshCannotResurrectAnAcknowledgedResult() async throws {
         let host = "completion-race.example"
         let configuration = URLSessionConfiguration.ephemeral
