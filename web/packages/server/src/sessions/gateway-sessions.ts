@@ -710,6 +710,8 @@ export class GatewaySessions {
     const registry = this.deps.registry
     const channel = registry.create(watch.stream, target.sid)
     registry.registerActiveRun({ stream_id: watch.stream, session_id: target.sid, phase: 'running', started_at: this.deps.now(), workspace: str(base.workspace), model: str(base.model) || null, provider: null, ephemeral: false, origin: 'user' })
+    // TAL-1564: the sidebar row turns streaming now, including for an idle observation whose owner just started a run.
+    this.deps.events.publish('owner_changed', { profile: target.profile, sessionId: target.sid })
     let chain = Promise.resolve()
     let terminal = false
     let streamError: unknown = null

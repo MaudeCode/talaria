@@ -46,7 +46,6 @@ import { resolvePathLikePython } from './workspace/paths.js'
 import type { MediaAccessDeps, MediaPolicyDeps } from './workspace/media.js'
 import { accessSync, constants as fsConstants, existsSync, statSync } from 'node:fs'
 import { basename, delimiter, dirname, join } from 'node:path'
-import type { Session } from './sessions/session.js'
 import { GitRunner, GitWorkspaceError, pathsOverlap } from './workspace/git.js'
 import { RollbackStore } from './workspace/rollback.js'
 import { UploadInbox } from './workspace/upload.js'
@@ -367,7 +366,8 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     runtime: {
       activeStreamIds,
       runningCronJobs,
-      live: (sid): Session | undefined => (registry.activeRunStreamForSession(sid) ? store.sessions.get(sid) : undefined),
+      // TAL-1564: the registry owns run liveness; a native-owner watch has no Web session in the store.
+      live: (sid) => { const stream = registry.activeRunStreamForSession(sid); return stream ? { stream_id: stream, session: store.sessions.get(sid) } : undefined },
       // Python `_session_attention_summary`: approvals outrank clarify prompts.
       attention: (sid) => {
         const approvals = pending.approvalPending(sid).pending_count

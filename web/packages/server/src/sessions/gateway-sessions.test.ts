@@ -788,6 +788,17 @@ describe('canonical owner attachment', () => {
     })
   })
 
+  it('lights the sidebar row while a native watch runs and announces its start (TAL-1564)', async () => {
+    const changes = vi.spyOn(s.deps.events, 'publish')
+    const row = async () => ((await (await s.get('/api/sessions')).json() as { sessions: Record<string, unknown>[] }).sessions).find((r) => r.session_id === sid)
+    const watch = await observeOwner(snapshot({ running: true, pending: [admission()] }))
+    expect(changes.mock.calls.some(([, opts]) => opts?.sessionId === sid)).toBe(true)
+    expect(await row()).toMatchObject({ is_streaming: true, active_stream_id: watch.stream })
+    watch.finish()
+    await watch.read
+    await vi.waitFor(async () => { expect(await row()).toMatchObject({ is_streaming: false, active_stream_id: null }) })
+  })
+
   it('publishes Web audio only for a live owner-confirmed successful completion', async () => {
     const changes = vi.spyOn(s.deps.events, 'publish')
     const watch = await observeOwner(snapshot({ running: true, pending: [admission()] }))

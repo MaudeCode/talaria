@@ -847,7 +847,8 @@ export async function buildSessionListPayload(store: SessionStore, params: ListP
 export interface RuntimeOverlay {
   activeStreamIds: Set<string>
   runningCronJobs: Map<string, number>
-  live: (sid: string) => Session | undefined
+  /** The session's registered run stream, with its Web session when a direct turn owns it. */
+  live: (sid: string) => { stream_id: string; session: Session | undefined } | undefined
   attention: (sid: string) => Row | null
 }
 
@@ -870,12 +871,13 @@ export function overlayRuntimeRows(rows: Row[], overlay: RuntimeOverlay): Row[] 
     const item = { ...row }
     const sid = str(item.session_id).trim()
     const live = overlay.live(sid)
-    if (live) {
-      item.active_stream_id = live.active_stream_id || null
-      item.has_pending_user_message = live.hasPendingPrompt
+    if (live) item.active_stream_id = live.stream_id
+    const session = live?.session
+    if (session) {
+      item.has_pending_user_message = session.hasPendingPrompt
       for (const key of ['pending_started_at', 'updated_at', 'last_message_at'] as const) {
         const current = num(item[key])
-        const raw = key === 'last_message_at' ? live.compact().last_message_at : (live as unknown as Row)[key]
+        const raw = key === 'last_message_at' ? session.compact().last_message_at : (session as unknown as Row)[key]
         if (num(raw) > current) item[key] = raw
       }
     }
