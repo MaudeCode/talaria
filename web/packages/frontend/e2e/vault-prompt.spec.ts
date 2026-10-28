@@ -47,7 +47,7 @@ test(`${kind} takes a masked answer and sends it only to the respond route`, asy
     await page.screenshot({ path: testInfo.outputPath('prompt-masked.png'), fullPage: true })
     await prompt.getByRole('button', { name: kind === 'unlock' ? 'Unlock' : 'Save', exact: true }).click()
     await expect(prompt).toHaveCount(0)
-    expect(responses).toEqual([{ session_id: sid, clarify_id: kind === 'unlock' ? 'contract-vault-unlock' : 'contract-skill-secret', answers: { [kind === 'unlock' ? 'master_password' : 'secret']: 'correct horse battery' } }])
+    await expect.poll(() => responses).toEqual([{ session_id: sid, clarify_id: kind === 'unlock' ? 'contract-vault-unlock' : 'contract-skill-secret', answers: { [kind === 'unlock' ? 'master_password' : 'secret']: 'correct horse battery' } }])
     await page.screenshot({ path: testInfo.outputPath('prompt-saved.png'), fullPage: true })
     if (kind === 'skill_secret') {
       head = { ...fixture[kind].pending, clarify_id: 'skip-skill-secret', vault: { ...(fixture[kind].pending.vault as object), timeout_at: Date.now() / 1000 + 120 } }
@@ -55,7 +55,7 @@ test(`${kind} takes a masked answer and sends it only to the respond route`, asy
       await expect(prompt).toBeVisible()
       await prompt.getByRole('button', { name: 'Skip', exact: true }).click()
       await expect(prompt).toHaveCount(0)
-      expect(responses[1]).toEqual({ session_id: sid, clarify_id: 'skip-skill-secret', decline: true })
+      await expect.poll(() => responses[1]).toEqual({ session_id: sid, clarify_id: 'skip-skill-secret', decline: true })
     }
   } finally {
     for (const response of streams) response.end()

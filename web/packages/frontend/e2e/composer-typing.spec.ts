@@ -64,7 +64,7 @@ test('typing keeps the model picker and clarification answer usable', async ({ p
     await page.screenshot({ path: testInfo.outputPath('clarification-answer.png') })
     await page.locator('#btnClarifySend').click()
     await expect(page.locator('#clarifyCard')).toHaveCount(0)
-    expect(answers).toEqual([{ session_id: sid, clarify_id: 'typing-prompt', answers: { environment: 'Synthetic environment' } }])
+    await expect.poll(() => answers).toEqual([{ session_id: sid, clarify_id: 'typing-prompt', answers: { environment: 'Synthetic environment' } }])
     await expect(input).toHaveValue('Draft kept')
     await page.screenshot({ path: testInfo.outputPath('draft-restored.png') })
   } finally {

@@ -39,6 +39,8 @@ test('held task actions show their result at once and roll a refusal back', asyn
   await expect(page.locator('[data-job-id="digest"]')).toHaveCount(0)
   await expect(page).toHaveURL(/\/tasks$/)
   await page.screenshot({ path: testInfo.outputPath('delete-shown.png') })
+  // The row hides before the delete reaches the route; settle it only once the request is held.
+  await expect.poll(() => writes).toBe(2)
   jobs = []
   finish({ ok: true })
   await expect(page.locator('[data-job-id="digest"]')).toHaveCount(0)
