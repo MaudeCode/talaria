@@ -306,7 +306,6 @@
 	"retrieval_context_label": "Zindeksowany kontekst",
 	"retrieval_context_preview": "Wcześniejsze wiadomości są przechowywane i mogą być pobierane za pomocą narzędzi kontekstowych",
 	"preserved_task_list_label": "Zachowana lista zadań",
-	"reference_only_label": "Tylko jako odniesienie",
 	"model_usage": "Użycie: /model <nazwa>",
 	"no_model_match": "Brak modelu pasującego do \"",
 	"model_did_you_mean": " — czy chodziło Ci o \"{m}\"?",

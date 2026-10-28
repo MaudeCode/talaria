@@ -208,7 +208,6 @@
 	"command_label": "Comando",
 	"context_compaction_label": "Compactação de contexto",
 	"preserved_task_list_label": "Lista de tarefas preservada",
-	"reference_only_label": "Apenas referência",
 	"model_usage": "Uso: /model <nome>",
 	"no_model_match": "Nenhum modelo correspondendo \"",
 	"model_did_you_mean": " — você quis dizer \"{m}\"?",

@@ -7,7 +7,7 @@ import { reasoningProjection } from './reasoning-display.js'
  */
 import { str } from '../util.js'
 import { createHash } from 'node:crypto'
-import { hasToolUseBlocks, finalAnswerOf, agentRowKind, agentSteerText, isReasoningBlock, markerKind, messageText, normalizeAssistantDisplay, normalizeUserDisplay, reasoningBlockText, reasoningFieldsText, splitDisplayText, stripToolCallXml, decidedResultView, toolResultView, toolOutcome, type ToolResultView } from './merge.js'
+import { hasToolUseBlocks, finalAnswerOf, agentRowKind, agentSteerText, isCompactionRow, isReasoningBlock, markerKind, messageText, normalizeAssistantDisplay, normalizeUserDisplay, reasoningBlockText, reasoningFieldsText, splitDisplayText, stripToolCallXml, decidedResultView, toolResultView, toolOutcome, type ToolResultView } from './merge.js'
 import type { Session } from './session.js'
 import { toolMessageForLimitedPayload } from './window.js'
 import { decidedEditDiff, toolArgs, toolEditDiff } from './tool-display.js'
@@ -482,7 +482,7 @@ function withStoredOutcome(preview: Record<string, unknown>, built: Record<strin
 function turnsOf(messages: unknown[]): Map<string, [Record<string, unknown>, number][]> {
   const turns = new Map<string, [Record<string, unknown>, number][]>()
   messages.forEach((m, index) => {
-    if (!isDict(m) || markerKind(m) || (m.role === 'assistant' && agentRowKind(m))) return
+    if (!isDict(m) || markerKind(m) || isCompactionRow(m) || (m.role === 'assistant' && agentRowKind(m))) return
     const id = str(m._turn_id)
     if (!id) return
     const rows = turns.get(id) ?? []

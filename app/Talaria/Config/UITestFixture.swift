@@ -27,7 +27,7 @@ struct UITestFixtureEnvironment {
     /// Serves a transcript with automatic background wakeups in the server's `_background_update` shape (TAL-371).
     nonisolated static let backgroundUpdatesArgument = "--ui-test-background-updates"
     /// Serves a compacted chat whose reference card the server placed after its second row (TAL-560).
-    nonisolated static let compressionReferenceArgument = "--ui-test-compression-reference"
+    nonisolated static let compactionRowArgument = "--ui-test-compaction-row"
     /// Serves the fixture chat as a branch of "Fixture Session 01", which opens with its own transcript (TAL-454).
     nonisolated static let branchedFromArgument = "--ui-test-branched-from"
     /// Answers the chat's first transcript load, so the cache exists, then holds every reopen
@@ -91,8 +91,8 @@ struct UITestFixtureEnvironment {
     nonisolated static var hasBackgroundUpdates: Bool {
         ProcessInfo.processInfo.arguments.contains(backgroundUpdatesArgument)
     }
-    nonisolated static var hasCompressionReference: Bool {
-        ProcessInfo.processInfo.arguments.contains(compressionReferenceArgument)
+    nonisolated static var hasCompactionRow: Bool {
+        ProcessInfo.processInfo.arguments.contains(compactionRowArgument)
     }
     nonisolated static var hasBranchedFrom: Bool {
         ProcessInfo.processInfo.arguments.contains(branchedFromArgument)
@@ -1036,15 +1036,16 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             return json(["session": detail])
         }
 
-        if UITestFixtureEnvironment.hasCompressionReference {
+        if UITestFixtureEnvironment.hasCompactionRow {
             var detail = session(id: sessionID, title: sessionTitle)
             detail["messages"] = [
                 ["role": "user", "content": "Plan the migration.", "message_id": "reference-prompt", "_ts": 2_000_000_000, "_turn_id": "plan"],
                 ["role": "assistant", "content": "Here is the plan.", "message_id": "reference-plan", "_ts": 2_000_000_001, "_turn_id": "plan"],
+                ["role": "marker", "content": "Earlier turns were summarised.", "message_id": "compaction:fixture", "_ts": 2_000_000_001, "_turn_id": "plan",
+                 "_marker_kind": "context_compaction", "_display": "row"],
                 ["role": "user", "content": "Start step one.", "message_id": "reference-step", "_ts": 2_000_000_002, "_turn_id": "step"],
                 ["role": "assistant", "content": "Step one done.", "message_id": "reference-done", "_ts": 2_000_000_003, "_turn_id": "step"]
             ]
-            detail["compression_reference"] = ["text": "Earlier turns were summarised.", "after_message_index": 1]
             return json(["session": detail])
         }
         if UITestFixtureEnvironment.hasBackgroundUpdates {

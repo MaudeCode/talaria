@@ -1357,9 +1357,9 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     const sid = await seeded(FOUR)
     expect((await post(s, '/api/session/compress', { session_id: sid })).status).toBe(200)
     const covered = maxId(sid)
-    expect(await served(sid)).toEqual(['u1', 'a1', 'u2', 'a2'])
+    expect(await served(sid)).toEqual(['u1', 'a1', 'u2', 'a2', 'Compressed'])
     commit(sid, [['user', 'late CLI', 102.5]])
-    expect(await served(sid)).toEqual(['u1', 'a1', 'u2', 'a2', 'late CLI'])
+    expect(await served(sid)).toEqual(['u1', 'a1', 'u2', 'a2', 'Compressed', 'late CLI'])
     expect((await sent(sid))).toEqual(['u1', 'a2', 'late CLI'])
     expect((await s.deps.sessionStore.get(sid)).state_db_seen_id).toBe(covered)
   })
@@ -2302,15 +2302,18 @@ describe('session detail stamps compaction markers (TAL-305)', () => {
     expect(served).toEqual(fixture.messages)
   })
 
-  it('serves the shared compression reference example exactly as the contract fixture records it (TAL-560)', async () => {
-    const fixture = (JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as Json).compression_reference_session as Json
+  it('serves the shared compaction row example exactly as the contract fixture records it (TAL-1566)', async () => {
+    const fixture = (JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as Json).compaction_row_session as Json
     const sid = String((await newSession(s)).session_id)
     const session = (await s.deps.sessionStore.get(sid))
     Object.assign(session, structuredClone(fixture.stored))
     await s.deps.sessionStore.save(session)
+    // Read back from its file, as a session an earlier release compacted loads.
+    s.deps.sessionStore.sessions.delete(sid)
     const served = (await json(await s.get(`/api/session?session_id=${sid}&${String(fixture.query)}`))).session as Json
     const expected = fixture.session as Json
-    for (const key of ['_messages_offset', 'messages', 'compression_reference']) expect(served[key]).toEqual(expected[key])
+    for (const key of ['_messages_offset', 'messages']) expect(served[key]).toEqual(expected[key])
+    expect(served).not.toHaveProperty('compression_reference')
   })
 })
 

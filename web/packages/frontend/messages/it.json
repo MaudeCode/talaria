@@ -306,7 +306,6 @@
 	"retrieval_context_label": "Contesto indicizzato",
 	"retrieval_context_preview": "I messaggi precedenti sono archiviati e recuperabili con gli strumenti di contesto",
 	"preserved_task_list_label": "Lista task preservata",
-	"reference_only_label": "Solo riferimento",
 	"model_usage": "Uso: /model <nome>",
 	"no_model_match": "Nessun modello corrispondente a \"",
 	"model_did_you_mean": " — intendevi \"{m}\"?",

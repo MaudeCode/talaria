@@ -1,0 +1,3 @@
+{
+  "entries": [{"category": "Fixed", "summary": "Context compaction notices now appear as a single line in the chat that matches the lines around it, stay where the compaction happened through later messages and reloads, and every compaction in a chat is shown.", "highlight": false, "components": ["app", "web"]}]
+}

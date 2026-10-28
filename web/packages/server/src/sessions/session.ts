@@ -9,6 +9,7 @@ import { str } from '../util.js'
 import { randomUUID } from 'node:crypto'
 import { resolvePathLikePython } from '../workspace/paths.js'
 import { turnOrigin } from './background-updates.js'
+import { withLegacyCompactionRow } from './compress.js'
 
 export type Message = Record<string, unknown>
 export type ToolCall = Record<string, unknown>
@@ -378,6 +379,7 @@ export class Session {
     this.compression_anchor_visible_idx = take('compression_anchor_visible_idx', null)
     this.compression_anchor_message_key = take('compression_anchor_message_key', null)
     this.compression_anchor_summary = take('compression_anchor_summary', null)
+    withLegacyCompactionRow(this)
     this.pre_compression_snapshot = Boolean(take('pre_compression_snapshot', false))
     this.context_engine = take('context_engine', null)
     this.compression_anchor_engine = take('compression_anchor_engine', null)

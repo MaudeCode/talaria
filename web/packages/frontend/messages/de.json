@@ -293,7 +293,6 @@
 	"retrieval_context_label": "Indizierter Kontext",
 	"retrieval_context_preview": "Frühere Nachrichten sind gespeichert und über Kontextwerkzeuge abrufbar",
 	"preserved_task_list_label": "Beibehaltene Aufgabenliste",
-	"reference_only_label": "Nur Referenz",
 	"model_usage": "Nutzung: /model <name>",
 	"no_model_match": "Kein Modell gefunden für \"",
 	"model_did_you_mean": " — meintest du \"{m}\"?",

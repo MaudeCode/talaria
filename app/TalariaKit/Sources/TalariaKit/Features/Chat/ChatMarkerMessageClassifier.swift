@@ -5,9 +5,6 @@ import Foundation
 public enum ChatMarkerMessageKind: Equatable {
     case contextCompaction
     case preservedTaskList
-    /// "Context compaction · Reference only" card from the session's
-    /// `compression_reference` (TAL-560) — never sent as a `_marker_kind`.
-    case compressionReference
 
     /// The server's `_marker_kind`; an unknown kind renders as an ordinary message.
     init?(wireValue: String?) {
@@ -18,17 +15,16 @@ public enum ChatMarkerMessageKind: Equatable {
         }
     }
 
-    var wireValue: String? {
+    var wireValue: String {
         switch self {
         case .contextCompaction: "context_compaction"
         case .preservedTaskList: "preserved_task_list"
-        case .compressionReference: nil
         }
     }
 
     public var title: String {
         switch self {
-        case .contextCompaction, .compressionReference:
+        case .contextCompaction:
             return String(localized: "Context compaction")
         case .preservedTaskList:
             return String(localized: "Preserved task list")

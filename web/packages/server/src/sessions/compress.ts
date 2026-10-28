@@ -3,8 +3,9 @@
  * `_handle_session_compress` helpers) and the per-session job table shared by `/api/session/compress` and the
  * `compress/start` + `compress/status` pair.
  */
+import { createHash, randomUUID } from 'node:crypto'
 import { str } from '../util.js'
-import { isContextCompressionMarker, isDict, messageText } from './merge.js'
+import { compactionRow, isCompactionRow, isContextCompressionMarker, isDict, messageText } from './merge.js'
 import type { Message, Session } from './session.js'
 
 const hasPartType = (content: unknown, types: string[]): boolean => Array.isArray(content) && content.some((p) => isDict(p) && types.includes(str(p.type)))
@@ -13,7 +14,7 @@ const plainText = (content: unknown): string => (Array.isArray(content) ? conten
 
 /** A transcript row a compression may anchor to. */
 export function isAnchorCandidate(m: unknown): m is Message {
-  if (!isDict(m) || !m.role || m.role === 'tool' || isContextCompressionMarker(m)) return false
+  if (!isDict(m) || !m.role || m.role === 'tool' || isContextCompressionMarker(m) || isCompactionRow(m)) return false
   if (plainText(m.content) || Boolean(m.attachments && (!Array.isArray(m.attachments) || m.attachments.length))) return true
   if (m.role !== 'assistant') return false
   return (Array.isArray(m.tool_calls) && m.tool_calls.length > 0) || hasPartType(m.content, ['tool_use', 'thinking', 'reasoning']) || Boolean(m.reasoning)
@@ -47,29 +48,36 @@ export function keyMatches(stored: Record<string, unknown>, row: Record<string, 
   return stored.ts === null || stored.ts === undefined || row.ts === null || stored.ts === row.ts
 }
 
-export interface CompressionReference { text: string; after_message_index: number | null }
+/**
+ * TAL-1566: records one compaction as its transcript row, after row `after` (-1: first) and the rest of that row's turn
+ * and tool results, so it falls between turns. The row takes its neighbour's time so timestamps stay in order, and
+ * recorded tool calls past it keep naming their own rows.
+ */
+export function insertCompactionRow(s: Pick<Session, 'messages' | 'tool_calls'>, after: number, summary: string, now: number, id: string = randomUUID()): void {
+  const turn = s.messages[after]?._turn_id
+  let at = after + 1
+  while (at < s.messages.length && (s.messages[at]!.role === 'tool' || (turn && s.messages[at]!._turn_id === turn))) at += 1
+  const timestamp = s.messages[at - 1]?.timestamp ?? s.messages[at]?.timestamp ?? now
+  s.messages = [...s.messages.slice(0, at), compactionRow(summary, timestamp, id), ...s.messages.slice(at)]
+  for (const call of s.tool_calls) if (typeof call.assistant_msg_idx === 'number' && call.assistant_msg_idx >= at) call.assistant_msg_idx += 1
+}
 
 /**
- * TAL-560: the "Context compaction · Reference only" card: the compaction summary and the row of `messages` (a full
- * display transcript, so the index is in the `_messages_offset` space of every window) it renders after; null there puts
- * it above the transcript. The anchor key's newest match wins, else the stored visible index. Null without a summary or
- * when a compaction marker row in the transcript already shows it.
+ * TAL-1566: a session an earlier release compacted kept only its anchor fields, which a separate reference card showed. It
+ * loads with that compaction's row in place: after the anchor key's newest match, else the stored visible index, else
+ * first. Nothing changes without a summary, without rows, or when a row already shows it.
  */
-export function compressionReference(s: Session, messages: unknown[]): CompressionReference | null {
+export function withLegacyCompactionRow(s: Pick<Session, 'messages' | 'tool_calls' | 'compression_anchor_summary' | 'compression_anchor_message_key' | 'compression_anchor_visible_idx'>): void {
   const text = oneLine(str(s.compression_anchor_summary))
-  if (!text) return null
-  if (messages.some((m) => isContextCompressionMarker(m) && oneLine(messageText((m as Message).content)).includes(text))) return null
+  const messages = s.messages
+  if (!text || !messages.length) return
+  if (messages.some((m) => (isCompactionRow(m) && oneLine(messageText(m.content)) === text) || (isContextCompressionMarker(m) && oneLine(messageText(m.content)).includes(text)))) return
   const candidates = messages.flatMap((m, index) => (isAnchorCandidate(m) ? [index] : []))
   const key = s.compression_anchor_message_key
-  if (isDict(key)) {
-    const match = candidates.findLast((index) => { const row = anchorMessageKey(messages[index] as Message); return row !== null && keyMatches(key, row) })
-    if (match !== undefined) return { text, after_message_index: match }
-  }
+  const match = isDict(key) ? candidates.findLast((index) => { const row = anchorMessageKey(messages[index]); return row !== null && keyMatches(key, row) }) : undefined
   const visibleIdx = s.compression_anchor_visible_idx
-  if (typeof visibleIdx === 'number' && Number.isInteger(visibleIdx) && visibleIdx >= 0 && candidates.length) {
-    return { text, after_message_index: candidates[Math.min(visibleIdx, candidates.length - 1)]! }
-  }
-  return { text, after_message_index: null }
+  const after = match ?? (typeof visibleIdx === 'number' && Number.isInteger(visibleIdx) && visibleIdx >= 0 && candidates.length ? candidates[Math.min(visibleIdx, candidates.length - 1)]! : -1)
+  insertCompactionRow(s, after, text, 0, `legacy-${createHash('sha256').update(text).digest('hex').slice(0, 16)}`)
 }
 
 /** TAL-540, Python `_compression_summary_from_messages`: an auto-compression's anchor summary is its newest marker's text. */

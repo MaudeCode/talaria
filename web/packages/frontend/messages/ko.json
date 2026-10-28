@@ -293,7 +293,6 @@
 	"retrieval_context_label": "Indexed context",
 	"retrieval_context_preview": "Earlier messages are stored and retrievable with context tools",
 	"preserved_task_list_label": "보존된 작업 목록",
-	"reference_only_label": "Reference only",
 	"model_usage": "Usage: /model <name>",
 	"no_model_match": "No model matching \"",
 	"model_did_you_mean": " — did you mean \"{m}\"?",

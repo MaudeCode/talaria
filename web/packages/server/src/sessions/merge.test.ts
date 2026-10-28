@@ -472,11 +472,15 @@ describe('compaction markers (TAL-305)', () => {
     expect(assistantReplyAddedAfterCurrentTurn([{ role: 'user', content: 'go' }, { role: 'assistant', content: 'Done.' }, boundary], [], 'go')).toBe(true)
   })
 
-  it('drops bracketed markers of either case from the settled display', () => {
-    const previous = [{ role: 'user', content: 'Hi' }, { role: 'assistant', content: 'Hello' }, { role: 'user', content: '[context compaction] old summary' }]
+  it("keeps an earlier compaction's row in place and drops the model context's markers of either case (TAL-1566)", () => {
+    const previous = [{ role: 'user', content: 'Hi' }, { role: 'assistant', content: 'Hello' }, { role: 'user', content: '[context compaction] old summary', _state_db_row_id: 7, timestamp: 3 }]
     const result = [...previous.slice(0, 2), { role: 'user', content: '[CONTEXT COMPACTION] new summary' }, { role: 'user', content: 'Next' }, { role: 'assistant', content: 'Context compaction is a summary step.' }]
     const merged = mergeDisplayMessagesAfterAgentResult(previous, previous, result, 'Next')
-    expect(merged.map((m) => m.content)).toEqual(['Hi', 'Hello', 'Next', 'Context compaction is a summary step.'])
+    expect(merged.map((m) => [m.role, m.content])).toEqual([['user', 'Hi'], ['assistant', 'Hello'], ['marker', '[context compaction] old summary'], ['user', 'Next'], ['assistant', 'Context compaction is a summary step.']])
+    expect(merged[2]).toEqual({ role: 'marker', content: '[context compaction] old summary', message_id: 'compaction:state-db-7', timestamp: 3, _marker_kind: 'context_compaction' })
+    // The row survives the turn after that one too.
+    const again = mergeDisplayMessagesAfterAgentResult(merged, merged.filter((m) => m.role !== 'marker'), [...merged.filter((m) => m.role !== 'marker'), { role: 'user', content: 'More' }, { role: 'assistant', content: 'Sure.' }], 'More')
+    expect(again.map((m) => m.content)).toEqual(['Hi', 'Hello', '[context compaction] old summary', 'Next', 'Context compaction is a summary step.', 'More', 'Sure.'])
   })
 })
 

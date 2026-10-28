@@ -3407,11 +3407,22 @@ describe('chat turns through the sidecar', () => {
       expect(stored.compression_anchor_visible_idx).toBe(1)
       expect(stored.compression_anchor_message_key).toMatchObject({ role: 'assistant', text: 'Here is the plan.' })
       expect(stored.compression_anchor_summary).toBe('[CONTEXT COMPACTION] Earlier we made a plan.')
-      // The terminal session places the reference card after that answer.
+      // TAL-1566: the terminal session shows the compaction's own row after that answer, before this turn.
       const done = frames.find((f) => f.event === 'done')?.data as Json
-      expect((done.session as Json).compression_reference).toEqual({ text: '[CONTEXT COMPACTION] Earlier we made a plan.', after_message_index: 1 })
+      const shown = (rows: unknown): unknown[] => (rows as Json[]).map((m) => [m.role, m.content])
+      const compaction = ['marker', '[CONTEXT COMPACTION] Earlier we made a plan.']
+      expect(shown((done.session as Json).messages)).toEqual([['user', 'make a plan'], ['assistant', 'Here is the plan.'], compaction, ['user', 'continue'], ['assistant', 'Continuing.']])
+      expect((done.session as Json)).not.toHaveProperty('compression_reference')
       // The frame carries the ring's post-compression figures, so the client updates it before `done`.
       expect(frames.find((f) => f.event === 'compressed')?.data).toMatchObject({ usage: { context_used_tokens: 1234, context_window_tokens: 200000, context_usage_percent: 1, context_threshold_percent: 50 } })
+      // The row stays in place through the next turn, and the model never receives it.
+      let history: Json[] = []
+      sidecar.respond('chat.start', (params) => { history = params.conversation_history; return completed([...params.conversation_history, { role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Done.' }]) })
+      const next = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'finish' }))
+      await s.sse(`/api/chat/stream?stream_id=${String(next.stream_id)}`, (f) => f.event === 'stream_end')
+      expect(history.some((m) => m.role === 'marker')).toBe(false)
+      const detail = ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages
+      expect(shown(detail)).toEqual([['user', 'make a plan'], ['assistant', 'Here is the plan.'], compaction, ['user', 'continue'], ['assistant', 'Continuing.'], ['user', 'finish'], ['assistant', 'Done.']])
     } finally {
       turns.deps.saveMode = original
     }

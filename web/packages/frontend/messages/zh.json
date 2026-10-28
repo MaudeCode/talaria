@@ -293,7 +293,6 @@
 	"retrieval_context_label": "已索引上下文",
 	"retrieval_context_preview": "较早消息已存储，可通过上下文工具检索",
 	"preserved_task_list_label": "保留的任务列表",
-	"reference_only_label": "仅供参考",
 	"model_usage": "用法：/model <name>",
 	"no_model_match": "没有匹配“",
 	"model_did_you_mean": "，您是否想选择“{m}”？",

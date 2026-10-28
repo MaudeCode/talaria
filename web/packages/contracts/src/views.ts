@@ -231,8 +231,10 @@ export const MessageSchema = z.looseObject({
     review_state: BackgroundReviewStateSchema.optional(),
   }).optional(),
   /**
-   * TAL-305: a marker the Agent wrote around context compaction, not a message anyone typed. Clients render a collapsed
-   * card with a localized title per kind and the body on expansion: `_marker_body` when sent, else `content`.
+   * TAL-305: a marker around context compaction, not a message anyone typed. Clients render a collapsed line with a
+   * localized title per kind and the body on expansion: `_marker_body` when sent, else `content`. TAL-1566: each compaction
+   * Web runs is one row in its place, with role `marker` and a stable `message_id`, display-only and excluded from model
+   * history; it is never a turn's prompt or reply.
    */
   _marker_kind: z.enum(['context_compaction', 'preserved_task_list']).optional(),
   /** TAL-305: a preserved task list's card body, without its marker line. */
@@ -331,17 +333,6 @@ const IsMessagingSessionSchema = z.boolean().describe('`source_kind` is `messagi
  */
 const WorkspaceNameSchema = NullableString.optional()
 
-/**
- * TAL-560: the "Context compaction · Reference only" card, on payloads that carry `messages`. Clients render `text` after
- * the row at full-transcript index `after_message_index` (row `after_message_index - _messages_offset` of `messages`), or
- * above the loaded rows when it is null or before them. Null: no card.
- */
-export const CompressionReferenceSchema = z.object({
-  text: z.string(),
-  after_message_index: z.number().int().nonnegative().nullable().describe('The full-transcript index of the row the card follows; null puts it above the transcript.'),
-})
-export type CompressionReference = z.infer<typeof CompressionReferenceSchema>
-
 /** TAL-454: the chat a `/branch` copied, with its redacted title. */
 export const BranchedFromSchema = z.object({ session_id: SessionIdSchema, title: z.string() })
 export type BranchedFrom = z.infer<typeof BranchedFromSchema>
@@ -409,7 +400,6 @@ export const SessionSchema = z.looseObject({
   /** The agent's display name: a named profile's own name, else the `bot_name` setting (TAL-458). */
   assistant_name: z.string().optional(),
   workspace_name: WorkspaceNameSchema,
-  compression_reference: CompressionReferenceSchema.nullable().optional(),
   focus_path: NullableString.optional().describe('TAL-1458: the last non-null `focus_path` of the session\'s persisted tool calls, so a reopened chat shows its file before any stream event; null when none.'),
   branched_from: BranchedFromSchema.nullable().optional().describe('TAL-454: the chat this one was branched from while it still loads (archived included); null for a compression continuation, a deleted or missing parent, and every other chat.'),
 })

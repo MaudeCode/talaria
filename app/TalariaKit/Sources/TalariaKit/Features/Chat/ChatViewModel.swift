@@ -244,8 +244,6 @@ public final class ChatViewModel {
             if !wasDeferring {
                 if messages != previousMessages || messagesOffset != previousOffset {
                     recomputeDisplayedTranscriptMessages()
-                } else {
-                    recomputeCompressionReferenceCard()
                 }
             }
         }
@@ -261,14 +259,6 @@ public final class ChatViewModel {
             from: messages,
             messageOffset: messagesOffset
         )
-        recomputeCompressionReferenceCard()
-    }
-    /// The "Context compaction · Reference only" card the server placed (TAL-560); nil shows none.
-    public private(set) var compressionReferenceCard: CompressionReferenceCard?
-    @ObservationIgnored private var compressionReference: CompressionReference?
-    private func applyCompressionReference(from session: SessionDetail?) {
-        compressionReference = session?.compressionReference
-        recomputeCompressionReferenceCard()
     }
     /// TAL-833: the standing `/goal` every session detail carries; nil hides its chip.
     public private(set) var sessionGoal: SessionGoal?
@@ -338,25 +328,6 @@ public final class ChatViewModel {
     /// The cached link paints with the cached transcript; a failed read shows none.
     private func restoreCachedBranchedFrom(sessionID: String, modelContext: ModelContext) {
         branchedFrom = try? CacheStore.cachedBranchedFrom(serverURL: server, sessionID: sessionID, in: modelContext)
-    }
-    private func clearCompressionReference() {
-        compressionReference = nil
-        compressionReferenceCard = nil
-    }
-    private func recomputeCompressionReferenceCard() {
-        guard !isDeferringTranscriptMapping else { return }
-        // Not folded into the messages/messagesOffset observers alone:
-        // applyCompletedStreamSession can update the reference without
-        // reassigning messages, so reference changes recompute here too. The
-        // equality guard keeps the overlapping triggers observer-silent.
-        let card = Self.compressionReferenceCard(
-            reference: compressionReference,
-            messagesOffset: messagesOffset,
-            transcriptMessages: displayedTranscriptMessages
-        )
-        guard compressionReferenceCard != card else { return }
-
-        compressionReferenceCard = card
     }
     private(set) var liveAssistantActivity = AssistantActivityTimeline()
     public var liveActivityRows: [AssistantActivityRow] { liveAssistantActivity.rows }
@@ -1853,7 +1824,6 @@ public final class ChatViewModel {
             // read-only flag behind once its transcript has been rejected.
             applyReadOnlyState(from: session, noticesChangesAtFetch: noticesChangesAtFetch, reasoningReadGeneration: loadRequestGeneration)
             serverConfirmsDeepTruncate = session?.confirmsDeepTruncate == true
-            applyCompressionReference(from: session)
             applyBranchedFrom(from: session, modelContext: modelContext)
             // The live stream names newer files than a detail read mid-run, so the detail only seeds the page.
             companionFocus.seed(session?.focusPath)
@@ -1921,7 +1891,6 @@ public final class ChatViewModel {
                 do {
                     let cachedMessages = try readTranscriptCache(server, sessionID, modelContext)
                     if !cachedMessages.messages.isEmpty {
-                        clearCompressionReference()
                         restoreCachedBranchedFrom(sessionID: sessionID, modelContext: modelContext)
                         restoreCachedTranscriptWindow(cachedMessages)
                         cachedRunStatus = try CacheStore.cachedRunStatus(serverURL: server, sessionID: sessionID, in: modelContext)
@@ -2123,7 +2092,6 @@ public final class ChatViewModel {
             let didAddMessages = mergedMessages.count > messages.count
             if didAddMessages { beforePrepend() }
             withDeferredTranscriptMapping {
-                applyCompressionReference(from: session)
                 messages = mergedMessages
                 latestServerLoadHadAssistantResponseAfterLatestUser = Self.hasAssistantResponseAfterLatestUser(
                     in: messages
@@ -2646,14 +2614,14 @@ public final class ChatViewModel {
         guard !messages.isEmpty else { return false }
 
         let searchRange: Range<Int>
-        if let latestUserIndex = messages.lastIndex(where: { $0.role == "user" }) {
+        if let latestUserIndex = messages.lastIndex(where: TranscriptTurnClassifier.isUserTurnBoundary) {
             searchRange = messages.index(after: latestUserIndex)..<messages.endIndex
         } else {
             searchRange = messages.startIndex..<messages.endIndex
         }
 
         return messages[searchRange].contains { message in
-            guard message.role == "assistant" else { return false }
+            guard message.role == "assistant", message.markerKind == nil else { return false }
             return hasAssistantResponseContent(message)
         }
     }
@@ -3611,7 +3579,6 @@ public final class ChatViewModel {
     func clearTranscript() {
         cancelPendingStreamingScrollTrigger()
         resetPendingStreamingContentBuffers()
-        clearCompressionReference()
         messages = []
         messagesOffset = 0
         recentMessagesOffset = nil
@@ -4435,7 +4402,6 @@ public final class ChatViewModel {
             }
 
             applyReadOnlyState(from: session)
-            applyCompressionReference(from: session)
             messages = session.messages ?? []
             updateOlderMessagePagination(from: session, loadedMessageCount: messages.count)
             isViewingCachedData = false
@@ -5885,7 +5851,6 @@ public final class ChatViewModel {
 
         streamCoordinator.applySessionActivityPhase(completedSession.activityPhase)
         applyReadOnlyState(from: completedSession)
-        applyCompressionReference(from: completedSession)
 
         var didApplyCompletedTranscript = false
         if let completedMessages = completedSession.messages,

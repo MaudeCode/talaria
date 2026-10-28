@@ -293,7 +293,6 @@
 	"retrieval_context_label": "インデックス済みコンテキスト",
 	"retrieval_context_preview": "以前のメッセージは保存され、コンテキストツールで取得できます",
 	"preserved_task_list_label": "保持されたタスクリスト",
-	"reference_only_label": "参照専用",
 	"model_usage": "使い方: /model <名前>",
 	"no_model_match": "一致するモデルなし: \"",
 	"model_did_you_mean": "（もしかして \"{m}\"？）",

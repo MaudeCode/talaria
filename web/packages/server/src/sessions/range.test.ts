@@ -266,7 +266,7 @@ it('widens sparse visible pages without repeatedly deriving the same prefix', as
   } finally { vi.restoreAllMocks(); await server.close() }
 })
 
-it('keeps a running turn record-only tool row in the compression anchor coordinates', async () => {
+it("keeps an earlier release's compaction out of a running turn, at one position in every window", async () => {
   const server = await bootTestServer()
   try {
     const turn = 'range-record-live', started = server.deps.sessions.deps.now()
@@ -284,11 +284,11 @@ it('keeps a running turn record-only tool row in the compression anchor coordina
     }, { workspace: server.state, model: null })
     server.deps.sessions.deps.runtime.activeStreamIds.add(turn)
     await server.deps.sessionStore.save(session)
+    server.deps.sessionStore.sessions.delete(session.session_id)
+    const at = (page: Record<string, unknown>): number => Number(page._messages_offset ?? 0) + (page.messages as Message[]).findIndex((m) => m.role === 'marker')
     const full = (await server.deps.sessions.detail(session.session_id, {}))
-    expect(full.compression_reference).toEqual({ text: 'reference', after_message_index: 3 })
-    for (const query of [{ msg_limit: '50' }, { msg_limit: '1', msg_before: '2' }]) {
-      expect((await server.deps.sessions.detail(session.session_id, query)).compression_reference).toEqual(full.compression_reference)
-    }
+    expect((full.messages as Message[]).map((m) => m.content)).toEqual(['earlier', 'settled reply', 'pending', '', 'reference'])
+    for (const query of [{ msg_limit: '50' }, { msg_limit: '1', msg_before: '5' }]) expect(at(await server.deps.sessions.detail(session.session_id, query))).toBe(at(full))
   } finally { await server.close() }
 })
 

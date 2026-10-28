@@ -293,7 +293,6 @@
 	"retrieval_context_label": "Contexte indexé",
 	"retrieval_context_preview": "Les messages plus anciens sont stockés et récupérables via les outils de contexte",
 	"preserved_task_list_label": "Liste de tâches préservée",
-	"reference_only_label": "Référence uniquement",
 	"model_usage": "Utilisation : /model <nom>",
 	"no_model_match": "Aucun modèle correspondant à \"",
 	"model_did_you_mean": " — vouliez-vous dire \"{m}\" ?",

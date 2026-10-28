@@ -1,61 +1,70 @@
 import SwiftUI
 import TalariaKit
 
-/// Collapsible card for the rows the server marks as compaction markers, in place
-/// of a message bubble. Mirrors Web's marker card and follows the
-/// `ReasoningBlockView` disclosure pattern.
+/// A row the server marks as a compaction marker or preserved task list (TAL-305), in place of a message bubble: one flat
+/// disclosure line on the `ReasoningBlockView` pattern, so it reads like the transcript's other activity rows (TAL-1566).
 struct MarkerMessageCardView: View {
     let kind: ChatMarkerMessageKind
     let content: String?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.chatDisclosureToggled) private var chatDisclosureToggled
     @ChatRetainedState("marker-expansion") private var isExpanded = false
 
-    init(kind: ChatMarkerMessageKind, content: String?) {
+    /// `stateID` names the row, so its expansion follows it, not its kind or position.
+    init(kind: ChatMarkerMessageKind, content: String?, stateID: String) {
         self.kind = kind
         self.content = content
-        _isExpanded = ChatRetainedState(wrappedValue: false, "marker:\(String(describing: kind))")
+        _isExpanded = ChatRetainedState(wrappedValue: false, "marker-expansion:\(stateID)")
     }
 
     var body: some View {
-        let cardBody = (content ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        let summary = summary(for: cardBody)
+        let body = (content ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
 
-        VStack(alignment: .leading, spacing: isExpanded ? 8 : 0) {
+        VStack(alignment: .leading, spacing: isExpanded ? 6 : 0) {
             Button {
                 chatDisclosureToggled()
                 withAnimation(ChatMotion.disclosure(reduceMotion: reduceMotion)) {
                     isExpanded.toggle()
                 }
             } label: {
-                header(summary: summary)
+                HStack(spacing: 8) {
+                    Image(systemName: iconName)
+                        .resizable()
+                        .scaledToFit()
+                        .foregroundStyle(.secondary)
+                        .frame(width: 16, height: 16)
+
+                    Text(kind.title)
+                        .font(AppFont.callout())
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+
+                    Spacer(minLength: 4)
+
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                }
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("\(kind.title), \(summary)")
+            .accessibilityLabel(kind.title)
             .accessibilityHint(isExpanded ? String(localized: "Double tap to collapse details.") : String(localized: "Double tap to expand details."))
 
             if isExpanded {
-                Text(cardBody.isEmpty ? kind.title : cardBody)
+                Text(body.isEmpty ? kind.title : body)
                     .font(AppFont.caption())
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(.secondary)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.leading, 24)
                     .transition(ChatMotion.disclosureTransition(reduceMotion: reduceMotion))
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 9)
-        .accessorySurface(
-            fallbackMaterial: .thinMaterial,
-            cornerRadius: 10
-        )
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var usesStackedHeader: Bool {
-        dynamicTypeSize.isAccessibilitySize
     }
 
     private var iconName: String {
@@ -64,78 +73,7 @@ struct MarkerMessageCardView: View {
             return "arrow.down.right.and.arrow.up.left"
         case .preservedTaskList:
             return "checklist"
-        case .compressionReference:
-            return "star"
         }
-    }
-
-    private func header(summary: String) -> some View {
-        HStack(alignment: usesStackedHeader ? .top : .center, spacing: 8) {
-            Image(systemName: iconName)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: 18, height: 18)
-
-            if usesStackedHeader {
-                VStack(alignment: .leading, spacing: 1) {
-                    titleText
-                    summaryText(summary, lineLimit: 2)
-                }
-            } else {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    titleText
-                    summaryText(summary, lineLimit: 1)
-                }
-            }
-
-            Spacer(minLength: 6)
-
-            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-        }
-        .contentShape(Rectangle())
-    }
-
-    private var titleText: some View {
-        Text(kind.title)
-            .font(AppFont.caption(weight: .semibold))
-            .foregroundStyle(.primary)
-            .lineLimit(1)
-    }
-
-    private func summaryText(_ value: String, lineLimit: Int) -> some View {
-        Text(value)
-            .font(AppFont.caption())
-            .foregroundStyle(.secondary)
-            .lineLimit(lineLimit)
-    }
-
-    private func summary(for value: String) -> String {
-        let oneLine = value
-            .replacingOccurrences(of: "\n", with: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        // The synthesized anchor card mirrors the web UI's
-        // "Reference only · <preview>" collapsed line.
-        if kind == .compressionReference {
-            guard !oneLine.isEmpty else { return String(localized: "Reference only") }
-            return String(localized: "Reference only · \(truncated(oneLine))")
-        }
-
-        if oneLine.isEmpty {
-            return kind.title
-        }
-
-        return truncated(oneLine)
-    }
-
-    private func truncated(_ oneLine: String) -> String {
-        if oneLine.count <= 80 {
-            return oneLine
-        }
-
-        return "\(oneLine.prefix(80))..."
     }
 }
 

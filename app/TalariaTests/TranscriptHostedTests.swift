@@ -540,17 +540,20 @@ final class TranscriptHostedTests: XCTestCase {
         XCTAssertEqual(BackgroundWorkSheet.icon(nil as BackgroundReviewState?), "questionmark.circle")
     }
 
-    /// The compaction card follows the row the server named and precedes the next one (TAL-560).
-    func testTheReferenceCardFollowsTheServersNamedRow() async throws {
-        let window = try await hostFixtureChat(["--ui-test-compression-reference"])
-        let found = await awaitElement(in: window) {
-            $0.accessibilityLabel?.contains("Reference only · Earlier turns were summarised.") == true
-        }
-        let card = try XCTUnwrap(found, "The reference card is missing")
+    /// A compaction is its own row in its place, a flat disclosure line as tall as the transcript's other ones (TAL-1566).
+    func testTheCompactionRowSitsInPlaceAsAFlatLine() async throws {
+        let window = try await hostFixtureChat(["--ui-test-compaction-row"])
+        let row = try await requireElement(in: window, label: "Context compaction")
         let anchor = try await requireElement(in: window, label: "Here is the plan.")
         let next = try await requireElement(in: window, label: "Start step one.")
-        XCTAssertLessThan(anchor.accessibilityFrame.maxY, card.accessibilityFrame.minY, "The card is not after the named row")
-        XCTAssertLessThan(card.accessibilityFrame.maxY, next.accessibilityFrame.minY, "The card is not before the following row")
+        XCTAssertLessThan(anchor.accessibilityFrame.maxY, row.accessibilityFrame.minY, "The row is not after the turn before it")
+        XCTAssertLessThan(row.accessibilityFrame.maxY, next.accessibilityFrame.minY, "The row is not before the turn after it")
+        XCTAssertGreaterThanOrEqual(row.accessibilityFrame.height.rounded(), 44, "The line is not the disclosure rows' height")
+        let collapsed = await awaitElement(in: window, timeout: 0.5) { $0.accessibilityLabel?.contains("Earlier turns were summarised.") == true }
+        XCTAssertNil(collapsed, "The summary shows before the row is expanded")
+        HostedAccessibility.activate(row)
+        let expanded = await awaitElement(in: window) { $0.accessibilityLabel?.contains("Earlier turns were summarised.") == true }
+        XCTAssertNotNil(expanded, "Expanding the row does not show the summary")
     }
 
     /// A branch links back to the chat it came from as one button, and that parent shows no such link (TAL-454). The
@@ -626,7 +629,7 @@ private func historyTranscript(messages supplied: [ChatMessage]? = nil, messageC
     return ChatTranscriptView(
         isLoading: false, errorMessage: nil, messages: messages,
         displayedTranscriptMessages: ChatViewModel.transcriptMessages(from: messages, messageOffset: messageOffset),
-        compressionReferenceCard: nil, branchedFrom: nil, reasoningGroups: [],
+        branchedFrom: nil, reasoningGroups: [],
         completedToolCallGroupsForAnchor: { _ in [] }, archivedActivityRowsForAnchor: { _ in [] },
         earlierSceneRowsForTurn: { _ in [] }, onLoadEarlierSceneRows: { _ in },
         liveReasoningText: "", liveActivityRows: [], reasoningAnchorMessageID: nil,
