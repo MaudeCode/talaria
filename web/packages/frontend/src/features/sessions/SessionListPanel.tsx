@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useLayoutEffect, useRef, useState, type DragEvent } from 'react'
 import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Archive, ArchiveRestore, Filter, GitBranch, Plus, Search, Upload, X } from 'lucide-react'
@@ -19,6 +19,11 @@ import { useLocale } from '../../i18n/useLocale'
 import { showToast } from '../toast/toast'
 import { showErrorToast } from '../toast/errorToast'
 import { useResourceEffects, useResourceMutation, withEffects } from './useResourceMutation'
+import { useSessionPin } from './useSessionPin'
+import { getStreamContext, useStreamContext } from '../../stream/connection'
+import { randomHex } from '../../lib/randomHex'
+
+const SESSION_DRAG_TYPE = 'application/x-talaria-session-pin'
 
 export function useSessionListQuery(params: api.SessionListParams = {}) {
   return useQuery({ queryKey: keys.sessions.list(params as Record<string, string | boolean | number | undefined>), queryFn: ({ signal }) => api.fetchSessions(params, signal), staleTime: 10_000 })
@@ -83,7 +88,7 @@ export function groupSessionRows(rows: SessionRow[], now = Date.now()): { id: Gr
 }
 
 /** The existing sidebar row, memoized so unchanged server rows retain their rendered subtree. */
-export const SessionListItem = memo(function SessionListItem({ row, active, proj, preview, timeLabel, onArchive, selection }: {
+export const SessionListItem = memo(function SessionListItem({ row, active, proj, preview, timeLabel, onArchive, selection, onDragStart, onDragEnd }: {
   row: SessionRow
   active: boolean
   proj: Awaited<ReturnType<typeof api.fetchProjects>>['projects'][number] | undefined
@@ -91,6 +96,8 @@ export const SessionListItem = memo(function SessionListItem({ row, active, proj
   timeLabel: string
   onArchive: (id: string, archived: boolean) => void
   selection?: { selected: boolean; disabled: boolean; onSelect: () => void }
+  onDragStart?: (event: DragEvent<HTMLAnchorElement>, row: SessionRow) => void
+  onDragEnd?: () => void
 }) {
   useLocale()
   const displayTitle = row.title || m.untitled()
@@ -113,6 +120,9 @@ export const SessionListItem = memo(function SessionListItem({ row, active, proj
       to="/session/$sessionId"
       params={{ sessionId: row.session_id }}
       onClick={closeMobileSidebar}
+      draggable={!!onDragStart && row.can_pin && !row.read_only}
+      onDragStart={(event) => { if (onDragStart) onDragStart(event, row); else event.preventDefault() }}
+      onDragEnd={onDragEnd}
       role="listitem"
       data-sid={row.session_id}
       data-source={row.is_cli_session ? (row.source_label ?? 'CLI') : undefined}
@@ -148,7 +158,8 @@ export function SessionListPanel() {
   const [source, setSource] = useState<'webui' | 'cli'>('webui')
   const [project, setProject] = useState<string | null>(null)
   const [showArchived, setShowArchived] = useState(false)
-  const list = useSessionListQuery(showArchived ? { include_archived: true } : {})
+  const listParams = showArchived ? { include_archived: true } : {}
+  const list = useSessionListQuery(listParams)
   const projects = useProjectsQuery()
   const newChat = useNewChat()
   const data = list.data
@@ -191,6 +202,66 @@ export function SessionListPanel() {
   })()
   const previews = new Map((q.length >= 2 ? search.data?.sessions ?? [] : []).flatMap((r) => (r.match_preview ? [[r.session_id, r.match_preview] as const] : [])))
   const groups = groupSessionRows(filtered).map((g) => ({ ...g, label: GROUP_LABEL[g.id]() }))
+  const context = useStreamContext()
+  const pin = useSessionPin()
+  const scope = JSON.stringify([filter, project, source, showArchived])
+  const [drag, setDrag] = useState<{ id: string; token: string; context: object; scope: string; list: typeof data; search: typeof search.data } | null>(null)
+  const [dropTarget, setDropTarget] = useState<boolean | null>(null)
+  const dragFocus = useRef<{ id: string; element: HTMLElement; context: object } | null>(null)
+  // Group moves remount rows; retain existing focus through the optimistic move and rollback.
+  useLayoutEffect(() => {
+    const focus = dragFocus.current
+    if (!focus) return
+    if (focus.context !== context || (document.activeElement !== focus.element && (focus.element.isConnected || document.activeElement !== document.body))) { dragFocus.current = null; return }
+    const item = [...document.querySelectorAll<HTMLElement>('#sessionList [data-sid]')].find((item) => item.dataset.sid === focus.id)
+    const body = item?.closest<HTMLElement>('.session-date-body')
+    const next = body?.style.display === 'none' ? body.parentElement?.querySelector<HTMLElement>('.session-date-header') : item
+    if (next) { next.focus({ preventScroll: true }); dragFocus.current = { ...focus, element: next } }
+    else dragFocus.current = null
+  })
+  const mutableRow = (id: string) => filtered.find((row) => row.session_id === id && row.can_pin && !row.read_only
+    && data?.sessions.some((r) => r.session_id === id && r.can_pin && !r.read_only && (!r.profile || r.profile === data.active_profile)))
+  const dragRow = drag?.context === context && drag.scope === scope && drag.list === data && drag.search === search.data
+    ? mutableRow(drag.id)
+    : undefined
+  // A replacement snapshot or context retires this gesture, even if the same ID returns later.
+  if (drag && !dragRow) { setDrag(null); setDropTarget(null) }
+  const endDrag = () => { setDrag(null); setDropTarget(null) }
+  const startDrag = (event: DragEvent<HTMLAnchorElement>, row: SessionRow) => {
+    if (!mutableRow(row.session_id) || list.isError || search.isPlaceholderData || (event.target as Element).closest('button')) { event.preventDefault(); return }
+    const token = randomHex()
+    event.dataTransfer.clearData()
+    event.dataTransfer.setData(SESSION_DRAG_TYPE, token)
+    event.dataTransfer.effectAllowed = 'move'
+    setDrag({ id: row.session_id, token, context, scope, list: data, search: search.data })
+  }
+  const acceptsDrop = (event: DragEvent, pinned: boolean) => !!dragRow && !!drag
+    && !list.isError && !search.isPlaceholderData && drag.context === getStreamContext()
+    && qc.getQueryData(keys.sessions.list(listParams)) === drag.list
+    && (q.length < 2 || qc.getQueryData(keys.sessions.search(q, searchFilters)) === drag.search)
+    && event.dataTransfer.types.length === 1 && event.dataTransfer.types.includes(SESSION_DRAG_TYPE)
+    && (dragRow.sidebar_group === 'pinned') !== pinned
+  const dropHandlers = (pinned: boolean) => ({
+    onDragOver: (event: DragEvent) => {
+      if (!acceptsDrop(event, pinned)) return
+      event.preventDefault(); event.stopPropagation()
+      event.dataTransfer.dropEffect = 'move'
+      setDropTarget(pinned)
+    },
+    onDragLeave: (event: DragEvent) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropTarget(null) },
+    onDrop: (event: DragEvent) => {
+      event.preventDefault(); event.stopPropagation()
+      if (event.dataTransfer.getData(SESSION_DRAG_TYPE) === drag?.token && acceptsDrop(event, pinned)) {
+        const focused = document.activeElement
+        if (focused instanceof HTMLElement && focused.closest('[data-sid]')?.getAttribute('data-sid') === drag.id) dragFocus.current = { id: drag.id, element: focused, context }
+        pin.mutate({ id: drag.id, pinned })
+      }
+      endDrag()
+    },
+  })
+  // Empty targets exist only during an internal gesture; ordinary visits keep the existing groups.
+  if (dragRow && !groups.some((g) => g.id === 'pinned')) groups.unshift({ id: 'pinned', label: GROUP_LABEL.pinned(), rows: [] })
+  if (dragRow && groups.every((g) => g.id === 'pinned')) groups.push({ id: 'today', label: m.session_unpin(), rows: [] })
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({})
   const archive = useResourceMutation({
     resource: ({ id }: { id: string; archived: boolean }) => `session:${id}`,
@@ -273,6 +344,7 @@ export function SessionListPanel() {
         </div>
       </div>
       <div className="session-list" id="sessionList" role="list">
+        <span className="sr-only" role="status">{dropTarget === null ? '' : dropTarget ? m.session_pin() : m.session_unpin()}</span>
         {cliCount > 0 && (
           <div className="session-source-tabs">
             <button type="button" className={cn('session-source-tab', source === 'webui' && 'active')} aria-pressed={source === 'webui'} onClick={() => setSource('webui')}>{m.sessions_source_webui({ n: webuiCount })}</button>
@@ -303,13 +375,13 @@ export function SessionListPanel() {
         {groups.map((g) => {
           const isCollapsed = !!collapsedGroups[g.id]
           return (
-            <div key={g.id} className="session-date-group">
+            <div key={g.id} className={cn('session-date-group', dropTarget !== null && dropTarget === (g.id === 'pinned') && 'session-drop-target')} {...dropHandlers(g.id === 'pinned')}>
               <div className={cn('session-date-header', g.id === 'pinned' && 'pinned')} role="button" tabIndex={0} aria-expanded={!isCollapsed} onClick={() => setCollapsedGroups((c) => ({ ...c, [g.id]: !c[g.id] }))} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setCollapsedGroups((c) => ({ ...c, [g.id]: !c[g.id] })) } }}>
                 <span className={cn('session-date-caret', isCollapsed && 'collapsed')} aria-hidden="true">{'\u25BE'}</span>
                 <span>{g.label}</span>
               </div>
               <div className="session-date-body" style={isCollapsed ? { display: 'none' } : undefined}>
-                {g.rows.map((row) => <SessionListItem key={row.session_id} row={row} active={row.session_id === activeId} proj={row.project_id ? projectsById.get(row.project_id) : undefined} preview={previews.get(row.session_id)} timeLabel={relativeTime(row.sort_ts)} onArchive={onArchive} />)}
+                {g.rows.map((row) => <SessionListItem key={row.session_id} row={row} active={row.session_id === activeId} proj={row.project_id ? projectsById.get(row.project_id) : undefined} preview={previews.get(row.session_id)} timeLabel={relativeTime(row.sort_ts)} onArchive={onArchive} onDragStart={startDrag} onDragEnd={endDrag} />)}
               </div>
             </div>
           )

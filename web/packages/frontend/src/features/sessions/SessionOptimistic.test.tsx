@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import type { ReactNode } from 'react'
+import type { ComponentProps, ReactNode } from 'react'
 import type { SessionRow } from '../../contracts'
 import { ApiError } from '../../contracts/common'
 
@@ -19,10 +19,12 @@ vi.mock('../toast/toast', () => ({ showToast: toast }))
 vi.mock('@tanstack/react-router', () => ({
   useParams: () => (router.active ? { sessionId: router.active } : {}),
   useNavigate: () => router.navigate,
-  Link: ({ children, className, ...rest }: { children: ReactNode; className?: string; 'data-sid'?: string }) => <div className={className} data-sid={rest['data-sid']}>{children}</div>,
+  Link: ({ children, className, draggable, onDragStart, onDragEnd, ...rest }: ComponentProps<'a'> & { children: ReactNode; 'data-sid'?: string }) => <a href="/" className={className} data-sid={rest['data-sid']} draggable={draggable} onDragStart={onDragStart} onDragEnd={onDragEnd}>{children}</a>,
 }))
 import * as api from '../../api/endpoints'
 import { SessionListPanel } from './SessionListPanel'
+import { keys } from '../../api/queryKeys'
+import { teardownAll } from '../../stream/connection'
 
 const now = Date.now() / 1000
 const row = (session_id: string, title: string, extra: Partial<SessionRow> = {}): SessionRow => ({
@@ -36,8 +38,10 @@ const shown = () => [...document.querySelectorAll('[data-sid]')].map((el) => el.
 const rowOf = (id: string) => document.querySelector<HTMLElement>(`[data-sid="${id}"]`)!
 
 async function panel() {
-  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}><SessionListPanel /></QueryClientProvider>)
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+  render(<QueryClientProvider client={qc}><SessionListPanel /></QueryClientProvider>)
   await screen.findByText('Alpha')
+  return qc
 }
 async function menu(id: string, item: string | RegExp) {
   await userEvent.click(within(rowOf(id)).getByRole('button', { name: 'Conversation actions' }))
@@ -50,7 +54,142 @@ beforeEach(() => {
   toast.mockReset()
   vi.mocked(api.fetchSessions).mockReset().mockResolvedValue({ sessions: [alpha, beta] } as never)
   vi.mocked(api.fetchProjects).mockReset().mockResolvedValue({ projects: [{ project_id: 'p1', name: 'Proj', color: '#7cb9ff' }, { project_id: 'p2', name: 'Other' }] } as never)
+  vi.mocked(api.pinSession).mockReset()
   vi.mocked(api.fetchWorktreeStatus).mockResolvedValue({ status: { path: '/wt', exists: true, removable: true, force_required: false, dirty: false, untracked_count: 0, ahead_behind: { ahead: 0, behind: 0 }, locked_by_stream: false } } as never)
+})
+
+function drag(id: string) {
+  const values = new Map<string, string>()
+  const dataTransfer = { clearData: () => values.clear(), setData: (type: string, value: string) => values.set(type, value), getData: (type: string) => values.get(type) ?? '', get types() { return [...values.keys()] }, effectAllowed: 'none', dropEffect: 'none' }
+  fireEvent.dragStart(rowOf(id), { dataTransfer })
+  return dataTransfer
+}
+
+describe('sidebar pin drag/drop (TAL-1498)', () => {
+  it('pins a dropped row immediately through the shared pin action', async () => {
+    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [{ ...alpha, pinned: true, sidebar_group: 'pinned' }, beta] } as never)
+    vi.mocked(api.pinSession).mockReturnValue(held())
+    await panel()
+    const dataTransfer = drag('beta')
+    fireEvent.dragOver(screen.getByText('Pinned'), { dataTransfer })
+    fireEvent.drop(screen.getByText('Pinned'), { dataTransfer })
+    await waitFor(() => expect(api.pinSession).toHaveBeenCalledWith('beta', true))
+    expect(within(screen.getByText('Pinned').closest<HTMLElement>('.session-date-group')!).getByText('Beta')).toBeInTheDocument()
+  })
+
+  it('offers an empty Pinned target and accepts a collapsed target', async () => {
+    vi.mocked(api.pinSession).mockReturnValue(held())
+    await panel()
+    expect(screen.queryByText('Pinned')).toBeNull()
+    const dataTransfer = drag('beta')
+    await userEvent.click(screen.getByText('Pinned'))
+    fireEvent.drop(screen.getByText('Pinned'), { dataTransfer })
+    await waitFor(() => expect(api.pinSession).toHaveBeenCalledWith('beta', true))
+    expect(rowOf('beta').closest('.session-date-body')).toHaveStyle({ display: 'none' })
+  })
+
+  it('unpins to the ordinary group immediately, including when every row is pinned', async () => {
+    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [{ ...alpha, pinned: true, sidebar_group: 'pinned' }] } as never)
+    vi.mocked(api.pinSession).mockReturnValue(held())
+    await panel()
+    const dataTransfer = drag('alpha')
+    fireEvent.drop(screen.getByText('Unpin conversation'), { dataTransfer })
+    await waitFor(() => expect(api.pinSession).toHaveBeenCalledWith('alpha', false))
+    expect(screen.queryByText('Pinned')).toBeNull()
+    expect(screen.getByText('Today').closest('.session-date-group')).toContainElement(rowOf('alpha'))
+  })
+
+  it.each(['same zone', 'cancel', 'outside'])('%s never issues a write', async (exit) => {
+    await panel()
+    const dataTransfer = drag('beta')
+    if (exit === 'cancel') { fireEvent.dragEnd(rowOf('beta')); fireEvent.drop(screen.getByText('Today'), { dataTransfer }) }
+    else fireEvent.drop(exit === 'same zone' ? screen.getByText('Today') : document.body, { dataTransfer })
+    expect(api.pinSession).not.toHaveBeenCalled()
+    fireEvent.dragEnd(rowOf('beta'))
+    expect(screen.queryByText('Pinned')).toBeNull()
+  })
+
+  it('does not treat a drop inside Pinned as reordering or unpinning', async () => {
+    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [{ ...alpha, pinned: true, sidebar_group: 'pinned' }, { ...beta, pinned: true, sidebar_group: 'pinned' }] } as never)
+    await panel()
+    fireEvent.drop(rowOf('alpha'), { dataTransfer: drag('beta') })
+    expect(api.pinSession).not.toHaveBeenCalled()
+  })
+
+  it.each([{ read_only: true }, { can_pin: false }, { profile: 'foreign' }])('rejects an unavailable source %j', async (extra) => {
+    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [alpha, { ...beta, ...extra }], active_profile: 'default' } as never)
+    await panel()
+    const dataTransfer = drag('beta')
+    fireEvent.drop(screen.getByText('Today'), { dataTransfer })
+    expect(dataTransfer.types).toEqual([])
+    expect(api.pinSession).not.toHaveBeenCalled()
+  })
+
+  it.each(['text/plain', 'Files', 'application/x-talaria-session-pin'])('rejects an external %s drag', async (type) => {
+    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [{ ...alpha, pinned: true, sidebar_group: 'pinned' }, beta] } as never)
+    await panel()
+    fireEvent.drop(screen.getByText('Pinned'), { dataTransfer: { types: [type], getData: () => 'beta' } })
+    expect(api.pinSession).not.toHaveBeenCalled()
+  })
+
+  it('rejects changed payloads, even with a genuine local drag in progress', async () => {
+    await panel()
+    const dataTransfer = drag('beta')
+    dataTransfer.setData(dataTransfer.types[0]!, '{"session_id":"alpha"}')
+    fireEvent.drop(screen.getByText('Pinned'), { dataTransfer })
+    expect(api.pinSession).not.toHaveBeenCalled()
+  })
+
+  it('checks the current cache again when replacement precedes its render', async () => {
+    const qc = await panel()
+    const dataTransfer = drag('beta')
+    act(() => {
+      qc.setQueryData(keys.sessions.list({}), { sessions: [alpha, { ...beta, read_only: true }] })
+      fireEvent.drop(screen.getByText('Pinned'), { dataTransfer })
+    })
+    expect(api.pinSession).not.toHaveBeenCalled()
+  })
+
+  it.each(['context', 'snapshot', 'filter'])('retires the drag on %s replacement', async (replacement) => {
+    const qc = await panel()
+    const dataTransfer = drag('beta')
+    if (replacement === 'context') act(() => teardownAll())
+    else if (replacement === 'snapshot') await act(async () => { qc.setQueryData(keys.sessions.list({}), { sessions: [{ ...alpha, title: 'Replaced Alpha' }, beta] }); await Promise.resolve() })
+    else fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'Beta' } })
+    await waitFor(() => expect(screen.queryByText('Pinned')).toBeNull())
+    fireEvent.drop(screen.getByText('Today'), { dataTransfer })
+    expect(api.pinSession).not.toHaveBeenCalled()
+  })
+
+  it('rolls a refused drop back and keeps the current pin error', async () => {
+    let refuse!: (error: unknown) => void
+    vi.mocked(api.pinSession).mockReturnValue(new Promise((_, reject) => { refuse = reject }) as never)
+    await panel()
+    rowOf('beta').focus()
+    const dataTransfer = drag('beta')
+    fireEvent.drop(screen.getByText('Pinned'), { dataTransfer })
+    await waitFor(() => expect(api.pinSession).toHaveBeenCalledWith('beta', true))
+    expect(rowOf('beta')).toHaveFocus()
+    refuse(refusal('Pin refused'))
+    await waitFor(() => expect(screen.queryByText('Pinned')).toBeNull())
+    expect(screen.getByText('Today').closest('.session-date-group')).toContainElement(rowOf('beta'))
+    expect(rowOf('beta')).toHaveFocus()
+    expect(toast).toHaveBeenCalledWith('Pin failed: Pin refused', 4000, 'error')
+  })
+
+  it('reconciles an unknown drop outcome without replaying the write', async () => {
+    let read!: (value: unknown) => void
+    vi.mocked(api.pinSession).mockRejectedValue(new ApiError({ kind: 'network', path: '/x', message: 'lost' }))
+    await panel()
+    vi.mocked(api.fetchSessions).mockReturnValue(new Promise((resolve) => { read = resolve }) as never)
+    const dataTransfer = drag('beta')
+    fireEvent.drop(screen.getByText('Pinned'), { dataTransfer })
+    await waitFor(() => expect(api.fetchSessions).toHaveBeenCalledTimes(2))
+    expect(screen.getByText('Pinned').closest('.session-date-group')).toContainElement(rowOf('beta'))
+    read({ sessions: [alpha, beta] })
+    await waitFor(() => expect(screen.queryByText('Pinned')).toBeNull())
+    expect(api.pinSession).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('session writes show their result while the server is held (TAL-1179)', () => {

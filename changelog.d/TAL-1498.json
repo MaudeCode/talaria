@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Drag conversations into or out of Pinned in the Web sidebar.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
