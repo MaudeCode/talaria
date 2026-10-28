@@ -443,7 +443,7 @@ API hashes. It never installs or enables a plugin. Unavailable imports link to
 the existing Plugins catalog. No OpenClaw, credential migration, overwrite mode,
 provider sign-in or automatic sync scheduling is included.
 
-Preview writes no source or profile files. The native path-based API receives
+Preview writes no source or profile files. Read-only home binding skips credential hydration, terminal initialization and process recovery; unsupported catalog pins refuse before importing legacy config owners. The native path-based API receives
 private temporary copies of bounded, descriptor-read source and target inputs.
 Symlinks, hard links, special files, overlapping trees and oversized inputs are
 refused. Five-minute consent binds the profile, plugin and complete input

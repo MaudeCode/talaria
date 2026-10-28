@@ -54,7 +54,7 @@ def imports(monkeypatch, tmp_path):
     monkeypatch.setattr(subject.homes, 'scoped_home', lambda *a, **kw: nullcontext())
     monkeypatch.setattr(subject.plugin_catalog, 'reviewed_importer', lambda _home: (Importer, SimpleNamespace(update_sync_manifest=sync), [state['pin']]) if state['supported'] else None)
     monkeypatch.setattr(subject, '_PREVIEWS', {})
-    monkeypatch.setattr(subject, '_refresh_runtime', lambda: True)
+    monkeypatch.setattr(subject, '_refresh_runtime', lambda _home: True)
     methods = build_methods(SimpleNamespace(load=lambda: None, ensure_current=lambda: None))
     def call(action, **params):
         return methods['profiles.import'](None, dict(profile_home=str(target), action=action, **params))

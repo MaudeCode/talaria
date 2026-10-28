@@ -40,11 +40,13 @@ for name in ('one', 'existing'):
 methods = build_methods(SimpleNamespace(load=lambda: None, ensure_current=lambda: None))
 def call(action, **params):
     return methods['profiles.import'](None, dict(profile_home=str(home), action=action, **params))
-if catalog.get_catalog_entry('agent-importers') is None:
+entry = catalog.get_catalog_entry('agent-importers')
+if entry is None or entry.sha != pin:
     before = {str(p): p.read_bytes() for p in home.rglob('*') if p.is_file()}
     unavailable = call('discover')
     assert unavailable['status'] == 'unavailable', unavailable
-    assert {str(p): p.read_bytes() for p in home.rglob('*') if p.is_file()} == before
+    after = {str(p): p.read_bytes() for p in home.rglob('*') if p.is_file()}
+    assert after == before, 'Changed profile files: ' + repr([name for name in after.keys() | before.keys() if after.get(name) != before.get(name)])
     print('NATIVE_IMPORT=' + json.dumps({'unavailable': unavailable}))
     sys.exit(0)
 with patch.object(catalog, 'fetch_live_catalog', side_effect=AssertionError('Import must never fetch the catalog')), patch.object(agent_imports, '_refresh_runtime', return_value=True):

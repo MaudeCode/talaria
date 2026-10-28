@@ -212,11 +212,12 @@ def _ledger(root_fd, token, result=None):
         return None
 
 
-def _refresh_runtime():
+def _refresh_runtime(home):
     from .commands import _reload_mcp, _reload_skills
     try:
-        _reload_skills()
-        _reload_mcp(log_errors=False)
+        with homes.scoped_home(home, load_plugins=False):
+            _reload_skills()
+            _reload_mcp(log_errors=False)
         return True
     except Exception:
         return False
@@ -227,7 +228,7 @@ def run(ctx, params):
     if action not in ('discover', 'preview', 'apply', 'result') or action == 'preview' and agent not in _SOURCES or action in ('apply', 'result') and (not isinstance(token, str) or not 0 < len(token) <= 128):
         raise InvalidParams('Invalid profile import request')
     home = homes.profile_home_param(params)
-    with homes.scoped_home(home, load_plugins=False), plugin_catalog._lock:
+    with homes.scoped_home(home, load_plugins=False, read_only=True), plugin_catalog._lock:
         try:
             with _directory(home) as root_fd:
                 # Read the durable consumption record before plugin/source checks. A retry is readback only.
@@ -319,7 +320,7 @@ def run(ctx, params):
                             if target[0].get(rel) != body:
                                 _write(root_fd, rel, body, exclusive=rel not in target[0], mode=output_identity[rel][2], expected=(target[0][rel], target[1][rel]) if rel in target[0] else None)
                         result = _result('partial' if any(i['status'] == 'error' for i in items) else 'applied', items=items, stripped=stripped)
-                        if not _refresh_runtime():
+                        if not _refresh_runtime(home):
                             result['message'] = 'Files imported. Reload Skills and MCP before using the imported setup.'
                         return _ledger(root_fd, token, result)
                     except Exception:

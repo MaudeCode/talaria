@@ -210,6 +210,14 @@ def reviewed_importer(home):
     from . import dashboard_plugins
     reviewed = json.loads((Path(__file__).parents[2] / 'agent_importer.json').read_text())
     pin, hashes = reviewed['revision'], reviewed['files']
+    # Older Agent config imports initialize files. Check the pure in-tree catalog before importing their command owner.
+    try:
+        from hermes_cli import plugin_catalog as source
+        entry = next((e for e in source.load_catalog() if e.name == 'agent-importers'), None)
+        if entry is None or entry.sha != pin:
+            return None
+    except (ImportError, AttributeError, OSError, ValueError):
+        return None
     agent = _agent()
     if agent is None or not dashboard_plugins._supported():
         return None
@@ -228,7 +236,6 @@ def reviewed_importer(home):
         key, record = matches[0]
         root = pc._sanitize_plugin_name(key, Path(home) / 'plugins')
         # Admission must not fetch or populate the profile's live catalog cache on a preview.
-        entry = next((e for e in source.load_catalog() if e.name == 'agent-importers'), None)
         cached = dashboard_plugins._read(Path(home), 'cache/plugin-catalog.json', 4 * 1024 * 1024, anchor=Path(home))
         if cached is None and ((Path(home) / 'cache/plugin-catalog.json').exists() or (Path(home) / 'cache/plugin-catalog.json').is_symlink()):
             return None

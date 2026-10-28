@@ -672,3 +672,18 @@ print(json.dumps(seen))
     assert run.returncode == 0, run.stderr[-4000:]
     # A plugin whose register raises does not fail the call or keep its sibling's source from loading.
     assert json.loads(run.stdout.strip().splitlines()[-1]) == ["stub-vault-key", "stub-vault-key"]
+
+
+def test_read_only_home_binding_does_not_hydrate_credentials_or_initialize_runtime(tmp_path, monkeypatch):
+    constants = types.ModuleType('hermes_constants')
+    override = ContextVar('read-only-home', default=None)
+    constants.set_hermes_home_override = lambda home: override.set(home)
+    constants.reset_hermes_home_override = lambda token: override.reset(token)
+    monkeypatch.setitem(sys.modules, 'hermes_constants', constants)
+    monkeypatch.setattr(home_module, '_secret_scope', lambda *a, **kw: pytest.fail('Read-only inspection hydrated credentials'))
+    monkeypatch.setattr(home_module, '_terminal_scope', lambda *a, **kw: pytest.fail('Read-only inspection initialized terminal defaults'))
+    monkeypatch.setattr(home_module, '_recover_processes', lambda *a: pytest.fail('Read-only inspection recovered processes'))
+    with home_module.scoped_home(tmp_path, read_only=True):
+        assert override.get() == tmp_path
+    assert override.get() is None
+    assert list(tmp_path.iterdir()) == []
