@@ -326,6 +326,7 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
           return await options.next()
         } catch (error) {
           if (error instanceof ORPCError) {
+            if (options.context.ctx.path === '/api/feedback/submit' && error.status === 400) throw new HttpError(400, 'invalid')
             const extra = errorResponseHeaders(error as ORPCError<string, unknown>)
             if (Object.keys(extra).length) options.context.ctx.extraResponseHeaders = extra
             throw error

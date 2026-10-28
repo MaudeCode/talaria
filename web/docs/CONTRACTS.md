@@ -486,3 +486,37 @@ authority, replay epoch, and execution generation. A replacement owner or turn
 starts with no retained gauge. These additions use sidecar RPC version 66 and
 remain optional for independently updated clients. They add no billing writer,
 model switching, prompt retry, or failed-turn recovery policy.
+
+## Feedback forwarding
+
+Authenticated clients preview optional diagnostics with `GET /api/feedback/diagnostics`
+and send `POST /api/feedback/submit`. The closed request, preview, success and
+error shapes are defined in `packages/contracts/src/routes/settings.ts` and
+`contracts/fixtures/web-feedback.json`. Clients reuse the same UUID `requestId`
+and unchanged form values after an unknown outcome. The server retries transport
+failures once and preserves the redacted server snapshot across retries and restarts.
+Changing a form under an existing request ID returns `invalid`.
+
+The server owns the install UUID, version stamps and diagnostics. It shares the
+existing publisher key and Relay transport; unregistered installs send unsigned.
+Relay 429 returns `rate_limited` and `retryAfterSeconds`, disabled intake returns
+`feedback_unavailable`, and unconfirmed transport or server failures return
+`relay_unreachable`. Relay response details never reach the client. Local input
+and Relay validation failures return `invalid`.
+
+Diagnostics contain runtime versions, platform/architecture, registration state,
+configured provider IDs and at most ten recent server errors, each capped at
+300 characters. The shared redactor and path, URL, environment-assignment and
+content-field removal all run before caching or truncating an error. Absolute
+POSIX, Windows and quoted paths are removed regardless of their root. The complete UTF-8 text
+is capped at 16 KiB. Feedback never reads transcripts or prompts. The private
+`feedback` document namespace stores one bounded ledger with the install UUID,
+redacted server snapshots and input hashes, never the submitted title or body.
+The full JSON envelope is checked before admission writes. A principal may admit
+20 fresh request IDs per hour; the ledger holds at most 1,024 receipts. Both limits
+return `rate_limited` with a retry interval and allow existing IDs to reconcile.
+Unknown outcomes retain the exact snapshot for up to 30 days. Confirmed sends
+compact to a report-ID receipt; definitive refusals discard diagnostics and retain
+a quota marker for one hour. Expired entries are removed on the next admission.
+Concurrent calls for one request ID serialize through send and compaction. Submission
+logs contain only the request UUID and outcome. There is no client UI in this change.

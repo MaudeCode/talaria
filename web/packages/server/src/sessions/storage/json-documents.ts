@@ -10,6 +10,7 @@ import { InvalidDocument, RevisionConflict, type DocumentBackend, type StoredDoc
 
 interface Format { directory?: string; files?: Record<string, string>; indent?: number; sorted?: boolean; secret?: boolean; text?: boolean; newline?: boolean }
 const formats: Record<string, Format> = {
+  feedback: { directory: 'feedback', secret: true },
   drafts: { directory: 'sessions/_drafts' },
   shares: { directory: 'shares', indent: 2, secret: true },
   'held-wakeups': { files: { held: 'sessions/_wakeup_held.json' } },

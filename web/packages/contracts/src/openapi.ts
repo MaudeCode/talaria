@@ -2,6 +2,7 @@ import { OpenAPIGenerator } from '@orpc/openapi'
 import { ZodToJsonSchemaConverter } from '@orpc/zod/zod4'
 import { routeContract } from './router.js'
 import { z } from 'zod'
+import { FeedbackErrorSchema } from './routes/settings.js'
 import { ModelConfirmationRequiredSchema } from './routes/sessions.js'
 import { RAW_ROUTES } from './routes/raw.js'
 
@@ -32,6 +33,8 @@ export async function generateOpenApiDocument(): Promise<Record<string, unknown>
   }
   const update = paths['/api/session/update']?.post as { responses: Record<string, unknown> }
   update.responses['409'] = { description: 'Model selection requires confirmation. No session state changed.', content: { 'application/json': { schema: z.toJSONSchema(ModelConfirmationRequiredSchema) } } }
+  const feedback = paths['/api/feedback/submit']?.post as { responses: Record<string, unknown> }
+  for (const status of ['400', '429', '502', '503']) feedback.responses[status] = { description: 'Feedback could not be confirmed sent. Only relay_unreachable permits an automatic retry with the same requestId.', content: { 'application/json': { schema: z.toJSONSchema(FeedbackErrorSchema) } } }
   document.paths = paths
   return document
 }
