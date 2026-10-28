@@ -44,6 +44,20 @@ const rows = (...list: Record<string, unknown>[]): SceneRows => list.map((row, o
 function completed(id: string) { return { event: 'tool_complete', data: { id, name: 'read_file', kind: 'read', target: `${id}.txt`, result: `Contents of ${id}` } } as const }
 
 describe('turn worklog presentation', () => {
+  it('clears retained reasoning titles and content when the server display choice hides reasoning (TAL-996)', () => {
+    const run = liveRun()
+    run.emit(tool('a'))
+    run.emit({ event: 'reasoning', data: { text: 'Private retained reasoning', titles: ['Private retained title'] } })
+    const content = (showReasoning: boolean) => <WorklogDisclosureProvider scope="visibility" showReasoning={showReasoning}><TurnActivityView activity={liveActivity(run.turn)} mode="compact_worklog" /></WorklogDisclosureProvider>
+    const view = render(content(true))
+    expect(screen.getAllByText('Private retained title').length).toBeGreaterThan(0)
+    view.rerender(content(false))
+    expect(screen.queryAllByText('Private retained title')).toHaveLength(0)
+    expect(screen.queryByText('Private retained reasoning')).not.toBeInTheDocument()
+    expect(view.container.querySelector('.thinking-card')).toBeNull()
+    expect(view.container.querySelector('[data-tool-id="a"]')).not.toBeNull()
+  })
+
   it('keeps settled disclosure consumers still while sibling content streams', () => {
     const rendered = vi.fn()
     const Choice = memo(function Choice() {

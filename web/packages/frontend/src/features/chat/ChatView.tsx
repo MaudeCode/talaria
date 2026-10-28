@@ -476,7 +476,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
 
   return (
     <>
-      <div id="mainChat" data-show-reasoning={showReasoning} className={cn(MAIN_VIEW, 'active', !showReasoning && '[&_.thinking-card]:hidden')}>
+      <div id="mainChat" data-show-reasoning={showReasoning} className={cn(MAIN_VIEW, 'active')}>
         <div className="chat-header flex items-center gap-3 min-h-[52px] px-5 py-1.5 border-b border-border shrink-0 max-[641px]:hidden">
           <div className="chat-header-text min-w-0 flex-1 flex flex-col gap-px">
             <h1 className="chat-header-title m-0 text-[13.5px] font-[550] text-text whitespace-nowrap overflow-hidden text-ellipsis tracking-[-.01em]" id="topbarTitle">{session || listedTitle ? (title || m.untitled()) : bootstrap.bot_name}</h1>
@@ -496,6 +496,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
         <div ref={stage} className="chat-stage relative flex flex-1 min-h-0 flex-col">
         {!query.isError && (
           <Transcript
+            showReasoning={showReasoning}
             disclosureScope={JSON.stringify([bootstrap.profile?.name ?? 'default', sessionId])}
             rows={shownRows}
             live={live}

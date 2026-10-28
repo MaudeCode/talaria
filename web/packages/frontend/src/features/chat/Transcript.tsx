@@ -27,6 +27,7 @@ const HAND_SCROLL_MS = 250
 
 export interface TranscriptProps {
   rows: VisibleMessage[]
+  showReasoning?: boolean | undefined
   disclosureScope?: string
   live: LiveTurn | null
   /** The connected chat owns its text subscription here; controlled transcript views pass `live` alone. */
@@ -359,7 +360,7 @@ export function Transcript(props: TranscriptProps) {
   const renderedRows = virtualize ? null : rows.map(renderRow)
 
   return (
-    <WorklogDisclosureProvider key={scope} scope={scope ?? ""}>
+    <WorklogDisclosureProvider key={scope} scope={scope ?? ""} showReasoning={props.showReasoning}>
     <div className="messages-shell relative flex flex-1 min-h-0 flex-col">
       {sessionId && actions.onQuoteSelection && <QuoteSelection key={`${scope ?? ''}:${sessionId}`} transcript={scrollRef} onQuote={actions.onQuoteSelection} />}
       <div ref={scrollRef} onScroll={onScroll} onWheel={(e) => { if (e.deltaY !== 0) onReaderScroll() }} onTouchMove={onReaderScroll} onPointerDown={onReaderInput} onKeyDown={onReaderInput} className={cn('messages relative z-0 flex flex-1 flex-col min-h-0 px-5 overflow-y-auto overflow-x-hidden [-webkit-overflow-scrolling:touch] touch-pan-y overscroll-y-contain [overflow-anchor:none] max-[641px]:pl-[max(10px,env(safe-area-inset-left,0))] max-[641px]:pr-[max(10px,env(safe-area-inset-right,0))]', empty && 'messages-empty')} id="messages" role="log" aria-live="off" aria-relevant="additions">
