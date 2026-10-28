@@ -250,7 +250,7 @@ device-validation build.
 
 `build.py web --experimental --output NEW_DIRECTORY` packs only the Web npm
 package for the Experimental channel from `HEAD`, without a plan or Docker image:
-version `<latest web-v tag>-exp.<12-hex source>`, tag `web-exp-v<version>`, and
+version `<latest web-v tag, patch + 1>-exp.<12-hex source>`, tag `web-exp-v<version>`, and
 the contracts package bundled so installs never look it up. The bundle also carries
 each direct dependency the contracts closure peer-depends on (`ws`), which npm would
 otherwise install as an empty directory. Before writing `build-result.json` it runs

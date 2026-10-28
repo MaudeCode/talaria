@@ -18,17 +18,20 @@ CONTRACTS = "@maudecode/talaria-web-contracts"
 
 
 def experimental_component(root):
-    """Experimental Web identity for HEAD: `<latest Stable version>-exp.<12-hex SHA>` (TAL-343)."""
+    """Experimental Web identity for HEAD: `<latest Stable version, patch bumped>-exp.<12-hex SHA>` (TAL-343).
+
+    A SemVer prerelease sorts before its release, so `1.4.0-exp.*` would read as older than the shipped 1.4.0;
+    `1.4.1-exp.*` sorts after it and before whatever Stable version ships next."""
     source = git(root, "rev-parse", "HEAD")
     stable = [tag.removeprefix("web-v") for tag in git(root, "tag", "--list", "web-v*").split()
               if re.fullmatch("web-v" + VERSION, tag)]
     if not stable:
         raise ValueError("Experimental versions need a published Stable web-vX.Y.Z tag")
-    latest = max(stable, key=lambda version: tuple(map(int, version.split("."))))
+    major, minor, patch = max(tuple(map(int, version.split("."))) for version in stable)
     if re.fullmatch(r"0[0-9]{11}", source[:12]):
         # A numeric SemVer identifier cannot start with 0 and npm would rewrite it; web-experimental.yml skips these (~0.04%).
         raise ValueError(f"{source[:12]} is not a valid SemVer prerelease identifier; this commit has no Experimental version")
-    version = f"{latest}-exp.{source[:12]}"
+    version = f"{major}.{minor}.{patch + 1}-exp.{source[:12]}"
     return {"version": version, "sourceRevision": source, "tag": "web-exp-v" + version}
 
 

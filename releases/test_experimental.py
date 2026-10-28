@@ -49,7 +49,7 @@ class ExperimentalTests(unittest.TestCase):
                                "--source-revision", component["sourceRevision"], "--tag", component["tag"]],
                               cwd=self.root, capture_output=True, text=True, check=False)
 
-    def test_version_follows_the_latest_stable_tag_and_the_source(self):
+    def test_version_follows_the_next_patch_after_the_latest_stable_tag_and_the_source(self):
         with self.assertRaisesRegex(ValueError, "Stable"):
             experimental_component(self.root)
         for tag in ("web-v1.9.9", "web-v1.10.0", "web-v1.2.0", "web-exp-v2.0.0", "app-v3.0.0"):
@@ -59,7 +59,7 @@ class ExperimentalTests(unittest.TestCase):
                 self.assertRaisesRegex(ValueError, "SemVer"):
             experimental_component(self.root)
         self.assertEqual(experimental_component(self.root), {
-            "version": f"1.10.0-exp.{source[:12]}", "sourceRevision": source, "tag": f"web-exp-v1.10.0-exp.{source[:12]}",
+            "version": f"1.10.1-exp.{source[:12]}", "sourceRevision": source, "tag": f"web-exp-v1.10.1-exp.{source[:12]}",
         })
 
     def test_release_json_carries_the_experimental_runtime_identity(self):

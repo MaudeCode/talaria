@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Experimental Web builds now carry the next version number instead of the Stable version they follow.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
