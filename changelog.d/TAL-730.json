@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Saved workspaces survive an unavailable profile configuration.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

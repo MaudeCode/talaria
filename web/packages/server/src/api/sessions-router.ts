@@ -27,6 +27,7 @@ import { ensureTrustedAuthSession, sessionCanManageServer } from '../auth/gate.j
 import { RelayPairingError } from '../sessions/relay.js'
 import { EscapeGrantExpired, type EscapeRequest } from '../workspace/escape.js'
 import { ProfileError } from '../profiles/profiles.js'
+import { ConfigUnavailable } from '../config/agent-config.js'
 
 const os = implement({ ...sessionsContract, ...workspacesContract }).$context<ApiContext>().use(requestSessionIdGuard)
 
@@ -34,6 +35,7 @@ const os = implement({ ...sessionsContract, ...workspacesContract }).$context<Ap
 export function failure(error: unknown): never {
   if (error instanceof HttpFailure) throw new HttpError(error.status, error.message, error.extra)
   if (error instanceof SessionNotFound) throw new HttpError(404, 'Session not found')
+  if (error instanceof ConfigUnavailable) throw new HttpError(503, error.message)
   if (error instanceof ProfileError) throw new HttpError(error.status, error.message)
   throw error
 }
@@ -533,7 +535,7 @@ export const sessionsRouter = os.router({
       }
       let p: string
       try { p = ws.validateToAdd(pathStr, profile) } catch (error) { throw new HttpError(400, (error as Error).message) }
-      const list = (await ws.load(profile))
+      const list = (await ws.load(profile, { forWrite: true }))
       if (list.some((w) => w.path === p)) throw new HttpError(400, 'Workspace already in list')
       list.push({ path: p, name: name || basename(p) })
       await ws.save(list, profile)
@@ -543,7 +545,7 @@ export const sessionsRouter = os.router({
       const pathStr = input.path.trim()
       if (!pathStr) throw new HttpError(400, 'path is required')
       const profile = ctx.deps.activeProfile()
-      const list = (await ctx.deps.workspaces.load(profile)).filter((w) => w.path !== pathStr)
+      const list = (await ctx.deps.workspaces.load(profile, { forWrite: true })).filter((w) => w.path !== pathStr)
       await ctx.deps.workspaces.save(list, profile)
       return { ok: true as const, workspaces: list }
     })),
@@ -552,7 +554,7 @@ export const sessionsRouter = os.router({
       const name = input.name.trim()
       if (!pathStr || !name) throw new HttpError(400, 'path and name are required')
       const profile = ctx.deps.activeProfile()
-      const list = (await ctx.deps.workspaces.load(profile))
+      const list = (await ctx.deps.workspaces.load(profile, { forWrite: true }))
       const entry = list.find((w) => w.path === pathStr)
       if (!entry) throw new HttpError(404, 'Workspace not found')
       entry.name = name
@@ -563,7 +565,7 @@ export const sessionsRouter = os.router({
       const paths = input.paths
       if (!Array.isArray(paths) || !paths.length) throw new HttpError(400, 'paths is required and must be a list')
       const profile = ctx.deps.activeProfile()
-      const list = (await ctx.deps.workspaces.load(profile))
+      const list = (await ctx.deps.workspaces.load(profile, { forWrite: true }))
       const byPath = new Map(list.map((w) => [w.path, w]))
       const reordered: typeof list = []
       const seen = new Set<string>()
