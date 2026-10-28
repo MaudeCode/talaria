@@ -135,7 +135,7 @@ public final class SessionEventStreamClient: SessionEventStreaming {
 /// counts as live once it delivers a keepalive or an event. A dropped stream reconnects after 1, 2
 /// and 4 s, then every 30 s; only a live connection resets that backoff, and only a live
 /// connection that follows an earlier live one asks every screen to resync, because events may
-/// have been missed in between.
+/// have been missed in between. `onLiveChange` reports when a connection turns live and when it ends.
 public enum SessionEventsMonitor {
     static let retryDelays: [Duration] = [.seconds(1), .seconds(2), .seconds(4)]
     static let steadyRetryDelay = Duration.seconds(30)
@@ -145,6 +145,7 @@ public enum SessionEventsMonitor {
         url: URL,
         client: SessionEventStreaming,
         onChange: @escaping @MainActor (SessionsChange) async -> Void,
+        onLiveChange: @MainActor (Bool) -> Void = { _ in },
         sleep: @escaping (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) async {
         var failures = 0
@@ -162,6 +163,7 @@ public enum SessionEventsMonitor {
                 guard let frame else { break }
                 if !isLive, frame == .keepalive || frame.isChange {
                     isLive = true
+                    onLiveChange(true)
                     failures = 0
                     if hasConnected { await onChange(.resync) }
                     hasConnected = true
@@ -172,6 +174,7 @@ public enum SessionEventsMonitor {
             }
             continuation.finish()
             client.stop()
+            if isLive { onLiveChange(false) }
             guard !Task.isCancelled else { return }
 
             let delay = failures < retryDelays.count ? retryDelays[failures] : steadyRetryDelay

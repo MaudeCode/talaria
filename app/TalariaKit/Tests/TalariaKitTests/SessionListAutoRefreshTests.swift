@@ -107,6 +107,79 @@ final class SessionListAutoRefreshTests: XCTestCase {
         XCTAssertEqual(refreshCount, 2)
     }
 
+    // MARK: - Active-row monitor
+
+    /// `sessions_changed` already announces a run's end (TAL-1240): while the events stream is live
+    /// no streaming row is polled, and a dropped stream falls back to one status read per row per 10 s.
+    func testStreamingRowsPollOnlyWhileTheEventsStreamIsDown() async throws {
+        let statusReads = LockedCounter()
+        MockURLProtocol.requestHandler = { request in
+            switch request.url?.path {
+            case "/api/sessions":
+                return apiTestJSONResponse("""
+                {"sessions": [
+                  {"session_id": "run-a", "title": "A", "is_streaming": true, "active_stream_id": "stream-a"},
+                  {"session_id": "run-b", "title": "B", "is_streaming": true, "active_stream_id": "stream-b"}
+                ]}
+                """, for: request)
+            case "/api/chat/stream/status":
+                _ = statusReads.increment()
+                return apiTestJSONResponse(#"{"active":true}"#, for: request)
+            default:
+                throw URLError(.badURL)
+            }
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        let server = try XCTUnwrap(URL(string: "https://example.test"))
+        let viewModel = SessionListViewModel(
+            server: server, client: APIClient(baseURL: server, session: URLSession(configuration: configuration))
+        )
+        await viewModel.load()
+        let streaming = viewModel.sessions.filter(SessionRowPresentation.isActiveStreaming)
+        XCTAssertEqual(streaming.count, 2)
+
+        var isLive = false
+        let events = Task { @MainActor in
+            await SessionEventsMonitor.run(
+                url: server.appendingPathComponent("api/sessions/events"),
+                client: ScriptedSessionEventClient(attempts: [[.frame(.opened), .frame(.keepalive)]]),
+                onChange: { _ in },
+                onLiveChange: { isLive = $0 }
+            )
+        }
+        while !isLive { await Task.yield() }
+
+        /// Ten seconds of the view's loop on a virtual clock.
+        func readsInTenSeconds() async -> Int {
+            let before = statusReads.count
+            let taskID = SessionListAutoRefresh.ActiveRowTaskID(
+                streamIDs: SessionListViewModel.activeStreamIDs(in: streaming),
+                hasActiveRows: !streaming.isEmpty,
+                isViewingCachedData: viewModel.isViewingCachedData,
+                isEventStreamLive: isLive
+            )
+            var elapsed = Duration.zero
+            await SessionListAutoRefresh.monitorActiveRows(taskID, check: {
+                _ = await viewModel.refreshActiveSessionStatesIfNeeded(streamIDs: taskID.streamIDs)
+            }, sleep: { interval in
+                guard elapsed + interval <= .seconds(10) else { throw CancellationError() }
+                elapsed += interval
+            })
+            return statusReads.count - before
+        }
+
+        let connectedReads = await readsInTenSeconds()
+        XCTAssertEqual(connectedReads, 0, "A live events stream already reports run ends")
+
+        events.cancel()
+        await events.value
+        XCTAssertFalse(isLive)
+        let disconnectedReads = await readsInTenSeconds()
+        XCTAssertLessThanOrEqual(disconnectedReads, 2, "At most one status read per streaming row per 10 s")
+        XCTAssertGreaterThan(disconnectedReads, 0, "A dropped stream still falls back to polling")
+    }
+
     // MARK: - Refresh queue
 
     func testQuietReloadRunsExactlyOnce() async {

@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The chat list no longer checks every running chat each second, saving data and battery while chats run.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

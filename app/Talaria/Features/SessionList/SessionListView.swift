@@ -43,6 +43,7 @@ struct SessionListView: View {
     @State private var removedSessionNavigation: [String: RemovedSessionNavigation] = [:]
     @State private var navigationState: SessionNavigationState
     @State private var isPresentingSettings = false
+    @State private var isSessionEventStreamLive = false
     @State private var settingsPath: [SettingsPane] = []
     @State private var pendingSettingsPath: [SettingsPane]?
     @State private var reopensSidebarAfterSettings = false
@@ -393,7 +394,16 @@ struct SessionListView: View {
                 )
             }
             .task(id: activeSessionMonitorTaskID) {
-                await monitorActiveSessionRows()
+                let taskID = activeSessionMonitorTaskID
+                await SessionListAutoRefresh.monitorActiveRows(taskID) {
+                    let refreshResult = await viewModel.refreshActiveSessionStatesIfNeeded(
+                        streamIDs: taskID.streamIDs,
+                        modelContext: modelContext
+                    )
+                    if refreshResult == .reloaded || refreshResult == .failed {
+                        handleLastError()
+                    }
+                }
             }
             .task(id: providerQuotaRefreshTaskID) {
                 guard scenePhase == .active else { return }
@@ -415,15 +425,17 @@ struct SessionListView: View {
                 // refreshes itself, and every open screen hears it through `refreshesLive`.
                 await SessionEventsMonitor.run(
                     url: Endpoint.sessionEvents.url(relativeTo: server),
-                    client: SessionEventStreamClient()
-                ) { change in
-                    NotificationCenter.default.post(
-                        name: .talariaSessionsChanged,
-                        object: server,
-                        userInfo: [SessionsChange.userInfoKey: change]
-                    )
-                    Task { await refreshSessionsAndActiveProfile() }
-                }
+                    client: SessionEventStreamClient(),
+                    onChange: { change in
+                        NotificationCenter.default.post(
+                            name: .talariaSessionsChanged,
+                            object: server,
+                            userInfo: [SessionsChange.userInfoKey: change]
+                        )
+                        Task { await refreshSessionsAndActiveProfile() }
+                    },
+                    onLiveChange: { isSessionEventStreamLive = $0 }
+                )
             }
             .task(id: autoRefreshTaskID) {
                 guard autoRefreshTaskID.isEnabled else { return }
@@ -1729,12 +1741,13 @@ struct SessionListView: View {
         )
     }
 
-    private var activeSessionMonitorTaskID: ActiveSessionMonitorTaskID {
+    private var activeSessionMonitorTaskID: SessionListAutoRefresh.ActiveRowTaskID {
         let activeSessions = visibleSessions.filter(SessionRowPresentation.isActiveStreaming)
-        return ActiveSessionMonitorTaskID(
+        return SessionListAutoRefresh.ActiveRowTaskID(
             streamIDs: SessionListViewModel.activeStreamIDs(in: activeSessions),
             hasActiveRows: !activeSessions.isEmpty,
-            isViewingCachedData: viewModel.isViewingCachedData
+            isViewingCachedData: viewModel.isViewingCachedData,
+            isEventStreamLive: isSessionEventStreamLive
         )
     }
 
@@ -1841,29 +1854,6 @@ struct SessionListView: View {
         // only trigger a session switch has.
         guard horizontalSizeClass == .regular else { return }
         immediateRefreshID = UUID()
-    }
-
-    private func monitorActiveSessionRows() async {
-        while !Task.isCancelled {
-            let taskID = activeSessionMonitorTaskID
-            guard taskID.hasActiveRows, !taskID.isViewingCachedData else { return }
-
-            do {
-                try await Task.sleep(nanoseconds: 1_000_000_000)
-            } catch {
-                return
-            }
-
-            guard !Task.isCancelled else { return }
-
-            let refreshResult = await viewModel.refreshActiveSessionStatesIfNeeded(
-                streamIDs: taskID.streamIDs,
-                modelContext: modelContext
-            )
-            if refreshResult == .reloaded || refreshResult == .failed {
-                handleLastError()
-            }
-        }
     }
 
     @MainActor
@@ -2318,12 +2308,6 @@ private struct SessionSearchTaskID: Hashable {
     let query: String
     let projectID: String?
     let visibility: AutomatedSessionVisibility
-    let isViewingCachedData: Bool
-}
-
-private struct ActiveSessionMonitorTaskID: Hashable {
-    let streamIDs: [String]
-    let hasActiveRows: Bool
     let isViewingCachedData: Bool
 }
 

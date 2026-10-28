@@ -186,7 +186,7 @@ final class SessionListRowsDestinationTests: XCTestCase {
 
 /// Replays one scripted list of callbacks per connection attempt, synchronously from `start`.
 @MainActor
-private final class ScriptedSessionEventClient: SessionEventStreaming {
+final class ScriptedSessionEventClient: SessionEventStreaming {
     enum Step { case frame(SessionEventFrame), fail }
 
     private var attempts: [[Step]]
