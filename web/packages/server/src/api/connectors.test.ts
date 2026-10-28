@@ -233,7 +233,7 @@ describe('TAL-1507: native scheduled connector sign-in offers', () => {
     await s.get('/api/connectors')
     const pages = await Promise.all(Array.from({ length: 6 }, async () => await json(await s.get('/api/connectors'))))
     const offer = pages[0]!.sign_in_offer as Json
-    expect(offer).toMatchObject({ available: true, due: true, visible: true, actions: ['sign_in', 'dismiss'] })
+    expect(offer).toMatchObject({ available: true, due: false, visible: true, actions: ['sign_in', 'dismiss'] })
     expect(new Set(pages.map((page) => (page.sign_in_offer as Json).offer_id)).size).toBe(1)
     expect(claims).toBe(1)
     const { ConnectorOffers } = await import('../tools/connectors.js')
@@ -244,10 +244,10 @@ describe('TAL-1507: native scheduled connector sign-in offers', () => {
       s.deps.connectorOffers = new ConnectorOffers(documents)
       expect((await json(await s.get('/api/connectors'))).sign_in_offer).toEqual(offer)
       sidecar.respond('connectors.offer.status', () => { throw new SidecarError('offline', { condition: 'sidecar_unavailable' }) })
-      expect((await json(await s.get('/api/connectors'))).sign_in_offer).toMatchObject({ visible: true, available: false, actions: ['dismiss'], offer_id: offer.offer_id })
+      expect((await json(await s.get('/api/connectors'))).sign_in_offer).toMatchObject({ visible: true, available: false, due: false, actions: ['dismiss'], offer_id: offer.offer_id })
       sidecar.respond('connectors.offer.status', () => status)
       status = { ...status, available: false, eligible: false }
-      expect((await json(await s.get('/api/connectors'))).sign_in_offer).toMatchObject({ visible: true, available: false, actions: ['dismiss'], offer_id: offer.offer_id })
+      expect((await json(await s.get('/api/connectors'))).sign_in_offer).toMatchObject({ visible: true, available: false, due: false, actions: ['dismiss'], offer_id: offer.offer_id })
       status = { ...status, available: true, eligible: true }
       await post(s, '/api/connectors/sign-in-offer/dismiss', { offer_id: offer.offer_id })
       expect(await json(await post(s, '/api/connectors/sign-in-offer/dismiss', { offer_id: offer.offer_id }))).toMatchObject({ visible: false })

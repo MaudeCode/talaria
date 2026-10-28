@@ -48,6 +48,15 @@ describe('ConnectorsSection (TAL-818)', () => {
     expect(api.onboardingOauthStart).not.toHaveBeenCalled()
   })
 
+  it('keeps an unavailable retained offer understandable without enabling sign-in', async () => {
+    vi.mocked(api.fetchConnectors).mockResolvedValueOnce({ ...offered, sign_in_offer: {
+      ...offered.sign_in_offer!, available: false, due: false, actions: ['dismiss'],
+    } })
+    renderWith(<ConnectorsSection />)
+    expect(await screen.findByRole('button', { name: 'Not now' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Sign in with Nous Portal' })).toBeDisabled()
+  })
+
   it('dismisses immediately, reconciles an unknown outcome, and rolls back a refusal', async () => {
     const hidden: ConnectorsPage = { ...offered, sign_in_offer: { ...offered.sign_in_offer!, visible: false, actions: [] } }
     vi.mocked(api.fetchConnectors).mockResolvedValue(offered)

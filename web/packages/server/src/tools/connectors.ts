@@ -39,7 +39,7 @@ export class ConnectorOffers {
       }
       const visible = record?.visible === true
       const result: ConnectorSignInOffer = {
-        available: status?.available ?? false, due: visible || (status?.available === true && status.eligible && status.due_in === 0), visible,
+        available: status?.available ?? false, due: status?.available === true && status.eligible && status.due_in === 0, visible,
         offer_id: visible ? record!.offer_id : null,
         actions: visible ? status?.available && status.eligible ? ['sign_in', 'dismiss'] : ['dismiss'] : [],
         refresh_after: status?.due_in ? Math.max(1, Math.min(status.due_in, 30)) : 30,

@@ -78615,7 +78615,8 @@
                           "type": "boolean"
                         },
                         "due": {
-                          "type": "boolean"
+                          "type": "boolean",
+                          "description": "The native eligible due check at this read; an already delivered offer remains visible independently."
                         },
                         "visible": {
                           "type": "boolean"
@@ -78850,7 +78851,8 @@
                       "type": "boolean"
                     },
                     "due": {
-                      "type": "boolean"
+                      "type": "boolean",
+                      "description": "The native eligible due check at this read; an already delivered offer remains visible independently."
                     },
                     "visible": {
                       "type": "boolean"

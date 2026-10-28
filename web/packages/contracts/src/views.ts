@@ -1123,7 +1123,7 @@ export const ConnectorViewSchema = z.object({
  * `rules_error`: why the rules could not be read; every app then reads off (fails closed).
  */
 export const ConnectorSignInOfferSchema = z.object({
-  available: z.boolean(), due: z.boolean(), visible: z.boolean(), offer_id: z.string().nullable(),
+  available: z.boolean(), due: z.boolean().describe('The native eligible due check at this read; an already delivered offer remains visible independently.'), visible: z.boolean(), offer_id: z.string().nullable(),
   actions: z.array(z.enum(['sign_in', 'dismiss'])), refresh_after: z.number().int().positive().nullable(),
 })
 export type ConnectorSignInOffer = z.infer<typeof ConnectorSignInOfferSchema>

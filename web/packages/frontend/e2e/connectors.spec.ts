@@ -169,8 +169,9 @@ test('scheduled guest offer reuses OAuth, preserves the result, and dismisses wi
   let approved = false
   let starts = 0
   let dismisses = 0
-  const offer = () => ({ available: true, due: visible, visible: visible && !signedIn, offer_id: visible && !signedIn ? 'offer-1' : null,
-    actions: visible && !signedIn ? ['sign_in', 'dismiss'] : [], refresh_after: 1 })
+  let offerAvailable = true
+  const offer = () => ({ available: offerAvailable, due: offerAvailable && visible, visible: visible && !signedIn, offer_id: visible && !signedIn ? 'offer-1' : null,
+    actions: visible && !signedIn ? offerAvailable ? ['sign_in', 'dismiss'] : ['dismiss'] : [], refresh_after: 1 })
   await page.route('**/api/connectors/available', (route) => route.fulfill({ json: { available: true } }))
   await page.route('**/api/connectors', (route) => route.fulfill({ json: { ...shared.page, sign_in_offer: offer() } }))
   await page.route('**/api/connectors/sign-in-offer/dismiss', async (route) => {
@@ -206,6 +207,12 @@ test('scheduled guest offer reuses OAuth, preserves the result, and dismisses wi
     await page.setViewportSize({ width: 1024, height: 768 })
     await page.screenshot({ path: testInfo.outputPath('offer-after-laptop.png') })
   }
+  offerAvailable = false
+  await expect(signIn).toBeDisabled()
+  await expect(later).toBeEnabled()
+  await page.screenshot({ path: testInfo.outputPath(`offer-unavailable-${testInfo.project.name}.png`) })
+  offerAvailable = true
+  await expect(signIn).toBeEnabled()
   await later.focus()
   await page.keyboard.press('Enter')
   await expect(later).toHaveCount(0)

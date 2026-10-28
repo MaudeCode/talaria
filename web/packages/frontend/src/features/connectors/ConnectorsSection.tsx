@@ -84,7 +84,7 @@ export function ConnectorsSection() {
   return (
     <>
     {(page.data.sign_in_required || offered || signInActive) && <OAuthSignIn provider="nous" label="Nous Portal" signedIn={false} compact idPrefix="connectorsOauth"
-      resultOnly={!page.data.sign_in_required && !offer?.actions.includes('sign_in')}
+      resultOnly={signInActive && !page.data.sign_in_required && !offered}
       canStart={page.data.sign_in_required || offer?.actions.includes('sign_in')} onStart={() => setSignInContext(context)}
       onDismiss={offered && offer?.actions.includes('dismiss') ? () => { if (offer.offer_id) { setSignInContext(null); dismiss.mutate(offer.offer_id) } } : undefined}
       onApproved={() => { setSignInContext(null); refresh() }} />}
