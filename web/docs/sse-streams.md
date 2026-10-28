@@ -93,6 +93,11 @@ TypeScript backend; `?gateway=1` on `/api/sessions/events` is the only gateway f
 
 ## Gateway watcher change detection
 
+After projection, the watcher compares every field of its compact public rows,
+including title, model and source metadata. Row order alone does not publish an
+event. A title-only rename publishes without changing activity timestamps or
+message counts; private cache metadata stays outside the comparison.
+
 The gateway watcher (`packages/server/src/sessions/gateway-watcher.ts`) is what turns writes to the
 agent's `state.db` into `sessions_changed` events on the streams above. It polls
 on a `POLL_INTERVAL` of 5s per profile, and the cost of a tick is fixed — it does

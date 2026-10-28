@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { bootTestServer, type TestServer, openStateDb } from '../test/harness.js'
 import { CliSessionSource } from './cli-sessions.js'
 import { Session } from './session.js'
-import type { StateDbWorkerRequest } from './state-db.js'
+import { cheapChangeFingerprint, type StateDbWorkerRequest } from './state-db.js'
 import { GatewayWatcher } from './gateway-watcher.js'
 
 describe('batched sidebar reads and targeted lookup cache', () => {
@@ -126,6 +126,32 @@ describe('batched sidebar reads and targeted lookup cache', () => {
       rmSync(path)
       expect(await watcher.pollOnce()).toBe(true)
       expect((await sub.next())?.sessions).toEqual([])
+    } finally { sub.close(); watcher.stop() }
+  })
+
+  it('publishes a title-only Agent rename once through the real CLI row projection', async () => {
+    const watcher = new GatewayWatcher('default', home, { rows: (profile) => source.read(profile), now: () => now, log: () => undefined })
+    const sub = watcher.subscribe()
+    try {
+      expect(await watcher.pollOnce()).toBe(true)
+      const initial = (await sub.next())!.sessions.find((row) => row.session_id === 'cli')!
+      expect(initial).toMatchObject({ title: 'cli', updated_at: 0, message_count: 1 })
+      const before = cheapChangeFingerprint(path)
+      const db = openStateDb(path)
+      try { db.exec("UPDATE sessions SET title = 'Renamed without activity' WHERE id = 'cli'") } finally { db.close() }
+      expect(cheapChangeFingerprint(path)).not.toBe(before)
+      now += 6
+      const projected = (await source.read('default')).rows.find((row) => row.session_id === 'cli')!
+      expect(projected).toMatchObject({ title: 'Renamed without activity', updated_at: initial.updated_at, message_count: initial.message_count })
+      expect(await watcher.pollOnce()).toBe(true)
+      const changed = await sub.next(AbortSignal.abort())
+      expect(changed?.sessions.find((row) => row.session_id === 'cli')).toEqual({ ...initial, title: 'Renamed without activity' })
+      expect(await sub.next(AbortSignal.abort())).toBeNull()
+      expect(await watcher.pollOnce()).toBe(false)
+      now += 300
+      expect(await watcher.pollOnce()).toBe(true)
+      expect(await sub.next(AbortSignal.abort())).toBeNull()
+      expect(sub.ended).toBe(false)
     } finally { sub.close(); watcher.stop() }
   })
 

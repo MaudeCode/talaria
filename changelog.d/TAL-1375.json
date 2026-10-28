@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Agent chat titles refresh in the session list after a rename without new messages.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
