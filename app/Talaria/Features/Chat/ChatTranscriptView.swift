@@ -463,6 +463,7 @@ struct ChatTranscriptView: View {
             }
             .id(transcriptContentID)
             .environment(\.chatMessageMenuRegistry, menuRegistry)
+            .environment(\.chatCodeBlockMargin, max(0, (viewportWidth - contentWidth) / 2 - transcriptHorizontalPadding))
             .background {
                 ZStack {
                     ChatScrollObserver(

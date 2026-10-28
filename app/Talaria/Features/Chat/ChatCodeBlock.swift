@@ -6,16 +6,24 @@ import SwiftUI
 import UIKit
 import TalariaKit
 
+extension EnvironmentValues {
+    /// The room on each side of the transcript's reading column that a wide code block may grow into (TAL-1487).
+    @Entry var chatCodeBlockMargin: CGFloat = 0
+}
+
 struct ChatCodeBlock: View {
     let language: String?
     let content: String
     let isStreaming: Bool
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.chatCodeBlockMargin) private var margin
     @AppStorage(ChatTranscriptDisplaySettings.wrapsCodeBlockLinesKey) private var wrapsCodeBlockLines = false
     @State private var copyConfirmation = CopyConfirmation()
     @State private var highlightedCode: NSAttributedString?
     @State private var scrollViewportWidth: CGFloat = 0
+    @State private var columnWidth: CGFloat = 0
+    @State private var naturalCodeWidth: CGFloat = 0
 
     private static let codeHorizontalPadding: CGFloat = 16
 
@@ -75,6 +83,8 @@ struct ChatCodeBlock: View {
             RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .stroke(SwiftUI.Color(.separator).opacity(0.35), lineWidth: 1)
         }
+        .padding(.horizontal, -bleed)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { columnWidth = $0 }
         .onChange(of: content) { _, _ in
             copyConfirmation.reset()
         }
@@ -90,6 +100,14 @@ struct ChatCodeBlock: View {
         // Code (and diff) blocks must never mirror inside an RTL message (#259):
         // the language header, copy/wrap controls, and the source itself stay LTR.
         .forcedLeftToRight()
+    }
+
+    /// How far the block grows past each side of its column: up to its lines' natural width, centred, within the
+    /// transcript's margins. Above that it scrolls; wrapped lines never need it.
+    private var bleed: CGFloat {
+        guard !wrapsCodeBlockLines, columnWidth > 0 else { return 0 }
+        let excess = naturalCodeWidth.rounded(.up) + 2 * Self.codeHorizontalPadding - columnWidth
+        return min(margin, max(0, excess / 2))
     }
 
     private var codeBlockBackground: SwiftUI.Color {
@@ -118,6 +136,7 @@ struct ChatCodeBlock: View {
     /// line's tint reaches the block's edge even when every line is short.
     private func styledCodeText(fixedHorizontal: Bool) -> some View {
         codeText
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { naturalCodeWidth = $0 }
             .frame(minWidth: fixedHorizontal ? max(scrollViewportWidth - 2 * Self.codeHorizontalPadding, 0) : nil, alignment: .leading)
             .fixedSize(horizontal: fixedHorizontal, vertical: true)
             .relativeLineSpacing(.em(0.18))

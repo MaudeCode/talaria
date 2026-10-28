@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "On iPad and the iPhone Duo's inner display, a wide code block grows into the margins beside the reading column before it scrolls sideways.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}
