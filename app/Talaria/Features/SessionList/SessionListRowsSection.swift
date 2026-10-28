@@ -50,20 +50,21 @@ struct SessionListRowsSection: View {
         }
     }
 
-    /// A caption opens each run of rows in one server group (TAL-1534), for a group the server lists.
+    /// A caption opens each run of rows in one group (TAL-1534): a server-grouped row's only when the server lists that
+    /// group, so a row the list adds after the last response still opens its own.
     private var sidebarRows: [(session: SessionSummary, caption: String?)] {
         var previous: String??
         return sessions.map { session in
             let group = session.sidebarGroupKind
             defer { previous = group }
             guard let group, previous != .some(group) else { return (session, nil) }
-            return (session, caption(for: group))
+            return (session, caption(for: group, serverGrouped: session.sidebarGroup != nil))
         }
     }
 
-    private func caption(for group: String) -> String? {
+    private func caption(for group: String, serverGrouped: Bool) -> String? {
         let listed = viewModel.sidebarGroups?.first { $0.kind == group }
-        if viewModel.sidebarGroups != nil, listed == nil { return nil }
+        if serverGrouped, viewModel.sidebarGroups != nil, listed == nil { return nil }
         switch group {
         case "pinned": return String(localized: "Pinned")
         case "recent": return String(localized: "Recents")

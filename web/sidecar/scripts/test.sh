@@ -12,7 +12,8 @@ fi
 venv="$here/.venv"
 if [[ ! -x "$venv/bin/python" ]]; then
   "$runner" -m venv "$venv"
-  "$venv/bin/python" -m pip install --quiet --disable-pip-version-check "pytest>=8,<10"
+  # pytest 9.2 renames parametrized case ids, which the reviewed inventory in tests/process_inventory.json lists.
+  "$venv/bin/python" -m pip install --quiet --disable-pip-version-check "pytest>=8,<9.2"
 fi
 state="${TMPDIR:-/tmp}/talaria-sidecar-tests.$$"
 mkdir -p "$state"

@@ -586,13 +586,15 @@ final class SessionListHostedTests: XCTestCase {
     func testSidebarCaptionsFollowTheServersGroups() async throws {
         let pinnedRow = #"{"session_id":"group-a","title":"Group row A","pinned":true,"source_kind":"webui""#
         let recentRow = #"{"session_id":"group-b","title":"Group row B","pinned":false,"source_kind":"webui""#
-        let cases: [(name: String, json: String, captions: Set<String>)] = [
-            ("server groups", #"{"sessions":[\#(pinnedRow),"sidebar_group":"pinned"},\#(recentRow),"sidebar_group":"recent"}],"sidebar_groups":[{"kind":"pinned","title":"Pinned"},{"kind":"recent","title":"Recents"}]}"#, ["Pinned", "Recents"]),
-            ("server lists no pinned group", #"{"sessions":[\#(pinnedRow),"sidebar_group":"recent"},\#(recentRow),"sidebar_group":"recent"}],"sidebar_groups":[{"kind":"recent","title":"Recents"}]}"#, ["Recents"]),
-            ("older server", #"{"sessions":[\#(pinnedRow)},\#(recentRow)}]}"#, ["Pinned", "Recents"]),
+        let cases: [(name: String, json: String, captions: Set<String>, inserted: SessionSummary?)] = [
+            ("server groups", #"{"sessions":[\#(pinnedRow),"sidebar_group":"pinned"},\#(recentRow),"sidebar_group":"recent"}],"sidebar_groups":[{"kind":"pinned","title":"Pinned"},{"kind":"recent","title":"Recents"}]}"#, ["Pinned", "Recents"], nil),
+            // A chat the list inserts after a pinned-only response still opens Recents.
+            ("row inserted after a pinned-only list", #"{"sessions":[\#(pinnedRow),"sidebar_group":"pinned"},\#(recentRow),"sidebar_group":"pinned"}],"sidebar_groups":[{"kind":"pinned","title":"Pinned"}]}"#, ["Pinned", "Recents"], SessionSummary(sessionId: "group-c", title: "Group row C")),
+            ("server lists no pinned group", #"{"sessions":[\#(pinnedRow),"sidebar_group":"recent"},\#(recentRow),"sidebar_group":"recent"}],"sidebar_groups":[{"kind":"recent","title":"Recents"}]}"#, ["Recents"], nil),
+            ("older server", #"{"sessions":[\#(pinnedRow)},\#(recentRow)}]}"#, ["Pinned", "Recents"], nil),
         ]
         defer { SidebarGroupsProtocol.json = nil }
-        for (name, json, captions) in cases {
+        for (name, json, captions, inserted) in cases {
             SidebarGroupsProtocol.json = json
             let configuration = URLSessionConfiguration.ephemeral
             configuration.protocolClasses = [SidebarGroupsProtocol.self]
@@ -601,7 +603,7 @@ final class SessionListHostedTests: XCTestCase {
             _ = await viewModel.load()
             XCTAssertEqual(viewModel.sessions.count, 2, name)
             let window = try hostWindow(List {
-                SessionListRowsSection(viewModel: viewModel, sessions: viewModel.sessions, emptyTitle: "", emptyDescription: nil, isSearchActive: false, searchText: "", selectedSessionID: nil, actions: fixtureRowActions)
+                SessionListRowsSection(viewModel: viewModel, sessions: viewModel.sessions + (inserted.map { [$0] } ?? []), emptyTitle: "", emptyDescription: nil, isSearchActive: false, searchText: "", selectedSessionID: nil, actions: fixtureRowActions)
             }.environment(\.sessionRowStyle, .sidebar))
             let listed = await awaitElement(in: window) { $0.accessibilityLabel?.hasPrefix("Group row B") == true }
             XCTAssertNotNil(listed, "\(name): rows did not render")
