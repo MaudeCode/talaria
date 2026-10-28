@@ -100,6 +100,24 @@ def test_root_profile_keeps_single_profile_semantics(tmp_path, monkeypatch, scop
         assert scope_calls[-1] == ("terminal", root, {"TERMINAL_ENV": "ssh"})
 
 
+@pytest.mark.parametrize('context_local', [False, True])
+def test_read_only_profile_scope_can_skip_process_recovery(tmp_path, monkeypatch, scope_calls, context_local):
+    root = tmp_path / 'root'
+    root.mkdir()
+    monkeypatch.setattr(home_module, '_PROCESS_HOME', root)
+    calls = []
+    monkeypatch.setattr(home_module, '_recover_processes', lambda home: calls.append(home))
+    constants = types.ModuleType('hermes_constants')
+    if context_local:
+        constants.set_hermes_home_override = lambda home: home
+        constants.reset_hermes_home_override = lambda token: None
+    monkeypatch.setitem(sys.modules, 'hermes_constants', constants)
+    with home_module.scoped_home(root, load_plugins=False, recover_processes=False):
+        assert calls == []
+    with home_module.scoped_home(root):
+        assert calls == [root]
+
+
 def test_named_profile_fails_closed_without_a_secret_scope(tmp_path, monkeypatch) -> None:
     root = tmp_path / "root"
     named = root / "profiles" / "work"

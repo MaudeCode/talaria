@@ -310,7 +310,7 @@ def _recover_processes(home: Path) -> None:
 
 
 @contextlib.contextmanager
-def scoped_home(home: Path, *, load_plugins: bool = True):
+def scoped_home(home: Path, *, load_plugins: bool = True, recover_processes: bool = True):
     """Run the body with Hermes Agent resolving ``get_hermes_home()`` to ``home``."""
     home = Path(home).expanduser()
     stamp = _scope_stamp(home)
@@ -322,7 +322,8 @@ def scoped_home(home: Path, *, load_plugins: bool = True):
         token = set_hermes_home_override(home)
         try:
             with _secret_scope(home, stamp, load_plugins=load_plugins), _terminal_scope(home, stamp):
-                _recover_processes(home)
+                if recover_processes:
+                    _recover_processes(home)
                 yield home
         finally:
             reset_hermes_home_override(token)
@@ -332,7 +333,8 @@ def scoped_home(home: Path, *, load_plugins: bool = True):
         os.environ["HERMES_HOME"] = str(home)
         try:
             with _secret_scope(home, stamp, load_plugins=load_plugins), _terminal_scope(home, stamp):
-                _recover_processes(home)
+                if recover_processes:
+                    _recover_processes(home)
                 yield home
         finally:
             if previous is None:

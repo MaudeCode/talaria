@@ -37,7 +37,7 @@ export function PendingWritesPanel({ kind }: { kind: Kind }) {
       <ul className="flex flex-col divide-y divide-border-subtle">
         {items.map((item) => (
           <li key={item.id} className="flex flex-col gap-1.5 py-2.5">
-            <PendingWriteReview summary={item.summary} target={`${item.target} · ${item.op}`} diff={item.diff} actions={<>
+            <TextDiffReview summary={item.summary} target={`${item.target} · ${item.op}`} diff={item.diff} actions={<>
               <Button variant="primary" disabled={!item.approvable} onClick={() => review.mutate({ verb: 'approve', id: item.id, revision: item.revision })}>{m.pending_writes_approve()}</Button>
               <Button variant="ghost" onClick={() => review.mutate({ verb: 'reject', id: item.id, revision: item.revision })}>{m.pending_writes_reject()}</Button>
             </>} />
@@ -49,17 +49,17 @@ export function PendingWritesPanel({ kind }: { kind: Kind }) {
 }
 
 
-/** Shared staged-write presentation for Agent proposals and explicit memory compaction previews. */
-export function PendingWriteReview({ summary, target, diff, actions, children, open = false }: {
-  summary: string; target: string; diff: string; actions: ReactNode; children?: ReactNode; open?: boolean
+/** Shared text comparison for saved revisions, Agent proposals and memory compaction previews. */
+export function TextDiffReview({ summary, target, diff, actions, children, open = false }: {
+  summary: string; target: string; diff: string; actions?: ReactNode; children?: ReactNode; open?: boolean
 }) {
   return <>
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
       <div className="min-w-0 flex-1">
         <div className="text-sm text-text">{summary}</div>
-        <div className="font-mono text-[11px] text-muted">{target}</div>
+        {target && <div className="font-mono text-[11px] text-muted">{target}</div>}
       </div>
-      <div className="flex gap-2">{actions}</div>
+      {actions && <div className="flex gap-2">{actions}</div>}
     </div>
     {children}
     <details open={open || undefined}>

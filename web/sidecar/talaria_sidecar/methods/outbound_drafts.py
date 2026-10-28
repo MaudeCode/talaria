@@ -27,25 +27,7 @@ _STATES = {'draft', 'approved', 'sent', 'saved', 'failed', 'discarded'}
 
 
 def _producer(home):
-    """Native registration, explicit profile consent and reviewed source, without loading a plugin."""
-    try:
-        from hermes_cli import plugins_cmd as pc
-        metadata = pc._read_install_metadata()
-        for plugin in dashboard_plugins._plugins(home):
-            if plugin['name'] != 'draft-cards' or not plugin['enabled'] or plugin.get('source') != 'user':
-                continue
-            root, anchor = Path(plugin['_dir']).parent, Path(plugin['_asset_anchor'])
-            record = metadata.get(root.name, {})
-            catalog = record.get('catalog', {})
-            if catalog.get('name') != 'draft-cards' or catalog.get('sha') != _PIN or record.get('revision') != _PIN:
-                continue
-            if not all((body := dashboard_plugins._read(root, name, anchor=anchor)) is not None
-                       and hashlib.sha256(body).hexdigest() == digest for name, digest in _SOURCES.items()):
-                continue
-            return _PIN
-    except (ImportError, AttributeError, OSError, ValueError, TypeError):
-        pass
-    return None
+    return dashboard_plugins.reviewed_producer(home, 'draft-cards', _PIN, _SOURCES)
 
 
 def _database(home):

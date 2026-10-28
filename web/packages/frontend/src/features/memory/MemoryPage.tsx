@@ -13,7 +13,7 @@ import { isApiError, isDefiniteRefusal } from '../../contracts/common'
 import { cn } from '../../ui/cn'
 import { useResourceEffects, useResourceMutation, withEffect } from '../sessions/useResourceMutation'
 import { getStreamContext, useStreamContext } from '../../stream/connection'
-import { PendingWritesPanel, PendingWriteReview } from '../pending-writes/PendingWritesPanel'
+import { PendingWritesPanel, TextDiffReview } from '../pending-writes/PendingWritesPanel'
 
 type Section = 'memory' | 'user' | 'soul' | 'project_context'
 type Writable = Exclude<Section, 'project_context'>
@@ -108,7 +108,7 @@ export function MemoryPage() {
       {compactionError && <div role="alert" className="mb-3 text-xs text-error">{compactionError}</div>}
       {preview && !effects['memory-compaction']?.remove && (
         <section ref={reviewRef} aria-label={m.memory_compaction_preview()} className="mb-6 flex scroll-mt-40 flex-col gap-3">
-          <PendingWriteReview summary={m.memory_compaction_preview()} target={preview.model} diff={preview.diff} open actions={<>
+          <TextDiffReview summary={m.memory_compaction_preview()} target={preview.model} diff={preview.diff} open actions={<>
             <Button variant="primary" disabled={draft[preview.section] !== undefined || write.isPending} onClick={() => { setCompactionError(''); apply.mutate(preview) }}>{m.memory_compaction_apply()}</Button>
             <Button variant="ghost" onClick={() => { setReview(null); setCompactionError('') }}>{m.cancel()}</Button>
           </>}>
@@ -116,7 +116,7 @@ export function MemoryPage() {
               <label className="min-w-0 text-xs text-muted">{m.memory_compaction_source()}<textarea readOnly value={preview.source} rows={7} className="mt-1 w-full rounded-md border border-border-subtle bg-code-bg p-3 font-mono text-xs text-pre-text" /></label>
               <label className="min-w-0 text-xs text-muted">{m.memory_compaction_proposed()}<textarea readOnly value={preview.proposed} rows={7} className="mt-1 w-full rounded-md border border-border-subtle bg-code-bg p-3 font-mono text-xs text-pre-text" /></label>
             </div>
-          </PendingWriteReview>
+          </TextDiffReview>
         </section>
       )}
       {memory.isPending && <LoadingState />}

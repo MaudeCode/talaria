@@ -1,5 +1,6 @@
 import { McpCostPatchSchema } from '../mcp-cost-policy.js'
 import { oc, type OpenAPI } from '@orpc/contract'
+import { SkillRevisionsInputSchema, SkillRevisionsSchema } from '../sidecar/namespaces.js'
 import { z } from 'zod'
 import { ConnectorSignInOfferSchema, SkillsSchema, SkillContentSchema, SkillsUsageSchema, MemorySchema, PromptSchema, PromptsSchema, CommandsSchema, LogsSchema, InsightsSchema, AgentHealthSchema, SystemHealthSchema, McpServerSchema, McpServersSchema, McpToolsSchema, ConnectorsPageSchema, ConnectorToolsViewSchema, ConnectorOperationViewSchema, PluginsSchema, UpdatesCheckSchema, UpdatesSummarySchema, UpdateApplySchema, UpdateNotificationsSchema, UpdateNotificationSchema, TabIdSchema, FrontendBuildIdSchema, NotesSourcesSchema, NotesSearchSchema, NoteItemSchema, WikiStatusSchema, WikiBrowseSchema, WikiPageSchema, DashboardStatusSchema, DashboardConfigSchema, GatewayStatusSchema, GatewayActionSchema, ProjectOsDashboardSchema, TranscribeCapabilitySchema, SpeechPrepareSchema, PluginSettingViewSchema, OnboardingOAuthSchema } from '../views.js'
 import { PluginCatalogQuerySchema, PluginCatalogSchema, PluginInstallInputSchema, PluginInstallResultSchema, PluginRuntimeApplicationSchema, PluginUpdateResultSchema, ToolsetsCatalogSchema, CommandBundleInvocationSchema, CommandBundleSchema, PendingWriteSchema, PendingWriteRefSchema } from '../sidecar/namespaces.js'
@@ -64,6 +65,7 @@ const PendingWritesReviewSchema = z.object({ results: z.array(z.object({ id: z.s
 export const toolsContract = {
   toolsetsCatalog: oc.route({ method: 'POST', path: '/api/toolsets', tags, summary: 'Read the current profile catalog with a draft selection. Null uses profile defaults.' }).input(z.object({ session_id: z.string().optional(), toolsets: z.array(z.string()).nullable() })).output(ToolsetsCatalogSchema),
   skills: {
+    revisions: oc.route({ method: 'GET', path: '/api/skills/revisions', tags, summary: 'Inspect actual saved skill history from the consented reviewed backend. Profile/skill-bound IDs refuse stale or foreign selections. No history is fabricated; inspection cannot execute checks, call providers, run a judge or change skills.' }).input(SkillRevisionsInputSchema).output(SkillRevisionsSchema),
     list: oc.route({ method: 'GET', path: '/api/skills', tags }).input(z.object({ category: z.string().optional() })).output(SkillsSchema),
     usage: oc.route({ method: 'GET', path: '/api/skills/usage', tags }).output(SkillsUsageSchema),
     content: oc.route({ method: 'GET', path: '/api/skills/content', tags, summary: 'Skill view, or one linked file when `file` is given.' }).input(z.object({ name: z.string().optional(), file: z.string().optional() })).output(SkillContentSchema),

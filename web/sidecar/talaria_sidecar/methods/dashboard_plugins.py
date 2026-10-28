@@ -190,6 +190,27 @@ def _plugins(home):
     return out
 
 
+def reviewed_producer(home, name, pin, sources):
+    """Verify a store adapter's native registration, profile consent and reviewed bytes without loading it."""
+    try:
+        from hermes_cli import plugins_cmd as pc
+        metadata = pc._read_install_metadata()
+        for plugin in _plugins(home):
+            if plugin['name'] != name or not plugin['enabled'] or plugin.get('source') != 'user':
+                continue
+            root, anchor = Path(plugin['_dir']).parent, Path(plugin['_asset_anchor'])
+            record = metadata.get(root.name, {})
+            catalog = record.get('catalog', {})
+            if catalog.get('name') != name or catalog.get('sha') != pin or record.get('revision') != pin:
+                continue
+            if all((body := _read(root, file, anchor=anchor)) is not None
+                   and hashlib.sha256(body).hexdigest() == digest for file, digest in sources.items()):
+                return pin
+    except (ImportError, AttributeError, OSError, ValueError, TypeError):
+        pass
+    return None
+
+
 def _named(home, name, *, require_panel=True):
     return next((p for p in _plugins(home) if p['name'] == name and p['enabled'] and (p['panel'] if require_panel else p.get('_api_file'))), None)
 

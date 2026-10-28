@@ -8,13 +8,14 @@ import { HubPage } from '../../shell/AppShell'
 import { Button } from '../../ui/Button'
 import { Select } from '../../ui/Select'
 import { ConfirmDialog } from '../../ui/Dialog'
-import { EmptyState, ErrorState, LoadingState, formatBytes } from '../../ui/States'
+import { EmptyState, ErrorState, LoadingState, formatBytes, formatDate } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { showErrorToast } from '../toast/errorToast'
 import { cn } from '../../ui/cn'
 import { useResourceEffects, useResourceMutation, withEffects, type ResourceEffect } from '../sessions/useResourceMutation'
 import { ResourceSwitch } from '../sessions/ResourceSwitch'
-import { PendingWritesPanel } from '../pending-writes/PendingWritesPanel'
+import { PendingWritesPanel, TextDiffReview } from '../pending-writes/PendingWritesPanel'
+import { useStreamContext } from '../../stream/connection'
 
 export function SkillsPage() {
   const [query, setQuery] = useState('')
@@ -31,7 +32,7 @@ export function SkillsPage() {
   })()
   const toggle = useResourceMutation({ resource: ({ name }: { name: string; enabled: boolean }) => `skill:${name}`, effect: ({ enabled }) => ({ value: enabled }), queryKey: keys.skills.all, readKeys: () => [{ queryKey: keys.skills.all, exact: true }], mutationFn: ({ name, enabled }: { name: string; enabled: boolean }) => api.toggleSkill(name, enabled), onError: (e) => showErrorToast(e) })
 
-  if (selected) return <SkillDetail name={selected} onBack={() => setSelected(null)} />
+  if (selected) return <SkillDetail key={selected} name={selected} onBack={() => setSelected(null)} />
   return (
     <HubPage
       title={m.tab_skills()}
@@ -96,6 +97,7 @@ function SkillDetail({ name, onBack }: { name: string; onBack: () => void }) {
   const [draft, setDraft] = useState<string | null>(null)
   const [confirm, setConfirm] = useState(false)
   const [file, setFile] = useState<string | null>(null)
+  const [historyOpen, setHistoryOpen] = useState(false)
   // The editor keeps the submitted text; a confirmed save clears only a draft nobody edited since. A later save waits for
   // the one in flight, so the server always ends on the newest text.
   const save = useResourceMutation({
@@ -116,6 +118,10 @@ function SkillDetail({ name, onBack }: { name: string; onBack: () => void }) {
       {content.isSuccess && (
         <div className="flex flex-col gap-3">
           {content.data.path && <div className="font-mono text-[11px] text-muted">{content.data.path}</div>}
+          <details onToggle={(event) => setHistoryOpen(event.currentTarget.open)}>
+            <summary className="cursor-pointer py-2 text-sm text-muted hover:text-text">{m.skill_revisions_title()}</summary>
+            {historyOpen && <SkillRevisionHistory name={name} />}
+          </details>
           <label className="flex flex-col gap-1 text-sm">
             <span>{m.skill_content_label()}</span>
             <textarea value={text} readOnly={content.data.editable === false} onChange={(e) => setDraft(e.target.value)} rows={24} spellCheck={false} placeholder={m.skill_content_placeholder()} className="w-full rounded-md border border-border bg-code-bg p-3 font-mono text-[12.5px] text-pre-text" />
@@ -140,6 +146,49 @@ function SkillDetail({ name, onBack }: { name: string; onBack: () => void }) {
       <ConfirmDialog open={confirm} onOpenChange={setConfirm} title={m.skill_delete_confirm({ a0: name })} confirmLabel={m.delete()} cancelLabel={m.cancel()} danger onConfirm={() => { del.mutate(); onBack() }} />
     </HubPage>
   )
+}
+
+function SkillRevisionHistory({ name }: { name: string }) {
+  const context = useStreamContext()
+  const [selection, setSelection] = useState<{ context: object; revision?: string; compare_to?: string } | null>(null)
+  const owned = selection?.context === context ? selection : null
+  const history = useQuery({ queryKey: keys.skills.revisions(name, owned?.revision, owned?.compare_to), queryFn: async ({ signal }) => ({ context, value: await api.fetchSkillRevisions(name, owned ?? undefined, signal) }) })
+  const data = history.data?.context === context ? history.data.value : undefined
+  const unavailable = data?.reason === 'history_unavailable' ? m.skill_revisions_missing()
+    : data?.reason === 'identity_unavailable' ? m.skill_revisions_identity_unavailable()
+    : data?.reason === 'invalid_history' ? m.skill_revisions_invalid() : m.skill_revisions_backend_unavailable()
+  return <section aria-label={m.skill_revisions_title()} className="flex min-w-0 flex-col gap-3 py-2">
+    {history.isPending && <LoadingState />}
+    {history.isError && <ErrorState error={history.error} onRetry={() => { setSelection(null); if (!owned) void history.refetch() }} />}
+    {data && data.state !== 'available' && <p role="status" className="text-sm text-muted">{unavailable}</p>}
+    {data?.state === 'available' && <>
+      <div className="font-mono text-xs break-all text-muted">Hermetic {data.backend_revision}</div>
+      <ul className="divide-y divide-border-subtle">
+        {data.revisions.map((row) => <li key={row.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 py-2 text-xs">
+          <span className="font-mono text-text">{row.label}</span>
+          {row.current && <span className="text-muted">{m.skill_revisions_current()}</span>}
+          {row.saved_at && <time dateTime={row.saved_at} className="text-muted">{formatDate(row.saved_at)}</time>}
+          {row.actor && <span className="text-muted">{row.actor}</span>}
+        </li>)}
+      </ul>
+      <div className="flex flex-wrap gap-3">
+        <label className="flex min-w-0 flex-col gap-1 text-xs text-muted">{m.skill_revisions_revision()}
+          <Select aria-label={m.skill_revisions_revision()} value={data.selected?.revision} onValueChange={(revision) => setSelection({ context, revision, ...(data.comparison ? { compare_to: data.comparison.from_revision } : {}) })}>
+            {data.revisions.map((row) => <option key={row.id} value={row.id}>{row.label}</option>)}
+          </Select>
+        </label>
+        {data.comparison && <label className="flex min-w-0 flex-col gap-1 text-xs text-muted">{m.skill_revisions_compare_with()}
+          <Select aria-label={m.skill_revisions_compare_with()} value={data.comparison.from_revision} onValueChange={(compare_to) => setSelection({ context, compare_to, ...(data.selected ? { revision: data.selected.revision } : {}) })}>
+            {data.revisions.map((row) => <option key={row.id} value={row.id}>{row.label}</option>)}
+          </Select>
+        </label>}
+      </div>
+      {data.selected && <label className="flex min-w-0 flex-col gap-1 text-xs text-muted">{m.skill_revisions_content()}
+        <textarea readOnly value={data.selected.content} rows={6} className="w-full rounded-md border border-border-subtle bg-code-bg p-3 font-mono text-xs text-pre-text" />
+      </label>}
+      {data.comparison && <TextDiffReview summary={m.skill_revisions_comparison()} target="" diff={data.comparison.diff} open />}
+    </>}
+  </section>
 }
 
 function SkillFile({ name, file, onBack }: { name: string; file: string; onBack: () => void }) {

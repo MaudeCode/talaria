@@ -236,6 +236,11 @@ Desktop contributions are unverified and do not run in Talaria. A lost acknowled
 the installed identity without replaying the install. Agents without this native boundary show an
 update requirement.
 
+Skills → a skill → **Saved revisions** inspects history from the enabled, consented,
+reviewed Hermetic backend. It shows real saved revisions, known provenance and a text
+comparison. Missing, ambiguous or unverifiable history stays unavailable. Inspection
+does not create history, migrate plugin data, run saved checks or change a skill.
+
 Select text within a chat message, then choose **Quote selection** to append it as a Markdown quote
 to the current draft. The action keeps the draft, attachments and cursor, and never sends a message.
 Quoting stops active dictation so later speech results cannot replace the quote.
