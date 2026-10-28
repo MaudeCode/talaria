@@ -9,10 +9,21 @@ import { keys } from '../../api/queryKeys'
 import { usePromptAnswer } from './usePromptAnswer'
 import { cn } from '../../ui/cn'
 
+// Focusable, editable and ARIA widget ancestors own their keyboard activation, including nested icons.
+const interactiveTarget = [
+  'button', 'a', 'input', 'select', 'textarea', 'summary', '[tabindex]',
+  'audio[controls]', 'video[controls]', 'iframe', 'object', 'embed',
+  '[contenteditable]:not([contenteditable="false"])',
+  ...['button', 'link', 'checkbox', 'combobox', 'grid', 'gridcell', 'listbox', 'menu', 'menubar',
+    'menuitem', 'menuitemcheckbox', 'menuitemradio', 'option', 'radio', 'radiogroup', 'scrollbar',
+    'searchbox', 'slider', 'spinbutton', 'switch', 'tab', 'tablist', 'textbox', 'tree', 'treegrid', 'treeitem']
+    .map((role) => `[role~="${role}"]`),
+].join(',')
+
 /**
  * Destructive-command approval. Rendered inline above the composer (legacy
  * placement) with alertdialog semantics; Enter answers "allow once" when focus
- * is outside a text field. Cleared by the terminal event or a successful respond.
+ * is outside interactive controls. Cleared by the terminal event or a successful respond.
  */
 export function ApprovalCard({ sessionId, pending, onResolved }: { sessionId: string; pending: ApprovalPending; onResolved: () => void }) {
   const [collapsed, setCollapsed] = useState(false)
@@ -30,9 +41,8 @@ export function ApprovalCard({ sessionId, pending, onResolved }: { sessionId: st
   useEffect(() => {
     if (dismissed || answered) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Enter' || e.metaKey || e.ctrlKey || e.shiftKey) return
-      const t = e.target as HTMLElement | null
-      if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'BUTTON' || t.tagName === 'A')) return
+      if (e.key !== 'Enter' || e.defaultPrevented || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.isComposing || e.repeat) return
+      if (e.composedPath().some((target) => target instanceof Element && target.closest(interactiveTarget))) return
       e.preventDefault()
       respond('once')
     }

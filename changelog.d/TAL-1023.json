@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Using Enter in menus and other controls no longer approves a waiting command.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
