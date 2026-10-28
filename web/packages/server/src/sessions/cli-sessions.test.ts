@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, utimesSync } from 'node:fs'
+import { mkdtempSync, rmSync, statSync, utimesSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Worker } from 'node:worker_threads'
@@ -7,6 +7,7 @@ import { bootTestServer, type TestServer, openStateDb } from '../test/harness.js
 import { CliSessionSource } from './cli-sessions.js'
 import { Session } from './session.js'
 import type { StateDbWorkerRequest } from './state-db.js'
+import { GatewayWatcher } from './gateway-watcher.js'
 
 describe('batched sidebar reads and targeted lookup cache', () => {
   let server: TestServer
@@ -29,6 +30,8 @@ describe('batched sidebar reads and targeted lookup cache', () => {
       db.prepare('INSERT INTO messages VALUES (?, ?, ?, ?)').run(i, kind, 'user', i)
     }
     db.close()
+    // Cache-reuse cases begin with a settled database; writes below remain fresh.
+    utimesSync(path, 1, 1)
     now = 100
     source = new CliSessionSource({ store: server.deps.sessionStore, profileHome: () => home, lastWorkspace: () => home,
       profilesMatch: server.deps.profilesMatch, now: () => now, log: () => undefined })
@@ -74,6 +77,56 @@ describe('batched sidebar reads and targeted lookup cache', () => {
       expect((await source.read('default', { sessionIds: ['cli'] })).rows[0]?.title).toBe('New WAL title')
       expect(ops()).toEqual(['rowBatches'])
     } finally { db.close() }
+  })
+
+  it.each([['coarse', 6, false], ['coarse', 0, false], ['coarse', 6, true], ['coarse', 0, true], ['ordinary', 6, false]] as const)('publishes same-size WAL activity with %s timestamps, cache advance %s and future tick %s', async (timestamps, advance, future) => {
+    const db = openStateDb(path)
+    db.exec(`PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0;
+      ALTER TABLE sessions ADD COLUMN last_activity_at REAL;
+      CREATE INDEX idx_sessions_effective_activity ON sessions(COALESCE(last_activity_at, started_at) DESC, started_at DESC, id DESC)`)
+    // Exercise the current whole-second tick and clocks ahead of the sampling host.
+    const tick = Math.floor(Date.now() / 1000) + (future ? 86400 : 0)
+    const watcher = new GatewayWatcher('default', home, { rows: (profile) => source.read(profile), now: () => now, log: () => undefined })
+    const sub = watcher.subscribe()
+    const signatures: string[] = []
+    try {
+      for (const activity of [110, 111, 112, 113]) {
+        db.exec('PRAGMA wal_checkpoint(RESTART)')
+        db.prepare("UPDATE sessions SET title = ?, last_activity_at = ? WHERE id = 'cli'").run(`activity-${String(activity)}`, activity)
+        if (timestamps === 'coarse') for (const file of [path, `${path}-wal`]) utimesSync(file, tick, tick)
+        signatures.push([path, `${path}-wal`].map((file) => { const st = statSync(file, { bigint: true }); return `${st.size}:${st.mtimeNs}` }).join('|'))
+        now += advance
+        await watcher.pollOnce()
+        const event = await sub.next(AbortSignal.timeout(100))
+        expect(event?.sessions.find((row) => row.session_id === 'cli'), `committed activity ${String(activity)}`).toMatchObject({ title: `activity-${String(activity)}`, updated_at: activity })
+      }
+      if (timestamps === 'coarse') expect(signatures[3]).toBe(signatures[2])
+      expect(ops().filter((op) => op === 'rowBatches')).toHaveLength(4)
+      // Once settled, unchanged polls stay cheap, and parity still refreshes the rows.
+      for (const file of [path, `${path}-wal`]) utimesSync(file, 1, 1)
+      await watcher.pollOnce()
+      calls.mockClear()
+      for (let i = 0; i < 10; i++) { now += 5; expect(await watcher.pollOnce()).toBe(false) }
+      expect(ops().filter((op) => op === 'rowBatches')).toHaveLength(0)
+      now += 300
+      expect(await watcher.pollOnce()).toBe(true)
+      expect(ops().filter((op) => op === 'rowBatches')).toHaveLength(1)
+      expect(await sub.next(AbortSignal.timeout(20))).toBeNull()
+    } finally { sub.close(); watcher.stop(); db.close() }
+  })
+
+  it('publishes database disappearance after an uncertain signature', async () => {
+    const tick = Math.floor(Date.now() / 1000) + 86400
+    utimesSync(path, tick, tick)
+    const watcher = new GatewayWatcher('default', home, { rows: (profile) => source.read(profile), now: () => now, log: () => undefined })
+    const sub = watcher.subscribe()
+    try {
+      expect(await watcher.pollOnce()).toBe(true)
+      expect((await sub.next())?.sessions.length).toBeGreaterThan(0)
+      rmSync(path)
+      expect(await watcher.pollOnce()).toBe(true)
+      expect((await sub.next())?.sessions).toEqual([])
+    } finally { sub.close(); watcher.stop() }
   })
 
   it('bounds retained targeted snapshots while keeping recent ones cached', async () => {

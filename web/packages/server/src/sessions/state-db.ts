@@ -11,6 +11,7 @@ import { createHash } from 'node:crypto'
 import { Worker } from 'node:worker_threads'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { startupTimingScope } from '../startup-timing.js'
+import { settledFileStatKey } from '../fs/stat.js'
 import type { AgentStorage, ExecutionMode } from '@maudecode/talaria-web-contracts'
 import { str } from '../util.js'
 import { stateDbMessageFingerprint, stateDbMessageKey } from './state-db-identity.js'
@@ -1022,7 +1023,8 @@ export function stateDbSessionHasMessages(dbPath: string, sid: string): boolean 
 /**
  * Python `_cheap_change_fingerprint`: `MAX(rowid)` of both tables, the file
  * stamps of the DB and its WAL, and the SQLite change counter (header bytes
- * 24..28). Returns null when unreadable so the caller projects instead.
+ * 24..28). Returns null when unreadable or too fresh to rule out same-tick
+ * writes, so the caller projects instead.
  */
 export function cheapChangeFingerprint(dbPath: string, onError?: (reason: string, error: unknown) => void): string | null {
   try {
@@ -1036,7 +1038,11 @@ export function cheapChangeFingerprint(dbPath: string, onError?: (reason: string
       finishStateDbRead(db)
     }
     for (const path of [dbPath, `${dbPath}-wal`]) {
-      try { const st = statSync(path, { bigint: true }); parts.push([Number(st.size), st.mtimeNs.toString()]) } catch { parts.push(null) }
+      try {
+        const stamp = settledFileStatKey(path)
+        if (stamp === null) return null
+        parts.push(stamp)
+      } catch { parts.push(null) }
     }
     try {
       const fd = openSync(dbPath, 'r')

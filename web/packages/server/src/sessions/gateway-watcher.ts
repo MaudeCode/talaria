@@ -58,7 +58,7 @@ export class GatewayWatcher {
   private running = false
   private stopping = false
   private lastHash = ''
-  private lastCheapFp = ''
+  private lastCheapFp: string | null = null
   private lastFullProjectionAt: number | null = null
   private lastErrorLogAt = Number.NEGATIVE_INFINITY
   private polling: Promise<boolean> | null = null
@@ -172,7 +172,8 @@ export class GatewayWatcher {
     // A watcher stopped mid-pass has already sent its subscribers the end sentinel.
     if (this.stopping) return false
     const hash = snapshotHash(sessions)
-    if (cheapFp !== null) this.lastCheapFp = cheapFp
+    // Keep uncertainty distinct from both a settled signature and a missing database.
+    this.lastCheapFp = cheapFp
     this.lastFullProjectionAt = now
     if (hash !== this.lastHash) {
       this.lastHash = hash

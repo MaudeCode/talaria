@@ -1,10 +1,10 @@
 import { sessionPath } from '../test/storage.js'
 import { spawn } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { afterAll, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { bootTestServer, type TestServer, openStateDb } from '../test/harness.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import type { SidecarResult } from '@maudecode/talaria-web-contracts'
@@ -289,6 +289,10 @@ describe('state.db projection', () => {
     db = createStateDb(dbPath)
   })
   afterAll(async () => { db.close(); s.deps.gatewayWatchers.stopAll(); await s.close() })
+  beforeEach(() => {
+    // Existing rows are settled; writes made by a case still exercise fresh signatures.
+    for (const file of [dbPath, `${dbPath}-wal`]) if (existsSync(file)) utimesSync(file, 1, 1)
+  })
 
   it('keeps decoded scalar and object content within the public session contract', async ({ onTestFinished }) => {
     onTestFinished(() => {
