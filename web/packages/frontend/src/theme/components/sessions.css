@@ -31,6 +31,7 @@
 .session-date-header{display:flex;align-items:center;gap:5px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);padding:8px 10px 4px;cursor:pointer;user-select:none;opacity:.8;transition:opacity .15s}
 .session-date-header:hover{opacity:1}
 .session-date-header.pinned{color:var(--session-pinned-fg)}
+.session-drop-target{background:var(--accent-bg);outline:1px solid var(--accent);outline-offset:-1px}
 .session-item.selected{background:var(--accent-bg);color:var(--accent-text)}
 .session-item.selected .session-title{color:var(--accent-text)}
 .session-date-caret{font-size:9px;transition:transform .2s;flex-shrink:0;display:inline-block;transform:rotate(0deg)}

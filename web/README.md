@@ -155,6 +155,11 @@ Unavailable, retired, deleted, or changed source identities refuse creation so
 you can select again. References inherit source-history privacy requirements.
 References are available for ordinary chats; diagnostic modes refuse them.
 
+In the Web sidebar, drag a conversation onto **Pinned** to pin it, or from Pinned
+onto an ordinary date group to unpin it. Empty drop targets appear while dragging;
+collapsed groups still accept drops. The conversation menu provides the same actions
+with keyboard and touch access.
+
 Talaria-created chats run `run_agent.AIAgent` in-process on the Agent venv, reading the profile's
 `HERMES_HOME` config. Existing canonical Agent conversations use their original gateway owner when it
 offers the authenticated `hermes-gateway-v1` session protocol. Opening or leaving a conversation never

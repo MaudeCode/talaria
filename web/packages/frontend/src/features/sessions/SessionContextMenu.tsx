@@ -1,4 +1,5 @@
 import { useResourceMutation } from './useResourceMutation'
+import { useSessionPin } from './useSessionPin'
 import { discardSession } from '../../stream/connection'
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
@@ -34,7 +35,7 @@ export function SessionContextMenu({ row, active }: { row: SessionRow; active: b
   const fail = (e: unknown) => showErrorToast(e)
   // `row` is the displayed row, so a repeated toggle targets the state the user sees.
   const rename = useResourceMutation({ resource: () => `session:${sid}`, effect: (title: string) => ({ fields: { title } }), mutationFn: (title) => api.renameSession(sid, title), onError: fail })
-  const pin = useResourceMutation({ resource: () => `session:${sid}`, effect: (pinned: boolean) => ({ fields: { pinned, sidebar_group: pinned ? 'pinned' : 'recent' } }), mutationFn: (pinned) => api.pinSession(sid, pinned), onError: (e) => showToast(m.session_pin_failed() + (e instanceof Error ? e.message : ''), 4000, 'error') })
+  const pin = useSessionPin()
   const archive = useResourceMutation({ resource: () => `session:${sid}`, effect: (archived: boolean) => ({ fields: { archived } }), mutationFn: (archived) => api.archiveSession(sid, archived), onSuccess: (_, archived) => { if (archived) showToast(m.session_archived()) }, onError: (e) => showToast(m.session_archive_failed() + (e instanceof Error ? e.message : ''), 4000, 'error') })
   const duplicate = useMutation({ mutationFn: () => api.duplicateSession(sid), onSuccess: (r) => { showToast(m.session_duplicated()); invalidate(); void navigate({ to: '/session/$sessionId', params: { sessionId: r.session.session_id } }) }, onError: (e) => showToast(m.session_duplicate_failed() + (e instanceof Error ? e.message : ''), 4000, 'error') })
   const del = useResourceMutation({
@@ -93,7 +94,7 @@ export function SessionContextMenu({ row, active }: { row: SessionRow; active: b
       >
         {!row.read_only && <MenuItem onClick={() => { setTitle(row.title); setDialog({ kind: 'rename' }) }}>{m.session_rename()}</MenuItem>}
         {!row.read_only && <MenuItem onClick={() => regen.mutate()}>{m.session_title_regenerate()}</MenuItem>}
-        {row.can_pin && <MenuItem onClick={() => pin.mutate(!row.pinned)}>{row.pinned ? m.session_unpin() : m.session_pin()}</MenuItem>}
+        {row.can_pin && <MenuItem onClick={() => pin.mutate({ id: sid, pinned: !row.pinned })}>{row.pinned ? m.session_unpin() : m.session_pin()}</MenuItem>}
         {!row.read_only && <MenuItem onClick={() => { setProjectId(row.project_id ?? ''); setDialog({ kind: 'move' }) }}>{m.session_move_project()}</MenuItem>}
         <MenuSeparator />
         <MenuItem onClick={copyLink}>{m.session_copy_link()}</MenuItem>
