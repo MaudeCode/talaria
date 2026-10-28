@@ -7,6 +7,18 @@ import { sanitizeShareMessage } from './sessions/shares.js'
 import { toolEditDiff } from './sessions/tool-display.js'
 
 describe('redactSensitive', () => {
+  it.each([
+    ['plain', '{"password":" x password=foo"}--password finalSecret987'],
+    ['ANSI-coloured', '{"pass\x1b[31mword":" x password=foo"}--password finalSecret987'],
+    ['single-quoted', "echo 'x password=foo'}--token finalSecret987"],
+    ['ANSI-C-quoted', "echo $'x password=foo'}--password finalSecret987"],
+    ['computed flag', '{"password":" x password=foo"}--${FLAG} finalSecret987'],
+    ['computed suffix', '{"password":" x password=foo"}--password${SUFFIX} finalSecret987'],
+  ])('masks later credentials after an enclosing quote in %s text', (_name, input) => {
+    expect.soft(redactText(input, true)).not.toContain('finalSecret987')
+    expect.soft(sanitizeShareMessage({ role: 'assistant', content: input }, [], [], '/nonexistent-home')?.content).not.toContain('finalSecret987')
+  })
+
   it('masks the password of a URL with userinfo and keeps the user and host', () => {
     expect(redactSensitive('psql postgres://u:pgSyntheticSecret42@h/db')).toBe('psql postgres://u:pgSynt...et42@h/db')
     expect(redactSensitive('curl https://user:pw@example.com/x')).toBe('curl https://user:***@example.com/x')
@@ -578,6 +590,9 @@ describe('redactSensitive cost', () => {
     // The Agent's ported families: env names, split tokens, JWT headers, phone numbers and bare URL userinfo.
     for (const text of [...['abcdefghij-', 'a.b+c-', 'token_', '--password ', 'aB', 'aBcD_', 'ABCd', 'AB', 'PW', 'KEY_', 'a_pw', 'a_key_', 'ghp_a\x1b', 'ghp_a\x1b[1m', 'ghp_a\x1b]8;;a', '\x1b[1', 'ghp_a\x9b1m', '\x9d8;;a', 'ghp_a\x1bPa', '\x1b( ', '\x90a\x9d', '\x1b\x00\x00', 'ghp_a\x1b[\x07', '\x1b(\x00', 'g\x1b]0;h\x07', 'x\x1b]0;a\x07', '\x1b]0;g\x07h', 'gh\x1b]0;p\x07\x1b]0;_\x07', 'ghp_ab\n', 'eyJaaaaaaaaaa.', 'eyJaaaaaaaaaa\x1b[1m', 'ey\x1b[1mJ', 'e\x1b]0;y\x07J', '-e\x1b]0;y\x07J', 'eyJaaaa\x1b]0;a\x07', 'eyJaaaaaaaaaa\n.', '+1234567', 'https://aaaaaaaa', 'DB_PW="', "db_pw='a ", 'ghp_ab\nK=', 'a_key=x\\ ', 'a_key=,', '\nsk-a', 'sk-aaaaaaaaaaaa\n', '&a_key=x', 'sk-aaaaaaaaaa\nsk-b\n', '2', '1234 ', '-----BE\x1b[1mGIN PRIVATE KEY-----\n', '-----BEGIN PRI\x1b[1mVATE KEY-----', '-----B\x1b]0;x\x07E\x1b]0;GIN\x07 PRIVATE KEY-----', '-----B\x1b]0;x\x07E\x1b]0;GIN\x07', '-\x1b]0;-\x07', '\x1b[1;31mAPI_KEY\x1b[m=abcdefghij\x1b[m ', '\x1b[1;34m"password"\x1b[0m: "x" ', 'Bear\x1b[1mer $$$$ ', 'Bear\x1b[1mer ****** '].map((seg) => seg.repeat(Math.ceil(200_000 / seg.length))),
       ...['Authorization: x ', 'Authorization: *** ', 'secret sauce ', 'password=*** '].map((seg) => `"${seg.repeat(Math.ceil(200_000 / seg.length))}"`),
+      // Overlapping parameter heads inside a masked word, and flags swallowed by repeated enclosing-quote values.
+      `"${'password=x '.repeat(20_000)}"}--password finalSecret987`,
+      ...['{"password":" x password=foo"}--password finalSecret987 ', '{"pass\x1b[31mword":" x password=foo"}--password finalSecret987 '].map((seg) => seg.repeat(Math.ceil(200_000 / seg.length))),
       // One huge identifier that does name a credential, and many long ones that are followed by a separator.
       `--${'aB'.repeat(100_000)}Password=x`, `${'2'.repeat(200_000)}:`, `ghp_a\x1b${'\x00'.repeat(200_000)}`, `${'a'.repeat(1_000)}= `.repeat(200), `${'a'.repeat(1_000)}://x:`.repeat(200),
       // Shell-composed identifiers: unclosed and alternating quote and escape pieces.

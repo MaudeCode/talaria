@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Keep later passwords hidden when credential text crosses a closing quote.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
