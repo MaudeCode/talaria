@@ -228,6 +228,18 @@ def _unavailable_plugin(provider_id: str) -> bool:
     return not any(p is profile for _name, p in installed_plugin_profiles())
 
 
+def require_runtime_ownership(requested: str | None) -> None:
+    """A process-wide Agent registry must not lend another home's plugin to this runtime."""
+    if not requested:
+        return
+    try:
+        if not _unavailable_plugin(requested.strip().lower()):
+            return
+    except Exception:  # noqa: BLE001 - an unverified plugin owner cannot authorize execution
+        log.debug("runtime plugin ownership check failed", exc_info=True)
+    raise RpcError("Requested provider is unavailable in this profile", condition="credential_missing")
+
+
 def _agent_knows_provider(name: str) -> bool:
     """Whether the Agent's auth layer can resolve this provider id at all.
 
@@ -367,6 +379,7 @@ def local_models() -> dict:
 
 
 def resolve_runtime(*, requested: str | None, api_key: str | None, base_url: str | None, target_model: str | None) -> dict:
+    require_runtime_ownership(requested)
     try:
         from hermes_cli.runtime_provider import format_runtime_provider_error, resolve_runtime_provider
     except Exception as exc:  # noqa: BLE001

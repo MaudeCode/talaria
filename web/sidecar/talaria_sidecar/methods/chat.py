@@ -34,7 +34,7 @@ from ..errors import InvalidParams, RpcError
 from ..home import profile_home_param, scoped_home, session_workspace
 from ..rpc import CallContext
 from .checkpoints import checkpoint_kwargs
-from .providers import runtime_failure
+from .providers import require_runtime_ownership, runtime_failure
 from .state_db import release_all, release_home, release_session_db
 from .toolsets import disabled_toolsets
 
@@ -695,6 +695,7 @@ def _cancel_checkpoint(run: _Run) -> list | None:
 
 
 def _resolve_runtime(provider: str | None, model: str) -> dict:
+    require_runtime_ownership(provider)
     try:
         from hermes_cli.runtime_provider import resolve_runtime_provider
     except Exception as exc:  # noqa: BLE001
