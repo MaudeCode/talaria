@@ -112,3 +112,24 @@ export const apnsDeliveryResultValidator = v.object({
   status: v.optional(v.number()),
   apnsId: v.optional(v.string()),
 });
+
+export const feedbackPayloadValidator = v.object({
+  requestId: v.string(),
+  installId: v.string(),
+  kind: v.union(v.literal("bug"), v.literal("feature"), v.literal("other")),
+  title: v.string(),
+  body: v.string(),
+  client: v.object({
+    platform: v.union(v.literal("web"), v.literal("ios")),
+    appVersion: v.optional(v.string()),
+    osVersion: v.optional(v.string()),
+    deviceModel: v.optional(v.string()),
+  }),
+  server: v.object({
+    webVersion: v.string(),
+    agentVersion: v.optional(v.string()),
+  }),
+  diagnostics: v.optional(v.string()),
+});
+
+export const feedbackTierValidator = v.union(v.literal("verified"), v.literal("unverified"));

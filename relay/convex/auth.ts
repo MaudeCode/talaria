@@ -99,26 +99,44 @@ export const acceptAppleSignIn = internalMutation({
   },
 });
 
+export type Budget = { key: string; windowMs: number; limit: number };
+
+/** No budget window is longer, so cleanup may delete a row whose window started earlier. */
+export const longestBudgetWindowMs = 24 * 60 * 60 * 1_000;
+
+/**
+ * Charges fixed-window budgets together: when any is exhausted none is charged, and
+ * `retryAfterMs` is when the last exhausted window resets.
+ */
+export async function consumeBudget(
+  ctx: MutationCtx,
+  now: number,
+  budgets: readonly Budget[],
+): Promise<{ ok: true } | { ok: false; retryAfterMs: number }> {
+  const rows = await Promise.all(budgets.map((budget) =>
+    ctx.db.query("authRateLimits").withIndex("by_key", (query) => query.eq("key", budget.key)).unique()));
+  const retryAfterMs = Math.max(0, ...budgets.map((budget, index) => {
+    const row = rows[index];
+    return row && now - row.windowStartedAt < budget.windowMs && row.attempts >= budget.limit
+      ? row.windowStartedAt + budget.windowMs - now
+      : 0;
+  }));
+  if (retryAfterMs > 0) return { ok: false, retryAfterMs };
+  for (const [index, budget] of budgets.entries()) {
+    const row = rows[index];
+    if (!row) await ctx.db.insert("authRateLimits", { key: budget.key, windowStartedAt: now, attempts: 1 });
+    else if (now - row.windowStartedAt >= budget.windowMs) await ctx.db.patch(row._id, { windowStartedAt: now, attempts: 1 });
+    else await ctx.db.patch(row._id, { attempts: row.attempts + 1 });
+  }
+  return { ok: true };
+}
+
 export const consumeAppleAuthBudget = internalMutation({
   args: { now: v.number() },
   returns: v.object({ ok: v.boolean() }),
   handler: async (ctx, args) => {
-    const row = await ctx.db
-      .query("authRateLimits")
-      .withIndex("by_key", (query) => query.eq("key", "apple-auth-global"))
-      .unique();
-    if (!row || args.now - row.windowStartedAt >= 60_000) {
-      if (row) await ctx.db.patch(row._id, { windowStartedAt: args.now, attempts: 1 });
-      else await ctx.db.insert("authRateLimits", {
-        key: "apple-auth-global",
-        windowStartedAt: args.now,
-        attempts: 1,
-      });
-      return { ok: true };
-    }
-    if (row.attempts >= 300) return { ok: false };
-    await ctx.db.patch(row._id, { attempts: row.attempts + 1 });
-    return { ok: true };
+    const result = await consumeBudget(ctx, args.now, [{ key: "apple-auth-global", windowMs: 60_000, limit: 300 }]);
+    return { ok: result.ok };
   },
 });
 

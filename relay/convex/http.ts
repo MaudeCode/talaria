@@ -13,8 +13,11 @@ import {
   base64UrlToBytes,
   randomToken,
   sha256,
+  sha256Hex,
+  timingSafeEqual,
   verifyPublisherSignature,
 } from "./lib/crypto";
+import { maximumFeedbackBytes, parseFeedbackReport } from "./lib/feedback";
 import {
   defaultNotificationPreferences,
   isSessionPhase,
@@ -113,8 +116,8 @@ http.route({
   }),
 });
 
-function json(status: number, body: unknown): Response {
-  return new Response(JSON.stringify(body), { status, headers: jsonHeaders });
+function json(status: number, body: unknown, headers: Record<string, string> = {}): Response {
+  return new Response(JSON.stringify(body), { status, headers: { ...jsonHeaders, ...headers } });
 }
 
 function mutationResponse(
@@ -241,9 +244,16 @@ async function authenticatePublisher(
   ctx: Parameters<Parameters<typeof httpAction>[0]>[0],
   request: Request,
   rawBody: string,
-  publisherId: string,
+  publisherId: string | null,
 ): Promise<
-  | { publisherOwnerUserId: string; keyId: string; nonce: string; nonceExpiresAt: number; receivedAt: number }
+  | {
+      publisherOwnerUserId: string;
+      publisherId: string;
+      keyId: string;
+      nonce: string;
+      nonceExpiresAt: number;
+      receivedAt: number;
+    }
   | null
 > {
   const keyId = request.headers.get("x-talaria-key-id")?.trim();
@@ -256,7 +266,7 @@ async function authenticatePublisher(
   if (!Number.isInteger(timestampSeconds) || Math.abs(receivedAt / 1_000 - timestampSeconds) > 5 * 60) {
     return null;
   }
-  const key = await ctx.runQuery(internal.pairing.getPublisherKey, { publisherId, keyId });
+  const key = await ctx.runQuery(internal.pairing.getPublisherKey, { publisherId: publisherId ?? undefined, keyId });
   if (!key?.enabled || key.revokedAt !== undefined) return null;
   try {
     const valid = await verifyPublisherSignature({
@@ -271,6 +281,7 @@ async function authenticatePublisher(
     return valid
       ? {
           publisherOwnerUserId: key.ownerUserId,
+          publisherId: key.publisherId,
           keyId,
           nonce,
           nonceExpiresAt: receivedAt + 10 * 60 * 1_000,
@@ -520,7 +531,6 @@ http.route({
       }
       if (state && state.sessionId !== sessionId) return json(400, { error: "session_mismatch" });
       const result = await ctx.runMutation(internal.publishers.acceptState, {
-        publisherId,
         profileId,
         ...auth,
         sessionId,
@@ -548,7 +558,6 @@ http.route({
       if (!event || event.sessionId !== parts[6]) return json(400, { error: "invalid_session_started" });
       if (event.publisherId !== publisherId || event.profileId !== profileId) return json(403, { error: "profile_mismatch" });
       const result = await ctx.runMutation(internal.publishers.acceptSessionStarted, {
-        publisherId,
         profileId,
         ...auth,
         sessionId: event.sessionId,
@@ -562,7 +571,6 @@ http.route({
       const through = numberField(body, "through");
       if (!parts[6] || through === null || !Number.isSafeInteger(through)) return json(400, { error: "invalid_viewed" });
       const result = await ctx.runMutation(internal.publishers.acknowledgeViewedSession, {
-        publisherId,
         profileId,
         ...auth,
         sessionId: parts[6],
@@ -580,7 +588,6 @@ http.route({
       const states = rawStates.map((state) => parseState(state));
       if (states.some((state) => state === null)) return json(400, { error: "invalid_snapshot" });
       const result = await ctx.runMutation(internal.publishers.acceptSnapshot, {
-        publisherId,
         profileId,
         ...auth,
         snapshotId,
@@ -861,6 +868,100 @@ http.route({
         state.publisherId === publisherId && state.sessionId === sessionId), now, true) });
     }
     return json(400, { error: "invalid_mode" });
+  }),
+});
+
+const publisherSignatureHeaders = ["x-talaria-key-id", "x-talaria-timestamp", "x-talaria-nonce", "x-talaria-signature"];
+const ticketKeyPattern = /^[A-Z][A-Z0-9]{0,15}-[1-9][0-9]{0,9}$/u;
+
+/** Feedback is off until the operator token is provisioned; then only that bearer may read the queue. */
+async function feedbackGate(request: Request, operator: boolean): Promise<Response | null> {
+  const expected = process.env.FEEDBACK_OPERATOR_TOKEN_SHA256?.trim().toLowerCase();
+  if (!expected) return json(404, { error: "not_found" });
+  if (!operator) return null;
+  const token = bearer(request);
+  return token && timingSafeEqual(await sha256Hex(token), expected) ? null : json(401, { error: "unauthorized" });
+}
+
+http.route({
+  path: "/v1/feedback",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const closed = await feedbackGate(request, false);
+    if (closed) return closed;
+    const rawBody = await request.text();
+    if (new TextEncoder().encode(rawBody).byteLength > maximumFeedbackBytes) {
+      return json(400, { error: "body_too_large" });
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(rawBody);
+    } catch {
+      return json(400, { error: "invalid_json" });
+    }
+    const payload = parseFeedbackReport(parsed);
+    if (!payload) return json(400, { error: "invalid_feedback" });
+    // Any signature header makes this a verified attempt: a bad one is refused, never downgraded.
+    const signed = publisherSignatureHeaders.some((header) => request.headers.has(header));
+    const publisher = signed ? await authenticatePublisher(ctx, request, rawBody, null) : undefined;
+    if (publisher === null) return json(401, { error: "unauthorized" });
+    const now = Date.now();
+    const result = await ctx.runMutation(internal.feedback.submit, {
+      payload,
+      payloadHash: await sha256(JSON.stringify(payload)),
+      installHash: await sha256(payload.installId),
+      now,
+      publisher,
+    });
+    switch (result.status) {
+      case "accepted":
+        return json(202, { reportId: result.reportId });
+      case "idempotency_conflict":
+        return json(409, { error: "idempotency_conflict" });
+      case "rate_limited":
+        return json(429, { error: "rate_limited" }, { "retry-after": String(Math.ceil(result.retryAfterMs / 1_000)) });
+      case "unauthorized":
+        return json(401, { error: "unauthorized" });
+    }
+  }),
+});
+
+http.route({
+  path: "/v1/feedback/pending",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const closed = await feedbackGate(request, true);
+    if (closed) return closed;
+    const rawLimit = new URL(request.url).searchParams.get("limit");
+    const limit = rawLimit === null ? 50 : Number(rawLimit);
+    if (!/^\d+$/u.test(rawLimit ?? "50") || limit < 1 || limit > 50) return json(400, { error: "invalid_limit" });
+    return json(200, { reports: await ctx.runQuery(internal.feedback.listPending, { limit }) });
+  }),
+});
+
+http.route({
+  pathPrefix: "/v1/feedback/",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const closed = await feedbackGate(request, true);
+    if (closed) return closed;
+    const parts = pathParts(request);
+    const reportId = parts[2];
+    if (parts.length !== 4 || parts[3] !== "ack" || !reportId) return json(404, { error: "not_found" });
+    const body = await readJson(request);
+    const ticketKey = body?.ticketKey;
+    if (!body || Object.keys(body).length !== 1 || typeof ticketKey !== "string" || !ticketKeyPattern.test(ticketKey)) {
+      return json(400, { error: "invalid_ticket_key" });
+    }
+    const result = await ctx.runMutation(internal.feedback.acknowledge, { reportId, ticketKey, now: Date.now() });
+    switch (result.status) {
+      case "delivered":
+        return json(200, { reportId, ticketKey, status: "delivered" });
+      case "not_found":
+        return json(404, { error: "not_found" });
+      case "ticket_key_conflict":
+        return json(409, { error: "ticket_key_conflict" });
+    }
   }),
 });
 

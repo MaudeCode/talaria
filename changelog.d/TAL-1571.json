@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Relay accepts rate-limited bug reports and feature requests from Talaria servers for delivery to the maintainers.",
+      "highlight": false,
+      "components": ["relay"]
+    }
+  ]
+}
