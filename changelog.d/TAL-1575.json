@@ -2,7 +2,7 @@
   "entries": [
     {
       "category": "Added",
-      "summary": "Send feedback from Settings or the sidebar, with an optional preview of redacted server diagnostics.",
+      "summary": "Send feedback from Settings or an optional sidebar button, with a preview of redacted server diagnostics.",
       "highlight": false
     }
   ]

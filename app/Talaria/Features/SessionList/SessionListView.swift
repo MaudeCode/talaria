@@ -143,6 +143,8 @@ struct SessionListView: View {
     @AppStorage(SectionVisibilitySettings.skillsKey) private var showsSkillsSection = true
     @AppStorage(SectionVisibilitySettings.memoryKey) private var showsMemorySection = true
     @AppStorage(SectionVisibilitySettings.insightsKey) private var showsInsightsSection = true
+    @AppStorage(SectionVisibilitySettings.sidebarFeedbackKey)
+    private var showsSidebarFeedbackButton = SectionVisibilitySettings.defaultShowsSidebarFeedbackButton
     @AppStorage(ProviderQuotaRefreshInterval.storageKey)
     private var quotaRefreshIntervalSeconds = ProviderQuotaRefreshInterval.defaultValue.rawValue
     // Per-server key (#19): the CLI toggle mirrors the active server's
@@ -1531,7 +1533,7 @@ struct SessionListView: View {
     @ToolbarContentBuilder
     private func sidebarSettingsActions(placement: ToolbarItemPlacement, prefersVertical: Bool) -> some ToolbarContent {
         if #available(iOS 27.1, *) {
-            if appSidebar.isPresented || sidebarPresentation.showsColumn {
+            if showsSidebarFeedbackAction {
                 ToolbarItem(placement: placement) { sidebarFeedbackButton }
                     .axisBehavior(prefersVertical ? .verticalPreferred : .horizontalOnly)
                     .visibilityPriority(.high)
@@ -1541,10 +1543,14 @@ struct SessionListView: View {
                 .visibilityPriority(.high)
         } else {
             ToolbarItemGroup(placement: placement) {
-                if appSidebar.isPresented || sidebarPresentation.showsColumn { sidebarFeedbackButton }
+                if showsSidebarFeedbackAction { sidebarFeedbackButton }
                 settingsButton
             }
         }
+    }
+
+    private var showsSidebarFeedbackAction: Bool {
+        showsSidebarFeedbackButton && (appSidebar.isPresented || sidebarPresentation.showsColumn)
     }
 
     private var sidebarFeedbackButton: some View {

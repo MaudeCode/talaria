@@ -142,6 +142,8 @@ struct UITestFixtureEnvironment {
         // The chat toolbar's Files and Git controls are hideable in Settings, so every launch shows both.
         UserDefaults.standard.set(true, forKey: SectionVisibilitySettings.chatFilesKey)
         UserDefaults.standard.set(true, forKey: SectionVisibilitySettings.chatGitKey)
+        UserDefaults.standard.set(SectionVisibilitySettings.defaultShowsSidebarFeedbackButton,
+                                  forKey: SectionVisibilitySettings.sidebarFeedbackKey)
         // Tests reach the composer's controls through its strip, so every launch starts with it shown.
         UserDefaults.standard.set(true, forKey: ComposerVisibilitySettings.controlStripKey)
         UserDefaults.standard.set(

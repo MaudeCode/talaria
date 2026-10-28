@@ -44,6 +44,7 @@ enum SyncedPreferenceAllowlist {
         .init(key: SectionVisibilitySettings.insightsKey, suite: .standard),
         .init(key: SectionVisibilitySettings.chatFilesKey, suite: .standard),
         .init(key: SectionVisibilitySettings.chatGitKey, suite: .standard),
+        .init(key: SectionVisibilitySettings.sidebarFeedbackKey, suite: .standard),
         .init(key: ComposerVisibilitySettings.workspaceKey, suite: .standard),
         .init(key: ComposerVisibilitySettings.profileKey, suite: .standard),
         .init(key: ComposerVisibilitySettings.gitBranchKey, suite: .standard),
