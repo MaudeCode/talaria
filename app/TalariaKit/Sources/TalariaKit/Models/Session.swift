@@ -1194,4 +1194,3 @@ public struct SessionBranchLink: Decodable, Equatable, Sendable {
     public let sessionId: String
     public let title: String
 }
-
