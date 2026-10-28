@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The Web sidebar marks running chats again, including chats that continue through their native owner.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

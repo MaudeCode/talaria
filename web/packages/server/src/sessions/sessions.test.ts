@@ -523,6 +523,21 @@ describe('session lifecycle over HTTP', () => {
     }
   })
 
+  it('marks a sidebar row streaming while a run it never persisted holds the registry (TAL-1564)', async () => {
+    const sid = String((await newSession(s)).session_id)
+    await writeMessages(s, sid, [{ role: 'user', content: 'nativeprobe question' }, { role: 'assistant', content: 'ok' }])
+    const row = async (): Promise<Json> => ((await json(await s.get('/api/sessions'))).sessions as Json[]).find((r) => r.session_id === sid)!
+    // A native-owner watch registers its run without writing the Web session's active_stream_id.
+    s.deps.registry.create('nativeprobe-run', sid)
+    s.deps.registry.registerActiveRun({ stream_id: 'nativeprobe-run', session_id: sid, phase: 'running', started_at: Date.now() / 1000, workspace: '', model: null, provider: null, ephemeral: false, origin: 'user' })
+    try {
+      expect(await row()).toMatchObject({ is_streaming: true, active_stream_id: 'nativeprobe-run' })
+    } finally {
+      s.deps.registry.retire('nativeprobe-run')
+    }
+    expect(await row()).toMatchObject({ is_streaming: false, active_stream_id: null })
+  })
+
   it('ships sort_ts on detail, list and search rows, and lists a pinned row above a streaming one (TAL-306)', async () => {
     const [pinned, streaming] = [String((await newSession(s)).session_id), String((await newSession(s)).session_id)]
     await writeMessages(s, pinned, [{ role: 'user', content: 'sortprobe pinned', timestamp: 1000 }, { role: 'assistant', content: 'ok', timestamp: 1001 }])
