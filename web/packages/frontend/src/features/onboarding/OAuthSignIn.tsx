@@ -5,6 +5,7 @@ import { isDefiniteRefusal } from '../../contracts/common'
 import { Button } from '../../ui/Button'
 import type { NousAccount, ConnectorOperationView } from '@maudecode/talaria-web-contracts'
 import { PageConnect } from '../connectors/ConnectTargets'
+import { useStreamContext } from '../../stream/connection'
 
 type Flow = Awaited<ReturnType<typeof api.onboardingOauthStart>>
 
@@ -18,14 +19,18 @@ const message = (e: unknown): string => (e instanceof Error ? e.message : String
  */
 interface OAuthSignInProps {
   provider: string; label: string; signedIn: boolean; onApproved: (provider: string) => void; idPrefix?: string; compact?: boolean; children?: (flow: Flow) => ReactNode; account?: NousAccount | null; accountError?: string | null; resultOnly?: boolean
+  onStart?: (() => void) | undefined; onDismiss?: (() => void) | undefined; canStart?: boolean | undefined
 }
 
 export function OAuthSignIn(props: OAuthSignInProps) {
-  // A provider change retires the old request owner, including starts still in flight.
-  return <OAuthSignInPanel key={props.provider} {...props} />
+  const context = useStreamContext()
+  const [owner, setOwner] = useState({ context, generation: 0 })
+  if (owner.context !== context) setOwner({ context, generation: owner.generation + 1 })
+  // Provider and profile changes retire pending starts, polling and retained results together.
+  return <OAuthSignInPanel key={`${props.provider}:${owner.generation}`} {...props} />
 }
 
-function OAuthSignInPanel({ provider, label, signedIn, onApproved, idPrefix = 'onboardingOauth', compact = false, children, account, accountError, resultOnly = false }: OAuthSignInProps) {
+function OAuthSignInPanel({ provider, label, signedIn, onApproved, idPrefix = 'onboardingOauth', compact = false, children, account, accountError, resultOnly = false, onStart, onDismiss, canStart = true }: OAuthSignInProps) {
   const [flow, setFlow] = useState<Flow | null>(null)
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
@@ -89,6 +94,7 @@ function OAuthSignInPanel({ provider, label, signedIn, onApproved, idPrefix = 'o
   }, [approved, needsAcknowledgement, onApproved, provider])
 
   async function start() {
+    onStart?.()
     setBusy(true)
     setFailure(null)
     setAcknowledged(false)
@@ -156,7 +162,7 @@ function OAuthSignInPanel({ provider, label, signedIn, onApproved, idPrefix = 'o
       : flow?.status === 'cancelled' ? m.oauth_cancelled()
         : flow?.status === 'error' ? `${m.oauth_codex_error()}: ${flow.error ?? ''}` : null)
   return (
-    <div className="onboarding-oauth flex flex-col gap-2 text-sm" id={`${idPrefix}Panel`}>
+    <div className="onboarding-oauth flex flex-col gap-2 text-sm pointer-coarse:[&_button]:min-h-11" id={`${idPrefix}Panel`}>
       {ended && <p className="text-warning" role="alert">{ended}</p>}
       {result ? <div role="status" className="flex flex-col gap-1 break-words" data-handoff-state={result.state}>
         <p className="text-success">{result.email ? m.oauth_signed_in_as({ email: result.email }) : m.oauth_signed_in({ provider: label })}</p>
@@ -165,9 +171,12 @@ function OAuthSignInPanel({ provider, label, signedIn, onApproved, idPrefix = 'o
       {result && !activeOperation && result.reconnect.map((connector) => <Button key={connector} className="w-fit" disabled={busy} onClick={() => { void reconnect(connector) }}>{m.oauth_reconnect({ app: connector })}</Button>)}
       {activeOperation && <PageConnect initial={activeOperation} name={label} onDone={() => setOperation(null)} />}
       {needsAcknowledgement && <Button className="w-fit" variant="primary" onClick={() => setAcknowledged(true)}>{m.oauth_result_continue()}</Button>}
-      {!resultOnly && <Button className="w-fit" variant={done ? 'default' : 'primary'} disabled={busy} onClick={() => { void start() }} id={`${idPrefix}StartBtn`}>
-        {done ? m.oauth_sign_in_again() : m.oauth_sign_in({ provider: label })}
-      </Button>}
+      {(!resultOnly || (!approved && onDismiss)) && <div className="flex flex-wrap items-center gap-2">
+        {!resultOnly && <Button className="w-fit" variant={done ? 'default' : 'primary'} disabled={busy || !canStart} onClick={() => { void start() }} id={`${idPrefix}StartBtn`}>
+          {done ? m.oauth_sign_in_again() : m.oauth_sign_in({ provider: label })}
+        </Button>}
+        {!approved && onDismiss && <Button variant="ghost" onClick={onDismiss}>{m.oauth_not_now()}</Button>}
+      </div>}
     </div>
   )
 }

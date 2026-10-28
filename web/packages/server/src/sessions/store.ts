@@ -55,7 +55,15 @@ export class SessionStore {
   }
   async hasIndex(): Promise<boolean> { return this.backend.hasIndex() }
   get shrinkBackup() { return this.backend.shrinkBackup }
-  async diagnose(): Promise<StorageIssue[]> { return this.backend.diagnose() }
+  private async waitForIndexWrites(): Promise<void> {
+    await this.indexFlush
+    await this.indexWriter
+  }
+  async diagnose(): Promise<StorageIssue[]> {
+    // Observe completed publication without retrying failed writes or repairing the raw index.
+    await this.waitForIndexWrites()
+    return this.backend.diagnose()
+  }
   async repair(issue: StorageIssue): Promise<boolean> {
     const repaired = await this.backend.repair(issue)
     if (repaired) this.sessions.delete(issue.session_id)
@@ -65,8 +73,7 @@ export class SessionStore {
     try {
       await Promise.allSettled(this.resolutions.values())
       await Promise.allSettled(this.writes.values())
-      await this.indexFlush
-      await this.indexWriter
+      await this.waitForIndexWrites()
     } finally { await this.deps.storage.close() }
   }
   // ── locks ────────────────────────────────────────────────────────────────

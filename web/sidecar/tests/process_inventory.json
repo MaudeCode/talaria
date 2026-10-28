@@ -8,6 +8,13 @@
         ""
       ]
     },
+    "tests/test_connector_offer_compatibility.py::test_native_connector_offer_schedule_and_claim_once": {
+      "layer": "compatibility",
+      "reason": "Real installed native offer scheduling, sighting helper and file-locked claim-once across concurrent callers, with disposable records and a controlled clock; an isolated Agent interpreter verifies older-release absence without importing Agent modules into the fast suite. No network or real identity is used.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_connectors.py::test_result_reconnect_uses_an_account_fenced_native_operation": {
       "layer": "compatibility",
       "reason": "Real native ConnectorClient, managed kind and asynchronous drive_operation must mint and observe the original account without native guest provisioning; rejoining and later account replacement must preserve the fence. Boundary fakes cannot prove these installed API and thread-context contracts.",

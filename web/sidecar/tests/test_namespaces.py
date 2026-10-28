@@ -141,6 +141,7 @@ def _connector_scenarios(proc: SidecarProcess, home: pathlib.Path):
         scope = {"profile_home": str(home)}
         steps = [
             ("connectors.available", scope), ("connectors.catalog", scope), ("connectors.accounts", scope),
+            ("connectors.offer.status", scope), ("connectors.offer.claim", {**scope, "guest_id": "stale-namespace-offer"}),
             ("connectors.tools", {**scope, "connector": "gmail"}), ("connectors.policy.get", scope),
             ("connectors.policy.set", {**scope, "connector": "gmail", "expected_revision": "rev-1", "enabled": False}),
             ("connectors.connect", {**scope, "connector": "gmail"}),

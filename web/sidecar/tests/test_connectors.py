@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import time
+from datetime import datetime
 
 import pytest
 
@@ -79,7 +80,8 @@ def test_page_reads_leave_native_identity_state_unchanged(connected, hermes_home
             auth.write_text(json.dumps(document))
         config.write_text("nous:\n  guest: false\n" if identity == "opted_out" else "{}\n")
         before = auth.read_bytes() if auth.exists() else None
-        for _ in range(3):
+        first_read = None
+        for read in range(3):
             for method in ("connectors.catalog", "connectors.accounts", "connectors.policy.get"):
                 answer = call(connected, method, hermes_home)
                 if "error" in answer:
@@ -87,7 +89,20 @@ def test_page_reads_leave_native_identity_state_unchanged(connected, hermes_home
                     assert condition(answer) in {"connectors_sign_in", "connectors_unavailable"}, answer
                 elif method == "connectors.accounts":
                     assert bool(answer["result"]["accounts"]) == (identity in {"expired_guest", "signed_in"})
-        assert (auth.read_bytes() if auth.exists() else None) == before
+            after = auth.read_bytes() if auth.exists() else None
+            if read == 0:
+                first_read = after
+            else:
+                assert after == first_read  # repeated sightings never rewrite auth or re-arm the schedule
+        if identity == "expired_guest" and result(connected, "connectors.offer.status", hermes_home)["available"]:
+            # TAL-1507 intentionally records one native connected-app sighting. Every credential and other field stays exact.
+            expected, actual = json.loads(before), json.loads(first_read)
+            expected["providers"]["nous"]["has_connected_app"] = True
+            assert datetime.fromisoformat(actual["updated_at"])
+            expected["updated_at"] = actual["updated_at"]
+            assert actual == expected
+        else:
+            assert first_read == before
     if original_config is None:
         config.unlink()
     else:

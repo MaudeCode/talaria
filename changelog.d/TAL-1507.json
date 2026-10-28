@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Sign in from Connectors when Hermes offers it, or choose Not now.",
+      "highlight": false,
+      "components": ["web"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "Recovery checks wait for recent session changes to finish saving.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

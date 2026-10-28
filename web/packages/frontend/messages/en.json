@@ -1695,6 +1695,7 @@
 	"oauth_codex_error": "OAuth login failed",
 	"oauth_codex_expired": "Code expired, please try again",
 	"oauth_sign_in": "Sign in with {provider}",
+	"oauth_not_now": "Not now",
 	"oauth_sign_in_again": "Sign in again",
 	"oauth_signed_in": "Signed in to {provider}.",
 	"oauth_denied": "Sign-in was declined. Try again.",

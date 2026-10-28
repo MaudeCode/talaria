@@ -48,7 +48,15 @@
     ],
     "policy_revision": "rev-7",
     "rules_error": null,
-    "sign_in_required": false
+    "sign_in_required": false,
+    "sign_in_offer": {
+      "available": true,
+      "due": false,
+      "visible": false,
+      "offer_id": null,
+      "actions": [],
+      "refresh_after": 30
+    }
   },
   "tools": {
     "connector": "notion",

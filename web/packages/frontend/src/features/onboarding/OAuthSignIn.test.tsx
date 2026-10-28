@@ -82,6 +82,22 @@ describe('OAuthSignIn', () => {
     expect(screen.queryByText('u***@example.test')).toBeNull()
   })
 
+  it('retires the owning flow and its late response when the profile context changes', async () => {
+    const { teardownAll } = await import('../../stream/connection')
+    let answer!: (value: Awaited<ReturnType<typeof api.onboardingOauthPoll>>) => void
+    vi.mocked(api.onboardingOauthPoll).mockImplementationOnce(() => new Promise((resolve) => { answer = resolve }))
+    render(<OAuthSignIn provider="nous" label="ChatGPT" signedIn={false} onApproved={vi.fn()} />)
+    await startFlow()
+    await nextPoll()
+    await act(async () => { teardownAll(); await Promise.resolve() })
+    expect(api.onboardingOauthCancel).toHaveBeenCalledWith('flow-1')
+    await act(async () => { answer({ ok: true, status: 'approved', flow_id: 'flow-1', nous_account: {
+      account_id: 'old-profile', email: 'x***@example.test', state: 'idle', lines: [], moved: [], dropped: [], reconnect: [], poll_after: null,
+    } }); await Promise.resolve() })
+    expect(screen.queryByText('x***@example.test', { exact: false })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Sign in with ChatGPT' })).toBeEnabled()
+  })
+
   it('ignores an old provider response after switching and cancels its unowned start', async () => {
     let answer!: (value: typeof started) => void
     vi.mocked(api.onboardingOauthStart).mockReturnValueOnce(new Promise((resolve) => { answer = resolve }))

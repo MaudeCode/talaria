@@ -9,6 +9,7 @@ registers its session operation here through ``remember_chat_operation``. Every 
 from __future__ import annotations
 
 import contextvars
+import hashlib
 import inspect
 import json
 import logging
@@ -132,11 +133,46 @@ def accounts() -> dict:
     client = _portal()
     if not _authenticated(client):
         return {"accounts": []}
+    rows = client.list_accounts()
+    try:
+        from hermes_cli.free_tier_offer import note_connected_apps_seen
+        note_connected_apps_seen([{"connected": row.get("active") is True and not row.get("disabled")} for row in rows])
+    except ImportError:
+        pass  # older Agents have no connector offer
+    except Exception:
+        log.warning("connector sighting unavailable")
     return {"accounts": [{
         "connection_id": row["connectionId"], "connector": row["connector"], "status": row["status"],
         "status_reason": row.get("statusReason"), "label": row["label"], "alias": row.get("alias"),
         "active": bool(row["active"]), "disabled": bool(row.get("disabled")), "created_at": row["createdAt"],
-    } for row in client.list_accounts()]}
+    } for row in rows]}
+
+
+def sign_in_offer(home: Path, claim_guest: str | None = None) -> dict:
+    """Native policy and CAS only. The server owns retention of the delivered page result."""
+    result = {"available": False, "guest_id": None, "eligible": False, "due_in": None, "claimed": False}
+    try:
+        from hermes_cli import anon_auth, free_tier_offer as native
+        if not all(callable(getattr(native, name, None)) for name in ("_eligible", "offer_due_in", "claim_offer")):
+            return result
+
+        def identity():
+            state = anon_auth.current_nous_state()
+            token = state.get("anon_token") if anon_auth.is_guest_state(state) else None
+            return hashlib.sha256(f"{home.resolve()}\0{token}".encode()).hexdigest() if isinstance(token, str) and token else None
+
+        guest = identity()
+        result["guest_id"] = guest
+        eligible = bool(native._eligible(native.CONNECTOR))
+        due = native.offer_due_in(native.CONNECTOR)
+        claimed = bool(guest and guest == claim_guest and native.claim_offer(native.CONNECTOR)) if claim_guest else False
+        if identity() != guest:
+            return {**result, "guest_id": None}
+        return {"available": True, "guest_id": guest, "eligible": eligible, "due_in": due, "claimed": claimed}
+    except ImportError:
+        return result
+    except Exception:
+        return result  # retain a proven identity, never raw auth or native error details
 
 
 def remove(connection_id: str) -> dict:
@@ -362,6 +398,21 @@ def remember_chat_operation(home: Path, payload: dict) -> dict | None:
 
 
 def register(registry_) -> None:
+    @registry_.method("connectors.offer.status")
+    def offer_status_(ctx: CallContext, params: dict) -> dict:
+        home = profile_home_param(params)
+        with scoped_home(home):
+            return sign_in_offer(home)
+
+    @registry_.method("connectors.offer.claim")
+    def offer_claim_(ctx: CallContext, params: dict) -> dict:
+        guest = params.get("guest_id")
+        if not isinstance(guest, str) or not guest:
+            raise InvalidParams("guest_id is required")
+        home = profile_home_param(params)
+        with scoped_home(home):
+            return sign_in_offer(home, guest)
+
     def page(params: dict, read, *, creates_guest: bool = False):
         with scoped_home(profile_home_param(params)):
             _open(creates_guest=creates_guest)

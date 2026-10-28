@@ -612,9 +612,12 @@ export const toolsRouter = os.router({
         connectorRead(ctx, 'connectors.catalog'), connectorRead(ctx, 'connectors.accounts'), connectorRead(ctx, 'connectors.policy.get'),
       ])
       rememberCatalogNames(home(ctx), catalog.value?.connectors ?? [])
-      return connectorsPage(catalog.value?.connectors ?? [], accounts.value?.accounts ?? [], policy.value, policy.error,
+      const page = connectorsPage(catalog.value?.connectors ?? [], accounts.value?.accounts ?? [], policy.value, policy.error,
         catalog.signInRequired || accounts.signInRequired || policy.signInRequired)
+      // Accounts has already recorded native sightings, including connections made outside Web.
+      return { ...page, sign_in_offer: await ctx.deps.connectorOffers.view(home(ctx), runningSidecar(ctx)) }
     })),
+    dismissOffer: os.connectors.dismissOffer.handler(({ input, context: { ctx } }) => run(() => ctx.deps.connectorOffers.view(home(ctx), runningSidecar(ctx), input.offer_id))),
     tools: os.connectors.tools.handler(({ input, context: { ctx } }) => run(async () => {
       const [listing, policy] = await Promise.all([connectorCall(ctx, 'connectors.tools', { connector: input.connector }), connectorRead(ctx, 'connectors.policy.get')])
       return connectorTools(listing, policy.value)

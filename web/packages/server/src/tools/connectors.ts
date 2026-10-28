@@ -3,7 +3,51 @@
  * follows the Agent desktop's (`apps/desktop/.../connectors/data/join.ts`): the member layer is the user's own rules and
  * the one a change writes; organization and role layers lock an app or tool off.
  */
-import type { ConnectorOperationView, ConnectorsPage, ConnectorToolsView, SidecarResult } from '@maudecode/talaria-web-contracts'
+import type { ConnectorOperationView, ConnectorsPage, ConnectorToolsView, ConnectorSignInOffer, SidecarResult } from '@maudecode/talaria-web-contracts'
+import { createHash, randomUUID } from 'node:crypto'
+import { z } from 'zod'
+import { updateDocument } from '../sessions/storage/document.js'
+import type { DocumentBackend } from '../sessions/storage/backend.js'
+import type { SidecarLike } from '../sidecar/client.js'
+
+const OfferRecord = z.object({ guest_id: z.string(), offer_id: z.string(), visible: z.boolean() })
+
+/** Page-result custody, separate from the Agent's install-wide schedule and backoff. */
+export class ConnectorOffers {
+  constructor(private readonly documents: DocumentBackend) {}
+
+  view(home: string, sidecar: SidecarLike, dismiss?: string): Promise<ConnectorSignInOffer> {
+    const key = createHash('sha256').update(home).digest('hex')
+    // Keep a successful CAS through a storage revision retry; never claim the same native due offer twice.
+    let claimed: z.infer<typeof OfferRecord> | null = null
+    return updateDocument(this.documents, 'connector-offers', key, async (value) => {
+      const parsed = OfferRecord.safeParse(value)
+      let record = parsed.success ? parsed.data : null
+      const status = await sidecar.call('connectors.offer.status', { profile_home: home }).catch(() => null)
+      // Confirmed identity/ineligibility retires the result; unavailable reads retain this profile's generic prompt.
+      if (status?.available && (!status.guest_id || !status.eligible)) record = null
+      else if (status?.guest_id && record?.guest_id !== status.guest_id) record = null
+      if (dismiss) {
+        // Repeating the same acknowledgement is safe; another guest or a later offer cannot be dismissed.
+        if (record?.offer_id === dismiss) record = { ...record, visible: false }
+      } else if (status?.available && status.eligible && status.guest_id && !record?.visible) {
+        if (!claimed && status.due_in === 0) {
+          const claim = await sidecar.call('connectors.offer.claim', { profile_home: home, guest_id: status.guest_id })
+          if (claim.available && claim.eligible && claim.claimed && claim.guest_id === status.guest_id) claimed = { guest_id: status.guest_id, offer_id: randomUUID(), visible: true }
+        }
+        if (claimed?.guest_id === status.guest_id) record = claimed
+      }
+      const visible = record?.visible === true
+      const result: ConnectorSignInOffer = {
+        available: status?.available ?? false, due: status?.available === true && status.eligible && status.due_in === 0, visible,
+        offer_id: visible ? record!.offer_id : null,
+        actions: visible ? status?.available && status.eligible ? ['sign_in', 'dismiss'] : ['dismiss'] : [],
+        refresh_after: status?.due_in ? Math.max(1, Math.min(status.due_in, 30)) : 30,
+      }
+      return { value: record, result, skip: !value && !record }
+    })
+  }
+}
 
 type Policy = SidecarResult<'connectors.policy.get'>
 type Body = Policy['layers'][number]['body']
