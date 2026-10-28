@@ -11,5 +11,6 @@ it('preserves safe shared Nous account results and tolerates older responses', (
   }
   expect(OnboardingOAuthSchema.parse({ status: 'approved' }).nous_account).toBeUndefined()
   expect(ProviderSchema.parse({ id: 'nous' }).nous_account).toBeUndefined()
+  expect(ProviderSchema.safeParse({ id: 'nous', nous_account_error: 123 }).success).toBe(false)
   expect(NousAccountSchema.parse({ ...fixtures.moved as object, anon_token: 'discarded' })).not.toHaveProperty('anon_token')
 })

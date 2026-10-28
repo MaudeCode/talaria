@@ -804,11 +804,14 @@ export class ProviderCatalog {
   /** Python `get_providers`. */
   async providers(profileHome: string): Promise<{ providers: Dict[]; active_provider: string | null; availability: CatalogAvailability }> {
     const payload = structuredClone((await this.providerRows(profileHome)).payload)
-    const sidecar = this.deps.sidecar()
-    // Handoff reads bypass model/catalog caches and never refresh or dispatch native work.
-    const account = sidecar ? await sidecar.call('providers.nous_account', { profile_home: profileHome }).then((r) => r.nous_account) : null
+    // Read native state on every refresh; the existing source-fenced lookup retains display data on failure.
+    const account = await this.poolLookup(profileHome, 'nous-account', (sidecar) => sidecar.call('providers.nous_account', { profile_home: profileHome }))
+    const confirmed = structuredClone(account.value?.nous_account ?? null)
     const nous = payload.providers.find((row) => row.id === 'nous')
-    if (nous) nous.nous_account = account
+    if (nous) {
+      nous.nous_account = confirmed && !account.authoritative ? { ...confirmed, state: 'unavailable', reconnect: [], poll_after: 5 } : confirmed
+      nous.nous_account_error = account.authoritative ? null : 'Connected-app transfer status is unavailable.'
+    }
     return payload
   }
 

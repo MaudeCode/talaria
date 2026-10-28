@@ -851,7 +851,10 @@ during its read is discarded. Unknown identity clears the display.
 The shared sign-in panel observes sequentially, at server `poll_after`, for at
 most 120 reads per start. Provider rows use the same field with one Query owner
 and the same bound. Reopening or refreshing reads native state again. A failed
-transport read retains the last display with an unavailable notice. Reconnect is
+transport read retains the last display with an unavailable notice. Provider RPC
+failures use the catalog's existing source-fenced lookup cache and the optional
+`nous_account_error` field without failing other provider rows. Changed credential
+or configuration fingerprints discard the cached identity and reconnect actions. Reconnect is
 explicit and checks profile/account identity, the current dropped-app result and
 live catalog before composing the native connector operation, without provisioning
 an identity. The native account starter always creates a live-credential client in

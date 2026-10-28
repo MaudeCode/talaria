@@ -67674,6 +67674,16 @@
                               }
                             ]
                           },
+                          "nous_account_error": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "is_active": {
                             "type": "boolean"
                           },

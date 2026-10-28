@@ -108,6 +108,14 @@ describe('OAuthSignIn', () => {
     expect(screen.queryByRole('button', { name: 'Reconnect gmail' })).toBeNull()
   })
 
+  it('keeps a confirmed provider result readable with its server-owned unavailable error', () => {
+    const account = { account_id: 'account-1', email: 'u***@example.test', state: 'unavailable' as const, lines: ['Apps moved.'], moved: ['calendar'], dropped: ['gmail'], reconnect: [], poll_after: 5 }
+    render(<OAuthSignIn provider="nous" label="Nous Portal" signedIn resultOnly account={account} accountError="Connected-app transfer status is unavailable." onApproved={vi.fn()} />)
+    expect(screen.getByRole('status')).toHaveTextContent('u***@example.test')
+    expect(screen.getByRole('alert')).toHaveTextContent('status is unavailable')
+    expect(screen.queryByRole('button', { name: 'Reconnect gmail' })).toBeNull()
+  })
+
   it('a declined sign-in says so and offers another attempt', async () => {
     vi.mocked(api.onboardingOauthPoll).mockResolvedValue({ ok: false, status: 'denied', flow_id: 'flow-1', error: 'Sign-in was declined.' })
     render(<OAuthSignIn provider="openai-codex" label="ChatGPT" signedIn={false} onApproved={vi.fn()} />)

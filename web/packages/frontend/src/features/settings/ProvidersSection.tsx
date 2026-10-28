@@ -93,7 +93,7 @@ export function ProvidersSection() {
                   )}
                 </div>
               </div>
-              {p.id === 'nous' && <OAuthSignIn provider={p.id} label={p.display_name ?? p.id} signedIn={p.has_key === true} account={p.nous_account ?? null} resultOnly compact idPrefix="providersNousOauth" onApproved={invalidate} />}
+              {p.id === 'nous' && <OAuthSignIn provider={p.id} label={p.display_name ?? p.id} signedIn={p.has_key === true} account={p.nous_account ?? null} accountError={p.nous_account_error ?? null} resultOnly compact idPrefix="providersNousOauth" onApproved={invalidate} />}
               {isEditing && p.is_self_hosted && <SelfHostedForm key={p.id} id={p.id} baseUrl={p.base_url ?? ''} saving={saveHosted.isPending} onSubmit={(body) => saveHosted.mutate({ id: p.id, name: p.display_name ?? p.id, ...body })} />}
               {isEditing && !p.is_self_hosted && <ProviderKeyForm key={p.id} label={`${p.display_name ?? p.id} API key`} hasKey={p.has_key === true} saving={saveKey.isPending} onSubmit={(key) => saveKey.mutate({ id: p.id, key })} />}
               {sources.map((s) => <ProviderQuotaPace key={s.source_id} source={s} showAccount={sources.length > 1} />)}

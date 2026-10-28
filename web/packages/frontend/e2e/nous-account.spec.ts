@@ -8,8 +8,9 @@ const fixtures = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../
 
 test('Nous result remains readable, survives reload, and reconnect is an explicit keyboard action', async ({ page }, testInfo) => {
   let result: NousAccount | null = null
+  let accountError: string | null = null
   const writes: unknown[] = []
-  await page.route('**/api/providers', (route) => route.fulfill({ json: { providers: [{ id: 'nous', display_name: 'Nous Portal', is_oauth: true, has_key: true, configured: true, models: [], nous_account: result }], active_provider: 'nous' } }))
+  await page.route('**/api/providers', (route) => route.fulfill({ json: { providers: [{ id: 'nous', display_name: 'Nous Portal', is_oauth: true, has_key: true, configured: true, models: [], nous_account: result, nous_account_error: accountError }], active_provider: 'nous' } }))
   await page.route('**/api/connectors/gmail/connect', async (route) => {
     writes.push(route.request().postDataJSON())
     await route.fulfill({ json: { op_id: 'reconnect-1', settled: false, outcome: null, can_continue: false, tool_call_id: null, targets: [
@@ -32,6 +33,18 @@ test('Nous result remains readable, survives reload, and reconnect is an explici
   expect(writes).toEqual([])
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   await page.screenshot({ path: testInfo.outputPath(`nous-result-${testInfo.project.name}.png`) })
+  result = { ...fixtures.moved, state: 'unavailable', reconnect: [], poll_after: 5 }
+  accountError = 'Connected-app transfer status is unavailable.'
+  await page.reload()
+  await settle(page)
+  await expect(row).toContainText(accountError)
+  await expect(row).toContainText('u***@example.test')
+  await expect(row.getByRole('button', { name: 'Reconnect gmail' })).toHaveCount(0)
+  await page.screenshot({ path: testInfo.outputPath(`nous-unavailable-${testInfo.project.name}.png`) })
+  result = fixtures.moved
+  accountError = null
+  await page.reload()
+  await settle(page)
   const reconnect = row.getByRole('button', { name: 'Reconnect gmail' })
   await reconnect.focus()
   await expect(reconnect).toBeFocused()

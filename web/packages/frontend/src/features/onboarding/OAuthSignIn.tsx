@@ -17,7 +17,7 @@ const message = (e: unknown): string => (e instanceof Error ? e.message : String
  * adds what the flow takes besides the link (the pasted redirect address). `compact` leaves the signed-in line to the caller.
  */
 interface OAuthSignInProps {
-  provider: string; label: string; signedIn: boolean; onApproved: (provider: string) => void; idPrefix?: string; compact?: boolean; children?: (flow: Flow) => ReactNode; account?: NousAccount | null; resultOnly?: boolean
+  provider: string; label: string; signedIn: boolean; onApproved: (provider: string) => void; idPrefix?: string; compact?: boolean; children?: (flow: Flow) => ReactNode; account?: NousAccount | null; accountError?: string | null; resultOnly?: boolean
 }
 
 export function OAuthSignIn(props: OAuthSignInProps) {
@@ -25,7 +25,7 @@ export function OAuthSignIn(props: OAuthSignInProps) {
   return <OAuthSignInPanel key={props.provider} {...props} />
 }
 
-function OAuthSignInPanel({ provider, label, signedIn, onApproved, idPrefix = 'onboardingOauth', compact = false, children, account, resultOnly = false }: OAuthSignInProps) {
+function OAuthSignInPanel({ provider, label, signedIn, onApproved, idPrefix = 'onboardingOauth', compact = false, children, account, accountError, resultOnly = false }: OAuthSignInProps) {
   const [flow, setFlow] = useState<Flow | null>(null)
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
@@ -151,7 +151,7 @@ function OAuthSignInPanel({ provider, label, signedIn, onApproved, idPrefix = 'o
   }
 
   const done = approved || signedIn
-  const ended = failure ?? (flow?.status === 'denied' ? m.oauth_denied()
+  const ended = failure ?? accountError ?? (flow?.status === 'denied' ? m.oauth_denied()
     : flow?.status === 'expired' ? m.oauth_codex_expired()
       : flow?.status === 'cancelled' ? m.oauth_cancelled()
         : flow?.status === 'error' ? `${m.oauth_codex_error()}: ${flow.error ?? ''}` : null)
