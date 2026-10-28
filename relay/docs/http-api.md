@@ -329,7 +329,7 @@ it never falls back to the unverified tier. A request without those headers is
 
 | Budget | Limit |
 |---|---|
-| Verified, per publisher | 20 an hour |
+| Verified, per publisher registration (owner and origin) | 20 an hour |
 | Unverified, per `installId` | 5 an hour |
 | Unverified, all installs | 200 a day |
 | Every tier | 1000 a day |

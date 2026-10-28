@@ -43,8 +43,13 @@ export const submit = internalMutation({
         ? { status: "accepted" as const, reportId: existing._id }
         : { status: "idempotency_conflict" as const };
     }
+    // Registrations are per owner and origin, so another account registering the same origin gets its own budget.
     const budget = await consumeBudget(ctx, args.now, args.publisher
-      ? [{ key: `feedback:pub:${args.publisher.publisherId}`, windowMs: hour, limit: 20 }, allTiers]
+      ? [{
+          key: `feedback:pub:${args.publisher.publisherOwnerUserId}:${args.publisher.publisherId}`,
+          windowMs: hour,
+          limit: 20,
+        }, allTiers]
       : [
           { key: `feedback:install:${args.installHash}`, windowMs: hour, limit: 5 },
           { key: "feedback:unverified", windowMs: day, limit: 200 },

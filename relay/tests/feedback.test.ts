@@ -34,33 +34,39 @@ const report = (overrides: Record<string, unknown> = {}) => ({ ...fixture, reque
 async function relay() {
   const backend = convexTest(schema, modules);
   workpoolTest.register(backend, "apnsWorkpool");
-  const keys = await webcrypto.subtle.generateKey("Ed25519", true, ["sign", "verify"]) as CryptoKeyPair;
-  const publicKey = bytesToBase64Url(new Uint8Array(await webcrypto.subtle.exportKey("raw", keys.publicKey)));
-  await backend.run(async (ctx) => {
-    await ctx.db.insert("publishers", {
-      version: 2, ownerUserId: "feedback-owner", publisherId: "https://feedback.example",
-      label: "Feedback publisher", enabled: true, createdAt: start, updatedAt: start,
+  // Two accounts may register the same origin; each registration authenticates independently.
+  const signers: Record<string, CryptoKey> = {};
+  for (const owner of ["feedback-owner", "rival-owner"]) {
+    const keys = await webcrypto.subtle.generateKey("Ed25519", true, ["sign", "verify"]) as CryptoKeyPair;
+    const publicKey = bytesToBase64Url(new Uint8Array(await webcrypto.subtle.exportKey("raw", keys.publicKey)));
+    signers[`${owner}-key`] = keys.privateKey;
+    await backend.run(async (ctx) => {
+      await ctx.db.insert("publishers", {
+        version: 2, ownerUserId: owner, publisherId: "https://feedback.example",
+        label: "Feedback publisher", enabled: true, createdAt: start, updatedAt: start,
+      });
+      await ctx.db.insert("publisherKeys", {
+        version: 2, ownerUserId: owner, publisherId: "https://feedback.example",
+        keyId: `${owner}-key`, publicKey, activatedAt: start, createdAt: start,
+      });
     });
-    await ctx.db.insert("publisherKeys", {
-      version: 2, ownerUserId: "feedback-owner", publisherId: "https://feedback.example",
-      keyId: "feedback-key", publicKey, activatedAt: start, createdAt: start,
-    });
-  });
+  }
   const submit = (body: unknown, headers: Record<string, string> = {}) => backend.fetch("/v1/feedback", {
     method: "POST",
     headers: { "content-type": "application/json", ...headers },
     body: typeof body === "string" ? body : JSON.stringify(body),
   });
   let nonces = 0;
-  const signatureHeaders = async (body: string, options: { nonce?: string; timestamp?: number; signedBody?: string } = {}) => {
+  const signatureHeaders = async (body: string, options: { nonce?: string; timestamp?: number; signedBody?: string; keyId?: string } = {}) => {
+    const keyId = options.keyId ?? "feedback-owner-key";
     const timestamp = String(Math.floor((options.timestamp ?? clock) / 1_000));
     const nonce = options.nonce ?? `feedback-nonce-${String(nonces++)}`;
     const message = ["POST", "/v1/feedback", timestamp, nonce, await sha256(options.signedBody ?? body)].join("\n");
     const signature = bytesToBase64Url(new Uint8Array(await webcrypto.subtle.sign(
-      "Ed25519", keys.privateKey, new TextEncoder().encode(message),
+      "Ed25519", signers[keyId]!, new TextEncoder().encode(message),
     )));
     return {
-      "x-talaria-key-id": "feedback-key", "x-talaria-timestamp": timestamp,
+      "x-talaria-key-id": keyId, "x-talaria-timestamp": timestamp,
       "x-talaria-nonce": nonce, "x-talaria-signature": signature,
     };
   };
@@ -155,12 +161,13 @@ describe("feedback budgets", () => {
     expect((await submit(report())).status).toBe(202);
   });
 
-  it("limits a verified publisher to twenty reports an hour", async () => {
+  it("limits a verified publisher to twenty reports an hour without spending another owner's budget", async () => {
     const { signedSubmit } = await relay();
     for (let index = 0; index < 20; index += 1) expect((await signedSubmit(report({ installId: uuid() }))).status).toBe(202);
     const limited = await signedSubmit(report({ installId: uuid() }));
     expect(limited.status).toBe(429);
     expect(retryAfter(limited)).toBe(3_600);
+    expect((await signedSubmit(report(), { keyId: "rival-owner-key" })).status).toBe(202);
   });
 
   it("caps unverified reports at two hundred a day while verified reports continue", async () => {
