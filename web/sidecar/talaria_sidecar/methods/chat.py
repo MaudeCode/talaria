@@ -72,6 +72,11 @@ class _Run:
         self.mcp_discovery_outcome = "ok"
         self.deadline: float | None = None
 
+    def prompt_cancelled(self, data: dict) -> bool:
+        # Vault answers racing a clear retain their existing unlock-then-release cleanup at turn end.
+        ended = self.session_ended and not str(data.get("kind") or "").startswith("vault_")
+        return self.ctx.cancelled or self.cancel.is_set() or self.finished.is_set() or ended
+
 
 class _ClarifyEntry:
     def __init__(self, data: dict):
@@ -92,13 +97,13 @@ def _ask_clarify(run: _Run, data: dict, timeout: int, emit=None) -> str | None:
     if run.deadline is not None:
         entry.deadline = min(entry.deadline, run.deadline) if entry.deadline is not None else run.deadline
     with run.lock:
-        if run.ctx.cancelled or run.cancel.is_set() or run.finished.is_set() or run.session_ended or (entry.deadline is not None and entry.deadline <= time.monotonic()):
+        if run.prompt_cancelled(data) or (entry.deadline is not None and entry.deadline <= time.monotonic()):
             return None
         run.clarify_entries[entry.clarify_id] = entry
     try:
         emit("clarify", dict(entry.data))
         while not entry.event.is_set():
-            if run.cancel.is_set() or run.finished.is_set() or run.ctx.cancelled or run.session_ended:
+            if run.prompt_cancelled(data):
                 break
             if entry.deadline is None:
                 entry.event.wait(0.1)
@@ -111,7 +116,7 @@ def _ask_clarify(run: _Run, data: dict, timeout: int, emit=None) -> str | None:
         with run.lock:
             run.clarify_entries.pop(entry.clarify_id, None)
         emit("clarify_resolved", {"clarify_id": entry.clarify_id, "session_id": run.session_id})
-    return None if run.ctx.cancelled or run.cancel.is_set() or run.finished.is_set() or run.session_ended else entry.result
+    return None if run.prompt_cancelled(data) else entry.result
 
 
 def _clarify_callback(run: _Run, params: dict, emit=None):
@@ -139,7 +144,7 @@ def _clarify_callback(run: _Run, params: dict, emit=None):
             if structured:
                 return {"answers": json.loads(answer)["answers"], "outcome": "submitted"}
             return answer
-        cancelled = run.ctx.cancelled or run.cancel.is_set() or run.finished.is_set() or run.session_ended
+        cancelled = run.prompt_cancelled(data)
         if structured:
             return {"answers": {}, "outcome": "cancelled" if cancelled else "timed_out",
                     "notice": "The user cancelled the clarification." if cancelled else "The clarification timed out."}
@@ -2858,7 +2863,7 @@ def register(registry) -> None:
             if target is None or target.event.is_set() or (target.deadline is not None and time.monotonic() >= target.deadline):
                 return {"ok": False}
             skill_secret = target.data.get("kind") == "skill_secret"
-            if ctx.cancelled or run.ctx.cancelled or run.cancel.is_set() or run.finished.is_set() or run.session_ended or (skill_secret and not clarify_id):
+            if ctx.cancelled or run.prompt_cancelled(target.data) or (skill_secret and not clarify_id):
                 return {"ok": False}
             # Secure answers are as typed; an empty reply is their decline. Only the first answer releases a waiter.
             secure = str(target.data.get("kind") or "").startswith("vault_") or skill_secret
