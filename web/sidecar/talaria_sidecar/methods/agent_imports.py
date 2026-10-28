@@ -1,7 +1,7 @@
 """Profile import adapter. Native planning runs on private snapshots; publication uses anchored descriptors."""
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import hashlib
 import json
 from itertools import islice
@@ -15,11 +15,12 @@ import time
 
 from .. import home as homes
 from ..errors import InvalidParams
-from . import plugin_catalog
+from . import memory, plugin_catalog
 
 _SOURCES = {'claude-code': ('.claude', 'Claude Code'), 'codex': ('.codex', 'Codex CLI'), 'cursor': ('.cursor', 'Cursor')}
 _CREDENTIALS = {'.credentials.json', 'auth.json', 'credentials.json', 'cli-config.json', '.env'}
 _TARGETS = ('config.yaml', 'memories', 'skills', 'import-sync.json')
+_MEMORY_FILES = {'memories/MEMORY.md', 'memories/USER.md'}
 _PREVIEWS = {}
 _MAX_FILES = 2048
 _MAX_BYTES = 16 * 1024 * 1024
@@ -71,6 +72,10 @@ def _snapshot(path, names):
         try:
             info = os.stat(name, dir_fd=fd, follow_symlinks=False)
         except FileNotFoundError:
+            return
+        if rel.endswith('.lock') and rel[:-5] in _MEMORY_FILES:
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                raise OSError('Unsafe memory lock')
             return
         if stat.S_ISDIR(info.st_mode):
             child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
@@ -185,14 +190,16 @@ def _write(root_fd, rel, body, *, exclusive=False, mode=0o600, expected=None):
                 stream.write(body)
                 stream.flush()
                 os.fsync(stream.fileno())
-            if expected is not None and _read(fd, name) != expected:
-                raise OSError('Import destination changed during publication')
-            if exclusive:
-                os.link(tmp, name, src_dir_fd=fd, dst_dir_fd=fd, follow_symlinks=False)
-            else:
-                # Replacing a link cannot follow it. Never mutate the old inode in place.
-                os.rename(tmp, name, src_dir_fd=fd, dst_dir_fd=fd)
-            os.fsync(fd)
+            guard = memory.file_lock(Path(name), parent_fd=fd) if rel in _MEMORY_FILES else nullcontext()
+            with guard:
+                if expected is not None and _read(fd, name) != expected:
+                    raise OSError('Import destination changed during publication')
+                if exclusive:
+                    os.link(tmp, name, src_dir_fd=fd, dst_dir_fd=fd, follow_symlinks=False)
+                else:
+                    # Replacing a link cannot follow it. Never mutate the old inode in place.
+                    os.rename(tmp, name, src_dir_fd=fd, dst_dir_fd=fd)
+                os.fsync(fd)
         finally:
             try:
                 os.unlink(tmp, dir_fd=fd)

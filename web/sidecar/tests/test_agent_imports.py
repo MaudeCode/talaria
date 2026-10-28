@@ -179,3 +179,95 @@ def test_partial_publication_reconciles_exact_bytes_without_native_replay(import
     monkeypatch.setattr(i.subject, '_ledger', original)
     assert i.call('result', receipt=preview['receipt'])['status'] == 'applied'
     assert i.effects == ['execute', 'sync']
+
+
+def test_live_memory_publication_excludes_a_save_at_the_final_rename(imports, monkeypatch):
+    import fcntl
+    import os
+
+    i = imports
+    memory = i.target / 'memories/MEMORY.md'
+    memory.parent.mkdir()
+    memory.write_text('Before preview')
+    snapshot = i.subject._snapshot(i.target, i.subject._TARGETS)
+    rename = os.rename
+    attempts = []
+
+    def competing_save(src, dst, **kwargs):
+        if dst == 'MEMORY.md':
+            # A native memory writer uses this exact lock inode before accepting a save.
+            with (memory.parent / 'MEMORY.md.lock').open('a+') as writer:
+                try:
+                    fcntl.flock(writer, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    attempts.append('blocked')
+                else:
+                    memory.write_text('Accepted concurrent save')
+                    attempts.append('accepted')
+                    fcntl.flock(writer, fcntl.LOCK_UN)
+        return rename(src, dst, **kwargs)
+
+    monkeypatch.setattr(os, 'rename', competing_save)
+    with i.subject._directory(i.target) as fd:
+        i.subject._write(fd, 'memories/MEMORY.md', b'Imported memory', expected=(snapshot[0]['memories/MEMORY.md'], snapshot[1]['memories/MEMORY.md']))
+    assert attempts == ['blocked'], 'Import overwrote a save accepted after its final identity check'
+    assert memory.read_text() == 'Imported memory'
+
+
+@pytest.mark.parametrize('name', ['MEMORY.md', 'USER.md'])
+def test_import_waits_for_a_live_memory_save_and_rechecks_its_result(imports, monkeypatch, name):
+    from contextlib import contextmanager
+    import fcntl
+    import threading
+
+    i = imports
+    path = i.target / 'memories' / name
+    path.parent.mkdir()
+    path.write_text('Before preview')
+    rel = 'memories/' + name
+    snapshot = i.subject._snapshot(i.target, i.subject._TARGETS)
+    at_lock = threading.Event()
+    finished = threading.Event()
+    errors = []
+    original = i.subject.memory.file_lock
+
+    @contextmanager
+    def observed(*args, **kwargs):
+        at_lock.set()
+        with original(*args, **kwargs):
+            yield
+
+    monkeypatch.setattr(i.subject.memory, 'file_lock', observed)
+    def publish():
+        try:
+            with i.subject._directory(i.target) as fd:
+                i.subject._write(fd, rel, b'Imported memory', expected=(snapshot[0][rel], snapshot[1][rel]))
+        except OSError as error:
+            errors.append(error)
+        finally:
+            finished.set()
+
+    with path.with_name(name + '.lock').open('a+') as writer:
+        fcntl.flock(writer, fcntl.LOCK_EX)
+        thread = threading.Thread(target=publish)
+        thread.start()
+        try:
+            assert at_lock.wait(5), 'Publication did not reach the shared memory lock'
+            assert not finished.is_set(), 'Publication ignored the active memory writer'
+            path.write_text('Accepted concurrent save')
+        finally:
+            fcntl.flock(writer, fcntl.LOCK_UN)
+    thread.join(5)
+    assert finished.is_set() and errors, 'A changed memory target was not refused after acquiring its lock'
+    assert path.read_text() == 'Accepted concurrent save'
+    assert rel + '.lock' not in i.subject._snapshot(i.target, i.subject._TARGETS)[0]
+
+
+def test_import_rejects_an_escaped_memory_lock_before_publication(imports):
+    i = imports
+    (i.target / 'memories').mkdir()
+    (i.target / 'memories/MEMORY.md.lock').symlink_to(i.other / 'config.yaml')
+    before = tree(i.other)
+    assert i.call('preview', agent='cursor')['status'] == 'unavailable'
+    assert tree(i.other) == before
+    assert i.effects == []

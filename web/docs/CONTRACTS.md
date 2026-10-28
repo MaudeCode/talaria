@@ -448,7 +448,7 @@ private temporary copies of bounded, descriptor-read source and target inputs.
 Symlinks, hard links, special files, overlapping trees and oversized inputs are
 refused. Five-minute consent binds the profile, plugin and complete input
 snapshots. Apply verifies those identities again before publishing staged native
-results with descriptor-relative atomic writes. Existing item conflicts remain
+results with descriptor-relative atomic writes. Live memory replacement holds the native persistent `.lock` inode across its final identity check and replacement, sharing exclusion with chat memory tools and `memory.write`. Lock files are excluded from snapshots and never replaced. Existing item conflicts remain
 intact. Native memory backups and sync registration are preserved.
 
 A private additive `.talaria-agent-imports/` record is synced before execution.
