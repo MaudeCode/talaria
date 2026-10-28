@@ -7,6 +7,7 @@ import { toolsContract, type GatewayMode, type GatewayStatus, type PluginOAuthCl
 import { HttpError, requireFields, type ApiContext } from './router.js'
 import { requestSessionIdGuard } from './session-visibility.js'
 import type { RequestContext } from '../http/context.js'
+import { clientStreamKey } from './sse-routes.js'
 import { activeProfileName, ensureTrustedAuthSession, sessionCanManageServer } from '../auth/gate.js'
 import { currentChatReadiness, HttpFailure } from '../sessions/service.js'
 import { SessionNotFound } from '../sessions/store.js'
@@ -489,6 +490,12 @@ export const toolsRouter = os.router({
       const chat = sessionId ? { session_id: sessionId, workspace: (await ctx.deps.sessions.turnWorkspace((await ctx.deps.sessionStore.get(sessionId, { metadataOnly: true })))) } : {}
       // Workspace resolution can yield to native adoption; recheck at the local execution boundary.
       if (sessionId) await ctx.deps.sessions.assertWritable(sessionId)
+      const releasePrincipal = ctx.deps.commandSlots.claim(JSON.stringify(['principal', ctx.notificationOwner ?? clientStreamKey(ctx)]))
+      const releaseProfile = releasePrincipal ? ctx.deps.commandSlots.claim(JSON.stringify(['profile', home(ctx)])) : null
+      if (!releaseProfile) {
+        releasePrincipal?.()
+        throw new HttpError(429, 'Too many running commands; wait for one to finish.')
+      }
       let output: string
       const controller = new AbortController()
       const prompts = new Set<string>()
@@ -518,6 +525,8 @@ export const toolsRouter = os.router({
       } catch (error) {
         return commandFailure(error, 'command_not_found', 'Plugin command not found')
       } finally {
+        releaseProfile()
+        releasePrincipal?.()
         signal?.removeEventListener('abort', cancel)
         ctx.res.off('close', cancel)
         for (const id of prompts) ctx.deps.pending.resolveClarify(sessionId, id)

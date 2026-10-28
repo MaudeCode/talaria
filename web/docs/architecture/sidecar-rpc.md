@@ -12,6 +12,11 @@ Session eviction, profile removal, credential changes and shutdown cancel these
 waiters. Profile deletion waits for their handlers to return. The server withdraws
 only the command's prompts on disconnect, error or completion and never replays
 a handler after an unknown outcome. Turn cleanup preserves command-owned prompts.
+The HTTP command path reuses the keyed concurrency budget, allowing two commands
+per authenticated principal and two per profile. Excess requests receive 429
+before dispatch. RPC admission permits at most eight commands globally, bounded
+below the configured total call limit so replies and unrelated operations retain
+capacity. Both budgets release on completion, error and cancellation.
 
 RPC v61 adds `connectors.offer.status` and `connectors.offer.claim`. The Agent
 owns connector guest eligibility, sightings, install-wide claim-once and backoff.

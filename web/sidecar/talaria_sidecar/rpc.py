@@ -74,7 +74,10 @@ class CallContext:
 class RpcServer:
     def __init__(self, methods: dict[str, Handler], *, stdin=None, stdout=None, max_calls: int = DEFAULT_MAX_CALLS):
         self.methods = dict(methods)
-        self._slots = threading.BoundedSemaphore(max(1, int(max_calls)))
+        call_limit = max(1, int(max_calls))
+        self._slots = threading.BoundedSemaphore(call_limit)
+        # A parked command must leave room for its answer and unrelated Agent work.
+        self._command_slots = threading.BoundedSemaphore(min(8, call_limit - 1))
         self.methods.setdefault("rpc.cancel", self._cancel)
         self.methods.setdefault("rpc.methods", lambda ctx, params: {"methods": sorted(self.methods)})
         self._in = stdin or sys.stdin.buffer
@@ -256,7 +259,11 @@ class RpcServer:
                 # Cancellation must not queue behind the call it targets.
                 self._dispatch(request)
                 continue
-            if not self._slots.acquire(blocking=False):
+            command = request.get("method") == "commands.exec"
+            command_admitted = not command or self._command_slots.acquire(blocking=False)
+            if not command_admitted or not self._slots.acquire(blocking=False):
+                if command and command_admitted:
+                    self._command_slots.release()
                 if request.get("method") == "chat.start":
                     StartupTiming(request).finish("refused")
                 self._error(request.get("id"), APPLICATION_ERROR, "sidecar is at its concurrent call limit", {"condition": "sidecar_busy"})
@@ -279,3 +286,5 @@ class RpcServer:
             self._dispatch(request, ctx)
         finally:
             self._slots.release()
+            if request.get("method") == "commands.exec":
+                self._command_slots.release()

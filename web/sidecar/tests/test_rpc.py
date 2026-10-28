@@ -6,9 +6,37 @@ import io
 import json
 import os
 import threading
+import pytest
 
 from talaria_sidecar.errors import CANCELLED, Cancelled
 from talaria_sidecar.rpc import RpcServer
+
+
+@pytest.mark.parametrize('max_calls', [1, 2, 64])
+def test_unanswered_commands_leave_capacity_for_clarification_replies(max_calls):
+    release, replied = threading.Event(), threading.Event()
+    requests = [{'jsonrpc': '2.0', 'id': n, 'method': 'commands.exec', 'params': {'profile_home': f'/profile/{n}'}} for n in range(64)]
+    requests.append({'jsonrpc': '2.0', 'id': 'answer', 'method': 'clarify.respond'})
+    output = io.BytesIO()
+    server = RpcServer({'commands.exec': lambda ctx, params: release.wait(5), 'clarify.respond': lambda ctx, params: {'ok': True}},
+                       stdin=io.BytesIO(b''.join(json.dumps(r).encode() + b'\n' for r in requests)), stdout=output, max_calls=max_calls)
+    write = server._write
+
+    def observe(message):
+        write(message)
+        if message.get('id') == 'answer':
+            replied.set()
+
+    server._write = observe
+    try:
+        server.serve_forever()
+        assert replied.wait(3)
+        replies = {json.loads(raw)['id']: json.loads(raw) for raw in output.getvalue().splitlines()}
+        assert replies['answer'].get('result') == {'ok': True}, replies['answer']
+        busy = [r for r in replies.values() if r.get('error', {}).get('data', {}).get('condition') == 'sidecar_busy']
+        assert len(busy) >= 56
+    finally:
+        release.set()
 
 
 def test_dispatch_is_bounded_and_cancel_still_reaches_a_running_call() -> None:

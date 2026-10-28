@@ -1,10 +1,51 @@
 import { afterEach, expect, it } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
-import { bootTestServer, type TestServer } from '../test/harness.js'
+import { bootTestServer, cookieHeader, type TestServer } from '../test/harness.js'
 
 let server: TestServer | undefined
 afterEach(async () => { await server?.close() })
+
+it.each(['profile', 'principal'] as const)('bounds commands by %s before dispatch and releases the budget', async (boundary) => {
+  const sidecar = new FakeSidecar()
+  const s = server = await bootTestServer({ sidecar, env: { HERMES_WEBUI_TRUSTED_AUTH_HEADER: 'X-Remote-User', HERMES_WEBUI_TRUSTED_GROUPS_HEADER: 'X-Remote-Groups', HERMES_WEBUI_GROUP_PROFILE_MAP: '{"ops":"work"}' } })
+  const identities: Record<string, Record<string, string>> = {}
+  for (const [key, user, group] of [['kimWork', 'kim', 'ops'], ['kimRoot', 'kim', 'dev'], ['leeWork', 'lee', 'ops'], ['leeRoot', 'lee', 'dev']]) {
+    const response = await s.get('/api/auth/status', { headers: { 'X-Remote-User': user!, 'X-Remote-Groups': group! } })
+    const cookie = cookieHeader(response.headers.getSetCookie(), 'hermes_session')
+    const headers = { cookie: cookie!, 'X-Remote-User': user!, 'X-Remote-Groups': group!, origin: s.base }
+    const bootstrap = await (await s.get('/api/bootstrap', { headers })).json() as { csrf_token: string }
+    identities[key!] = { ...headers, 'X-Hermes-CSRF-Token': bootstrap.csrf_token, 'content-type': 'application/json' }
+  }
+  const post = (identity: string, path: string, body: unknown) => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: identities[identity]! })
+  const work = await (await post('kimWork', '/api/session/new', {})).json() as { session: { session_id: string } }
+  const root = await (await post('kimRoot', '/api/session/new', {})).json() as { session: { session_id: string } }
+  const held: (() => void)[] = []
+  let executed = 0
+  sidecar.respond('commands.exec', () => {
+    executed += 1
+    if (executed > 2) return { output: 'completed', source: 'plugin' }
+    return new Promise((resolve) => { held.push(() => { resolve({ output: 'completed', source: 'plugin' }) }) })
+  })
+  const run = (identity: string, sid: string) => post(identity, '/api/commands/exec', { command: '/probe-choice', session_id: sid })
+  const first = run('kimWork', work.session.session_id)
+  const second = run('kimWork', work.session.session_id)
+  try {
+    await expect.poll(() => held.length).toBe(2)
+    const blocked = await run(boundary === 'profile' ? 'leeWork' : 'kimRoot', boundary === 'profile' ? work.session.session_id : root.session.session_id)
+    expect(blocked.status).toBe(429)
+    expect(executed).toBe(2)
+    // Another principal in another profile still reaches its handler.
+    expect((await run('leeRoot', root.session.session_id)).status).toBe(200)
+    held[0]!()
+    expect((await first).status).toBe(200)
+    expect((await run('kimWork', work.session.session_id)).status).toBe(200)
+  } finally {
+    for (const finish of held) finish()
+    await Promise.allSettled([first, second])
+  }
+  expect(s.deps.commandSlots.active).toBe(0)
+})
 
 it('answers a running plugin command through the ordinary clarification stream without a chat turn', async () => {
   const sidecar = new FakeSidecar()
@@ -77,4 +118,5 @@ it.each(['error', 'disconnect'] as const)('withdraws only its own prompts on com
     expect(s.deps.pending.clarifyPending(sid).pending?.clarify_id).toBe('other-command')
     expect(sidecar.calls.filter((c) => c.method === 'commands.exec')).toHaveLength(1)
   } finally { fail(); await command.catch(() => undefined) }
+  expect(s.deps.commandSlots.active).toBe(0)
 })
