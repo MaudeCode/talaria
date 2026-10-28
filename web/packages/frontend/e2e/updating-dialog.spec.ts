@@ -104,7 +104,8 @@ test('a dropped Web update keeps the dialog reconnecting, then shows the server 
   await expect(dialog.getByRole('button')).toHaveCount(0)
   await page.keyboard.press('Escape')
   await expect(dialog).toBeVisible()
-  expect(applies).toEqual([expect.objectContaining({ target: 'webui', tab_id: expect.stringMatching(/^[A-Za-z0-9_-]{8,64}$/) })])
+  // The dialog opens before the request is sent, so wait for the route to see it.
+  await expect.poll(() => applies).toEqual([expect.objectContaining({ target: 'webui', tab_id: expect.stringMatching(/^[A-Za-z0-9_-]{8,64}$/) })])
   // Reduced motion (the Playwright default here) stops the spinner after one near-instant iteration.
   expect(await dialog.locator('.animate-spin').evaluateAll((nodes) => nodes.map((node) => getComputedStyle(node).animationIterationCount))).toEqual(['1'])
 
