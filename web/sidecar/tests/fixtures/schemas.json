@@ -7786,6 +7786,38 @@
               "reactions_supported": {
                 "type": "boolean"
               },
+              "todo_state": {
+                "description": "Canonical owner plan. Null clears it; omission retains transcript fallback for older owners.",
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "todos": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {}
+                        }
+                      },
+                      "revision": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "todos"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "pending": {
                 "type": "array",
                 "items": {
@@ -8530,6 +8562,38 @@
               },
               "reactions_supported": {
                 "type": "boolean"
+              },
+              "todo_state": {
+                "description": "Canonical owner plan. Null clears it; omission retains transcript fallback for older owners.",
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "todos": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {}
+                        }
+                      },
+                      "revision": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "todos"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "pending": {
                 "type": "array",

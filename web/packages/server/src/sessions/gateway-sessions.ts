@@ -23,6 +23,7 @@ import { pendingUserRow } from './merge.js'
 import { ReasoningTitleTracker, reasoningEventPayload } from './reasoning-titles.js'
 import { CANONICAL_READ_ONLY_REASON, WEB_DIAGNOSTIC_REQUEST_PREFIX } from './state-db.js'
 import { toolProgress } from './tool-display.js'
+import { deriveTodoState, normalizeTodoSnapshot } from './todo.js'
 
 type Row = Record<string, unknown>
 interface Target { sid: string; profile: string; home: string; key: string }
@@ -30,7 +31,7 @@ interface Target { sid: string; profile: string; home: string; key: string }
 type Batch = GatewayClarifyBatch & { remaining: string[] }
 interface Watch { stream: string; controller: AbortController; snapshot: GatewaySnapshot; batch: Batch | null; restarting: boolean; reconcile?: () => void }
 /** The attach-only transport outlives individual run projections while a viewer holds it. */
-interface Observation { controller: AbortController; snapshot: GatewaySnapshot; replaying: boolean; completion: StreamFrame | null; listeners: Set<(frame: StreamFrame) => void>; leases: number; ended: Promise<GatewaySessionResult> }
+interface Observation { controller: AbortController; snapshot: GatewaySnapshot; todoSequence: number; replaying: boolean; completion: StreamFrame | null; listeners: Set<(frame: StreamFrame) => void>; leases: number; ended: Promise<GatewaySessionResult> }
 
 const ownerStreamPrefix = (home: string): string => `owner-${createHash('sha256').update(home).digest('hex').slice(0, 16)}-`
 const ownerStateId = (identity: string): string => `owner-${createHash('sha256').update(identity).digest('hex')}`
@@ -55,6 +56,9 @@ function retryText(admission: GatewaySnapshot['pending'][number]): string | null
 /** Steering belongs to the current turn; it must never replace that turn's transcript anchor. */
 const runningAdmission = (snapshot: GatewaySnapshot) => snapshot.pending.find((p) => p.status === 'started' && !p.steering)
 const sameExecution = (a: GatewaySnapshot, b: GatewaySnapshot): boolean => a.authority_epoch === b.authority_epoch && a.replay_epoch === b.replay_epoch && a.execution_generation === b.execution_generation
+/** Todo revisions belong to a single owner execution; sequence also fences explicit null clears. */
+const newerTodo = (a: GatewaySnapshot, b: GatewaySnapshot): boolean => Object.hasOwn(a, 'todo_state') && sameExecution(a, b)
+  && (a.last_sequence > b.last_sequence || !Object.hasOwn(b, 'todo_state') || a.todo_state != null && b.todo_state != null && (a.todo_state.revision ?? 0) > (b.todo_state.revision ?? 0))
 
 /** Native counters and the owner's compact turn-end usage share one existing Web usage shape. */
 function ownerUsage(data: Row): Row {
@@ -144,11 +148,19 @@ export class GatewaySessions {
     this.deps.channels.emit(target.sid, 'session-updated', { session_id: target.sid, source: 'native_owner' }, target.profile)
   }
 
+  private nativeTodo(target: Target, snapshot: GatewaySnapshot): Row | null {
+    const observed = this.observations.get(target.key)?.snapshot
+    const current = observed && (newerTodo(observed, snapshot) || observed.authority_epoch > snapshot.authority_epoch
+      || observed.authority_epoch === snapshot.authority_epoch && observed.replay_epoch === snapshot.replay_epoch && observed.execution_generation > snapshot.execution_generation) ? observed : snapshot
+    return Object.hasOwn(current, 'todo_state')
+      ? normalizeTodoSnapshot(current.todo_state ?? { todos: [] }) : deriveTodoState(current.messages)
+  }
+
   /** One shared connection, acquired by viewers and run projections, with no local Agent admission. */
   private transport(target: Target, base: Row, snapshot: GatewaySnapshot): Observation {
     const prior = this.observations.get(target.key)
     if (prior && !prior.controller.signal.aborted) return prior
-    const observation: Observation = { controller: new AbortController(), snapshot, replaying: true, completion: null, listeners: new Set(), leases: 0, ended: Promise.resolve({ state: 'unavailable', reason: 'owner_connection_lost', snapshot: null, receipt: null }) }
+    const observation: Observation = { controller: new AbortController(), snapshot, todoSequence: 0, replaying: true, completion: null, listeners: new Set(), leases: 0, ended: Promise.resolve({ state: 'unavailable', reason: 'owner_connection_lost', snapshot: null, receipt: null }) }
     this.observations.set(target.key, observation)
     this.noticeState(target, snapshot)
     observation.ended = (async () => {
@@ -166,7 +178,9 @@ export class GatewaySessions {
             if ((frame.data as Row).reaction_only === true) { this.changed(target); return }
             const completed = observation.completion?.data as Row | undefined
             if (result.replay_gap || completed && (completed.authority_epoch !== result.snapshot.authority_epoch || completed.replay_epoch !== result.snapshot.replay_epoch)) observation.completion = null
-            observation.snapshot = result.snapshot
+            const prior = observation.snapshot
+            if (!sameExecution(prior, result.snapshot)) observation.todoSequence = 0
+            observation.snapshot = newerTodo(prior, result.snapshot) ? { ...result.snapshot, todo_state: prior.todo_state, last_sequence: prior.last_sequence } : result.snapshot
             observation.replaying = (frame.data as Row).replaying === true
             this.noticeState(target, result.snapshot, result.replay_gap === true)
             if ((result.snapshot.running || result.snapshot.pending.some((p) => p.status === 'queued' || p.status === 'started')) && !this.watches.has(target.key)) this.watch(target, base, result.snapshot)
@@ -176,7 +190,20 @@ export class GatewaySessions {
           } else if (frame.event === 'event') {
             const event = frame.data as Row
             const data = (event.payload ?? {}) as Row
-            if (event.type === 'notification.show' || event.type === 'notification.clear') {
+            if (event.type === 'todo.updated') {
+              const snap = observation.snapshot
+              if (event.session_id !== target.sid || event.replay_epoch !== snap.replay_epoch
+                  || event.authority_epoch !== snap.authority_epoch || event.execution_generation !== snap.execution_generation
+                  || !Number.isSafeInteger(event.seq) || Number(event.seq) <= observation.todoSequence
+                  || !Array.isArray(data.todos) || !Number.isSafeInteger(data.revision) || Number(data.revision) < 0
+                  || snap.todo_state != null && Number(data.revision) <= (snap.todo_state.revision ?? -1)) return
+              // A retained event may be newer than the transcript-derived plan in an attach snapshot.
+              // Explicit null still fences all events at or before that snapshot's sequence.
+              if (Number(event.seq) <= snap.last_sequence && snap.todo_state === null) return
+              observation.todoSequence = Number(event.seq)
+              observation.snapshot = { ...snap, todo_state: { todos: data.todos as Row[], revision: Number(data.revision) }, last_sequence: Math.max(snap.last_sequence, Number(event.seq)) }
+              this.changed(target)
+            } else if (event.type === 'notification.show' || event.type === 'notification.clear') {
               const snap = observation.snapshot
               const state = this.noticeState(target, snap)
               if (event.session_id !== target.sid || event.replay_epoch !== snap.replay_epoch
@@ -191,7 +218,11 @@ export class GatewaySessions {
               this.changed(target)
             } else if (event.type === 'session.info') {
               if (data.authority_epoch !== observation.snapshot.authority_epoch || Number(data.execution_generation) < observation.snapshot.execution_generation) return
-              observation.snapshot = { ...observation.snapshot, ...data }
+              const nextGeneration = Number(data.execution_generation) > observation.snapshot.execution_generation
+              if (nextGeneration) observation.todoSequence = 0
+              observation.snapshot = { ...observation.snapshot, ...data,
+                ...(nextGeneration && observation.snapshot.todo_state ? { todo_state: { ...observation.snapshot.todo_state, revision: 0 } } : {}),
+              }
               if ((observation.snapshot.running || observation.snapshot.pending.some((p) => p.status === 'queued' || p.status === 'started')) && !this.watches.has(target.key)) this.watch(target, base, observation.snapshot)
               this.changed(target)
             } else if (event.type === 'message.complete' && event.session_id === target.sid
@@ -462,6 +493,7 @@ export class GatewaySessions {
     const fields: Row = { ...base, show_reasoning: showReasoning, owner_attachment: this.attachment({ ...result, model_change: this.currentModelChange(target, snapshot) }), composer_state_key: ownerStateId(target.key), context_detail_key: this.contextDetailKey(target, snapshot), active_stream_id: stream, is_streaming: Boolean(stream) }
     if (snapshot) {
       fields.notices = this.nativeNotices(target, snapshot)
+      fields.todo_state = this.nativeTodo(target, snapshot) ?? normalizeTodoSnapshot({ todos: [] })
       const observed = this.watches.get(target.key)?.snapshot
       const canReact = snapshot.reactions_supported === true && this.attachment(result).can_submit
       const nativeRows: Row[] = snapshot.messages.map(({ reactions, ...row }) => ({ ...row,
@@ -803,6 +835,10 @@ export class GatewaySessions {
             const kind = str(event.type)
             if (kind === 'notification.show' || kind === 'notification.clear') {
               await put('notices', { session_id: target.sid, notices: this.nativeNotices(target, observation.snapshot) })
+              return
+            }
+            if (kind === 'todo.updated') {
+              await put('todo_state', { ...normalizeTodoSnapshot(data), session_id: target.sid, stream_id: watch.stream, source: 'live' })
               return
             }
             if (kind === 'request.cancel') {

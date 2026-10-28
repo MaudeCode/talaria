@@ -296,6 +296,14 @@ components. It never materializes a writable Talaria session or settles the owne
 The Agent owns admission, execution, recovery, and revision/generation-fenced mutations. Talaria's
 observational journals and stream scope include the complete profile home and session identity.
 Watches request reasoning from the owner so Show can resume it on an existing observation. The server applies the current profile display preference to reasoning and subagent-thinking frames, and maps subagent lifecycle and usage events into the existing chat frames. Unsupported display negotiation leaves older owners observable.
+
+The same profile-bound observation owns native todo state. Optional owner snapshots and
+`todo.updated` events feed `sessions/todo.ts`, the direct-chat normalizer, which ships
+display text, states and counts in `session.todo_state` and the existing `todo_state` SSE.
+Owner null and empty plans clear stale lists; omitted fields use the full transcript fallback.
+Execution/owner epochs, todo revisions and replay sequences fence updates. Idle viewers
+refresh through `session-updated`; the existing Todos page uses the session query cache
+and `useTranscript` observation lifecycle, with no separate task cache or Agent admission.
 Unknown admissions require an explicit recovery decision. On Agents with `clarify.lock` (v0.22.3+), the
 owner's native CLI clarify batch reaches the attached watch once, as a `clarify_batch` stream event; the
 server shows it as one clarify card, locks each answer, and clears it on the owner's `request.cancel`.

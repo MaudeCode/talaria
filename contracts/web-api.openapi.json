@@ -4630,6 +4630,130 @@
                           ],
                           "type": "string"
                         },
+                        "todo_state": {
+                          "type": "object",
+                          "properties": {
+                            "display_items": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "number"
+                                      }
+                                    ]
+                                  },
+                                  "text": {
+                                    "type": "string"
+                                  },
+                                  "state": {
+                                    "enum": [
+                                      "pending",
+                                      "in_progress",
+                                      "completed",
+                                      "cancelled"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "text",
+                                  "state"
+                                ]
+                              }
+                            },
+                            "total_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "completed_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "pending_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "in_progress_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "cancelled_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "session_id": {
+                              "type": "string"
+                            },
+                            "todos": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "number"
+                                      }
+                                    ]
+                                  },
+                                  "text": {
+                                    "type": "string"
+                                  },
+                                  "content": {
+                                    "type": "string"
+                                  },
+                                  "title": {
+                                    "type": "string"
+                                  },
+                                  "status": {
+                                    "type": "string"
+                                  },
+                                  "done": {
+                                    "type": "boolean"
+                                  },
+                                  "completed": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "additionalProperties": {}
+                              }
+                            },
+                            "summary": {
+                              "type": "object",
+                              "propertyNames": {
+                                "type": "string"
+                              },
+                              "additionalProperties": {}
+                            },
+                            "version": {
+                              "type": "number"
+                            },
+                            "ts": {
+                              "type": "number"
+                            },
+                            "source": {
+                              "type": "string"
+                            },
+                            "description": {
+                              "type": "string"
+                            }
+                          },
+                          "additionalProperties": {}
+                        },
                         "source_references": {
                           "type": "array",
                           "items": {
@@ -8659,6 +8783,130 @@
                           ],
                           "type": "string"
                         },
+                        "todo_state": {
+                          "type": "object",
+                          "properties": {
+                            "display_items": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "number"
+                                      }
+                                    ]
+                                  },
+                                  "text": {
+                                    "type": "string"
+                                  },
+                                  "state": {
+                                    "enum": [
+                                      "pending",
+                                      "in_progress",
+                                      "completed",
+                                      "cancelled"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "text",
+                                  "state"
+                                ]
+                              }
+                            },
+                            "total_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "completed_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "pending_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "in_progress_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "cancelled_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "session_id": {
+                              "type": "string"
+                            },
+                            "todos": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "number"
+                                      }
+                                    ]
+                                  },
+                                  "text": {
+                                    "type": "string"
+                                  },
+                                  "content": {
+                                    "type": "string"
+                                  },
+                                  "title": {
+                                    "type": "string"
+                                  },
+                                  "status": {
+                                    "type": "string"
+                                  },
+                                  "done": {
+                                    "type": "boolean"
+                                  },
+                                  "completed": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "additionalProperties": {}
+                              }
+                            },
+                            "summary": {
+                              "type": "object",
+                              "propertyNames": {
+                                "type": "string"
+                              },
+                              "additionalProperties": {}
+                            },
+                            "version": {
+                              "type": "number"
+                            },
+                            "ts": {
+                              "type": "number"
+                            },
+                            "source": {
+                              "type": "string"
+                            },
+                            "description": {
+                              "type": "string"
+                            }
+                          },
+                          "additionalProperties": {}
+                        },
                         "source_references": {
                           "type": "array",
                           "items": {
@@ -11873,6 +12121,130 @@
                             "stale"
                           ],
                           "type": "string"
+                        },
+                        "todo_state": {
+                          "type": "object",
+                          "properties": {
+                            "display_items": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "number"
+                                      }
+                                    ]
+                                  },
+                                  "text": {
+                                    "type": "string"
+                                  },
+                                  "state": {
+                                    "enum": [
+                                      "pending",
+                                      "in_progress",
+                                      "completed",
+                                      "cancelled"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "text",
+                                  "state"
+                                ]
+                              }
+                            },
+                            "total_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "completed_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "pending_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "in_progress_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "cancelled_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "session_id": {
+                              "type": "string"
+                            },
+                            "todos": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "number"
+                                      }
+                                    ]
+                                  },
+                                  "text": {
+                                    "type": "string"
+                                  },
+                                  "content": {
+                                    "type": "string"
+                                  },
+                                  "title": {
+                                    "type": "string"
+                                  },
+                                  "status": {
+                                    "type": "string"
+                                  },
+                                  "done": {
+                                    "type": "boolean"
+                                  },
+                                  "completed": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "additionalProperties": {}
+                              }
+                            },
+                            "summary": {
+                              "type": "object",
+                              "propertyNames": {
+                                "type": "string"
+                              },
+                              "additionalProperties": {}
+                            },
+                            "version": {
+                              "type": "number"
+                            },
+                            "ts": {
+                              "type": "number"
+                            },
+                            "source": {
+                              "type": "string"
+                            },
+                            "description": {
+                              "type": "string"
+                            }
+                          },
+                          "additionalProperties": {}
                         },
                         "source_references": {
                           "type": "array",
@@ -17121,6 +17493,130 @@
                           ],
                           "type": "string"
                         },
+                        "todo_state": {
+                          "type": "object",
+                          "properties": {
+                            "display_items": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "number"
+                                      }
+                                    ]
+                                  },
+                                  "text": {
+                                    "type": "string"
+                                  },
+                                  "state": {
+                                    "enum": [
+                                      "pending",
+                                      "in_progress",
+                                      "completed",
+                                      "cancelled"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "text",
+                                  "state"
+                                ]
+                              }
+                            },
+                            "total_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "completed_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "pending_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "in_progress_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "cancelled_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "session_id": {
+                              "type": "string"
+                            },
+                            "todos": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "number"
+                                      }
+                                    ]
+                                  },
+                                  "text": {
+                                    "type": "string"
+                                  },
+                                  "content": {
+                                    "type": "string"
+                                  },
+                                  "title": {
+                                    "type": "string"
+                                  },
+                                  "status": {
+                                    "type": "string"
+                                  },
+                                  "done": {
+                                    "type": "boolean"
+                                  },
+                                  "completed": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "additionalProperties": {}
+                              }
+                            },
+                            "summary": {
+                              "type": "object",
+                              "propertyNames": {
+                                "type": "string"
+                              },
+                              "additionalProperties": {}
+                            },
+                            "version": {
+                              "type": "number"
+                            },
+                            "ts": {
+                              "type": "number"
+                            },
+                            "source": {
+                              "type": "string"
+                            },
+                            "description": {
+                              "type": "string"
+                            }
+                          },
+                          "additionalProperties": {}
+                        },
                         "source_references": {
                           "type": "array",
                           "items": {
@@ -21942,6 +22438,130 @@
                             "stale"
                           ],
                           "type": "string"
+                        },
+                        "todo_state": {
+                          "type": "object",
+                          "properties": {
+                            "display_items": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "number"
+                                      }
+                                    ]
+                                  },
+                                  "text": {
+                                    "type": "string"
+                                  },
+                                  "state": {
+                                    "enum": [
+                                      "pending",
+                                      "in_progress",
+                                      "completed",
+                                      "cancelled"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "text",
+                                  "state"
+                                ]
+                              }
+                            },
+                            "total_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "completed_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "pending_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "in_progress_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "cancelled_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "session_id": {
+                              "type": "string"
+                            },
+                            "todos": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "number"
+                                      }
+                                    ]
+                                  },
+                                  "text": {
+                                    "type": "string"
+                                  },
+                                  "content": {
+                                    "type": "string"
+                                  },
+                                  "title": {
+                                    "type": "string"
+                                  },
+                                  "status": {
+                                    "type": "string"
+                                  },
+                                  "done": {
+                                    "type": "boolean"
+                                  },
+                                  "completed": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "additionalProperties": {}
+                              }
+                            },
+                            "summary": {
+                              "type": "object",
+                              "propertyNames": {
+                                "type": "string"
+                              },
+                              "additionalProperties": {}
+                            },
+                            "version": {
+                              "type": "number"
+                            },
+                            "ts": {
+                              "type": "number"
+                            },
+                            "source": {
+                              "type": "string"
+                            },
+                            "description": {
+                              "type": "string"
+                            }
+                          },
+                          "additionalProperties": {}
                         },
                         "source_references": {
                           "type": "array",
@@ -27488,6 +28108,130 @@
                           ],
                           "type": "string"
                         },
+                        "todo_state": {
+                          "type": "object",
+                          "properties": {
+                            "display_items": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "number"
+                                      }
+                                    ]
+                                  },
+                                  "text": {
+                                    "type": "string"
+                                  },
+                                  "state": {
+                                    "enum": [
+                                      "pending",
+                                      "in_progress",
+                                      "completed",
+                                      "cancelled"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "text",
+                                  "state"
+                                ]
+                              }
+                            },
+                            "total_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "completed_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "pending_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "in_progress_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "cancelled_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "session_id": {
+                              "type": "string"
+                            },
+                            "todos": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "number"
+                                      }
+                                    ]
+                                  },
+                                  "text": {
+                                    "type": "string"
+                                  },
+                                  "content": {
+                                    "type": "string"
+                                  },
+                                  "title": {
+                                    "type": "string"
+                                  },
+                                  "status": {
+                                    "type": "string"
+                                  },
+                                  "done": {
+                                    "type": "boolean"
+                                  },
+                                  "completed": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "additionalProperties": {}
+                              }
+                            },
+                            "summary": {
+                              "type": "object",
+                              "propertyNames": {
+                                "type": "string"
+                              },
+                              "additionalProperties": {}
+                            },
+                            "version": {
+                              "type": "number"
+                            },
+                            "ts": {
+                              "type": "number"
+                            },
+                            "source": {
+                              "type": "string"
+                            },
+                            "description": {
+                              "type": "string"
+                            }
+                          },
+                          "additionalProperties": {}
+                        },
                         "source_references": {
                           "type": "array",
                           "items": {
@@ -30651,6 +31395,130 @@
                             "stale"
                           ],
                           "type": "string"
+                        },
+                        "todo_state": {
+                          "type": "object",
+                          "properties": {
+                            "display_items": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "number"
+                                      }
+                                    ]
+                                  },
+                                  "text": {
+                                    "type": "string"
+                                  },
+                                  "state": {
+                                    "enum": [
+                                      "pending",
+                                      "in_progress",
+                                      "completed",
+                                      "cancelled"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "text",
+                                  "state"
+                                ]
+                              }
+                            },
+                            "total_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "completed_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "pending_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "in_progress_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "cancelled_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "session_id": {
+                              "type": "string"
+                            },
+                            "todos": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "number"
+                                      }
+                                    ]
+                                  },
+                                  "text": {
+                                    "type": "string"
+                                  },
+                                  "content": {
+                                    "type": "string"
+                                  },
+                                  "title": {
+                                    "type": "string"
+                                  },
+                                  "status": {
+                                    "type": "string"
+                                  },
+                                  "done": {
+                                    "type": "boolean"
+                                  },
+                                  "completed": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "additionalProperties": {}
+                              }
+                            },
+                            "summary": {
+                              "type": "object",
+                              "propertyNames": {
+                                "type": "string"
+                              },
+                              "additionalProperties": {}
+                            },
+                            "version": {
+                              "type": "number"
+                            },
+                            "ts": {
+                              "type": "number"
+                            },
+                            "source": {
+                              "type": "string"
+                            },
+                            "description": {
+                              "type": "string"
+                            }
+                          },
+                          "additionalProperties": {}
                         },
                         "source_references": {
                           "type": "array",
@@ -33878,6 +34746,130 @@
                           ],
                           "type": "string"
                         },
+                        "todo_state": {
+                          "type": "object",
+                          "properties": {
+                            "display_items": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "number"
+                                      }
+                                    ]
+                                  },
+                                  "text": {
+                                    "type": "string"
+                                  },
+                                  "state": {
+                                    "enum": [
+                                      "pending",
+                                      "in_progress",
+                                      "completed",
+                                      "cancelled"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "text",
+                                  "state"
+                                ]
+                              }
+                            },
+                            "total_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "completed_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "pending_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "in_progress_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "cancelled_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "session_id": {
+                              "type": "string"
+                            },
+                            "todos": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "number"
+                                      }
+                                    ]
+                                  },
+                                  "text": {
+                                    "type": "string"
+                                  },
+                                  "content": {
+                                    "type": "string"
+                                  },
+                                  "title": {
+                                    "type": "string"
+                                  },
+                                  "status": {
+                                    "type": "string"
+                                  },
+                                  "done": {
+                                    "type": "boolean"
+                                  },
+                                  "completed": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "additionalProperties": {}
+                              }
+                            },
+                            "summary": {
+                              "type": "object",
+                              "propertyNames": {
+                                "type": "string"
+                              },
+                              "additionalProperties": {}
+                            },
+                            "version": {
+                              "type": "number"
+                            },
+                            "ts": {
+                              "type": "number"
+                            },
+                            "source": {
+                              "type": "string"
+                            },
+                            "description": {
+                              "type": "string"
+                            }
+                          },
+                          "additionalProperties": {}
+                        },
                         "source_references": {
                           "type": "array",
                           "items": {
@@ -37101,6 +38093,130 @@
                             "stale"
                           ],
                           "type": "string"
+                        },
+                        "todo_state": {
+                          "type": "object",
+                          "properties": {
+                            "display_items": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "number"
+                                      }
+                                    ]
+                                  },
+                                  "text": {
+                                    "type": "string"
+                                  },
+                                  "state": {
+                                    "enum": [
+                                      "pending",
+                                      "in_progress",
+                                      "completed",
+                                      "cancelled"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "text",
+                                  "state"
+                                ]
+                              }
+                            },
+                            "total_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "completed_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "pending_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "in_progress_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "cancelled_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "session_id": {
+                              "type": "string"
+                            },
+                            "todos": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "number"
+                                      }
+                                    ]
+                                  },
+                                  "text": {
+                                    "type": "string"
+                                  },
+                                  "content": {
+                                    "type": "string"
+                                  },
+                                  "title": {
+                                    "type": "string"
+                                  },
+                                  "status": {
+                                    "type": "string"
+                                  },
+                                  "done": {
+                                    "type": "boolean"
+                                  },
+                                  "completed": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "additionalProperties": {}
+                              }
+                            },
+                            "summary": {
+                              "type": "object",
+                              "propertyNames": {
+                                "type": "string"
+                              },
+                              "additionalProperties": {}
+                            },
+                            "version": {
+                              "type": "number"
+                            },
+                            "ts": {
+                              "type": "number"
+                            },
+                            "source": {
+                              "type": "string"
+                            },
+                            "description": {
+                              "type": "string"
+                            }
+                          },
+                          "additionalProperties": {}
                         },
                         "source_references": {
                           "type": "array",
@@ -49727,6 +50843,130 @@
                           ],
                           "type": "string"
                         },
+                        "todo_state": {
+                          "type": "object",
+                          "properties": {
+                            "display_items": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "number"
+                                      }
+                                    ]
+                                  },
+                                  "text": {
+                                    "type": "string"
+                                  },
+                                  "state": {
+                                    "enum": [
+                                      "pending",
+                                      "in_progress",
+                                      "completed",
+                                      "cancelled"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "text",
+                                  "state"
+                                ]
+                              }
+                            },
+                            "total_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "completed_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "pending_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "in_progress_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "cancelled_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "session_id": {
+                              "type": "string"
+                            },
+                            "todos": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "number"
+                                      }
+                                    ]
+                                  },
+                                  "text": {
+                                    "type": "string"
+                                  },
+                                  "content": {
+                                    "type": "string"
+                                  },
+                                  "title": {
+                                    "type": "string"
+                                  },
+                                  "status": {
+                                    "type": "string"
+                                  },
+                                  "done": {
+                                    "type": "boolean"
+                                  },
+                                  "completed": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "additionalProperties": {}
+                              }
+                            },
+                            "summary": {
+                              "type": "object",
+                              "propertyNames": {
+                                "type": "string"
+                              },
+                              "additionalProperties": {}
+                            },
+                            "version": {
+                              "type": "number"
+                            },
+                            "ts": {
+                              "type": "number"
+                            },
+                            "source": {
+                              "type": "string"
+                            },
+                            "description": {
+                              "type": "string"
+                            }
+                          },
+                          "additionalProperties": {}
+                        },
                         "source_references": {
                           "type": "array",
                           "items": {
@@ -52938,6 +54178,130 @@
                             "stale"
                           ],
                           "type": "string"
+                        },
+                        "todo_state": {
+                          "type": "object",
+                          "properties": {
+                            "display_items": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "number"
+                                      }
+                                    ]
+                                  },
+                                  "text": {
+                                    "type": "string"
+                                  },
+                                  "state": {
+                                    "enum": [
+                                      "pending",
+                                      "in_progress",
+                                      "completed",
+                                      "cancelled"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "text",
+                                  "state"
+                                ]
+                              }
+                            },
+                            "total_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "completed_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "pending_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "in_progress_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "cancelled_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "session_id": {
+                              "type": "string"
+                            },
+                            "todos": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "number"
+                                      }
+                                    ]
+                                  },
+                                  "text": {
+                                    "type": "string"
+                                  },
+                                  "content": {
+                                    "type": "string"
+                                  },
+                                  "title": {
+                                    "type": "string"
+                                  },
+                                  "status": {
+                                    "type": "string"
+                                  },
+                                  "done": {
+                                    "type": "boolean"
+                                  },
+                                  "completed": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "additionalProperties": {}
+                              }
+                            },
+                            "summary": {
+                              "type": "object",
+                              "propertyNames": {
+                                "type": "string"
+                              },
+                              "additionalProperties": {}
+                            },
+                            "version": {
+                              "type": "number"
+                            },
+                            "ts": {
+                              "type": "number"
+                            },
+                            "source": {
+                              "type": "string"
+                            },
+                            "description": {
+                              "type": "string"
+                            }
+                          },
+                          "additionalProperties": {}
                         },
                         "source_references": {
                           "type": "array",
@@ -56539,6 +57903,130 @@
                           ],
                           "type": "string"
                         },
+                        "todo_state": {
+                          "type": "object",
+                          "properties": {
+                            "display_items": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "number"
+                                      }
+                                    ]
+                                  },
+                                  "text": {
+                                    "type": "string"
+                                  },
+                                  "state": {
+                                    "enum": [
+                                      "pending",
+                                      "in_progress",
+                                      "completed",
+                                      "cancelled"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "text",
+                                  "state"
+                                ]
+                              }
+                            },
+                            "total_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "completed_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "pending_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "in_progress_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "cancelled_count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "session_id": {
+                              "type": "string"
+                            },
+                            "todos": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "number"
+                                      }
+                                    ]
+                                  },
+                                  "text": {
+                                    "type": "string"
+                                  },
+                                  "content": {
+                                    "type": "string"
+                                  },
+                                  "title": {
+                                    "type": "string"
+                                  },
+                                  "status": {
+                                    "type": "string"
+                                  },
+                                  "done": {
+                                    "type": "boolean"
+                                  },
+                                  "completed": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "additionalProperties": {}
+                              }
+                            },
+                            "summary": {
+                              "type": "object",
+                              "propertyNames": {
+                                "type": "string"
+                              },
+                              "additionalProperties": {}
+                            },
+                            "version": {
+                              "type": "number"
+                            },
+                            "ts": {
+                              "type": "number"
+                            },
+                            "source": {
+                              "type": "string"
+                            },
+                            "description": {
+                              "type": "string"
+                            }
+                          },
+                          "additionalProperties": {}
+                        },
                         "source_references": {
                           "type": "array",
                           "items": {
@@ -60040,6 +61528,130 @@
                                 "stale"
                               ],
                               "type": "string"
+                            },
+                            "todo_state": {
+                              "type": "object",
+                              "properties": {
+                                "display_items": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "number"
+                                          }
+                                        ]
+                                      },
+                                      "text": {
+                                        "type": "string"
+                                      },
+                                      "state": {
+                                        "enum": [
+                                          "pending",
+                                          "in_progress",
+                                          "completed",
+                                          "cancelled"
+                                        ],
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "text",
+                                      "state"
+                                    ]
+                                  }
+                                },
+                                "total_count": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "completed_count": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "pending_count": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "in_progress_count": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "cancelled_count": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "session_id": {
+                                  "type": "string"
+                                },
+                                "todos": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "number"
+                                          }
+                                        ]
+                                      },
+                                      "text": {
+                                        "type": "string"
+                                      },
+                                      "content": {
+                                        "type": "string"
+                                      },
+                                      "title": {
+                                        "type": "string"
+                                      },
+                                      "status": {
+                                        "type": "string"
+                                      },
+                                      "done": {
+                                        "type": "boolean"
+                                      },
+                                      "completed": {
+                                        "type": "boolean"
+                                      }
+                                    },
+                                    "additionalProperties": {}
+                                  }
+                                },
+                                "summary": {
+                                  "type": "object",
+                                  "propertyNames": {
+                                    "type": "string"
+                                  },
+                                  "additionalProperties": {}
+                                },
+                                "version": {
+                                  "type": "number"
+                                },
+                                "ts": {
+                                  "type": "number"
+                                },
+                                "source": {
+                                  "type": "string"
+                                },
+                                "description": {
+                                  "type": "string"
+                                }
+                              },
+                              "additionalProperties": {}
                             },
                             "source_references": {
                               "type": "array",

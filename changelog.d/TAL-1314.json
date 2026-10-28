@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Native chats restore their current task list and follow changes from other viewers.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

@@ -70,6 +70,24 @@ def _control_refusal(home: Path, sid: str) -> str | None:
     return None
 
 
+def _todo_state(value: object) -> dict | None:
+    if not isinstance(value, dict) or not isinstance(value.get("todos"), list):
+        return None
+    fields = {"id": (str, int, float), "text": (str,), "content": (str,), "title": (str,),
+              "status": (str,), "done": (bool,), "completed": (bool,)}
+    revision = value.get("revision", 0)
+    if type(revision) is not int or revision < 0:
+        return None
+    return {"todos": [{k: v for k, v in item.items() if k in fields and type(v) in fields[k]}
+                      for item in value["todos"] if isinstance(item, dict)], "revision": revision}
+
+
+def _event(value: dict) -> dict:
+    if value.get("type") == "todo.updated":
+        return {**value, "payload": _todo_state(value.get("payload")) or {}}
+    return value
+
+
 def _snapshot(value: dict) -> dict:
     # Raw conversation rows contain private principal/admission metadata; the client needs
     # display rows, not those bindings or the inventory's system prompt and credential hint.
@@ -84,7 +102,8 @@ def _snapshot(value: dict) -> dict:
             {"author": reaction["author"], "emoji": reaction["emoji"]} for reaction in reactions
             if isinstance(reaction, dict) and reaction.get("author") in ("user", "agent")
             and isinstance(reaction.get("emoji"), str) and reaction["emoji"] in _REACTION_EMOJIS] if isinstance(reactions, list) else []})
-    return {**value, "messages": rows, "info": {k: v for k, v in value["info"].items() if k in info_keys}}
+    return {**value, "messages": rows, "info": {k: v for k, v in value["info"].items() if k in info_keys},
+            **({"todo_state": _todo_state(value["todo_state"])} if "todo_state" in value else {})}
 
 
 def _refused(state: str, reason: str) -> dict:
@@ -332,7 +351,7 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                     if (event.get("type") in {"session.updated", "notification.show", "notification.clear"}
                             or event.get("execution_generation") == snap["execution_generation"]
                             or event.get("type") == "session.info" and event.get("payload", {}).get("execution_generation") == snap["execution_generation"]):
-                        ctx.emit("event", event)
+                        ctx.emit("event", _event(event))
                 sequence = replay["last_sequence"]
             ctx.emit("replay_complete", {})
             checked = asyncio.get_running_loop().time()
@@ -386,7 +405,7 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                 if event.get("seq", 0) <= sequence:
                     continue
                 sequence = event["seq"]
-                ctx.emit("event", event)
+                ctx.emit("event", _event(event))
             return result
         except GatewayRPCError as exc:
             if params["action"] == "react" and str(exc) not in {"invalid_params", "not_found", "permission_denied", "profile_mismatch"}:

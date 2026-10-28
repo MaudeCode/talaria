@@ -6,7 +6,16 @@ const isDict = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeo
 
 export function normalizeTodoSnapshot(data: unknown): Record<string, unknown> | null {
   if (!isDict(data) || !Array.isArray(data.todos)) return null
-  return { todos: data.todos, summary: isDict(data.summary) ? data.summary : {}, version: TODO_STATE_VERSION }
+  const display_items = data.todos.filter(isDict).map((item) => ({
+    ...(typeof item.id === 'string' || typeof item.id === 'number' ? { id: item.id } : {}),
+    text: [item.text, item.content, item.title].find((value): value is string => typeof value === 'string') ?? '',
+    state: item.done === true || item.completed === true || item.status === 'done' || item.status === 'completed'
+      ? 'completed' : item.status === 'in_progress' ? 'in_progress' : item.status === 'cancelled' ? 'cancelled' : 'pending',
+  }))
+  return { todos: data.todos, summary: isDict(data.summary) ? data.summary : {}, version: TODO_STATE_VERSION,
+    display_items, total_count: display_items.length,
+    ...Object.fromEntries(['pending', 'in_progress', 'completed', 'cancelled'].map((state) => [`${state}_count`, display_items.filter((item) => item.state === state).length])),
+  }
 }
 
 export function parseTodoToolResult(result: unknown): Record<string, unknown> | null {

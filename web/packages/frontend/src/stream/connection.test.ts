@@ -54,6 +54,18 @@ describe('turn boundary cache invalidation (TAL-1210)', () => {
   })
   afterEach(() => { resetConnectionsForTests(); qc.clear() })
 
+  it('uses one session cache for live todos and authoritative reconnect clears', async () => {
+    const initial = sessionFixture({ session_id: SID })
+    qc.setQueryData(keys.sessions.detail(SID), { session: initial })
+    await attachToStream(SID, 'run-a')
+    const plan = { display_items: [{ text: 'Owner task', state: 'pending' }], total_count: 1 }
+    opened[0]!.onEvent(parseChatEvent('todo_state', JSON.stringify(plan))!, 'run-a:1')
+    expect(qc.getQueryData<{ session: typeof initial }>(keys.sessions.detail(SID))?.session.todo_state).toEqual(plan)
+    opened[0]!.onEvent(parseChatEvent('session_snapshot', JSON.stringify({ session: { ...initial, todo_state: { display_items: [], total_count: 0 } } }))!, 'run-a:2')
+    expect(qc.getQueryData<{ session: typeof initial }>(keys.sessions.detail(SID))?.session.todo_state).toEqual({ display_items: [], total_count: 0 })
+    expect(qc.getQueryData<{ session: typeof initial }>(keys.sessions.detail('other'))?.session).toBeUndefined()
+  })
+
   it.each(['done', 'apperror', 'error', 'cancel'] as const)('%s keeps the embedded session fresh and refreshes only its metadata and lists', async (event) => {
     await attachToStream(SID, 'run-a')
     const session = sessionFixture({ session_id: SID, messages: [{ role: 'assistant', id: 2, content: 'Settled reply' }] })

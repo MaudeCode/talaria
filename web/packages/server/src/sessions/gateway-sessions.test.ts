@@ -690,6 +690,104 @@ describe('canonical owner attachment', () => {
     }
   }
 
+  describe('native todo state (TAL-1314)', () => {
+    const todoFixture = JSON.parse(readFileSync(new URL('../../../../../contracts/fixtures/web-native-todos.json', import.meta.url), 'utf8')) as { owner: Record<string, unknown>; public: Record<string, unknown> }
+    const raw = todoFixture.owner
+    const display = todoFixture.public
+    const withTodo = (todo: unknown, extra: Partial<GatewaySnapshot> = {}) => snapshot({ ...extra, todo_state: todo } as Partial<GatewaySnapshot>)
+    const detail = async () => SessionEnvelopeSchema.parse(await (await s.get(`/api/session?session_id=${sid}`)).json()).session
+
+    it('restores owner todos on attach before a new tool call and clears explicit null or empty state', async () => {
+      let snap = withTodo(raw)
+      sidecar.respond('gateway.session', () => attached(snap))
+      expect((await detail()).todo_state).toMatchObject(display)
+      for (const clear of [null, { todos: [], revision: 4 }]) {
+        snap = withTodo(clear, { last_sequence: 5 })
+        expect((await detail()).todo_state).toMatchObject({ todos: [], display_items: [], total_count: 0 })
+      }
+      snap = snapshot({ messages: [{ role: 'tool', content: JSON.stringify(raw) }] })
+      expect((await detail()).todo_state).toMatchObject(display)
+      expect(sidecar.calls.some((call) => call.method === 'chat.start')).toBe(false)
+    })
+
+    it('streams a full normalized update from another viewer and rejects duplicate or stale owner events', async () => {
+      const watch = await observeOwner(withTodo(null, { running: true, pending: [admission()] }))
+      watch.event('todo.updated', raw, 1, { seq: 5 })
+      for (const stamps of [{ seq: 5 }, { seq: 4 }, { seq: 6, session_id: 'other' }, { seq: 6, replay_epoch: 'obsolete' }, { seq: 6, authority_epoch: 9 }, { seq: 6, execution_generation: 0 }])
+        watch.event('todo.updated', { todos: [{ content: 'Stale task' }], revision: 99 }, 1, stamps)
+      await vi.waitFor(async () => { expect((await detail()).todo_state).toMatchObject(display) })
+      watch.finish()
+      const frames = await watch.read
+      expect(frames.filter((frame) => frame.event === 'todo_state').map((frame) => frame.data)).toEqual([expect.objectContaining(display)])
+    })
+
+    it('keeps snapshot precedence across replay and replaces todos on a new execution or owner epoch', async () => {
+      const watch = await observeOwner(withTodo(raw, { running: true, pending: [admission()], last_sequence: 8 }))
+      watch.event('todo.updated', { todos: [{ content: 'Old replay' }], revision: 2 }, 1, { seq: 7 })
+      expect((await detail()).todo_state).toMatchObject(display)
+      watch.snapshot({ todo_state: null, execution_generation: 2, last_sequence: 10 }, true)
+      watch.event('todo.updated', raw, 1, { seq: 11 })
+      await vi.waitFor(async () => { expect((await detail()).todo_state).toMatchObject({ display_items: [], total_count: 0 }) })
+      watch.snapshot({ todo_state: { todos: [{ content: 'Replacement' }], revision: 1 }, authority_epoch: 2, replay_epoch: 'new-owner', execution_generation: 1, last_sequence: 1 }, true)
+      watch.event('todo.updated', raw, 2, { seq: 100, authority_epoch: 1, replay_epoch: 'owner-epoch' })
+      await vi.waitFor(async () => { expect((await detail()).todo_state).toMatchObject({ display_items: [{ text: 'Replacement', state: 'pending' }], total_count: 1 }) })
+      watch.finish()
+      await watch.read
+    })
+
+    it('restores a newer todo revision from replay when the transcript snapshot trails it', async () => {
+      const watch = await observeOwner(withTodo({ todos: [], revision: 2 }, { running: true, pending: [admission()], last_sequence: 8 }))
+      try {
+        watch.event('todo.updated', raw, 1, { seq: 7 })
+        await vi.waitFor(async () => { expect((await detail()).todo_state).toMatchObject(display) })
+      } finally { watch.finish(); await watch.read }
+    })
+
+    it('accepts a new generation todo revision after session.info without restoring old events', async () => {
+      const watch = await observeOwner(withTodo(raw, { running: true, pending: [admission()] }))
+      const next = { todos: [{ content: 'New generation' }], revision: 1 }
+      try {
+        watch.event('session.info', { authority_epoch: 1, execution_generation: 2, running: true, pending: [{ ...admission(), execution_generation: 2 }] })
+        watch.event('todo.updated', next, 2, { seq: 8 })
+        watch.event('todo.updated', raw, 1, { seq: 9 })
+        await vi.waitFor(async () => { expect((await detail()).todo_state).toMatchObject({ display_items: [{ text: 'New generation' }] }) })
+      } finally {
+        watch.snapshot({ execution_generation: 2, todo_state: next, last_sequence: 8 }, false, false)
+        watch.finish()
+        await watch.read
+      }
+    })
+
+    it('isolates same-ID idle plans by profile and invalidates both viewers without an active run', async () => {
+      const otherHome = join(s.state, 'profiles', 'work')
+      mkdirSync(otherHome, { recursive: true })
+      const other = openStateDb(join(otherHome, 'state.db'))
+      other.exec(fixture.schema.join('\n'))
+      for (const sql of fixture.inserts) other.exec(sql)
+      const controllers = [new AbortController(), new AbortController(), new AbortController()]
+      const emitters = new Map<string, (frame: Omit<StreamFrame, 'seq'>) => void>()
+      sidecar.respond('gateway.session', (params, send, opts) => {
+        const snap = withTodo(null)
+        if (params.action !== 'watch') return attached(snap)
+        emitters.set(params.profile_home, send)
+        send({ event: 'snapshot', data: attached(snap) })
+        return new Promise((resolve) => { opts.signal!.addEventListener('abort', () => { resolve(attached(snap)) }, { once: true }) })
+      })
+      const changes = vi.spyOn(s.deps.channels, 'emit')
+      try {
+        for (const [i, profile] of ['default', 'default', 'work'].entries()) await s.deps.sessions.owner!.observe(sid, profile, controllers[i]!.signal)
+        expect(emitters.size).toBe(2)
+        for (const [home, send] of emitters) send({ event: 'event', data: { type: 'todo.updated', session_id: sid, authority_epoch: 1, replay_epoch: 'owner-epoch', execution_generation: 1, seq: 5, payload: { todos: [{ content: home === otherHome ? 'Work plan' : 'Default plan' }], revision: 1 } } })
+        for (const [profile, text] of [['default', 'Default plan'], ['work', 'Work plan']]) {
+          const response = await s.get(`/api/session?session_id=${sid}`, { headers: { cookie: `hermes_profile=${profile}` } })
+          expect(SessionEnvelopeSchema.parse(await response.json()).session.todo_state).toMatchObject({ display_items: [{ text }] })
+          expect(changes.mock.calls.some(([id, event, , scope]) => id === sid && event === 'session-updated' && scope === profile)).toBe(true)
+        }
+        expect(s.deps.registry.activeRunStreamForSession(sid)).toBeNull()
+      } finally { for (const controller of controllers) controller.abort(); other.close() }
+    })
+  })
+
   it('publishes Web audio only for a live owner-confirmed successful completion', async () => {
     const changes = vi.spyOn(s.deps.events, 'publish')
     const watch = await observeOwner(snapshot({ running: true, pending: [admission()] }))

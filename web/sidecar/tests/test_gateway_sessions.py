@@ -359,6 +359,68 @@ def test_watch_replays_idle_model_outcomes_without_execution_stamp(native_owner_
     assert ("event", event) in emitted
 
 
+@pytest.mark.parametrize("todo", [None, {"todos": [], "revision": 4},
+    {"todos": [{"id": "a", "content": "Owner task", "status": "pending", "private_binding": "hidden"}], "revision": 3, "private_state": "hidden"}])
+def test_todo_snapshot_preserves_explicit_clear_and_strips_private_fields(native_owner_stub, todo):
+    native_owner_stub.snapshot_extra = {"todo_state": todo}
+    result = native_owner_stub.run(None, {"session_id": "chat", "action": "snapshot"})
+    assert "todo_state" in result["snapshot"]
+    assert "hidden" not in json.dumps(result["snapshot"]["todo_state"])
+    if todo is None:
+        assert result["snapshot"]["todo_state"] is None
+    else:
+        assert result["snapshot"]["todo_state"]["revision"] == todo["revision"]
+
+
+def test_todo_replay_and_live_events_share_private_field_sanitization(native_owner_stub):
+    from types import SimpleNamespace
+    owner = native_owner_stub
+    def event(seq):
+        return {"session_id": "chat", "type": "todo.updated", "seq": seq, "replay_epoch": "epoch",
+                "authority_epoch": 1, "execution_generation": 1,
+                "payload": {"todos": [{"content": "Task", "private": "hidden", "title": {"binding": "hidden"}}],
+                            "revision": seq, "private": "hidden"}}
+    owner.replay, owner.events = [event(4)], [event(4), event(5)]
+    emitted = []
+    ctx = SimpleNamespace(cancelled=False)
+    def emit(kind, data):
+        emitted.append((kind, data))
+        if kind == "event" and data["seq"] == 5:
+            ctx.cancelled = True
+    ctx.emit = emit
+    owner.run(ctx, {"session_id": "chat", "action": "watch"})
+    assert [data["payload"] for kind, data in emitted if kind == "event"] == [
+        {"todos": [{"content": "Task"}], "revision": 4}, {"todos": [{"content": "Task"}], "revision": 5}]
+
+
+@requires_agent
+def test_real_owner_todo_producer_matches_snapshot_and_replay(native_owner_stub, tmp_path):
+    from types import SimpleNamespace
+    fixture_path = SIDECAR_ROOT.parent.parent / "contracts/fixtures/web-native-todos.json"
+    result = subprocess.run([AGENT_PYTHON, str(Path(__file__).parent / "fixtures/gateway_todo_producer.py"),
+                             str(AGENT_DIR), str(fixture_path)],
+                            env=isolated_env(tmp_path / "producer", HERMES_WEBUI_AGENT_DIR=str(AGENT_DIR)),
+                            capture_output=True, text=True, timeout=30, check=False)
+    assert result.returncode == 0, result.stdout + result.stderr
+    produced = json.loads(result.stdout)
+    if not produced["supported"]:
+        pytest.skip("this supported owner predates native todo hydration")
+    owner = native_owner_stub
+    owner.snapshot_extra = {"todo_state": produced["snapshot"]}
+    owner.replay = produced["events"]
+    frames = []
+    owner.run(SimpleNamespace(cancelled=True, emit=lambda kind, data: frames.append((kind, data))),
+              {"session_id": "chat", "action": "watch"})
+    expected = json.loads(fixture_path.read_text())["owner"]
+    assert frames[0][1]["snapshot"]["todo_state"] == expected
+    assert [data["payload"] for kind, data in frames if kind == "event"] == [expected]
+
+
+def test_older_owner_todo_omission_stays_absent(native_owner_stub):
+    result = native_owner_stub.run(None, {"session_id": "chat", "action": "snapshot"})
+    assert "todo_state" not in result["snapshot"]
+
+
 def test_watch_forwards_native_progress_and_deduplicates_replay_overlap(native_owner_stub):
     from types import SimpleNamespace
     def progress(seq, message, session="chat"):
