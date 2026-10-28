@@ -5,7 +5,7 @@ import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { isApiError } from '../../contracts/common'
-import { FEEDBACK_DRAFT_KEY as DRAFT_KEY, FeedbackDraftSchema } from '../../contracts/persisted'
+import { FEEDBACK_DRAFT_KEY as DRAFT_KEY, FeedbackDraftSchema, FeedbackDraftsSchema } from '../../contracts/persisted'
 import { randomUuid } from '../../lib/randomHex'
 import { readPersistedJson, removePersisted, writePersistedJson } from '../../lib/persisted'
 import { currentLocale } from '../../i18n/runtime'
@@ -21,19 +21,30 @@ import { showErrorToast } from '../toast/errorToast'
 type Draft = z.infer<typeof FeedbackDraftSchema>
 const SENT_TOAST = 'feedback-sent'
 const fresh = (): Draft => ({ requestId: randomUuid(), kind: 'bug', title: '', body: '', includeDiagnostics: true })
+const blank = (draft: Draft) => !/\S/.test(draft.title) && !/\S/.test(draft.body)
 
-// Module scope so a send outlives the Help section: a refusal reopens the dialog with the draft wherever it was left.
-let state: { open: boolean; draft: Draft } | null = null
+/**
+ * Module scope so a send outlives the Help section. `draft` is the form; `held` keeps every report the server has not
+ * accepted yet (sent and awaiting an answer, or set aside by a rollback), so neither a refusal nor a reload loses one.
+ */
+let state: { open: boolean; draft: Draft; held: Draft[] } | null = null
+const inFlight = new Set<string>()
 const listeners = new Set<() => void>()
-const current = () => (state ??= { open: false, draft: readPersistedJson(DRAFT_KEY, FeedbackDraftSchema) ?? fresh() })
+const current = () => (state ??= { open: false, ...(readPersistedJson(DRAFT_KEY, FeedbackDraftsSchema) ?? { draft: fresh(), held: [] }) })
 const subscribe = (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener) } }
-function update(next: Partial<{ open: boolean; draft: Draft }>): void {
+function update(next: Partial<{ open: boolean; draft: Draft; held: Draft[] }>): void {
   state = { ...current(), ...next }
-  if (next.draft) writePersistedJson(DRAFT_KEY, next.draft)
+  if (blank(state.draft) && !state.held.length) removePersisted(DRAFT_KEY)
+  else writePersistedJson(DRAFT_KEY, { draft: state.draft, held: state.held })
   for (const listener of listeners) listener()
 }
 
-export function openFeedback(): void { update({ open: true }) }
+/** An empty form picks up the oldest held report that is not in flight (set aside by a rollback, or cut off by a reload). */
+export function openFeedback(): void {
+  const { draft, held } = current()
+  const waiting = blank(draft) ? held.find((d) => !inFlight.has(d.requestId)) : undefined
+  update(waiting ? { open: true, draft: waiting, held: held.filter((d) => d !== waiting) } : { open: true })
+}
 
 /** The server keys idempotency on the whole report, so changed content is a new request; an unchanged retry reuses its id. */
 function edit(change: Partial<Omit<Draft, 'requestId'>>): void {
@@ -62,13 +73,16 @@ function errorText(error: unknown): string {
   }
 }
 
-/** Optimistic send: the dialog closes and confirms at once; a refusal reopens it with the draft and the error. */
+/** Optimistic send: the form empties and confirms at once; a refusal reopens it with that report and the error. */
 async function send(): Promise<void> {
   const sent = current().draft
-  update({ open: false })
+  inFlight.add(sent.requestId)
+  update({ open: false, draft: fresh(), held: [...current().held, sent] })
   showRichToast({ id: SENT_TOAST, text: m.feedback_sent(), ttl: 2500, kind: 'info', dismissible: false, actions: [] })
   const { requestId, kind, title, body, includeDiagnostics } = sent
   const input = { requestId, kind, title, body, includeDiagnostics, client: { platform: 'web' as const } }
+  let refused = false
+  let refusal: unknown
   try {
     try {
       await api.submitFeedback(input)
@@ -77,15 +91,17 @@ async function send(): Promise<void> {
       await api.submitFeedback(input)
     }
   } catch (error) {
-    dismissToast(SENT_TOAST)
-    update({ open: true })
-    showErrorToast(new Error(errorText(error)))
-    return
+    refused = true
+    refusal = error
   }
-  // Text edited while the report was in flight stays as the next draft.
-  if (current().draft.requestId !== requestId) return
-  update({ draft: fresh() })
-  removePersisted(DRAFT_KEY)
+  inFlight.delete(requestId)
+  const held = current().held.filter((d) => d.requestId !== requestId)
+  if (!refused) { update({ held }); return }
+  // A report written meanwhile waits behind the refused one instead of being replaced.
+  const { draft } = current()
+  dismissToast(SENT_TOAST)
+  update({ open: true, draft: sent, held: blank(draft) ? held : [draft, ...held] })
+  showErrorToast(new Error(errorText(refusal)))
 }
 
 const KINDS = [['bug', () => m.feedback_kind_bug()], ['feature', () => m.feedback_kind_feature()], ['other', () => m.feedback_kind_other()]] as const
@@ -102,7 +118,7 @@ export function FeedbackDialog() {
   const [showDiagnostics, setShowDiagnostics] = useState(false)
   const ready = /\S/.test(draft.title) && /\S/.test(draft.body)
   return (
-    <Dialog open={open} onOpenChange={(next) => update({ open: next })} title={m.feedback_send_open()}>
+    <Dialog open={open} onOpenChange={(next) => update({ open: next })} title={m.feedback_send_open()} className="max-h-[90dvh] overflow-y-auto">
       <form className="flex flex-col gap-3 text-sm" onSubmit={(e) => { e.preventDefault(); if (ready) void send() }}>
         <div role="group" aria-label={m.feedback_kind()} className="flex gap-1 rounded-md border border-border bg-input p-1">
           {KINDS.map(([kind, label]) => (

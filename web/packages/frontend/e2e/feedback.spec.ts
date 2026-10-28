@@ -39,3 +39,18 @@ for (const theme of ['dark', 'light'] as const) {
     errors.splice(0, errors.length, ...errors.filter((e) => !/api\/feedback\/submit|status of 429/.test(e)))
   })
 }
+
+test('Send feedback stays reachable on a short viewport with diagnostics open', async ({ page }) => {
+  await page.setViewportSize({ width: 844, height: 390 })
+  await page.route('**/api/feedback/diagnostics', (route) => route.fulfill({ json: { text: Array.from({ length: 40 }, (_, i) => `line ${String(i)}`).join('\n'), bytes: 0 } }))
+  await page.goto('/settings/help')
+  await settle(page)
+  await page.getByRole('button', { name: 'Send feedback' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Send feedback' })
+  await dialog.getByText('Show diagnostics').click()
+  await expect(dialog.locator('[data-feedback-diagnostics]')).toBeVisible()
+  const sendButton = dialog.getByRole('button', { name: 'Send', exact: true })
+  await sendButton.scrollIntoViewIfNeeded()
+  const box = await sendButton.boundingBox()
+  expect(box && box.y >= 0 && box.y + box.height <= 390).toBe(true)
+})
