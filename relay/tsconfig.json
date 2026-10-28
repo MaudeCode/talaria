@@ -14,5 +14,5 @@
     "target": "ESNext",
     "types": ["node", "vitest/globals"]
   },
-  "include": ["convex/**/*.ts", "src/**/*.ts", "tests/**/*.ts"]
+  "include": ["convex/**/*.ts", "src/**/*.ts", "bridge/**/*.ts", "tests/**/*.ts"]
 }

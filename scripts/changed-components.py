@@ -30,6 +30,7 @@ WORKFLOWS = {
     "web-verify.yml": {"web_server", "web_frontend", "web_sidecar", "tooling"},
     "web-docker-smoke.yml": {"docker", "tooling"},
     "relay-verify.yml": {"relay", "tooling"},
+    "relay-bridge-image.yml": {"relay", "tooling"},
     "repository-tooling.yml": {"tooling"},
     "web-docs.yml": {"tooling"},
     "fuzz-soak.yml": {"app", "tooling"},

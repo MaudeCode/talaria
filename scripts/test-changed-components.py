@@ -34,6 +34,7 @@ class RoutingTests(unittest.TestCase):
             # Every script is mapped; an unmapped one would select the full suite.
             (["scripts/check-release-contracts.py"], {"contracts", "tooling"}),
             (["scripts/check"], {"tooling"}),
+            ([".github/workflows/relay-bridge-image.yml"], {"relay", "tooling"}),
             (["scripts/generate-brand-icons.py"], {"web_frontend", "tooling"}),
             (["app/changelog.d/TAL-123.json"], set()),
             (["README.md", "docs/guide.md", "app/DEVELOPMENT.md", "web/docs/guide.md", "relay/README.md"], set()),
