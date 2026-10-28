@@ -626,7 +626,7 @@ export const toolsRouter = os.router({
       const { revision } = await connectorCall(ctx, 'connectors.policy.set', { connector: input.connector, expected_revision: input.revision, ...change })
       return { ok: true as const, revision }
     })),
-    connect: os.connectors.connect.handler(({ input, context: { ctx } }) => run(async () => operationView(ctx, await connectorCall(ctx, 'connectors.connect', { connector: input.connector })))),
+    connect: os.connectors.connect.handler(({ input, context: { ctx } }) => run(async () => operationView(ctx, await connectorCall(ctx, 'connectors.connect', { connector: input.connector, ...(input.nous_account_id ? { nous_account_id: input.nous_account_id } : {}) })))),
     removeAccount: os.connectors.removeAccount.handler(({ input, context: { ctx } }) => run(async () => {
       await connectorCall(ctx, 'connectors.remove', { connection_id: input.connection_id })
       return { ok: true as const }

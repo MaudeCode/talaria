@@ -8,10 +8,12 @@ registers its session operation here through ``remember_chat_operation``. Every 
 
 from __future__ import annotations
 
+import contextvars
 import inspect
 import json
 import logging
 import threading
+import uuid
 from collections import OrderedDict
 from pathlib import Path
 from types import SimpleNamespace
@@ -201,6 +203,14 @@ def _operation(home: Path, op_id: str):
         operation = _OPS.get((str(home), op_id))
     if operation is None:
         raise RpcError("No connection operation with that id.", condition="operation_not_found")
+    account_id = getattr(operation, "_talaria_nous_account_id", None)
+    if account_id:
+        from . import nous_account
+        current = nous_account.read(home)
+        if not current or current["account_id"] != account_id:
+            from tools.connectors.contract import SettleReason
+            operation.settle(SettleReason.interrupt)
+            raise RpcError("No connection operation for the current account.", condition="operation_not_found")
     return operation
 
 
@@ -226,8 +236,62 @@ def operation_view(operation) -> dict:
     }
 
 
-def connect(home: Path, connector: str) -> dict:
+def _reconnect(home: Path, connector: str, account_id: str) -> dict:
+    """Compose the existing native operation with an account-fenced, noncreating client.
+
+    Native account.find_or_start_operation always uses a creating, live-credential client
+    in its later thread. Its lifecycle primitives accept the client this result needs.
+    """
+    from tools.connectors import account, live, managed
+    from tools.connectors.gateway.client import ConnectorClient
+    from tools.connectors.operation import ConnectionOperation, Target
+    from tools.connectors.run import drive_operation
+    from tools.connectors.contract import SettleReason
+    from . import nous_account
+
+    with account._start_lock:
+        existing = live.find_target(connector, profile_home=str(home))
+        if existing is not None:
+            if getattr(existing, "_talaria_nous_account_id", None) != account_id:
+                raise RpcError("Finish the current app connection before reconnecting this result.", condition="operation_refused")
+            _remember(home, existing)
+            return operation_view(_operation(home, existing.op_id))
+        client = ConnectorClient(initiator="desktop_page", header_provider=lambda url: nous_account.connector_headers(home, account_id, url))
+        operation = ConnectionOperation([Target(connector, "connector", "connect")], session_key=f"account:{uuid.uuid4().hex}")
+        operation._talaria_nous_account_id = account_id
+        operation._talaria_nous_client = client
+        start = account.AccountOperationStart(operation=operation, started=True)
+        context = contextvars.copy_context()
+
+        def run():
+            try:
+                drive_operation(operation, managed.managed_kind(client, "connect", force=False),
+                                connection_callback=lambda payload: start.done.set(),
+                                tick_seconds=managed.WATCH_TICK_SECONDS, with_urls_in_result=False)
+            except Exception:
+                start.failed = True
+                operation.settle(SettleReason.interrupt)
+            finally:
+                live.close(operation)
+                start.done.set()
+
+        live.open(operation)
+        _remember(home, operation)
+        try:
+            threading.Thread(target=lambda: context.run(run), daemon=True, name="connector-account-operation").start()
+        except Exception:
+            live.close(operation)
+            operation.settle(SettleReason.interrupt)
+            raise
+    if account.wait_for_prepare(start) and start.failed:
+        raise RpcError("Connector request failed.", condition="connectors_failed")
+    return operation_view(_operation(home, operation.op_id))
+
+
+def connect(home: Path, connector: str, *, account_id: str | None = None) -> dict:
     """Start (or rejoin) the account-owned connect for ``connector`` and wait for its authorization link."""
+    if account_id is not None:
+        return _reconnect(home, connector, account_id)
     from tools.connectors import account
     from tools.connectors.contract import TargetState
     from tools.connectors.run import reissue
@@ -236,8 +300,11 @@ def connect(home: Path, connector: str) -> dict:
     page = {"initiator": "desktop_page"} if "initiator" in inspect.signature(account.find_or_start_operation).parameters else {}
     start = account.find_or_start_operation([connector], action="connect", profile_home=str(home), **page)
     _remember(home, start.operation)
+    _operation(home, start.operation.op_id)
     if not start.started:
         target = start.operation.target(connector)
+        if target is not None and target.state in (TargetState.failed, TargetState.expired) and getattr(start.operation, "_talaria_nous_client", None) is not None:
+            return respond(home, start.operation.op_id, "retry", connector, {})
         if target is not None and target.state in (TargetState.failed, TargetState.expired) and reissue(start.operation, [connector], **page):
             raise RpcError("This connection cannot be started again.", condition="operation_refused")
         return operation_view(start.operation)
@@ -262,7 +329,14 @@ def respond(home: Path, op_id: str, action: str, target: str | None, env: dict) 
         if action == "continue":
             apply_answer(operation, json.dumps({"settled_by": SettleReason.continue_.value}))
         elif action == "retry" and row.kind == "connector":
-            if reissue(operation, [row.name]):
+            client = getattr(operation, "_talaria_nous_client", None)
+            if client is not None:
+                from tools.connectors.managed import mint
+                from tools.connectors.contract import Actor, TargetState
+                if row.state not in (TargetState.failed, TargetState.expired):
+                    raise RpcError("This target cannot be run again.", condition="operation_refused")
+                mint(client, operation, [row.name], reinitiate=True, actor=Actor.user)
+            elif reissue(operation, [row.name]):
                 raise RpcError("This target cannot be run again.", condition="operation_refused")
         else:
             status = "skipped" if action == "skip" else "approved"
@@ -346,7 +420,16 @@ def register(registry_) -> None:
     def connect_(ctx: CallContext, params: dict) -> dict:
         slug = _slug(params)
         home = profile_home_param(params)
-        return page(params, lambda: connect(home, slug), creates_guest=True)
+        def begin():
+            if "nous_account_id" in params:
+                from . import nous_account
+                view = nous_account.read(home)
+                if not view or view["account_id"] != params["nous_account_id"] or slug not in view["reconnect"]:
+                    raise RpcError("The signed-in account or reconnect result changed. Refresh before reconnecting.", condition="connectors_forbidden")
+                if not any(row["slug"] == slug for row in catalog()["connectors"]):
+                    raise RpcError("This app is not available to reconnect.", condition="connectors_forbidden")
+            return connect(home, slug, account_id=params.get("nous_account_id"))
+        return page(params, begin, creates_guest="nous_account_id" not in params)
 
     def gated() -> None:
         # Reads and moves on an operation pass the availability gate too, without creating an identity.

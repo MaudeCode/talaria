@@ -108,7 +108,14 @@ a static WebUI-maintained model list.
 
 OpenAI Codex, Nous Portal, xAI Grok, and MiniMax sign in from the setup step.
 Choose the provider, select **Sign in**, open the link, and enter the code shown.
-The wizard continues after the provider approves. The Agent saves the credential
+For modern Nous Agents, the result stays visible until **Continue**. It shows the
+masked account email and the Agent's connected-app handoff outcome. Sign-in can
+succeed while apps are still moving, paused, or failed. **Reconnect** starts only
+the selected app's existing connector flow, after checking that the active
+profile still holds the same account. It never signs in or retries a transfer
+automatically. Settings -> Providers shows the current native result after a
+refresh or reopening the page. Older Agents retain generic sign-in success.
+The wizard continues after approval for other providers. The Agent saves the credential
 to the profile's own `auth.json`; WebUI keeps no copy. The sign-in routes use the
 same local-network gate as the rest of onboarding (or
 `HERMES_WEBUI_ONBOARDING_OPEN=1`). GitHub Copilot, Qwen, and Anthropic Claude

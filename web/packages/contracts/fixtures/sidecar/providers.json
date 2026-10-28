@@ -242,7 +242,7 @@
           },
           "minimax-oauth": {
             "id": "minimax-oauth",
-            "name": "MiniMax (OAuth · minimax.io)",
+            "name": "MiniMax (OAuth \u00b7 minimax.io)",
             "auth_type": "oauth_minimax",
             "portal_base_url": "https://api.minimax.io",
             "inference_base_url": "https://api.minimax.io/anthropic",
@@ -1221,6 +1221,42 @@
         "available": true,
         "strategy": "",
         "entries": []
+      }
+    }
+  ],
+  "providers.nous_account": [
+    {
+      "params": {
+        "profile_home": "<home>"
+      },
+      "result": {
+        "nous_account": null
+      }
+    },
+    {
+      "params": {
+        "profile_home": "<home>"
+      },
+      "result": {
+        "nous_account": {
+          "account_id": "synthetic-account-1",
+          "email": "u***@example.test",
+          "state": "claimed",
+          "lines": [
+            "Your apps moved to u***@example.test: calendar.",
+            "Reconnect in u***@example.test: gmail."
+          ],
+          "moved": [
+            "calendar"
+          ],
+          "dropped": [
+            "gmail"
+          ],
+          "reconnect": [
+            "gmail"
+          ],
+          "poll_after": null
+        }
       }
     }
   ]

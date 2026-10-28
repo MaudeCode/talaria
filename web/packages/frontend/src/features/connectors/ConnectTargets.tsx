@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ConnectorOperationView } from '@maudecode/talaria-web-contracts'
 import { ExternalLink } from 'lucide-react'
@@ -86,4 +86,15 @@ function TargetRow({ target, busy, onMove }: { target: Target; busy: boolean; on
       ))}
     </li>
   )
+}
+
+/** The page's own connect: the authorization link and Skip until the server reports the account connected. */
+export function PageConnect({ initial, name, onDone }: { initial: ConnectorOperationView; name: string; onDone: () => void }) {
+  const { view, lost, move } = useConnectorOperation(initial)
+  useEffect(() => {
+    if (!view.outcome && !lost) return
+    if (view.outcome) showToast(view.outcome === 'connected' ? m.connectors_connected_toast({ name }) : m.connectors_not_connected_toast({ name }), 3000, view.outcome === 'connected' ? 'info' : 'error')
+    onDone()
+  }, [view.outcome, lost]) // eslint-disable-line react-hooks/exhaustive-deps -- once, when it settles
+  return <div className="pl-9"><ConnectTargets view={view} move={move} /></div>
 }

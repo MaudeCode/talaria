@@ -1,6 +1,13 @@
 {
   "schemaVersion": 1,
   "families": {
+    "tests/test_connectors.py::test_result_reconnect_uses_an_account_fenced_native_operation": {
+      "layer": "compatibility",
+      "reason": "Real native ConnectorClient, managed kind and asynchronous drive_operation must mint and observe the original account without native guest provisioning; rejoining and later account replacement must preserve the fence. Boundary fakes cannot prove these installed API and thread-context contracts.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_tts_compatibility.py::test_native_tts_providers_and_profile_credentials": {
       "layer": "compatibility",
       "reason": "Real installed Agent TTS dispatch, command-provider resolver and profile credential scopes must remain compatible. Provider synthesis is stubbed; synthetic homes verify all native registrations and root/named/root credential isolation without network or a speech SDK. A separate Agent interpreter isolates its imports.",

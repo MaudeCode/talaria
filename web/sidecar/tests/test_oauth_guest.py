@@ -34,7 +34,7 @@ class NousPortal:
         self.paths: list[str] = []
         self.asked = threading.Event()
         self.answered = threading.Event()
-        self.token = jwt({"sub": "user-synthetic", "scope": "inference:invoke", "exp": int(time.time()) + 86400})
+        self.token = jwt({"sub": "user-synthetic", "email": "user@example.test", "scope": "inference:invoke", "exp": int(time.time()) + 86400})
 
     def answer(self, method: str, path: str, body: dict) -> tuple[int, dict]:
         self.paths.append(path)
@@ -97,6 +97,8 @@ def test_an_approved_guest_sign_in_promotes_the_guest_to_the_account(signing_in,
         assert time.monotonic() < deadline, portal.paths
         time.sleep(0.2)
     assert view["status"] == "approved", view
+    if not portal.promotion:
+        assert view.get("nous_account", {}).get("email") == "u***@example.test", view
     account = nous(hermes_home)
     assert account["auth_method"] == "oauth_device_code" and account["access_token"] == portal.token
     assert "anon_token" not in account

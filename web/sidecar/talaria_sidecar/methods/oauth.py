@@ -26,7 +26,7 @@ from typing import Any, Callable
 from ..errors import InvalidParams, RpcError
 from ..home import profile_home_param, scoped_home
 from ..rpc import CallContext
-from . import plugin_oauth
+from . import plugin_oauth, nous_account
 
 log = logging.getLogger("talaria_sidecar.oauth")
 
@@ -65,6 +65,7 @@ class Flow:
     # The credential is saved but the sign-in has not finished (a guest sign-in still settles the account): a cancel or
     # an expiry can no longer undo it, and the flow stays pending until its own ending.
     committed: bool = False
+    nous_account_id: str | None = None
     # A browser sign-in also finishes from the redirect address the user pastes (``oauth.submit_redirect``).
     submit: Callable[[str], None] | None = None
     # Set once a browser sign-in's loopback listener is closed, so a replacing start can bind the same fixed port.
@@ -78,7 +79,12 @@ class Flow:
         self.status, self.error, self.ended_at = status, error, time.time()
 
     def view(self) -> dict:
-        return {"flow_id": self.flow_id, "provider": self.provider, "status": self.status, "error": self.error}
+        view = {"flow_id": self.flow_id, "provider": self.provider, "status": self.status, "error": self.error}
+        if self.status == "approved" and self.nous_account_id:
+            with scoped_home(self.home):
+                account = nous_account.read(self.home)
+            view["nous_account"] = account if account and account["account_id"] == self.nous_account_id else None
+        return view
 
 
 class _Watched:
@@ -156,6 +162,9 @@ def _nous_begin() -> tuple[dict, dict]:
 
     # v0.22.0 replaced ``guest_enabled`` with ``guest_allowed``; 0.21.x releases only have the former.
     guest_gate = getattr(anon_auth, "guest_allowed", None) or getattr(anon_auth, "guest_enabled")
+    native = getattr(anon_auth, "run_sign_in", None)
+    if native and "replace_account" in inspect.signature(native).parameters:
+        return _nous_sign_in(anon_auth)
     if guest_gate() and anon_auth.has_guest():
         # The native sign-in owns the guest's connector handoff for its installed protocol.
         if hasattr(anon_auth, "run_sign_in"):
@@ -191,6 +200,9 @@ def _nous_sign_in(anon_auth: Any) -> tuple[dict, dict]:
             yield may_persist
             if may_persist:
                 flow.committed = True
+                # Bind before native handoff/settlement releases this account to another sign-in.
+                account = nous_account.read(flow.home)
+                state["nous_account_id"] = account["account_id"] if account else None
 
     def scope():
         flow = state.get("flow")
@@ -198,6 +210,8 @@ def _nous_sign_in(anon_auth: Any) -> tuple[dict, dict]:
 
     # Older Agents use promotion; v0.22.5 removed its option in favor of plain device login and native handoff.
     options = {"cancel_wins_after_promotion": True} if "cancel_wins_after_promotion" in inspect.signature(anon_auth.run_sign_in).parameters else {}
+    if "replace_account" in inspect.signature(anon_auth.run_sign_in).parameters:
+        options["replace_account"] = True
     sign_in = anon_auth.run_sign_in(cancelled=cancelled, persist_guard=persist_guard, scope=scope, **options)
     first = next(sign_in)
     if first.kind != "code":
@@ -226,6 +240,8 @@ def _nous_wait(flow: Flow, state: dict) -> dict:
             sign_in.close()
         if not ended.ok:
             raise _SignInEnded(ended)
+        with scoped_home(flow.home):
+            nous_account.read(flow.home, ended)
         return {}
     from hermes_cli.auth import _poll_for_token
 
@@ -406,6 +422,7 @@ def _run(flow: Flow, wait: Callable[[Flow, dict], dict], save: Callable[[Flow, d
                 return
             with scoped_home(flow.home):
                 save(flow, state, tokens)
+            flow.nous_account_id = state.get("nous_account_id")
             flow.end("approved")
         log.info("oauth: %s sign-in approved (flow=%s)", flow.provider, flow.flow_id[:6])
     except _Stop:
@@ -556,7 +573,11 @@ def register(reg) -> None:
 
     @reg.method("oauth.poll", requires_agent=False)
     def poll_(ctx: CallContext, params: dict) -> dict:
-        return poll(profile_home_param(params), _flow_id(params))
+        home, flow_id = profile_home_param(params), _flow_id(params)
+        flow = _flow(home, flow_id)
+        if flow.status == "approved" and flow.nous_account_id:
+            reg.runtime.ensure_current()  # a retired worker cannot promise background progress
+        return poll(home, flow_id)
 
     @reg.method("oauth.cancel", requires_agent=False)
     def cancel_(ctx: CallContext, params: dict) -> dict:

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ConnectorOperationView, ConnectorToolsView, ConnectorView } from '@maudecode/talaria-web-contracts'
 import { ChevronDown, ChevronRight } from 'lucide-react'
@@ -13,7 +13,7 @@ import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { useResourceEffects, useResourceMutation, withEffects } from '../sessions/useResourceMutation'
 import { ResourceSwitch } from '../sessions/ResourceSwitch'
-import { ConnectTargets, useConnectorOperation } from './ConnectTargets'
+import { PageConnect } from './ConnectTargets'
 import { OAuthSignIn } from '../onboarding/OAuthSignIn'
 
 type Rule = { enabled: boolean } | { tool: string; tool_enabled: boolean }
@@ -144,17 +144,6 @@ function ConnectorRow({ connector, ruleBusy, onRule }: { connector: ConnectorVie
         confirmLabel={m.connectors_disconnect()} cancelLabel={m.cancel()} onConfirm={() => { if (removing) remove.mutate(removing.id) }} />
     </li>
   )
-}
-
-/** The page's own connect: the authorization link and Skip until the server reports the account connected. */
-function PageConnect({ initial, name, onDone }: { initial: ConnectorOperationView; name: string; onDone: () => void }) {
-  const { view, lost, move } = useConnectorOperation(initial)
-  useEffect(() => {
-    if (!view.outcome && !lost) return
-    if (view.outcome) showToast(view.outcome === 'connected' ? m.connectors_connected_toast({ name }) : m.connectors_not_connected_toast({ name }), 3000, view.outcome === 'connected' ? 'info' : 'error')
-    onDone()
-  }, [view.outcome, lost]) // eslint-disable-line react-hooks/exhaustive-deps -- once, when it settles
-  return <div className="pl-9"><ConnectTargets view={view} move={move} /></div>
 }
 
 function ToolList({ slug, busy, onRule }: { slug: string; busy: boolean; onRule: (rule: Rule) => void }) {

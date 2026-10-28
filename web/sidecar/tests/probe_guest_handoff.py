@@ -56,7 +56,7 @@ def respond(request):
     if os.environ.get("HANDOFF_TRANSIENT") == "1" and len(claims) == 1:
         return httpx.Response(503, json={"error": "temporarily_unavailable"}, headers={"retry-after": "300"})
     return httpx.Response(200, json={"status": "claimed", "account_email": "fixture@example.invalid",
-        "connectors": {"kind": "moved", "moved_toolkits": ["calendar"], "dropped_toolkits": []},
+        "connectors": {"kind": "moved", "moved_toolkits": ["calendar"], "dropped_toolkits": ["gmail"]},
         "cohort_carried": False})
 
 

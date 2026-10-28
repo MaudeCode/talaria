@@ -310,7 +310,14 @@ class PlainSignIn(SignIn):
         return self.run(cancel_wins_after_promotion=True, **self.kwargs)
 
 
-@pytest.fixture(params=[SignIn, PlainSignIn], ids=["promotion", "plain-device"])
+class ModernSignIn(SignIn):
+    def __call__(self, *, cancelled, persist_guard, scope, replace_account=False):
+        assert replace_account is True
+        self.kwargs = dict(cancelled=cancelled, persist_guard=persist_guard, scope=scope, replace_account=replace_account)
+        return self.run(cancel_wins_after_promotion=True, cancelled=cancelled, persist_guard=persist_guard, scope=scope)
+
+
+@pytest.fixture(params=[SignIn, PlainSignIn, ModernSignIn], ids=["promotion", "plain-device", "modern-replacement"])
 def sign_in_factory(request):
     return request.param
 
@@ -446,3 +453,26 @@ def test_a_guest_sign_in_that_cannot_start_is_refused(sign_in_factory, provider,
     assert refused.value.data["condition"] == condition
     assert str(refused.value) == first.copy_terminal
     assert sign_in.closed and oauth._FLOWS == {}
+
+
+def test_modern_plain_sign_in_uses_native_completion_even_without_a_guest(provider, monkeypatch, tmp_path):
+    native = ModernSignIn()
+    requests = stub_agent(monkeypatch, guest=False, shape="0.22", sign_in=native)
+    flow = oauth.start(tmp_path, "nous")
+    native.answer.set()
+    native.settle.set()
+    assert settle(tmp_path, flow["flow_id"])["status"] == "approved"
+    assert native.kwargs["replace_account"] is True and requests == []
+
+
+def test_native_completion_cannot_adopt_an_account_replaced_during_settlement(provider, monkeypatch, tmp_path):
+    native = ModernSignIn()
+    stub_agent(monkeypatch, guest=False, shape="0.22", sign_in=native)
+    current = ["original-account"]
+    monkeypatch.setattr(oauth.nous_account, "read", lambda *args: {"account_id": current[0]})
+    flow = oauth.start(tmp_path, "nous")
+    native.answer.set()
+    wait_until(lambda: native.persisted)
+    current[0] = "replacement-account"
+    native.settle.set()
+    assert settle(tmp_path, flow["flow_id"]) == {"flow_id": flow["flow_id"], "provider": "nous", "status": "approved", "error": None, "nous_account": None}

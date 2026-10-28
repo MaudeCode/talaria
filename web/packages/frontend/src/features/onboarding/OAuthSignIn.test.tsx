@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, render, screen } from '@testing-library/react'
 
-vi.mock('../../api/endpoints', () => ({ onboardingOauthStart: vi.fn(), onboardingOauthPoll: vi.fn(), onboardingOauthCancel: vi.fn() }))
+vi.mock('../../api/endpoints', () => ({ onboardingOauthStart: vi.fn(), onboardingOauthPoll: vi.fn(), onboardingOauthCancel: vi.fn(), connectConnector: vi.fn() }))
 import * as api from '../../api/endpoints'
 import { OAuthSignIn } from './OAuthSignIn'
 
@@ -43,6 +43,69 @@ describe('OAuthSignIn', () => {
     await nextPoll()
     expect(api.onboardingOauthPoll).toHaveBeenCalledTimes(2)
     expect(api.onboardingOauthCancel).not.toHaveBeenCalled()
+  })
+
+  it('keeps the Nous result readable until Continue and polls handoff separately from approval', async () => {
+    const account = { account_id: 'account-1', email: 'u***@example.test', state: 'retrying' as const, lines: ['Moving your free-tier apps to this account; Hermes keeps trying in the background.'], moved: [], dropped: [], reconnect: [], poll_after: 1 }
+    vi.mocked(api.onboardingOauthStart).mockResolvedValue({ ...started, provider: 'nous' })
+    vi.mocked(api.onboardingOauthPoll).mockResolvedValue({ ok: true, status: 'approved', flow_id: 'flow-1', nous_account: account })
+    const onApproved = vi.fn()
+    render(<OAuthSignIn provider="nous" label="Nous Portal" signedIn={false} onApproved={onApproved} />)
+    await act(async () => { screen.getByRole('button', { name: 'Sign in with Nous Portal' }).click(); await Promise.resolve() })
+    await nextPoll()
+    expect(screen.getByRole('status')).toHaveTextContent('u***@example.test')
+    expect(screen.getByRole('status')).toHaveTextContent('keeps trying in the background')
+    expect(onApproved).not.toHaveBeenCalled()
+    await nextPoll()
+    expect(api.onboardingOauthPoll).toHaveBeenCalledTimes(2)
+    await act(async () => { screen.getByRole('button', { name: 'Continue' }).click(); await Promise.resolve() })
+    expect(onApproved).toHaveBeenCalledTimes(1)
+  })
+
+  it('retains confirmed handoff on a failed read and never overlaps polling', async () => {
+    const account = { account_id: 'account-1', email: 'u***@example.test', state: 'retrying' as const, lines: ['Still moving apps.'], moved: [], dropped: [], reconnect: [], poll_after: 1 }
+    vi.mocked(api.onboardingOauthPoll).mockResolvedValueOnce({ ok: true, status: 'approved', flow_id: 'flow-1', nous_account: account }).mockRejectedValueOnce(new Error('offline'))
+    render(<OAuthSignIn provider="nous" label="ChatGPT" signedIn={false} onApproved={vi.fn()} />)
+    await startFlow()
+    await nextPoll()
+    await nextPoll()
+    expect(screen.getByRole('status')).toHaveTextContent('Still moving apps.')
+    expect(screen.getByRole('alert')).toHaveTextContent('status is unavailable')
+    expect(api.onboardingOauthCancel).not.toHaveBeenCalled()
+    let resolve!: (result: Awaited<ReturnType<typeof api.onboardingOauthPoll>>) => void
+    vi.mocked(api.onboardingOauthPoll).mockReturnValueOnce(new Promise((done) => { resolve = done }))
+    await nextPoll()
+    const calls = vi.mocked(api.onboardingOauthPoll).mock.calls.length
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000) })
+    expect(api.onboardingOauthPoll).toHaveBeenCalledTimes(calls)
+    await act(async () => { resolve({ ok: true, status: 'approved', flow_id: 'flow-1', nous_account: null }); await Promise.resolve() })
+    expect(screen.queryByText('u***@example.test')).toBeNull()
+  })
+
+  it('ignores an old provider response after switching and cancels its unowned start', async () => {
+    let answer!: (value: typeof started) => void
+    vi.mocked(api.onboardingOauthStart).mockReturnValueOnce(new Promise((resolve) => { answer = resolve }))
+    const view = render(<OAuthSignIn provider="nous" label="ChatGPT" signedIn={false} onApproved={vi.fn()} />)
+    await startFlow()
+    view.rerender(<OAuthSignIn provider="openai-codex" label="ChatGPT" signedIn={false} onApproved={vi.fn()} />)
+    await act(async () => { answer(started); await Promise.resolve() })
+    expect(screen.queryByText('ABCD-1234')).toBeNull()
+    expect(api.onboardingOauthCancel).toHaveBeenCalledWith('flow-1')
+  })
+
+  it('renders refreshed provider results and reconnects only on explicit action with the account fence', async () => {
+    const account = { account_id: 'account-1', email: 'u***@example.test', state: 'claimed' as const, lines: ['Your apps moved: calendar.', 'Reconnect gmail.'], moved: ['calendar'], dropped: ['gmail'], reconnect: ['gmail'], poll_after: null }
+    const { rerender } = render(<OAuthSignIn provider="nous" label="Nous Portal" signedIn resultOnly account={account} onApproved={vi.fn()} />)
+    expect(screen.getByRole('status')).toHaveTextContent('calendar')
+    expect(api.onboardingOauthStart).not.toHaveBeenCalled()
+    expect(api.connectConnector).not.toHaveBeenCalled()
+    vi.mocked(api.connectConnector).mockRejectedValueOnce(new Error('Account changed'))
+    await act(async () => { screen.getByRole('button', { name: 'Reconnect gmail' }).click(); await Promise.resolve() })
+    expect(api.connectConnector).toHaveBeenCalledWith('gmail', 'account-1')
+    expect(screen.getByRole('alert')).toHaveTextContent('Account changed')
+    rerender(<OAuthSignIn provider="nous" label="Nous Portal" signedIn resultOnly account={null} onApproved={vi.fn()} />)
+    expect(screen.queryByText('u***@example.test')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Reconnect gmail' })).toBeNull()
   })
 
   it('a declined sign-in says so and offers another attempt', async () => {
