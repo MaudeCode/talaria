@@ -69,8 +69,9 @@ public enum SessionListAutoRefresh {
 }
 
 extension SessionListAutoRefresh {
-    /// How often the active-row monitor asks each streaming row's status.
-    static let activeRowInterval = Duration.seconds(1)
+    /// The server's `sessions_changed` event already announces a run's end (TAL-1240), so the per-row status read
+    /// is only the fallback for a dropped events stream: one read per streaming row per interval.
+    static let activeRowInterval = Duration.seconds(10)
 
     /// `.task(id:)` for the active-row monitor: the list's streaming rows and what gates asking about them.
     public struct ActiveRowTaskID: Hashable {
@@ -86,7 +87,8 @@ extension SessionListAutoRefresh {
             self.isEventStreamLive = isEventStreamLive
         }
 
-        public var isEnabled: Bool { hasActiveRows && !isViewingCachedData }
+        /// A live events stream suspends the monitor; its end changes the id and restarts it.
+        public var isEnabled: Bool { hasActiveRows && !isViewingCachedData && !isEventStreamLive }
     }
 
     /// Asks after the streaming rows every `activeRowInterval` while `taskID` is enabled.
