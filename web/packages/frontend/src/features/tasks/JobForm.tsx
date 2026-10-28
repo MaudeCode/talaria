@@ -19,7 +19,7 @@ import { cn } from '../../ui/cn'
 import { useModelsQuery, useProfilesQuery } from '../../app/queries'
 import { contextFromList, cronResource, jobId } from './cronJob'
 import { newResource, useResourceMutation } from '../sessions/useResourceMutation'
-import { catalogEntryById, catalogGroupLabel, modelOptionLabel, catalogModelSections } from '../../lib/modelEntry'
+import { catalogEntryById, catalogGroupLabel, ModelOptionContent, catalogModelSections } from '../../lib/modelEntry'
 
 export type EditorMode = 'create' | 'edit' | 'duplicate'
 
@@ -252,7 +252,7 @@ export function JobForm({ mode, job, jobs, onCancel, onSubmitted, onCreated }: {
                       <option value="">{m.cron_model_use_default()}</option>
                       {(models.data?.groups ?? []).flatMap((g) => catalogModelSections(g).map((section) => (
                         <optgroup key={`${g.provider}:${section.label}`} label={[catalogGroupLabel(g), section.label].filter(Boolean).join(' · ')}>
-                          {section.models.map((mm) => <option key={mm.id} value={mm.id}>{modelOptionLabel(mm)}</option>)}
+                          {section.models.map((mm) => <option key={mm.id} value={mm.id}><ModelOptionContent entry={mm} /></option>)}
                         </optgroup>
                       )))}
                       {f.state.value && !listed && <option value={f.state.value}>{selectedModel?.label ?? f.state.value}</option>}

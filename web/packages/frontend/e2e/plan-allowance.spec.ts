@@ -1,14 +1,38 @@
+import type { Locator } from '@playwright/test'
 import { createServer, type ServerResponse } from 'node:http'
 import { expect, settle, test } from './fixtures'
 
 test.use({ serviceWorkers: 'block' })
+
+async function textIsUnclipped(locator: Locator, text: string): Promise<boolean> {
+  return locator.evaluate((element, needle) => {
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT)
+    let node: Node | null
+    while ((node = walker.nextNode())) {
+      const start = node.textContent?.indexOf(needle) ?? -1
+      if (start < 0) continue
+      const range = document.createRange()
+      range.setStart(node, start)
+      range.setEnd(node, start + needle.length)
+      const textBox = range.getBoundingClientRect()
+      if (!textBox.width || !textBox.height || textBox.left < 0 || textBox.right > innerWidth) return false
+      for (let parent = node.parentElement; parent; parent = parent.parentElement) {
+        if (getComputedStyle(parent).overflowX === 'visible') continue
+        const box = parent.getBoundingClientRect()
+        if (textBox.left < box.left || textBox.right > box.right) return false
+      }
+      return true
+    }
+    return false
+  }, text)
+}
 
 for (const legacy of [true, false]) test(`${legacy ? 'legacy' : 'native'} model allowance and quota views`, async ({ page }, info) => {
   const models = [
     { id: 'included', label: 'Included model', provider_id: 'nous', bare_id: 'included', allowance: { state: 'included', usage_level: 'low', resets_at_ms: null } },
     { id: 'saved', label: 'Saved model', provider_id: 'nous', bare_id: 'saved', allowance: { state: 'unknown', usage_level: null, resets_at_ms: null } },
     { id: 'free', label: 'Free model', provider_id: 'nous', bare_id: 'free', allowance: { state: 'free', usage_level: 'free', resets_at_ms: null } },
-    { id: 'large', label: 'Large model', provider_id: 'nous', bare_id: 'large', allowance: { state: 'blocked', usage_level: 'top_tier', resets_at_ms: null } },
+    { id: 'large', label: 'Large model with a long catalog name (via Nous)', provider_id: 'nous', bare_id: 'large', allowance: { state: 'blocked', usage_level: 'top_tier', resets_at_ms: null } },
   ]
   const plan = { kind: 'usage_window', plan: 'Pro', gauges: [{ label: 'week', title: 'Weekly', scope: 'all', left_fraction: 0, style: 'red', resets_at_ms: null }, { label: 'large', title: 'Large', scope: 'top_tier', left_fraction: 0.8, style: 'green', resets_at_ms: null }], top_tier_model_ids: ['large'], featured_model_ids: ['included'], paused_reason: null, credits_pay: false }
   const group = { provider: 'Nous', provider_id: 'nous', models: legacy ? models.map((m) => ({ id: m.id, label: m.label, provider_id: m.provider_id, bare_id: m.bare_id })) : models,
@@ -21,11 +45,12 @@ for (const legacy of [true, false]) test(`${legacy ? 'legacy' : 'native'} model 
   await expect(page.getByRole('option')).toHaveCount(4)
   if (!legacy) {
     await expect(page.getByText('Nous · Recommended', { exact: true })).toBeVisible()
-    await expect(page.getByRole('option', { name: 'Large model · Large · Allowance exhausted', exact: true })).toBeVisible()
+    await expect(page.getByRole('option', { name: 'Large model with a long catalog name (via Nous) · Large · Allowance exhausted', exact: true })).toBeVisible()
     await expect(page.getByRole('option', { name: 'Saved model · Allowance unknown', exact: true })).toBeVisible()
   }
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   await page.screenshot({ animations: 'disabled', path: info.outputPath(legacy ? 'before-models.png' : 'after-models.png') })
+  if (!legacy) expect(await textIsUnclipped(page.getByRole('option', { name: 'Large model with a long catalog name (via Nous) · Large · Allowance exhausted', exact: true }), 'Allowance exhausted')).toBe(true)
   await page.keyboard.press('Escape')
   await page.route('**/api/providers', (route) => route.fulfill({ json: { active_provider: 'nous', providers: [{ id: 'nous', display_name: 'Nous', configured: true, has_key: true }] } }))
   let quotaPhase = 'fresh'
@@ -52,6 +77,27 @@ for (const legacy of [true, false]) test(`${legacy ? 'legacy' : 'native'} model 
     await expect(page.getByTestId('provider-plan-usage')).toContainText('Last-confirmed data')
     await expect(page.getByText('Credits cover usage after allowance')).toHaveCount(0)
     await page.screenshot({ animations: 'disabled', path: info.outputPath('credits-after.png') })
+    const created = await page.request.post('/api/session/new', { data: {} })
+    expect(created.ok()).toBe(true)
+    const { session } = await created.json() as { session: { session_id: string } }
+    await page.route('**/api/session?**', async (route) => {
+      const response = await route.fetch()
+      const body = await response.json() as { session: Record<string, unknown> }
+      await route.fulfill({ response, json: { ...body, session: { ...body.session, model: 'saved', model_provider: 'nous', model_option_id: 'saved' } } })
+    })
+    await page.goto(`/session/${session.session_id}`); await settle(page)
+    await page.locator('#msg').fill('Synthetic draft for model inspection')
+    await expect.poll(async () => await page.locator('#composerModelChip').isVisible() || await page.locator('#composerMobileConfigBtn').isVisible()).toBe(true)
+    if (await page.locator('#composerModelChip').isVisible()) await page.locator('#composerModelChip').click()
+    else {
+      await page.locator('#composerMobileConfigBtn').click()
+      await page.locator('#composerMobileConfigPanel').getByRole('button', { name: /model:/i }).click()
+    }
+    await expect(page.getByRole('menuitemradio')).toHaveCount(4)
+    await page.screenshot({ animations: 'disabled', path: info.outputPath('composer-models.png') })
+    expect(await textIsUnclipped(page.getByRole('menuitemradio', { name: 'Large model with a long catalog name (via Nous) · Large · Allowance exhausted', exact: true }), 'Allowance exhausted')).toBe(true)
+    await expect(page.getByRole('group', { name: 'Recommended', exact: true })).toBeVisible()
+    await expect(page.getByRole('group', { name: 'Other', exact: true })).toBeVisible()
   }
 })
 

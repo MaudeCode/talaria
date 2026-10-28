@@ -10,7 +10,7 @@ import { Button } from '../../ui/Button'
 import { CompletionAudioSettings } from './CompletionAudioSettings'
 import { AuxiliaryModelsSetting } from './AuxiliaryModels'
 import { useBootstrap } from '../../app/bootstrap'
-import { catalogEntryById, catalogGroupLabel, modelOptionLabel, catalogModelSections } from '../../lib/modelEntry'
+import { catalogEntryById, catalogGroupLabel, ModelOptionContent, catalogModelSections } from '../../lib/modelEntry'
 
 function Toggle({ label, hint, settingKey, fallback = false, disabled }: { label: string; hint?: string; settingKey: string; fallback?: boolean; disabled?: boolean }) {
   const { bool, set } = useSettingField([settingKey])
@@ -46,7 +46,7 @@ export function PreferencesSection() {
         <Select id="settingsModel" value={chosen?.model ?? defaultEntry?.id ?? str('default_model')} onValueChange={(v) => { setDefault.mutate({ model: v, provider: catalogEntryById(models.data, v)?.provider_id ?? null }) }}>
           {(models.data?.groups ?? []).flatMap((g) => catalogModelSections(g).map((section) => (
             <optgroup key={`${g.provider}:${section.label}`} label={[catalogGroupLabel(g), section.label].filter(Boolean).join(' · ')}>
-              {section.models.map((mm) => <option key={mm.id} value={mm.id}>{modelOptionLabel(mm)}</option>)}
+              {section.models.map((mm) => <option key={mm.id} value={mm.id}><ModelOptionContent entry={mm} /></option>)}
             </optgroup>
           )))}
           {!defaultListed && str('default_model') && <option value={defaultEntry?.id ?? str('default_model')}>{defaultEntry?.label ?? str('default_model')}</option>}

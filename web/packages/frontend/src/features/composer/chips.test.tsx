@@ -68,6 +68,8 @@ describe('ModelChip', () => {
     await userEvent.click(screen.getByRole('button'))
     expect(await screen.findByText('Recommended')).toBeVisible()
     expect(screen.getByText('Other')).toBeVisible()
+    expect(within(screen.getByRole('group', { name: /^Recommended$/ })).getAllByRole('menuitemradio')).toHaveLength(1)
+    expect(within(screen.getByRole('group', { name: /^Other$/ })).getAllByRole('menuitemradio')).toHaveLength(3)
     expect(screen.getAllByRole('menuitemradio').map((el) => el.textContent)).toEqual([
       'Included model · Included', 'Saved model · Allowance unknown', 'Free model · Free', 'Large model · Large · Allowance exhausted',
     ])

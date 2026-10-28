@@ -1,4 +1,7 @@
+import { useLocale } from '../i18n/useLocale'
+import { cn } from '../ui/cn'
 import { m } from '../paraglide/messages.js'
+import { isLocale } from '../paraglide/runtime.js'
 import type { Models } from '@maudecode/talaria-web-contracts'
 
 export type ModelEntry = Models['groups'][number]['models'][number]
@@ -20,12 +23,30 @@ export function catalogGroupLabel(group: Models['groups'][number]): string {
 }
 
 /** Localized wording for the server's allowance verdict, shared by every model row. */
-export function modelOptionLabel(entry: ModelEntry): string {
-  const allowance = entry.allowance
-  if (!allowance) return entry.label ?? entry.id
-  const level = allowance.usage_level === 'free' ? m.plan_free() : allowance.usage_level === 'top_tier' ? m.plan_large() : null
+function allowanceLabel(allowance: ModelEntry['allowance'], locale?: string): string {
+  if (!allowance) return ''
+  const options = locale && isLocale(locale) ? { locale } : undefined
+  const level = allowance.usage_level === 'free' ? m.plan_free({}, options) : allowance.usage_level === 'top_tier' ? m.plan_large({}, options) : null
   const state = { included: m.plan_included, free: null, blocked: m.plan_blocked, credits: m.plan_credits, unknown: m.plan_unknown }[allowance.state]
-  return [entry.label ?? entry.id, level, state?.()].filter(Boolean).join(' · ')
+  return [level, state?.({}, options)].filter(Boolean).join(' · ')
+}
+
+export function modelOptionLabel(entry: ModelEntry, locale?: string): string {
+  return [entry.label ?? entry.id, allowanceLabel(entry.allowance, locale)].filter(Boolean).join(' · ')
+}
+
+/** Shared noninteractive content for MenuRadioItem, Select options and model-choice buttons. */
+export function ModelOptionContent({ entry }: { entry: ModelEntry }) {
+  const locale = useLocale()
+  const name = entry.label ?? entry.id
+  const detail = allowanceLabel(entry.allowance, locale)
+  if (!detail) return <span className="min-w-0 truncate" title={name}>{name}</span>
+  const tone = entry.allowance?.state === 'blocked' ? 'text-error' : entry.allowance?.state === 'credits' ? 'text-warning' : 'text-muted'
+  return <span className="flex min-w-0 flex-1 items-center gap-1.5 pe-0.5" title={modelOptionLabel(entry, locale)}>
+    <span className="min-w-0 flex-1 truncate">{name}</span>
+    {' · '}
+    <span className={cn('max-w-[65%] shrink-0 whitespace-normal text-end text-xs leading-tight', tone)}>{detail}</span>
+  </span>
 }
 
 /** Join the server's section membership to its rows; search only filters this display list. */

@@ -1,12 +1,12 @@
 import { ProviderQuotaPace } from '../settings/ProviderQuotaPace'
-import { memo, useRef, useState } from 'react'
+import { Fragment, memo, useRef, useState } from 'react'
 import { Popover } from '@base-ui/react/popover'
 import { ChevronDown, Cpu, Brain, Wrench, FolderOpen, GitBranch, Shield } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import { useContextDetailQuery, useExecutionModesQuery, useModelsQuery, useWorkspacesQuery, useToolsetsCatalogQuery } from '../../app/queries'
 import { Menu, MenuGroup, MenuGroupLabel, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator } from '../../ui/Menu'
 import { cn } from '../../ui/cn'
-import { catalogEntryById, catalogGroupLabel, catalogModelSections, modelOptionLabel } from '../../lib/modelEntry'
+import { catalogEntryById, catalogGroupLabel, catalogModelSections, ModelOptionContent, type ModelEntry } from '../../lib/modelEntry'
 import { useLocale } from '../../i18n/useLocale'
 import { resetTime } from '../../i18n/units'
 import type { ExecutionMode, ExecutionModes, Models } from '@maudecode/talaria-web-contracts'
@@ -81,10 +81,12 @@ export function ModelChip({ model, optionId, onChange, row }: { model: string | 
           <MenuGroup key={g.provider}>
             <MenuGroupLabel><span className="flex items-center justify-between gap-2"><span className="truncate">{catalogGroupLabel(g)}</span><GroupLimitBadge group={g} locale={locale} /></span></MenuGroupLabel>
             <ProviderQuotaPace plan={g.plan_usage} planStale={g.plan_stale} compact />
-            {g.displaySections.map((section) => <div key={section.label}>
-              {section.label && <div className="px-2.5 py-1 text-[11px] font-medium text-muted">{section.label}</div>}
-              {section.models.map((mm) => <ModelMenuRow key={mm.id} id={mm.id} label={modelOptionLabel(mm)} resetsAt={mm.limit?.resets_at} locale={locale} />)}
-            </div>)}
+            {g.displaySections.map((section) => {
+              const rows = section.models.map((entry) => <ModelMenuRow key={entry.id} entry={entry} locale={locale} />)
+              return section.label ? <MenuGroup key={section.label}>
+                <MenuGroupLabel>{section.label}</MenuGroupLabel>{rows}
+              </MenuGroup> : <Fragment key={section.label}>{rows}</Fragment>
+            })}
           </MenuGroup>
         ))}
       </MenuRadioGroup>
@@ -99,9 +101,10 @@ export function ModelChip({ model, optionId, onChange, row }: { model: string | 
 }
 
 /** Search changes membership; surviving catalog rows keep their rendered label and cooldown. */
-const ModelMenuRow = memo(function ModelMenuRow({ id, label, resetsAt, locale }: { id: string; label: string; resetsAt: string | undefined; locale: string }) {
-  return <MenuRadioItem value={id} className={RADIO_CLASS}>
-    <span className="truncate">{label}</span>
+const ModelMenuRow = memo(function ModelMenuRow({ entry, locale }: { entry: ModelEntry; locale: string }) {
+  const resetsAt = entry.limit?.resets_at
+  return <MenuRadioItem value={entry.id} className={RADIO_CLASS}>
+    <ModelOptionContent entry={entry} />
     {resetsAt && <span data-model-limit="model" className="ms-auto shrink-0 text-xs text-warning">{m.model_limited_until({ time: resetTime(locale, resetsAt) })}</span>}
   </MenuRadioItem>
 })

@@ -1,4 +1,4 @@
-import { catalogGroupLabel, catalogModelSections, modelOptionLabel } from '../../lib/modelEntry'
+import { catalogGroupLabel, catalogModelSections, ModelOptionContent } from '../../lib/modelEntry'
 import { useState, type ReactNode } from 'react'
 import { Check, ChevronLeft, ChevronRight } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
@@ -132,7 +132,7 @@ function AuxiliaryModelPicker({ task, onDone, onPick }: { task: AuxTask; onDone:
             <h3 className="px-2 py-1 text-xs font-medium uppercase tracking-wide text-muted">{catalogGroupLabel(g)}</h3>
             {catalogModelSections(g, query, true).map((section) => <div key={section.label}>
               {section.label && <h4 className="px-2 py-1 text-xs text-muted">{section.label}</h4>}
-              {section.models.map((mm) => <OptionButton key={mm.id} selected={!onPick && mm.id === task.selected_option_id} onClick={() => pick(mm.id, g.provider_id, { provider_label: catalogGroupLabel(g), value_label: mm.label ?? mm.id })}>{modelOptionLabel(mm)}</OptionButton>)}
+              {section.models.map((mm) => <OptionButton key={mm.id} selected={!onPick && mm.id === task.selected_option_id} onClick={() => pick(mm.id, g.provider_id, { provider_label: catalogGroupLabel(g), value_label: mm.label ?? mm.id })}><ModelOptionContent entry={mm} /></OptionButton>)}
             </div>)}
           </section>
         ))}
