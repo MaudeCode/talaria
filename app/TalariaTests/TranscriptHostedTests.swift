@@ -873,3 +873,64 @@ extension TranscriptHostedTests {
     }
 
 }
+
+/// A code block wider than the reading column grows into the chat's margins before it scrolls (TAL-1487).
+@MainActor
+extension TranscriptHostedTests {
+    private static let wideCodeLine = String(repeating: "wide_fixture ", count: 9)
+    private static let widestCodeLine = String(repeating: "widest_fixture ", count: 16)
+
+    /// The transcript's code blocks, top first, as their horizontal scroll views.
+    private func hostCodeBlocks(size: CGSize) async throws -> (UIWindow, [UIScrollView]) {
+        let content = "Code fixture.\n\n```text\n\(Self.wideCodeLine)\n```\n\n```text\n\(Self.widestCodeLine)\n```\n"
+        let message = ChatMessage(role: "assistant", content: content, timestamp: nil, messageId: "code-width")
+        let window = try hostWindow(historyTranscript(messages: [message], hasOlderMessages: false) { _ in false }, size: size)
+        func blocks() -> [UIScrollView] {
+            var found: [UIScrollView] = []
+            func visit(_ view: UIView) {
+                if let scroll = view as? UIScrollView, scroll.bounds.height < window.bounds.height / 2 { found.append(scroll) }
+                view.subviews.forEach(visit)
+            }
+            visit(window)
+            return found.sorted { $0.convert($0.bounds, to: window).minY < $1.convert($1.bounds, to: window).minY }
+        }
+        let mounted = await awaitCondition { blocks().count == 2 && blocks().allSatisfy { $0.contentSize.width > 0 } }
+        XCTAssertTrue(mounted, "The code blocks never mounted")
+        settle(0.2)
+        return (window, blocks())
+    }
+
+    func testWideCodeBlocksUseTheChatMarginsBeforeScrolling() async throws {
+        let size = HostedSize.padLandscape
+        let (window, blocks) = try await hostCodeBlocks(size: size)
+        let (wide, widest) = (try XCTUnwrap(blocks.first), try XCTUnwrap(blocks.last))
+        let wideFrame = wide.convert(wide.bounds, to: window)
+        let widestFrame = widest.convert(widest.bounds, to: window)
+        let column = AdaptiveReadableContentWidth.chat - 32
+        XCTAssertGreaterThan(wide.contentSize.width, column, "The fixture must be wider than the column")
+        XCTAssertEqual(wideFrame.width, wide.contentSize.width, accuracy: 1, "A block that fits the chat shows whole")
+        XCTAssertEqual(wideFrame.midX, size.width / 2, accuracy: 1, "The widened block stays centred on the column")
+        XCTAssertEqual(widestFrame.width, size.width - 32, accuracy: 1, "The widest block takes the chat less its margins")
+        XCTAssertEqual(widestFrame.midX, size.width / 2, accuracy: 1)
+        XCTAssertGreaterThan(widest.contentSize.width, widestFrame.width + 1, "The widest block still scrolls")
+        attachHostedScreenshot(window, name: "code-width-pad")
+
+        let copy = HostedAccessibility.elements(in: window).filter { $0.accessibilityLabel == "Copy code" }
+            .sorted { $0.accessibilityFrame.minY < $1.accessibilityFrame.minY }
+        HostedAccessibility.activate(try XCTUnwrap(copy.last))
+        XCTAssertEqual(UIPasteboard.general.string?.trimmingCharacters(in: .newlines), Self.widestCodeLine, "Copy takes the whole block")
+    }
+
+    /// A chat no wider than the column, such as the Duo's inner display beside the sidebar, keeps the column.
+    func testCodeBlocksKeepTheColumnWhenTheChatIsNoWider() async throws {
+        for size in [HostedSize.phone, CGSize(width: 571, height: HostedSize.duoInnerLandscape.height)] {
+            let (window, blocks) = try await hostCodeBlocks(size: size)
+            for block in blocks {
+                let frame = block.convert(block.bounds, to: window)
+                XCTAssertEqual(frame.width, size.width - 32, accuracy: 1, "A block left the column at \(size)")
+                XCTAssertGreaterThan(block.contentSize.width, frame.width + 1, "A wide block stopped scrolling at \(size)")
+            }
+            window.isHidden = true
+        }
+    }
+}

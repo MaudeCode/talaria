@@ -322,6 +322,8 @@ struct MessageBubbleView: View {
 
             MarkdownRenderer(content: messageText, isStreaming: isStreaming)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                // A code block stays inside the card's border.
+                .environment(\.chatCodeBlockMargin, 0)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 12)
