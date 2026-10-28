@@ -278,3 +278,102 @@ clients provide it to pin the Activity to its original run. Later runs do not
 replace or repaint retained cards for another stream; explicit acknowledgement
 clears each finished run. Registrations without this field retain legacy
 single-card replacement behavior.
+
+## Feedback reports
+
+Talaria Web servers forward user bug reports and feature requests to Relay. An
+in-cluster operator bridge pulls them from the queue below; clients never hold
+a tracker credential. Every feedback route answers 404 until the deployment sets
+`FEEDBACK_OPERATOR_TOKEN_SHA256`.
+
+`POST /v1/feedback` accepts at most 32 KiB of JSON. The shared example is
+`contracts/fixtures/feedback-report.json`.
+
+```json
+{
+  "requestId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+  "installId": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+  "kind": "bug",
+  "title": "Composer loses the draft after reconnecting",
+  "body": "Plain-text description",
+  "client": { "platform": "web", "appVersion": "1.4.0", "osVersion": "macOS 26.1", "deviceModel": "Mac" },
+  "server": { "webVersion": "1.4.0", "agentVersion": "0.9.2" },
+  "diagnostics": "optional plain text"
+}
+```
+
+| Field | Rule |
+|---|---|
+| `requestId`, `installId` | UUID |
+| `kind` | `bug`, `feature`, or `other` |
+| `title` | 1–120 characters |
+| `body` | 1–8000 characters |
+| `client.platform` | `web` or `ios` |
+| `client.appVersion`, `client.osVersion`, `client.deviceModel` | optional, 1–64 characters |
+| `server.webVersion` | 1–64 characters |
+| `server.agentVersion` | optional, 1–64 characters |
+| `diagnostics` | optional, 1–16384 characters |
+
+Strings must not be blank. Optional fields are omitted, not `null`. Relay stores
+the text as given and never renders or interprets it. An unknown field at any
+level, a value past its bound, or an invalid enum answers 400
+`{error:"invalid_feedback"}`; an oversize body answers 400
+`{error:"body_too_large"}`.
+
+A request carrying any [publisher authentication](#publisher-authentication)
+header is a **verified** submission: Relay identifies the registered publisher
+from `X-Talaria-Key-Id` and checks the signature over path `/v1/feedback`, the
+timestamp window, and nonce replay. Any failure answers 401 and stores nothing;
+it never falls back to the unverified tier. A request without those headers is
+**unverified**.
+
+| Budget | Limit |
+|---|---|
+| Verified, per publisher | 20 an hour |
+| Unverified, per `installId` | 5 an hour |
+| Unverified, all installs | 200 a day |
+| Every tier | 1000 a day |
+
+Windows are fixed and start at their first accepted report. An exhausted budget
+answers 429 `{error:"rate_limited"}` with `Retry-After` in seconds, and a refused
+report charges no budget.
+
+Success answers 202 `{reportId}`. Resending the same `requestId` with the same
+payload returns the original `reportId` without charging a budget; the same
+`requestId` with a different payload answers 409 `{error:"idempotency_conflict"}`.
+
+### Operator queue
+
+Both operator routes require `Authorization: Bearer <token>`, where the SHA-256
+of the token, as lowercase hex, equals `FEEDBACK_OPERATOR_TOKEN_SHA256`. A
+missing or wrong token answers 401.
+
+`GET /v1/feedback/pending?limit=50` returns at most `limit` (1–50, default 50)
+pending reports, oldest first:
+
+```json
+{
+  "reports": [
+    {
+      "reportId": "opaque-report-id",
+      "tier": "verified",
+      "publisherId": "https://hermes.example.com",
+      "createdAt": 1787845600000,
+      "payload": { "requestId": "…", "kind": "bug", "title": "…" }
+    }
+  ]
+}
+```
+
+`publisherId` is present only for verified reports. Another `limit` answers 400
+`{error:"invalid_limit"}`.
+
+`POST /v1/feedback/{reportId}/ack` with exactly `{ "ticketKey": "TAL-123" }`
+marks the report delivered and removes it from the pending list. It returns
+`{reportId, ticketKey, status:"delivered"}`; repeating it with the same key does
+the same. A different key for a delivered report answers 409
+`{error:"ticket_key_conflict"}`, an unknown report 404, and a malformed key 400
+`{error:"invalid_ticket_key"}`.
+
+Cleanup deletes delivered reports seven days after delivery and pending reports
+30 days after submission.

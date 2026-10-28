@@ -37,9 +37,12 @@ APNS_KEY_ID
 APNS_PRIVATE_KEY
 APPLE_SUBJECT_HASH_KEY
 APPLE_CLIENT_IDS=dev.kil.talaria,dev.kil.talaria.branch
+FEEDBACK_OPERATOR_TOKEN_SHA256
 ```
 
 `APPLE_SUBJECT_HASH_KEY` is a random server secret used to pseudonymize Apple's stable subject before storage. APNs credentials and this hash key never enter the database or API responses.
+
+`FEEDBACK_OPERATOR_TOKEN_SHA256` is the lowercase hex SHA-256 of the feedback bridge's bearer token (`printf %s "$TOKEN" | shasum -a 256`). Feedback routes answer 404 until it is set; the token itself stays with the bridge.
 
 Signed `relay-vX.Y.Z` tags validate release identity. The authorized root
 `production-cutover.yml` workflow deploys changed Relay releases into the existing

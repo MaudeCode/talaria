@@ -3,7 +3,7 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import { internalMutation, type MutationCtx } from "./_generated/server";
-import { revokeDevicesForSession } from "./auth";
+import { longestBudgetWindowMs, revokeDevicesForSession } from "./auth";
 import { grantMatches } from "./completions";
 import { activityPhase, isTerminalPhase } from "./lib/model";
 
@@ -36,7 +36,7 @@ async function prunePass(ctx: MutationCtx) {
   const now = Date.now();
   const oldJobCutoff = now - 7 * 24 * 60 * 60 * 1_000;
   const retiredCutoff = now - 30 * 24 * 60 * 60 * 1_000;
-  const [nonces, userSessions, appleTokens, invitations, sessions, expiredActivities, doneJobs, keys, pendingKeys, devices, activities, deadJobs, staleJobs, acknowledgedCompletions] = await Promise.all([
+  const [nonces, userSessions, appleTokens, invitations, sessions, expiredActivities, doneJobs, keys, pendingKeys, devices, activities, deadJobs, staleJobs, acknowledgedCompletions, deliveredFeedback, pendingFeedback, rateLimits] = await Promise.all([
     ctx.db
       .query("publisherNonces")
       .withIndex("by_expires_at", (query) => query.lt("expiresAt", now))
@@ -109,8 +109,24 @@ async function prunePass(ctx: MutationCtx) {
         query.eq("acknowledged", true).lt("_creationTime", oldJobCutoff),
       )
       .take(batchSize),
+    ctx.db
+      .query("feedbackReports")
+      .withIndex("by_status_and_delivered_at", (query) =>
+        query.eq("status", "delivered").lt("deliveredAt", oldJobCutoff),
+      )
+      .take(batchSize),
+    ctx.db
+      .query("feedbackReports")
+      .withIndex("by_status_and_created_at", (query) =>
+        query.eq("status", "pending").lt("createdAt", retiredCutoff),
+      )
+      .take(batchSize),
+    ctx.db
+      .query("authRateLimits")
+      .withIndex("by_window_started_at", (query) => query.lt("windowStartedAt", now - longestBudgetWindowMs))
+      .take(batchSize),
   ]);
-  const full = [nonces, userSessions, appleTokens, invitations, sessions, expiredActivities, doneJobs, keys, pendingKeys, devices, activities, deadJobs, staleJobs, acknowledgedCompletions]
+  const full = [nonces, userSessions, appleTokens, invitations, sessions, expiredActivities, doneJobs, keys, pendingKeys, devices, activities, deadJobs, staleJobs, acknowledgedCompletions, deliveredFeedback, pendingFeedback, rateLimits]
     .some((rows) => rows.length === batchSize);
   let revokedDevices = 0;
   for (const state of expiredActivities) {
@@ -134,6 +150,9 @@ async function prunePass(ctx: MutationCtx) {
     ...devices,
     ...activities,
     ...acknowledgedCompletions,
+    ...deliveredFeedback,
+    ...pendingFeedback,
+    ...rateLimits,
     ...(await orphanedCompletionsPage(ctx)),
   ];
   const uniqueDocuments = [...new Map(documents.map((document) => [document._id, document])).values()];

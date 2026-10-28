@@ -25,9 +25,17 @@ export function randomToken(byteCount = 32): string {
   return bytesToBase64Url(bytes);
 }
 
+async function sha256Bytes(value: string): Promise<Uint8Array> {
+  return new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(value)));
+}
+
 export async function sha256(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", encoder.encode(value));
-  return bytesToBase64Url(new Uint8Array(digest));
+  return bytesToBase64Url(await sha256Bytes(value));
+}
+
+/** Lowercase hex, the form `shasum -a 256` prints for operator-provisioned secrets. */
+export async function sha256Hex(value: string): Promise<string> {
+  return Array.from(await sha256Bytes(value), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 export function timingSafeEqual(left: string, right: string): boolean {

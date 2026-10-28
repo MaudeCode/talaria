@@ -1,0 +1,18 @@
+{
+  "requestId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+  "installId": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+  "kind": "bug",
+  "title": "Composer loses the draft after reconnecting",
+  "body": "I typed a long prompt, the connection dropped, and after it reconnected the composer was empty.",
+  "client": {
+    "platform": "web",
+    "appVersion": "1.4.0",
+    "osVersion": "macOS 26.1",
+    "deviceModel": "Mac"
+  },
+  "server": {
+    "webVersion": "1.4.0",
+    "agentVersion": "0.9.2"
+  },
+  "diagnostics": "reconnects=2 lastError=socket_closed"
+}

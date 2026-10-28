@@ -8,6 +8,8 @@ import {
   preferencesValidator,
   sessionPhaseValidator,
   aggregateRowValidator,
+  feedbackPayloadValidator,
+  feedbackTierValidator,
 } from "./lib/validators";
 
 export default defineSchema({
@@ -44,7 +46,9 @@ export default defineSchema({
     key: v.string(),
     windowStartedAt: v.number(),
     attempts: v.number(),
-  }).index("by_key", ["key"]),
+  })
+    .index("by_key", ["key"])
+    .index("by_window_started_at", ["windowStartedAt"]),
 
   appleJwksCache: defineTable({
     key: v.string(),
@@ -271,4 +275,20 @@ export default defineSchema({
     .index("by_user_id_and_device_id_and_status", ["userId", "deviceId", "status"])
     .index("by_status_and_updated_at", ["status", "updatedAt"]),
 
+  // `requestId` is unique: the submit mutation reads it before inserting in the same transaction.
+  feedbackReports: defineTable({
+    requestId: v.string(),
+    payloadHash: v.string(),
+    tier: feedbackTierValidator,
+    publisherId: v.optional(v.string()),
+    installHash: v.string(),
+    payload: feedbackPayloadValidator,
+    status: v.union(v.literal("pending"), v.literal("delivered")),
+    ticketKey: v.optional(v.string()),
+    createdAt: v.number(),
+    deliveredAt: v.optional(v.number()),
+  })
+    .index("by_request_id", ["requestId"])
+    .index("by_status_and_created_at", ["status", "createdAt"])
+    .index("by_status_and_delivered_at", ["status", "deliveredAt"]),
 });

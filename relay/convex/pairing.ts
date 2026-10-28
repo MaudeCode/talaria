@@ -237,7 +237,8 @@ export const redeemProfileInvitation = internalMutation({
 });
 
 export const getPublisherKey = internalQuery({
-  args: { publisherId: v.string(), keyId: v.string() },
+  // Without `publisherId` the key names its own publisher; signed routes with no publisher in the path use that.
+  args: { publisherId: v.optional(v.string()), keyId: v.string() },
   returns: v.union(
     v.null(),
     v.object({
@@ -254,11 +255,11 @@ export const getPublisherKey = internalQuery({
       .query("publisherKeys")
       .withIndex("by_version_and_key_id", (query) => query.eq("version", 2).eq("keyId", args.keyId))
       .unique();
-    if (!key?.ownerUserId || key.publisherId !== args.publisherId) return null;
+    if (!key?.ownerUserId || (args.publisherId !== undefined && key.publisherId !== args.publisherId)) return null;
     const publisher = await ctx.db
       .query("publishers")
       .withIndex("by_version_and_owner_user_id_and_publisher_id", (query) =>
-        query.eq("version", 2).eq("ownerUserId", key.ownerUserId).eq("publisherId", args.publisherId),
+        query.eq("version", 2).eq("ownerUserId", key.ownerUserId).eq("publisherId", key.publisherId),
       )
       .unique();
     if (!publisher?.ownerUserId) return null;

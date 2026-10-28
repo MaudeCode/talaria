@@ -113,7 +113,7 @@ function exposedState(state: Doc<"sessionStates">) {
   };
 }
 
-async function authorizePublisherMutation(
+export async function authorizePublisherMutation(
   ctx: MutationCtx,
   args: {
     publisherOwnerUserId: string;
