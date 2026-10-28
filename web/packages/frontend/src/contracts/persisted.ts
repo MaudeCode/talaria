@@ -22,6 +22,13 @@ export const LocalDraftSchema = z.object({ text: z.string().max(200_000), update
 /** Highest composer draft revision this browser has issued or seen (`hermes-draft-revision`, TAL-564). */
 export const DraftRevisionSchema = z.number().int().nonnegative()
 
+/** Send feedback reports (TAL-1574), cleared with the identity (`resetIdentityCache`): an unsent report belongs to its author. */
+export const FEEDBACK_DRAFT_KEY = 'hermes-feedback-draft'
+/** One report; `requestId` is reused on every retry of unchanged content. */
+export const FeedbackDraftSchema = z.object({ requestId: z.uuid(), kind: z.enum(['bug', 'feature', 'other']), title: z.string().max(120), body: z.string().max(8000), includeDiagnostics: z.boolean() })
+/** The form's draft plus the reports the server has not accepted yet (in flight, or set aside by a rollback). */
+export const FeedbackDraftsSchema = z.object({ draft: FeedbackDraftSchema, held: z.array(FeedbackDraftSchema) })
+
 /** Sidebar collapsed groups (`hermes-webui-collapsed-groups`). */
 export const CollapsedGroupsSchema = z.array(z.string().max(128)).max(200)
 
