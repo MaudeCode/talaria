@@ -89,7 +89,7 @@ function Discussion({ roomId, provisionalName, onDisband }: { roomId: string; pr
   const [before, setBefore] = useState<number | undefined>()
   const key = ['groups', bootstrap.profile?.name, roomId, before]
   const view = useQuery({ queryKey: key, queryFn: ({ signal }) => api.fetchGroup(roomId, before, signal), enabled: provisionalName === undefined })
-  const [intent, setIntent] = useState<{ identity: string; text: string; id: string; unknown: boolean; files: PendingFile[] } | null>(null)
+  const [intent, setIntent] = useState<{ identity: string; text: string; id: string; eventId: string | null; unknown: boolean; files: PendingFile[] } | null>(null)
   const [renameDraft, setRenameDraft] = useState<{ identity: string; value: string } | null>(null)
   const [renameIntent, setRenameIntent] = useState<{ identity: string; value: string; id: string; unknown: boolean } | null>(null)
   const [stopping, setStopping] = useState<string | null>(null)
@@ -103,7 +103,9 @@ function Discussion({ roomId, provisionalName, onDisband }: { roomId: string; pr
     return () => { active = false; stream.close() }
   }, [roomId, before, qc, bootstrap.profile?.name, provisionalName])
   const data = view.data, room = data?.room
-  const currentIntent = intent?.identity === room?.identity ? intent : null
+  const committedIntent = intent?.identity === room?.identity && intent?.eventId !== null && data?.rows.some((row) => row.message.message_id === intent?.eventId)
+  const currentIntent = intent?.identity === room?.identity && !committedIntent ? intent : null
+  if (committedIntent) setIntent(null)
   const currentRename = renameIntent?.identity === room?.identity ? renameIntent : null
   const currentDraft = renameDraft?.identity === room?.identity ? renameDraft : null
   const refresh = () => qc.invalidateQueries({ queryKey: ['groups', bootstrap.profile?.name, roomId] })
@@ -115,18 +117,27 @@ function Discussion({ roomId, provisionalName, onDisband }: { roomId: string; pr
   }
   const send = async (text: string, files: PendingFile[]) => {
     const id = crypto.randomUUID(), identity = room?.identity ?? ''
-    setIntent({ identity, text, id, unknown: false, files })
+    setIntent({ identity, text, id, eventId: null, unknown: false, files })
     const clear = () => setIntent((current) => current?.id === id ? null : current)
+    const refuse = (error: unknown) => { clear(); showErrorToast(error); return false }
     const reconcile = async () => {
       const [next, receipt] = await Promise.all([api.fetchGroup(roomId), api.fetchGroupReceipt(roomId, id)])
       if (next.room?.identity === identity) qc.setQueryData(key, next)
       return next.room?.identity === identity && receipt.outcome === 'confirmed'
     }
+    let eventId: string
+    try { eventId = (await api.fetchGroupSendIdentity(id)).event_id }
+    catch (error) { return refuse(error) } // No write has been attempted.
+    setIntent((current) => current?.id === id ? { ...current, eventId } : current)
     try {
       const result = await api.writeGroup(room?.identity ?? null, { action: 'send', room_id: roomId, event_id: id, payload: { text, attachments: files.flatMap((f) => f.groupAttachment ? [f.groupAttachment] : []) } })
-      if (result.outcome === 'confirmed' || await reconcile()) { await refresh(); clear(); return true }
-      if (result.outcome === 'refused') { clear(); showErrorToast(new Error(m.group_write_refused())); return false }
-    } catch { if (await reconcile().catch(() => false)) { clear(); return true } }
+      if (result.outcome === 'refused') return refuse(new Error(m.group_write_refused()))
+      if (result.outcome === 'confirmed') { void refresh().then(clear, clear); return true }
+      if (await reconcile()) { clear(); return true }
+    } catch (error) {
+      if (isDefiniteRefusal(error)) return refuse(error)
+      if (await reconcile().catch(() => false)) { clear(); return true }
+    }
     setIntent((current) => current?.id === id ? { ...current, unknown: true } : current)
     return true
   }

@@ -138,3 +138,43 @@ it('bounds room observation catch-up and replaces stalled snapshots', async () =
     expect(sidecar.calls.filter((c) => c.method === 'gateway.groups' && (c.params as { operation: { action: string } }).operation.action === 'log')).toHaveLength(2)
   } finally { viewer.release(); await groups.close() }
 })
+
+it('issues the native occurrence identity before dispatch without querying or mutating the owner', async () => {
+  const { sidecar } = await setup()
+  sidecar.calls.length = 0
+  const response = await server!.get('/api/groups/send-identity?request_id=stable-send')
+  expect(response.status).toBe(200)
+  const identity = await response.json() as { event_id: string }
+  expect(sidecar.calls).toHaveLength(0)
+  const view = await read()
+  await post(view.room!.identity, { action: 'send', room_id: 'discussion', event_id: 'stable-send', payload: { text: 'Occurrence' } })
+  expect((await read()).rows[0]!.message.message_id).toBe(identity.event_id)
+})
+
+for (const authType of ['trusted', 'oidc'] as const) it(`requires owner authority for multi-profile discussions: ${authType}`, async () => {
+  const sidecar = new FakeSidecar()
+  groupFixture(sidecar)
+  server = await bootTestServer({ sidecar, env: {
+    HERMES_WEBUI_TRUSTED_AUTH_HEADER: 'X-Remote-User', HERMES_WEBUI_GROUP_PROFILE_MAP: '{}',
+    HERMES_WEBUI_OIDC_ISSUER: 'https://identity.invalid', HERMES_WEBUI_OIDC_CLIENT_ID: 'synthetic-client',
+  }, deps: (deps) => {
+    deps.profiles.list = () => Promise.resolve([{ name: 'default', is_default: true }, { name: 'helper' }])
+    // External identity proof is the boundary; the request gate and owner policy remain real.
+    deps.oidc.sessionBindingIsCurrent = () => Promise.resolve(true)
+  } })
+  const cookie = server.deps.auth.createSession({ authType, username: 'scoped-user', boundProfile: 'default' })
+  const headers = { cookie: `${server.deps.auth.cookieName()}=${cookie}`, 'X-Remote-User': 'scoped-user', origin: server.base,
+    'X-Hermes-CSRF-Token': server.deps.auth.csrfTokenForSession(cookie)!, 'content-type': 'application/json' }
+  sidecar.calls.length = 0
+  for (const path of ['/api/groups', '/api/groups/view?room_id=discussion', '/api/groups/receipt?room_id=discussion&request_id=send', '/api/groups/stream?room_id=discussion', '/api/groups/send-identity?request_id=send', '/api/groups/file?room_id=discussion&event_id=event&attachment_id=file']) {
+    const response = await server.get(path, { headers })
+    expect(response.status, path).toBe(403)
+    expect(await response.json()).toEqual({ error: 'Owner session required' })
+  }
+  for (const path of ['/api/groups/action', '/api/groups/upload']) expect((await server.get(path, { method: 'POST', headers, body: '{}' })).status, path).toBe(403)
+  expect(sidecar.calls).toHaveLength(0)
+  const owner = server.deps.auth.createSession({ authType: 'password' })
+  const response = await server.get('/api/groups', { headers: { cookie: `${server.deps.auth.cookieName()}=${owner}` } })
+  expect(response.status).toBe(200)
+  expect(await response.json()).toMatchObject({ available: true, profiles: [{ profile: 'default' }, { profile: 'helper' }] })
+})

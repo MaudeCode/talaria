@@ -20,6 +20,7 @@ import { TranscribeResponseSchema, type SteerSendNowRequestSchema, type SteerWit
 export const fetchGroups = (offset = 0) => orpc().groups.list({ offset })
 export const fetchGroup = (room_id: string, before_seq?: number, signal?: AbortSignal) => orpc().groups.view({ room_id, ...(before_seq === undefined ? {} : { before_seq }) }, signal ? { signal } : {})
 export const fetchGroupReceipt = (room_id: string, request_id: string) => orpc().groups.receipt({ room_id, request_id })
+export const fetchGroupSendIdentity = (request_id: string) => orpc().groups.sendIdentity({ request_id })
 export const writeGroup = (identity: string | null, operation: GroupOperation) => orpc().groups.write({ identity, operation })
 export async function uploadGroupFile(room_id: string, identity: string, file: File) {
   const data_base64 = await new Promise<string>((resolve, reject) => {

@@ -96453,6 +96453,48 @@
         }
       }
     },
+    "/api/groups/send-identity": {
+      "get": {
+        "operationId": "groups.sendIdentity",
+        "tags": [
+          "groups"
+        ],
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "event_id": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                    }
+                  },
+                  "required": [
+                    "event_id"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/groups": {
       "get": {
         "operationId": "groups.list",

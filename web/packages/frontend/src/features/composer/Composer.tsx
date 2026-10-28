@@ -150,16 +150,12 @@ function takeHandoff(sessionId: string) {
 }
 
 const unusedChatControl = () => undefined
-export function Composer(props: ComposerProps | RoomComposerProps) {
-  if (!('onEnsureSession' in props)) return <ComposerBody {...props} sessionId={null} session={null} busy={false} streamId={null}
-    onEnsureSession={() => Promise.reject(new Error('Discussion is not a chat'))} onLocalCommand={() => Promise.resolve(false)}
-    terminalOpen={false} onToggleTerminal={unusedChatControl} onModelChange={unusedChatControl} onWorkspaceChange={unusedChatControl} onToolsetsChange={unusedChatControl}
-    onReasoningChange={unusedChatControl} reasoning={null} yolo={false} onToggleYolo={unusedChatControl} queued={[]} onQueue={unusedChatControl} onQueueChange={unusedChatControl}
-    locked={!props.room.canSend} />
-  return <ComposerBody {...props} />
-}
-
-function ComposerBody(props: ComposerProps) {
+export function Composer(input: ComposerProps | RoomComposerProps) {
+  const props: ComposerProps = 'onEnsureSession' in input ? input : { ...input, sessionId: null, session: null, busy: false, streamId: null,
+    onEnsureSession: () => Promise.reject(new Error('Discussion is not a chat')), onLocalCommand: () => Promise.resolve(false),
+    terminalOpen: false, onToggleTerminal: unusedChatControl, onModelChange: unusedChatControl, onWorkspaceChange: unusedChatControl, onToolsetsChange: unusedChatControl,
+    onReasoningChange: unusedChatControl, reasoning: null, yolo: false, onToggleYolo: unusedChatControl, queued: [], onQueue: unusedChatControl, onQueueChange: unusedChatControl,
+    locked: !input.room.canSend }
   const { sessionId, session, busy, streamId, settings, onEnsureSession, onLocalCommand, terminalOpen, onToggleTerminal, onModelChange, onWorkspaceChange, onNewWorktreeChat, onRemoveWorktree, onToolsetsChange, onExecutionModeChange, onReasoningChange, reasoning, reasoningLevels, reasoningSupported = true, pendingChoices, locked = false, yolo, onToggleYolo, queued, onQueue, onQueueChange, clarify, notices = EMPTY_NOTICES } = props
   const bootstrap = useBootstrap()
   const launchBackground = useStartBackground()
@@ -171,6 +167,8 @@ function ComposerBody(props: ComposerProps) {
   const intent = useTurnIntent(sessionId)
   const sending = !!intent.send
   const submitting = useRef(false)
+  const roomCanSend = room?.canSend
+  useEffect(() => { if (roomCanSend) submitting.current = false }, [roomCanSend])
   const [dictating, setDictating] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const [configOpen, setConfigOpen] = useState(false)

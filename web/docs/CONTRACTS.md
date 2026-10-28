@@ -341,7 +341,16 @@ native upload/download digests and sizes. Downloads require the room identity,
 committed event id and attachment id; no Agent path is exposed. An uncertain
 write is read back, never automatically repeated. `/api/groups/receipt` reconciles
 a user's send identity against the native log. An unconfirmed receipt stays
-unknown. App adoption is tracked separately in TAL-1378.
+unknown. Before dispatch, `/api/groups/send-identity` resolves the caller's
+occurrence id to its native event id without querying or changing an owner.
+The optimistic row uses that server-issued identity to converge on a streamed
+persisted row, including while the POST response is delayed. Definite refusals
+restore the draft and files immediately, without reconciliation reads.
+Multi-profile discussions require the existing server-owner authority. The
+shared authentication gate protects the whole group API namespace, including
+streams and file downloads, before native RPC. A profile-bound trusted-header
+or OIDC login cannot use another managed profile through a room.
+App adoption is tracked separately in TAL-1378.
 
 ## Memory compaction
 

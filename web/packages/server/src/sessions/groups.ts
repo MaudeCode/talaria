@@ -25,6 +25,9 @@ export class Groups {
   private readonly watchers = new Map<string, { channel: StreamChannel; controller: AbortController; done: Promise<void> }>()
   constructor(private readonly deps: () => AppDeps, private readonly pollMs = 1000) {}
 
+  /** Resolve protocol identity before dispatch so SSE can confirm an in-flight occurrence. No owner access. */
+  sendIdentity(requestId: string): { event_id: string } { return { event_id: nativeEventId(requestId) } }
+
   scope(profile: string, owner: string): GroupScope {
     return { home: this.deps().profileHome(profile), subject: hash(['talaria', owner]), profile }
   }

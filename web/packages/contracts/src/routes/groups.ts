@@ -4,6 +4,7 @@ import { GROUP_ATTACHMENT_BASE64_LIMIT, GroupCatalogSchema, GroupIdSchema, Group
 
 export const GroupWriteInputSchema = z.object({ identity: z.string().nullable(), operation: GroupOperationSchema })
 export const groupsContract = { groups: {
+  sendIdentity: oc.route({ method: 'GET', path: '/api/groups/send-identity', tags: ['groups'] }).input(z.object({ request_id: GroupIdSchema })).output(z.object({ event_id: GroupIdSchema })),
   list: oc.route({ method: 'GET', path: '/api/groups', tags: ['groups'] }).input(z.object({ offset: z.coerce.number().int().nonnegative().optional() })).output(GroupCatalogSchema),
   view: oc.route({ method: 'GET', path: '/api/groups/view', tags: ['groups'] }).input(z.object({ room_id: GroupIdSchema, before_seq: z.coerce.number().int().positive().optional() })).output(GroupViewSchema),
   receipt: oc.route({ method: 'GET', path: '/api/groups/receipt', tags: ['groups'] }).input(z.object({ room_id: GroupIdSchema, request_id: GroupIdSchema })).output(GroupWriteResultSchema),

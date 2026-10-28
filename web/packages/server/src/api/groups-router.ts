@@ -18,6 +18,7 @@ async function run<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 export const groupsRouter = os.router({ groups: {
+  sendIdentity: os.groups.sendIdentity.handler(({ input, context: { ctx } }) => ctx.deps.groups.sendIdentity(input.request_id)),
   list: os.groups.list.handler(({ input, context: { ctx } }) => run(() => ctx.deps.groups.catalog(groupScope(ctx), input.offset))),
   view: os.groups.view.handler(({ input, context: { ctx } }) => run(() => ctx.deps.groups.view(groupScope(ctx), input.room_id, input.before_seq))),
   receipt: os.groups.receipt.handler(({ input, context: { ctx } }) => run(() => ctx.deps.groups.receipt(groupScope(ctx), input.room_id, input.request_id))),
