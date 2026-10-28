@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Scrolling quickly to the top of a long chat keeps loading older messages instead of stopping.",
+      "highlight": false
+    }
+  ]
+}

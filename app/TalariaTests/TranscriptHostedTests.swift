@@ -171,6 +171,47 @@ final class TranscriptHostedTests: XCTestCase {
         XCTAssertEqual(requests, 1, "Prefetch must start with at least three viewports of history still available")
     }
 
+    func testHistoryLoadsWhenTheReaderReturnsToTheTopBetweenMetricDeliveries() async throws {
+        var requests = 0
+        var interleave: (() -> Void)?
+        let window = try hostWindow(PagedHistoryTranscript(onMetrics: { metrics in
+            // Runs right after the transcript has published this delivery's near-top state.
+            guard metrics.distanceFromTop < 1, let run = interleave else { return }
+            interleave = nil
+            run()
+        }, load: { _ in requests += 1; return false }))
+        let scroll = try XCTUnwrap(historyScroll(in: window))
+        var settledOffset = CGFloat.nan
+        let ready = await awaitCondition {
+            guard let controller = self.historyObserver(in: window)?.coordinator?.scrollPositionController,
+                  !controller.isNavigating, !controller.isRealizingRows, !controller.shouldPrefetchHistory() else { return false }
+            defer { settledOffset = scroll.contentOffset.y }
+            return scroll.contentOffset.y == settledOffset
+        }
+        XCTAssertTrue(ready, "The reader must settle at the latest message, outside the prefetch region")
+        XCTAssertEqual(requests, 0)
+        let coordinator = try XCTUnwrap(historyObserver(in: window)?.coordinator)
+        try XCTUnwrap(coordinator.scrollPositionController).userDidBeginDragging()
+        coordinator.onFollowEvent(.userScrollBegin)
+        let away = scroll.contentOffset.y
+        let top = -scroll.adjustedContentInset.top
+        // Under load the history check can run after the offset moved away again, and the reader's
+        // return lands before the observer's next coalesced delivery, which then reports no change.
+        interleave = {
+            scroll.contentOffset.y = away
+            window.layoutIfNeeded()
+            scroll.contentOffset.y = top
+        }
+        // The transcript can hold the reader at the latest message briefly after startup.
+        for _ in 0..<250 where interleave != nil {
+            scroll.contentOffset.y = top
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertNil(interleave, "The reader never reached the top")
+        let loaded = await awaitCondition(timeout: 2) { requests > 0 }
+        XCTAssertTrue(loaded, "A reader resting at the top must load older history after a check saw them away")
+    }
+
     func testHistoryInsertionIsPreservedBeforeTheLoaderReturns() async throws {
         try await assertHistoryResponsePreservesReader(holdCompletion: true)
     }
