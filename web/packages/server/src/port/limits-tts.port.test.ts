@@ -1,12 +1,11 @@
-/**
- * TTS, tool-argument cap, and speech-settings regressions.
- */
+/** TTS routing, tool-argument cap, and speech-settings regressions. */
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { RPC_ERROR_CODES } from '@maudecode/talaria-web-contracts'
 import { FakeSidecar } from '../sidecar/fake.js'
+import { SidecarError } from '../sidecar/client.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
-import { writeEnvFile } from '../test/env-file.js'
 import { WindowLimiter } from '../api/tools-router.js'
 import { TOOL_ARG_CONTENT_CAP, TOOL_ARG_CONTENT_KEYS, truncateToolArgs } from '../sessions/merge.js'
 
@@ -14,49 +13,58 @@ type Json = Record<string, unknown>
 const post = (s: TestServer, path: string, body: unknown, headers: Record<string, string> = {}): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json', ...headers } })
 const json = async (res: Response): Promise<Json> => (await res.json()) as Json
 
-interface Captured { url: string; init: RequestInit | undefined; addresses?: string[] }
-
-/** Hostnames the fake resolver answers; anything else is NXDOMAIN. */
-const DNS: Record<string, string[]> = { 'custom.example.com': ['93.184.216.34'], 'api.openai.com': ['104.18.7.192'], 'rebind.example.com': ['93.184.216.34', '10.0.0.5'], 'internal.example.com': ['192.168.1.10'] }
-
-/** Upstream engines keyed by the posted text: `big` streams without end, `json` answers JSON, `redirect` answers 302. */
-function ttsFetch(requests: Captured[]): typeof fetch {
-  return (input, init) => {
-    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
-    requests.push({ url, init })
-    const body = typeof init?.body === 'string' ? init.body : ''
-    const text = (JSON.parse(body || '{}') as { text?: string; input?: string })
-    const marker = text.input ?? text.text ?? ''
-    if (marker === 'big') return Promise.resolve(new Response(new ReadableStream({ pull(c) { c.enqueue(new Uint8Array(1024 * 1024)) } }), { status: 200, headers: { 'content-type': 'audio/mpeg' } }))
-    if (marker === 'json') return Promise.resolve(new Response('{"error":"nope"}', { status: 200, headers: { 'content-type': 'application/json' } }))
-    if (marker === 'redirect') return Promise.resolve(new Response(null, { status: 302, headers: { location: 'http://169.254.169.254/latest' } }))
-    return Promise.resolve(new Response(Buffer.from(url.includes('elevenlabs') ? 'ID3eleven' : 'ID3openai'), { status: 200, headers: { 'content-type': 'audio/mpeg' } }))
-  }
-}
-
-function bootTts(env: Record<string, string> = {}): Promise<{ s: TestServer; sidecar: FakeSidecar; requests: Captured[]; configs: Map<string, Json> }> {
+async function bootTts(env: Record<string, string> = {}) {
   const sidecar = new FakeSidecar()
   const configs = new Map<string, Json>()
-  const requests: Captured[] = []
+  const requests: unknown[] = []
   sidecar.respond('config.get', (params) => ({ path: join(params.profile_home, 'config.yaml'), exists: true, config: configs.get(params.profile_home) ?? {} }))
-  return bootTestServer({ sidecar, env, deps: (deps) => {
-    const f = ttsFetch(requests)
-    deps.fetch = f
-    deps.dnsLookup = (hostname) => { const a = DNS[hostname]; return a ? Promise.resolve(a.map((address) => ({ address, family: 4 }))) : Promise.reject(new Error(`ENOTFOUND ${hostname}`)) }
-    deps.pinnedFetch = async (url, init, addresses) => { const res = await f(url, init); requests.at(-1)!.addresses = addresses; return res }
-  } }).then((s) => { writeFileSync(join(s.state, 'config.yaml'), '# seed\n'); return { s, sidecar, requests, configs } })
+  const s = await bootTestServer({ sidecar, env, deps: (deps) => {
+    const forbidden = vi.fn((...args: unknown[]) => { requests.push(args); return Promise.reject(new Error('TTS must never fetch from Node')) })
+    deps.fetch = forbidden
+    deps.pinnedFetch = forbidden
+    deps.dnsLookup = forbidden
+  } })
+  writeFileSync(join(s.state, 'config.yaml'), '# seed\n')
+  return { s, sidecar, requests, configs }
 }
 
 describe('TTS validation, limits, and engines', () => {
   let s: TestServer
-  let requests: Captured[]
+  let requests: unknown[]
   let configs: Map<string, Json>
   let sidecar: FakeSidecar
   beforeAll(async () => { ({ s, requests, configs, sidecar } = await bootTts()) })
   afterAll(() => s.close())
   const setConfig = (cfg: Json): void => { configs.set(s.state, cfg); s.deps.agentConfig.invalidate() }
-  const setEnv = (keys: Record<string, string | null>): void => { writeEnvFile(join(s.state, '.env'), keys) }
-  const fresh = (): void => { s.deps.ttsLimiter = new WindowLimiter(60, 100); requests.length = 0 }
+  const ttsCalls = () => sidecar.calls.filter((call) => call.method === 'tts.synthesize') as { params: Record<string, unknown> }[]
+  const fresh = (): void => {
+    s.deps.ttsLimiter = new WindowLimiter(60, 100)
+    requests.length = 0
+    sidecar.calls.length = 0
+    sidecar.respond('tts.synthesize', undefined)
+  }
+
+  it.each([['mp3', 'audio/mpeg'], ['wav', 'audio/wav'], ['flac', 'audio/flac']])('routes a configured Agent provider and returns %s without Node fetches', async (format, contentType) => {
+    fresh()
+    setConfig({ tts: { provider: 'piper' } })
+    sidecar.respond('tts.synthesize', () => ({ provider: 'piper', format, audio_b64: Buffer.from('synthetic audio').toString('base64') }))
+    const res = await post(s, '/api/tts', { text: 'Hello', rate: '+50%', pitch: '+20Hz', voice: 'ignored', voice_id: 'ignored' })
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toBe(contentType)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(Buffer.from(await res.arrayBuffer()).toString()).toBe('synthetic audio')
+    expect(ttsCalls()).toEqual([{ method: 'tts.synthesize', params: { profile_home: s.state, text: 'Hello', provider: 'piper', speed: 1.5 } }])
+    expect(requests).toEqual([])
+  })
+
+  it.each([['-200%', 0.5], ['+200%', 2], ['', undefined]])('maps rate %s to Agent speed %s', async (rate, speed) => {
+    fresh()
+    const res = await post(s, '/api/tts', { text: 'Hello', engine: 'openai', rate })
+    expect(res.status).toBe(200)
+    expect(ttsCalls()[0]?.params.speed).toBe(speed)
+    expect(ttsCalls()[0]?.params.provider).toBe('openai')
+    expect(requests).toEqual([])
+  })
 
   it('GET /api/tts answers 405', async () => {
     const res = await s.get('/api/tts')
@@ -64,137 +72,107 @@ describe('TTS validation, limits, and engines', () => {
     expect(String((await json(res)).error)).toContain('POST required')
   })
 
-  it('5001 characters answer 400 too long', async () => {
+  it.each([
+    [{ text: 'x'.repeat(5001), engine: 'openai' }, 'too long'],
+    [{ text: 'x'.repeat(5001), engine: 'elevenlabs' }, 'too long'],
+    [{ text: '', engine: 'piper' }, 'text is required'],
+    [{ text: 'hi', rate: '<break/>' }, 'invalid rate'],
+    [{ text: 'hi', pitch: '+500Hz' }, 'invalid pitch'],
+  ])('rejects invalid text or prosody before synthesis', async (body, message) => {
     fresh()
-    const res = await post(s, '/api/tts', { text: 'x'.repeat(5001), engine: 'openai' })
+    const res = await post(s, '/api/tts', body)
     expect(res.status).toBe(400)
-    expect(String((await json(res)).error)).toContain('too long')
-    expect(requests).toEqual([])
-  })
-
-  it('an invalid rate answers 400 before any engine call', async () => {
-    fresh()
-    const res = await post(s, '/api/tts', { text: 'hi', rate: '<break/>', engine: 'openai' })
-    expect(res.status).toBe(400)
-    expect(String((await json(res)).error)).toContain('invalid rate')
-    expect(requests).toEqual([])
-  })
-
-  it('an invalid pitch answers 400 before any engine call', async () => {
-    fresh()
-    const res = await post(s, '/api/tts', { text: 'hi', pitch: '+500Hz', engine: 'openai' })
-    expect(res.status).toBe(400)
-    expect(String((await json(res)).error)).toContain('invalid pitch')
+    expect(String((await json(res)).error)).toContain(message)
+    expect(ttsCalls()).toEqual([])
     expect(requests).toEqual([])
   })
 
   it('X-Forwarded-For does not split the limiter key unless opted in', async () => {
-    setEnv({ OPENAI_API_KEY: 'sk-openai-1234' })
+    fresh()
     s.deps.ttsLimiter = new WindowLimiter(60, 1)
     expect((await post(s, '/api/tts', { text: 'hi', engine: 'openai' }, { 'x-forwarded-for': '203.0.113.1' })).status).toBe(200)
     expect((await post(s, '/api/tts', { text: 'hi', engine: 'openai' }, { 'x-forwarded-for': '203.0.113.2' })).status).toBe(429)
+    expect(ttsCalls()).toHaveLength(1)
   })
 
-  it('ElevenLabs without a key answers 503 and calls nothing', async () => {
+  it('uses configured providers, allows explicit overrides, and preserves the unconfigured fallback', async () => {
     fresh()
-    setEnv({ ELEVENLABS_API_KEY: null })
-    const res = await post(s, '/api/tts', { text: 'hi', engine: 'elevenlabs' })
-    expect(res.status).toBe(503)
-    expect(String((await json(res)).error)).toContain('ELEVENLABS_API_KEY')
-    expect(requests).toEqual([])
-  })
-
-  it('a traversal voice_id in config answers 400 before any request', async () => {
+    setConfig({ tts: { provider: 'gemini' } })
+    expect((await post(s, '/api/tts', { text: 'Hello' })).status).toBe(200)
+    expect(ttsCalls()[0]?.params.provider).toBe('gemini')
     fresh()
-    setEnv({ ELEVENLABS_API_KEY: 'el-key-1234' })
-    setConfig({ tts: { elevenlabs: { voice_id: '../../etc/passwd' } } })
-    const res = await post(s, '/api/tts', { text: 'hi', engine: 'elevenlabs' })
-    expect(res.status).toBe(400)
-    expect(String((await json(res)).error)).toContain('voice_id')
-    expect(requests).toEqual([])
-  })
-
-  it('a keyed ElevenLabs request streams audio/mpeg with the voice id, key header, and text', async () => {
-    fresh()
-    setEnv({ ELEVENLABS_API_KEY: 'el-key-1234' })
-    setConfig({ tts: { elevenlabs: { voice_id: 'voiceABC', model_id: 'eleven_turbo' } } })
-    const res = await post(s, '/api/tts', { text: 'hello there', engine: 'elevenlabs' })
-    expect(res.status).toBe(200)
-    expect(res.headers.get('content-type')).toBe('audio/mpeg')
-    expect(Buffer.from(await res.arrayBuffer()).toString()).toBe('ID3eleven')
-    expect(requests[0]?.url).toContain('/text-to-speech/voiceABC/')
-    expect((requests[0]?.init?.headers as Record<string, string>)['xi-api-key']).toBe('el-key-1234')
-    expect(JSON.parse(requests[0]?.init?.body as string) as Json).toMatchObject({ text: 'hello there', model_id: 'eleven_turbo', voice_settings: { stability: 0.5, similarity_boost: 0.75 } })
-    // Python read `tts.elevenlabs.model` before `model_id` and defaulted the voice to Adam.
-    fresh()
-    setEnv({ ELEVENLABS_API_KEY: 'el-key-1234' })
-    setConfig({ tts: { elevenlabs: { model: 'eleven_v3' } } })
-    await post(s, '/api/tts', { text: 'again', engine: 'elevenlabs' })
-    expect(requests[0]?.url).toContain('/text-to-speech/pNInz6obpgDQGcFmaJgB/')
-    expect(JSON.parse(requests[0]?.init?.body as string) as Json).toMatchObject({ model_id: 'eleven_v3' })
-  })
-
-  it('a request without an engine uses the profile tts.provider, and answers 503 tts_unconfigured without one', async () => {
-    fresh()
-    setEnv({ OPENAI_API_KEY: 'sk-openai-1234', ELEVENLABS_API_KEY: 'el-key-1234' })
-    setConfig({ tts: { provider: 'openai', openai: { voice: 'nova' } } })
-    let res = await post(s, '/api/tts', { text: 'Hello', voice: 'en-US-AriaNeural' })
-    expect(res.status).toBe(200)
-    expect(requests[0]?.url).toBe('https://api.openai.com/v1/audio/speech')
-    expect(JSON.parse(requests[0]?.init?.body as string)).toEqual({ model: 'gpt-4o-mini-tts', input: 'Hello', voice: 'nova' })
-    // An explicit engine still wins over the configured provider.
-    fresh()
-    expect((await post(s, '/api/tts', { text: 'Hello', engine: 'elevenlabs' })).status).toBe(200)
-    expect(requests[0]?.url).toContain('api.elevenlabs.io')
+    expect((await post(s, '/api/tts', { text: 'Hello', engine: 'edge' })).status).toBe(200)
+    expect(ttsCalls()[0]?.params.provider).toBe('edge')
     fresh()
     setConfig({ tts: { elevenlabs: { model: 'eleven_v3' } } })
-    res = await post(s, '/api/tts', { text: 'Hello' })
+    const res = await post(s, '/api/tts', { text: 'Hello' })
     expect(res.status).toBe(503)
     expect(await json(res)).toMatchObject({ code: 'tts_unconfigured' })
-    expect(requests).toEqual([])
-    setEnv({ ELEVENLABS_API_KEY: null })
-  })
-
-  it('the 5000-character cap applies to ElevenLabs before any request', async () => {
-    fresh()
-    setEnv({ ELEVENLABS_API_KEY: 'el-key-1234' })
-    const res = await post(s, '/api/tts', { text: 'x'.repeat(5001), engine: 'elevenlabs' })
-    expect(res.status).toBe(400)
-    expect(String((await json(res)).error)).toContain('too long')
+    expect(ttsCalls()).toEqual([])
     expect(requests).toEqual([])
   })
 
-  it('oversized ElevenLabs audio answers 502', async () => {
+  it.each([
+    [new SidecarError('not registered', { code: RPC_ERROR_CODES.invalidParams, condition: 'invalid_params' }), 400, { error: 'unknown TTS engine bogus' }],
+    [new SidecarError('private provider detail', { condition: 'tts_failed' }), 502, { error: 'Text-to-speech generation failed' }],
+    [new SidecarError('sidecar restarting', { condition: 'sidecar_unavailable' }), 503, { condition: 'sidecar_unavailable' }],
+    [new SidecarError('stale Agent', { condition: 'agent_runtime_stale' }), 503, { condition: 'agent_runtime_stale' }],
+  ])('maps sidecar errors without disclosing provider failures', async (error, status, body) => {
     fresh()
-    setEnv({ ELEVENLABS_API_KEY: 'el-key-1234' })
     setConfig({})
-    const res = await post(s, '/api/tts', { text: 'big', engine: 'elevenlabs' })
-    expect(res.status).toBe(502)
-    expect(await json(res)).toEqual({ error: 'ElevenLabs TTS generation failed' })
+    sidecar.respond('tts.synthesize', () => { throw error })
+    const res = await post(s, '/api/tts', { text: 'Hello', engine: 'bogus' })
+    expect(res.status).toBe(status)
+    expect(await json(res)).toMatchObject(body)
+    expect(requests).toEqual([])
   })
 
-  it('an ElevenLabs redirect is not followed and answers 502', async () => {
+  it.each([
+    { provider: 'piper', format: 'ogg', audio_b64: 'SUQz' },
+    { provider: 'piper', format: 'mp3', audio_b64: '' },
+    { provider: 'piper', format: 'mp3', audio_b64: Buffer.alloc(8 * 1024 * 1024 + 1).toString('base64') },
+  ])('rejects unsupported, empty, or oversized sidecar audio', async (result) => {
     fresh()
-    setEnv({ ELEVENLABS_API_KEY: 'el-key-1234' })
-    const res = await post(s, '/api/tts', { text: 'redirect', engine: 'elevenlabs' })
+    sidecar.respond('tts.synthesize', () => result)
+    const res = await post(s, '/api/tts', { text: 'Hello', engine: 'piper' })
     expect(res.status).toBe(502)
-    expect(await json(res)).toEqual({ error: 'ElevenLabs TTS generation failed' })
-    expect(requests).toHaveLength(1)
+    expect(await json(res)).toEqual({ error: 'Text-to-speech generation failed' })
+    expect(requests).toEqual([])
   })
 
-  it('OpenAI TTS posts the default model and voice with the bearer key', async () => {
+  it('a named profile sends only its own home, never keys or provider configuration', async () => {
     fresh()
-    setEnv({ OPENAI_API_KEY: 'sk-openai-1234', VOICE_TOOLS_OPENAI_KEY: null })
+    const home = join(s.state, 'profiles', 'voice')
+    mkdirSync(home, { recursive: true })
+    sidecar.respond('profiles.list', () => ({ profiles: [s.state, home].map((path, i) => ({ name: i ? 'voice' : 'default', path, is_default: !i, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 })) }))
+    s.deps.profiles.invalidate()
+    try {
+      const switched = await post(s, '/api/profile/switch', { name: 'voice' })
+      const cookie = (switched.headers.get('set-cookie') ?? '').split(';')[0] ?? ''
+      const res = await post(s, '/api/tts', { text: 'Hello', engine: 'elevenlabs', voice_id: 'attacker' }, { cookie })
+      expect(res.status).toBe(200)
+      expect(ttsCalls()[0]?.params).toEqual({ profile_home: home, text: 'Hello', provider: 'elevenlabs' })
+      expect(requests).toEqual([])
+    } finally {
+      sidecar.respond('profiles.list', undefined)
+      s.deps.profiles.invalidate()
+    }
+  })
+
+  it('an unreadable profile config answers 503 without synthesis', async () => {
+    fresh()
     setConfig({})
-    const res = await post(s, '/api/tts', { text: 'Hello', engine: 'openai' })
-    expect(res.status).toBe(200)
-    expect(res.headers.get('content-type')).toBe('audio/mpeg')
-    expect(Buffer.from(await res.arrayBuffer()).toString()).toBe('ID3openai')
-    expect(requests[0]?.url).toBe('https://api.openai.com/v1/audio/speech')
-    expect((requests[0]?.init?.headers as Record<string, string>).Authorization).toBe('Bearer sk-openai-1234')
-    expect(JSON.parse(requests[0]?.init?.body as string)).toEqual({ model: 'gpt-4o-mini-tts', input: 'Hello', voice: 'alloy' })
+    sidecar.respond('config.get', () => { throw new Error('sidecar restarting') })
+    try {
+      const res = await post(s, '/api/tts', { text: 'Hello', engine: 'openai' })
+      expect(res.status).toBe(503)
+      expect(String((await json(res)).error)).toContain('configuration is unavailable')
+      expect(ttsCalls()).toEqual([])
+      expect(requests).toEqual([])
+    } finally {
+      sidecar.respond('config.get', (params) => ({ path: join(params.profile_home, 'config.yaml'), exists: true, config: configs.get(params.profile_home) ?? {} }))
+    }
   })
-
   // TAL-906: the Agent's answers for these texts are recorded in contracts/fixtures/sidecar/text.json.
   const CORPUS = 'Saved peyton-sample-20260922.wav to /tmp/out/9f2c1e7a-3b4d-4c2e-8f1a-0b9e2d7c6a51.json, see https://example.com/a/b?x=1 and commit 4bf46b7c8.'
   const PROSE = 'Meet Ana on 2026-10-14 at ana@example.com; the ratio is 3:2, a well-known plan.'
@@ -206,11 +184,10 @@ describe('TTS validation, limits, and engines', () => {
 
   it('/api/tts sends the engine the Agent spoken text without the filename, path, UUID, or URL', async () => {
     fresh()
-    setEnv({ OPENAI_API_KEY: 'sk-openai-1234', VOICE_TOOLS_OPENAI_KEY: null })
     setConfig({})
     const res = await post(s, '/api/tts', { text: CORPUS, engine: 'openai' })
     expect(res.status).toBe(200)
-    expectSpokenCorpus(String((JSON.parse(requests[0]?.init?.body as string) as Json).input))
+    expectSpokenCorpus(String(ttsCalls()[0]?.params.text))
   })
 
   it('speech.prepare answers the same spoken text', async () => {
@@ -227,7 +204,6 @@ describe('TTS validation, limits, and engines', () => {
 
   it('a sidecar that cannot prepare the text leaves it as written, and a script with nothing to say calls no engine', async () => {
     fresh()
-    setEnv({ OPENAI_API_KEY: 'sk-openai-1234', VOICE_TOOLS_OPENAI_KEY: null })
     setConfig({})
     const recorded = sidecar.responderFor('text.spoken')
     try {
@@ -245,160 +221,11 @@ describe('TTS validation, limits, and engines', () => {
     }
   })
 
-  it('VOICE_TOOLS_OPENAI_KEY wins over OPENAI_API_KEY', async () => {
-    fresh()
-    setEnv({ OPENAI_API_KEY: 'sk-openai-1234', VOICE_TOOLS_OPENAI_KEY: 'sk-voice-tools-1234' })
-    expect((await post(s, '/api/tts', { text: 'Hello', engine: 'openai' })).status).toBe(200)
-    expect((requests[0]?.init?.headers as Record<string, string>).Authorization).toBe('Bearer sk-voice-tools-1234')
-    setEnv({ VOICE_TOOLS_OPENAI_KEY: null })
-  })
-
-  it('tts.openai base_url, model, and voice override the request', async () => {
-    fresh()
-    setEnv({ OPENAI_API_KEY: 'sk-openai-1234' })
-    setConfig({ tts: { openai: { base_url: 'https://custom.example.com/v1', model: 'tts-custom', voice: 'nova' } } })
-    expect((await post(s, '/api/tts', { text: 'Hello', engine: 'openai' })).status).toBe(200)
-    expect(requests[0]?.url).toBe('https://custom.example.com/v1/audio/speech')
-    expect(requests[0]?.addresses).toEqual(['93.184.216.34'])
-    expect(JSON.parse(requests[0]?.init?.body as string)).toEqual({ model: 'tts-custom', input: 'Hello', voice: 'nova' })
-  })
-
-  it('an https base_url whose DNS answers include a private address is refused before the bearer is sent, and an unresolvable one is an upstream failure', async () => {
-    fresh()
-    setEnv({ OPENAI_API_KEY: 'sk-openai-1234' })
-    for (const host of ['rebind.example.com', 'internal.example.com']) {
-      setConfig({ tts: { openai: { base_url: `https://${host}/v1` } } })
-      const res = await post(s, '/api/tts', { text: 'Hello', engine: 'openai' })
-      expect(res.status).toBe(400)
-      expect(String((await json(res)).error)).toContain('base_url')
-      expect(requests).toEqual([])
-    }
-    setConfig({ tts: { openai: { base_url: 'https://nxdomain.example.com/v1' } } })
-    expect((await post(s, '/api/tts', { text: 'Hello', engine: 'openai' })).status).toBe(502)
-    expect(requests).toEqual([])
-  })
-
-  it('the ElevenLabs voice comes from the operator config only, never from the request', async () => {
-    fresh()
-    setConfig({ tts: { elevenlabs: { voice_id: 'voiceCONFIG' } } })
-    setEnv({ ELEVENLABS_API_KEY: 'el-key-1234' })
-    expect((await post(s, '/api/tts', { text: 'Hello', engine: 'elevenlabs', voice_id: 'voiceATTACKER' })).status).toBe(200)
-    expect(requests[0]?.url).toContain('/text-to-speech/voiceCONFIG/')
-    setEnv({ ELEVENLABS_API_KEY: null })
-  })
-
-  it('a named profile never uses a key the default profile .env put into the process environment', async () => {
-    fresh()
-    setConfig({})
-    setEnv({ OPENAI_API_KEY: null, VOICE_TOOLS_OPENAI_KEY: null })
-    const env = s.deps.config.env
-    env.OPENAI_API_KEY = 'sk-root-dotenv-1234'
-    env.HERMES_WEBUI_HOME_DOTENV_KEYS = 'OPENAI_API_KEY'
-    mkdirSync(join(s.state, 'profiles', 'voice'), { recursive: true })
-    sidecar.respond('profiles.list', () => ({ profiles: [{ name: 'default', path: s.state, is_default: true, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }, { name: 'voice', path: join(s.state, 'profiles', 'voice'), is_default: false, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }] }))
-    s.deps.profiles.invalidate()
-    try {
-      const switched = await post(s, '/api/profile/switch', { name: 'voice' })
-      const cookie = (switched.headers.get('set-cookie') ?? '').split(';')[0] ?? ''
-      // The default profile itself still has its key.
-      expect((await post(s, '/api/tts', { text: 'Hello', engine: 'openai' })).status).toBe(200)
-      expect((requests[0]?.init?.headers as Record<string, string>).Authorization).toBe('Bearer sk-root-dotenv-1234')
-      fresh()
-      let res = await post(s, '/api/tts', { text: 'Hello', engine: 'openai' }, { cookie })
-      expect(res.status).toBe(503)
-      expect(String((await json(res)).error)).toContain('not configured')
-      expect(requests).toEqual([])
-      // Its own .env key is used, never the root one.
-      writeEnvFile(join(s.state, 'profiles', 'voice', '.env'), { OPENAI_API_KEY: 'sk-voice-own-1234' })
-      res = await post(s, '/api/tts', { text: 'Hello', engine: 'openai' }, { cookie })
-      expect(res.status).toBe(200)
-      expect((requests[0]?.init?.headers as Record<string, string>).Authorization).toBe('Bearer sk-voice-own-1234')
-    } finally {
-      delete env.OPENAI_API_KEY
-      delete env.HERMES_WEBUI_HOME_DOTENV_KEYS
-      sidecar.respond('profiles.list', () => ({ profiles: [{ name: 'default', path: s.state, is_default: true, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }] }))
-      s.deps.profiles.invalidate()
-    }
-  })
-
-  it('an unreadable profile config answers 503 instead of falling back to the public OpenAI endpoint', async () => {
-    fresh()
-    setEnv({ OPENAI_API_KEY: 'sk-openai-1234' })
-    setConfig({ tts: { openai: { base_url: 'https://custom.example.com/v1' } } })
-    // The config read fails between the config change and the request: the operator's endpoint is unknown.
-    sidecar.respond('config.get', () => { throw new Error('sidecar restarting') })
-    try {
-      const res = await post(s, '/api/tts', { text: 'Hello', engine: 'openai' })
-      expect(res.status).toBe(503)
-      expect(String((await json(res)).error)).toContain('configuration is unavailable')
-      expect(requests).toEqual([])
-    } finally {
-      sidecar.respond('config.get', (params) => ({ path: join(params.profile_home, 'config.yaml'), exists: true, config: configs.get(params.profile_home) ?? {} }))
-    }
-  })
-
-  it('a public http base_url is refused while loopback http is allowed for development', async () => {
-    fresh()
-    setEnv({ OPENAI_API_KEY: 'sk-openai-1234' })
-    setConfig({ tts: { openai: { base_url: 'http://tts.example.com/v1' } } })
-    let res = await post(s, '/api/tts', { text: 'Hello', engine: 'openai' })
-    expect(res.status).toBe(400)
-    expect(requests).toEqual([])
-    setConfig({ tts: { openai: { base_url: 'http://localhost:8080/v1' } } })
-    res = await post(s, '/api/tts', { text: 'Hello', engine: 'openai' })
-    expect(res.status).toBe(200)
-    expect(requests[0]?.url).toBe('http://localhost:8080/v1/audio/speech')
-  })
-
-  it.each(['http://169.254.169.254/v1', 'https://user:pass@api.example.com/v1', 'http://user:pass@localhost:8080/v1', 'https://169.254.169.254/v1', 'https://10.0.0.5/v1', 'https://192.168.1.10/v1', 'https://127.0.0.1/v1', 'https://[::1]/v1', 'https://[::ffff:7f00:1]/v1', 'https://[64:ff9b::a9fe:a9fe]/v1'])(
-    'base_url %s answers 400', async (baseUrl) => {
-      fresh()
-      setEnv({ OPENAI_API_KEY: 'sk-openai-1234' })
-      setConfig({ tts: { openai: { base_url: baseUrl } } })
-      const res = await post(s, '/api/tts', { text: 'Hello', engine: 'openai' })
-      expect(res.status).toBe(400)
-      expect(String((await json(res)).error)).toContain('base_url')
-      expect(requests).toEqual([])
-    })
-
-  it('a JSON upstream body answers 502', async () => {
-    fresh()
-    setEnv({ OPENAI_API_KEY: 'sk-openai-1234' })
-    setConfig({})
-    const res = await post(s, '/api/tts', { text: 'json', engine: 'openai' })
-    expect(res.status).toBe(502)
-    expect(await json(res)).toEqual({ error: 'OpenAI TTS generation failed' })
-  })
-
-  it('an OpenAI redirect is not followed and the bearer is never re-sent', async () => {
-    fresh()
-    setEnv({ OPENAI_API_KEY: 'sk-openai-1234' })
-    const res = await post(s, '/api/tts', { text: 'redirect', engine: 'openai' })
-    expect(res.status).toBe(502)
-    expect(requests).toHaveLength(1)
-    // The pinned client returns 3xx as-is (pinned.test.ts); the loopback http path still passes `redirect: 'error'`.
-    expect(requests[0]?.addresses).toEqual(['104.18.7.192'])
-  })
-
-  it('the redirect target is never dialled', async () => {
-    fresh()
-    setEnv({ OPENAI_API_KEY: 'sk-openai-1234' })
-    expect((await post(s, '/api/tts', { text: 'redirect', engine: 'openai' })).status).toBe(502)
-    expect(requests.map((r) => r.url)).toEqual(['https://api.openai.com/v1/audio/speech'])
-  })
-
-  it('oversized OpenAI audio answers 502', async () => {
-    fresh()
-    setEnv({ OPENAI_API_KEY: 'sk-openai-1234' })
-    const res = await post(s, '/api/tts', { text: 'big', engine: 'openai' })
-    expect(res.status).toBe(502)
-    expect(await json(res)).toEqual({ error: 'OpenAI TTS generation failed' })
-  })
 })
 
 describe('TTS limiter behind an opted-in trusted proxy', () => {
   let s: TestServer
-  beforeAll(async () => { ({ s } = await bootTts({ HERMES_WEBUI_TRUST_FORWARDED_FOR: '1' })); writeEnvFile(join(s.state, '.env'), { OPENAI_API_KEY: 'sk-openai-1234' }) })
+  beforeAll(async () => { ({ s } = await bootTts({ HERMES_WEBUI_TRUST_FORWARDED_FOR: '1' })) })
   afterAll(() => s.close())
 
   it('different forwarded clients get separate limiter keys', async () => {

@@ -347,6 +347,15 @@ export const CONNECTORS_METHODS = {
   'connectors.respond': { params: ConnectorOp.extend({ action: z.enum(['skip', 'retry', 'approve', 'continue']), target: z.string().optional(), env: z.record(z.string(), z.string()).optional() }), result: ConnectorOperationSnapshotSchema },
 } as const
 
+// ── tts ────────────────────────────────────────────────────────────────
+/** The Agent owns speech providers, credentials and output encoding, as with STT. */
+export const TTS_METHODS = {
+  'tts.synthesize': {
+    params: ProfileHomeParams.extend({ text: z.string().min(1).max(5000), provider: z.string().min(1), speed: z.number().min(0.5).max(2).optional() }),
+    result: z.object({ provider: z.string(), format: z.string(), audio_b64: z.string() }),
+  },
+} as const
+
 // ── stt ────────────────────────────────────────────────────────────────
 export const STT_METHODS = {
   /**

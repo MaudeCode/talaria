@@ -93368,26 +93368,34 @@
     },
     "/api/tts": {
       "post": {
-        "summary": "Text-to-speech proxy (`engine`: openai or elevenlabs); answers `audio/mpeg`.",
+        "summary": "Text-to-speech through any provider supported by the installed Agent.",
         "tags": [
           "tools"
         ],
         "parameters": [],
         "responses": {
           "200": {
-            "description": "MP3 audio.",
+            "description": "MP3, WAV, or FLAC audio.",
             "content": {
-              "audio/mpeg": {}
+              "audio/mpeg": {},
+              "audio/wav": {},
+              "audio/flac": {}
             }
           },
           "400": {
-            "description": "Invalid text, voice, or engine.",
+            "description": "Invalid text, prosody, or engine.",
             "content": {
               "application/json": {}
             }
           },
           "429": {
             "description": "Rate limited (one request per 2 s per client).",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "502": {
+            "description": "Speech synthesis failed or returned unsupported audio.",
             "content": {
               "application/json": {}
             }
@@ -93401,7 +93409,7 @@
         },
         "requestBody": {
           "required": true,
-          "description": "`{text, engine?, voice?, rate?, pitch?}`; `engine` defaults to the profile `tts.provider`.",
+          "description": "`{text, engine?, voice?, rate?, pitch?}`; `engine` names an Agent speech provider and defaults to the profile `tts.provider`. `rate` is a percentage mapped to speed [0.5, 2]; `pitch` is validated but ignored. Voices come from Agent configuration.",
           "content": {
             "application/json": {}
           }

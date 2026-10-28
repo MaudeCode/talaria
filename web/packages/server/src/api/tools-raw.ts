@@ -1,23 +1,18 @@
 /** Binary and public raw handlers: `/api/transcribe`, `/api/tts`, `/api/csp-report` (Python `handle_transcribe`, `_handle_tts`, `_handle_csp_report`). */
-import { join } from 'node:path'
-import { homeDotenvKeys } from '../cli/dotenv.js'
-import { isIP } from 'node:net'
-import { isNonGlobalAddress } from '../http/addresses.js'
-import { BlockedAddressError, vettedAddresses } from '../http/pinned.js'
+import { RPC_ERROR_CODES } from '@maudecode/talaria-web-contracts'
 import type { RequestContext } from '../http/context.js'
 import { activeProfileName } from '../auth/gate.js'
 import { sanitizeUploadName } from '../workspace/upload.js'
-import { loadEnvFile } from '../providers/env-file.js'
 import { dict } from '../config/agent-config.js'
 import { SidecarError } from '../sidecar/client.js'
 import { str } from '../util.js'
-import { readCapped } from '../http/capped.js'
 import { rateLimitClientIp } from './router.js'
 import { readUploadForm, uploadFile } from './raw-routes.js'
 
 const CSP_MAX_BODY = 64 * 1024
 const TTS_TIMEOUT_MS = 30_000
-const TTS_MAX_AUDIO_BYTES = 16 * 1024 * 1024
+const TTS_MAX_AUDIO_BYTES = 8 * 1024 * 1024
+const TTS_CONTENT_TYPES = new Map([['mp3', 'audio/mpeg'], ['wav', 'audio/wav'], ['flac', 'audio/flac']])
 const SPOKEN_TEXT_TIMEOUT_MS = 10_000
 /** The Agent's `prepare_spoken_text` default `max_chars`. */
 const SPOKEN_TEXT_MAX_CHARS = 4000
@@ -64,29 +59,6 @@ function prosody(value: unknown, unit: string): string | null {
   return `${sign}${String(n)}${unit}`
 }
 
-/** Python `_tts_addr_is_blocked`: `localhost` names and every non-global address (`http/addresses.ts`). */
-function blockedTtsAddress(host: string): boolean {
-  const h = host.replace(/^\[|\]$/g, '').toLowerCase()
-  if (h === 'localhost' || h.endsWith('.localhost')) return true
-  if (!isIP(h)) return false
-  return isNonGlobalAddress(h)
-}
-
-const TTS_LOCALHOST_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]'])
-
-/** Python `_normalized_openai_tts_base_url`: public hosts over HTTPS only (bearer never travels in clear); plain HTTP only to loopback for local development. */
-function normalizedOpenAiBase(raw: string): string {
-  const u = new URL(raw)
-  if (u.username || u.password || u.search || u.hash) throw new Error('invalid base_url')
-  const host = u.hostname.toLowerCase()
-  if (u.protocol === 'https:') {
-    if (blockedTtsAddress(host)) throw new Error('invalid base_url')
-  } else if (u.protocol === 'http:') {
-    if (!TTS_LOCALHOST_HOSTS.has(host)) throw new Error('invalid base_url')
-  } else throw new Error('invalid base_url')
-  return `${u.protocol}//${u.host}${u.pathname.replace(/\/+$/, '')}`
-}
-
 /**
  * TAL-906: the Agent's read-aloud script for `text`, which every engine and client speaks; the text as written when the
  * sidecar cannot prepare it. Either way it keeps the Agent's spoken-text cap.
@@ -104,24 +76,6 @@ export async function spokenText(ctx: RequestContext, text: string): Promise<str
   return spoken.slice(0, SPOKEN_TEXT_MAX_CHARS).trimEnd()
 }
 
-/** An upstream engine answered, but not with usable audio (Python answers 502 for these; 500 stays for unexpected faults). */
-class UpstreamAudioError extends Error {}
-
-async function bufferAudio(res: Response): Promise<Buffer> {
-  const type = (res.headers.get('content-type') ?? '').toLowerCase()
-  // A present non-audio Content-Type is rejected; a missing one is tolerated (some OpenAI-compatible servers omit it).
-  if (type && !type.startsWith('audio/') && !type.includes('octet-stream')) throw new UpstreamAudioError(`unexpected content-type ${type}`)
-  const raw = await readCapped(res, TTS_MAX_AUDIO_BYTES)
-  if (!raw) throw new UpstreamAudioError('audio exceeds the proxy limit')
-  if (!raw.length) throw new UpstreamAudioError('empty audio')
-  return raw
-}
-
-/** Redirects (`redirect: 'error'`), non-audio bodies, and oversize bodies are upstream failures (502); anything else is a server fault (500). */
-function upstreamFailureStatus(error: unknown): number {
-  return error instanceof UpstreamAudioError || (error instanceof TypeError && /redirect/i.test(error.message)) ? 502 : 500
-}
-
 export async function handleTts(ctx: RequestContext): Promise<void> {
   let body: Record<string, unknown>
   try { body = await ctx.readJsonBody(64 * 1024) } catch { (await ctx.json({ error: 'invalid request body' }, { status: 400 })); return }
@@ -136,10 +90,6 @@ export async function handleTts(ctx: RequestContext): Promise<void> {
   if (ctx.deps.ttsLimiter.limited(rateLimitClientIp(ctx) || 'unknown')) { (await ctx.json({ error: 'rate limit exceeded — please wait' }, { status: 429 })); return }
   const profile = activeProfileName(ctx)
   const home = ctx.deps.profileHome(profile)
-  // Process-wide deployment values still apply, but variables the default profile's `.env` put into the process
-  // environment at startup are that profile's own and never reach a named profile's request.
-  const owned = ctx.deps.isRootProfile(profile) ? new Set<string>() : homeDotenvKeys(ctx.deps.config.env)
-  const env = { ...loadEnvFile(join(home, '.env')), ...Object.fromEntries(Object.entries(ctx.deps.config.env).filter(([k]) => !owned.has(k))) }
   // An unreadable config must not degrade to the public defaults: the operator's endpoint, model, and voice are unknown.
   let config: Record<string, unknown>
   try { config = await ctx.deps.agentConfig.read(home) } catch (error) {
@@ -152,58 +102,32 @@ export async function handleTts(ctx: RequestContext): Promise<void> {
   if (!engine) { (await ctx.json({ error: 'No text-to-speech engine is configured', code: 'tts_unconfigured' }, { status: 503 })); return }
   const text = await spokenText(ctx, raw)
   if (!text) { (await ctx.json({ error: 'text has nothing to speak' }, { status: 400 })); return }
-  const f = ctx.deps.fetch
-  if (engine === 'elevenlabs') {
-    const apiKey = (env.ELEVENLABS_API_KEY ?? '').trim()
-    if (!apiKey) { (await ctx.json({ error: 'ELEVENLABS_API_KEY not configured' }, { status: 503 })); return }
-    const el = dict(tts.elevenlabs)
-    // The voice comes from the operator's config only (Python parity): a caller may not pick voices on the operator's key.
-    // Python defaults: Adam, `tts.elevenlabs.model` before `model_id`, and fixed voice settings.
-    const voiceId = str(el.voice_id ?? 'pNInz6obpgDQGcFmaJgB').trim()
-    if (!/^[A-Za-z0-9_-]{1,64}$/.test(voiceId)) { (await ctx.json({ error: 'invalid voice_id in config' }, { status: 400 })); return }
-    const modelId = str(el.model).trim() || str(el.model_id).trim() || 'eleven_multilingual_v2'
-    try {
-      const res = await f(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream?output_format=mp3_44100_128`, { method: 'POST', headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json', Accept: 'audio/mpeg' }, body: JSON.stringify({ text, model_id: modelId, voice_settings: { stability: 0.5, similarity_boost: 0.75 } }), redirect: 'error', signal: AbortSignal.timeout(TTS_TIMEOUT_MS) })
-      if (!res.ok) { (await ctx.json({ error: 'ElevenLabs TTS generation failed' }, { status: 502 })); return }
-      const audio = await bufferAudio(res)
-      await ctx.send({ status: 200, headers: { 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-store' }, body: audio, security: true })
-    } catch (error) {
-      ctx.deps.log(`[tts] elevenlabs failed: ${str((error as Error).message)}`)
-      await ctx.json({ error: 'ElevenLabs TTS generation failed' }, { status: upstreamFailureStatus(error) })
-    }
-    return
+  const sidecar = ctx.deps.sidecar()
+  if (!sidecar) {
+    await ctx.json({ error: 'Speech synthesis is unavailable on this server', condition: 'sidecar_unavailable' }, { status: 503 }); return
   }
-  if (engine === 'openai') {
-    // Python: the dedicated voice-tools key wins over the general OpenAI key.
-    const apiKey = ((env.VOICE_TOOLS_OPENAI_KEY ?? '').trim() || (env.OPENAI_API_KEY ?? '').trim())
-    if (!apiKey) { (await ctx.json({ error: 'OpenAI API key not configured' }, { status: 503 })); return }
-    const oai = dict(tts.openai)
-    let base = 'https://api.openai.com/v1'
-    try { base = normalizedOpenAiBase(str(oai.base_url) || base) } catch { (await ctx.json({ error: 'invalid OpenAI base_url in config' }, { status: 400 })); return }
-    // The bearer only travels to an address that passed the same check as the hostname, over that very connection.
-    let addresses: string[] = []
-    if (base.startsWith('https:')) {
-      try { addresses = await vettedAddresses(new URL(base).hostname, blockedTtsAddress, ctx.deps.dnsLookup) } catch (error) {
-        if (error instanceof BlockedAddressError) { (await ctx.json({ error: 'invalid OpenAI base_url in config' }, { status: 400 })); return }
-        ctx.deps.log(`[tts] openai base_url did not resolve: ${str((error as Error).message)}`)
-        await ctx.json({ error: 'OpenAI TTS generation failed' }, { status: 502 }); return
+  try {
+    const result = await sidecar.call('tts.synthesize', {
+      profile_home: home, text, provider: engine,
+      ...(rate ? { speed: Math.max(0.5, Math.min(2, 1 + Number.parseFloat(rate) / 100)) } : {}),
+    }, { timeoutMs: TTS_TIMEOUT_MS })
+    const contentType = TTS_CONTENT_TYPES.get(result.format)
+    if (!contentType || result.audio_b64.length > Math.ceil(TTS_MAX_AUDIO_BYTES / 3) * 4) throw new Error('unsupported or oversized audio')
+    const audio = Buffer.from(result.audio_b64, 'base64')
+    if (!audio.length || audio.length > TTS_MAX_AUDIO_BYTES) throw new Error('empty or oversized audio')
+    await ctx.send({ status: 200, headers: { 'Content-Type': contentType, 'Cache-Control': 'no-store' }, body: audio, security: true })
+  } catch (error) {
+    ctx.deps.log(`[tts] synthesis failed: ${str((error as Error).message)}`)
+    if (error instanceof SidecarError) {
+      if (error.code === RPC_ERROR_CODES.invalidParams) {
+        await ctx.json({ error: `unknown TTS engine ${engine}` }, { status: 400 }); return
+      }
+      if (error.condition !== 'tts_failed') {
+        await ctx.json({ error: 'Speech synthesis is unavailable on this server', condition: error.condition }, { status: 503 }); return
       }
     }
-    try {
-      const init = { method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', Accept: 'audio/mpeg' }, body: JSON.stringify({ model: str(oai.model) || 'gpt-4o-mini-tts', input: text, voice: str(oai.voice) || 'alloy' }), signal: AbortSignal.timeout(TTS_TIMEOUT_MS) }
-      const res = addresses.length ? await ctx.deps.pinnedFetch(`${base}/audio/speech`, init, addresses) : await f(`${base}/audio/speech`, { ...init, redirect: 'error' })
-      if (!res.ok) { (await ctx.json({ error: 'OpenAI TTS generation failed' }, { status: 502 })); return }
-      const audio = await bufferAudio(res)
-      await ctx.send({ status: 200, headers: { 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-store' }, body: audio, security: true })
-    } catch (error) {
-      ctx.deps.log(`[tts] openai failed: ${str((error as Error).message)}`)
-      await ctx.json({ error: 'OpenAI TTS generation failed' }, { status: upstreamFailureStatus(error) })
-    }
-    return
+    await ctx.json({ error: 'Text-to-speech generation failed' }, { status: 502 })
   }
-  // The matrix drops Edge TTS with a 503 (the decision's documented outcome); other names stay a 400.
-  if (engine === 'edge') { (await ctx.json({ error: 'Edge TTS is not available in this release; use the browser, openai, or elevenlabs engine' }, { status: 503 })); return }
-  await ctx.json({ error: `unknown TTS engine ${engine}; Edge TTS was removed, use the browser, openai, or elevenlabs engine` }, { status: 400 })
 }
 
 /** Public sink: always 204, rate limited per client, payload logged. */

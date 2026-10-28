@@ -1,5 +1,15 @@
 # Sidecar RPC (TAL-245)
 
+RPC v59 adds `tts.synthesize` alongside STT. The profile-scoped Agent owns provider
+registration, credentials, voice configuration and synthesis. Unknown names fail
+before the Agent's implicit Edge fallback. One request owns a temporary directory
+and at most 8 MiB of MP3, WAV or FLAC audio; only MP3 parts may be concatenated.
+Every synthesis exit removes temporary files. `/api/tts` keeps the spoken-text
+normalizer, validation, per-client limiter and `tts_unconfigured` fallback, maps
+rate percentages to speed [0.5, 2], and validates but ignores pitch. Provider errors
+are logged privately and returned as a generic 502. Node sends no provider request.
+
+
 `plugins.catalog` reads the native reviewed catalog/cache without loading plugins, filters and
 orders it on the sidecar, and returns at most 50 rows per page. Installer-owned metadata supplies
 the installed key and revision. `plugins.install` accepts only a catalog name and an optional

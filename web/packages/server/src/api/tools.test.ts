@@ -1420,7 +1420,7 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     }
   })
 
-  it('transcribe proxies multipart audio to the sidecar; tts proxies openai and rate limits', async () => {
+  it('transcribe proxies multipart audio to the sidecar; tts delegates to the Agent and rate limits', async () => {
     sidecar.respond('stt.transcribe', (params) => ({ transcript: `heard ${String(Buffer.from(params.audio_b64, 'base64').length)} bytes${params.suffix ?? ''}`, filtered: false }))
     const boundary = 'abc'
     const body = [`--${boundary}`, 'Content-Disposition: form-data; name="file"; filename="clip.webm"', 'Content-Type: audio/webm', '', 'audio-bytes', `--${boundary}--`, ''].join('\r\n')
@@ -1429,14 +1429,11 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     expect(await json(res)).toEqual({ ok: true, transcript: 'heard 11 bytes.webm', filtered: false })
     res = await s.get('/api/transcribe', { method: 'POST', body: '--x--', headers: { 'content-type': 'multipart/form-data; boundary=x' } })
     expect(res.status).toBe(400)
-    res = await post(s, '/api/tts', { text: 'hi', engine: 'openai' })
-    expect(res.status).toBe(503)
-    writeFileSync(join(s.state, '.env'), 'OPENAI_API_KEY=sk-test-1234\n')
-    chmodSync(join(s.state, '.env'), 0o600)
-    // An unbounded upstream body is cut off at the 16 MiB cap instead of being buffered.
+    sidecar.respond('tts.synthesize', () => { throw new SidecarError('provider failed', { condition: 'tts_failed' }) })
     s.deps.ttsLimiter = new WindowLimiter(2, 1)
     res = await post(s, '/api/tts', { text: 'big', engine: 'openai' })
     expect(res.status).toBe(502)
+    sidecar.respond('tts.synthesize', undefined)
     s.deps.ttsLimiter = new WindowLimiter(2, 1)
     res = await post(s, '/api/tts', { text: 'hi', engine: 'openai' })
     expect(res.status).toBe(200)
@@ -1448,7 +1445,7 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     expect(res.status).toBe(400)
     s.deps.ttsLimiter = new WindowLimiter(2, 1)
     res = await post(s, '/api/tts', { text: 'x', engine: 'edge' })
-    expect(res.status).toBe(503) // Edge TTS is a decided removal; the matrix documents the 503
+    expect(res.status).toBe(200) // Edge now goes through the Agent like every registered provider
   })
 
   it('client events are sanitised and csp reports are accepted without auth', async () => {

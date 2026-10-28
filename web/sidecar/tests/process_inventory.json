@@ -1,6 +1,13 @@
 {
   "schemaVersion": 1,
   "families": {
+    "tests/test_tts_compatibility.py::test_native_tts_providers_and_profile_credentials": {
+      "layer": "compatibility",
+      "reason": "Real installed Agent TTS dispatch, command-provider resolver and profile credential scopes must remain compatible. Provider synthesis is stubbed; synthetic homes verify all native registrations and root/named/root credential isolation without network or a speech SDK. A separate Agent interpreter isolates its imports.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_guest_handoff.py::test_standalone_resumes_native_guest_handoffs": {
       "layer": "compatibility",
       "reason": "Real Agent handoff worker, auth-store locks, destination proof and private credential cleanup across seed and standalone stdio processes. Controlled native timer/clock and HTTPX transport keep all state synthetic; retained, plain-device, foreign-profile, wrong-account and deleted-profile cases prove native API behavior unavailable to boundary fakes.",
