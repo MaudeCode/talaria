@@ -170,7 +170,8 @@ export function UpdateNotificationProvider({ children }: { children: ReactNode }
   const serverRows = notifications.data?.notifications ?? []
   const rows = withEffects(withEffects(serverRows, (row) => `notification-read:${row.id}`, effects), (row) => `notification:${row.id}`, effects)
   // The badge drops each unread row the user just read or removed.
-  const unread = Math.max(0, (notifications.data?.unread_count ?? 0) - serverRows.filter((row) => row.unread && !rows.some((shown) => shown.id === row.id && shown.unread)).length)
+  const readNow = serverRows.filter((row) => row.unread && !rows.some((shown) => shown.id === row.id && shown.unread)).length
+  const unread = Math.max(0, (notifications.data?.unread_count ?? 0) - readNow)
 
   const readMutate = read.mutate
   const markRead = useCallback((row: UpdateNotification) => { if (row.unread) readMutate(row.id) }, [readMutate])

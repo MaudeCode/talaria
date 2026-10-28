@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { useVirtualizer } from '@tanstack/react-virtual'
 import { ArrowDown, ArrowUp } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
 import type { Attachment } from '../../contracts'
@@ -18,6 +17,7 @@ import { onScrollRequest, requestComposerRest } from './sendMotion'
 import { QuoteSelection } from './QuoteSelection'
 import { useAutoRead } from './useAutoRead'
 import { useLiveTurn } from '../../stream/store'
+import { VirtualHistory, type HistoryVirtualizer } from './VirtualHistory'
 
 const VIRTUALIZE_AT = 200
 const NO_ACTIONS: RowActions = {}
@@ -103,15 +103,15 @@ export function Transcript(props: TranscriptProps) {
   const lastAssistantIndex = useMemo(() => rows.findLastIndex((row) => isReplyRow(row.message)), [rows])
   const virtualize = virtualizeLongTranscripts && rows.length > VIRTUALIZE_AT
 
+  // `pin` is the only writer of `pinned`, so the ref never trails it.
   const pinnedRef = useRef(pinned)
-  pinnedRef.current = pinned
   const pin = useCallback((next: boolean) => { pinnedRef.current = next; setPinned(next) }, [])
   // Entering a session settles at its bottom as its rows and layout arrive, even with auto-follow off,
   // until the reader scrolls up or a turn streams (auto-follow alone governs streamed content).
   const settlingRef = useRef(false)
   const streaming = showLive && !!live && !isTerminal(live.status)
   const followsRef = useRef((): boolean => false)
-  followsRef.current = () => pinnedRef.current && (autoFollow || (settlingRef.current && !streaming))
+  useLayoutEffect(() => { followsRef.current = () => pinnedRef.current && (autoFollow || (settlingRef.current && !streaming)) })
   useEffect(() => { if (streaming) settlingRef.current = false }, [streaming])
   const lastTopRef = useRef(0)
 
@@ -223,25 +223,14 @@ export function Transcript(props: TranscriptProps) {
   // says, because this is the composer covering the end rather than new content arriving.
   useEffect(() => onScrollRequest('follow', () => { if (pinnedRef.current) scrollToBottom(false) }), [scrollToBottom])
 
-  const virtualizer = useVirtualizer({
-    enabled: virtualize,
-    count: virtualize ? rows.length : 0,
-    getScrollElement: () => scrollRef.current,
-    estimateSize: (i) => {
-      const row = rows[i]
-      // Keep a rekeyed turn near the viewport until its new contents can be measured.
-      const previous = prependRef.current?.anchors.find((anchor) => row?.key !== anchor.key && row?.assistantRows?.some((part) => part.key === anchor.key))
-      return previous?.height ?? (row?.message.role === 'user' ? 96 : 220)
-    },
-    overscan: 8,
-    getItemKey: (i) => rows[i]?.key ?? i,
-  })
-  // While following, the follow above owns the scroll position. The virtualizer's own compensation for a row measured
-  // above the fold moves the pane up before the list's height catches up, which reads as the reader leaving the end
-  // (a fresh transcript measures many rows at once). Elsewhere (reading up, a deep link) its default keeps rows still.
-  useLayoutEffect(() => {
-    Object.defineProperty(virtualizer, 'shouldAdjustScrollPositionOnItemSizeChange', { configurable: true, get: () => (followsRef.current() ? () => false : undefined) })
-  }, [virtualizer])
+  // Set by VirtualHistory while the history is virtualized.
+  const virtualizerRef = useRef<HistoryVirtualizer | null>(null)
+  const estimateSize = (i: number) => {
+    const row = rows[i]
+    // Keep a rekeyed turn near the viewport until its new contents can be measured.
+    const previous = prependRef.current?.anchors.find((anchor) => row?.key !== anchor.key && row?.assistantRows?.some((part) => part.key === anchor.key))
+    return previous?.height ?? (row?.message.role === 'user' ? 96 : 220)
+  }
 
   // Entry is keyed by the session scope (and a `?msg=` link), never by row keys: sessions can share them, and older rows change the first.
   const entryRef = useRef<{ focus: string | undefined; pagedAt?: number } | null>(null)
@@ -293,21 +282,28 @@ export function Transcript(props: TranscriptProps) {
         }
         if (virtualize) {
           const index = rows.findIndex((row) => row.key === candidate.key)
-          const item = virtualizer.measurementsCache[index]
+          const item = virtualizerRef.current?.measurementsCache[index]
           const list = pane.querySelector<HTMLElement>('[data-virtual-history]')
           if (item && list) { offset = item.start + list.offsetTop - candidate.top; break }
         }
       }
-      if (virtualize) virtualizer.scrollToOffset(offset)
+      if (virtualize) virtualizerRef.current?.scrollToOffset(offset)
       else pane.scrollTop = offset
       lastTopRef.current = pane.scrollTop
-      if (++passes < 12) frame = requestAnimationFrame(restore)
+      passes += 1
+      if (passes < 12) frame = requestAnimationFrame(restore)
       else { prependRef.current = null; release() }
     }
     restore()
     return () => { cancelAnimationFrame(frame); release() }
-  }, [loadedFrom, rows, virtualize, virtualizer])
-  useLayoutEffect(() => { prependRef.current = null; readerAnchor.current = null; entryRef.current = { focus: focusKey }; settlingRef.current = true; lastTopRef.current = 0; pin(true) }, [scope, focusKey, pin])
+  }, [loadedFrom, rows, virtualize])
+  // A new entry (session scope or `?msg=` link) starts pinned: the state resets while rendering, its refs before layout.
+  const [entered, setEntered] = useState({ scope, focusKey })
+  if (entered.scope !== scope || entered.focusKey !== focusKey) {
+    setEntered({ scope, focusKey })
+    setPinned(true)
+  }
+  useLayoutEffect(() => { prependRef.current = null; readerAnchor.current = null; entryRef.current = { focus: focusKey }; settlingRef.current = true; lastTopRef.current = 0; pinnedRef.current = true }, [scope, focusKey])
   useLayoutEffect(() => {
     const entry = entryRef.current
     if (!entry || rows.length === 0) return
@@ -330,8 +326,8 @@ export function Transcript(props: TranscriptProps) {
       target.scrollIntoView({ block: 'center' })
       lastTopRef.current = scrollRef.current?.scrollTop ?? 0
       rememberReaderAnchor()
-    } else virtualizer.scrollToIndex(index, { align: 'center' })
-  }, [rows, loadedFrom, virtualize, virtualizer, truncated, loadingOlder, olderError, requestOlder, pin, scrollToBottom, rememberReaderAnchor])
+    } else virtualizerRef.current?.scrollToIndex(index, { align: 'center' })
+  }, [rows, loadedFrom, virtualize, truncated, loadingOlder, olderError, requestOlder, pin, scrollToBottom, rememberReaderAnchor])
 
   const sentinelRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -375,17 +371,7 @@ export function Transcript(props: TranscriptProps) {
               </div>
             )}
             {virtualize ? (
-              <div data-virtual-history style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
-                {virtualizer.getVirtualItems().map((v) => {
-                  const row = rows[v.index]
-                  if (!row) return null
-                  return (
-                    <div key={v.key} data-index={v.index} ref={virtualizer.measureElement} style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${v.start}px)` }}>
-                      {renderRow(row, v.index)}
-                    </div>
-                  )
-                })}
-              </div>
+              <VirtualHistory rows={rows} estimateSize={estimateSize} followsRef={followsRef} handle={virtualizerRef} renderRow={renderRow} />
             ) : <div className="messages-inner messages-history">{renderedRows}</div>}
             {(pending || showLiveUser) && <UserMessageRow row={liveUserRow} renderMarkdown={renderUserMarkdown} sessionId={sessionId} actions={NO_ACTIONS} pending />}
             {showLive && live && <LiveTurnView turn={live} name={assistantName} mode={mode} userVisible omitToolIds={continuedTools} />}

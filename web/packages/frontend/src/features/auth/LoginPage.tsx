@@ -31,9 +31,8 @@ export function LoginPage({ next }: { next: string | undefined }) {
       finish()
     } catch (err) {
       setError(isApiError(err) && err.kind === 'http' ? (err.message || m.login_invalid_pw()) : m.login_conn_failed())
-    } finally {
-      setBusy(false)
     }
+    setBusy(false)
   }
 
   const onPasskey = async () => {
@@ -43,14 +42,14 @@ export function LoginPage({ next }: { next: string | undefined }) {
     try {
       const opt = await api.passkeyOptions()
       const cred = await navigator.credentials.get({ publicKey: decodeRequestOptions(opt.publicKey as unknown as Parameters<typeof decodeRequestOptions>[0]) })
-      if (!cred) throw new Error('Passkey cancelled')
-      await api.passkeyLogin(encodeAssertion(cred as PublicKeyCredential))
-      finish()
+      if (cred) {
+        await api.passkeyLogin(encodeAssertion(cred as PublicKeyCredential))
+        finish()
+      } else setError('Passkey cancelled')
     } catch (err) {
       setError(err instanceof Error ? err.message : m.login_conn_failed())
-    } finally {
-      setBusy(false)
     }
+    setBusy(false)
   }
 
   const oidcHref = appUrl(`api/auth/oidc/start${target !== './' ? `?next=${encodeURIComponent(target)}` : ''}`).href

@@ -150,6 +150,11 @@ run Playwright against the built assets and the Node server started by `e2e/serv
 sidecar command it uses the fixture replay sidecar). See
 `docs/architecture/frontend-migration.md` for the layout.
 
+`src/reactCompilerCoverage.test.ts` compiles every shipped frontend source with React Compiler and fails on any
+function the compiler skips; a skipped function still builds, unmemoized. Lint misses some skips, notably `try` with
+`finally` and `throw` inside `try`: settle async work with `.catch`/`.finally` or move it to module scope.
+`KNOWN_BAILOUTS` only shrinks, and holds the `useVirtualizer` caller alone.
+
 ## Manual checks
 
 - UI changes: verify desktop, narrow, and mobile widths and attach before/after evidence to the PR.

@@ -66,17 +66,13 @@ export function OAuthSignIn({ provider, label, signedIn, onApproved, idPrefix = 
     setFailure(null)
     try {
       const started = await api.onboardingOauthStart(provider)
+      if (mounted.current) setFlow(started)
       // The panel went away while the start was in flight: that flow has no one to finish it.
-      if (!mounted.current) {
-        if (started.status === 'pending' && started.flow_id) void api.onboardingOauthCancel(started.flow_id).catch(() => undefined)
-        return
-      }
-      setFlow(started)
+      else if (started.status === 'pending' && started.flow_id) void api.onboardingOauthCancel(started.flow_id).catch(() => undefined)
     } catch (e) {
       if (mounted.current) setFailure(message(e))
-    } finally {
-      if (mounted.current) setBusy(false)
     }
+    if (mounted.current) setBusy(false)
   }
 
   // The sign-in panel closes on Cancel; a refused cancel brings the pending flow back with the error.

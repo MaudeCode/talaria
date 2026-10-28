@@ -128,6 +128,13 @@ function fileKey(f: File): string {
  * the session is created comes along too.
  */
 let handoff: { draft: { readonly current: string }; files: File[]; sessionId: string | null } | null = null
+/** Hands the hand-off to the composer of its session once. Kept outside the component: the React Compiler inlines a local alias of module state. */
+function takeHandoff(sessionId: string) {
+  const h = handoff
+  if (h?.sessionId !== sessionId) return null
+  handoff = null
+  return h
+}
 
 export const Composer = memo(function Composer(props: ComposerProps) {
   const { sessionId, session, busy, streamId, settings, onEnsureSession, onLocalCommand, terminalOpen, onToggleTerminal, onModelChange, onWorkspaceChange, onNewWorktreeChat, onRemoveWorktree, onToolsetsChange, onExecutionModeChange, onReasoningChange, reasoning, reasoningLevels, reasoningSupported = true, pendingChoices, locked = false, yolo, onToggleYolo, queued, onQueue, onQueueChange, clarify, notices = EMPTY_NOTICES } = props
@@ -347,8 +354,8 @@ export const Composer = memo(function Composer(props: ComposerProps) {
 
   // Adopt a hand-off from the empty chat's composer (see addFiles). Runs after the session-change reset above.
   useEffect(() => {
-    if (!sessionId || handoff?.sessionId !== sessionId) return
-    const h = handoff; handoff = null
+    const h = sessionId ? takeHandoff(sessionId) : null
+    if (!sessionId || !h) return
     adopted.current = sessionId
     // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time adoption of module state left by the composer that unmounted
     setText(h.draft.current)
@@ -463,7 +470,8 @@ export const Composer = memo(function Composer(props: ComposerProps) {
     if (!value && files.length === 0) return
     if (files.some((f) => f.status === 'uploading')) { showToast(m.loading()); return }
     submitting.current = true
-    try {
+    // `.finally` rather than try/finally: React Compiler cannot lower a `finally` clause.
+    const submit = async () => {
       const interrupt = (replacement: string) => {
         if (!sessionId) return
         onQueue(queueEntry(replacement))
@@ -556,12 +564,11 @@ export const Composer = memo(function Composer(props: ComposerProps) {
         const attachments = files.flatMap((f) => (f.status === 'done' && f.upload ? [f.upload] : []))
         await startTurn({ sessionId: target.session_id, message: value, files, request: { ...turnRequest(target, bootstrap.profile?.name ?? 'default'), ...(attachments.length ? { attachments } : {}) } })
       } catch (e) {
-        if (scope !== getStreamContext()) return
-        showToast(e instanceof Error ? e.message : String(e), 5000, 'error')
-      } finally {
-        textarea.current?.focus()
+        if (scope === getStreamContext()) showToast(e instanceof Error ? e.message : String(e), 5000, 'error')
       }
-    } finally { submitting.current = false }
+      textarea.current?.focus()
+    }
+    await submit().finally(() => { submitting.current = false })
   }, [nativeOwner, localStateId, text, files, sending, session, onEnsureSession, busy, busyMode, sessionId, trySteer, locked, queueEntry, onQueue, onLocalCommand, bootstrap.profile, askBtw, runCommand, catalog, launchBackground])
 
   const applySuggestion = (s: CommandSuggestion) => { setText(`/${s.name} `); textarea.current?.focus() }

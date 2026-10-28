@@ -133,13 +133,16 @@ export function TerminalPanel({ sessionId, workspace, onClose, onReopen = () => 
     const text = (value: string) => value.replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '')
     try {
       const result = await post('api/terminal/exec', { session_id: sessionId, mode: 'owner_command', target_key: captured.target_key, command }, CapturedCommandResultSchema, { retries: 0, timeoutMs: 50_000 })
-      if (term.current !== selected) return
-      selected?.writeln(text(result.stdout))
-      if (result.stderr) selected?.writeln(text(result.stderr))
-      selected?.writeln(m.terminal_exit_code({ code: String(result.code) }))
+      if (term.current === selected) {
+        selected?.writeln(text(result.stdout))
+        if (result.stderr) selected?.writeln(text(result.stderr))
+        selected?.writeln(m.terminal_exit_code({ code: String(result.code) }))
+      }
     } catch (error) {
       if (term.current === selected) selected?.writeln(text(error instanceof Error ? error.message : String(error)))
-    } finally { commandBusy.current = false; setExecuting(false) }
+    }
+    commandBusy.current = false
+    setExecuting(false)
   }
   const startResize = (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault()

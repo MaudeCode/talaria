@@ -59,7 +59,8 @@ function PendingSteerMessage({ sessionId, steer }: { sessionId: string; steer: P
   const run = async (request: () => Promise<void>) => {
     if (busy) return
     setBusy(true)
-    try { await request() } catch (e) { showErrorToast(e) } finally { setBusy(false) }
+    try { await request() } catch (e) { showErrorToast(e) }
+    setBusy(false)
   }
   // Edit and Cancel take the row away at once; a refusal brings it back. Edit's text returns only from a confirmed withdrawal:
   // a steer that left during an unknown outcome may have been delivered, and returning it would invite sending it twice.

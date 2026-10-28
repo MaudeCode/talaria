@@ -43,16 +43,19 @@ export interface ConfirmDialogProps {
   alternate?: { label: string; onConfirm: () => void | Promise<void> } | undefined
 }
 
+// The confirmed change shows at once (optimistic writes); the dialog never waits for the server.
+// Module scope: React Compiler cannot lower try/finally inside a component.
+function confirmThenClose(confirm: () => void | Promise<void>, close: () => void) {
+  try { void Promise.resolve(confirm()).catch(() => undefined) } finally { close() }
+}
+
 /** Destructive confirmation (alert dialog semantics: no outside-click dismissal). */
 export function ConfirmDialog({ open, onOpenChange, title, description, confirmLabel, cancelLabel, danger, onConfirm, alternate }: ConfirmDialogProps) {
   const action = (label: string, destructive: boolean | undefined, confirm: () => void | Promise<void>) => (
     <button
       type="button"
       className={cn('rounded-md px-3 py-1.5 text-sm font-medium', destructive ? 'bg-error text-white' : 'bg-accent text-accent-fg')}
-      onClick={() => {
-        // The confirmed change shows at once (optimistic writes); the dialog never waits for the server.
-        try { void Promise.resolve(confirm()).catch(() => undefined) } finally { onOpenChange(false) }
-      }}
+      onClick={() => { confirmThenClose(confirm, () => onOpenChange(false)) }}
     >
       {label}
     </button>

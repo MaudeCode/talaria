@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
 import { chatConditionText } from './chatCondition'
 import { m } from '../../paraglide/messages.js'
-import { useLocale } from '../../i18n/useLocale'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { isApiError } from '../../contracts/common'
@@ -129,41 +128,37 @@ export function useRuntimeNotices({ live, onRetry, compressingSince, agentNotice
   const warning = live?.warning
   const error = live?.status === 'error' ? live.error : null
   const compressionSince = compressingSince ?? live?.compressionStartedAt ?? null
-  const locale = useLocale()
-  return useMemo(() => {
-    const list: Notice[] = []
-    if (!online) list.push({ kind: 'offline', tone: 'warning', title: m.notice_offline_title(), detail: m.notice_offline_detail(), dismissible: true })
-    if (failures > 0) list.push({ kind: 'server_unreachable', tone: 'warning', title: m.notice_server_title(), status: <RetryCountdown at={failedAt + retryDelay(failures)} busy={probing} />, action: { label: m.retry(), run: retry }, dismissible: false })
-    if (failures === 0 && health?.chat?.available === false) list.push({ kind: 'agent_unavailable', tone: 'warning', title: chatConditionText(health.chat.condition, health.chat.agent_runtime_reason) ?? m.notice_agent_title(), dismissible: true })
-    // Old-server fallback (TAL-951): a server without `chat` only reports gateway liveness. Delete once Stable ships `chat`.
-    else if (failures === 0 && health && !health.chat && health.alive === false) list.push({ kind: 'agent_unavailable', tone: 'warning', title: m.notice_agent_title(), detail: health.details?.reason ?? health.error, dismissible: true })
-    if (warning) list.push({ kind: 'provider_failure', tone: 'warning', title: warning === 'owner_replay_gap' ? m.owner_replay_gap() : warning, dismissible: true })
-    if (error) {
-      const runtimeTitle = chatConditionText(error.condition ?? error.type, error.agent_runtime_reason)
-      list.push({ kind: 'thread_error', tone: 'error', title: runtimeTitle ?? m.live_error(), detail: runtimeTitle ? undefined : error.message, action: onRetry && error.retryable !== false ? { label: m.retry(), run: onRetry } : undefined, dismissible: true })
-    }
-    for (const n of agentNotices) list.push({ id: `runtime:agent_notice:${n.key}`, kind: 'agent_notice', tone: NOTICE_TONE[n.level], title: n.text, dismissible: true })
-    if (compressionSince !== null) list.push({ kind: 'compressing', tone: 'info', title: m.live_compressing(), status: <RunElapsed since={compressionSince} />, dismissible: false, oneLine: true })
-    if (goal) list.push(goalNotice(goal))
-    const visible = list.filter((n) => !dismissed.has(`${n.kind}:${n.title}`)).sort((a, b) => PRIORITY.indexOf(a.kind) - PRIORITY.indexOf(b.kind))
-    const first = visible[0]
-    const notices: ComposerNotice[] = visible.map((n) => ({
-      id: n.id ?? `runtime:${n.kind}`,
-      tone: n.tone,
-      content: (
-        <>
-          {n.kind === 'compressing' && <Loader2 size={13} className="animate-spin" aria-hidden="true" />}
-          {/* One sentence that wraps (two lines at most) rather than a title and detail squeezed into columns. */}
-          <span className={`min-w-0 leading-snug ${n.oneLine ? 'truncate' : 'line-clamp-2'}`} title={n.detail ? `${n.title} · ${n.detail}` : undefined}><span className="font-medium">{n.title}</span>{n.detail && <span className="opacity-80"> · {n.detail}</span>}</span>
-          {n.status && <span className="ms-auto shrink-0 ps-2 opacity-80">{n.status}</span>}
-        </>
-      ),
-      // A notice that may not fit its chip opens whole in a dialog.
-      detail: n.oneLine && !n.detail ? undefined : { title: n.title, content: n.detail ? <p className="whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">{n.detail}</p> : null },
-      action: n.action,
-      onDismiss: n.dismissible ? () => setDismissed((d) => new Set([...d, `${n.kind}:${n.title}`])) : undefined,
-    }))
-    return { notices, announcement: first ? { assertive: first.tone === 'error', text: first.tone === 'error' ? `${first.title} ${first.detail ?? ''}`.trim() : first.title } : null }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- Paraglide messages read the active locale implicitly.
-  }, [online, failures, health, failedAt, probing, retry, warning, error, onRetry, agentNotices, compressionSince, goal, dismissed, locale])
+  const list: Notice[] = []
+  if (!online) list.push({ kind: 'offline', tone: 'warning', title: m.notice_offline_title(), detail: m.notice_offline_detail(), dismissible: true })
+  if (failures > 0) list.push({ kind: 'server_unreachable', tone: 'warning', title: m.notice_server_title(), status: <RetryCountdown at={failedAt + retryDelay(failures)} busy={probing} />, action: { label: m.retry(), run: retry }, dismissible: false })
+  if (failures === 0 && health?.chat?.available === false) list.push({ kind: 'agent_unavailable', tone: 'warning', title: chatConditionText(health.chat.condition, health.chat.agent_runtime_reason) ?? m.notice_agent_title(), dismissible: true })
+  // Old-server fallback (TAL-951): a server without `chat` only reports gateway liveness. Delete once Stable ships `chat`.
+  else if (failures === 0 && health && !health.chat && health.alive === false) list.push({ kind: 'agent_unavailable', tone: 'warning', title: m.notice_agent_title(), detail: health.details?.reason ?? health.error, dismissible: true })
+  if (warning) list.push({ kind: 'provider_failure', tone: 'warning', title: warning === 'owner_replay_gap' ? m.owner_replay_gap() : warning, dismissible: true })
+  if (error) {
+    const runtimeTitle = chatConditionText(error.condition ?? error.type, error.agent_runtime_reason)
+    list.push({ kind: 'thread_error', tone: 'error', title: runtimeTitle ?? m.live_error(), detail: runtimeTitle ? undefined : error.message, action: onRetry && error.retryable !== false ? { label: m.retry(), run: onRetry } : undefined, dismissible: true })
+  }
+  for (const n of agentNotices) list.push({ id: `runtime:agent_notice:${n.key}`, kind: 'agent_notice', tone: NOTICE_TONE[n.level], title: n.text, dismissible: true })
+  if (compressionSince !== null) list.push({ kind: 'compressing', tone: 'info', title: m.live_compressing(), status: <RunElapsed since={compressionSince} />, dismissible: false, oneLine: true })
+  if (goal) list.push(goalNotice(goal))
+  const visible = list.filter((n) => !dismissed.has(`${n.kind}:${n.title}`)).sort((a, b) => PRIORITY.indexOf(a.kind) - PRIORITY.indexOf(b.kind))
+  const first = visible[0]
+  const notices: ComposerNotice[] = visible.map((n) => ({
+    id: n.id ?? `runtime:${n.kind}`,
+    tone: n.tone,
+    content: (
+      <>
+        {n.kind === 'compressing' && <Loader2 size={13} className="animate-spin" aria-hidden="true" />}
+        {/* One sentence that wraps (two lines at most) rather than a title and detail squeezed into columns. */}
+        <span className={`min-w-0 leading-snug ${n.oneLine ? 'truncate' : 'line-clamp-2'}`} title={n.detail ? `${n.title} · ${n.detail}` : undefined}><span className="font-medium">{n.title}</span>{n.detail && <span className="opacity-80"> · {n.detail}</span>}</span>
+        {n.status && <span className="ms-auto shrink-0 ps-2 opacity-80">{n.status}</span>}
+      </>
+    ),
+    // A notice that may not fit its chip opens whole in a dialog.
+    detail: n.oneLine && !n.detail ? undefined : { title: n.title, content: n.detail ? <p className="whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">{n.detail}</p> : null },
+    action: n.action,
+    onDismiss: n.dismissible ? () => setDismissed((d) => new Set([...d, `${n.kind}:${n.title}`])) : undefined,
+  }))
+  return { notices, announcement: first ? { assertive: first.tone === 'error', text: first.tone === 'error' ? `${first.title} ${first.detail ?? ''}`.trim() : first.title } : null }
 }

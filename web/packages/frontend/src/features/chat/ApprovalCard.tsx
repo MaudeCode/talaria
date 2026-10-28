@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useEffectEvent, useState } from 'react'
 import { AlertTriangle, ChevronDown, ChevronUp, X } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import type { ApprovalPending } from '../../contracts'
@@ -38,17 +38,17 @@ export function ApprovalCard({ sessionId, pending, onResolved }: { sessionId: st
   })
   const answered = isAnswered(resource)
   const respond = (choice: 'once' | 'session' | 'always' | 'deny', yolo = false) => { if (!answered) answer({ choice, yolo }) }
+  const answerOnce = useEffectEvent(() => { respond('once') })
   useEffect(() => {
     if (dismissed || answered) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Enter' || e.defaultPrevented || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.isComposing || e.repeat) return
       if (e.composedPath().some((target) => target instanceof Element && target.closest(interactiveTarget))) return
       e.preventDefault()
-      respond('once')
+      answerOnce()
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, pending.approval_id, dismissed, answered])
   if (dismissed || answered) return null
   const command = pending.command ?? pending.action ?? ''

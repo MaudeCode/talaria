@@ -53,25 +53,6 @@ export function messageKey(message: Message): string | undefined {
 export function useTranscript(sessionId: string | null, equalLive?: (previous: LiveTurn | null, next: LiveTurn | null) => boolean) {
   const qc = useQueryClient()
   const streamContext = useStreamContext()
-  // useQuery below subscribes to this window; a moved boundary retires its prefix and pending pages together.
-  const windowOffset = qc.getQueryData<{ session: Session }>(keys.sessions.detail(sessionId ?? ''))?.session._messages_offset ?? 0
-  const pageScope = useMemo(() => ({ sessionId, windowOffset, streamContext }), [sessionId, windowOffset, streamContext])
-  const [olderState, setOlderState] = useState<{ scope: typeof pageScope; items: Message[] }>({ scope: pageScope, items: [] })
-  if (olderState.scope !== pageScope) setOlderState({ scope: pageScope, items: [] })
-  const older = useMemo(() => (olderState.scope === pageScope ? olderState.items : []), [olderState, pageScope])
-  const setOlder = useCallback((update: (prev: Message[]) => Message[]) => setOlderState((s) => ({ scope: pageScope, items: update(s.scope === pageScope ? s.items : []) })), [pageScope])
-  const [pageState, setPageState] = useState({ scope: pageScope, loading: false, error: false })
-  if (pageState.scope !== pageScope) setPageState({ scope: pageScope, loading: false, error: false })
-  const retiredPages = useRef(new WeakSet<object>())
-  const paging = useRef<{ scope: typeof pageScope; loading: boolean; error: boolean; before?: number }>({ scope: pageScope, loading: false, error: false })
-  useEffect(() => {
-    const retired = retiredPages.current
-    retired.delete(pageScope)
-    return () => { retired.add(pageScope) }
-  }, [pageScope])
-  const loadingOlder = pageState.scope === pageScope && pageState.loading
-  const olderError = pageState.scope === pageScope && pageState.error
-  const attachedStream = useRef<string | null>(null)
   const query = useQuery({
     queryKey: keys.sessions.detail(sessionId ?? ''),
     queryFn: async ({ signal }) => {
@@ -91,6 +72,25 @@ export function useTranscript(sessionId: string | null, equalLive?: (previous: L
     refetchOnWindowFocus: false,
     retry: (count, error) => !(error instanceof Error && 'status' in error && (error as { status: number }).status === 404) && count < 1,
   })
+  // The subscribed window; a moved boundary retires its prefix and pending pages together.
+  const windowOffset = query.data?.session._messages_offset ?? 0
+  const pageScope = useMemo(() => ({ sessionId, windowOffset, streamContext }), [sessionId, windowOffset, streamContext])
+  const [olderState, setOlderState] = useState<{ scope: typeof pageScope; items: Message[] }>({ scope: pageScope, items: [] })
+  if (olderState.scope !== pageScope) setOlderState({ scope: pageScope, items: [] })
+  const older = useMemo(() => (olderState.scope === pageScope ? olderState.items : []), [olderState, pageScope])
+  const setOlder = useCallback((update: (prev: Message[]) => Message[]) => setOlderState((s) => ({ scope: pageScope, items: update(s.scope === pageScope ? s.items : []) })), [pageScope])
+  const [pageState, setPageState] = useState({ scope: pageScope, loading: false, error: false })
+  if (pageState.scope !== pageScope) setPageState({ scope: pageScope, loading: false, error: false })
+  const retiredPages = useRef(new WeakSet<object>())
+  const paging = useRef<{ scope: typeof pageScope; loading: boolean; error: boolean; before?: number }>({ scope: pageScope, loading: false, error: false })
+  useEffect(() => {
+    const retired = retiredPages.current
+    retired.delete(pageScope)
+    return () => { retired.add(pageScope) }
+  }, [pageScope])
+  const loadingOlder = pageState.scope === pageScope && pageState.loading
+  const olderError = pageState.scope === pageScope && pageState.error
+  const attachedStream = useRef<string | null>(null)
   const session: Session | null = query.data?.session ?? null
   // The owner can change metadata on any loaded row. Keep older pages in the same Query invalidation
   // family as the tail, so reaction reconciliation covers every displayed snapshot without dropping scroll history.
@@ -194,17 +194,17 @@ export function useTranscript(sessionId: string | null, equalLive?: (previous: L
     const current = () => !retiredPages.current.has(pageScope) && paging.current === request && scope === getStreamContext() && (qc.getQueryData<{ session: Session }>(keys.sessions.detail(sessionId))?.session._messages_offset ?? 0) === windowOffset
     try {
       const res = await api.fetchSession(sessionId, { messages: true, msg_limit: TRANSCRIPT_WINDOW, msg_before: before, resolve_model: false })
-      if (!current()) return
       const chunk = res.session.messages ?? []
-      if (!chunk.length) throw new Error('Empty history page')
-      beforePrepend?.()
-      setOlder((prev) => [...chunk, ...prev])
+      if (current() && !chunk.length) request.error = true
+      else if (current()) {
+        beforePrepend?.()
+        setOlder((prev) => [...chunk, ...prev])
+      }
     } catch {
       if (current()) request.error = true
-    } finally {
-      request.loading = false
-      if (current()) setPageState({ scope: pageScope, loading: false, error: request.error })
     }
+    request.loading = false
+    if (current()) setPageState({ scope: pageScope, loading: false, error: request.error })
   }, [sessionId, session, truncated, older.length, setOlder, pageScope, qc, windowOffset])
 
   const refresh = useCallback(async (accepted?: unknown, historyCut = false) => {

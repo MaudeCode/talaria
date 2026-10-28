@@ -6,12 +6,10 @@ import { resetIdentityCache } from '../../api/queryClient'
 
 export function useLogout() {
   return useCallback(async () => {
-    try {
-      await api.logout()
-    } finally {
+    await api.logout().finally(() => {
       teardownAll()
       resetIdentityCache()
       window.location.assign(appUrl('login').href)
-    }
+    })
   }, [])
 }
