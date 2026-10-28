@@ -2805,6 +2805,51 @@ describe('session detail resolves each tool call\'s outcome (TAL-313)', () => {
   })
 })
 
+describe('workspace routes preserve unresolved config state (TAL-730)', () => {
+  it('leaves registry bytes intact across GET and refused writes, then supports local mutations after recovery', async () => {
+    const s = await bootTestServer()
+    try {
+      const root = realpathSync(s.state)
+      const entries = ['first', 'second'].map((name) => ({ path: join(root, name), name }))
+      for (const entry of entries) mkdirSync(entry.path)
+      const added = join(root, 'added')
+      mkdirSync(added)
+      const file = join(s.state, 'workspaces.json')
+      const bytes = JSON.stringify(entries, null, 4) + '\n'
+      writeFileSync(file, bytes)
+      const config = vi.spyOn(s.deps.agentConfig, 'peek').mockReturnValue(null)
+      try {
+        const listed = await s.get('/api/workspaces')
+        expect(listed.status).toBe(200)
+        expect((await json(listed)).workspaces).not.toEqual(entries)
+        expect(readFileSync(file, 'utf8')).toBe(bytes)
+        for (const [route, body, status] of [
+          ['remove', { path: entries[0]!.path }, 503],
+          ['rename', { path: entries[0]!.path, name: 'Renamed' }, 503],
+          ['reorder', { paths: entries.map((entry) => entry.path).reverse() }, 503],
+          ['add', { path: added }, 400],
+        ] as const) {
+          const response = await post(s, `/api/workspaces/${route}`, body)
+          expect(response.status, route).toBe(status)
+          if (status === 503) expect((await json(response)).error).toBe('config.yaml is unavailable; retry')
+          expect(readFileSync(file, 'utf8'), route).toBe(bytes)
+        }
+        config.mockReturnValue({})
+        expect((await json(await s.get('/api/workspaces'))).workspaces).toEqual(entries)
+        expect((await post(s, '/api/workspaces/add', { path: added, name: 'Added' })).status).toBe(200)
+        expect((await post(s, '/api/workspaces/rename', { path: entries[0]!.path, name: 'Renamed' })).status).toBe(200)
+        const paths = [added, entries[1]!.path, entries[0]!.path]
+        expect((await post(s, '/api/workspaces/reorder', { paths })).status).toBe(200)
+        expect((await json(await s.get('/api/workspaces'))).workspaces).toEqual([
+          { path: added, name: 'Added' }, entries[1], { path: entries[0]!.path, name: 'Renamed' },
+        ])
+        expect((await post(s, '/api/workspaces/remove', { path: added })).status).toBe(200)
+        expect((await json(await s.get('/api/workspaces'))).workspaces).toEqual([entries[1], { path: entries[0]!.path, name: 'Renamed' }])
+      } finally { config.mockRestore() }
+    } finally { await s.close() }
+  })
+})
+
 describe('server-resolved workspace display names (TAL-303)', () => {
   it('ships the registered name, else the basename, on detail, list and search rows, from each session profile\'s registry', async () => {
     const s = await bootTestServer()

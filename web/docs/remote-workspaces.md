@@ -57,6 +57,12 @@ When it answers `false`:
 - `terminal_remote_backend` is `true` in the bootstrap `features` and the
   workspace list, so clients hide host-only controls.
 
+While config is unresolved, workspace lists keep the fail-closed Home fallback
+without persisting the filtered list. Registered workspace bytes and names survive
+until config resolves. Registry writes return 503 until then; add may reject its
+path with 400 first. Once a remote backend is confirmed, loading still persists
+the removal of host-local entries.
+
 Chat keeps working: the profile's remote terminal backend owns the target-side
 paths and runs the tools there.
 

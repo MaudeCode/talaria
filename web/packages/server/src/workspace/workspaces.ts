@@ -1,3 +1,4 @@
+import { ConfigUnavailable } from '../config/agent-config.js'
 import { pyOsError, str } from '../util.js'
 /**
  * Workspace registry and trust boundary (Python `api/workspace.py`): per-profile
@@ -272,7 +273,16 @@ export class WorkspaceRegistry {
     return result
   }
 
-  async load(profile: string | null = null): Promise<WorkspaceEntry[]> {
+  private configResolved(profile: string | null): boolean {
+    try { return this.deps.profileConfig(profile) !== null } catch { return false }
+  }
+
+  private requireResolvedConfig(profile: string | null): void {
+    if (!this.configResolved(profile)) throw new ConfigUnavailable('config.yaml is unavailable; retry')
+  }
+
+  async load(profile: string | null = null, options: { forWrite?: boolean } = {}): Promise<WorkspaceEntry[]> {
+    if (options.forWrite) this.requireResolvedConfig(profile)
     return (await this.read(profile, false))
   }
 
@@ -286,8 +296,9 @@ export class WorkspaceRegistry {
       const key = `${this.profileKey(profile)}.registry`
       const record = await this.deps.documents.get('workspaces', key)
       if (record) {
+        const resolved = this.configResolved(profile)
         const cleaned = this.cleanWorkspaceList(record.value, profile, forNames)
-        if (!forNames && Array.isArray(record.value) && cleaned.length !== record.value.length) {
+        if (!forNames && resolved && this.configResolved(profile) && Array.isArray(record.value) && cleaned.length !== record.value.length) {
           try { await this.deps.documents.put('workspaces', key, cleaned, record.revision) } catch { /* next read reconciles a competing edit */ }
         }
         return cleaned.length ? cleaned : [{ path: this.profileConfigDefaultWorkspace(profile), name: 'Home' }]
@@ -297,8 +308,12 @@ export class WorkspaceRegistry {
   }
 
   async save(workspaces: WorkspaceEntry[], profile: string | null = null): Promise<void> {
+    this.requireResolvedConfig(profile)
     const key = `${this.profileKey(profile)}.registry`
-    await updateDocument(this.deps.documents, 'workspaces', key, () => ({ value: workspaces, result: undefined }), { replaceInvalid: true })
+    await updateDocument(this.deps.documents, 'workspaces', key, () => {
+      this.requireResolvedConfig(profile)
+      return { value: workspaces, result: undefined }
+    }, { replaceInvalid: true })
   }
 
   private validLastWorkspace(raw: string, profile: string | null, remoteCwd: string | null): string | null {
