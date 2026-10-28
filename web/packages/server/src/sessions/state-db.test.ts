@@ -484,6 +484,51 @@ describe('state.db projection', () => {
     } finally { sub.close(); watcher.stop() }
   })
 
+  it('compares every public gateway row field in a bounded large list, ignoring order and private metadata', async () => {
+    let now = 100
+    const read: CliSessionRead = { rows: Array.from({ length: 620 }, (_, i) => ({ session_id: `shared-${String(i)}`, title: 'Shared', model: 'model-a', source_tag: 'cli', raw_source: 'cli', session_source: 'cli', source_label: 'CLI', message_count: 1, created_at: 1, updated_at: 2 })), truncated: new Set(), buildSucceeded: true, storage: { state: 'ok', reason: null } }
+    // Distinct IDs can collate equally; their input order must not affect comparison.
+    read.rows[0]!.session_id = 'shared-\u00e9'
+    read.rows[1]!.session_id = 'shared-e\u0301'
+    const watcher = new GatewayWatcher('default', s.state, { rows: () => Promise.resolve(read), now: () => now, log: () => undefined })
+    const sub = watcher.subscribe()
+    try {
+      expect(await watcher.pollOnce()).toBe(true)
+      expect((await sub.next())?.sessions).toHaveLength(620)
+      read.rows.reverse()
+      read.rows[0]!._private_cache_revision = 1
+      now += 300
+      expect(await watcher.pollOnce()).toBe(true)
+      expect(await sub.next(AbortSignal.abort())).toBeNull()
+      for (const [field, value, publicField = field] of [
+        ['title', 'Renamed'], ['model', 'model-b'], ['source_tag', 'telegram', 'source'],
+        ['raw_source', 'telegram'], ['session_source', 'messaging'], ['source_label', 'Telegram'],
+        ['created_at', 3], ['updated_at', 4], ['message_count', 2], ['session_id', 'changed-id'],
+      ] as const) {
+        read.rows[0]![field] = value
+        now += 300
+        expect(await watcher.pollOnce()).toBe(true)
+        const event = await sub.next(AbortSignal.abort())
+        expect(event?.sessions[0], field).toMatchObject({ [publicField]: value })
+        expect(event?.sessions).toHaveLength(620)
+        expect(event?.sessions[0]).not.toHaveProperty('_private_cache_revision')
+        expect(await sub.next(AbortSignal.abort())).toBeNull()
+      }
+      // The existing public shaper makes missing and null metadata equivalent.
+      read.rows[0]!.model = undefined
+      now += 300
+      expect(await watcher.pollOnce()).toBe(true)
+      expect((await sub.next(AbortSignal.abort()))?.sessions[0]?.model).toBeNull()
+      read.rows[0]!.model = null
+      now += 300
+      expect(await watcher.pollOnce()).toBe(true)
+      expect(await sub.next(AbortSignal.abort())).toBeNull()
+      watcher.stop()
+      expect(await sub.next()).toBeNull()
+      expect(sub.ended).toBe(true)
+    } finally { sub.close(); watcher.stop() }
+  })
+
   it('publishes no shared rows after stopping an in-flight poll', async () => {
     let release!: (read: CliSessionRead) => void
     const rows = vi.fn(() => new Promise<CliSessionRead>((resolve) => { release = resolve }))

@@ -30,7 +30,11 @@ export interface GatewaySubscriber {
 interface Queue { items: (GatewaySessionsEvent | null)[]; wake: (() => void) | null; ended: boolean }
 
 export function snapshotHash(sessions: Dict[]): string {
-  const key = [...sessions].sort((a, b) => str(a.session_id).localeCompare(str(b.session_id))).map((s) => `${str(s.session_id)}:${str(s.updated_at ?? 0)}:${str(s.message_count ?? 0)}`).join('|')
+  // The public row shaper fixes field order and defaults before comparison.
+  const key = JSON.stringify([...sessions].sort((a, b) => {
+    const aId = str(a.session_id), bId = str(b.session_id)
+    return aId < bId ? -1 : aId > bId ? 1 : 0
+  }))
   return createHash('md5').update(key).digest('hex')
 }
 
