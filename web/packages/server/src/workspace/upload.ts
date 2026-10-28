@@ -3,6 +3,7 @@ import { closeSync, existsSync, lstatSync, mkdirSync, realpathSync } from 'node:
 import { writeFully } from '../fs/atomic.js'
 import { basename, extname, join } from 'node:path'
 import { randomBytes } from 'node:crypto'
+import { MIMEType } from 'node:util'
 import { isWithin, resolvePathLikePython } from './paths.js'
 import { openAnchoredCreateFd, rmtreeAnchored, unlinkAnchored, FileExistsError } from './fs.js'
 import { mimeFor } from './media.js'
@@ -12,29 +13,26 @@ export interface MultipartFile { filename: string; body: Buffer }
 /** `files` keeps the last part per field name; `parts` keeps every file part in order (repeated field names included). */
 export interface MultipartResult { fields: Record<string, string>; files: Record<string, MultipartFile>; parts: MultipartFile[] }
 
-/** Python `parse_multipart`: boundary split with CRLF or LF part separators. */
+/** Multipart delimiter lines with CRLF framing and legacy LF compatibility. */
 export function parseMultipart(raw: Buffer, contentType: string): MultipartResult {
-  const m = /boundary=([^;\s]+)/.exec(contentType)
-  if (!m) throw new Error('No boundary in Content-Type')
-  const boundary = Buffer.from((m[1] ?? '').replace(/^"|"$/g, ''))
-  const delimiter = Buffer.concat([Buffer.from('--'), boundary])
+  let boundary: string | null
+  try { boundary = new MIMEType(contentType).params.get('boundary') } catch { throw new Error('Invalid boundary in Content-Type') }
+  if (!boundary || !/^[0-9A-Za-z'()+_,./:=? -]{0,69}[0-9A-Za-z'()+_,./:=?-]$/.test(boundary)) throw new Error('Invalid boundary in Content-Type')
+  const delimiter = Buffer.from(`--${boundary}`)
   const fields: Record<string, string> = {}
   const files: Record<string, MultipartFile> = {}
   const fileParts: MultipartFile[] = []
-  const parts = splitBuffer(raw, delimiter)
-  for (const part of parts.slice(1)) {
-    const stripped = stripLeadingNewlines(part)
-    if (stripped.subarray(0, 2).toString() === '--') break
+  const parts = splitMultipart(raw, delimiter)
+  for (const part of parts) {
     const crlf = part.indexOf('\r\n\r\n')
-    const lf = crlf < 0 ? part.indexOf('\n\n') : -1
-    const sepIndex = crlf >= 0 ? crlf : lf
-    const sepLen = crlf >= 0 ? 4 : 2
-    if (sepIndex < 0) continue
+    const lf = part.indexOf('\n\n')
+    const useCrlf = crlf >= 0 && (lf < 0 || crlf < lf)
+    const sepIndex = useCrlf ? crlf : lf
+    const sepLen = useCrlf ? 4 : 2
+    if (sepIndex < 0) throw new Error('Invalid multipart part headers')
     const headerRaw = part.subarray(0, sepIndex)
-    let body = part.subarray(sepIndex + sepLen)
-    if (body.subarray(-2).toString() === '\r\n') body = body.subarray(0, -2)
-    else if (body.subarray(-1).toString() === '\n') body = body.subarray(0, -1)
-    const headers = stripLeadingNewlines(headerRaw).toString('utf8')
+    const body = part.subarray(sepIndex + sepLen)
+    const headers = headerRaw.toString('utf8')
     const disp = /^content-disposition:\s*(.*)$/im.exec(headers)?.[1] ?? ''
     const nameM = /name="([^"]*)"/.exec(disp)
     const fileM = /filename="([^"]*)"/.exec(disp)
@@ -49,23 +47,31 @@ export function parseMultipart(raw: Buffer, contentType: string): MultipartResul
   return { fields, files, parts: fileParts }
 }
 
-function splitBuffer(buf: Buffer, delimiter: Buffer): Buffer[] {
+function splitMultipart(buf: Buffer, delimiter: Buffer): Buffer[] {
   const out: Buffer[] = []
-  let start = 0
-  for (;;) {
-    const idx = buf.indexOf(delimiter, start)
-    if (idx < 0) break
-    out.push(buf.subarray(start, idx))
-    start = idx + delimiter.length
+  let start: number | null = null
+  let framingLength = 2
+  for (let idx = buf.indexOf(delimiter); idx >= 0; idx = buf.indexOf(delimiter, idx + delimiter.length)) {
+    if (idx > 0 && buf[idx - 1] !== 0x0a) continue
+    let end = idx + delimiter.length
+    const closing = buf[end] === 0x2d && buf[end + 1] === 0x2d
+    if (closing) end += 2
+    while (buf[end] === 0x20 || buf[end] === 0x09) end += 1
+    const newlineLength = buf[end] === 0x0d ? 2 : 1
+    if (buf[end] === 0x0d && buf[end + 1] === 0x0a) end += 2
+    else if (buf[end] === 0x0a) end += 1
+    else if (!closing || end !== buf.length) continue
+    if (start !== null) {
+      // Use the preceding delimiter's newline style so LF framing preserves a payload's final CR.
+      const partEnd = idx - (framingLength === 2 && buf[idx - 2] === 0x0d ? 2 : 1)
+      if (partEnd < start) throw new Error('Invalid multipart framing')
+      out.push(buf.subarray(start, partEnd))
+    }
+    if (closing) return out
+    start = end
+    framingLength = newlineLength
   }
-  out.push(buf.subarray(start))
-  return out
-}
-
-function stripLeadingNewlines(buf: Buffer): Buffer {
-  let i = 0
-  while (i < buf.length && (buf[i] === 0x0d || buf[i] === 0x0a)) i += 1
-  return buf.subarray(i)
+  throw new Error('Incomplete multipart framing: missing closing delimiter')
 }
 
 export function sanitizeUploadName(filename: string): string {

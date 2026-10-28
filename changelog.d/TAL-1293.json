@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Keep uploaded files intact when their contents include boundary-like text, and reject incomplete uploads.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
