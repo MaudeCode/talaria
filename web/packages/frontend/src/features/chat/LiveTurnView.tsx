@@ -1,3 +1,4 @@
+import { ProviderQuotaPace } from '../settings/ProviderQuotaPace'
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react'
 import { Link } from '@tanstack/react-router'
 import { m } from '../../paraglide/messages.js'
@@ -124,8 +125,9 @@ export function LiveStatusPill({ sessionId, background = false }: { sessionId: s
     label = status.progress_percent === null ? m.live_prompt_reading() : m.live_prompt_reading_percent({ percent: new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 0 }).format(status.progress_percent / 100) })
   }
   return (
-    <div className="live-run-status flex items-center gap-2 text-muted" role="status" aria-live="polite">
+    <div className="live-run-status flex flex-wrap items-center justify-center gap-2 text-muted" role="status" aria-live="polite">
       <LaurelSpinner />
+      <ProviderQuotaPace gauge={turn.usage?.plan_gauge} compact />
       <span className="live-run-label">{label}</span>
       {!reconnecting && !background && !wait && (!status || status.phase === 'working') && <>{' '}<RunElapsed since={turn.startedAt} /></>}
       {turn.tps != null && <span className="font-mono text-[11px] tabular-nums opacity-75" title="Tokens per second">{turn.tps.toFixed(1)} tok/s</span>}

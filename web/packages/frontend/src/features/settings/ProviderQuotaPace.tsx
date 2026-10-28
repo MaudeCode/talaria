@@ -1,7 +1,8 @@
+import type { PlanGauge, PlanUsage } from '@maudecode/talaria-web-contracts'
 import type { z } from 'zod'
 import { m } from '../../paraglide/messages.js'
 import { useLocale } from '../../i18n/useLocale'
-import { formatDurationUnits } from '../../i18n/units'
+import { formatDurationUnits, resetTime } from '../../i18n/units'
 import type { ProviderQuotaSourceSchema } from '../../contracts'
 import { QuotaUrgency } from './QuotaThresholds'
 
@@ -17,8 +18,20 @@ function formatMinutes(locale: string, minutes: number): string {
 }
 
 /** The server-selected pace window (`pace_window_index`) of a quota source and the source's urgency; every value is a TAL-409/TAL-411 contract field. */
-export function ProviderQuotaPace({ source, showAccount }: { source: QuotaSource; showAccount: boolean }) {
+export function ProviderQuotaPace({ source, showAccount = false, plan, planStale = false, gauge, compact = false }: { source?: QuotaSource; showAccount?: boolean; plan?: PlanUsage | null | undefined; planStale?: boolean | undefined; gauge?: PlanGauge | null | undefined; compact?: boolean }) {
   const locale = useLocale()
+  const allowance = plan ?? source?.plan_usage
+  const stale = planStale || source?.plan_stale || source?.status === 'stale' || source?.status === 'unavailable'
+  if (gauge) return <span className="text-[11px] tabular-nums text-muted" data-plan-gauge={gauge.id}>
+    {m.plan_used({ label: gauge.label, percent: new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 0 }).format(gauge.used_bp / 10000) })}
+    {gauge.resets_at_ms !== null && <span> · {m.provider_quota_resets({ time: resetTime(locale, gauge.resets_at_ms) })}</span>}
+  </span>
+  if (allowance) return <div className={compact ? 'px-2.5 py-1 text-xs text-muted' : 'mt-2 border-t border-border pt-2 text-xs text-muted'} data-testid="provider-plan-usage">
+    <div className="flex flex-wrap gap-x-2"><span className="font-medium text-text">{allowance.plan}</span>{stale && <span>{m.catalog_last_confirmed()}</span>}{allowance.paused_reason && <span>{m.plan_paused()}</span>}</div>
+    {allowance.gauges.map((g) => <div key={`${g.scope}:${g.label}`} className="flex flex-wrap gap-x-2 tabular-nums"><span>{g.title || g.label}</span><span>{m.plan_remaining({ percent: new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 1 }).format(g.left_fraction) })}</span>{g.resets_at_ms !== null && <span>{m.provider_quota_resets({ time: resetTime(locale, g.resets_at_ms) })}</span>}</div>)}
+    {allowance.credits_pay === true && !stale && !allowance.paused_reason && <span>{m.plan_credits_cover()}</span>}
+  </div>
+  if (!source) return null
   const w = source.pace_window_index == null ? undefined : source.windows?.[source.pace_window_index]
   if (!w) {
     if (!source.urgency) return null

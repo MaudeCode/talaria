@@ -124,6 +124,20 @@ describe('live status', () => {
   })
 })
 
+describe('native run plan gauge (TAL-1508)', () => {
+  it('renders the server gauge and clears it when the next complete meter omits the allowance', async () => {
+    const run = liveRun()
+    const view = render(<LiveStatusPill sessionId={run.turn.sessionId} />)
+    const usage = { input_tokens: 100, output_tokens: 20, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost: null }
+    run.emit({ event: 'metering', data: { usage: { ...usage, plan_gauge: { id: 'day', label: 'Today', used_bp: 8300, resets_at_ms: null } } } })
+    view.rerender(<LiveStatusPill sessionId={run.turn.sessionId} />)
+    await waitFor(() => expect(view.getByRole('status')).toHaveTextContent('Today: 83% used'))
+    run.emit({ event: 'metering', data: { usage: { ...usage, plan_gauge: null } } })
+    view.rerender(<LiveStatusPill sessionId={run.turn.sessionId} />)
+    await waitFor(() => expect(view.queryByText('Today: 83% used')).toBeNull())
+  })
+})
+
 describe('server-selected prompt reading (TAL-1058)', () => {
   it('renders known and unknown progress in the existing accessible status, and clears terminal state', async () => {
     const run = liveRun()

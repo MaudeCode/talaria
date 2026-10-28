@@ -191,7 +191,7 @@ def native_owner_stub(tmp_path, monkeypatch):
                 owner.snapshot_extra = owner.change_on_context
             return getattr(owner, 'context_payload', value)
         if method == "session.stats":
-            return {"output_tokens": 40, "last_turn_tokens": 12}
+            return {"output_tokens": 40, "last_turn_tokens": 12, **getattr(owner, "usage_stats", {})}
         if method == "config.set":
             if owner.config_failure == "refused":
                 raise RuntimeError("unsupported_setting")
@@ -800,3 +800,12 @@ def test_reaction_rpc_failures_preserve_unknown_outcomes(native_owner_stub, reas
     result = owner.run(None, {"session_id": "native", "action": "react", "row_id": 42, "emoji": "👍"})
     assert result["state"] == state
     assert len([call for call in owner.calls if call[0] == "message.react"]) == 1
+
+
+def test_plan_gauge_snapshot_is_read_from_this_owner_and_cleared_on_omission(native_owner_stub):
+    owner = native_owner_stub
+    gauge = {"id": "day", "label": "Today", "used_bp": 8300, "resets_at_ms": None}
+    owner.usage_stats = {"plan_gauge": gauge}
+    assert owner.run(None, {"session_id": "chat", "action": "snapshot"})["snapshot"]["plan_gauge"] == gauge
+    owner.usage_stats = {}
+    assert owner.run(None, {"session_id": "chat", "action": "snapshot"})["snapshot"]["plan_gauge"] is None

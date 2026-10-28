@@ -19,7 +19,7 @@ import { cn } from '../../ui/cn'
 import { useModelsQuery, useProfilesQuery } from '../../app/queries'
 import { contextFromList, cronResource, jobId } from './cronJob'
 import { newResource, useResourceMutation } from '../sessions/useResourceMutation'
-import { catalogEntryById, catalogGroupLabel } from '../../lib/modelEntry'
+import { catalogEntryById, catalogGroupLabel, ModelOptionContent, catalogModelSections } from '../../lib/modelEntry'
 
 export type EditorMode = 'create' | 'edit' | 'duplicate'
 
@@ -250,11 +250,11 @@ export function JobForm({ mode, job, jobs, onCancel, onSubmitted, onCreated }: {
                   <FieldRow label={m.cron_model_label()} hint={noAgent ? m.cron_model_no_agent_hint() : m.cron_model_hint()} htmlFor="cronModel" inline>
                     <Select id="cronModel" value={f.state.value} onValueChange={(v) => { form.setFieldValue('model_provider', catalogEntryById(models.data, v)?.provider_id ?? (v && v === initialModel ? job?.provider ?? null : null)); f.handleChange(v) }} className="w-56 max-w-full" disabled={noAgent}>
                       <option value="">{m.cron_model_use_default()}</option>
-                      {(models.data?.groups ?? []).map((g) => (
-                        <optgroup key={g.provider} label={catalogGroupLabel(g)}>
-                          {g.models.map((mm) => <option key={mm.id} value={mm.id}>{mm.label ?? mm.id}</option>)}
+                      {(models.data?.groups ?? []).flatMap((g) => catalogModelSections(g).map((section) => (
+                        <optgroup key={`${g.provider}:${section.label}`} label={[catalogGroupLabel(g), section.label].filter(Boolean).join(' · ')}>
+                          {section.models.map((mm) => <option key={mm.id} value={mm.id}><ModelOptionContent entry={mm} /></option>)}
                         </optgroup>
-                      ))}
+                      )))}
                       {f.state.value && !listed && <option value={f.state.value}>{selectedModel?.label ?? f.state.value}</option>}
                     </Select>
                   </FieldRow>

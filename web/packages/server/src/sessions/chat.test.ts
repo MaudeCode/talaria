@@ -468,6 +468,27 @@ describe('chat turns through the sidecar', () => {
     expect(marks).toEqual([true, false])
   })
 
+  it('persists a native plan gauge through done and reload, then clears an omitted complete snapshot (TAL-1508)', async () => {
+    const sid = await newSession(s)
+    const gauge = { id: 'day', label: 'Today', used_bp: 8000, resets_at_ms: null }
+    let onPlan = true
+    sidecar.respond('chat.start', (params) => {
+      const result = completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Plan answer' }])
+      return { ...result, usage: { ...result.usage, ...(onPlan ? { plan_gauge: gauge } : {}) } }
+    })
+    for (const expected of [gauge, null]) {
+      const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'synthetic plan request' }))
+      const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+      expect((frames.find((f) => f.event === 'done')?.data as Json).usage).toMatchObject({ plan_gauge: expected })
+      s.deps.sessionStore.sessions.delete(sid)
+      const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
+      expect(detail.plan_gauge).toEqual(expected)
+      const replay = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+      expect((replay.find((f) => f.event === 'done')?.data as Json).usage).toMatchObject({ plan_gauge: expected })
+      onPlan = false
+    }
+  })
+
   it('streams a turn, settles the transcript, journals every frame, and replays it after the run', async () => {
     const sid = await newSession(s)
     sidecar.respond('chat.start', (params, emit) => {
@@ -4270,7 +4291,7 @@ describe('live metering and todo_state (TAL-397)', () => {
     const usageIdx = frames.findIndex((f) => f.event === 'metering' && ((f.data as Json).usage as Json).input_tokens === 100)
     expect(usageIdx).toBeGreaterThan(0)
     expect(usageIdx).toBeLessThan(names.indexOf('tool'))
-    expect((frames[usageIdx]?.data as Json).usage).toEqual({ input_tokens: 100, output_tokens: 10, estimated_cost: 0.0005, cache_read_tokens: 0, cache_write_tokens: 0 })
+    expect((frames[usageIdx]?.data as Json).usage).toEqual({ plan_gauge: null, input_tokens: 100, output_tokens: 10, estimated_cost: 0.0005, cache_read_tokens: 0, cache_write_tokens: 0 })
 
     // Live todo_state: the full list, before the turn settles, equal to the settled and reloaded snapshot.
     const todoFrame = frames.find((f) => f.event === 'todo_state')?.data as Json
@@ -4282,7 +4303,7 @@ describe('live metering and todo_state (TAL-397)', () => {
 
     // The last metering frame before `done` carries the persisted counters and the persisted turn rate.
     const last = live[live.length - 1]!
-    expect(last.usage).toEqual({ input_tokens: detail.input_tokens, output_tokens: detail.output_tokens, estimated_cost: detail.estimated_cost, cache_read_tokens: detail.cache_read_tokens, cache_write_tokens: detail.cache_write_tokens })
+    expect(last.usage).toEqual({ plan_gauge: null, input_tokens: detail.input_tokens, output_tokens: detail.output_tokens, estimated_cost: detail.estimated_cost, cache_read_tokens: detail.cache_read_tokens, cache_write_tokens: detail.cache_write_tokens })
     expect(last.usage).toMatchObject({ input_tokens: 120, output_tokens: 30, estimated_cost: 0.001 })
     const settledRow = (detail.messages as Json[]).filter((m) => m.role === 'assistant').at(-1)!
     expect(last).toMatchObject({ tps: settledRow._turnTps, tps_available: true, estimated: false })

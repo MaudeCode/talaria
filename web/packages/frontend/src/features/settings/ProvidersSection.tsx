@@ -1,3 +1,4 @@
+import { ModelOptionContent } from '../../lib/modelEntry'
 import { reconcileProviderQuotas } from '../../lib/providerQuotas'
 import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -104,7 +105,7 @@ export function ProvidersSection() {
                   <ul className="mt-1 flex flex-wrap gap-1">
                     {p.models.map((mm) => (
                       <li key={mm.id}>
-                        <button type="button" onClick={() => setDefault.mutate({ model: mm.id, provider: p.id })} className={cn('rounded-full border px-2 py-0.5 text-[11px]', mm.id === defaultModel ? 'border-accent bg-accent-bg text-accent-text' : 'border-border text-muted hover:text-text')} title={m.providers_set_default()}>{mm.label ?? mm.id}</button>
+                        <button type="button" onClick={() => setDefault.mutate({ model: mm.id, provider: p.id })} className={cn('rounded-full border px-2 py-0.5 text-[11px]', mm.id === defaultModel ? 'border-accent bg-accent-bg text-accent-text' : 'border-border text-muted hover:text-text')} title={m.providers_set_default()}><ModelOptionContent entry={mm} /></button>
                       </li>
                     ))}
                   </ul>

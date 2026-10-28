@@ -1,11 +1,12 @@
-import { memo, useRef, useState } from 'react'
+import { ProviderQuotaPace } from '../settings/ProviderQuotaPace'
+import { Fragment, memo, useRef, useState } from 'react'
 import { Popover } from '@base-ui/react/popover'
 import { ChevronDown, Cpu, Brain, Wrench, FolderOpen, GitBranch, Shield } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import { useContextDetailQuery, useExecutionModesQuery, useModelsQuery, useWorkspacesQuery, useToolsetsCatalogQuery } from '../../app/queries'
 import { Menu, MenuGroup, MenuGroupLabel, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator } from '../../ui/Menu'
 import { cn } from '../../ui/cn'
-import { catalogEntryById, catalogGroupLabel } from '../../lib/modelEntry'
+import { catalogEntryById, catalogGroupLabel, catalogModelSections, ModelOptionContent, type ModelEntry } from '../../lib/modelEntry'
 import { useLocale } from '../../i18n/useLocale'
 import { resetTime } from '../../i18n/units'
 import type { ExecutionMode, ExecutionModes, Models } from '@maudecode/talaria-web-contracts'
@@ -65,24 +66,27 @@ export function ModelChip({ model, optionId, onChange, row }: { model: string | 
   const [query, setQuery] = useState('')
   const searchInput = useRef<HTMLInputElement>(null)
   const groups = (() => {
-    const q = query.trim().toLowerCase()
     if (!open) return []
-    return (models.data?.groups ?? []).map((g) => ({ ...g, models: g.models.filter((mm) => !q || mm.id.toLowerCase().includes(q) || (mm.label ?? '').toLowerCase().includes(q)) })).filter((g) => g.models.length > 0)
+    return (models.data?.groups ?? []).map((g) => ({ ...g, displaySections: catalogModelSections(g, query) })).filter((g) => g.displaySections.some((section) => section.models.length))
   })()
   const onSelect = (id: string) => onChange(id, catalogEntryById(models.data, id)?.provider_id ?? null)
   const selected = catalogEntryById(models.data, model ? optionId : models.data?.default_option_id)
   const label = selected ? selected.label ?? selected.id : (model ?? models.data?.default_model) || '—'
   return (
     // TAL-807: opening the picker reads the catalog again, so a rate limit or quota level reflects the server now.
-    <Menu open={open} initialFocus={searchInput} label={m.composer_control_model()} side="top" className="max-h-[60vh] min-w-72" onOpenChange={(open) => { setOpen(open); if (open) void models.refetch() }} trigger={<Chip id={row ? undefined : "composerModelChip"} icon={<Cpu size={16} aria-hidden="true" />} label={label} title={m.composer_control_model()} row={row} className="composer-model-chip" />}>
+    <Menu open={open} initialFocus={searchInput} label={m.composer_control_model()} side="top" className="max-h-[60vh] min-w-72 max-w-[calc(100vw-2rem)]" onOpenChange={(open) => { setOpen(open); if (open) void models.refetch() }} trigger={<Chip id={row ? undefined : "composerModelChip"} icon={<Cpu size={16} aria-hidden="true" />} label={label} title={m.composer_control_model()} row={row} className="composer-model-chip" />}>
       <div className="p-1"><input ref={searchInput} type="search" autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder={m.model_search_placeholder()} aria-label={m.model_search_placeholder()} className="h-8 w-full rounded-md border border-border bg-input px-2 text-sm text-text" onKeyDown={(e) => { if (e.key !== 'Escape') e.stopPropagation() }} /></div>
       <MenuRadioGroup value={selected?.id ?? ''} onValueChange={onSelect}>
         {groups.map((g) => (
           <MenuGroup key={g.provider}>
             <MenuGroupLabel><span className="flex items-center justify-between gap-2"><span className="truncate">{catalogGroupLabel(g)}</span><GroupLimitBadge group={g} locale={locale} /></span></MenuGroupLabel>
-            {g.models.map((mm) => (
-              <ModelMenuRow key={mm.id} id={mm.id} label={mm.label ?? mm.id} resetsAt={mm.limit?.resets_at} locale={locale} />
-            ))}
+            <ProviderQuotaPace plan={g.plan_usage} planStale={g.plan_stale} compact />
+            {g.displaySections.map((section) => {
+              const rows = section.models.map((entry) => <ModelMenuRow key={entry.id} entry={entry} locale={locale} />)
+              return section.label ? <MenuGroup key={section.label}>
+                <MenuGroupLabel>{section.label}</MenuGroupLabel>{rows}
+              </MenuGroup> : <Fragment key={section.label}>{rows}</Fragment>
+            })}
           </MenuGroup>
         ))}
       </MenuRadioGroup>
@@ -97,9 +101,10 @@ export function ModelChip({ model, optionId, onChange, row }: { model: string | 
 }
 
 /** Search changes membership; surviving catalog rows keep their rendered label and cooldown. */
-const ModelMenuRow = memo(function ModelMenuRow({ id, label, resetsAt, locale }: { id: string; label: string; resetsAt: string | undefined; locale: string }) {
-  return <MenuRadioItem value={id} className={RADIO_CLASS}>
-    <span className="truncate">{label}</span>
+const ModelMenuRow = memo(function ModelMenuRow({ entry, locale }: { entry: ModelEntry; locale: string }) {
+  const resetsAt = entry.limit?.resets_at
+  return <MenuRadioItem value={entry.id} className={RADIO_CLASS}>
+    <ModelOptionContent entry={entry} />
     {resetsAt && <span data-model-limit="model" className="ms-auto shrink-0 text-xs text-warning">{m.model_limited_until({ time: resetTime(locale, resetsAt) })}</span>}
   </MenuRadioItem>
 })
@@ -212,6 +217,7 @@ export function WorkspaceChip({ value, name, onChange, onNewWorktree, onRemoveWo
 export interface ContextFigures {
   sessionId?: string | undefined; detailKey?: string | null | undefined
   percent: number | null | undefined; used: number | null | undefined; window: number | null | undefined; thresholdPercent?: number | null | undefined
+  planGauge?: import('@maudecode/talaria-web-contracts').PlanGauge | null | undefined
   input?: number | undefined; output?: number | undefined; cacheRead?: number | undefined; cacheWrite?: number | undefined; cacheHitPercent?: number | null | undefined; cost?: number | null | undefined
   onCompress?: (() => void) | undefined; compressing?: boolean | undefined
 }
@@ -239,7 +245,7 @@ const COMPRESS_CLASS = 'self-start rounded-md bg-accent px-3 py-1.5 text-xs font
 export function ContextRing(figures: ContextFigures) {
   const [open, setOpen] = useState(false)
   const st = contextStats(figures)
-  if (!st) return null
+  if (!st) return <ProviderQuotaPace gauge={figures.planGauge} compact />
   const { pct, tone: t, title } = st
   const r = 9.75
   const c = 2 * Math.PI * r
@@ -259,6 +265,7 @@ export function ContextRing(figures: ContextFigures) {
             <Popover.Popup id="ctxPopup" aria-label={m.composer_context_usage()} className="flex max-h-[min(36rem,70vh)] max-w-[min(22rem,calc(100vw-2rem))] flex-col gap-0.5 overflow-y-auto rounded-md border border-border bg-surface px-3 py-2 text-xs leading-relaxed text-text shadow-md outline-none">
               <span className="font-medium">{st.usage}</span>
               {st.details.map((d) => <span key={d} className="tabular-nums text-muted">{d}</span>)}
+              <ProviderQuotaPace gauge={figures.planGauge} compact />
               {open && <ContextDetailRows key={figures.detailKey} sessionId={figures.sessionId} identity={figures.detailKey} />}
               {figures.onCompress && <Popover.Close className={cn(COMPRESS_CLASS, 'mt-1.5')} id="ctxCompressBtn" disabled={figures.compressing} onClick={figures.onCompress}>{m.ctx_compress_now()}</Popover.Close>}
             </Popover.Popup>
@@ -272,13 +279,14 @@ export function ContextRing(figures: ContextFigures) {
 /** Context readout row for the overflow panel on phones, where the footer ring is hidden. */
 export function ContextRow(figures: ContextFigures) {
   const st = contextStats(figures)
-  if (!st) return null
+  if (!st) return <ProviderQuotaPace gauge={figures.planGauge} compact />
   return (
     <div className={cn('composer-mobile-config-action composer-mobile-context-action', st.tone === 'mid' && 'ctx-mid', st.tone === 'high' && 'ctx-high')} role="group" aria-label={m.composer_mobile_context()} id="composerMobileContextAction">
       <div className="composer-mobile-config-copy composer-mobile-context-copy">
         <span className="composer-mobile-config-kicker">{m.composer_mobile_context()}</span>
         <span className="composer-mobile-config-value">{st.usage}</span>
         {st.details.map((d) => <span key={d} className="composer-mobile-context-detail">{d}</span>)}
+        <ProviderQuotaPace gauge={figures.planGauge} compact />
         <ContextDetailRows key={figures.detailKey} sessionId={figures.sessionId} identity={figures.detailKey} />
         {figures.onCompress && <button type="button" className={cn(COMPRESS_CLASS, 'mt-1')} id="composerMobileCompressBtn" disabled={figures.compressing} onClick={figures.onCompress}>{m.ctx_compress_now()}</button>}
       </div>

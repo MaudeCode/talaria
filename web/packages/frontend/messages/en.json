@@ -2814,5 +2814,17 @@
   "profile_import_status_skipped": "Skipped",
   "profile_import_status_conflict": "Conflict",
   "profile_import_status_error": "Error",
-  "profile_import_partial": "Some items could not be imported."
+  "profile_import_partial": "Some items could not be imported.",
+  "plan_included": "Included",
+  "plan_free": "Free",
+  "plan_large": "Large",
+  "plan_blocked": "Allowance exhausted",
+  "plan_credits": "Uses credits",
+  "plan_unknown": "Allowance unknown",
+  "plan_recommended": "Recommended",
+  "plan_other": "Other",
+  "plan_remaining": "{percent} remaining",
+  "plan_credits_cover": "Credits cover usage after allowance",
+  "plan_paused": "Included usage paused",
+  "plan_used": "{label}: {percent} used"
 }

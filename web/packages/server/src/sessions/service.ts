@@ -895,7 +895,7 @@ export class SessionService {
   /** One server decision for history, mutation replies, done frames and export documents. */
   async publicProjection(payload: Record<string, unknown>, profile: string | null): Promise<Record<string, unknown>> {
     const show = await this.deps.showReasoning?.(profile) ?? true
-    return { ...reasoningProjection(payload, show), show_reasoning: show }
+    return { ...reasoningProjection(payload, show), plan_gauge: payload.plan_gauge ?? null, show_reasoning: show }
   }
 
   // ── detail ──────────────────────────────────────────────────────────────
@@ -1492,7 +1492,8 @@ export class SessionService {
     const s = (await this.get404(sid))
     const inp = Math.trunc(s.input_tokens) || 0
     const out = Math.trunc(s.output_tokens) || 0
-    return { input_tokens: inp, output_tokens: out, total_tokens: inp + out, estimated_cost: s.estimated_cost, model: s.model }
+    const view = this.owner ? await this.owner.project(await this.wireRow(s), 0, null, false) : { plan_gauge: s.plan_gauge }
+    return { plan_gauge: view.plan_gauge ?? null, input_tokens: inp, output_tokens: out, total_tokens: inp + out, estimated_cost: s.estimated_cost, model: s.model }
   }
 
   // ── creation ─────────────────────────────────────────────────────────────

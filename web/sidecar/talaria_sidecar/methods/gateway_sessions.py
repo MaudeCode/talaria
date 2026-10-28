@@ -230,7 +230,17 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
             subscription = value["subscription_id"]
             if reason := await asyncio.to_thread(_control_refusal, home, sid):
                 raise GatewayRPCError(reason)
-            return {**_snapshot(value), "reactions_supported": _verified_contract(endpoint, "message-reactions-v1")}
+            gauge = None
+            if params["action"] in {"snapshot", "watch"}:
+                try:
+                    stats = await client.rpc("session.stats", session_id=sid)
+                    after = await client.rpc("session.resume", session_id=sid)
+                    if all(value.get(k) == after.get(k) for k in ("session_id", "authority_epoch", "replay_epoch", "execution_generation")):
+                        gauge = stats.get("plan_gauge")
+                except GatewayRPCError:
+                    pass  # older owners have no stats capability
+            return {**_snapshot(value), "plan_gauge": gauge,
+                    "reactions_supported": _verified_contract(endpoint, "message-reactions-v1")}
 
         receipt = lock = None
         try:

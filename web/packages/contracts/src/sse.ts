@@ -1,3 +1,4 @@
+import { PlanGaugeSchema } from './plan-usage.js'
 import { z } from 'zod'
 import { RateLimitWaitSchema, RunStatusSchema } from './run-status.js'
 import { ApprovalPendingSchema, SessionSchema, AgentRuntimeMetadataSchema, ClarifyStepSchema, VaultPromptSchema, ConnectorOperationViewSchema, ContextUsageFields, PendingSteerSchema, SessionGoalSchema, SessionNoticeSchema, SteerWithdrawnSchema, ToolDisplayFields, ToolProgressSchema, ToolResultViewSchema, TodoStateSchema, TurnTerminalStateSchema } from './views.js'
@@ -15,7 +16,7 @@ const Tool = z.looseObject({ name: z.string().optional(), ...ToolDisplayFields, 
 const ToolComplete = Tool.extend({ duration: z.number().nullable().optional(), is_error: z.boolean().optional(), cost_usd: z.number().nullable().optional(), result: z.unknown().optional(), result_view: ToolResultViewSchema.optional(), output: z.unknown().optional() })
 const Approval = z.looseObject({ allowed_choices: ApprovalPendingSchema.shape.allowed_choices, can_enable_yolo: ApprovalPendingSchema.shape.can_enable_yolo, approval_id: z.string().optional(), session_id: z.string().optional(), command: z.string().optional(), description: z.string().optional(), title: z.string().optional(), name: z.string().optional(), kind: z.string().optional(), reason: z.string().optional(), action: z.string().optional(), question: z.string().optional(), status: z.string().optional(), pending_count: z.number().optional(), run_id: z.string().optional(), mirror_token: z.string().optional() })
 const Clarify = z.looseObject({ steps: z.array(ClarifyStepSchema).optional(), vault: VaultPromptSchema.optional(), clarify_id: z.string().optional(), session_id: z.string().optional(), question: z.string().optional(), choices: z.array(z.unknown()).optional(), title: z.string().optional(), name: z.string().optional(), kind: z.string().optional(), reason: z.string().optional(), action: z.string().optional(), status: z.string().optional(), raw_preview: z.string().optional(), timeout_seconds: z.number().optional(), timeout_at: z.number().optional(), index: z.number().optional(), total: z.number().optional() })
-const Compression = z.looseObject({ session_id: z.string().optional(), old_session_id: z.string().optional(), new_session_id: z.string().optional(), continuation_session_id: z.string().optional(), usage: z.looseObject(ContextUsageFields).optional() })
+const Compression = z.looseObject({ session_id: z.string().optional(), old_session_id: z.string().optional(), new_session_id: z.string().optional(), continuation_session_id: z.string().optional(), usage: z.looseObject({ ...ContextUsageFields, plan_gauge: PlanGaugeSchema.nullable().optional() }).optional() })
 /**
  * TAL-1006: an open compression span. `started_at` (epoch seconds) is the span's start, the same on every heartbeat;
  * `compressed` closes it, as does the turn's terminal frame. A journal written before the field shipped omits it, and
@@ -26,11 +27,11 @@ const Title = z.looseObject({ session_id: z.string().optional(), title: z.string
 const Warning = z.looseObject({ type: z.string().optional(), message: z.string().optional() })
 const AppError = z.looseObject({ ...AgentRuntimeMetadataSchema.shape, condition: z.string().optional(), terminal_state: TurnTerminalStateSchema.optional(), type: z.string().optional(), message: z.string().optional(), details: z.unknown().optional(), hint: z.string().optional(), session_id: z.string().optional(), old_session_id: z.string().optional(), new_session_id: z.string().optional(), continuation_session_id: z.string().optional(), status: z.union([z.string(), z.number()]).optional(), session: z.unknown().optional(), code: z.string().optional() })
 /** `usage`: the session's token counters and turn timings, with the same context-ring figures as `session` (TAL-299). */
-const Done = z.looseObject({ terminal_state: TurnTerminalStateSchema.optional(), session: z.unknown().optional(), usage: z.looseObject(ContextUsageFields).optional(), status: z.string().optional(), ephemeral: z.boolean().optional(), answer: z.string().optional() })
+const Done = z.looseObject({ terminal_state: TurnTerminalStateSchema.optional(), session: z.unknown().optional(), usage: z.looseObject({ ...ContextUsageFields, plan_gauge: PlanGaugeSchema.nullable().optional() }).optional(), status: z.string().optional(), ephemeral: z.boolean().optional(), answer: z.string().optional() })
 const Cancel = z.looseObject({ terminal_state: TurnTerminalStateSchema.optional(), type: z.string().optional(), message: z.string().optional(), hint: z.string().optional(), status: z.string().optional(), session_id: z.string().optional(), session: z.unknown().optional() })
 const StreamEnd = z.looseObject({ session_id: z.string().optional() })
 /** TAL-397: the session's token and cost counters as the turn will persist them. */
-const MeteringUsage = z.looseObject({ input_tokens: z.number(), output_tokens: z.number(), estimated_cost: z.number().nullable(), cache_read_tokens: z.number(), cache_write_tokens: z.number() })
+const MeteringUsage = z.looseObject({ plan_gauge: PlanGaugeSchema.nullable().optional(), input_tokens: z.number(), output_tokens: z.number(), estimated_cost: z.number().nullable(), cache_read_tokens: z.number(), cache_write_tokens: z.number() })
 /**
  * TAL-397: the live turn's meter, sent when the Agent's counters change and at most once a second while text streams.
  * `tps` is the stream's delta rate (null, with `tps_available: false`, until two deltas are apart). The last frame before

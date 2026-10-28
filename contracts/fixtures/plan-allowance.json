@@ -1,0 +1,40 @@
+{
+  "plan_usage": {
+    "kind": "usage_window",
+    "plan": "Pro",
+    "gauges": [
+      {
+        "label": "week",
+        "left_fraction": 0,
+        "style": "red",
+        "resets_at_ms": 1900000000000,
+        "scope": "all",
+        "title": "Weekly"
+      },
+      {
+        "label": "top_tier",
+        "left_fraction": 0.8,
+        "style": "green",
+        "resets_at_ms": null,
+        "scope": "top_tier",
+        "title": "Large"
+      }
+    ],
+    "top_tier_model_ids": [
+      "large"
+    ],
+    "featured_model_ids": [
+      "included"
+    ],
+    "paused_reason": null,
+    "credits_pay": false
+  },
+  "usage_levels": {
+    "included": "low",
+    "free": "free",
+    "large": "top_tier"
+  },
+  "unavailable_model_ids": [],
+  "allowance_pending": false,
+  "free_tier": false
+}

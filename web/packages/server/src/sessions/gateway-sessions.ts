@@ -1,3 +1,4 @@
+import { applyPlanGauge } from './session.js'
 import { reasoningProjection } from './reasoning-display.js'
 import { CHECKPOINT_DIFF_MAX_BYTES, ReactionEmojiSchema, unavailableContextDetail, type ReactionState, type MessageReactionView, type CheckpointDiff, type SessionActivityPhase, type ContextDetail } from '@maudecode/talaria-web-contracts'
 import { checkpointDiffFiles } from '../workspace/rollback.js'
@@ -61,7 +62,8 @@ const newerTodo = (a: GatewaySnapshot, b: GatewaySnapshot): boolean => Object.ha
   && (a.last_sequence > b.last_sequence || !Object.hasOwn(b, 'todo_state') || a.todo_state != null && b.todo_state != null && (a.todo_state.revision ?? 0) > (b.todo_state.revision ?? 0))
 
 /** Native counters and the owner's compact turn-end usage share one existing Web usage shape. */
-function ownerUsage(data: Row): Row {
+function ownerUsage(payload: Row, complete = false): Row {
+  const data = payload.usage && typeof payload.usage === 'object' ? { ...payload, ...payload.usage as Row } : payload
   const fields: Record<string, string[]> = {
     input_tokens: ['prompt_tokens', 'prompt', 'input_tokens', 'input'], output_tokens: ['completion_tokens', 'completion', 'output_tokens', 'output'],
     cache_read_tokens: ['cache_read_tokens'], cache_write_tokens: ['cache_write_tokens'],
@@ -69,6 +71,7 @@ function ownerUsage(data: Row): Row {
     context_length: ['context_length', 'context_max'], cache_hit_percent: ['cache_hit_pct'], tps: ['tokens_per_s', 'avg_tps'],
   }
   const usage: Row = {}
+  applyPlanGauge(usage, data, complete || typeof data.calls === 'number' || typeof data.api_calls === 'number')
   for (const [field, keys] of Object.entries(fields)) {
     const value = keys.map((key) => data[key]).find((value) => typeof value === 'number' && Number.isFinite(value) && value >= 0)
     if (value !== undefined) usage[field] = value
@@ -490,7 +493,7 @@ export class GatewaySessions {
   private async view(base: Row, result: GatewaySessionResult, stream: string | null, target: Target, limit: number | null = 120, before: number | null = null, withMessages = true): Promise<Row> {
     const snapshot = result.snapshot
     const showReasoning = await this.deps.service.deps.showReasoning?.(target.profile) ?? true
-    const fields: Row = { ...base, show_reasoning: showReasoning, owner_attachment: this.attachment({ ...result, model_change: this.currentModelChange(target, snapshot) }), composer_state_key: ownerStateId(target.key), context_detail_key: this.contextDetailKey(target, snapshot), active_stream_id: stream, is_streaming: Boolean(stream) }
+    const fields: Row = { ...base, plan_gauge: snapshot?.plan_gauge ?? null, show_reasoning: showReasoning, owner_attachment: this.attachment({ ...result, model_change: this.currentModelChange(target, snapshot) }), composer_state_key: ownerStateId(target.key), context_detail_key: this.contextDetailKey(target, snapshot), active_stream_id: stream, is_streaming: Boolean(stream) }
     if (snapshot) {
       fields.notices = this.nativeNotices(target, snapshot)
       fields.todo_state = this.nativeTodo(target, snapshot) ?? normalizeTodoSnapshot({ todos: [] })
@@ -745,8 +748,8 @@ export class GatewaySessions {
         calls.length = 0
       }
       const resetProjection = async () => { await clearTools(); liveRunning = false; reasoning = ''; usage = {}; completion = null; titles = new ReasoningTitleTracker() }
-      const meter = async (data: Row) => {
-        usage = { ...usage, ...ownerUsage(data) }
+      const meter = async (data: Row, complete = false) => {
+        usage = { ...usage, ...ownerUsage(data, complete) }
         if (['input_tokens', 'output_tokens', 'cache_read_tokens', 'cache_write_tokens'].every((key) => typeof usage[key] === 'number')) await put('metering', { session_id: target.sid, usage: { ...usage, estimated_cost: usage.estimated_cost ?? null }, tps: usage.tps ?? null, tps_available: usage.tps !== undefined, estimated: false })
       }
       const finish = async () => {
@@ -907,7 +910,7 @@ export class GatewaySessions {
                   && typeof data.text === 'string' && data.text.trim()) {
                 completion = { admission: activeAdmission, message: data.text, type: 'cron_session_read_only', code: 'cron_session_read_only', retryable: false }
               }
-              if (data.usage && typeof data.usage === 'object') await meter(data.usage as Row)
+              if (data.usage && typeof data.usage === 'object') await meter(data.usage as Row, true)
             }
             else if (kind === 'tool.start' || kind === 'tool.progress' || kind === 'tool.complete') {
               if (event.session_id !== target.sid || event.replay_epoch !== undefined && event.replay_epoch !== watch.snapshot.replay_epoch) return
