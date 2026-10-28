@@ -283,10 +283,14 @@ final class SessionListHostedTests: XCTestCase {
             }
             let settings = try XCTUnwrap(HostedAccessibility.elements(in: window).first(where: isSettingsAvatar))
             let notifications = try XCTUnwrap(HostedAccessibility.element(in: window, label: "Close navigation"))
+            let feedback = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "sidebar-send-feedback" }
             attachHostedScreenshot(window, name: orientation == .portrait ? "duo-settings-portrait" : "duo-settings-landscape")
             XCTAssertEqual(settings.accessibilityFrame.midX, notifications.accessibilityFrame.midX, accuracy: 1,
                 "Settings must share the vertical bar with the drawer toggle instead of keeping a horizontal bar")
             XCTAssertGreaterThan(abs(settings.accessibilityFrame.midY - notifications.accessibilityFrame.midY), 20)
+            XCTAssertEqual(feedback.accessibilityFrame.midX, settings.accessibilityFrame.midX, accuracy: 1)
+            XCTAssertLessThan(feedback.accessibilityFrame.maxY, settings.accessibilityFrame.minY,
+                              "Send Feedback must sit above the Settings cog on the Duo vertical bar")
             XCTAssertEqual(settings.accessibilityHint, "Long press to switch servers.")
             window.isHidden = true
             window.rootViewController = nil
@@ -323,6 +327,25 @@ final class SessionListHostedTests: XCTestCase {
         HostedAccessibility.activate(try await requireElement(in: window, where: isSettingsAvatar))
         _ = try await requireElement(in: window) {
             HostedAccessibility.identifier(of: $0) == "settings-user-profile"
+        }
+    }
+
+    func testSidebarFeedbackOpensTheSharedFormAndRestoresTheSidebar() async throws {
+        for (name, size) in [("phone", HostedSize.phone), ("duo-inner", HostedSize.duoInner)] {
+            let fixture = try FixtureApp(for: self)
+            let window = try hostWindow(fixture.sessionList(), size: size)
+            try await openSidebar(in: window)
+            let feedback = await awaitElement(in: window) { HostedAccessibility.identifier(of: $0) == "sidebar-send-feedback" }
+            let button = try XCTUnwrap(feedback, "An open sidebar must offer Send Feedback beside Settings")
+            attachHostedScreenshot(window, name: "sidebar-feedback-\(name)")
+            HostedAccessibility.activate(button)
+            _ = try await requireElement(in: window, label: "Include Diagnostics")
+            XCTAssertNotNil(HostedAccessibility.toolbarItem("Send", in: window))
+            XCTAssertNil(HostedAccessibility.element(in: window, identifier: "settings-user-profile"))
+            HostedAccessibility.activate(try XCTUnwrap(HostedAccessibility.toolbarItem("Cancel", in: window)))
+            _ = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "sidebar-send-feedback" }
+            window.isHidden = true
+            window.rootViewController = nil
         }
     }
 

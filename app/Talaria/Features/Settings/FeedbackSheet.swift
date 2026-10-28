@@ -4,6 +4,8 @@ import UIKit
 
 /// Uses the same native form presentation as CreateProfileSheet; submission stays in the draft owner.
 struct FeedbackSheet: View {
+    static var title: String { String(localized: "Send Feedback") }
+    static let systemImage = "bubble.and.pencil"
     @Bindable var model: FeedbackComposer
     @State private var diagnosticsExpanded = false
 
@@ -45,7 +47,7 @@ struct FeedbackSheet: View {
                     Section { SettingsErrorFootnote(error) }
                 }
             }
-            .navigationTitle("Send Feedback")
+            .navigationTitle(Self.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -66,6 +68,19 @@ struct FeedbackSheet: View {
 
     private func field<Value>(_ path: WritableKeyPath<FeedbackRequest, Value>) -> Binding<Value> {
         Binding(get: { model.draft[keyPath: path] }, set: { value in model.edit { $0[keyPath: path] = value } })
+    }
+}
+
+extension View {
+    func feedbackPresentation(_ model: FeedbackComposer?, isEnabled: Bool = true, onDismiss: (() -> Void)? = nil) -> some View {
+        sheet(isPresented: Binding(get: { isEnabled && model?.isPresented == true }, set: { value in
+            if isEnabled { model?.isPresented = value }
+        }), onDismiss: onDismiss) {
+            if let model { FeedbackSheet(model: model) }
+        }
+        .overlay(alignment: .top) {
+            if isEnabled, let model { GitActionToastOverlay(state: model.confirmation) }
+        }
     }
 }
 

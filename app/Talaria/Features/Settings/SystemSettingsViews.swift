@@ -118,7 +118,7 @@ struct AboutSettingsView: View {
                 SettingsDivider()
 
                 Button { feedback.isPresented = true } label: {
-                    SettingsAccessoryRow(title: String(localized: "Send Feedback"), systemImage: "bubble.and.pencil")
+                    SettingsAccessoryRow(title: FeedbackSheet.title, systemImage: FeedbackSheet.systemImage)
                 }
                 .buttonStyle(.plain)
                 .disabled(feedback.server == nil || feedback.isSending)
@@ -159,12 +159,7 @@ struct AboutSettingsView: View {
                 .accessibilityHint("Opens the copyright and license notices for the open-source software in Talaria.")
             }
         }
-        .sheet(isPresented: $feedback.isPresented) {
-            FeedbackSheet(model: feedback)
-        }
-        .overlay(alignment: .top) {
-            GitActionToastOverlay(state: feedback.confirmation)
-        }
+        .feedbackPresentation(feedback)
     }
 
     private var appVersion: String {
