@@ -18,6 +18,9 @@
     "e2e": "npm run e2e -w packages/frontend",
     "openapi": "npm run openapi -w packages/contracts"
   },
+  "overrides": {
+    "katex": "0.18.4"
+  },
   "engines": {
     "node": ">=24"
   }
