@@ -506,6 +506,21 @@ describe('OIDC outbound vetting', () => {
   const now = () => Date.now() / 1000
   const env = { HERMES_WEBUI_OIDC_ISSUER: ISSUER, HERMES_WEBUI_OIDC_CLIENT_ID: 'web-client', HERMES_WEBUI_OIDC_ALLOW_CLAIM: 'groups', HERMES_WEBUI_OIDC_ALLOW_VALUES: 'admins' }
 
+  it.each([204, 205, 304])('rejects bodyless discovery status %s through the existing request error', async (status) => {
+    const s = await bootTestServer({ env })
+    try {
+      s.deps.dnsLookup = () => Promise.resolve([{ address: '93.184.216.34', family: 4 }])
+      s.deps.pinnedFetch = () => Promise.resolve(new Response(null, { status }))
+      const start = await s.get('/api/auth/oidc/start')
+      expect(start.status).toBe(502)
+      const message = status === 304 ? 'Failed to reach OIDC endpoint' : 'OIDC endpoint returned invalid JSON'
+      expect((await json(start)).error).toBe(`${message}: ${ISSUER}/.well-known/openid-configuration`)
+      expect(s.deps.auth.getSessionInfo('')).toBeNull()
+      s.deps.pinnedFetch = (url, init) => fakeIdp(now).fetch(url, init)
+      expect((await s.get('/api/auth/oidc/start')).status).toBe(302)
+    } finally { await s.close() }
+  })
+
   it('an untrusted issuer is resolved, checked, and reached only through the pinned connection', async () => {
     const s = await bootTestServer({ env })
     try {
