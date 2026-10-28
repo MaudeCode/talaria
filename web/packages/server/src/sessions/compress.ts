@@ -49,14 +49,14 @@ export function keyMatches(stored: Record<string, unknown>, row: Record<string, 
 }
 
 /**
- * TAL-1566: records one compaction as its transcript row, after row `after` (-1: first) and the rest of that row's turn
- * and tool results, so it falls between turns. The row takes its neighbour's time so timestamps stay in order, and
+ * TAL-1566: records one compaction as its transcript row, after row `after` (-1: first), the rest of that row's turn and
+ * tool results, and any compaction already there, so it falls between turns in the order compactions ran. The row takes its neighbour's time so timestamps stay in order, and
  * recorded tool calls past it keep naming their own rows.
  */
 export function insertCompactionRow(s: Pick<Session, 'messages' | 'tool_calls'>, after: number, summary: string, now: number, id: string = randomUUID()): void {
   const turn = s.messages[after]?._turn_id
   let at = after + 1
-  while (at < s.messages.length && (s.messages[at]!.role === 'tool' || (turn && s.messages[at]!._turn_id === turn))) at += 1
+  while (at < s.messages.length && (s.messages[at]!.role === 'tool' || isCompactionRow(s.messages[at]) || (turn && s.messages[at]!._turn_id === turn))) at += 1
   const timestamp = s.messages[at - 1]?.timestamp ?? s.messages[at]?.timestamp ?? now
   s.messages = [...s.messages.slice(0, at), compactionRow(summary, timestamp, id), ...s.messages.slice(at)]
   for (const call of s.tool_calls) if (typeof call.assistant_msg_idx === 'number' && call.assistant_msg_idx >= at) call.assistant_msg_idx += 1

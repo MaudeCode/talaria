@@ -439,6 +439,13 @@ describe('manual session compression', () => {
       expect(older._messages_offset).toBe(3)
       expect(shown(older)).toEqual(['four', TOKEN_LINE, 'five'])
     })
+    it('keeps back-to-back compactions at one anchor in the order they ran', async () => {
+      const sid = await seeded()
+      let n = 0
+      sidecar.respond('chat.compress', (params) => ({ ...compressed(params), messages: params.conversation_history, summary: { noop: false, headline: '', token_line: `compaction ${String(++n)}`, note: null } }))
+      for (let i = 0; i < 2; i += 1) expect((await post(s, '/api/session/compress', { session_id: sid })).status).toBe(200)
+      expect(shown(await detail(sid))).toEqual(['one', 'two', 'three', 'four', 'marker:compaction 1', 'marker:compaction 2'])
+    })
   })
 
   describe('a compaction an earlier release recorded only as its anchor (TAL-560)', () => {
