@@ -144,3 +144,18 @@ it('sends includeDiagnostics false when unchecked and keeps the draft across a r
   await closed()
   expect(submit).toHaveBeenCalledWith(expect.objectContaining({ kind: 'bug', includeDiagnostics: false }))
 })
+
+it('drops an unsent draft when the signed-in identity changes', async () => {
+  const first = await setup()
+  open()
+  fill()
+  first.unmount()
+  // Login, logout and an expired session reset the identity, then navigate (a fresh module graph).
+  const { resetIdentityCache } = await import('../../api/queryClient')
+  resetIdentityCache()
+  vi.resetModules()
+  await setup()
+  open()
+  expect(title()).toHaveValue('')
+  expect(details()).toHaveValue('')
+})

@@ -23,6 +23,8 @@ export const LocalDraftSchema = z.object({ text: z.string().max(200_000), update
 export const DraftRevisionSchema = z.number().int().nonnegative()
 
 /** The Send feedback draft (`hermes-feedback-draft`, TAL-1574); `requestId` is reused on every retry of unchanged content. */
+/** Cleared with the identity (`resetIdentityCache`): an unsent report belongs to the account that wrote it. */
+export const FEEDBACK_DRAFT_KEY = 'hermes-feedback-draft'
 export const FeedbackDraftSchema = z.object({ requestId: z.uuid(), kind: z.enum(['bug', 'feature', 'other']), title: z.string().max(120), body: z.string().max(8000), includeDiagnostics: z.boolean() })
 
 /** Sidebar collapsed groups (`hermes-webui-collapsed-groups`). */

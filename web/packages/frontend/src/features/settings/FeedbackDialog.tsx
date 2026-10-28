@@ -5,7 +5,7 @@ import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { isApiError } from '../../contracts/common'
-import { FeedbackDraftSchema } from '../../contracts/persisted'
+import { FEEDBACK_DRAFT_KEY as DRAFT_KEY, FeedbackDraftSchema } from '../../contracts/persisted'
 import { randomUuid } from '../../lib/randomHex'
 import { readPersistedJson, removePersisted, writePersistedJson } from '../../lib/persisted'
 import { currentLocale } from '../../i18n/runtime'
@@ -19,7 +19,6 @@ import { dismissToast, showRichToast } from '../toast/toast'
 import { showErrorToast } from '../toast/errorToast'
 
 type Draft = z.infer<typeof FeedbackDraftSchema>
-const DRAFT_KEY = 'hermes-feedback-draft'
 const SENT_TOAST = 'feedback-sent'
 const fresh = (): Draft => ({ requestId: randomUuid(), kind: 'bug', title: '', body: '', includeDiagnostics: true })
 

@@ -2,7 +2,8 @@ import { QueryClient, dehydrate, hydrate, type DehydratedState, type Query } fro
 import { z, type ZodType } from 'zod'
 import { isApiError } from '../contracts/common'
 import { ProfilesSchema, ProjectsSchema, ReasoningStatusSchema, SessionEnvelopeSchema, SessionsListSchema, SettingsSchema, WorkspacesSchema } from '../contracts'
-import { readPersisted, readPersistedJson, removePersistedByPrefix, writePersisted, writePersistedJson } from '../lib/persisted'
+import { FEEDBACK_DRAFT_KEY } from '../contracts/persisted'
+import { readPersisted, readPersistedJson, removePersisted, removePersistedByPrefix, writePersisted, writePersistedJson } from '../lib/persisted'
 import { randomHex } from '../lib/randomHex'
 
 /**
@@ -26,6 +27,7 @@ export function resetIdentityCache(): void {
   for (const retire of retireClients) retire()
   removePersistedByPrefix('hermes-boot:')
   removePersistedByPrefix('hermes-webui-session')
+  removePersisted(FEEDBACK_DRAFT_KEY)
   // Removing the old snapshot can free the quota that blocked the fence write.
   if (readPersisted(GENERATION_KEY) !== generation) writePersisted(GENERATION_KEY, generation)
 }
