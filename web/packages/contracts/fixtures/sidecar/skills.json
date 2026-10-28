@@ -734,7 +734,7 @@
     {
       "params": {
         "profile_home": "<profile>",
-        "name": "demo"
+        "name": "apple-notes"
       },
       "result": {
         "state": "unavailable",

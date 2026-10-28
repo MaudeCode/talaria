@@ -60,6 +60,7 @@ SCENARIOS: list[tuple[str, dict]] = [
     ("skills.find", {"profile_home": "{profile}", "name": "apple-notes"}),
     ("skills.view", {"profile_home": "{profile}", "name": "apple-notes"}),
     ("skills.view", {"profile_home": "{profile}", "name": "does-not-exist"}),
+    ("skills.revisions", {"profile_home": "{profile}", "name": "apple-notes"}),
     # skill bundles (run_scenarios seeds the profile's media-kit bundle; one member is not installed)
     ("commands.bundles", {"profile_home": "{profile}"}),
     ("commands.bundle_resolve", {"profile_home": "{profile}", "command": "/media-kit find a cat"}),
