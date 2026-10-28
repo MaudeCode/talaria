@@ -55,6 +55,14 @@ The server owns every layer except the client's live timeline:
   completed turn carries, so Web and iOS render one projection of live,
   settled, replayed, and recovered activity.
 
+Direct turn settlement reconciles a completed Agent result before persisting either
+transcript or model context. A valid final assistant row remains authoritative,
+including rewritten prose. When it is absent, the result's `final_response`,
+then the current stream's last prose segment after tool/interim activity, can
+supply the missing row. Failed, partial, stopped and interrupted turns do not
+promote streamed progress to success. Terminal frames, replay, reload and export
+all read the reconciled transcript; clients retain no text-matching fallback.
+
 The frontend's stream reducer (`packages/frontend/src/stream/reducer.ts`) is a
 projection of SSE frames that converges on the server's settled fields.
 

@@ -37,6 +37,24 @@ const props = (): TranscriptProps => ({
   showJumpButtons: false, virtualizeLongTranscripts: false,
 })
 
+it('keeps the server-recovered final answer when done replaces the live row (TAL-1030)', async () => {
+  dispatch({ type: 'start', sessionId: 'history', streamId: 'run', turnId: 'run', userMessageId: '1', userText: 'Question', now: 0 })
+  dispatch({ type: 'event', sessionId: 'history', streamId: 'run', event: { event: 'token', data: { text: 'Unique final answer' } }, lastEventId: 'run:1', now: 1 })
+  const input = { ...props(), truncated: false, rows: projectMessages([{ id: 1, role: 'user' as const, content: 'Question', _turn_id: 'run' }]) }
+  const view = render(<Transcript {...input} live={getStreamState().turns.history!} />)
+  expect(await screen.findByText('Unique final answer')).toBeVisible()
+  const session = sessionFixture({ session_id: 'history', messages: [
+    { id: 1, role: 'user', content: 'Question', _turn_id: 'run' },
+    { id: 2, role: 'assistant', content: 'Unique final answer', _turn_id: 'run' },
+  ] })
+  dispatch({ type: 'event', sessionId: 'history', streamId: 'run', event: { event: 'done', data: { session, terminal_state: 'completed' } }, lastEventId: 'run:2', now: 2 })
+  view.rerender(<Transcript {...input} rows={projectMessages(session.messages!)} live={getStreamState().turns.history!} />)
+  expect(screen.getAllByText('Unique final answer')).toHaveLength(1)
+  expect(view.container.querySelector('[data-live]')).toBeNull()
+  view.rerender(<Transcript {...input} rows={projectMessages(session.messages!)} live={null} />)
+  expect(await screen.findByText('Unique final answer')).toBeVisible()
+})
+
 it('owns virtualizer scroll listeners only while the virtualized window is active', () => {
   const added = vi.spyOn(HTMLElement.prototype, 'addEventListener')
   const removed = vi.spyOn(HTMLElement.prototype, 'removeEventListener')

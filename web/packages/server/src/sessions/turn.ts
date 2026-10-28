@@ -36,7 +36,7 @@ import { SessionGoals } from './goals.js'
 import { turnTerminalState } from './anchor.js'
 import { persistentStateChanges, persistentStateSnapshot } from './state-saved.js'
 import { agentBuildParams, webuiEphemeralSystemPrompt, workspaceSystemMessage } from './turn-context.js'
-import { agentSteerText, assistantReplyAddedAfterCurrentTurn, attachedFilesPrompt, buildPartialMessage, dedupeContext, checkpointTurnStart, extractToolCallsFromMessages, hasNativeImages, injectMaxIterationSummaryFallback, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, withDataUseRequirements, sessionLacksFinalAssistantAnswer, splitDisplayText, stateDbSeenId, joinReasoning, reasoningFieldsText, toolOutcome, withoutMaxIterationSummaryRequest, withNativeImagesRestored, withoutNativeImages, withoutToolImages } from './merge.js'
+import { agentSteerText, assistantReplyAddedAfterCurrentTurn, attachedFilesPrompt, buildPartialMessage, dedupeContext, checkpointTurnStart, extractToolCallsFromMessages, finalAnswerOf, hasNativeImages, isConversationalAssistant, withFinalAssistantAnswer, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, withDataUseRequirements, sessionLacksFinalAssistantAnswer, splitDisplayText, stateDbSeenId, joinReasoning, reasoningFieldsText, toolOutcome, withoutMaxIterationSummaryRequest, withNativeImagesRestored, withoutNativeImages, withoutToolImages } from './merge.js'
 import { mayBecomeSilentReply, turnOrigin, recordBackgroundReview, recordBackgroundUpdate, type BackgroundUpdate } from './background-updates.js'
 import { countExchanges, fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitle, latestExchangeSnippets, looksInvalidGeneratedTitle, looksLikeDefaultCliTitle, sanitizeGeneratedTitle, titleLanguageMismatch, titlePrompts } from './titles.js'
 import { WORKSPACE_BUSY_MESSAGE } from '../workspace/git.js'
@@ -693,6 +693,7 @@ export class TurnRunner {
     const mintToolId = (): string => `tool-${streamId}-${String(++mintedToolIds)}`
     // When the server received each call's start frame: its completion's `duration` is measured from it.
     const toolStartedAt = new WeakMap<Record<string, unknown>, number>()
+    let finalStreamedText = ''
     let tokenSent = false
     let firstTokenAt: number | null = null
     // TAL-397: the live meter. Counters start from the session's and follow the Agent's; the rate counts text deltas.
@@ -804,6 +805,7 @@ export class TurnRunner {
                 // Visible text closes the reasoning segment: a stable title snapshot (or a clear) goes out first.
                 const stable = titles.stableSnapshot(reasoningText.join(''))
                 if (stable !== null) (await emitFrame('reasoning', { text: '', titles: stable }))
+                finalStreamedText += str(data.text)
                 partialText.push(str(data.text))
                 if (holdSilence && mayBecomeSilentReply(partialText.join(''))) { heldText += str(data.text); (await meterDelta(receivedAt)); return }
                 await emitFrame('token', { text: heldText + str(data.text) })
@@ -812,6 +814,7 @@ export class TurnRunner {
                 return
               }
               case 'reasoning': {
+                finalStreamedText = ''
                 if (partialText.length && !reasoningText.length) titles.resetSegment()
                 reasoningText.push(str(data.text))
                 // Python `reasoning_event_payload`: bold or first-line titles ride on the delta they complete.
@@ -833,7 +836,13 @@ export class TurnRunner {
                 await saving
                 return
               }
+              case 'interim_assistant': {
+                finalStreamedText = ''
+                await emitFrame(frame.event, data)
+                return
+              }
               case 'tool': {
+                finalStreamedText = ''
                 const call = { name: data.name, args: data.args ?? {}, tid: str(data.tid), done: false }
                 liveToolCalls.push(call)
                 toolIds.set(call, call.tid || mintToolId())
@@ -1002,9 +1011,13 @@ export class TurnRunner {
         return
       }
       s = current
-      // Python `_maybe_inject_max_iteration_summary_fallback`: an exhausted tool budget leaves the closing
-      // explanation in `final_response` only, so it becomes the turn's assistant answer before anything else reads it.
-      const withFallback = (rows: Message[]): Message[] => (result.tool_limit_reached ? injectMaxIterationSummaryFallback(rows, result.final_response) : rows)
+      // Recover before display, context, state.db reconciliation and terminal classification read the result.
+      const recoverAnswer = result.status === 'completed' && !result.failed && !result.partial && !result.compression_exhausted && !result.error && !capturedTerminalError
+      const recoveredPrompt = pendingUserRow(msgText, opts.attachments ?? [], s.pending_started_at, opts.source ?? 'webui', streamId)
+      if (typeof userMessage === 'string') recoveredPrompt.api_content = userMessage
+      else recoveredPrompt.content = userMessage
+      const withFallback = (rows: Message[], finalResponse = result.final_response): Message[] => (recoverAnswer || result.tool_limit_reached
+        ? withFinalAssistantAnswer(rows, finalResponse, { previousContext, msgText, prompt: recoveredPrompt, streamedText: recoverAnswer && !opts.ephemeral ? finalStreamedText : '', toolLimitReached: result.tool_limit_reached }) : rows)
       const withoutRequest = (rows: Message[]): Message[] => (result.tool_limit_reached ? withoutMaxIterationSummaryRequest(rows, result.max_iterations_summary_request, msgText) : rows)
       const agentRows = withFallback(result.messages)
       const resultMessages = withoutRequest(agentRows)
@@ -1055,7 +1068,9 @@ export class TurnRunner {
       // ── settle the transcript ──
       // TAL-539: after a mid-turn compression the model context is the sidecar's pruned copy, settled like the transcript.
       const pruned = result.compressed ? result.context_messages ?? null : null
-      const context = withoutToolImages(pruned ? withoutRequest(withFallback(pruned)) : resultMessages)
+      const answer = assistantAdded ? resultMessages.at(-1) : undefined
+      const finalResponse = answer && isConversationalAssistant(answer) && finalAnswerOf(answer).trim() ? messageText(answer.content) : ''
+      const context = withoutToolImages(pruned ? withoutRequest(withFallback(pruned, finalResponse)) : resultMessages)
       let estimate = result.compressed ? result.post_compression_context_tokens_estimate ?? null : null
       // The sidecar estimated its own rows; a tool-limit settlement or stripped screenshots (TAL-544) that changed them move
       // the estimate by the difference.

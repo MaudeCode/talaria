@@ -1,5 +1,32 @@
 import { describe, expect, it } from 'vitest'
-import { BODY_EXCERPT_LIMIT, assistantReplyAddedAfterCurrentTurn, extractToolCallsFromMessages, markerKind, mergeDisplayMessagesAfterAgentResult, mergeSessionMessagesAppendOnly, normalizeAssistantDisplay, sessionLacksFinalAssistantAnswer, splitDisplayText, stripToolCallXml, toolOutcome, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withToolCallOutcomes } from './merge.js'
+import { BODY_EXCERPT_LIMIT, assistantReplyAddedAfterCurrentTurn, extractToolCallsFromMessages, markerKind, mergeDisplayMessagesAfterAgentResult, mergeSessionMessagesAppendOnly, normalizeAssistantDisplay, sessionLacksFinalAssistantAnswer, splitDisplayText, stripToolCallXml, toolOutcome, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withToolCallOutcomes, withFinalAssistantAnswer } from './merge.js'
+
+describe('withFinalAssistantAnswer (TAL-1030)', () => {
+  const opts = { previousContext: [], msgText: 'question', prompt: { role: 'user', content: 'question', api_content: 'Expanded prompt' }, streamedText: 'Streamed prose', toolLimitReached: false }
+  it('retains the admitted prompt and model projection when the result contains no rows', () => {
+    expect(withFinalAssistantAnswer([], 'Final prose', opts)).toEqual([opts.prompt, { role: 'assistant', content: 'Final prose' }])
+  })
+  it('preserves structured authoritative answers and their model-facing fields', () => {
+    const rows = [{ role: 'user', content: 'question' }, { role: 'assistant', content: [{ type: 'text', text: 'Rewritten' }], api_content: 'Model text' }]
+    expect(withFinalAssistantAnswer(rows, 'Old text', opts)).toBe(rows)
+  })
+  it('keeps inline reasoning in model context for the existing display projection', () => {
+    const rows = [{ role: 'user', content: 'question' }]
+    const result = withFinalAssistantAnswer(rows, '<think>reasoning</think>Final prose', opts)
+    expect(result.at(-1)).toMatchObject({ content: '<think>reasoning</think>Final prose' })
+    expect(normalizeAssistantDisplay(result.at(-1))).toMatchObject({ content: 'Final prose', reasoning: 'reasoning' })
+    expect(rows).toHaveLength(1)
+  })
+  it('recovers after a tool-call assistant row, preserving every activity segment', () => {
+    const rows = [{ role: 'user', content: 'question' }, { role: 'assistant', content: 'Working', tool_calls: [{ id: 'tool' }] }]
+    const result = withFinalAssistantAnswer(rows, 'Final prose', opts)
+    expect(result.slice(0, -1)).toEqual(rows)
+    expect(result.at(-1)).toEqual({ role: 'assistant', content: 'Final prose' })
+  })
+  it.each(['[SILENT]', 'NO_REPLY'])('keeps %s intact for the existing background silence policy', (marker) => {
+    expect(withFinalAssistantAnswer([{ role: 'user', content: 'question' }], marker, opts).at(-1)).toEqual({ role: 'assistant', content: marker })
+  })
+})
 
 describe('toolOutcome (TAL-313)', () => {
   it('projects a locator only from a successful draft producer tool reply, across persisted calls', () => {
