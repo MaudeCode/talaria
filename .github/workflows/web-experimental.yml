@@ -48,7 +48,7 @@ jobs:
           if ! grep -qxE '(web_server|web_frontend|contracts)=true' "$RUNNER_TEMP/changes"; then
             exit 0
           fi
-          # <stable>-exp.<12-hex> is invalid SemVer when those 12 characters are digits with a leading zero.
+          # <next patch>-exp.<12-hex> is invalid SemVer when those 12 characters are digits with a leading zero.
           if [[ "${HEAD_SHA:0:12}" =~ ^0[0-9]{11}$ ]]; then
             echo "::notice::${HEAD_SHA:0:12} cannot form a SemVer prerelease; the next Web change publishes instead."
             exit 0
