@@ -25,7 +25,7 @@ async function newSession(s: TestServer): Promise<string> {
 }
 
 const completed = (messages: Json[], extra: Partial<ChatResult> = {}): ChatResult => ({
-  status: 'completed', messages, final_response: str(messages[messages.length - 1]?.content), error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '',
+  status: 'completed', messages, final_response: messages.at(-1)?.role === 'assistant' ? str(messages.at(-1)?.content) : '', error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '',
   usage: { prompt_tokens: 120, completion_tokens: 30, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: 0.001 }, context: { context_length: 200000 }, model: 'test-model', provider: 'test', compressed: false,
   agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [], ...extra,
 })

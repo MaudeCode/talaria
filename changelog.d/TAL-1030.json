@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Final chat answers remain visible after a response finishes and when you reopen the conversation.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

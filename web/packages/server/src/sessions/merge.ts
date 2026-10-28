@@ -284,14 +284,20 @@ export function sessionLacksFinalAssistantAnswer(messages: Message[]): boolean {
   return true
 }
 
-/**
- * Python `_maybe_inject_max_iteration_summary_fallback`: when the Agent exhausted its tool budget its closing
- * explanation can live only in `final_response`, so it is appended as the turn's assistant answer.
- */
-export function injectMaxIterationSummaryFallback(messages: Message[], finalResponse: string): Message[] {
-  if (!finalResponse.trim()) return messages
-  if (!sessionLacksFinalAssistantAnswer(messages)) return messages
-  return [...messages, { role: 'assistant', content: finalResponse, _max_iteration_summary_fallback: true }]
+/** A completed result's final row wins; recover an omitted answer only from this turn's own output. */
+export function withFinalAssistantAnswer(messages: Message[], finalResponse: string, opts: { previousContext: Message[]; msgText: string; prompt: Message; streamedText: string; toolLimitReached: boolean }): Message[] {
+  const at = findCurrentUserTurn(messages, opts.msgText)
+  const replayedContext = messagesHavePrefix(messages, opts.previousContext)
+  const ownRows = replayedContext ? messages.slice(opts.previousContext.length)
+    : at !== null ? messages.slice(at + 1)
+    : messages.every((m) => m.role === 'assistant' || m.role === 'tool' || isContextCompressionMarker(m)) ? messages : []
+  const last = ownRows.findLast((m) => !isContextCompressionMarker(m) && !isDict(m._steer) && !agentRowKind(m))
+  if (last && assistantHasFinalVisibleText(last) && finalAnswerOf(last).trim()) return messages
+  const content = splitDisplayText(finalResponse)[0].trim() ? finalResponse : opts.streamedText
+  if (!splitDisplayText(content)[0].trim()) return messages
+  // An empty or history-only result still needs its prompt in the next model request.
+  const rows = ownRows.length || (!replayedContext && at !== null) ? messages : [...opts.previousContext, opts.prompt]
+  return [...rows, { role: 'assistant', content, ...(opts.toolLimitReached ? { _max_iteration_summary_fallback: true } : {}) }]
 }
 
 /**

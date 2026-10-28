@@ -21,6 +21,89 @@ function completed(params: SidecarParams<'chat.start'>): SidecarResultInput<'cha
   }
 }
 
+describe('final answer settlement (TAL-1030)', () => {
+  it.each(['failed', 'partial', 'error', 'exception', 'cancelled', 'tool-progress', 'interim-progress', 'reasoning-only', 'empty'] as const)('does not recover a successful answer from %s', async (ending) => {
+    const sidecar = new FakeSidecar()
+    sidecar.respond('chat.start', (params, emit) => {
+      if (ending !== 'empty') emit({ event: 'token', data: { text: ending === 'reasoning-only' ? '<think>private reasoning</think>' : 'Unfinished progress' } })
+      if (ending === 'exception') throw new Error('Response interrupted')
+      if (ending === 'tool-progress') emit({ event: 'tool', data: { name: 'terminal', tid: 't', args: {} } })
+      if (ending === 'interim-progress') emit({ event: 'interim_assistant', data: { text: 'Unfinished progress', already_streamed: true } })
+      return { ...completed(params), messages: [...params.conversation_history, { role: 'user', content: params.user_message }],
+        final_response: ['failed', 'partial', 'error', 'cancelled'].includes(ending) ? 'Unfinished progress' : '',
+        status: ending === 'cancelled' ? 'cancelled' : ending === 'error' ? 'error' : 'completed',
+        failed: ending === 'failed', partial: ending === 'partial', error: ['failed', 'partial', 'error'].includes(ending) ? 'Response interrupted' : null }
+    })
+    const server = await bootTestServer({ sidecar })
+    try {
+      const session = await server.deps.sessionStore.newSession()
+      session.messages = [{ role: 'user', content: 'old' }, { role: 'assistant', content: 'Old answer' }]
+      session.context_messages = structuredClone(session.messages)
+      await server.deps.sessionStore.save(session)
+      const start = await server.get('/api/chat/start', { method: 'POST', body: JSON.stringify({ session_id: session.session_id, message: 'hello' }), headers: { 'content-type': 'application/json' } })
+      const { stream_id: streamId } = await start.json() as { stream_id: string }
+      const frames = await server.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'stream_end')
+      const terminal = frames.find((f) => ['done', 'cancel', 'apperror'].includes(f.event))?.data as { terminal_state: string }
+      expect(terminal.terminal_state).toBe(ending === 'cancelled' ? 'cancelled' : ['tool-progress', 'interim-progress', 'reasoning-only', 'empty'].includes(ending) ? 'no_response' : 'interrupted')
+      const saved = await server.deps.sessionStore.get(session.session_id)
+      expect(saved.messages.filter((m) => m._turn_id === streamId && m.role === 'assistant' && !m._error && !m._partial)).toEqual([])
+    } finally { await server.close() }
+  })
+
+  it.each(['omitted', 'empty', 'stream-only', 'tool-tail', 'authoritative', 'rewritten', 'segments', 'compressed', 'compressed-rewrite'] as const)('preserves %s answers through done, replay, reload, export and model history', async (shape) => {
+    const answer = 'Unique final answer'
+    const expected = ['rewritten', 'compressed-rewrite'].includes(shape) ? 'Authoritative rewrite' : answer
+    const sidecar = new FakeSidecar()
+    sidecar.respond('chat.start', (params, emit) => {
+      emit({ event: 'token', data: { text: 'Earlier progress' } })
+      emit({ event: 'tool', data: { name: 'terminal', tid: 't', args: {} } })
+      emit({ event: 'tool_complete', data: { name: 'terminal', tid: 't', result: 'ok' } })
+      emit({ event: 'reasoning', data: { text: 'Final reasoning' } })
+      emit({ event: 'token', data: { text: answer } })
+      const user = { role: 'user', content: params.user_message }
+      const tools = [{ role: 'assistant', content: 'Earlier progress', tool_calls: [{ id: 't', type: 'function', function: { name: 'terminal', arguments: '{}' } }] }, { role: 'tool', tool_call_id: 't', content: 'ok' }]
+      const rows = shape === 'empty' ? [] : [...params.conversation_history, user,
+        ...(['tool-tail', 'segments'].includes(shape) ? tools : []),
+        ...(['authoritative', 'rewritten', 'segments', 'compressed-rewrite'].includes(shape) ? [{ role: 'assistant', content: expected }] : [])]
+      return { ...completed(params), messages: rows, final_response: shape === 'stream-only' ? '' : answer,
+        ...(shape.startsWith('compressed') ? { compressed: true, context_messages: [{ role: 'user', content: '[Context compaction: summary]' }, user] } : {}) }
+    })
+    const server = await bootTestServer({ sidecar })
+    try {
+      const session = await server.deps.sessionStore.newSession()
+      // Equal prose from an older turn must neither satisfy this turn nor suppress its recovered answer.
+      session.messages = [{ role: 'user', content: 'old prompt' }, { role: 'assistant', content: answer }]
+      session.context_messages = structuredClone(session.messages)
+      await server.deps.sessionStore.save(session)
+      const start = await server.get('/api/chat/start', { method: 'POST', body: JSON.stringify({ session_id: session.session_id, message: 'hello' }), headers: { 'content-type': 'application/json' } })
+      expect(start.status).toBe(200)
+      const { stream_id: streamId } = await start.json() as { stream_id: string }
+      const url = `/api/chat/stream?stream_id=${streamId}&after_seq=0`
+      const frames = await server.sse(url, (f) => f.event === 'stream_end')
+      expect(frames.some((f) => f.event === 'token' && (f.data as { text: string }).text === answer)).toBe(true)
+      const done = frames.find((f) => f.event === 'done')?.data as { terminal_state: string; session: { messages: Record<string, unknown>[] } }
+      expect(done?.session.messages.at(-1)).toMatchObject({ role: 'assistant', content: expected, _turn_id: streamId })
+      expect(done.terminal_state).toBe('completed')
+      expect(done.session.messages.filter((m) => m.role === 'assistant' && m.content === expected && m._turn_id === streamId)).toHaveLength(1)
+      const replay = await server.sse(url, (f) => f.event === 'stream_end')
+      expect(replay.find((f) => f.event === 'done')?.data).toEqual(done)
+      server.deps.sessionStore.sessions.delete(session.session_id)
+      const detail = await (await server.get(`/api/session?session_id=${session.session_id}`)).json() as { session: { messages: unknown[] } }
+      expect(detail.session.messages.at(-1)).toMatchObject({ role: 'assistant', content: expected, _turn_id: streamId })
+      const exported = await server.get(`/api/session/export?session_id=${session.session_id}&format=json`)
+      expect(exported.status).toBe(200)
+      expect(await exported.text()).toContain(expected)
+      let history: Record<string, unknown>[] = []
+      sidecar.respond('chat.start', (params) => { history = params.conversation_history; return completed(params) })
+      const next = await server.get('/api/chat/start', { method: 'POST', body: JSON.stringify({ session_id: session.session_id, message: 'next' }), headers: { 'content-type': 'application/json' } })
+      const nextId = (await next.json() as { stream_id: string }).stream_id
+      await server.sse(`/api/chat/stream?stream_id=${nextId}`, (f) => f.event === 'stream_end')
+      expect(history.at(-1)).toMatchObject({ role: 'assistant', content: expected })
+      expect(history[0]).toMatchObject({ role: 'user', content: shape.startsWith('compressed') ? '[Context compaction: summary]' : 'old prompt' })
+    } finally { await server.close() }
+  })
+})
+
 it('sends the complete 120-row transcript window in done', async () => {
   const sidecar = new FakeSidecar()
   sidecar.respond('chat.start', completed)
