@@ -371,7 +371,7 @@ export function Transcript(props: TranscriptProps) {
               </div>
             )}
             {virtualize ? (
-              <VirtualHistory rows={rows} scrollRef={scrollRef} estimateSize={estimateSize} followsRef={followsRef} handle={virtualizerRef} renderRow={renderRow} />
+              <VirtualHistory rows={rows} estimateSize={estimateSize} followsRef={followsRef} handle={virtualizerRef} renderRow={renderRow} />
             ) : <div className="messages-inner messages-history">{renderedRows}</div>}
             {(pending || showLiveUser) && <UserMessageRow row={liveUserRow} renderMarkdown={renderUserMarkdown} sessionId={sessionId} actions={NO_ACTIONS} pending />}
             {showLive && live && <LiveTurnView turn={live} name={assistantName} mode={mode} userVisible omitToolIds={continuedTools} />}
