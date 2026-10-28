@@ -74,7 +74,7 @@ def test_pending_native_entitlement_is_unknown_not_unavailable(monkeypatch):
     assert result['unavailable_model_ids'] == []
 
 
-def test_direct_usage_carries_native_gauge_and_older_agent_clears_it(monkeypatch):
+def test_direct_usage_carries_native_gauge_and_omits_missing_capability(monkeypatch):
     from types import SimpleNamespace
     from talaria_sidecar.methods import chat
     native = ModuleType('gateway.session_usage')
@@ -85,4 +85,6 @@ def test_direct_usage_carries_native_gauge_and_older_agent_clears_it(monkeypatch
     assert chat._usage(agent)['plan_gauge'] == gauge
     assert chat._usage(agent)['prompt_tokens'] == 42
     native.plan_gauge = lambda agent: None
-    assert chat._usage(agent)['plan_gauge'] is None
+    assert 'plan_gauge' not in chat._usage(agent)
+    monkeypatch.setitem(sys.modules, 'gateway.session_usage', None)
+    assert 'plan_gauge' not in chat._usage(agent)

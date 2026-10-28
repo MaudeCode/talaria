@@ -131,4 +131,16 @@ describe('native plan allowance (TAL-1508)', () => {
     } finally { await t.s.close() }
   })
 
+  it('marks retained plan quotas stale when account membership cannot be refreshed', async () => {
+    const t = await setup()
+    t.sidecar.respond('usage.pool', () => ({ entries: [] }))
+    try {
+      await t.s.deps.catalog.quotas(t.home, 'default')
+      t.sidecar.respond('usage.pool_providers', () => { throw new Error('synthetic unavailable membership') })
+      t.setSnapshot(native)
+      const quotas = await t.s.deps.catalog.quotas(t.home, 'default') as { sources: { provider_id: string; status: string; plan_stale?: boolean }[] }
+      expect(quotas.sources.find((source) => source.provider_id === 'nous')).toMatchObject({ status: 'stale', plan_stale: true })
+    } finally { await t.s.close() }
+  })
+
 })

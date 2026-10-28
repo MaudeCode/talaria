@@ -320,7 +320,7 @@ def _usage(agent: Any) -> dict:
         gauge = None
     cost = getattr(agent, "session_estimated_cost_usd", None)
     return {
-        "plan_gauge": gauge,
+        **({"plan_gauge": gauge} if gauge is not None else {}),
         "prompt_tokens": int(_num("session_prompt_tokens")),
         "completion_tokens": int(_num("session_completion_tokens")),
         "cache_read_tokens": int(_num("session_cache_read_tokens")),

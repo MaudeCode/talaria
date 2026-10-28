@@ -20,4 +20,10 @@ describe('native quota presentation', () => {
     render(<ProviderQuotaPace gauge={{ id: 'day', label: 'Today', used_bp: 8300, resets_at_ms: null }} />)
     expect(screen.getByText('Today: 83% used')).toBeVisible()
   })
+  it.each(['stale', 'unavailable'])('renders cached %s plan data without current credits coverage wording', (status) => {
+    render(<ProviderQuotaPace source={{ source_id: 'cached-plan', status, plan_usage: { ...plan, credits_pay: true }, plan_stale: false }} />)
+    expect(screen.getByText('Last-confirmed data')).toBeVisible()
+    expect(screen.queryByText('Credits cover usage after allowance')).toBeNull()
+  })
+
 })

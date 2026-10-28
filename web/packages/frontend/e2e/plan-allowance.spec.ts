@@ -28,7 +28,12 @@ for (const legacy of [true, false]) test(`${legacy ? 'legacy' : 'native'} model 
   await page.screenshot({ animations: 'disabled', path: info.outputPath(legacy ? 'before-models.png' : 'after-models.png') })
   await page.keyboard.press('Escape')
   await page.route('**/api/providers', (route) => route.fulfill({ json: { active_provider: 'nous', providers: [{ id: 'nous', display_name: 'Nous', configured: true, has_key: true }] } }))
-  await page.route('**/api/provider/quotas*', (route) => route.fulfill({ json: { version: 1, computed_at: '2026-01-01T00:00:00Z', scope_id: 'test-scope', profile_id: 'default', active_provider: 'nous', requested_source_id: null, missing_source: false, sources: legacy ? [] : [{ source_id: 'test-nous', provider_id: 'nous', plan_usage: plan, windows: [] }] } }))
+  let quotaPhase = 'fresh'
+  await page.route('**/api/provider/quotas*', (route) => route.fulfill({ json: {
+    version: 1, computed_at: '2026-01-01T00:00:00Z', scope_id: 'test-scope', profile_id: 'default', active_provider: 'nous', requested_source_id: null, missing_source: false,
+    availability: { authoritative: quotaPhase !== 'offline', status: quotaPhase === 'offline' ? 'unavailable' : 'available', generation: 'synthetic-generation', unavailable_reason: quotaPhase === 'offline' ? 'Account status temporarily unavailable.' : null },
+    sources: legacy || quotaPhase === 'offline' ? [] : [{ source_id: 'test-nous', provider_id: 'nous', status: 'available', plan_usage: { ...plan, credits_pay: quotaPhase === 'credits' }, plan_stale: false, windows: [] }],
+  } }))
   await page.goto('/settings/providers'); await settle(page)
   if (!legacy) {
     await expect(page.getByTestId('provider-plan-usage')).toContainText('0% remaining')
@@ -37,6 +42,17 @@ for (const legacy of [true, false]) test(`${legacy ? 'legacy' : 'native'} model 
   }
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   await page.screenshot({ animations: 'disabled', path: info.outputPath(legacy ? 'before-quotas.png' : 'after-quotas.png') })
+  if (!legacy) {
+    quotaPhase = 'credits'
+    await page.getByRole('button', { name: 'Refresh quotas', exact: true }).click()
+    await expect(page.getByText('Credits cover usage after allowance')).toBeVisible()
+    await page.screenshot({ animations: 'disabled', path: info.outputPath('credits-before.png') })
+    quotaPhase = 'offline'
+    await page.getByRole('button', { name: 'Refresh quotas', exact: true }).click()
+    await expect(page.getByTestId('provider-plan-usage')).toContainText('Last-confirmed data')
+    await expect(page.getByText('Credits cover usage after allowance')).toHaveCount(0)
+    await page.screenshot({ animations: 'disabled', path: info.outputPath('credits-after.png') })
+  }
 })
 
 test('run allowance follows the current stream and clears on replacement', async ({ page }, info) => {

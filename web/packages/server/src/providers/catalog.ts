@@ -1630,7 +1630,8 @@ export class ProviderCatalog {
       return classifyQuotaSource({
         computed_at: isoAt(at), source_id: d.source_id, provider_id: d.provider_id, provider_label: d.provider_label, account_label: d.account_label,
         is_active_provider: d.provider_id === active, supported: q.supported === true, status: str(limits.status) || str(q.status) || 'unavailable',
-        plan_usage: limits.plan_usage ?? null, plan_stale: limits.plan_stale ?? false, plan: limits.plan ?? null, windows: (limits.windows ?? []) as QuotaWindow[], pace_window_index: (limits.pace_window_index ?? null) as number | null, session_window_index: limits.session_window_index ?? null, weekly_window_index: limits.weekly_window_index ?? null, quota: q.quota ?? null, balances: q.balances ?? [], details: limits.details ?? [],
+        ...(limits.plan_usage !== undefined ? { plan_usage: limits.plan_usage, plan_stale: limits.plan_stale ?? false } : {}),
+        plan: limits.plan ?? null, windows: (limits.windows ?? []) as QuotaWindow[], pace_window_index: (limits.pace_window_index ?? null) as number | null, session_window_index: limits.session_window_index ?? null, weekly_window_index: limits.weekly_window_index ?? null, quota: q.quota ?? null, balances: q.balances ?? [], details: limits.details ?? [],
         unavailable_reason: limits.unavailable_reason ?? null, retry_after: limits.retry_after ?? null, fetched_at: limits.fetched_at ?? null, message: q.message ?? null,
       }, thresholds)
     }))
@@ -1673,7 +1674,7 @@ export class ProviderCatalog {
   private readonly lastQuotaSources = new Map<string, { source: string; sequence: number; membership: Set<string>; sources: QuotaSourceRow[]; sourceSequences: Map<string, number> }>()
 
   private staleQuotaSource(source: QuotaSourceRow, reason = 'Provider data is temporarily unavailable. Showing last-confirmed data.'): QuotaSourceRow {
-    return { ...source, status: 'stale', unavailable_reason: reason, message: reason, urgency: { remaining: 'stale', pace: 'stale' } }
+    return { ...source, ...(source.plan_usage ? { plan_stale: true } : {}), status: 'stale', unavailable_reason: reason, message: reason, urgency: { remaining: 'stale', pace: 'stale' } }
   }
 
   private availability(source: string, authoritative: boolean, cached: boolean): CatalogAvailability {

@@ -21,7 +21,7 @@ function formatMinutes(locale: string, minutes: number): string {
 export function ProviderQuotaPace({ source, showAccount = false, plan, planStale = false, gauge, compact = false }: { source?: QuotaSource; showAccount?: boolean; plan?: PlanUsage | null | undefined; planStale?: boolean | undefined; gauge?: PlanGauge | null | undefined; compact?: boolean }) {
   const locale = useLocale()
   const allowance = plan ?? source?.plan_usage
-  const stale = planStale || source?.plan_stale
+  const stale = planStale || source?.plan_stale || source?.status === 'stale' || source?.status === 'unavailable'
   if (gauge) return <span className="text-[11px] tabular-nums text-muted" data-plan-gauge={gauge.id}>
     {m.plan_used({ label: gauge.label, percent: new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 0 }).format(gauge.used_bp / 10000) })}
     {gauge.resets_at_ms !== null && <span> · {m.provider_quota_resets({ time: resetTime(locale, gauge.resets_at_ms) })}</span>}
