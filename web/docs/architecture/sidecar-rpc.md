@@ -1,6 +1,6 @@
 # Sidecar RPC (TAL-245)
 
-RPC v62 lets session-bound `commands.exec` emit the existing `clarify` and
+RPC v64 lets session-bound `commands.exec` emit the existing `clarify` and
 `clarify_resolved` frames. The Agent's `bind_asker` and `clarify_asker` own choice
 labels and private-value mapping. Commands reuse the chat clarification waiter
 and callback without creating an Agent or chat turn. Each invocation has its
