@@ -103,6 +103,9 @@ public final class SessionListViewModel {
     /// The Agent's session storage health from the last list load (TAL-830), kept in the response cache so a
     /// relaunch still explains an empty list. nil until then or from an older server.
     public private(set) var agentStorage: AgentStorage?
+    /// The groups the last successful list load fills, in display order (`sidebar_groups`, TAL-1534). nil until
+    /// then or from an older server; the sidebar then captions every group its rows carry.
+    public private(set) var sidebarGroups: [SessionSidebarGroup]?
     /// The latest archive the Chats list still offers to undo (TAL-443). A second
     /// archive replaces it, so only the latest one is undoable.
     public private(set) var archiveUndo: SessionArchiveUndo?
@@ -479,6 +482,7 @@ public final class SessionListViewModel {
                 claimCountAtStart: claimCountAtStart
             )
             automatedSessionCounts = response.automatedSessionCounts
+            sidebarGroups = response.sidebarGroups
             agentStorage = response.agentStorage
             if let data = try? JSONEncoder().encode(response.agentStorage) {
                 agentStorageEntry?.save(data)

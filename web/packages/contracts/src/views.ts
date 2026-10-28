@@ -401,6 +401,13 @@ export const SessionSchema = z.looseObject({
 export type Session = z.infer<typeof SessionSchema>
 export const SessionEnvelopeSchema = z.looseObject({ session: SessionSchema })
 
+/** TAL-1534: the sidebar group a listed row belongs to; `pinned` rows come first in the canonical order. */
+export const SidebarGroupKindSchema = z.enum(['pinned', 'recent'])
+export type SidebarGroupKind = z.infer<typeof SidebarGroupKindSchema>
+/** One group present in a session list, with its English caption; clients localize the known kinds. */
+export const SidebarGroupSchema = z.object({ kind: SidebarGroupKindSchema, title: z.string() })
+export type SidebarGroup = z.infer<typeof SidebarGroupSchema>
+
 /** Sidebar row from `GET /api/sessions`. */
 export const SessionRowSchema = z.looseObject({
   session_id: SessionIdSchema, title: z.string(), workspace: z.string().optional(), model: NullableString.optional(), created_at: UnixSeconds.optional(), updated_at: UnixSeconds.optional(), last_message_at: NullableNumber.optional(),
@@ -409,6 +416,7 @@ export const SessionRowSchema = z.looseObject({
   source_tag: NullableString.optional(), source_label: NullableString.optional(), session_source: NullableString.optional(), raw_source: NullableString.optional(), parent_session_id: NullableString.optional(),
   active_stream_id: ActiveStreamIdSchema, share_token: NullableString.optional(), share_url: NullableString.optional(), worktree_branch: NullableString.optional(), match_type: z.enum(['title', 'metadata', 'content']).optional(), match_preview: NullableString.optional(),
   workspace_name: WorkspaceNameSchema,
+  sidebar_group: SidebarGroupKindSchema.nullable().optional().describe('TAL-1534: the sidebar group `GET /api/sessions` files the row under; null for an archived row. Other routes omit it.'),
   ...ContextUsageFields,
 })
 export type SessionRow = z.infer<typeof SessionRowSchema>
@@ -428,6 +436,7 @@ export const SessionsListSchema = z.looseObject({
   // TAL-482: sidebar counts for the "Scheduled sessions" / "Webhook sessions" groups; `_truncated` means more exist than are listed.
   scheduled_session_count: z.number().int().nonnegative(), scheduled_sessions_truncated: z.boolean(),
   webhook_session_count: z.number().int().nonnegative(), webhook_sessions_truncated: z.boolean(),
+  sidebar_groups: z.array(SidebarGroupSchema).describe('TAL-1534: the groups the unarchived `sessions` rows fill, in display order; a client captions only these.'),
   agent_storage: AgentStorageSchema.describe('Agent session storage health; a degraded state explains an empty or missing Agent session list.'),
   archived_limit: z.number().int().nullable().optional(), archived_offset: z.number().int().optional(),
 })

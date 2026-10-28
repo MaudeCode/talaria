@@ -50,20 +50,24 @@ struct SessionListRowsSection: View {
         }
     }
 
+    /// A caption opens each run of rows in one server group (TAL-1534), for a group the server lists.
     private var sidebarRows: [(session: SessionSummary, caption: String?)] {
-        // TAL-1534: the server will ship the group; until then the caption follows its pinned-first order.
-        var hasRecentsCaption = false
-        return sessions.enumerated().map { index, session in
-            let caption: String?
-            if session.pinned != true, !hasRecentsCaption {
-                caption = String(localized: "Recents")
-                hasRecentsCaption = true
-            } else if index == 0, session.pinned == true {
-                caption = String(localized: "Pinned")
-            } else {
-                caption = nil
-            }
-            return (session, caption)
+        var previous: String??
+        return sessions.map { session in
+            let group = session.sidebarGroupKind
+            defer { previous = group }
+            guard let group, previous != .some(group) else { return (session, nil) }
+            return (session, caption(for: group))
+        }
+    }
+
+    private func caption(for group: String) -> String? {
+        let listed = viewModel.sidebarGroups?.first { $0.kind == group }
+        if viewModel.sidebarGroups != nil, listed == nil { return nil }
+        switch group {
+        case "pinned": return String(localized: "Pinned")
+        case "recent": return String(localized: "Recents")
+        default: return listed?.title
         }
     }
 

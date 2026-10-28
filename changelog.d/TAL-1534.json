@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "The server now decides which chats appear under Pinned and Recents, so the App and Web sidebars always group chats the same way.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}

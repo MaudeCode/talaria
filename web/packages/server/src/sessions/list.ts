@@ -13,7 +13,7 @@ import type { SessionStore } from './store.js'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { AGENT_STORAGE_OK, CANONICAL_READ_ONLY_REASON, OWNERSHIP_UNAVAILABLE_REASON, isCliSessionRow as isStateDbCliRow, isCliSessionRowVisible, normalizeAgentSessionSource, type StateDbSessionSource } from './state-db.js'
 import { MESSAGING_SOURCES, sourceKind } from './source-kind.js'
-import { type AgentStorage } from '@maudecode/talaria-web-contracts'
+import { type AgentStorage, type SidebarGroup, type SidebarGroupKind } from '@maudecode/talaria-web-contracts'
 
 export type Row = Record<string, unknown>
 const num = (v: unknown): number => { const n = Number(v ?? 0); return Number.isFinite(n) && n > 0 ? n : 0 }
@@ -887,6 +887,13 @@ export function overlayRuntimeRows(rows: Row[], overlay: RuntimeOverlay): Row[] 
   return out.sort(compareSessionRows)
 }
 
+const SIDEBAR_GROUP_TITLES: Record<SidebarGroupKind, string> = { pinned: 'Pinned', recent: 'Recents' }
+
+/** TAL-1534: the sidebar group the canonical order (pinned first) files a row under; an archived row is in none. */
+function sidebarGroup(row: Row): SidebarGroupKind | null {
+  return row.archived ? null : row.pinned ? 'pinned' : 'recent'
+}
+
 export function sidebarSessionResponseItem(row: Row, redactEnabled: boolean, attention: Row | null, activeStreamIds: ReadonlySet<string>, workspaceName: (row: Row) => string | null): Row {
   const item: Row = {}
   for (const [k, v] of Object.entries(row)) if (SIDEBAR_SESSION_RESPONSE_FIELDS.has(k)) item[k] = v
@@ -896,6 +903,7 @@ export function sidebarSessionResponseItem(row: Row, redactEnabled: boolean, att
   // Python reconciles stale stream state before serialising (#2157): a dead stream id is not exposed as active.
   withSessionWireFlags(item, activeStreamIds)
   item.attention = attention
+  item.sidebar_group = sidebarGroup(row)
   return item
 }
 
@@ -918,6 +926,7 @@ export interface ListResponse extends Record<string, unknown> {
   scheduled_sessions_truncated: boolean
   webhook_session_count: number
   webhook_sessions_truncated: boolean
+  sidebar_groups: SidebarGroup[]
   agent_storage: AgentStorage
   archived_limit?: number
   archived_offset?: number
@@ -955,6 +964,7 @@ export function sessionListResponse(payload: ListPayload, overlay: RuntimeOverla
     scheduled_sessions_truncated: payload.scheduled_sessions_truncated,
     webhook_session_count: payload.webhook_session_count,
     webhook_sessions_truncated: payload.webhook_sessions_truncated,
+    sidebar_groups: (Object.keys(SIDEBAR_GROUP_TITLES) as SidebarGroupKind[]).filter((kind) => sessions.some((r) => r.sidebar_group === kind)).map((kind) => ({ kind, title: SIDEBAR_GROUP_TITLES[kind] })),
     agent_storage: payload.agent_storage,
   }
   if (payload.archived_limit !== null) {

@@ -65,7 +65,7 @@ const attentionLabel = (kind: string | undefined) => kind === 'approval' ? m.ses
 
 const GROUP_ORDER: GroupId[] = ['pinned', 'today', 'yesterday', 'week', 'older']
 
-/** Files rows under local-date groups by the server's `sort_ts`, keeping the server's order inside each group (TAL-306). */
+/** Files rows under the server's Pinned group (TAL-1534), the rest under local-date groups by the server's `sort_ts`, keeping the server's order inside each group (TAL-306). */
 export function groupSessionRows(rows: SessionRow[], now = Date.now()): { id: GroupId; rows: SessionRow[] }[] {
   const today = new Date(now); today.setHours(0, 0, 0, 0)
   const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1)
@@ -74,7 +74,7 @@ export function groupSessionRows(rows: SessionRow[], now = Date.now()): { id: Gr
   const byGroup = new Map<GroupId, SessionRow[]>()
   for (const r of rows) {
     const ts = r.sort_ts * 1000
-    const g: GroupId = r.pinned ? 'pinned' : ts >= todayMs ? 'today' : ts >= yesterdayMs ? 'yesterday' : ts >= weekMs ? 'week' : 'older'
+    const g: GroupId = r.sidebar_group === 'pinned' ? 'pinned' : ts >= todayMs ? 'today' : ts >= yesterdayMs ? 'yesterday' : ts >= weekMs ? 'week' : 'older'
     const grouped = byGroup.get(g)
     if (grouped) grouped.push(r)
     else byGroup.set(g, [r])
