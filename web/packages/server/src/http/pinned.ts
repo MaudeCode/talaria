@@ -49,9 +49,18 @@ export const pinnedFetch: PinnedFetch = (url, init, addresses) => {
   }
   return new Promise((resolve, reject) => {
     const req = (u.protocol === 'https:' ? httpsRequest : httpRequest)(u, { method: init.method ?? 'GET', headers: init.headers ?? {}, lookup: lookup as never, ...(init.signal ? { signal: init.signal } : {}) }, (res) => {
-      const headers = new Headers()
-      for (const [k, v] of Object.entries(res.headers)) if (typeof v === 'string') headers.set(k, v); else if (Array.isArray(v)) for (const item of v) headers.append(k, item)
-      resolve(new Response(Readable.toWeb(res) as ReadableStream, { status: res.statusCode ?? 0, headers }))
+      try {
+        const headers = new Headers()
+        for (const [k, v] of Object.entries(res.headers)) if (typeof v === 'string') headers.set(k, v); else if (Array.isArray(v)) for (const item of v) headers.append(k, item)
+        const status = res.statusCode ?? 0
+        const bodyless = req.method === 'HEAD' || status === 204 || status === 205 || status === 304
+        const response = new Response(bodyless ? null : Readable.toWeb(res) as ReadableStream, { status, headers })
+        if (bodyless) res.destroy()
+        resolve(response)
+      } catch (error) {
+        res.destroy()
+        reject(error instanceof Error ? error : new Error(String(error)))
+      }
     })
     req.on('error', reject)
     req.end(init.body)

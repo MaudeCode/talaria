@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Empty sign-in or speech-provider responses no longer stop the Web server.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
