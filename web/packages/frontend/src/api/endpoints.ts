@@ -1,4 +1,4 @@
-import type { DelegationWrite } from '@maudecode/talaria-web-contracts'
+import type { DelegationWrite, FeedbackSubmitSchema } from '@maudecode/talaria-web-contracts'
 /**
  * Endpoint functions, one per route the application uses, all typed by the
  * contract package through the oRPC client (`orpc.ts`). Byte streams
@@ -361,3 +361,6 @@ export const discoverAgentImports = () => orpc().profileImport.discover()
 export const previewAgentImport = (agent: AgentImportSource) => orpc().profileImport.preview({ agent }, { signal: timeout(120_000) })
 export const applyAgentImport = (receipt: string) => orpc().profileImport.apply({ receipt }, { signal: timeout(120_000) })
 export const agentImportResult = (receipt: string) => orpc().profileImport.result({ receipt })
+
+export const fetchFeedbackDiagnostics = () => orpc().feedback.diagnostics()
+export const submitFeedback = (input: z.infer<typeof FeedbackSubmitSchema>) => orpc().feedback.submit(input)

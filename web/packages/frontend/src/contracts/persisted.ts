@@ -22,6 +22,9 @@ export const LocalDraftSchema = z.object({ text: z.string().max(200_000), update
 /** Highest composer draft revision this browser has issued or seen (`hermes-draft-revision`, TAL-564). */
 export const DraftRevisionSchema = z.number().int().nonnegative()
 
+/** The Send feedback draft (`hermes-feedback-draft`, TAL-1574); `requestId` is reused on every retry of unchanged content. */
+export const FeedbackDraftSchema = z.object({ requestId: z.uuid(), kind: z.enum(['bug', 'feature', 'other']), title: z.string().max(120), body: z.string().max(8000), includeDiagnostics: z.boolean() })
+
 /** Sidebar collapsed groups (`hermes-webui-collapsed-groups`). */
 export const CollapsedGroupsSchema = z.array(z.string().max(128)).max(200)
 

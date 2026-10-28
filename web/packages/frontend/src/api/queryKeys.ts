@@ -18,6 +18,7 @@ export const keys = {
   personalities: ['personalities'] as const,
   auxiliaryModels: ['models', 'auxiliary'] as const,
   transcribeCapability: ['transcribe', 'capability'] as const,
+  feedbackDiagnostics: ['feedback', 'diagnostics'] as const,
   sessions: {
     all: ['sessions'] as const,
     list: (params: Record<string, string | boolean | number | undefined>) => ['sessions', 'list', params] as const,
