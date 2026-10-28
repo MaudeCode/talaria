@@ -2,7 +2,8 @@ import { QueryClient, dehydrate, hydrate, type DehydratedState, type Query } fro
 import { z, type ZodType } from 'zod'
 import { isApiError } from '../contracts/common'
 import { ProfilesSchema, ProjectsSchema, ReasoningStatusSchema, SessionEnvelopeSchema, SessionsListSchema, SettingsSchema, WorkspacesSchema } from '../contracts'
-import { readPersisted, readPersistedJson, writePersistedJson } from '../lib/persisted'
+import { readPersisted, readPersistedJson, removePersistedByPrefix, writePersisted, writePersistedJson } from '../lib/persisted'
+import { randomHex } from '../lib/randomHex'
 
 /**
  * Boot snapshot of the queries that paint the shell (sidebar list, the last
@@ -13,7 +14,21 @@ import { readPersisted, readPersistedJson, writePersistedJson } from '../lib/per
  * (login and logout clear that prefix).
  */
 const SNAPSHOT_KEY = 'hermes-boot:queries'
+// Outside the cleared prefix so old tabs retain a durable revocation fence.
+const GENERATION_KEY = 'hermes-boot-generation'
 const SNAPSHOT_LIMIT = 2_000_000
+const retireClients = new Set<() => void>()
+
+/** Retire the previous identity's readers and writers before navigating. */
+export function resetIdentityCache(): void {
+  const generation = randomHex()
+  writePersisted(GENERATION_KEY, generation)
+  for (const retire of retireClients) retire()
+  removePersistedByPrefix('hermes-boot:')
+  removePersistedByPrefix('hermes-webui-session')
+  // Removing the old snapshot can free the quota that blocked the fence write.
+  if (readPersisted(GENERATION_KEY) !== generation) writePersisted(GENERATION_KEY, generation)
+}
 
 function snapshotSchema(key: readonly unknown[]): ZodType | null {
   switch (key[0]) {
@@ -31,22 +46,23 @@ function snapshotSchema(key: readonly unknown[]): ZodType | null {
 }
 
 const DehydratedSchema = z.object({
+  generation: z.string().nullable().optional(),
   queries: z.array(z.looseObject({ queryKey: z.array(z.unknown()), queryHash: z.string(), state: z.looseObject({ data: z.unknown(), dataUpdatedAt: z.number(), status: z.literal('success') }) })),
 })
 
-function restoreSnapshot(qc: QueryClient): void {
+function restoreSnapshot(qc: QueryClient, generation: string | null): void {
   const snap = readPersistedJson(SNAPSHOT_KEY, DehydratedSchema)
-  if (!snap) return
+  if (!snap || (snap.generation ?? null) !== generation) return
   const queries = snap.queries.filter((q) => snapshotSchema(q.queryKey)?.safeParse(q.state.data).success)
   hydrate(qc, { queries, mutations: [] } as unknown as DehydratedState)
 }
 
-function persistSnapshot(qc: QueryClient): void {
+function persistSnapshot(qc: QueryClient, generation: string | null): void {
   const keep = (q: Query) => q.state.status === 'success' && snapshotSchema(q.queryKey) !== null
-  let state = dehydrate(qc, { shouldDehydrateQuery: keep })
+  let state = { ...dehydrate(qc, { shouldDehydrateQuery: keep }), generation }
   // Over budget: the transcript is the only entry that grows; drop it and keep the shell queries.
-  if (JSON.stringify(state).length > SNAPSHOT_LIMIT) state = dehydrate(qc, { shouldDehydrateQuery: (q) => keep(q) && q.queryKey[1] !== 'detail' })
-  if (JSON.stringify(state).length <= SNAPSHOT_LIMIT) writePersistedJson(SNAPSHOT_KEY, state)
+  if (JSON.stringify(state).length > SNAPSHOT_LIMIT) state = { ...dehydrate(qc, { shouldDehydrateQuery: (q) => keep(q) && q.queryKey[1] !== 'detail' }), generation }
+  if (JSON.stringify(state).length <= SNAPSHOT_LIMIT && readPersisted(GENERATION_KEY) === generation) writePersistedJson(SNAPSHOT_KEY, state)
 }
 
 export function createQueryClient(): QueryClient {
@@ -67,14 +83,40 @@ export function createQueryClient(): QueryClient {
     },
   })
   if (typeof window !== 'undefined') {
-    restoreSnapshot(qc)
+    const generation = readPersisted(GENERATION_KEY)
+    restoreSnapshot(qc, generation)
     let timer: number | undefined
-    qc.getQueryCache().subscribe((ev) => {
-      if (ev.type !== 'updated' || ev.action.type !== 'success') return
+    let retired = false
+    const retire = () => {
+      retired = true
       window.clearTimeout(timer)
-      timer = window.setTimeout(() => persistSnapshot(qc), 500)
+      unsubscribe()
+      window.removeEventListener('pagehide', persist)
+      window.removeEventListener('storage', onStorage)
+      retireClients.delete(retire)
+      qc.clear()
+    }
+    const isCurrent = () => {
+      if (!retired && readPersisted(GENERATION_KEY) !== generation) {
+        retire()
+        // Mounted observers need a fresh client after another tab changes identity.
+        window.location.reload()
+      }
+      return !retired
+    }
+    const persist = () => { if (isCurrent()) persistSnapshot(qc, generation) }
+    const onStorage = (ev: StorageEvent) => {
+      if (ev.key === GENERATION_KEY || ev.key === null) isCurrent()
+    }
+    const unsubscribe = qc.getQueryCache().subscribe((ev) => {
+      if (ev.type !== 'updated' || ev.action.type !== 'success') return
+      if (!isCurrent()) return
+      window.clearTimeout(timer)
+      timer = window.setTimeout(persist, 500)
     })
-    window.addEventListener('pagehide', () => persistSnapshot(qc))
+    retireClients.add(retire)
+    window.addEventListener('pagehide', persist)
+    window.addEventListener('storage', onStorage)
   }
   return qc
 }

@@ -9,6 +9,7 @@ import { fetchBootstrap } from '../api/endpoints'
 import { teardownAll } from '../stream/connection'
 import { appUrl } from '../lib/appRoot'
 import { bootLocale } from '../i18n/runtime'
+import { resetIdentityCache } from '../api/queryClient'
 
 export type BootstrapStatus = { state: 'ready'; data: Bootstrap } | { state: 'error'; error: unknown }
 
@@ -18,6 +19,7 @@ let inflight: Promise<Bootstrap> | null = null
 
 function handleAuthExpired(next: string): void {
   teardownAll()
+  resetIdentityCache()
   window.location.assign(appUrl(`login?next=${encodeURIComponent(next)}`).href)
 }
 
