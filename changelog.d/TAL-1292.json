@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Workspace editor saves preserve the original file when writing fails.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
