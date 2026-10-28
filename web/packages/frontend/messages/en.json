@@ -2797,5 +2797,22 @@
 	"group_next_page": "Next page",
 	"group_attachment_limit": "Attach up to {n} files per message.",
 	"group_unknown_phase": "Unknown",
-	"group_disbanded": "This discussion has been disbanded."
+	"group_disbanded": "This discussion has been disbanded.",
+  "profile_import": "Import agent setup",
+  "profile_import_source": "Source",
+  "profile_import_preview": "Preview",
+  "profile_import_apply": "Import",
+  "profile_import_confirm": "Import into the active profile?",
+  "profile_import_confirm_body": "Imports instructions, memories, skills and MCP settings. Existing conflicts are kept. Review the dispositions before importing.",
+  "profile_import_catalog": "Open plugin catalog",
+  "profile_import_stripped": "Stripped secret names",
+  "profile_import_check": "Check result",
+  "profile_import_done": "Import complete",
+  "profile_import_no_sources": "No permitted coding-agent sources found.",
+  "profile_import_status_imported": "Imported",
+  "profile_import_status_importable": "Importable",
+  "profile_import_status_skipped": "Skipped",
+  "profile_import_status_conflict": "Conflict",
+  "profile_import_status_error": "Error",
+  "profile_import_partial": "Some items could not be imported."
 }

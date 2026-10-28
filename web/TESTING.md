@@ -176,3 +176,10 @@ function the compiler skips; a skipped function still builds, unmemoized. Lint m
   Agent images to the active pin. It verifies the CLI version, Python, unchanged
   restart reuse, interrupted-copy recovery, rollback, and preserved Hermes home data without
   building the Web image or contacting a model provider.
+
+The compatibility checker provisions the immutable coding-agent importer API
+from `sidecar/agent_importer.json` before starting tests. The native contract
+probe then runs offline on synthetic source/profile trees. When supplying an
+Agent checkout directly to `sidecar/scripts/test.sh`, also provide
+`HERMES_WEBUI_IMPORTER_DIR` containing those checksum-verified files. The fast
+`tests/test_agent_imports.py` matrix needs neither Agent nor plugin bytes.

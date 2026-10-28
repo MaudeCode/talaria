@@ -3331,6 +3331,128 @@
     ],
     "additionalProperties": false
   },
+  "profiles.import": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "status": {
+        "type": "string",
+        "enum": [
+          "available",
+          "unavailable",
+          "preview",
+          "applied",
+          "partial",
+          "changed",
+          "unknown"
+        ]
+      },
+      "sources": {
+        "maxItems": 3,
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "agent": {
+              "type": "string",
+              "enum": [
+                "claude-code",
+                "codex",
+                "cursor"
+              ]
+            },
+            "label": {
+              "type": "string",
+              "maxLength": 64
+            }
+          },
+          "required": [
+            "agent",
+            "label"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "items": {
+        "maxItems": 2048,
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "imported",
+                "skipped",
+                "conflict",
+                "error"
+              ]
+            },
+            "label": {
+              "type": "string",
+              "maxLength": 256
+            }
+          },
+          "required": [
+            "kind",
+            "status",
+            "label"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "stripped_secrets": {
+        "maxItems": 2048,
+        "type": "array",
+        "items": {
+          "type": "string",
+          "maxLength": 200
+        }
+      },
+      "catalog_required": {
+        "type": "boolean"
+      },
+      "receipt": {
+        "anyOf": [
+          {
+            "type": "string",
+            "maxLength": 128
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "can_apply": {
+        "type": "boolean"
+      },
+      "message": {
+        "anyOf": [
+          {
+            "type": "string",
+            "maxLength": 512
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "status",
+      "sources",
+      "items",
+      "stripped_secrets",
+      "receipt",
+      "can_apply",
+      "message"
+    ],
+    "additionalProperties": false
+  },
   "profiles.list": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

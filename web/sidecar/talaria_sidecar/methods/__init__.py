@@ -29,9 +29,9 @@ class Registry:
 
 def build_methods(runtime: AgentRuntime) -> dict[str, Handler]:
     registry = Registry(runtime)
-    from . import aux, chat, checkpoints, commands, config, connectors, cron, dashboard_plugins, delegation, gateway, goals, kanban, mcp, managed_buffers, memory, oauth, outbound_drafts, plugin_oauth, process, profiles, providers, skills, state_db, stt, tts, text, toolsets, usage, worktree, write_approval  # noqa: WPS433
+    from . import agent_imports, aux, chat, checkpoints, commands, config, connectors, cron, dashboard_plugins, delegation, gateway, goals, kanban, mcp, managed_buffers, memory, oauth, outbound_drafts, plugin_oauth, process, profiles, providers, skills, state_db, stt, tts, text, toolsets, usage, worktree, write_approval  # noqa: WPS433
     from . import runtime as runtime_methods
 
-    for module in (runtime_methods, goals, commands, kanban, state_db, profiles, skills, mcp, stt, tts, cron, providers, oauth, plugin_oauth, aux, delegation, text, process, usage, gateway, worktree, checkpoints, memory, chat, config, toolsets, write_approval, connectors, dashboard_plugins, outbound_drafts, managed_buffers):
+    for module in (agent_imports, runtime_methods, goals, commands, kanban, state_db, profiles, skills, mcp, stt, tts, cron, providers, oauth, plugin_oauth, aux, delegation, text, process, usage, gateway, worktree, checkpoints, memory, chat, config, toolsets, write_approval, connectors, dashboard_plugins, outbound_drafts, managed_buffers):
         module.register(registry)
     return registry.methods

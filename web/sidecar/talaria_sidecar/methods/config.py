@@ -133,9 +133,8 @@ def _split_config_aliases(text: str, desired: dict) -> str:
     return output.getvalue()
 
 
-def write_config(path: Path, config: dict, *, profile_home: Path | None = None) -> dict:
-    if not isinstance(config, dict):
-        raise InvalidParams("config must be an object")
+def assert_config_writable(profile_home: Path | None = None) -> None:
+    """Verify the owning profile policy before any config publication; uncertainty refuses."""
     try:
         managed = importlib.import_module("hermes_constants").get_managed_system(profile_home)
     except Exception as exc:  # noqa: BLE001
@@ -144,6 +143,12 @@ def write_config(path: Path, config: dict, *, profile_home: Path | None = None) 
     if managed is not None:
         raise RpcError("config.yaml is package-managed. Update the declarative configuration instead.",
                        condition="config_write_refused")
+
+
+def write_config(path: Path, config: dict, *, profile_home: Path | None = None) -> dict:
+    if not isinstance(config, dict):
+        raise InvalidParams("config must be an object")
+    assert_config_writable(profile_home)
     target = _write_target(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     try:

@@ -1,6 +1,13 @@
 {
   "schemaVersion": 1,
   "families": {
+    "tests/test_agent_imports_contract.py::test_reviewed_native_importer_contract": {
+      "layer": "compatibility",
+      "reason": "Real reviewed plugin structured API, native profile selection, memory merge, MCP conflict/secret stripping and sync registration require the installed Agent interpreter. Immutable plugin bytes are provisioned before tests; every source and profile is disposable and the test is offline.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_gateway_sessions.py::test_real_owner_todo_producer_matches_snapshot_and_replay": {
       "layer": "compatibility",
       "reason": "Real installed Agent history hydration and native tool-completion callback must publish the same todo snapshot through SessionEvents. A separate Agent interpreter isolates its imports; no daemon, model, or real account runs. Boundary fakes cannot prove supported-Agent producer behavior.",

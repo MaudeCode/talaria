@@ -1,0 +1,6 @@
+{
+  "profiles.import": [
+    {"params":{"action":"discover","profile_home":"/tmp/fixture/profile"},"result":{"status":"unavailable","catalog_required":true,"sources":[],"items":[],"stripped_secrets":[],"receipt":null,"can_apply":false,"message":"Install and enable Agent Importers from the plugin catalog."}},
+    {"params":{"action":"preview","agent":"cursor","profile_home":"/tmp/fixture/profile"},"result":{"status":"preview","sources":[],"items":[{"kind":"rules","status":"imported","label":"Cursor rules"},{"kind":"skill","status":"conflict","label":"Skill"}],"stripped_secrets":["mcp_servers.fixture.env.API_TOKEN"],"receipt":"synthetic-preview","can_apply":true,"message":null}}
+  ]
+}

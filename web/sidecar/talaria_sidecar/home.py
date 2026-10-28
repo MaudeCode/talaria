@@ -310,8 +310,8 @@ def _recover_processes(home: Path) -> None:
 
 
 @contextlib.contextmanager
-def scoped_home(home: Path, *, load_plugins: bool = True, recover_processes: bool = True):
-    """Run the body with Hermes Agent resolving ``get_hermes_home()`` to ``home``."""
+def scoped_home(home: Path, *, load_plugins: bool = True, recover_processes: bool = True, read_only: bool = False):
+    """Bind the home; read-only inspection skips credential hydration, terminal defaults and recovery."""
     home = Path(home).expanduser()
     stamp = _scope_stamp(home)
     try:
@@ -321,13 +321,18 @@ def scoped_home(home: Path, *, load_plugins: bool = True, recover_processes: boo
     if set_hermes_home_override is not None:
         token = set_hermes_home_override(home)
         try:
-            with _secret_scope(home, stamp, load_plugins=load_plugins), _terminal_scope(home, stamp):
-                if recover_processes:
-                    _recover_processes(home)
+            if read_only:
                 yield home
+            else:
+                with _secret_scope(home, stamp, load_plugins=load_plugins), _terminal_scope(home, stamp):
+                    if recover_processes:
+                        _recover_processes(home)
+                    yield home
         finally:
             reset_hermes_home_override(token)
         return
+    if read_only:
+        raise RpcError("Read-only profile binding is unavailable", condition="agent_incompatible")
     with _ENV_LOCK:
         previous = os.environ.get("HERMES_HOME")
         os.environ["HERMES_HOME"] = str(home)

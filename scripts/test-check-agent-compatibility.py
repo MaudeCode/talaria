@@ -180,6 +180,9 @@ class CheckerTests(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         self.tools = FakeTools(self, self.root)
+        patcher = patch.object(checker, 'provision_importer', side_effect=lambda target: (target.mkdir(), target)[1])
+        self.provision_importer = patcher.start()
+        self.addCleanup(patcher.stop)
         patcher = patch("sys.stdout", new_callable=io.StringIO)  # Each run prints its receipt.
         self.stdout = patcher.start()
         self.addCleanup(patcher.stop)

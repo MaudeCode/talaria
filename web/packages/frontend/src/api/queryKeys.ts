@@ -8,6 +8,7 @@ export const keys = {
   auth: ['auth'] as const,
   settings: ['settings'] as const,
   profiles: ['profiles'] as const,
+  agentImports: ['profile', 'imports'] as const,
   activeProfile: ['profile', 'active'] as const,
   models: ['models'] as const,
   reasoning: (model: string | null | undefined, provider: string | null | undefined) => ['reasoning', model ?? null, provider ?? null] as const,

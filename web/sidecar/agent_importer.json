@@ -1,0 +1,8 @@
+{
+  "revision": "b5932f1b03ccd0f7738cb4975318df990408f3a3",
+  "files": {
+    "importer.py": "38fff0aa19fb91d33566ff8113c546d2a10b2b6c38e98340d4f0ea81177d67b3",
+    "sync.py": "0b2bf82a6c90406fbf2cd1cac66db95ab523bd9fd2d102ea8f0272d0efd65c19",
+    "plugin.yaml": "7057c999f5a4ac2b91c3277866f9a84e2ef8e4f63efe269bed787c4962ef632f"
+  }
+}

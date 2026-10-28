@@ -48,6 +48,7 @@ SCENARIOS: list[tuple[str, dict]] = [
     # profiles
     ("profiles.list", {"base_home": "{home}"}),
     ("profiles.create", {"base_home": "{home}", "name": "alpha"}),
+    ("profiles.import", {"profile_home": "{profile}", "action": "discover"}),
     ("profiles.runtime_env", {"profile_home": "{profile}", "protected_keys": []}),
     ("profiles.skills_stats", {"profile_home": "{profile}"}),
     ("gateway.mode", {"profile_home": "{home}", "name": "default", "is_default": True}),
