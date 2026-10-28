@@ -216,7 +216,7 @@ def _nous_sign_in(anon_auth: Any) -> tuple[dict, dict]:
     first = next(sign_in)
     if first.kind != "code":
         sign_in.close()
-        raise RpcError(first.copy_terminal, condition="oauth_unsupported" if first.precondition else "oauth_failed")
+        raise RpcError(first.copy, condition="oauth_unsupported" if first.precondition else "oauth_failed")
     state["sign_in"] = sign_in
     return {"user_code": first.code, "verification_url": first.link, "expires_in": first.expires_in, "interval": first.interval}, state
 

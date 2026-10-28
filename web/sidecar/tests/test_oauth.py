@@ -451,7 +451,7 @@ def test_a_guest_sign_in_that_cannot_start_is_refused(sign_in_factory, provider,
     with pytest.raises(RpcError) as refused:
         oauth.start(tmp_path, "nous")
     assert refused.value.data["condition"] == condition
-    assert str(refused.value) == first.copy_terminal
+    assert str(refused.value) == first.copy
     assert sign_in.closed and oauth._FLOWS == {}
 
 
@@ -476,3 +476,15 @@ def test_native_completion_cannot_adopt_an_account_replaced_during_settlement(pr
     current[0] = "replacement-account"
     native.settle.set()
     assert settle(tmp_path, flow["flow_id"]) == {"flow_id": flow["flow_id"], "provider": "nous", "status": "approved", "error": None, "nous_account": None}
+
+
+def test_native_start_errors_use_safe_copy(provider, monkeypatch, tmp_path, caplog):
+    first = state("failed", copy="Sign-in didn't finish. Try again whenever you're ready.")
+    first.copy_terminal = "Sign-in failed: credential=synthetic-secret"
+    native = ModernSignIn(first=first)
+    stub_agent(monkeypatch, guest=False, shape="0.22", sign_in=native)
+    with pytest.raises(RpcError) as refused:
+        oauth.start(tmp_path, "nous")
+    assert str(refused.value) == first.copy
+    assert "synthetic-secret" not in caplog.text
+    assert native.closed and oauth._FLOWS == {}
