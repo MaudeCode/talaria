@@ -13,7 +13,7 @@ import Foundation
 public enum SessionListAutoRefresh {
     /// Modest enough that an idle sidebar is cheap, frequent enough that a
     /// session started elsewhere shows up while the user is still looking.
-    static let interval = Duration.seconds(30)
+    public static let interval = Duration.seconds(30)
 
     /// `.task(id:)` restarts the loop whenever this changes. That restart is
     /// also how foregrounding and the list coming back on screen earn their
@@ -46,6 +46,7 @@ public enum SessionListAutoRefresh {
     @MainActor
     public static func run(
         refreshesImmediately: Bool,
+        interval: Duration = SessionListAutoRefresh.interval,
         refresh: () async -> Void,
         sleep: (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) async {
@@ -64,6 +65,39 @@ public enum SessionListAutoRefresh {
 
             await refresh()
         }
+    }
+}
+
+extension SessionListAutoRefresh {
+    /// How often the active-row monitor asks each streaming row's status.
+    static let activeRowInterval = Duration.seconds(1)
+
+    /// `.task(id:)` for the active-row monitor: the list's streaming rows and what gates asking about them.
+    public struct ActiveRowTaskID: Hashable {
+        public var streamIDs: [String]
+        public var hasActiveRows: Bool
+        public var isViewingCachedData: Bool
+        public var isEventStreamLive: Bool
+
+        public init(streamIDs: [String], hasActiveRows: Bool, isViewingCachedData: Bool, isEventStreamLive: Bool) {
+            self.streamIDs = streamIDs
+            self.hasActiveRows = hasActiveRows
+            self.isViewingCachedData = isViewingCachedData
+            self.isEventStreamLive = isEventStreamLive
+        }
+
+        public var isEnabled: Bool { hasActiveRows && !isViewingCachedData }
+    }
+
+    /// Asks after the streaming rows every `activeRowInterval` while `taskID` is enabled.
+    @MainActor
+    public static func monitorActiveRows(
+        _ taskID: ActiveRowTaskID,
+        check: () async -> Void,
+        sleep: (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+    ) async {
+        guard taskID.isEnabled else { return }
+        await run(refreshesImmediately: false, interval: activeRowInterval, refresh: check, sleep: sleep)
     }
 }
 
