@@ -28,6 +28,7 @@ export const SessionIdSchema = z.string().regex(/^[A-Za-z0-9_.:-]{1,128}$/, 'inv
 export type SessionId = z.infer<typeof SessionIdSchema>
 
 export const AttachmentSchema = z.looseObject({
+  download_url: z.string().startsWith('/api/groups/file?').optional(),
   filename: z.string().optional(), name: z.string().optional(), path: z.string().optional(), size: z.number().optional(), mime: z.string().optional(), is_image: z.boolean().optional(), rollback_token: z.string().optional(),
 })
 export type Attachment = z.infer<typeof AttachmentSchema>

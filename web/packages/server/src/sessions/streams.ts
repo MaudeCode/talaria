@@ -58,6 +58,16 @@ export class StreamChannel {
     return this.subscribers.size
   }
 
+  /** A complete snapshot supersedes every queued frame, including a stalled reader's gap. */
+  replace(item: StreamItem): void {
+    this.offline.length = 0
+    this.offlineDropped = 0
+    this.toolProgress.clear()
+    this.lastEventId = item[2]
+    for (const sub of this.subscribers) { sub.queue.length = 0; sub.gap = null }
+    this.put(item)
+  }
+
   put(item: StreamItem): void {
     const data = item[1] as { id?: string; progress?: unknown } | null
     if (item[0] === 'tool_progress' && data?.id) {

@@ -9703,6 +9703,47 @@
     ],
     "additionalProperties": false
   },
+  "gateway.groups": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "state": {
+        "type": "string",
+        "enum": [
+          "available",
+          "unavailable",
+          "refused",
+          "unknown"
+        ]
+      },
+      "reason": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "value": {
+        "anyOf": [
+          {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "state",
+      "reason",
+      "value"
+    ],
+    "additionalProperties": false
+  },
   "worktree.create": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

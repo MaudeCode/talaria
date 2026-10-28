@@ -9,6 +9,10 @@ import * as turnActivity from './turnActivity'
 
 let intersect: IntersectionObserverCallback
 let resized: ResizeObserverCallback
+it('keeps older history reachable when the visible window contains no message rows', () => {
+  const view = render(<Transcript {...props()} rows={[]} truncated />)
+  expect(view.container.querySelector('[data-history-sentinel]')).not.toBeNull()
+})
 const observe = vi.fn()
 beforeEach(() => {
   window.matchMedia = vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia

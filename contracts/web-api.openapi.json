@@ -5088,6 +5088,10 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "download_url": {
+                                      "type": "string",
+                                      "pattern": "^\\/api\\/groups\\/file\\?.*"
+                                    },
                                     "filename": {
                                       "type": "string"
                                     },
@@ -6999,6 +7003,10 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "download_url": {
+                                "type": "string",
+                                "pattern": "^\\/api\\/groups\\/file\\?.*"
+                              },
                               "filename": {
                                 "type": "string"
                               },
@@ -9241,6 +9249,10 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "download_url": {
+                                      "type": "string",
+                                      "pattern": "^\\/api\\/groups\\/file\\?.*"
+                                    },
                                     "filename": {
                                       "type": "string"
                                     },
@@ -11152,6 +11164,10 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "download_url": {
+                                "type": "string",
+                                "pattern": "^\\/api\\/groups\\/file\\?.*"
+                              },
                               "filename": {
                                 "type": "string"
                               },
@@ -12580,6 +12596,10 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "download_url": {
+                                      "type": "string",
+                                      "pattern": "^\\/api\\/groups\\/file\\?.*"
+                                    },
                                     "filename": {
                                       "type": "string"
                                     },
@@ -14491,6 +14511,10 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "download_url": {
+                                "type": "string",
+                                "pattern": "^\\/api\\/groups\\/file\\?.*"
+                              },
                               "filename": {
                                 "type": "string"
                               },
@@ -17951,6 +17975,10 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "download_url": {
+                                      "type": "string",
+                                      "pattern": "^\\/api\\/groups\\/file\\?.*"
+                                    },
                                     "filename": {
                                       "type": "string"
                                     },
@@ -19862,6 +19890,10 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "download_url": {
+                                "type": "string",
+                                "pattern": "^\\/api\\/groups\\/file\\?.*"
+                              },
                               "filename": {
                                 "type": "string"
                               },
@@ -22232,6 +22264,10 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "download_url": {
+                                "type": "string",
+                                "pattern": "^\\/api\\/groups\\/file\\?.*"
+                              },
                               "filename": {
                                 "type": "string"
                               },
@@ -22897,6 +22933,10 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "download_url": {
+                                      "type": "string",
+                                      "pattern": "^\\/api\\/groups\\/file\\?.*"
+                                    },
                                     "filename": {
                                       "type": "string"
                                     },
@@ -24808,6 +24848,10 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "download_url": {
+                                "type": "string",
+                                "pattern": "^\\/api\\/groups\\/file\\?.*"
+                              },
                               "filename": {
                                 "type": "string"
                               },
@@ -28566,6 +28610,10 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "download_url": {
+                                      "type": "string",
+                                      "pattern": "^\\/api\\/groups\\/file\\?.*"
+                                    },
                                     "filename": {
                                       "type": "string"
                                     },
@@ -30477,6 +30525,10 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "download_url": {
+                                "type": "string",
+                                "pattern": "^\\/api\\/groups\\/file\\?.*"
+                              },
                               "filename": {
                                 "type": "string"
                               },
@@ -31854,6 +31906,10 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "download_url": {
+                                      "type": "string",
+                                      "pattern": "^\\/api\\/groups\\/file\\?.*"
+                                    },
                                     "filename": {
                                       "type": "string"
                                     },
@@ -33765,6 +33821,10 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "download_url": {
+                                "type": "string",
+                                "pattern": "^\\/api\\/groups\\/file\\?.*"
+                              },
                               "filename": {
                                 "type": "string"
                               },
@@ -35204,6 +35264,10 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "download_url": {
+                                      "type": "string",
+                                      "pattern": "^\\/api\\/groups\\/file\\?.*"
+                                    },
                                     "filename": {
                                       "type": "string"
                                     },
@@ -37115,6 +37179,10 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "download_url": {
+                                "type": "string",
+                                "pattern": "^\\/api\\/groups\\/file\\?.*"
+                              },
                               "filename": {
                                 "type": "string"
                               },
@@ -38552,6 +38620,10 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "download_url": {
+                                      "type": "string",
+                                      "pattern": "^\\/api\\/groups\\/file\\?.*"
+                                    },
                                     "filename": {
                                       "type": "string"
                                     },
@@ -40463,6 +40535,10 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "download_url": {
+                                "type": "string",
+                                "pattern": "^\\/api\\/groups\\/file\\?.*"
+                              },
                               "filename": {
                                 "type": "string"
                               },
@@ -51301,6 +51377,10 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "download_url": {
+                                      "type": "string",
+                                      "pattern": "^\\/api\\/groups\\/file\\?.*"
+                                    },
                                     "filename": {
                                       "type": "string"
                                     },
@@ -53212,6 +53292,10 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "download_url": {
+                                "type": "string",
+                                "pattern": "^\\/api\\/groups\\/file\\?.*"
+                              },
                               "filename": {
                                 "type": "string"
                               },
@@ -54637,6 +54721,10 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "download_url": {
+                                      "type": "string",
+                                      "pattern": "^\\/api\\/groups\\/file\\?.*"
+                                    },
                                     "filename": {
                                       "type": "string"
                                     },
@@ -56548,6 +56636,10 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "download_url": {
+                                "type": "string",
+                                "pattern": "^\\/api\\/groups\\/file\\?.*"
+                              },
                               "filename": {
                                 "type": "string"
                               },
@@ -57480,6 +57572,10 @@
                         {
                           "type": "object",
                           "properties": {
+                            "download_url": {
+                              "type": "string",
+                              "pattern": "^\\/api\\/groups\\/file\\?.*"
+                            },
                             "filename": {
                               "type": "string"
                             },
@@ -58361,6 +58457,10 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "download_url": {
+                                      "type": "string",
+                                      "pattern": "^\\/api\\/groups\\/file\\?.*"
+                                    },
                                     "filename": {
                                       "type": "string"
                                     },
@@ -60272,6 +60372,10 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "download_url": {
+                                "type": "string",
+                                "pattern": "^\\/api\\/groups\\/file\\?.*"
+                              },
                               "filename": {
                                 "type": "string"
                               },
@@ -61965,6 +62069,10 @@
                                     "items": {
                                       "type": "object",
                                       "properties": {
+                                        "download_url": {
+                                          "type": "string",
+                                          "pattern": "^\\/api\\/groups\\/file\\?.*"
+                                        },
                                         "filename": {
                                           "type": "string"
                                         },
@@ -63842,6 +63950,10 @@
                               "items": {
                                 "type": "object",
                                 "properties": {
+                                  "download_url": {
+                                    "type": "string",
+                                    "pattern": "^\\/api\\/groups\\/file\\?.*"
+                                  },
                                   "filename": {
                                     "type": "string"
                                   },
@@ -96336,6 +96448,3090 @@
                   ]
                 }
               }
+            }
+          }
+        }
+      }
+    },
+    "/api/groups/send-identity": {
+      "get": {
+        "operationId": "groups.sendIdentity",
+        "tags": [
+          "groups"
+        ],
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "event_id": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                    }
+                  },
+                  "required": [
+                    "event_id"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/groups": {
+      "get": {
+        "operationId": "groups.list",
+        "tags": [
+          "groups"
+        ],
+        "parameters": [
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "identity": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "available": {
+                      "type": "boolean"
+                    },
+                    "reason": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "unsupported",
+                            "stopped",
+                            "refused",
+                            "unavailable",
+                            "unknown",
+                            "driver_inactive"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "profiles": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "profile": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "profile",
+                          "label"
+                        ]
+                      }
+                    },
+                    "rooms": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "identity": {
+                            "type": "string"
+                          },
+                          "revision": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "disbanded": {
+                            "type": "boolean"
+                          },
+                          "max_upload_bytes": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "exclusiveMinimum": 0
+                          },
+                          "attachment_limit": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "exclusiveMinimum": 0
+                          },
+                          "members": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "member_id": {
+                                  "type": "string",
+                                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                                },
+                                "profile": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 128
+                                },
+                                "handle": {
+                                  "type": "string",
+                                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                                },
+                                "display_name": {
+                                  "type": "string",
+                                  "maxLength": 128
+                                },
+                                "phase": {
+                                  "enum": [
+                                    "idle",
+                                    "queued",
+                                    "running",
+                                    "stopping",
+                                    "unknown",
+                                    "failed",
+                                    "approval"
+                                  ],
+                                  "type": "string"
+                                },
+                                "actions": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "enum": [
+                                          "retry",
+                                          "discard",
+                                          "approval"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "member_id": {
+                                        "type": "string",
+                                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                                      },
+                                      "task_id": {
+                                        "type": "string",
+                                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                                      },
+                                      "execution_generation": {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991,
+                                        "exclusiveMinimum": 0
+                                      },
+                                      "request_id": {
+                                        "type": "string"
+                                      },
+                                      "approval": {
+                                        "type": "object",
+                                        "properties": {
+                                          "command": {
+                                            "type": "string"
+                                          },
+                                          "description": {
+                                            "type": "string"
+                                          },
+                                          "choices": {
+                                            "type": "array",
+                                            "items": {
+                                              "enum": [
+                                                "once",
+                                                "deny"
+                                              ],
+                                              "type": "string"
+                                            }
+                                          }
+                                        }
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "member_id",
+                                      "task_id",
+                                      "execution_generation"
+                                    ]
+                                  }
+                                }
+                              },
+                              "required": [
+                                "member_id",
+                                "profile",
+                                "handle",
+                                "phase",
+                                "actions"
+                              ]
+                            }
+                          },
+                          "actions": {
+                            "type": "array",
+                            "items": {
+                              "enum": [
+                                "send",
+                                "rename",
+                                "disband",
+                                "stop"
+                              ],
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "identity",
+                          "revision",
+                          "disbanded",
+                          "max_upload_bytes",
+                          "attachment_limit",
+                          "members",
+                          "actions"
+                        ]
+                      }
+                    },
+                    "actions": {
+                      "type": "array",
+                      "items": {
+                        "const": "create"
+                      }
+                    },
+                    "next_offset": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "identity",
+                    "available",
+                    "reason",
+                    "profiles",
+                    "rooms",
+                    "actions",
+                    "next_offset"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/groups/view": {
+      "get": {
+        "operationId": "groups.view",
+        "tags": [
+          "groups"
+        ],
+        "parameters": [
+          {
+            "name": "room_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "before_seq",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "exclusiveMinimum": 0
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "available": {
+                      "type": "boolean"
+                    },
+                    "reason": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "unsupported",
+                            "stopped",
+                            "refused",
+                            "unavailable",
+                            "unknown",
+                            "driver_inactive"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "room": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "identity": {
+                              "type": "string"
+                            },
+                            "revision": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "disbanded": {
+                              "type": "boolean"
+                            },
+                            "max_upload_bytes": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            "attachment_limit": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            "members": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "member_id": {
+                                    "type": "string",
+                                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                                  },
+                                  "profile": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 128
+                                  },
+                                  "handle": {
+                                    "type": "string",
+                                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                                  },
+                                  "display_name": {
+                                    "type": "string",
+                                    "maxLength": 128
+                                  },
+                                  "phase": {
+                                    "enum": [
+                                      "idle",
+                                      "queued",
+                                      "running",
+                                      "stopping",
+                                      "unknown",
+                                      "failed",
+                                      "approval"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "actions": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "enum": [
+                                            "retry",
+                                            "discard",
+                                            "approval"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "member_id": {
+                                          "type": "string",
+                                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                                        },
+                                        "task_id": {
+                                          "type": "string",
+                                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                                        },
+                                        "execution_generation": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991,
+                                          "exclusiveMinimum": 0
+                                        },
+                                        "request_id": {
+                                          "type": "string"
+                                        },
+                                        "approval": {
+                                          "type": "object",
+                                          "properties": {
+                                            "command": {
+                                              "type": "string"
+                                            },
+                                            "description": {
+                                              "type": "string"
+                                            },
+                                            "choices": {
+                                              "type": "array",
+                                              "items": {
+                                                "enum": [
+                                                  "once",
+                                                  "deny"
+                                                ],
+                                                "type": "string"
+                                              }
+                                            }
+                                          }
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "member_id",
+                                        "task_id",
+                                        "execution_generation"
+                                      ]
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "member_id",
+                                  "profile",
+                                  "handle",
+                                  "phase",
+                                  "actions"
+                                ]
+                              }
+                            },
+                            "actions": {
+                              "type": "array",
+                              "items": {
+                                "enum": [
+                                  "send",
+                                  "rename",
+                                  "disband",
+                                  "stop"
+                                ],
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "name",
+                            "identity",
+                            "revision",
+                            "disbanded",
+                            "max_upload_bytes",
+                            "attachment_limit",
+                            "members",
+                            "actions"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "rows": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string"
+                          },
+                          "index": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "author": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "object",
+                            "properties": {
+                              "role": {
+                                "type": "string"
+                              },
+                              "content": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string"
+                                        },
+                                        "text": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "type"
+                                      ],
+                                      "additionalProperties": {}
+                                    }
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "id": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "number"
+                                  }
+                                ]
+                              },
+                              "message_id": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "number"
+                                  }
+                                ]
+                              },
+                              "timestamp": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "reaction_view": {
+                                "type": "object",
+                                "properties": {
+                                  "row_id": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991,
+                                    "exclusiveMinimum": 0
+                                  },
+                                  "state": {
+                                    "type": "object",
+                                    "properties": {
+                                      "items": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "emoji": {
+                                              "enum": [
+                                                "👍",
+                                                "👎",
+                                                "❤️",
+                                                "😂",
+                                                "😮",
+                                                "🎉"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "count": {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991,
+                                              "exclusiveMinimum": 0
+                                            },
+                                            "mine": {
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "emoji",
+                                            "count",
+                                            "mine"
+                                          ]
+                                        }
+                                      },
+                                      "selected": {
+                                        "anyOf": [
+                                          {
+                                            "enum": [
+                                              "👍",
+                                              "👎",
+                                              "❤️",
+                                              "😂",
+                                              "😮",
+                                              "🎉"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "items",
+                                      "selected"
+                                    ]
+                                  },
+                                  "actions": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "emoji": {
+                                          "anyOf": [
+                                            {
+                                              "enum": [
+                                                "👍",
+                                                "👎",
+                                                "❤️",
+                                                "😂",
+                                                "😮",
+                                                "🎉"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "result": {
+                                          "type": "object",
+                                          "properties": {
+                                            "items": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "emoji": {
+                                                    "enum": [
+                                                      "👍",
+                                                      "👎",
+                                                      "❤️",
+                                                      "😂",
+                                                      "😮",
+                                                      "🎉"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "count": {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991,
+                                                    "exclusiveMinimum": 0
+                                                  },
+                                                  "mine": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "emoji",
+                                                  "count",
+                                                  "mine"
+                                                ]
+                                              }
+                                            },
+                                            "selected": {
+                                              "anyOf": [
+                                                {
+                                                  "enum": [
+                                                    "👍",
+                                                    "👎",
+                                                    "❤️",
+                                                    "😂",
+                                                    "😮",
+                                                    "🎉"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "items",
+                                            "selected"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "emoji",
+                                        "result"
+                                      ]
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "row_id",
+                                  "state",
+                                  "actions"
+                                ]
+                              },
+                              "attachments": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "download_url": {
+                                      "type": "string",
+                                      "pattern": "^\\/api\\/groups\\/file\\?.*"
+                                    },
+                                    "filename": {
+                                      "type": "string"
+                                    },
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "path": {
+                                      "type": "string"
+                                    },
+                                    "size": {
+                                      "type": "number"
+                                    },
+                                    "mime": {
+                                      "type": "string"
+                                    },
+                                    "is_image": {
+                                      "type": "boolean"
+                                    },
+                                    "rollback_token": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "additionalProperties": {}
+                                }
+                              },
+                              "tool_calls": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "progress": {
+                                      "anyOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "percent": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "number",
+                                                  "minimum": 0,
+                                                  "maximum": 100
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "message": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "percent",
+                                            "message"
+                                          ]
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "kind": {
+                                      "enum": [
+                                        "shell",
+                                        "read",
+                                        "list",
+                                        "search",
+                                        "web",
+                                        "write",
+                                        "skill",
+                                        "memory",
+                                        "delegate",
+                                        "unknown"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "target": {
+                                      "type": "string"
+                                    },
+                                    "edit_diff": {
+                                      "type": "object",
+                                      "properties": {
+                                        "added": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "removed": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "diff": {
+                                          "type": "string"
+                                        },
+                                        "truncated": {
+                                          "type": "boolean"
+                                        },
+                                        "hunks": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "header": {
+                                                "type": "string"
+                                              },
+                                              "old_start": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "new_start": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "new_end": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "additions": {
+                                                "type": "integer",
+                                                "minimum": -9007199254740991,
+                                                "maximum": 9007199254740991
+                                              },
+                                              "deletions": {
+                                                "type": "integer",
+                                                "minimum": -9007199254740991,
+                                                "maximum": 9007199254740991
+                                              },
+                                              "lines": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "kind": {},
+                                                    "old_line": {},
+                                                    "new_line": {},
+                                                    "text": {}
+                                                  }
+                                                }
+                                              }
+                                            },
+                                            "required": [
+                                              "header",
+                                              "old_start",
+                                              "new_start",
+                                              "new_end",
+                                              "additions",
+                                              "deletions",
+                                              "lines"
+                                            ]
+                                          }
+                                        }
+                                      },
+                                      "required": [
+                                        "added",
+                                        "removed",
+                                        "diff",
+                                        "truncated",
+                                        "hunks"
+                                      ]
+                                    },
+                                    "focus_path": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ],
+                                      "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path."
+                                    },
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "args": {},
+                                    "function": {
+                                      "type": "object",
+                                      "properties": {
+                                        "name": {
+                                          "type": "string"
+                                        },
+                                        "arguments": {}
+                                      },
+                                      "additionalProperties": {}
+                                    },
+                                    "id": {
+                                      "type": "string"
+                                    },
+                                    "call_id": {
+                                      "type": "string"
+                                    },
+                                    "tool_call_id": {
+                                      "type": "string"
+                                    },
+                                    "done": {
+                                      "type": "boolean"
+                                    },
+                                    "is_error": {
+                                      "type": "boolean"
+                                    },
+                                    "preview": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "result": {},
+                                    "result_view": {
+                                      "anyOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "outbound_draft": {
+                                              "type": "object",
+                                              "properties": {
+                                                "draft_id": {
+                                                  "type": "string",
+                                                  "pattern": "^d_[0-9a-f]{8}$"
+                                                },
+                                                "card": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991,
+                                                  "exclusiveMinimum": 0
+                                                }
+                                              },
+                                              "required": [
+                                                "draft_id",
+                                                "card"
+                                              ]
+                                            },
+                                            "text": {
+                                              "type": "string"
+                                            },
+                                            "stdout": {
+                                              "type": "string"
+                                            },
+                                            "stderr": {
+                                              "type": "string"
+                                            },
+                                            "error": {
+                                              "type": "string"
+                                            },
+                                            "exit_code": {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            }
+                                          }
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "output": {},
+                                    "duration": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "cost_usd": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "timestamp": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "event_type": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "additionalProperties": {}
+                                }
+                              },
+                              "reasoning": {
+                                "type": "string"
+                              },
+                              "tool_call_id": {
+                                "type": "string"
+                              },
+                              "tool_use_id": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "badge": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "provider_details": {},
+                              "provider_details_label": {
+                                "type": "string"
+                              },
+                              "recovery_control": {},
+                              "_anchor_activity_scene": {
+                                "type": "object",
+                                "properties": {
+                                  "version": {
+                                    "const": "activity_scene_v1"
+                                  },
+                                  "activity_rows": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "row_id": {
+                                          "type": "string"
+                                        },
+                                        "order_index": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "role": {
+                                          "enum": [
+                                            "prose",
+                                            "reasoning",
+                                            "tool",
+                                            "steering"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "created_at": {
+                                          "type": "number"
+                                        },
+                                        "text": {
+                                          "type": "string"
+                                        },
+                                        "titles": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "display_text": {
+                                          "type": "string"
+                                        },
+                                        "media": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "url": {
+                                                "type": "string"
+                                              },
+                                              "name": {
+                                                "type": "string"
+                                              },
+                                              "mime": {
+                                                "type": "string"
+                                              },
+                                              "kind": {
+                                                "enum": [
+                                                  "image",
+                                                  "audio",
+                                                  "video",
+                                                  "pdf",
+                                                  "file"
+                                                ],
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "url",
+                                              "name",
+                                              "mime",
+                                              "kind"
+                                            ]
+                                          }
+                                        },
+                                        "tool": {
+                                          "type": "object",
+                                          "properties": {
+                                            "id": {
+                                              "type": "string"
+                                            },
+                                            "name": {
+                                              "type": "string"
+                                            },
+                                            "progress": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "percent": {
+                                                      "anyOf": [
+                                                        {
+                                                          "type": "number",
+                                                          "minimum": 0,
+                                                          "maximum": 100
+                                                        },
+                                                        {
+                                                          "type": "null"
+                                                        }
+                                                      ]
+                                                    },
+                                                    "message": {
+                                                      "anyOf": [
+                                                        {
+                                                          "type": "string"
+                                                        },
+                                                        {
+                                                          "type": "null"
+                                                        }
+                                                      ]
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "percent",
+                                                    "message"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "kind": {
+                                              "enum": [
+                                                "shell",
+                                                "read",
+                                                "list",
+                                                "search",
+                                                "web",
+                                                "write",
+                                                "skill",
+                                                "memory",
+                                                "delegate",
+                                                "unknown"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "target": {
+                                              "type": "string"
+                                            },
+                                            "edit_diff": {
+                                              "type": "object",
+                                              "properties": {
+                                                "added": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "removed": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "diff": {
+                                                  "type": "string"
+                                                },
+                                                "truncated": {
+                                                  "type": "boolean"
+                                                },
+                                                "hunks": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "header": {},
+                                                      "old_start": {},
+                                                      "new_start": {},
+                                                      "new_end": {},
+                                                      "additions": {},
+                                                      "deletions": {},
+                                                      "lines": {}
+                                                    }
+                                                  }
+                                                }
+                                              },
+                                              "required": [
+                                                "added",
+                                                "removed",
+                                                "diff",
+                                                "truncated",
+                                                "hunks"
+                                              ]
+                                            },
+                                            "focus_path": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ],
+                                              "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path."
+                                            },
+                                            "args": {},
+                                            "preview": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "result": {},
+                                            "result_view": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "outbound_draft": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "draft_id": {
+                                                          "type": "string",
+                                                          "pattern": "^d_[0-9a-f]{8}$"
+                                                        },
+                                                        "card": {
+                                                          "type": "integer",
+                                                          "minimum": -9007199254740991,
+                                                          "maximum": 9007199254740991,
+                                                          "exclusiveMinimum": 0
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "draft_id",
+                                                        "card"
+                                                      ]
+                                                    },
+                                                    "text": {
+                                                      "type": "string"
+                                                    },
+                                                    "stdout": {
+                                                      "type": "string"
+                                                    },
+                                                    "stderr": {
+                                                      "type": "string"
+                                                    },
+                                                    "error": {
+                                                      "type": "string"
+                                                    },
+                                                    "exit_code": {
+                                                      "type": "integer",
+                                                      "minimum": -9007199254740991,
+                                                      "maximum": 9007199254740991
+                                                    }
+                                                  }
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "done": {
+                                              "type": "boolean"
+                                            },
+                                            "is_error": {
+                                              "type": "boolean"
+                                            },
+                                            "duration": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "number"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "cost_usd": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "number"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "background": {
+                                              "type": "object",
+                                              "properties": {
+                                                "task_ids": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "string"
+                                                  }
+                                                },
+                                                "status": {
+                                                  "enum": [
+                                                    "running",
+                                                    "attention",
+                                                    "completed",
+                                                    "failed",
+                                                    "cancelled",
+                                                    "unknown"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "agents": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "total": {
+                                                      "type": "integer",
+                                                      "minimum": -9007199254740991,
+                                                      "maximum": 9007199254740991
+                                                    },
+                                                    "completed": {
+                                                      "type": "integer",
+                                                      "minimum": -9007199254740991,
+                                                      "maximum": 9007199254740991
+                                                    },
+                                                    "failed": {
+                                                      "type": "integer",
+                                                      "minimum": -9007199254740991,
+                                                      "maximum": 9007199254740991
+                                                    },
+                                                    "running": {
+                                                      "type": "integer",
+                                                      "minimum": -9007199254740991,
+                                                      "maximum": 9007199254740991
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "total",
+                                                    "completed",
+                                                    "failed",
+                                                    "running"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "task_ids",
+                                                "status",
+                                                "agents"
+                                              ]
+                                            },
+                                            "result_truncated": {
+                                              "const": true
+                                            },
+                                            "result_chars": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "id",
+                                            "name",
+                                            "preview",
+                                            "done",
+                                            "is_error",
+                                            "duration",
+                                            "cost_usd"
+                                          ],
+                                          "additionalProperties": {}
+                                        },
+                                        "steering": {
+                                          "type": "object",
+                                          "properties": {
+                                            "steer_id": {
+                                              "type": "string"
+                                            },
+                                            "consumed": {
+                                              "type": "boolean"
+                                            },
+                                            "submitted_at": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "number"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "consumed_at": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "number"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "phase_duration": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "number"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "steer_id",
+                                            "consumed",
+                                            "submitted_at",
+                                            "consumed_at"
+                                          ],
+                                          "additionalProperties": {}
+                                        }
+                                      },
+                                      "required": [
+                                        "row_id",
+                                        "order_index",
+                                        "role"
+                                      ],
+                                      "additionalProperties": {}
+                                    }
+                                  },
+                                  "final_answer": {
+                                    "type": "string"
+                                  },
+                                  "final_answer_excerpt": {
+                                    "type": "string",
+                                    "description": "Collapsed preview of an older settled final answer. Absent on the session-global newest visible reply; its exemption transfers only when a newer visible reply settles."
+                                  },
+                                  "turn_duration": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "final_answer_display": {
+                                    "type": "string"
+                                  },
+                                  "final_answer_media": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "url": {
+                                          "type": "string"
+                                        },
+                                        "name": {
+                                          "type": "string"
+                                        },
+                                        "mime": {
+                                          "type": "string"
+                                        },
+                                        "kind": {
+                                          "enum": [
+                                            "image",
+                                            "audio",
+                                            "video",
+                                            "pdf",
+                                            "file"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "url",
+                                        "name",
+                                        "mime",
+                                        "kind"
+                                      ]
+                                    }
+                                  },
+                                  "terminal_state": {
+                                    "type": "string",
+                                    "description": "The turn's outcome: a `TurnTerminalState` (`completed`, `no_response`, `error`, `cancelled`, `interrupted`, `tool_limit_reached`, ...), or `running` for the running turn of a run with no journal to replay (TAL-374). A running scene holds every persisted row (no final answer) and renders open, with no \"Worked\" fold or outcome; the live rows streamed after attach continue it, and the settled scene replaces both."
+                                  },
+                                  "expanded_by_default": {
+                                    "type": "boolean"
+                                  },
+                                  "final_phase_duration": {
+                                    "type": "number"
+                                  },
+                                  "has_consumed_steering": {
+                                    "type": "boolean"
+                                  },
+                                  "file_changes": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "path": {
+                                          "type": "string"
+                                        },
+                                        "action": {
+                                          "enum": [
+                                            "added",
+                                            "edited",
+                                            "deleted",
+                                            "renamed"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "path",
+                                        "action"
+                                      ],
+                                      "additionalProperties": {}
+                                    }
+                                  },
+                                  "activity_rows_total": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "activity_rows_offset": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "activity_rows_complete": {
+                                    "type": "boolean"
+                                  },
+                                  "activity_rows_omitted": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "activity_scene_ref": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "version",
+                                  "activity_rows"
+                                ],
+                                "additionalProperties": {}
+                              },
+                              "_turn_id": {
+                                "type": "string"
+                              },
+                              "_turnDuration": {
+                                "type": "number"
+                              },
+                              "_turnTps": {
+                                "type": "number"
+                              },
+                              "_ts": {
+                                "type": "number"
+                              },
+                              "reasoning_titles": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "_active_turn_user": {
+                                "type": "boolean"
+                              },
+                              "_steer": {
+                                "type": "object",
+                                "properties": {
+                                  "steer_id": {
+                                    "type": "string"
+                                  },
+                                  "submitted_at": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "consumed_at": {
+                                    "type": "number"
+                                  },
+                                  "phase_duration": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": [
+                                  "steer_id"
+                                ],
+                                "additionalProperties": {}
+                              },
+                              "_final_phase_duration": {
+                                "type": "number"
+                              },
+                              "_display_truncated": {
+                                "type": "boolean",
+                                "description": "Whether this settled body has a collapsed preview. The newest settled visible assistant reply and active-turn output remain full."
+                              },
+                              "_display_excerpt": {
+                                "type": "string",
+                                "description": "Collapsed preview with full content retained. The newest settled visible assistant reply remains exempt throughout the next running turn, until a newer visible reply settles."
+                              },
+                              "_collapsible": {
+                                "type": "boolean"
+                              },
+                              "_display_content": {
+                                "type": "string"
+                              },
+                              "_media": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "url": {
+                                      "type": "string"
+                                    },
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "mime": {
+                                      "type": "string"
+                                    },
+                                    "kind": {
+                                      "enum": [
+                                        "image",
+                                        "audio",
+                                        "video",
+                                        "pdf",
+                                        "file"
+                                      ],
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "url",
+                                    "name",
+                                    "mime",
+                                    "kind"
+                                  ]
+                                }
+                              },
+                              "_background_update": {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "enum": [
+                                      "delegation",
+                                      "process",
+                                      "mixed",
+                                      "other"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "attention": {
+                                    "type": "boolean"
+                                  },
+                                  "count": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991,
+                                    "exclusiveMinimum": 0
+                                  },
+                                  "summary": {
+                                    "type": "string"
+                                  },
+                                  "lines": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "enum": [
+                                            "agent",
+                                            "command",
+                                            "other"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "status": {
+                                          "enum": [
+                                            "completed",
+                                            "failed",
+                                            "notice"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "label": {
+                                          "type": "string"
+                                        },
+                                        "exit_code": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "review_state": {
+                                          "enum": [
+                                            "waiting",
+                                            "reviewing",
+                                            "reviewed",
+                                            "failed",
+                                            "unknown"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "status",
+                                        "label"
+                                      ]
+                                    }
+                                  },
+                                  "review_state": {
+                                    "enum": [
+                                      "waiting",
+                                      "reviewing",
+                                      "reviewed",
+                                      "failed",
+                                      "unknown"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "attention",
+                                  "count",
+                                  "summary",
+                                  "lines"
+                                ]
+                              },
+                              "_marker_kind": {
+                                "enum": [
+                                  "context_compaction",
+                                  "preserved_task_list"
+                                ],
+                                "type": "string"
+                              },
+                              "_marker_body": {
+                                "type": "string"
+                              },
+                              "_notice_kind": {
+                                "enum": [
+                                  "failed_turn",
+                                  "session_finalize"
+                                ],
+                                "type": "string"
+                              },
+                              "_delivery": {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "enum": [
+                                      "webhook",
+                                      "cron"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "body": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "name",
+                                  "body"
+                                ]
+                              },
+                              "_background_reply": {
+                                "type": "boolean"
+                              },
+                              "_background_silent": {
+                                "type": "boolean"
+                              },
+                              "_display": {
+                                "enum": [
+                                  "row",
+                                  "hidden",
+                                  "in_scene"
+                                ],
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "role"
+                            ],
+                            "additionalProperties": {}
+                          },
+                          "attachments": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "attachment_id": {
+                                  "type": "string",
+                                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                                },
+                                "kind": {
+                                  "enum": [
+                                    "image",
+                                    "pdf",
+                                    "file"
+                                  ],
+                                  "type": "string"
+                                },
+                                "name": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 255,
+                                  "pattern": "^[^/\\\\\\x00\\r\\n]+$"
+                                },
+                                "mime": {
+                                  "type": "string",
+                                  "maxLength": 127,
+                                  "pattern": "^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*\\/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*$"
+                                },
+                                "size": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 15000000,
+                                  "exclusiveMinimum": 0
+                                },
+                                "event_id": {
+                                  "type": "string",
+                                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                                },
+                                "download_url": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "attachment_id",
+                                "kind",
+                                "name",
+                                "mime",
+                                "size",
+                                "event_id",
+                                "download_url"
+                              ]
+                            }
+                          }
+                        },
+                        "required": [
+                          "key",
+                          "index",
+                          "author",
+                          "message",
+                          "attachments"
+                        ]
+                      }
+                    },
+                    "cursor": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "has_more": {
+                      "type": "boolean"
+                    },
+                    "next_before_seq": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991,
+                          "exclusiveMinimum": 0
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "available",
+                    "reason",
+                    "room",
+                    "rows",
+                    "cursor",
+                    "has_more",
+                    "next_before_seq"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/groups/receipt": {
+      "get": {
+        "operationId": "groups.receipt",
+        "tags": [
+          "groups"
+        ],
+        "parameters": [
+          {
+            "name": "room_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "request_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "outcome": {
+                      "enum": [
+                        "confirmed",
+                        "refused",
+                        "unknown"
+                      ],
+                      "type": "string"
+                    },
+                    "reason": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "unsupported",
+                            "stopped",
+                            "refused",
+                            "unavailable",
+                            "unknown",
+                            "driver_inactive"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "room_id": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                    },
+                    "event_id": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "attachment": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "attachment_id": {
+                              "type": "string",
+                              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                            },
+                            "kind": {
+                              "enum": [
+                                "image",
+                                "pdf",
+                                "file"
+                              ],
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 255,
+                              "pattern": "^[^/\\\\\\x00\\r\\n]+$"
+                            },
+                            "mime": {
+                              "type": "string",
+                              "maxLength": 127,
+                              "pattern": "^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*\\/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*$"
+                            },
+                            "size": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 15000000,
+                              "exclusiveMinimum": 0
+                            }
+                          },
+                          "required": [
+                            "attachment_id",
+                            "kind",
+                            "name",
+                            "mime",
+                            "size"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "outcome",
+                    "reason",
+                    "room_id",
+                    "event_id",
+                    "attachment"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/groups/action": {
+      "post": {
+        "operationId": "groups.write",
+        "tags": [
+          "groups"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "identity": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "operation": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "action": {
+                            "const": "capabilities"
+                          }
+                        },
+                        "required": [
+                          "action"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "action": {
+                            "const": "list"
+                          },
+                          "offset": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "limit": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 100,
+                            "exclusiveMinimum": 0
+                          }
+                        },
+                        "required": [
+                          "action"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "action": {
+                            "const": "create"
+                          },
+                          "room_id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                          },
+                          "name": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "members": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 6,
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "member_id": {
+                                  "type": "string",
+                                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                                },
+                                "profile": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 128
+                                },
+                                "handle": {
+                                  "type": "string",
+                                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                                },
+                                "display_name": {
+                                  "type": "string",
+                                  "maxLength": 128
+                                }
+                              },
+                              "required": [
+                                "member_id",
+                                "profile",
+                                "handle"
+                              ]
+                            }
+                          }
+                        },
+                        "required": [
+                          "action",
+                          "room_id",
+                          "name",
+                          "members"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "action": {
+                            "const": "state"
+                          },
+                          "room_id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                          },
+                          "include_disbanded": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "action",
+                          "room_id"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "action": {
+                            "const": "log"
+                          },
+                          "room_id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                          },
+                          "since_seq": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "limit": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 100,
+                            "exclusiveMinimum": 0
+                          }
+                        },
+                        "required": [
+                          "action",
+                          "room_id",
+                          "since_seq"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "action": {
+                            "const": "rename"
+                          },
+                          "room_id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                          },
+                          "event_id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                          },
+                          "name": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          }
+                        },
+                        "required": [
+                          "action",
+                          "room_id",
+                          "event_id",
+                          "name"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "action": {
+                            "const": "disband"
+                          },
+                          "room_id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                          },
+                          "cancel_id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                          }
+                        },
+                        "required": [
+                          "action",
+                          "room_id",
+                          "cancel_id"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "action": {
+                            "const": "send"
+                          },
+                          "room_id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                          },
+                          "event_id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                          },
+                          "payload": {
+                            "type": "object",
+                            "properties": {
+                              "text": {
+                                "type": "string",
+                                "maxLength": 65536
+                              },
+                              "attachments": {
+                                "type": "array",
+                                "maxItems": 8,
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "attachment_id": {
+                                      "type": "string",
+                                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                                    },
+                                    "kind": {
+                                      "enum": [
+                                        "image",
+                                        "pdf",
+                                        "file"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "name": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 255,
+                                      "pattern": "^[^/\\\\\\x00\\r\\n]+$"
+                                    },
+                                    "mime": {
+                                      "type": "string",
+                                      "maxLength": 127,
+                                      "pattern": "^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*\\/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*$"
+                                    },
+                                    "size": {
+                                      "type": "integer",
+                                      "minimum": -9007199254740991,
+                                      "maximum": 15000000,
+                                      "exclusiveMinimum": 0
+                                    }
+                                  },
+                                  "required": [
+                                    "attachment_id",
+                                    "kind",
+                                    "name",
+                                    "mime",
+                                    "size"
+                                  ]
+                                }
+                              }
+                            },
+                            "required": [
+                              "text"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "action",
+                          "room_id",
+                          "event_id",
+                          "payload"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "action": {
+                            "const": "stop"
+                          },
+                          "room_id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                          },
+                          "cancel_id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                          }
+                        },
+                        "required": [
+                          "action",
+                          "room_id",
+                          "cancel_id"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "member_id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                          },
+                          "task_id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                          },
+                          "execution_generation": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "exclusiveMinimum": 0
+                          },
+                          "action": {
+                            "const": "retry"
+                          },
+                          "room_id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                          }
+                        },
+                        "required": [
+                          "member_id",
+                          "task_id",
+                          "execution_generation",
+                          "action",
+                          "room_id"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "member_id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                          },
+                          "task_id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                          },
+                          "execution_generation": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "exclusiveMinimum": 0
+                          },
+                          "action": {
+                            "const": "discard"
+                          },
+                          "room_id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                          }
+                        },
+                        "required": [
+                          "member_id",
+                          "task_id",
+                          "execution_generation",
+                          "action",
+                          "room_id"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "member_id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                          },
+                          "task_id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                          },
+                          "execution_generation": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "exclusiveMinimum": 0
+                          },
+                          "action": {
+                            "const": "approve"
+                          },
+                          "room_id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                          },
+                          "request_id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                          },
+                          "choice": {
+                            "enum": [
+                              "once",
+                              "deny"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "member_id",
+                          "task_id",
+                          "execution_generation",
+                          "action",
+                          "room_id",
+                          "request_id",
+                          "choice"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "action": {
+                            "const": "attachment.upload"
+                          },
+                          "room_id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                          },
+                          "upload_id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                          },
+                          "kind": {
+                            "enum": [
+                              "image",
+                              "pdf",
+                              "file"
+                            ],
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 255
+                          },
+                          "mime": {
+                            "type": "string",
+                            "maxLength": 127
+                          },
+                          "data_base64": {
+                            "type": "string",
+                            "maxLength": 20000000
+                          }
+                        },
+                        "required": [
+                          "action",
+                          "room_id",
+                          "upload_id",
+                          "kind",
+                          "name",
+                          "mime",
+                          "data_base64"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "action": {
+                            "const": "attachment.download"
+                          },
+                          "room_id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                          },
+                          "event_id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                          },
+                          "attachment_id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                          }
+                        },
+                        "required": [
+                          "action",
+                          "room_id",
+                          "event_id",
+                          "attachment_id"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "identity",
+                  "operation"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "outcome": {
+                      "enum": [
+                        "confirmed",
+                        "refused",
+                        "unknown"
+                      ],
+                      "type": "string"
+                    },
+                    "reason": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "unsupported",
+                            "stopped",
+                            "refused",
+                            "unavailable",
+                            "unknown",
+                            "driver_inactive"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "room_id": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                    },
+                    "event_id": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "attachment": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "attachment_id": {
+                              "type": "string",
+                              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                            },
+                            "kind": {
+                              "enum": [
+                                "image",
+                                "pdf",
+                                "file"
+                              ],
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 255,
+                              "pattern": "^[^/\\\\\\x00\\r\\n]+$"
+                            },
+                            "mime": {
+                              "type": "string",
+                              "maxLength": 127,
+                              "pattern": "^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*\\/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*$"
+                            },
+                            "size": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 15000000,
+                              "exclusiveMinimum": 0
+                            }
+                          },
+                          "required": [
+                            "attachment_id",
+                            "kind",
+                            "name",
+                            "mime",
+                            "size"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "outcome",
+                    "reason",
+                    "room_id",
+                    "event_id",
+                    "attachment"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/groups/upload": {
+      "post": {
+        "operationId": "groups.upload",
+        "tags": [
+          "groups"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "room_id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                  },
+                  "identity": {
+                    "type": "string"
+                  },
+                  "upload_id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  "mime": {
+                    "type": "string",
+                    "maxLength": 127
+                  },
+                  "data_base64": {
+                    "type": "string",
+                    "maxLength": 20000000
+                  }
+                },
+                "required": [
+                  "room_id",
+                  "identity",
+                  "upload_id",
+                  "name",
+                  "mime",
+                  "data_base64"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "outcome": {
+                      "enum": [
+                        "confirmed",
+                        "refused",
+                        "unknown"
+                      ],
+                      "type": "string"
+                    },
+                    "reason": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "unsupported",
+                            "stopped",
+                            "refused",
+                            "unavailable",
+                            "unknown",
+                            "driver_inactive"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "room_id": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                    },
+                    "event_id": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "attachment": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "attachment_id": {
+                              "type": "string",
+                              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                            },
+                            "kind": {
+                              "enum": [
+                                "image",
+                                "pdf",
+                                "file"
+                              ],
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 255,
+                              "pattern": "^[^/\\\\\\x00\\r\\n]+$"
+                            },
+                            "mime": {
+                              "type": "string",
+                              "maxLength": 127,
+                              "pattern": "^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*\\/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*$"
+                            },
+                            "size": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 15000000,
+                              "exclusiveMinimum": 0
+                            }
+                          },
+                          "required": [
+                            "attachment_id",
+                            "kind",
+                            "name",
+                            "mime",
+                            "size"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "outcome",
+                    "reason",
+                    "room_id",
+                    "event_id",
+                    "attachment"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/groups/stream": {
+      "get": {
+        "summary": "Authorized discussion snapshots, projected from the native monotonic room log. Reconnect replaces the bounded window; clients never replay raw native events.",
+        "tags": [
+          "groups"
+        ],
+        "parameters": [
+          {
+            "name": "room_id",
+            "in": "query",
+            "required": true,
+            "description": "Discussion in the active profile and authenticated owner scope.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "GroupStreamEvent snapshot stream with keepalives.",
+            "content": {
+              "text/event-stream": {}
+            }
+          },
+          "400": {
+            "description": "Invalid room identity.",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "409": {
+            "description": "Native room unavailable.",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "503": {
+            "description": "Client stream limit reached.",
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/groups/file": {
+      "get": {
+        "summary": "Authenticated, event-bound native discussion attachment bytes. Native digest, size and custody are rechecked; Agent paths are never accepted.",
+        "tags": [
+          "groups"
+        ],
+        "parameters": [
+          {
+            "name": "room_id",
+            "in": "query",
+            "required": true,
+            "description": "Discussion id.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "identity",
+            "in": "query",
+            "required": true,
+            "description": "Opaque current room identity.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "event_id",
+            "in": "query",
+            "required": true,
+            "description": "Committed native message event.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "attachment_id",
+            "in": "query",
+            "required": true,
+            "description": "Native attachment capability.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Verified attachment bytes.",
+            "content": {
+              "application/octet-stream": {}
+            }
+          },
+          "404": {
+            "description": "Attachment unavailable.",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "409": {
+            "description": "Room identity changed.",
+            "content": {
+              "application/json": {}
             }
           }
         }

@@ -313,6 +313,45 @@ same Query invalidation family as the tail. Server window offsets delimit the
 loaded interval; readback retains its rows and scroll position across the window cap.
 
 
+## Native profile discussions
+
+`/api/groups` advertises the running native driver's capabilities and its seatable
+profiles intersected with profiles managed by this server. Unsupported, stopped
+and inactive owners advertise no actions. Discussions attach to an existing
+profile-bound owner; no request starts a gateway or constructs an Agent.
+
+`/api/groups/action` accepts a closed operation union. Every existing-room write
+carries the server's opaque room identity. Member approvals and Retry/Discard
+also carry the current native member/task/execution generation and approval id.
+The native service owns the durable room, task ledger, control receipts and
+attachment custody. The Web server owns authorization, bounded display windows,
+attribution, safe errors, member phases and permitted actions. Clients render
+these fields through the shared transcript, composer and approval components.
+
+`/api/groups/view` returns a server-ordered window. `before_seq` requests an older
+window; returning to the latest window resumes observation. One authenticated
+`/api/groups/stream` observer per owner/profile/room holds the native log cursor
+while viewers exist. Snapshots replace the displayed window, so replay cannot
+duplicate rows. Gaps or authority replacement rebuild a bounded snapshot. The
+last viewer releases observation without stopping native execution.
+
+Uploads use `/api/groups/upload`; the server classifies the declared MIME, and
+the native store validates MIME, bytes and room custody. The server verifies
+native upload/download digests and sizes. Downloads require the room identity,
+committed event id and attachment id; no Agent path is exposed. An uncertain
+write is read back, never automatically repeated. `/api/groups/receipt` reconciles
+a user's send identity against the native log. An unconfirmed receipt stays
+unknown. Before dispatch, `/api/groups/send-identity` resolves the caller's
+occurrence id to its native event id without querying or changing an owner.
+The optimistic row uses that server-issued identity to converge on a streamed
+persisted row, including while the POST response is delayed. Definite refusals
+restore the draft and files immediately, without reconciliation reads.
+Multi-profile discussions require the existing server-owner authority. The
+shared authentication gate protects the whole group API namespace, including
+streams and file downloads, before native RPC. A profile-bound trusted-header
+or OIDC login cannot use another managed profile through a room.
+App adoption is tracked separately in TAL-1378.
+
 ## Memory compaction
 
 `POST /api/memory/compaction/preview` accepts `section` (`memory` or `user`) and the

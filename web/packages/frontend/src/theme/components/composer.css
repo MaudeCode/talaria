@@ -97,7 +97,7 @@
    show around the strip. Without a card (the read-only note) it ends opaque at the wrap's bottom. */
 .composer-wrap::before{content:"";position:absolute;left:0;right:0;top:calc(-1 * var(--composer-fade-height));bottom:0;z-index:-1;pointer-events:none;border-top:var(--composer-wrap-border-top);background:linear-gradient(to bottom,transparent,var(--composer-wrap-bg) calc(var(--composer-fade-height) + var(--composer-card-bottom,calc(100% - var(--composer-fade-height)))))}
 .composer-dock--hero .composer-wrap::before{display:none}
-.composer-dock .composer-box,.composer-dock .composer-notice,.composer-dock .composer-strip,.composer-dock .composer-terminal-panel,.composer-dock [role="note"]{pointer-events:auto}
+.composer-dock .composer-box,.composer-dock .composer-strip,.composer-dock .composer-terminal-panel,.composer-dock [role="note"]{pointer-events:auto}
 .composer-hero-title{position:absolute;left:var(--space-4);right:var(--space-4);bottom:100%;max-width:var(--msg-max);margin:0 auto;padding-bottom:calc(var(--space-4) * 2);text-align:center;font-size:var(--composer-hero-title-size);line-height:1.25;font-weight:500;letter-spacing:-.02em;color:var(--text)}
 .composer-wrap{position:relative;padding:8px 20px 20px}
 @media (max-width:768px){.composer-wrap{padding:6px 12px 12px}}
@@ -127,7 +127,7 @@
 .composer-notices.is-stacked{flex-direction:column;gap:var(--space-2)}
 /* One glass surface for a chip and for the pill; a tone tints its own chip or segment. */
 .composer-notice,.composer-notices.is-grouped{border:1px solid var(--composer-border-color);border-radius:calc(var(--r-lg) + var(--space-1));background:linear-gradient(var(--notice-tint,transparent),var(--notice-tint,transparent)),color-mix(in srgb,var(--composer-bg) var(--composer-glass-mix),transparent);-webkit-backdrop-filter:var(--composer-backdrop);backdrop-filter:var(--composer-backdrop);box-shadow:var(--composer-shadow)}
-.composer-notice{box-sizing:border-box;display:flex;flex:none;align-items:center;gap:var(--space-1);min-width:0;max-width:100%;min-height:32px;padding:calc(var(--space-1) / 2) var(--space-1) calc(var(--space-1) / 2) var(--space-3);animation:composer-notice-in .18s cubic-bezier(.2,.8,.2,1)}
+.composer-notice{pointer-events:auto;box-sizing:border-box;display:flex;flex:none;align-items:center;gap:var(--space-1);min-width:0;max-width:100%;min-height:32px;padding:calc(var(--space-1) / 2) var(--space-1) calc(var(--space-1) / 2) var(--space-3);animation:composer-notice-in .18s cubic-bezier(.2,.8,.2,1)}
 .composer-notice.is-leaving{animation:composer-notice-out .22s ease-in forwards;pointer-events:none}
 .composer-notice[data-tone="warning"]{--notice-tint:color-mix(in srgb,var(--amber) 9%,transparent);color:var(--amber)}
 .composer-notice[data-tone="error"]{--notice-tint:color-mix(in srgb,var(--error) 8%,transparent);color:var(--error)}

@@ -4,10 +4,15 @@
  */
 import { parseChatEvent, type ChatEvent, SessionListEventSchema, type SessionListEvent, CHAT_EVENT_NAMES, SESSION_STREAM_EVENT_NAMES, SessionStreamEventSchema, type SessionStreamEvent } from '../contracts/sse'
 import { resolveApiUrl } from './client'
+import { GroupStreamEventSchema, type GroupView } from '@maudecode/talaria-web-contracts'
 
 export interface SseHandle {
   close(): void
   readonly readyState: () => number
+}
+
+export function openGroupStream(roomId: string, onView: (view: GroupView) => void): SseHandle {
+  return openSessionFeed(`api/groups/stream?${new URLSearchParams({ room_id: roomId })}`, ['snapshot'], (value) => GroupStreamEventSchema.safeParse(value), { onEvent: (event) => onView(event.data) })
 }
 
 export interface ChatStreamCallbacks {

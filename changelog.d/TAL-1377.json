@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Create persistent discussions with multiple agent profiles, shared files, member replies and approval controls.",
+      "highlight": true,
+      "components": ["web"]
+    }
+  ]
+}

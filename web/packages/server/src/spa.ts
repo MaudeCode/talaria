@@ -11,7 +11,7 @@ import { PREVIEW_PREFIX } from './workspace/preview.js'
 
 export const SPA_EXACT_PATHS = new Set([
   '/', '/index.html', '/sessions', '/tasks', '/kanban', '/skills', '/memory', '/workspaces', '/profiles', '/todos', '/insights', '/logs',
-  '/settings', '/onboarding', '/login', '/share',
+  '/settings', '/onboarding', '/login', '/share', '/groups',
 ])
 export const SPA_PREFIX_PATHS = ['/session/', '/tasks/', '/kanban/', '/skills/', '/memory/', '/workspaces/', '/profiles/', '/settings/', '/ext/', '/share/']
 export const SERVER_OWNED_PREFIXES = ['/api/', '/assets/', '/static/', '/extensions/', PREVIEW_PREFIX, '/plugins/', '/dashboard-plugins/', '/agent-dashboard-plugins/', '/session/static/']

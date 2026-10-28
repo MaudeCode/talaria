@@ -243,6 +243,11 @@ def _run(action: str, home: Path, cli_profile: str | None, ctx: CallContext, *, 
 
 
 def register(registry) -> None:
+    @registry.method("gateway.groups")
+    def groups_(ctx: CallContext, params: dict) -> dict:
+        from .groups import groups
+        return groups(ctx, params)
+
     @registry.method("gateway.session")
     def session_(ctx: CallContext, params: dict) -> dict:
         from .gateway_sessions import session

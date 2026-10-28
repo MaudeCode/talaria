@@ -2,10 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import { X, FileText, LoaderCircle, RotateCw } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import type { UploadResponse } from '../../contracts'
+import type { GroupAttachmentSchema } from '@maudecode/talaria-web-contracts'
+import type { z } from 'zod'
 import { IconButton } from '../../ui/Button'
 import { ImageLightbox } from '../chat/ImageLightbox'
 
-export interface PendingFile { key: string; file: File; status: 'uploading' | 'done' | 'error'; upload?: UploadResponse | undefined; error?: string | undefined }
+export interface PendingFile { key: string; file: File; status: 'uploading' | 'done' | 'error'; upload?: UploadResponse | undefined; groupAttachment?: z.infer<typeof GroupAttachmentSchema> | undefined; error?: string | undefined }
 
 const isImage = (f: PendingFile) => f.file.type.startsWith('image/')
 

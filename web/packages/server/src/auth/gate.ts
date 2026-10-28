@@ -320,7 +320,9 @@ export async function checkAuth(ctx: RequestContext): Promise<boolean> {
   }
   const info = await ensureTrustedAuthSession(ctx)
   if (info) {
-    if (OPERATOR_ONLY_PATHS.has(path) && !(await sessionCanManageServer(ctx, info))) {
+    // Discussions can execute several managed profiles, including through streams and files.
+    const operatorOnly = OPERATOR_ONLY_PATHS.has(path) || path === '/api/groups' || path.startsWith('/api/groups/')
+    if (operatorOnly && !(await sessionCanManageServer(ctx, info))) {
       await ctx.rawJson(403, { error: 'Owner session required' })
       return false
     }

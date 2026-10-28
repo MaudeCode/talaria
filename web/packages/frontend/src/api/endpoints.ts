@@ -7,6 +7,8 @@ import type { DelegationWrite } from '@maudecode/talaria-web-contracts'
  */
 import { m } from '../paraglide/messages.js'
 import { orpc, timeout } from './orpc'
+import type { GroupOperation } from '@maudecode/talaria-web-contracts'
+
 import type { OwnerActionRequest } from '@maudecode/talaria-web-contracts'
 import type { OutboundDraftAction, OutboundDraftRef } from '@maudecode/talaria-web-contracts'
 import { postForm } from './client'
@@ -14,6 +16,21 @@ import { loadedBuild, tabId } from '../app/tabBuild'
 import { UploadResponseSchema, type ChatStartRequest, type SessionId, type SessionNewRequestSchema, type SteerRequestSchema, type ApprovalRespondRequestSchema, type ClarifyRespondRequestSchema, type DraftRequestSchema } from '../contracts'
 import type { z } from 'zod'
 import { TranscribeResponseSchema, type SteerSendNowRequestSchema, type SteerWithdrawRequest } from '@maudecode/talaria-web-contracts'
+
+export const fetchGroups = (offset = 0) => orpc().groups.list({ offset })
+export const fetchGroup = (room_id: string, before_seq?: number, signal?: AbortSignal) => orpc().groups.view({ room_id, ...(before_seq === undefined ? {} : { before_seq }) }, signal ? { signal } : {})
+export const fetchGroupReceipt = (room_id: string, request_id: string) => orpc().groups.receipt({ room_id, request_id })
+export const fetchGroupSendIdentity = (request_id: string) => orpc().groups.sendIdentity({ request_id })
+export const writeGroup = (identity: string | null, operation: GroupOperation) => orpc().groups.write({ identity, operation })
+export async function uploadGroupFile(room_id: string, identity: string, file: File) {
+  const data_base64 = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result.split(',')[1] ?? '') : reject(new Error('File could not be read'))
+    reader.onerror = () => reject(reader.error ?? new Error('File could not be read'))
+    reader.readAsDataURL(file)
+  })
+  return orpc().groups.upload({ room_id, identity, upload_id: crypto.randomUUID(), name: file.name, mime: file.type || 'application/octet-stream', data_base64 })
+}
 
 const qs = (params: Record<string, string | number | boolean | undefined | null>) => {
   const p = new URLSearchParams()
