@@ -2,6 +2,7 @@ import SwiftUI
 import TalariaKit
 
 struct ChatTranscriptMessageBlock: View, Equatable {
+    @Environment(\.chatShowsReasoning) private var showsReasoning
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.chatDisclosureToggled) private var chatDisclosureToggled
     @ChatRetainedState("completed-activity") private var expandedCompletedActivityIDs = Set<String>()
@@ -123,7 +124,8 @@ struct ChatTranscriptMessageBlock: View, Equatable {
             message: transcriptMessage.message,
             liveRows: liveActivityRows,
             archivedRows: archivedActivityRows,
-            earlierSceneRows: earlierSceneRows
+            earlierSceneRows: earlierSceneRows,
+            showsReasoning: showsReasoning
         )
     }
 

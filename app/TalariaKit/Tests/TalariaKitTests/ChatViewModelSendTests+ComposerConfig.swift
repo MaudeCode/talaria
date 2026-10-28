@@ -1273,3 +1273,166 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(requests.count, 2, "A successful load is cached")
     }
 }
+
+
+@MainActor
+extension ChatViewModelSendTests {
+    func testReasoningDisplayChangesWithoutHoldingTheComposerAndRollsBackOnRefusal() async throws {
+        let requests = DeferredRequests()
+        let server = URL(string: "https://reasoning-display-refusal.test")!
+        DeferredMockURLProtocol.setOnRequest({ request in _ = requests.append(request) }, forHost: server.host!)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: server.host!) }
+        let model = try makeViewModel(server: server, protocolClasses: [DeferredMockURLProtocol.self]) { _ in
+            throw URLError(.badURL)
+        }
+        let command = try XCTUnwrap(SlashCommandCatalog.command(named: "reasoning"))
+        let write = Task { await model.executeSlashCommand(command, args: "hide") }
+        try await waitUntil { requests.count == 1 }
+        XCTAssertFalse(model.isUpdatingComposerConfiguration, "Reasoning visibility must not hold unrelated composer controls")
+        XCTAssertFalse(model.showsReasoning, "Hide must apply before the server replies")
+        requests.request(at: 0).complete(withJSON: #"{"error":"Reasoning display is locked"}"#, statusCode: 400)
+        let result = await write.value
+        XCTAssertEqual(result, .unsupported(friendlyMessage: "The server rejected the request: Reasoning display is locked"))
+        XCTAssertEqual(requests.count, 1, "A definite refusal must not replay the write")
+        XCTAssertTrue(model.showsReasoning, "A refusal restores the last confirmed display choice")
+    }
+}
+
+@MainActor
+extension ChatViewModelSendTests {
+    func testReasoningDisplayUnknownOutcomeReconcilesWithoutReplaying() async throws {
+        let requests = DeferredRequests()
+        let server = URL(string: "https://reasoning-display-unknown.test")!
+        DeferredMockURLProtocol.setOnRequest({ request in _ = requests.append(request) }, forHost: server.host!)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: server.host!) }
+        let model = try makeViewModel(server: server, protocolClasses: [DeferredMockURLProtocol.self]) { _ in throw URLError(.badURL) }
+        let write = Task { await model.executeSlashCommand(try XCTUnwrap(SlashCommandCatalog.command(named: "reasoning")), args: "hide") }
+        try await waitUntil { requests.count == 1 }
+        requests.request(at: 0).fail(with: URLError(.networkConnectionLost))
+        try await waitUntil { requests.count == 2 }
+        XCTAssertEqual(requests.request(at: 1).request.httpMethod, "GET")
+        requests.request(at: 1).complete(withJSON: #"{"show_reasoning":false}"#)
+        _ = try await write.value
+        XCTAssertFalse(model.showsReasoning)
+        XCTAssertEqual(requests.count, 2, "Unknown outcomes reconcile through a read, never a repeated write")
+    }
+
+    func testReasoningDisplayWritesAreOrderedAndRefusalUsesLastConfirmedChoice() async throws {
+        let requests = DeferredRequests()
+        let server = URL(string: "https://reasoning-display-order.test")!
+        DeferredMockURLProtocol.setOnRequest({ request in _ = requests.append(request) }, forHost: server.host!)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: server.host!) }
+        let model = try makeViewModel(server: server, protocolClasses: [DeferredMockURLProtocol.self]) { _ in throw URLError(.badURL) }
+        let command = try XCTUnwrap(SlashCommandCatalog.command(named: "reasoning"))
+        let hide = Task { await model.executeSlashCommand(command, args: "hide") }
+        try await waitUntil { requests.count == 1 }
+        let show = Task { await model.executeSlashCommand(command, args: "show") }
+        try await waitUntil { model.showsReasoning }
+        XCTAssertEqual(requests.count, 1)
+        requests.request(at: 0).complete(withJSON: #"{"show_reasoning":false}"#)
+        try await waitUntil { requests.count == 2 }
+        XCTAssertTrue(model.showsReasoning)
+        requests.request(at: 1).complete(withJSON: #"{"error":"Locked"}"#, statusCode: 400)
+        _ = await hide.value
+        _ = await show.value
+        XCTAssertFalse(model.showsReasoning, "Refused Show restores the Hide that the server already confirmed")
+    }
+
+    func testReasoningDisplayIgnoresSessionReadThatPredatesItsWrite() async throws {
+        let requests = DeferredRequests()
+        let server = URL(string: "https://reasoning-display-stale.test")!
+        DeferredMockURLProtocol.setOnRequest({ request in _ = requests.append(request) }, forHost: server.host!)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: server.host!) }
+        let model = try makeViewModel(server: server, protocolClasses: [DeferredMockURLProtocol.self]) { _ in throw URLError(.badURL) }
+        let load = Task { await model.loadMessages() }
+        try await waitUntil { requests.count == 1 }
+        let write = Task { await model.executeSlashCommand(try XCTUnwrap(SlashCommandCatalog.command(named: "reasoning")), args: "hide") }
+        try await waitUntil { requests.count == 2 }
+        requests.request(at: 1).complete(withJSON: #"{"show_reasoning":false}"#)
+        _ = try await write.value
+        requests.request(at: 0).complete(withJSON: #"{"session":{"session_id":"session-abc","show_reasoning":true,"messages":[]}}"#)
+        await load.value
+        XCTAssertFalse(model.showsReasoning)
+        let refresh = Task { await model.loadMessages() }
+        try await waitUntil { requests.count == 3 }
+        requests.request(at: 2).complete(withJSON: #"{"session":{"session_id":"session-abc","show_reasoning":true,"messages":[]}}"#)
+        await refresh.value
+        XCTAssertTrue(model.showsReasoning, "A fresh server decision replaces the previous confirmed choice")
+    }
+
+    func testReasoningDisplayShowRefreshesTheLoadedHistoryPrefix() async throws {
+        var show = false
+        var prefixReads = 0
+        let model = try makeViewModel { request in
+            if request.url?.path == "/api/reasoning" {
+                show = true
+                return apiTestJSONResponse(#"{"show_reasoning":true}"#, for: request)
+            }
+            guard request.url?.path == "/api/session" else { return apiTestJSONResponse("{}", for: request) }
+            let before = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "msg_before" }?.value
+            let offset = before == nil ? 50 : 0
+            if before != nil { prefixReads += 1 }
+            let rows = (offset..<(offset + 50)).map { index in
+                ["role":"assistant", "message_id":"reasoning-\(index)", "content":"Answer \(index)", "reasoning":show ? "Reasoning \(index)" : ""]
+            }
+            let body: [String: Any] = ["session":["session_id":"session-abc", "show_reasoning":show, "messages":rows, "_messages_offset":offset, "_messages_truncated":offset > 0, "message_count":100]]
+            return apiTestJSONResponse(String(decoding: try JSONSerialization.data(withJSONObject: body), as: UTF8.self), for: request)
+        }
+        await model.loadMessages()
+        let loaded = await model.loadOlderMessages()
+        XCTAssertTrue(loaded)
+        XCTAssertEqual(model.messages.count, 100)
+        XCTAssertEqual(model.messages.first?.reasoning, "")
+        _ = await model.executeSlashCommand(try XCTUnwrap(SlashCommandCatalog.command(named: "reasoning")), args: "show")
+        XCTAssertTrue(model.showsReasoning)
+        XCTAssertEqual(model.messages.count, 100)
+        XCTAssertEqual(model.messages.first?.reasoning, "Reasoning 0")
+        XCTAssertEqual(prefixReads, 2)
+    }
+}
+
+@MainActor
+extension ChatViewModelSendTests {
+    func testReasoningDisplayRetiresScenePageReadBeforeTheVisibilityChange() async throws {
+        let requests = DeferredRequests()
+        let server = URL(string: "https://reasoning-display-scene.test")!
+        DeferredMockURLProtocol.setOnRequest({ request in _ = requests.append(request) }, forHost: server.host!)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: server.host!) }
+        let model = try makeViewModel(server: server, protocolClasses: [DeferredMockURLProtocol.self]) { _ in throw URLError(.badURL) }
+        let load = Task { await model.loadMessages() }
+        try await waitUntil { requests.count == 1 }
+        requests.request(at: 0).complete(withJSON: #"{"session":{"session_id":"session-abc","show_reasoning":true,"messages":[{"role":"assistant","message_id":"answer","content":"Public answer","_anchor_activity_scene":{"version":"activity_scene_v1","terminal_state":"completed","final_answer":"Public answer","activity_rows":[],"activity_rows_offset":1,"activity_rows_total":1,"activity_scene_ref":"scene"}}]}}"#)
+        await load.value
+        let turn = try XCTUnwrap(model.displayedTranscriptMessages.last)
+        let page = Task { await model.loadEarlierSceneRows(for: turn) }
+        try await waitUntil { requests.count == 2 }
+        let write = Task { await model.executeSlashCommand(try XCTUnwrap(SlashCommandCatalog.command(named: "reasoning")), args: "hide") }
+        try await waitUntil { requests.count == 3 }
+        requests.request(at: 2).complete(withJSON: #"{"show_reasoning":false}"#)
+        _ = try await write.value
+        requests.request(at: 1).complete(withJSON: #"{"scene_ref":"scene","rows":[{"row_id":"reasoning","role":"reasoning","order_index":0,"text":"Old private reasoning"}],"start":0,"end":1,"total":1,"complete":true}"#)
+        await page.value
+        XCTAssertTrue(model.earlierSceneRows.isEmpty, "A page from the old display choice must not repopulate the current scene cache")
+    }
+}
+
+@MainActor
+extension ChatViewModelSendTests {
+    func testReasoningDisplayDropsAQueuedWriteAfterAnAccountReset() async throws {
+        let requests = DeferredRequests()
+        let server = URL(string: "https://reasoning-display-account.test")!
+        DeferredMockURLProtocol.setOnRequest({ request in _ = requests.append(request) }, forHost: server.host!)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: server.host!) }
+        let model = try makeViewModel(server: server, protocolClasses: [DeferredMockURLProtocol.self]) { _ in throw URLError(.badURL) }
+        let command = try XCTUnwrap(SlashCommandCatalog.command(named: "reasoning"))
+        let first = Task { await model.executeSlashCommand(command, args: "hide") }
+        try await waitUntil { requests.count == 1 }
+        let queued = Task { await model.executeSlashCommand(command, args: "show") }
+        try await waitUntil { model.showsReasoning }
+        ServerCacheGeneration.advance(for: server)
+        requests.request(at: 0).complete(withJSON: #"{"show_reasoning":false}"#)
+        _ = await first.value
+        _ = await queued.value
+        XCTAssertEqual(requests.count, 1, "A retired account must neither write nor reconcile through the new account")
+    }
+}

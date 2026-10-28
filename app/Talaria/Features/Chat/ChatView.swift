@@ -1855,6 +1855,7 @@ struct ChatView: View {
                 restoredReadingRowID: chat.restoredReadingRowID,
                 onReaderMoved: chat.recordReadingRow
             )
+            .environment(\.chatShowsReasoning, viewModel.showsReasoning)
             .environment(\.openURL, OpenURLAction(handler: chat.handleTranscriptLink))
             .environment(\.chatFullToolResultLoader) { toolCallID in
                 try await viewModel.fullToolResult(toolCallID: toolCallID)

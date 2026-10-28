@@ -1,11 +1,17 @@
 import SwiftUI
 import TalariaKit
 
+extension EnvironmentValues {
+    /// The server display preference; a missing field on older servers keeps reasoning visible.
+    @Entry var chatShowsReasoning = true
+}
+
 struct ReasoningBlockView: View {
     let text: String
     let titles: [String]
     let isActive: Bool
 
+    @Environment(\.chatShowsReasoning) private var showsReasoning
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.chatDisclosureToggled) private var chatDisclosureToggled
     @AppStorage(ChatTranscriptDisplaySettings.thinkingCardsStartExpandedKey) private var startsExpanded = false
@@ -26,7 +32,7 @@ struct ReasoningBlockView: View {
     }
 
     var body: some View {
-        if let trimmedText {
+        if showsReasoning, let trimmedText {
             VStack(alignment: .leading, spacing: isExpanded ? 6 : 0) {
                 Button {
                     chatDisclosureToggled()
