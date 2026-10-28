@@ -49,7 +49,7 @@ it('builds done from the same indexed window as detail for 3,000 messages', asyn
     expect(done.session.message_count).toBe(3002)
     expect(done.session.messages).toEqual(detail.messages)
     expect(done.session.tool_calls).toEqual(detail.tool_calls)
-    for (const key of ['message_count', '_messages_offset', '_messages_truncated', 'compression_reference', 'todo_state']) expect(done.session[key], key).toEqual(detail[key])
+    for (const key of ['message_count', '_messages_offset', '_messages_truncated', 'todo_state']) expect(done.session[key], key).toEqual(detail[key])
     const messages = done.session.messages as Message[]
     expect(messages.some((row) => row._anchor_activity_scene)).toBe(true)
     expect(messages.find((row) => row.role === 'tool')).toMatchObject({ _content_truncated: true })

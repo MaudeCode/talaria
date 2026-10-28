@@ -26,7 +26,7 @@ import { PendingPrompts, clarifyReply, isVaultPrompt, vaultReply } from './pendi
 import type { JournalEventMeta } from './storage/backend.js'
 import type { RunJournal, RunJournalWriter } from './journal.js'
 import { COMPRESSION_RECOVERY_ACTION_START_FOCUSED, COMPRESSION_RECOVERY_TERMINAL_STATE, CONTEXT_USAGE_FIELDS, Session, contextUsage, forgetContextFigures, titleFrom, type Message } from './session.js'
-import { anchorMessageKey, markerSummary, visibleMessagesForAnchor } from './compress.js'
+import { anchorMessageKey, markerSummary, insertCompactionRow, visibleMessagesForAnchor } from './compress.js'
 import { buildActiveTurnToken, completedToolIndex, publicToolFrame, redactNestedMessageContainers, redactString, withToolId } from '../redact.js'
 import { dict, findPersonality, type Config, type PersonalityRow } from '../config/agent-config.js'
 import { ReasoningTitleTracker, reasoningEventPayload } from './reasoning-titles.js'
@@ -1099,6 +1099,9 @@ export class TurnRunner {
         s.compression_anchor_visible_idx = anchorIdx
         s.compression_anchor_message_key = anchorMessageKey(anchorIdx !== null && anchorIdx < after.length ? after[anchorIdx] : after.at(-1))
         s.compression_anchor_summary = markerSummary(s.context_messages)
+        // TAL-1566: the compaction's row sits where the compaction happened: before this turn's rows.
+        const at = s.messages.findIndex((m) => m._turn_id === streamId)
+        if (s.compression_anchor_summary) insertCompactionRow(s, (at < 0 ? s.messages.length : at) - 1, str(s.compression_anchor_summary), deps.now())
       }
       const now = deps.now()
       for (const m of s.messages) m.timestamp ??= now

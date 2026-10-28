@@ -312,7 +312,6 @@
 	"retrieval_context_label": "Indexovaný kontext",
 	"retrieval_context_preview": "Dřívější zprávy jsou uloženy a načteny pomocí kontextových nástrojů",
 	"preserved_task_list_label": "Zachovaný seznam úkolů",
-	"reference_only_label": "Pouze jako odkaz",
 	"model_usage": "Použití: /model <název>",
 	"no_model_match": "Nevyhovuje žádný model \"",
 	"model_did_you_mean": " — měli jste na mysli „{m}“?",

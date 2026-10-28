@@ -293,7 +293,6 @@
 	"retrieval_context_label": "Индексированный контекст",
 	"retrieval_context_preview": "Предыдущие сообщения сохранены и доступны через инструменты контекста",
 	"preserved_task_list_label": "Сохранённый список задач",
-	"reference_only_label": "Только справка",
 	"model_usage": "Использование: /model <name>",
 	"no_model_match": "Нет модели, соответствующей \"",
 	"model_did_you_mean": " — возможно, вы имели в виду \"{m}\"?",

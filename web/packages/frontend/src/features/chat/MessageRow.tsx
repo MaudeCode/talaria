@@ -1,7 +1,7 @@
 import type { MessageReactionView } from '@maudecode/talaria-web-contracts'
 import { Menu, MenuItem } from '../../ui/Menu'
 import { memo, useState } from 'react'
-import { AlertTriangle, ArrowUp, CalendarClock, Copy, GitBranch, Info, ListChecks, Pencil, RotateCcw, SmilePlus, Shrink, Volume2, Webhook } from 'lucide-react'
+import { AlertTriangle, ArrowUp, CalendarClock, ChevronRight, Copy, GitBranch, Info, ListChecks, Pencil, RotateCcw, SmilePlus, Shrink, Volume2, Webhook } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import type { BackgroundLine, Message } from '../../contracts'
 import { StatusIcon } from '../background/BackgroundWork'
@@ -156,8 +156,9 @@ export const BackgroundUpdateRow = memo(function BackgroundUpdateRow({ row }: { 
 })
 
 /**
- * TAL-305: a marker the server stamped `_marker_kind` (a compaction summary or a preserved task list), shown as a collapsed
- * card titled by its kind, never as anyone's message. The body opens from the title: `_marker_body` when sent, else `content`.
+ * TAL-305: a marker the server stamped `_marker_kind` (a compaction summary or a preserved task list), one quiet line in its
+ * place like a notice, titled by its kind, never anyone's message. TAL-1566: no card. The body opens from the title:
+ * `_marker_body` when sent, else `content`.
  */
 export const MarkerRow = memo(function MarkerRow({ row }: { row: VisibleMessage }) {
   const { message } = row
@@ -167,12 +168,13 @@ export const MarkerRow = memo(function MarkerRow({ row }: { row: VisibleMessage 
   const text = message._marker_body ?? messageText(message.content)
   return (
     <div className="msg-row" data-role="marker" data-msg-idx={row.index} data-message-key={row.key}>
-      <details className="marker-card rounded-md border border-border bg-surface px-3 py-2 text-[13px] text-muted">
-        <summary className="flex cursor-pointer list-none items-center gap-2 [&::-webkit-details-marker]:hidden">
+      <details className="marker-row group text-[13px] text-muted">
+        <summary className="flex w-fit cursor-pointer list-none items-center gap-2 [&::-webkit-details-marker]:hidden">
           <Icon size={14} aria-hidden="true" className="shrink-0" />
-          <span className="font-medium text-text">{tasks ? m.marker_preserved_task_list() : m.marker_context_compaction()}</span>
+          <span className="min-w-0">{tasks ? m.marker_preserved_task_list() : m.marker_context_compaction()}</span>
+          <ChevronRight size={14} aria-hidden="true" className="shrink-0 transition-transform group-open:rotate-90 motion-reduce:transition-none" />
         </summary>
-        <div className="mt-2">
+        <div className="mt-2 pl-[22px]">
           <CollapsedBody excerpt={message._marker_body === undefined && message._display_truncated ? message._display_excerpt : undefined}>
             {(excerpt) => <div className="msg-body whitespace-pre-wrap">{excerpt ?? text}</div>}
           </CollapsedBody>

@@ -876,14 +876,6 @@ public struct TranscriptAssistantSegment: Equatable {
     let message: ChatMessage
 }
 
-/// Display model for the synthesized "Context compaction · Reference only" card.
-public struct CompressionReferenceCard: Equatable {
-    public let referenceText: String
-    /// `renderID` of the transcript row the card renders directly after;
-    /// nil places the card above the loaded transcript.
-    public let afterRenderID: String?
-}
-
 public struct MessageActionContext: Equatable, Identifiable {
     public var id: String { messageID }
 
@@ -1086,7 +1078,10 @@ extension ChatViewModel {
 
             appendAssistantTurn()
             let absoluteIndex = offset + loadedIndex
-            let renderID = "transcript:\(absoluteIndex)"
+            // A compaction keeps its row's identity when rows land before it (TAL-1566).
+            let renderID = message.markerKind != nil
+                ? message.messageId.map { "marker:\($0)" } ?? "transcript:\(absoluteIndex)"
+                : "transcript:\(absoluteIndex)"
 
             transcriptMessages.append(TranscriptMessage(
                 loadedIndex: loadedIndex,
@@ -1114,21 +1109,6 @@ extension ChatViewModel {
             )
         }
         return transcriptMessages
-    }
-
-    /// Places the server's reference card (TAL-560) after the transcript row holding its anchor's full-transcript index,
-    /// or above the loaded rows when the anchor is not among them.
-    public nonisolated static func compressionReferenceCard(
-        reference: CompressionReference?,
-        messagesOffset: Int,
-        transcriptMessages: [TranscriptMessage]
-    ) -> CompressionReferenceCard? {
-        guard let reference else { return nil }
-
-        // A transcript row spans its assistant segments; the anchor attaches to the row ending at or before it.
-        let loadedIndex = reference.afterMessageIndex.map { $0 - max(0, messagesOffset) }
-        let afterRenderID = loadedIndex.flatMap { index in transcriptMessages.last { $0.loadedIndex <= index }?.renderID }
-        return CompressionReferenceCard(referenceText: reference.text, afterRenderID: afterRenderID)
     }
 
     nonisolated private static func appendReasoningCandidate(

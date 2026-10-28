@@ -1,4 +1,5 @@
 import { OutboundDraftRefSchema } from '@maudecode/talaria-web-contracts'
+import { randomUUID } from 'node:crypto'
 /**
  * Transcript settlement after an Agent turn (the core of Python
  * `_merge_display_messages_after_agent_result`, `_message_identity`,
@@ -135,6 +136,26 @@ export function isContextCompressionMarker(msg: unknown): boolean {
   return markerKind(msg) === 'context_compaction'
 }
 
+/**
+ * TAL-1566: one compaction's transcript row: the summary, display-only in its own `marker` role, so no rule treats it as a
+ * turn or an Agent marker, and the model never receives it.
+ */
+export function compactionRow(summary: string, timestamp: unknown, id: string): Message {
+  return { role: 'marker', content: summary, message_id: `compaction:${id}`, timestamp, _marker_kind: 'context_compaction' }
+}
+
+export function isCompactionRow(msg: unknown): boolean {
+  return isDict(msg) && msg.role === 'marker'
+}
+
+/** The Agent's compaction marker as a compaction row, keeping its identity. */
+function compactionRowFromMarker(m: Message): Message {
+  const id = str(m.message_id) || str(m.id) || (m._state_db_row_id !== undefined ? `state-db-${str(m._state_db_row_id)}` : randomUUID())
+  return compactionRow(messageText(m.content).trim(), m.timestamp, id)
+}
+
+const oneLine = (text: string): string => text.split(/\s+/).join(' ').trim()
+
 // The Agent's failed-turn boundary copy (`agent/turn_failure_copy.py`): an older row carries it without its kind.
 const FAILED_TURN_NOTICES = new Set([
   'Your request was not processed. Send it again if you still want me to carry it out.',
@@ -194,6 +215,8 @@ export function withMirrorSources<T>(messages: T[], session: object): T[] {
  */
 export function withMarkerKinds<T>(messages: T[], session: object): T[] {
   const erroredTurns = new Set(messages.flatMap((m) => (isDict(m) && m._error ? [str(m._turn_id)] : [])))
+  // TAL-1566: one compaction shows once; the Agent's own marker for a compaction Web's row already shows stays hidden.
+  const shownCompactions = messages.flatMap((m) => (isCompactionRow(m) ? [oneLine(messageText((m as Message).content))] : [])).filter(Boolean)
   const messaging = sourceKind(session as Record<string, unknown>) === 'messaging'
   return messages.map((m) => {
     if (!isDict(m)) return m
@@ -205,7 +228,10 @@ export function withMarkerKinds<T>(messages: T[], session: object): T[] {
       if (!agentKind) return m
       return agentKind === 'failed_turn' && !erroredTurns.has(str(m._turn_id)) ? { ...m, _notice_kind: agentKind } : { ...m, display_kind: 'hidden' }
     }
-    if (kind === 'context_compaction') return { ...m, _marker_kind: kind }
+    if (kind === 'context_compaction') {
+      const text = oneLine(messageText(m.content))
+      return shownCompactions.some((summary) => text.includes(summary)) ? { ...m, display_kind: 'hidden' } : { ...m, _marker_kind: kind }
+    }
     const body = messageText(m.content).trim().slice(PRESERVED_TASK_LIST_PREFIX.length).trim()
     return { ...m, _marker_kind: kind, _marker_body: body }
   })
@@ -312,7 +338,8 @@ export function withoutMaxIterationSummaryRequest(messages: Message[], request: 
 }
 
 export function mergeDisplayMessagesAfterAgentResult(previousDisplay: Message[], previousContext: Message[], resultMessages: Message[], msgText: string, opts: MergeOptions = {}): Message[] {
-  const display = previousDisplay.filter((m) => !isContextCompressionMarker(m))
+  // TAL-1566: compactions keep their rows where they are; the Agent's own markers among them become compaction rows.
+  const display = previousDisplay.map((m) => (isContextCompressionMarker(m) ? compactionRowFromMarker(m) : m))
   const seenPartial = new Set<string>()
   const dedupedRev: Message[] = []
   for (let i = display.length - 1; i >= 0; i -= 1) {
@@ -327,6 +354,7 @@ export function mergeDisplayMessagesAfterAgentResult(previousDisplay: Message[],
     dedupedRev.push(m)
   }
   const prev = dedupedRev.reverse()
+  const prevTurns = prev.filter((m) => !isCompactionRow(m))
   const context = previousContext.filter((m) => !isContextCompressionMarker(m))
   const result = resultMessages.filter((m) => isDict(m))
   if (!result.length) return prev
@@ -336,7 +364,7 @@ export function mergeDisplayMessagesAfterAgentResult(previousDisplay: Message[],
     const currentUserIn = candidates.some((m) => looksLikeCurrentUserTurn(m, msgText))
     const assistantOnly = candidates.length > 0 && candidates.every((m) => isContextCompressionMarker(m) || (isDict(m) && (m.role === 'assistant' || m.role === 'tool')))
     if (!(assistantOnly && !currentUserIn)) {
-      candidates = stripReplayedPrefix(prev, candidates) as Message[]
+      candidates = stripReplayedPrefix(prevTurns, candidates) as Message[]
       candidates = stripReplayedPrefix(context, candidates) as Message[]
     }
   } else {
@@ -1373,7 +1401,7 @@ export function sanitizeMessagesForApi(messages: Message[], { preserveApiContent
     const replay = preserveApiContent ? apiContent(msg) : undefined
     if (isReasoningOnlyAssistant(msg) && !replay) continue
     // The Agent already received a steer mid-turn; its persisted row is display-only.
-    if (msg._error || isDict(msg._steer) || msg._notice_kind === 'session_finalize') continue
+    if (msg._error || isDict(msg._steer) || msg._notice_kind === 'session_finalize' || isCompactionRow(msg)) continue
     if (msg._partial && !messageText(msg.content).trim()) continue
     const recovered = Boolean(msg._recovered) && msg.role === 'user'
     if (msg.role === 'tool') { const tid = str(msg.tool_call_id) || str(msg.tool_use_id); if (!tid || !validToolCallIds.has(tid)) continue }

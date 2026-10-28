@@ -40,7 +40,6 @@ struct ChatTranscriptView: View {
     let errorMessage: String?
     let messages: [ChatMessage]
     let displayedTranscriptMessages: [TranscriptMessage]
-    let compressionReferenceCard: CompressionReferenceCard?
     let branchedFrom: SessionBranchLink?
     let reasoningGroups: [ReasoningGroup]
     let completedToolCallGroupsForAnchor: (String?) -> [ToolCallGroup]
@@ -441,9 +440,6 @@ struct ChatTranscriptView: View {
             VStack(spacing: transcriptMessageSpacing) {
                 if let branchedFrom { branchedFromButton(branchedFrom) }
                 if hasOlderMessages { historyIndicator }
-                if let compressionReferenceCard, compressionReferenceCard.afterRenderID == nil {
-                    compressionReferenceCardView(compressionReferenceCard, proxy: proxy)
-                }
                 if !displayedTranscriptMessages.isEmpty {
                     windowedTranscriptRows(proxy: proxy, viewportFrame: viewportFrame)
                 } else {
@@ -604,10 +600,6 @@ struct ChatTranscriptView: View {
 
             row
 
-            if let compressionReferenceCard,
-               compressionReferenceCard.afterRenderID == transcriptMessage.renderID {
-                compressionReferenceCardView(compressionReferenceCard, proxy: proxy)
-            }
             if index == displayedTranscriptMessages.count - 1 { transcriptTailContent }
         }, id: Self.containerID(for: transcriptMessage.renderID), proxy: proxy)
     }
@@ -623,17 +615,6 @@ struct ChatTranscriptView: View {
         turnChangesCard
         inlineCommitButton
         Color.clear.frame(height: 1).allowsHitTesting(false)
-    }
-
-    @ViewBuilder
-    private func compressionReferenceCardView(_ card: CompressionReferenceCard, proxy: ScrollViewProxy) -> some View {
-        let row = MarkerMessageCardView(kind: .compressionReference, content: card.referenceText)
-        if card.afterRenderID == nil {
-            positionAnchoredRow(row, id: "compression-reference", proxy: proxy)
-                .id("compression-reference")
-        } else {
-            row
-        }
     }
 
     /// Opens the chat this one was branched from through the session deep link (TAL-454), so an offline tap

@@ -25,7 +25,7 @@ test('a kept-message summary renders once as a compaction card and survives refr
       mkdirSync(shots, { recursive: true })
       await page.screenshot({ path: `${shots}/collapsed-${testInfo.project.name}.png` })
     }
-    const card = page.locator('#messages .marker-card')
+    const card = page.locator('#messages .marker-row')
     await expect(card).toHaveCount(1)
     await expect(card).toContainText('Context compaction')
     await expect(page.locator('#messages [data-role="assistant"]')).toHaveCount(2)
@@ -34,7 +34,7 @@ test('a kept-message summary renders once as a compaction card and survives refr
     await expect(card.locator('.msg-body')).toHaveText(carrier.summary)
     if (shots) await page.screenshot({ path: `${shots}/expanded-${testInfo.project.name}.png` })
     await page.reload()
-    await expect(page.locator('#messages .marker-card')).toHaveCount(1)
+    await expect(page.locator('#messages .marker-row')).toHaveCount(1)
     await expect(page.locator('#messages [data-role="assistant"]')).toHaveCount(2)
   } finally {
     db.close()

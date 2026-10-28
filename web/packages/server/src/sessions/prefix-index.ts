@@ -2,14 +2,12 @@
 import { createHash } from 'node:crypto'
 import { str } from '../util.js'
 import { assistantAnchorSceneMessageRef, messageTurnId, terminalStateOf } from './anchor.js'
-import { anchorMessageKey, isAnchorCandidate, keyMatches, type CompressionReference } from './compress.js'
-import { isConversationalAssistant, agentRowKind, markerKind, finalAnswerOf, agentSteerText, ApiMessageSummary, isContextCompressionMarker, messageText, normalizeAssistantDisplay, normalizeUserDisplay, withAttachmentObjects } from './merge.js'
-import { isEmptyPartialActivityMessage, messageTimestamp, type Message, type Session } from './session.js'
+import { isConversationalAssistant, agentRowKind, markerKind, finalAnswerOf, agentSteerText, ApiMessageSummary, normalizeAssistantDisplay, normalizeUserDisplay, withAttachmentObjects } from './merge.js'
+import { isEmptyPartialActivityMessage, messageTimestamp, type Message } from './session.js'
 import { messageTodoSnapshot, tsFloat } from './todo.js'
 import { stateDbIdentityKeys, stateDbMessageKey } from './state-db-identity.js'
 
 interface Snapshot { maxTimestamp: number; maxTodoTimestamp: number; todo: Record<string, unknown> | null; userCount: number; lastTimestamp: number | null }
-interface Candidate { index: number; key: Record<string, unknown> | null }
 const upperBound = (rows: number[], value: number): number => {
   let lo = 0, hi = rows.length
   while (lo < hi) { const mid = (lo + hi) >>> 1; if (rows[mid]! <= value) lo = mid + 1; else hi = mid }
@@ -28,9 +26,6 @@ export class SessionPrefixIndex {
   readonly refCounts = new Map<string, number>()
   readonly identities = [new Set<string>(), new Set<string>()] as const
   readonly unidentified = [new Map<string, number>(), new Map<string, number>()] as const
-  readonly markerSummaries: { index: number; text: string }[] = []
-  readonly anchorCandidates: Candidate[] = []
-  private readonly candidatesByKey = new Map<string, Candidate[]>()
   private readonly snapshots: Snapshot[] = [{ maxTimestamp: 0, maxTodoTimestamp: 0, todo: null, userCount: 0, lastTimestamp: null }]
   private readonly rowHashes: string[] = []
   private toolCallsHash = ''
@@ -118,14 +113,6 @@ export class SessionPrefixIndex {
       const projected = steer === null ? raw : { ...raw, content: steer }
       const display = normalizeUserDisplay(normalizeAssistantDisplay(withAttachmentObjects([projected])[0]!))
       if (isConversationalAssistant(display)) this.replyRows.push(index)
-      const normalized = display.role === 'assistant' && this.calls.has(index) && (!Array.isArray(display.tool_calls) || !display.tool_calls.length) ? { ...display, tool_calls: this.calls.get(index) } : display
-      if (isContextCompressionMarker(normalized)) this.markerSummaries.push({ index, text: messageText(normalized.content).split(/\s+/).join(' ').trim() })
-      if (isAnchorCandidate(normalized)) {
-        const candidate = { index, key: anchorMessageKey(normalized) }
-        this.anchorCandidates.push(candidate)
-        const key = candidate.key && this.candidateKey(candidate.key)
-        if (key) { const entries = this.candidatesByKey.get(key) ?? []; entries.push(candidate); this.candidatesByKey.set(key, entries) }
-      }
       this.length += 1
     }
     this.model.finish()
@@ -158,7 +145,6 @@ export class SessionPrefixIndex {
     return calls
   }
 
-  private candidateKey(key: Record<string, unknown>): string { return JSON.stringify([str(key.role), str(key.text), Number(key.attachments) || 0]) }
   turnId(index: number): string { return this.ids[index - this.baseIndex] ?? 'legacy:start' }
   turnStart(index: number): number { return this.turns.get(this.turnId(index))?.first ?? this.baseIndex }
   turnEnd(index: number): number { return (this.turns.get(this.turnId(index))?.last ?? index) + 1 }
@@ -179,28 +165,5 @@ export class SessionPrefixIndex {
       excluded.add(turn)
       yield at
     }
-  }
-
-  compressionReference(s: Session, end: number, tail: SessionPrefixIndex): CompressionReference | null {
-    const text = str(s.compression_anchor_summary).split(/\s+/).join(' ').trim()
-    if (!text) return null
-    if (this.markerSummaries.some((m) => m.index < end && m.text.includes(text)) || tail.markerSummaries.some((m) => m.text.includes(text))) return null
-    const key = s.compression_anchor_message_key
-    if (key && typeof key === 'object' && !Array.isArray(key)) {
-      const stored = key as Record<string, unknown>
-      const matches = (index: SessionPrefixIndex, bound: number) => (index.candidatesByKey.get(this.candidateKey(stored)) ?? []).findLast((entry) => entry.index < bound && entry.key !== null && keyMatches(stored, entry.key))
-      const match = matches(tail, Infinity) ?? matches(this, end)
-      if (match) return { text, after_message_index: match.index }
-    }
-    // Binary search by absolute position; do not copy the prefix candidates for each tail read.
-    let lo = 0, hi = this.anchorCandidates.length
-    while (lo < hi) { const mid = (lo + hi) >>> 1; if (this.anchorCandidates[mid]!.index < end) lo = mid + 1; else hi = mid }
-    const count = lo + tail.anchorCandidates.length
-    const visible = s.compression_anchor_visible_idx
-    if (typeof visible === 'number' && Number.isInteger(visible) && visible >= 0 && count) {
-      const at = Math.min(visible, count - 1)
-      return { text, after_message_index: (at < lo ? this.anchorCandidates[at] : tail.anchorCandidates[at - lo])!.index }
-    }
-    return { text, after_message_index: null }
   }
 }

@@ -986,8 +986,6 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
     public let toolCalls: [PersistedToolCall]?
     public let messagesTruncated: Bool?
     public let messagesOffset: Int?
-    /// The server-placed "Context compaction · Reference only" card (TAL-560); nil shows none.
-    public let compressionReference: CompressionReference?
     /// The chat this one was branched from, while it still loads (TAL-454); nil shows no link.
     public let branchedFrom: SessionBranchLink?
     /// TAL-1458: the file the session's last persisted file call named; nil when none, or from an older server.
@@ -1062,7 +1060,6 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
         case underscoredMessagesOffset = "_messages_offset"
         case transformedMessagesTruncated = "_messagesTruncated"
         case transformedMessagesOffset = "_messagesOffset"
-        case compressionReference
         case branchedFrom
         case focusPath
         case enabledToolsets
@@ -1137,7 +1134,6 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
         messagesOffset = container.decodeLossyIntIfPresent(forKey: .underscoredMessagesOffset)
             ?? container.decodeLossyIntIfPresent(forKey: .transformedMessagesOffset)
             ?? container.decodeLossyIntIfPresent(forKey: .messagesOffset)
-        compressionReference = try? container.decodeIfPresent(CompressionReference.self, forKey: .compressionReference)
         branchedFrom = try? container.decodeIfPresent(SessionBranchLink.self, forKey: .branchedFrom)
         focusPath = container.decodeLossyStringIfPresent(forKey: .focusPath)
         transcriptSeq = try? container.decodeIfPresent(TranscriptSeq.self, forKey: .transcriptSeq)
@@ -1197,16 +1193,4 @@ public struct TranscriptSeq: Decodable, Equatable {
 public struct SessionBranchLink: Decodable, Equatable, Sendable {
     public let sessionId: String
     public let title: String
-}
-
-/// The "Context compaction · Reference only" card the server places (TAL-560): its text, and the full-transcript index of
-/// the row it follows (the `_messages_offset` space); nil puts it above the transcript.
-public struct CompressionReference: Decodable, Equatable {
-    public let text: String
-    public let afterMessageIndex: Int?
-
-    init(text: String, afterMessageIndex: Int?) {
-        self.text = text
-        self.afterMessageIndex = afterMessageIndex
-    }
 }

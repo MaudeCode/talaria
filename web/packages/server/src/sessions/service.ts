@@ -27,9 +27,9 @@ import { isClaudeCodeSessionId, type ClaudeCodeSessionSource } from './claude-co
 import { auditSessionRecovery, repairSafeSessionRecovery, type RecoveryDeps } from './recovery.js'
 import { stateDbWebDiagnosticIdsAsync, agentSessionRowsExistingAsync, CANONICAL_READ_ONLY_REASON, OWNERSHIP_UNAVAILABLE_REASON, CONVERSATION_ROUND_THRESHOLD, emptyLineageReport, stateDbSessionReadAsync, stateDbSessionSourcesAsync, stateDbTimestampSeconds, withStateDbListingReads, type stateDbSessionRow, type StateDbRead, type StateDbSessionSource, type StateDbSettlementRead } from './state-db.js'
 import { completionIncomplete, fallbackHandoffSummary, HANDOFF_SYSTEM_PROMPT, handoffMarker, handoffPayload, handoffTranscript, messageHandoffPayload, sameHandoff } from './handoff.js'
-import { anchorMessageKey, anchorSummary, CompressionJobs, compressionReference, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
+import { anchorMessageKey, anchorSummary, CompressionJobs, insertCompactionRow, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { chatReadiness, runtimeFailureDetails, SidecarError, type SidecarLike } from '../sidecar/client.js'
-import { agentSteerText, ApiMessageSummary, appendStateDbIdentityRows, attachedFilesPrompt, attachmentObjects, checkpointTurnStart, dedupeContext, isContextCompressionMarker, journalOutputRows, looksLikeCurrentUserTurn, stoppedTurnContext, mergeSessionMessagesAppendOnly, messageIdentity, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, withDataUseRequirements, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, newestSettledReply, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withMirrorSources, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, type ToolResultView } from './merge.js'
+import { agentSteerText, ApiMessageSummary, appendStateDbIdentityRows, attachedFilesPrompt, attachmentObjects, checkpointTurnStart, dedupeContext, isCompactionRow, isContextCompressionMarker, journalOutputRows, looksLikeCurrentUserTurn, stoppedTurnContext, mergeSessionMessagesAppendOnly, messageIdentity, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, withDataUseRequirements, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, newestSettledReply, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withMirrorSources, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, type ToolResultView } from './merge.js'
 import { withBackgroundUpdates } from './background-updates.js'
 import { markedStateDbGeneration, stateDbIdentityKeys, stampStateDbGeneration, stateDbMessageRepresented } from './state-db-identity.js'
 import { sourceKind } from './source-kind.js'
@@ -849,7 +849,6 @@ export class SessionService {
     // Mutation replies replace a client's transcript, so they carry the same server-built scenes as the detail.
     if (withMessages) {
       payload.messages = (await this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes((await this.backgroundUpdates(s, withMarkerKinds(withTurnIds(messages), s))), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, showReasoning: await this.deps.showReasoning?.(s.profile) ?? true, runningScene: !(await this.journaledActiveTurn(s)) })))
-      payload.compression_reference = compressionReference(s, payload.messages as unknown[])
     }
     return this.publicProjection(redactSessionData(payload, this.deps.redactEnabled()), s.profile)
   }
@@ -904,7 +903,7 @@ export class SessionService {
     return (await this.store.revision(s.session_id))
   }
 
-  private readonly pageTails = new WeakMap<SessionPrefixIndex, { key: string; tail: Message[]; index: SessionPrefixIndex; newestReply?: number | null; enoughContext: boolean; sources: SessionService['stateDbSources']; contextRows: Message[]; contextLength: number; summary: { total: number; last: number; todo: Record<string, unknown> | null; compression: ReturnType<SessionPrefixIndex['compressionReference']> } }>()
+  private readonly pageTails = new WeakMap<SessionPrefixIndex, { key: string; tail: Message[]; index: SessionPrefixIndex; newestReply?: number | null; enoughContext: boolean; sources: SessionService['stateDbSources']; contextRows: Message[]; contextLength: number; summary: { total: number; last: number; todo: Record<string, unknown> | null } }>()
   private readonly pageContexts = new WeakMap<SessionPrefixIndex, { key: string; local: Message[]; enough: boolean; contextRows: Message[]; contextLength: number; marker: boolean; unidentified: readonly ReadonlyMap<string, number>[] }>()
 
   activitySummary(s: Session, turnId?: string): ReturnType<SessionPrefixIndex['activitySummary']> {
@@ -932,7 +931,7 @@ export class SessionService {
     const prompt = pending ? index.prompts.get(pending.activeTurnToken) : undefined
     if (prompt !== undefined) prefixEnd = Math.min(prefixEnd, prompt)
     const dbPath = this.stateDbPath(s.profile)
-    const key = JSON.stringify([index.revision, index.length, statSignature(dbPath), statSignature(`${dbPath}-wal`), s.active_stream_id, pending, journaled, s.state_db_seen_id, s.state_db_seen_boundary, s.state_db_seen_stamp, s.updated_at, this.deps.activeProfile(), s.compression_anchor_summary, s.compression_anchor_message_key, s.compression_anchor_visible_idx, this.compactionWaiters.has(s.active_stream_id ?? '')])
+    const key = JSON.stringify([index.revision, index.length, statSignature(dbPath), statSignature(`${dbPath}-wal`), s.active_stream_id, pending, journaled, s.state_db_seen_id, s.state_db_seen_boundary, s.state_db_seen_stamp, s.updated_at, this.deps.activeProfile(), this.compactionWaiters.has(s.active_stream_id ?? '')])
     let cached = this.pageTails.get(index)
     if (cached?.key !== key || cached.contextRows !== s.context_messages || cached.contextLength !== s.context_messages.length) {
       const streaming = Boolean(s.active_stream_id && !this.compactionWaiters.has(s.active_stream_id))
@@ -991,7 +990,7 @@ export class SessionService {
         return result
       }
       cached = { key, tail, index: tailIndex, enoughContext, sources, contextRows: s.context_messages, contextLength: s.context_messages.length,
-        summary: { total: prefixEnd + tail.length, last: Math.max(index.summary(prefixEnd).maxTimestamp, tailIndex.summary().maxTimestamp), todo: tailIndex.summary().todo ?? index.summary(prefixEnd).todo, compression: index.compressionReference(s, prefixEnd, tailIndex) } }
+        summary: { total: prefixEnd + tail.length, last: Math.max(index.summary(prefixEnd).maxTimestamp, tailIndex.summary().maxTimestamp), todo: tailIndex.summary().todo ?? index.summary(prefixEnd).todo } }
       if (cacheable) this.pageTails.set(index, cached)
     }
     const { tail, index: tailIndex } = cached
@@ -1153,7 +1152,6 @@ export class SessionService {
     if (loadMessages) raw.transcript_seq = journaled ? { stream_id: journaled.turnId, seq: 0 } : null
     if (limited) attachTodoSnapshot(raw, limited.todo, s.extra[UNSETTLED_TODO_KEY])
     else if (loadMessages) attachTodoState(raw, all, s.extra[UNSETTLED_TODO_KEY])
-    if (loadMessages) raw.compression_reference = limited ? limited.compression : compressionReference(s, all)
     if (mergedLast) {
       raw.last_message_at = Math.max(Number(raw.last_message_at ?? 0) || 0, mergedLast)
       raw.updated_at = Math.max(Number(raw.updated_at ?? 0) || 0, mergedLast)
@@ -2317,6 +2315,8 @@ export class SessionService {
         live.compression_anchor_message_key = anchorMessageKey(anchor)
         live.compression_anchor_summary = anchorSummary(summary, compressed)
         live.compression_anchor_mode = 'manual'
+        // TAL-1566: the compaction's own row follows the anchor (first without one), before a waiting turn's rows.
+        if (live.compression_anchor_summary) insertCompactionRow(live, anchor ? live.messages.indexOf(anchor) : -1, str(live.compression_anchor_summary), this.deps.now())
         // #4836: an intentional-shrink boundary, so append-only state.db reconciliation does not replay compressed rows.
         live.truncation_watermark = truncationWatermarkFor(compressed)
         live.truncation_boundary = live.truncation_watermark
@@ -3120,6 +3120,13 @@ function truncationWatermarkFor(messages: unknown[]): number {
 }
 
 function stampIntentionalShrink(session: Session, oldCount: number, newCount: number): boolean {
+  // TAL-1566: a cut that removed the newest compaction's row ends its anchor too, so no later load restores the row.
+  const summary = str(session.compression_anchor_summary).trim()
+  if (summary && !session.messages.some((m) => isCompactionRow(m) && str(m.content).trim() === summary)) {
+    session.compression_anchor_summary = null
+    session.compression_anchor_message_key = null
+    session.compression_anchor_visible_idx = null
+  }
   if (newCount >= oldCount) return false
   session.intentional_shrink_generation = randomUUID().replace(/-/g, '')
   return true

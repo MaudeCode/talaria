@@ -304,46 +304,4 @@ func testSessionToleratesNumericFieldsOutsideIntRange() async throws {
     XCTAssertEqual(session.messages?.first?.content, "Still standing")
 }
 
-func testSessionDecodesCompressionReference() async throws {
-    let client = makeClient { request in
-        apiTestJSONResponse("""
-        {
-          "session": {
-            "session_id": "abc123",
-            "compression_reference": {"text": "Summary of the compacted conversation.", "after_message_index": 7}
-          }
-        }
-        """, for: request)
-    }
-
-    let response = try await client.session(id: "abc123")
-    let session = try XCTUnwrap(response.session)
-
-    XCTAssertEqual(session.compressionReference, CompressionReference(text: "Summary of the compacted conversation.", afterMessageIndex: 7))
-}
-
-func testSessionCompressionReferenceAboveTranscriptOrAbsent() async throws {
-    let bodies = [
-        "a": #"{"session": {"session_id": "a", "compression_reference": {"text": "Only a summary.", "after_message_index": null}}}"#,
-        "b": #"{"session": {"session_id": "b", "compression_reference": null}}"#,
-        "c": #"{"session": {"session_id": "c", "compression_reference": "unexpected-string"}}"#,
-        "d": #"{"session": {"session_id": "d"}}"#,
-    ]
-    let client = makeClient { request in
-        let id = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)?
-            .queryItems?.first { $0.name == "session_id" }?.value
-        return apiTestJSONResponse(try XCTUnwrap(bodies[id ?? ""]), for: request)
-    }
-
-    let aboveResponse = try await client.session(id: "a")
-    let above = try XCTUnwrap(aboveResponse.session)
-    XCTAssertEqual(above.compressionReference, CompressionReference(text: "Only a summary.", afterMessageIndex: nil))
-    for id in ["b", "c", "d"] {
-        let response = try await client.session(id: id)
-        let session = try XCTUnwrap(response.session)
-        XCTAssertEqual(session.sessionId, id)
-        XCTAssertNil(session.compressionReference)
-    }
-}
-
 }

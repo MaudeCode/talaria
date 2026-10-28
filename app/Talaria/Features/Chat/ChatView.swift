@@ -1733,7 +1733,6 @@ struct ChatView: View {
                 errorMessage: viewModel.errorMessage,
                 messages: viewModel.messages,
                 displayedTranscriptMessages: chat.displayedTranscriptMessages,
-                compressionReferenceCard: viewModel.compressionReferenceCard,
                 branchedFrom: viewModel.branchedFrom,
                 reasoningGroups: viewModel.displayedReasoningGroups,
                 completedToolCallGroupsForAnchor: { anchorMessageID in

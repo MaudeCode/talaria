@@ -158,6 +158,9 @@ describe('compaction markers (TAL-305)', () => {
     const card = (id: string) => view.container.querySelector<HTMLDetailsElement>(`[data-message-key="${keyOf(id)}"] details`)!
     const compaction = card('marker-compaction')
     expect(compaction.open).toBe(false)
+    // TAL-1566: a quiet line like a notice, not a bordered card.
+    expect(compaction.className).not.toMatch(/\b(border|bg-|rounded)/)
+    expect(compaction.className).toContain('text-muted')
     expect(compaction.querySelector('summary')).toHaveTextContent('Context compaction')
     fireEvent.click(compaction.querySelector('summary')!)
     expect(compaction.querySelector('.msg-body')?.textContent).toBe(messages.find((m) => m.message_id === 'marker-compaction')?.content)

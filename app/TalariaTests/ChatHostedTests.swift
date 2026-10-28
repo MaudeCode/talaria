@@ -1672,7 +1672,7 @@ final class ChatHostedTests: XCTestCase {
     /// An edit or regenerate the server holds asks with the server's count, the edit only once its sheet has closed;
     /// Cancel keeps the transcript (TAL-929).
     func testHeldEditAndRegenerateAskWithTheServersCount() async throws {
-        let window = try await hostFixtureChat(["--ui-test-compression-reference"])
+        let window = try await hostFixtureChat(["--ui-test-compaction-row"])
         func alert() -> UIAlertController? {
             var controller = window.rootViewController
             while let presented = controller?.presentedViewController { controller = presented }

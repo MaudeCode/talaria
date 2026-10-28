@@ -293,7 +293,6 @@
 	"retrieval_context_label": "Ngữ cảnh đã lập chỉ mục",
 	"retrieval_context_preview": "Các tin nhắn trước được lưu và có thể truy xuất bằng công cụ ngữ cảnh",
 	"preserved_task_list_label": "Danh sách tác vụ được giữ lại",
-	"reference_only_label": "Chỉ tham khảo",
 	"model_usage": "Cách dùng: /model <tên>",
 	"no_model_match": "Không có model nào khớp \"",
 	"model_did_you_mean": " — có phải bạn muốn \"{m}\"?",

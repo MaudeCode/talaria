@@ -542,8 +542,8 @@ public enum TranscriptTurnClassifier {
     }
 
     public static func isUserTurnBoundary(_ message: ChatMessage) -> Bool {
-        // A persisted steer belongs inside its turn; it never opens one.
-        guard message.role == "user", message.steer == nil else { return false }
+        // A persisted steer belongs inside its turn, and a server-marked compaction is nobody's prompt; neither opens one.
+        guard message.role == "user", message.steer == nil, message.markerKind == nil else { return false }
         return hasVisibleUserContent(message)
     }
 

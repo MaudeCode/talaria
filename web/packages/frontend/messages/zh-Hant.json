@@ -293,7 +293,6 @@
 	"retrieval_context_label": "已索引的脈絡",
 	"retrieval_context_preview": "較早的訊息已儲存，可透過脈絡工具擷取",
 	"preserved_task_list_label": "保留的任務清單",
-	"reference_only_label": "僅供參考",
 	"model_usage": "用法：/model <name>",
 	"no_model_match": "沒有符合的模型：",
 	"model_did_you_mean": "，您是否想選擇「{m}」？",

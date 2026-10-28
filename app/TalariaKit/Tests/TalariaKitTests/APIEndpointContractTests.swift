@@ -843,25 +843,22 @@ final class SharedContractTests: XCTestCase {
         XCTAssertEqual(rows.last?.assistantSegments.count, 1)
     }
 
-    func testSharedWebSessionPlacesTheServersCompressionReference() throws {
+    func testSharedWebSessionShowsTheCompactionAsItsOwnRowInPlace() throws {
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
-        // A release checks this App against every retained Web; one from before TAL-560 has no such example.
-        guard let example = object["compression_reference_session"] as? [String: Any] else { return }
+        // A release checks this App against every retained Web; one from before TAL-1566 has no such example.
+        guard let example = object["compaction_row_session"] as? [String: Any] else { return }
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         let detail = try decoder.decode(SessionDetail.self, from: JSONSerialization.data(withJSONObject: example["session"] ?? [:]))
         let messages = try XCTUnwrap(detail.messages)
         let offset = try XCTUnwrap(detail.messagesOffset)
         let transcript = ChatViewModel.transcriptMessages(from: messages, messageOffset: offset)
-        let card = ChatViewModel.compressionReferenceCard(
-            reference: detail.compressionReference,
-            messagesOffset: offset,
-            transcriptMessages: transcript
-        )
-        // The tail window starts at row 2; the card follows the anchor row 3, "Step one done.".
-        let anchor = try XCTUnwrap(transcript.first { $0.message.messageId == "reference-anchor" })
-        XCTAssertEqual(card, CompressionReferenceCard(referenceText: "Earlier turns were summarised.", afterRenderID: anchor.renderID))
-        XCTAssertEqual(messages[3 - offset].messageId, "reference-anchor")
+        // The tail window starts at the anchor, "Step one done."; the compaction's own row follows it, before step two.
+        XCTAssertEqual(transcript.map { $0.message.markerKind }, [nil, .contextCompaction, nil, nil])
+        let row = transcript[1]
+        XCTAssertEqual(row.message.content, "Earlier turns were summarised.")
+        XCTAssertEqual(row.renderID, "marker:\(try XCTUnwrap(row.message.messageId))")
+        XCTAssertFalse(TranscriptTurnClassifier.isUserTurnBoundary(row.message))
     }
 
     func testSharedWebSessionLinksOnlyTheBranchToItsParent() throws {
