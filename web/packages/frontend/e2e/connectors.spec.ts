@@ -216,7 +216,7 @@ test('scheduled guest offer reuses OAuth, preserves the result, and dismisses wi
   await later.focus()
   await page.keyboard.press('Enter')
   await expect(later).toHaveCount(0)
-  expect(dismisses).toBe(1)
+  await expect.poll(() => dismisses).toBe(1)
   expect(starts).toBe(0)
   await page.reload()
   await settle(page)
