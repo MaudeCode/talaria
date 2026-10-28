@@ -19,6 +19,16 @@ describe('redactSensitive', () => {
     expect.soft(sanitizeShareMessage({ role: 'assistant', content: input }, [], [], '/nonexistent-home')?.content).not.toContain('finalSecret987')
   })
 
+  it.each([
+    'Authorization: "--password foo "--password finalSecret987',
+    "Authorization: '--token foo '--token finalSecret987",
+    'Bearer "--password foo "--password finalSecret987',
+    'X-Auth: Bearer "--token foo "--token finalSecret987',
+  ])('preserves composed-word masks when a header contains overlapping credential heads: %s', (input) => {
+    expect.soft(redactText(input, true)).not.toContain('finalSecret987')
+    expect.soft(sanitizeShareMessage({ role: 'assistant', content: input }, [], [], '/nonexistent-home')?.content).not.toContain('finalSecret987')
+  })
+
   it('masks the password of a URL with userinfo and keeps the user and host', () => {
     expect(redactSensitive('psql postgres://u:pgSyntheticSecret42@h/db')).toBe('psql postgres://u:pgSynt...et42@h/db')
     expect(redactSensitive('curl https://user:pw@example.com/x')).toBe('curl https://user:***@example.com/x')
@@ -593,6 +603,7 @@ describe('redactSensitive cost', () => {
       // Overlapping parameter heads inside a masked word, and flags swallowed by repeated enclosing-quote values.
       `"${'password=x '.repeat(20_000)}"}--password finalSecret987`,
       ...['{"password":" x password=foo"}--password finalSecret987 ', '{"pass\x1b[31mword":" x password=foo"}--password finalSecret987 '].map((seg) => seg.repeat(Math.ceil(200_000 / seg.length))),
+      'Authorization: "--password foo "--password finalSecret987 '.repeat(4_000),
       // One huge identifier that does name a credential, and many long ones that are followed by a separator.
       `--${'aB'.repeat(100_000)}Password=x`, `${'2'.repeat(200_000)}:`, `ghp_a\x1b${'\x00'.repeat(200_000)}`, `${'a'.repeat(1_000)}= `.repeat(200), `${'a'.repeat(1_000)}://x:`.repeat(200),
       // Shell-composed identifiers: unclosed and alternating quote and escape pieces.

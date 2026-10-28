@@ -1307,7 +1307,9 @@ function redactComposedWords(text: string): string {
     const wanted = redactRules(plain)
     if (wanted === plain) continue
     const asWritten = shellDequote(redactRules(span)).replaceAll(WORD_SPACE, ' ')
-    if (!revealsMore(plain, asWritten, wanted)) continue
+    // Apply a composed flag's mask with its following value even when this span is safe in isolation: an outer header
+    // rule may swallow the flag name before the full-text pass reaches that value.
+    if (!flag && !revealsMore(plain, asWritten, wanted)) continue
     out += text.slice(last, start) + redactRules(unit).replaceAll(WORD_SPACE, ' ')
     last = spanEnd
     if (flag) k += 1
