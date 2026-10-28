@@ -8,6 +8,8 @@ test.use({ serviceWorkers: 'block' })
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64')
 const image = (name: string) => ({ name, mimeType: 'image/png', buffer: PNG })
 const chips = (page: Page) => page.locator('.attach-tray li')
+/** The file name an upload request carries in its multipart body. */
+const uploadName = (request: Request) => /filename="([^"]+)"/.exec(request.postDataBuffer()?.toString('latin1') ?? '')?.[1] ?? ''
 
 /** One synthetic session, its draft autosave, and an upload endpoint that records which session each file went to. */
 async function mockSession(page: Page, sid: string, uploads: string[] = []) {
@@ -21,9 +23,11 @@ async function mockSession(page: Page, sid: string, uploads: string[] = []) {
   await page.route('**/api/upload**', async (route) => {
     const target = new URL(route.request().url()).searchParams.get('session_id') ?? ''
     uploads.push(target)
-    const path = `/tmp/${target}/f${uploads.length}.png`
+    // Named from the file itself, so concurrent uploads keep their names whatever order they arrive in.
+    const filename = uploadName(route.request())
+    const path = `/tmp/${target}/${filename}`
     uploadedPaths.add(JSON.stringify([target, path]))
-    await route.fulfill({ json: { filename: `f${uploads.length}.png`, path, size: PNG.length, mime: 'image/png', is_image: true } })
+    await route.fulfill({ json: { filename, path, size: PNG.length, mime: 'image/png', is_image: true } })
   })
   return uploads
 }
@@ -45,6 +49,14 @@ test('picked images show as chips in an existing chat and send without text', as
   await mockSession(page, 'picked')
   let body: Record<string, unknown> | null = null
   await page.route('**/api/chat/start', async (route) => { body = route.request().postDataJSON() as Record<string, unknown>; await route.fulfill({ json: { status: 'suppressed' } }) })
+  // The second pick's upload reaches the server first; the send still follows selection order.
+  let secondArrived!: () => void
+  const second = new Promise<void>((resolve) => { secondArrived = resolve })
+  await page.route('**/api/upload**', async (route) => {
+    if (uploadName(route.request()) === 'one.png') await second
+    else secondArrived()
+    await route.fallback()
+  })
   await page.goto('/session/picked')
   await page.locator('#fileInput').setInputFiles([image('one.png'), image('two.png')])
   await expect(chips(page)).toHaveCount(2)
@@ -54,7 +66,7 @@ test('picked images show as chips in an existing chat and send without text', as
   await page.locator('#btnSend').click()
   await expect.poll(() => body).not.toBeNull()
   expect(body!.message).toBe('')
-  expect((body!.attachments as { filename: string }[]).map((a) => a.filename)).toEqual(['f1.png', 'f2.png'])
+  expect((body!.attachments as { filename: string }[]).map((a) => a.filename)).toEqual(['one.png', 'two.png'])
   await expect(chips(page)).toHaveCount(0)
 })
 
