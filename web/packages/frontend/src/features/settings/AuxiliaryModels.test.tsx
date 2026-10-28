@@ -209,3 +209,16 @@ it('reconciles an unknown outcome before allowing another delegation save', asyn
   await act(async () => { reconcile(initial); await Promise.resolve() })
   await waitFor(() => expect(screen.getByRole('combobox', { name: 'Mode' })).toHaveTextContent('missing_backend'))
 })
+
+it('renders server-denied delegation management read-only while retaining the local fixed-model picker', async () => {
+  vi.mocked(api.fetchAuxiliaryModels).mockResolvedValue({ ...auxState(), delegation: delegationFixtures.readonly })
+  renderSetting()
+  const list = await openList()
+  expect(screen.getByRole('button', { name: 'Reset all to auto' })).toBeDisabled()
+  await userEvent.click(list.getByRole('button', { name: /Delegation/ }))
+  expect(screen.getByRole('combobox', { name: 'Mode' })).toBeDisabled()
+  expect(screen.queryByRole('button', { name: 'Profile routes' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Model routes' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Restore Default' })).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Fixed model' })).toBeEnabled()
+})

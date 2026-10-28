@@ -1941,3 +1941,39 @@ describe('Agent speed tiers (TAL-788)', () => {
   })
 
 })
+
+it('refuses delegation configuration and hides other profile identities for a bound non-owner (TAL-1499)', async () => {
+  const native = new FakeSidecar()
+  const server = await bootTestServer({ sidecar: native, env: { HERMES_WEBUI_PASSWORD: 'synthetic-test-password' } })
+  const configs = fakeConfigStore(native)
+  const path = join(server.state, 'config.yaml')
+  writeFileSync(path, '# owned config\n')
+  configs.set(server.state, {})
+  mkdirSync(join(server.state, 'profiles', 'victim'), { recursive: true })
+  native.respond('aux.delegation', () => ({ supported: true, configured: 'default', effective: 'default', available: true, fixed_model_active: true, blocked_reason: null, backends: [{ name: 'default', label: 'Default', available: true, description: '', reason: '' }], profiles: ['default', 'victim'] }))
+  native.respond('aux.delegation_routes', (params) => ({ block: { ...params.block } }))
+  const value = server.deps.auth.createSession({ authType: 'password', boundProfile: 'default' })
+  const headers = { cookie: `${server.deps.auth.cookieName()}=${value}`, origin: server.base, 'x-csrf-token': server.deps.auth.csrfTokenForSession(value) ?? '' }
+  try {
+    expect((await json(await server.get('/api/auth/status', { headers }))).can_manage_server).toBe(false)
+    const before = structuredClone(configs.get(server.state))
+    for (const write of [
+      { action: 'routes', backend: 'profile_routes', block: { profiles: [{ name: 'victim' }], default: 'victim' } },
+      { action: 'routes', backend: 'model_map', block: { options: [{ name: 'borrow', description: 'borrow', model: 'synthetic', provider: 'openai', profile: 'victim' }], default: 'borrow' } },
+      { action: 'backend', backend: 'profile_routes' },
+    ]) {
+      const res = await post(server, '/api/model/auxiliary/delegation', write, headers)
+      expect(res.status).toBe(403)
+      expect(configs.get(server.state)).toEqual(before)
+    }
+    expect(native.calls.some((call) => ['aux.delegation_routes', 'aux.delegation_backend', 'config.set'].includes(call.method))).toBe(false)
+    expect((await post(server, '/api/model/set', { scope: 'auxiliary', task: '__reset__' }, headers)).status).toBe(403)
+    const read = await json(await server.get('/api/model/auxiliary', { headers }))
+    expect(read.delegation).toMatchObject({ can_edit: false, profiles: [] })
+    expect(JSON.stringify(read.delegation)).not.toContain('victim')
+    const owner = server.deps.auth.createSession({ authType: 'password' })
+    const ownerHeaders = { cookie: `${server.deps.auth.cookieName()}=${owner}`, origin: server.base, 'x-csrf-token': server.deps.auth.csrfTokenForSession(owner) ?? '' }
+    expect((await post(server, '/api/model/auxiliary/delegation', { action: 'routes', backend: 'profile_routes', block: { profiles: [{ name: 'victim' }], default: 'victim' } }, ownerHeaders)).status).toBe(200)
+    expect((await json(await server.get('/api/model/auxiliary', { headers: ownerHeaders }))).delegation).toMatchObject({ can_edit: true, profiles: ['default', 'victim'] })
+  } finally { await server.close() }
+})

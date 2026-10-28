@@ -2776,5 +2776,6 @@
   "delegation_empty": "No routes",
   "delegation_restore": "Restore Default",
   "delegation_no_default": "No default",
-  "delegation_reset_confirm": "Reset auxiliary tasks to Auto and restore the Default delegation mode."
+  "delegation_reset_confirm": "Reset auxiliary tasks to Auto and restore the Default delegation mode.",
+  "delegation_owner_required": "An owner session is required to configure delegation modes and named routes."
 }

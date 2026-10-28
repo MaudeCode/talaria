@@ -350,7 +350,7 @@ Licensed under the MIT license (see the repository root).
 
 Session storage defaults to the existing JSON format. `TALARIA_STORAGE=json` selects that adapter explicitly; other values fail startup.
 
-Settings → Preferences → **Auxiliary Models → Delegation** selects Default or an
+Server owners use Settings → Preferences → **Auxiliary Models → Delegation** to select Default or an
 available registered mode and edits named model/profile routes and their default.
 Unavailable saved modes show the Agent's recovery reason and **Restore Default**.
 The fixed-model picker is available only when the Agent says that mode uses it.

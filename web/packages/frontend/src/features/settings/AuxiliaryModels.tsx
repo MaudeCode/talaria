@@ -57,7 +57,7 @@ function AuxiliaryModelsDialog({ onClose }: { onClose: () => void }) {
             ))}
           </ul>
           <div className="mt-3 flex justify-end">
-            <Button onClick={() => setConfirmReset(true)}>{m.settings_btn_reset_aux_models()}</Button>
+            <Button disabled={delegation?.can_edit === false} onClick={() => setConfirmReset(true)}>{m.settings_btn_reset_aux_models()}</Button>
           </div>
           <ConfirmDialog
             open={confirmReset}
@@ -196,15 +196,15 @@ function DelegationEditor({ task, state, onDone }: { task: AuxTask; state: Deleg
       {!rows.length && <EmptyState>{m.delegation_empty()}</EmptyState>}
       <Button className="self-start" onClick={() => { setOriginal(null); setEditing({ name: '', description: '' }) }}>{m.delegation_add_route()}</Button>
     </> : <>
-      <FieldRow label={m.delegation_mode()} htmlFor="delegationMode">
-        <Select id="delegationMode" value={state.configured} disabled={!state.supported} onValueChange={(backend) => save.mutate({ write: { action: 'backend', backend }, shown: { ...state, configured: backend } })}>
+      <FieldRow label={m.delegation_mode()} hint={state.can_edit ? undefined : m.delegation_owner_required()} htmlFor="delegationMode">
+        <Select id="delegationMode" value={state.configured} disabled={!state.supported || !state.can_edit} onValueChange={(backend) => save.mutate({ write: { action: 'backend', backend }, shown: { ...state, configured: backend } })}>
           {state.backends.map((backend) => <option key={backend.name} value={backend.name} disabled={!backend.available}>{backend.label}</option>)}
         </Select>
       </FieldRow>
       {state.blocked_reason && <p role="status" className="break-words text-sm text-muted">{state.blocked_reason}</p>}
-      {state.supported && <Button className="self-start" onClick={() => save.mutate({ write: { action: 'backend', backend: 'default' }, shown: { ...state, configured: 'default' } })}>{m.delegation_restore()}</Button>}
+      {state.supported && state.can_edit && <Button className="self-start" onClick={() => save.mutate({ write: { action: 'backend', backend: 'default' }, shown: { ...state, configured: 'default' } })}>{m.delegation_restore()}</Button>}
       {state.fixed_model_active ? <Button className="self-start" onClick={() => setSection('fixed')}>{m.delegation_fixed()}<ChevronRight size={14} aria-hidden="true" /></Button> : <p className="text-xs text-muted">{m.delegation_inactive()}</p>}
-      {state.supported && <div className="flex flex-wrap gap-2">
+      {state.supported && state.can_edit && <div className="flex flex-wrap gap-2">
         <Button onClick={() => setSection('model_map')}>{m.delegation_routes()}</Button>
         <Button onClick={() => setSection('profile_routes')}>{m.delegation_profiles()}</Button>
       </div>}

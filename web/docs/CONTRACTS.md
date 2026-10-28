@@ -374,7 +374,10 @@ Older Agents report unsupported mode editing while retaining saved route blocks.
 
 `POST /api/model/auxiliary/delegation` selects a backend through native
 `set_global_backend`, or replaces one complete `model_map` / `profile_routes`
-block through the existing serialized config owner. Native canonical route keys
+block through the existing serialized config owner. Mode/route writes and Reset All
+require the existing server-owner authority. Non-owners receive `can_edit: false`,
+an empty profile registry and no named route blocks; the ordinary profile-local
+fixed-model picker remains available when active. Native canonical route keys
 and parsers validate saves. Read responses omit API keys and request overrides;
 `original_name` preserves hidden values across renames. An omitted fallback list
 keeps its native meaning, and an empty list stays explicitly empty. Profile routes

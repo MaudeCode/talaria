@@ -50,7 +50,8 @@
     "profile_routes": {
       "profiles": [],
       "default": null
-    }
+    },
+    "can_edit": true
   },
   "missing": {
     "supported": true,
@@ -110,7 +111,8 @@
     "profile_routes": {
       "profiles": [],
       "default": null
-    }
+    },
+    "can_edit": true
   },
   "older": {
     "supported": false,
@@ -149,6 +151,48 @@
     "profile_routes": {
       "profiles": [],
       "default": null
-    }
+    },
+    "can_edit": true
+  },
+  "readonly": {
+    "supported": true,
+    "configured": "default",
+    "effective": "default",
+    "available": true,
+    "blocked_reason": null,
+    "fixed_model_active": true,
+    "backends": [
+      {
+        "name": "default",
+        "label": "Default",
+        "description": "Fixed model or inherit parent",
+        "available": true,
+        "reason": ""
+      },
+      {
+        "name": "model_map",
+        "label": "Named model routes",
+        "description": "Choose a named model route",
+        "available": true,
+        "reason": ""
+      },
+      {
+        "name": "profile_routes",
+        "label": "Profile routes",
+        "description": "Use existing profiles",
+        "available": true,
+        "reason": ""
+      }
+    ],
+    "profiles": [],
+    "model_map": {
+      "options": [],
+      "default": null
+    },
+    "profile_routes": {
+      "profiles": [],
+      "default": null
+    },
+    "can_edit": false
   }
 }

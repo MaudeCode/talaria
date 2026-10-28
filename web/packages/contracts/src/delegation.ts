@@ -27,6 +27,7 @@ export const DelegationRegistrySchema = z.object({
 const PublicRoute = DelegationRouteSchema.omit({ api_key: true, api_key_clear: true, original_name: true, request_overrides: true })
 const PublicBlock = DelegationBlockSchema.extend({ options: z.array(PublicRoute).optional(), profiles: z.array(PublicRoute).optional() })
 export const DelegationSettingsSchema = DelegationRegistrySchema.extend({
+  can_edit: z.boolean().describe('Only server owners may edit delegation modes and named routes.'),
   model_map: PublicBlock, profile_routes: PublicBlock,
 })
 export type DelegationSettings = z.infer<typeof DelegationSettingsSchema>

@@ -67855,6 +67855,10 @@
                             "type": "string"
                           }
                         },
+                        "can_edit": {
+                          "type": "boolean",
+                          "description": "Only server owners may edit delegation modes and named routes."
+                        },
                         "model_map": {
                           "type": "object",
                           "properties": {
@@ -68121,6 +68125,7 @@
                         "fixed_model_active",
                         "backends",
                         "profiles",
+                        "can_edit",
                         "model_map",
                         "profile_routes"
                       ]
@@ -69330,6 +69335,10 @@
                             "type": "string"
                           }
                         },
+                        "can_edit": {
+                          "type": "boolean",
+                          "description": "Only server owners may edit delegation modes and named routes."
+                        },
                         "model_map": {
                           "type": "object",
                           "properties": {
@@ -69596,6 +69605,7 @@
                         "fixed_model_active",
                         "backends",
                         "profiles",
+                        "can_edit",
                         "model_map",
                         "profile_routes"
                       ]
@@ -69921,6 +69931,10 @@
                                 "type": "string"
                               }
                             },
+                            "can_edit": {
+                              "type": "boolean",
+                              "description": "Only server owners may edit delegation modes and named routes."
+                            },
                             "model_map": {
                               "type": "object",
                               "properties": {
@@ -70187,6 +70201,7 @@
                             "fixed_model_active",
                             "backends",
                             "profiles",
+                            "can_edit",
                             "model_map",
                             "profile_routes"
                           ]
