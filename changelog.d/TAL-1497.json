@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Hardened Web math rendering against inherited trust settings when prototype pollution is present.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
