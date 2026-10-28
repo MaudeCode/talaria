@@ -7,7 +7,7 @@
  * `read` queries `state.db` on the listing worker so the event loop stays free
  * (TAL-920), for the list and the single-session lookups alike (TAL-923).
  */
-import { existsSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { AGENT_STORAGE_OK, cronSessionJobId, isCliSessionRow, normalizeAgentSessionSource, readImportableAgentSessionRowBatchesAsync, stateDbReadFailure, stateDbSessionReadAsync, withStateDbListingReads, type Dict, type ReadRowsOptions } from './state-db.js'
 import type { AgentStorage } from '@maudecode/talaria-web-contracts'
@@ -15,6 +15,7 @@ import { latestLineageSidecar, sanitizeSessionRow, type ListParams } from './lis
 import type { SessionStore } from './store.js'
 import { str } from '../util.js'
 import { looksLikeDefaultCliTitle } from './titles.js'
+import { settledFileStatKey } from '../fs/stat.js'
 
 export const CLI_VISIBLE_SESSION_LIMIT = 20
 const BACKGROUND_PROJECT_CHIP_LIMIT = 200
@@ -54,11 +55,11 @@ export interface CliSessionRead {
   storage: AgentStorage
 }
 
-function dbStamp(path: string): string {
-  try { const st = statSync(path, { bigint: true }); return `${st.size.toString()}:${st.mtimeNs.toString()}:${st.ino.toString()}` } catch { return 'missing' }
+function dbStamp(path: string): string | null {
+  try { return settledFileStatKey(path) } catch { return 'missing' }
 }
 
-interface CacheSlot { cacheKey: string; key: string; dbPath: string; sourceFilter: string | null; sessionIds: readonly string[] | null; keepEmpty: boolean; sidebarRows: boolean }
+interface CacheSlot { cacheKey: string; key: string | null; dbPath: string; sourceFilter: string | null; sessionIds: readonly string[] | null; keepEmpty: boolean; sidebarRows: boolean }
 /** A query's rows, or the error a background kind's read failed with. */
 type QueryResult = Dict[] | Error
 /** Every query's result in `queries` order; null when there is no state.db, an Error when the interactive read failed. */
@@ -102,12 +103,14 @@ export class CliSessionSource {
     const dbPath = this.dbPath(profile)
     const sourceFilter = str(opts.sourceFilter).trim().toLowerCase() || null
     const sessionIds = opts.sessionIds ?? null
-    return { cacheKey: JSON.stringify([profile, sourceFilter, sessionIds === null ? null : [...new Set(sessionIds)].sort(), opts.keepEmpty === true, opts.sidebarRows === true]), key: `${dbPath}\n${dbStamp(dbPath)}\n${dbStamp(`${dbPath}-wal`)}\n${await this.deps.store.index().then((index) => index.revision, () => '')}`, dbPath, sourceFilter, sessionIds, keepEmpty: opts.keepEmpty === true, sidebarRows: opts.sidebarRows === true }
+    const stamps = [dbStamp(dbPath), dbStamp(`${dbPath}-wal`)]
+    const revision = await this.deps.store.index().then((index) => index.revision, () => '')
+    return { cacheKey: JSON.stringify([profile, sourceFilter, sessionIds === null ? null : [...new Set(sessionIds)].sort(), opts.keepEmpty === true, opts.sidebarRows === true]), key: stamps.includes(null) ? null : `${dbPath}\n${stamps.join('\n')}\n${revision}`, dbPath, sourceFilter, sessionIds, keepEmpty: opts.keepEmpty === true, sidebarRows: opts.sidebarRows === true }
   }
 
   private cached(slot: CacheSlot): CliSessionRead | null {
     const hit = this.cache.get(slot.cacheKey)
-    if (hit?.key !== slot.key || hit.until <= this.deps.now()) return null
+    if (slot.key === null || hit?.key !== slot.key || hit.until <= this.deps.now()) return null
     return { rows: hit.rows.map((r) => ({ ...r })), truncated: hit.truncated, buildSucceeded: hit.buildSucceeded, storage: hit.storage }
   }
 
@@ -135,7 +138,8 @@ export class CliSessionSource {
     // Targeted lookups have many identities; retire expired entries and bound retained snapshots.
     for (const [key, hit] of this.cache) if (hit.until <= now) this.cache.delete(key)
     if (this.cache.size >= CACHE_SLOT_LIMIT) this.cache.delete(this.cache.keys().next().value!)
-    this.cache.set(slot.cacheKey, { key: slot.key, until: now + CACHE_TTL_S, rows, truncated, buildSucceeded, storage })
+    if (slot.key === null) this.cache.delete(slot.cacheKey)
+    else this.cache.set(slot.cacheKey, { key: slot.key, until: now + CACHE_TTL_S, rows, truncated, buildSucceeded, storage })
     return { rows: rows.map((r) => ({ ...r })), truncated, buildSucceeded, storage }
   }
 

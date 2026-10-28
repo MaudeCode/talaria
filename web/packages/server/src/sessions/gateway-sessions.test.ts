@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { Worker } from 'node:worker_threads'
@@ -27,6 +27,9 @@ describe('gateway sidebar cache', () => {
   let s: TestServer
   let db: DatabaseSync
   let now: number
+  const settleDatabase = (): void => {
+    for (const path of [join(s.state, 'state.db'), join(s.state, 'state.db-wal')]) if (existsSync(path)) utimesSync(path, 1, 1)
+  }
   beforeEach(async () => {
     now = 100
     s = await bootTestServer({ now: () => now, gatewayPollMs: 60_000 })
@@ -38,7 +41,7 @@ describe('gateway sidebar cache', () => {
   })
   afterEach(async () => { db.close(); await s.close() })
 
-  it('shares one listing worker call between a changed gateway poll and the sidebar list', async () => {
+  it('shares one listing worker call between a changed gateway poll and the sidebar list once settled', async () => {
     const watcher = s.deps.gatewayWatchers.get('default')
     const sub = watcher.subscribe()
     expect((await sub.next(AbortSignal.timeout(2000)))?.sessions.some((row) => row.session_id === sid)).toBe(true)
@@ -46,6 +49,7 @@ describe('gateway sidebar cache', () => {
     await Promise.resolve()
     db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, 'user', 'another turn', 9999)
     db.prepare('UPDATE sessions SET message_count = 3 WHERE id = ?').run(sid)
+    settleDatabase()
     const calls = vi.spyOn(Worker.prototype, 'postMessage')
     try {
       expect(await watcher.pollOnce()).toBe(true)
@@ -73,6 +77,7 @@ describe('gateway sidebar cache', () => {
       await Promise.resolve()
       now += 5
       db.prepare('UPDATE sessions SET message_count = 3 WHERE id = ?').run(sid)
+      settleDatabase()
       metadata.mockRejectedValueOnce(new Error('synthetic sidecar metadata failure'))
       expect(await watcher.pollOnce()).toBe(false)
       const failed = await s.deps.cliSessions.read('default')

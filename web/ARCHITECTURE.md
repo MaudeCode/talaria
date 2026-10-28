@@ -92,7 +92,11 @@ reader retries ownership per window within that snapshot so healthy windows rema
 available. Sidebar and targeted metadata results share
 the five-second cache, scoped by profile, source filter, sorted session IDs and
 lookup flags, and invalidated by database/WAL stamps or the session-index revision.
-The cache retains at most 200 snapshots.
+The cache retains at most 200 snapshots. Database/WAL signatures sampled within
+two seconds of their modification timestamp cannot prove unchanged content on a
+coarse-timestamp filesystem. Both the row cache and gateway watcher bypass reuse
+for those samples, including future timestamps. The watcher acknowledges a fresh
+projection after the files settle, then resumes its unchanged-file fast path.
 
 The model picker shares one pool-limit read per profile and catalog source. Its
 sidecar deadline is three seconds; successes and failures are cached for 45 seconds.

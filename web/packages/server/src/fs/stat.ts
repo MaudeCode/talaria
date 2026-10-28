@@ -6,6 +6,11 @@ export function fileStatKey(path: string, st: BigIntStats = statSync(path, { big
   return `${st.dev}:${st.ino}:${st.mtimeNs}:${st.ctimeNs}:${st.size}`
 }
 
+/** Same-tick writes can share a signature; match the Agent's two-second uncertainty window. */
+export function settledFileStatKey(path: string, st: BigIntStats = statSync(path, { bigint: true })): string | null {
+  return BigInt(Date.now()) * 1_000_000n - st.mtimeNs < 2_000_000_000n ? null : fileStatKey(path, st)
+}
+
 /** The revision identity of the file at `path`; one format for path stats and open-descriptor fstats. */
 export function signatureOf(path: string, st: BigIntStats): string {
   return `${path}:${st.mtimeNs}:${st.size}:${st.ctimeNs}`

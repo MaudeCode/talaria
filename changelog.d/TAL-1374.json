@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Agent session activity updates promptly on filesystems with coarse timestamps.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
