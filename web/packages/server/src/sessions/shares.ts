@@ -158,18 +158,27 @@ export class ShareStore {
     return t
   }
 
-  async createOrRefresh(session: Session, snapshot: ShareSnapshot): Promise<ShareMeta> {
-    const token = (session.share_token ?? '').trim() || randomBytes(18).toString('base64url')
+  async createOrRefresh(session: Session, snapshot: ShareSnapshot, persistOwner?: (meta: ShareMeta) => Promise<void>): Promise<ShareMeta> {
+    let token = (session.share_token ?? '').trim() || randomBytes(18).toString('base64url')
     const now = this.now()
     const payload: Record<string, unknown> = {
       token, source_session_id: session.session_id, title: snapshot.title, messages: snapshot.messages, message_count: snapshot.message_count,
       created_at: now, updated_at: now, revoked_at: null,
     }
     this.validate(token)
-    const current = await readDocument(this.documents, 'shares', token, { replaceInvalid: true })
+    let current = await readDocument(this.documents, 'shares', token, { replaceInvalid: true })
+    // A failed ownership-clear can leave a revoked token on the session. Never publish it again.
+    if (isDict(current?.value) && current.value.revoked_at) {
+      token = randomBytes(18).toString('base64url')
+      payload.token = token
+      current = null
+    }
     if (isDict(current?.value)) payload.created_at = current.value.created_at || now
+    const meta = { share_token: token, share_title: snapshot.title, share_message_count: snapshot.message_count, share_created_at: payload.created_at as number, share_updated_at: now }
+    // Persist the owner before making bytes readable, so even a lost publication acknowledgement is revocable.
+    await persistOwner?.(meta)
     await this.documents.put('shares', token, payload, current?.revision ?? null)
-    return { share_token: token, share_title: snapshot.title, share_message_count: snapshot.message_count, share_created_at: payload.created_at as number, share_updated_at: now }
+    return meta
   }
 
   /** The public payload, or null when missing/revoked. */

@@ -1,0 +1,1 @@
+{"entries":[{"category":"Security","summary":"Concurrent sharing requests now keep one revocable conversation link, including when saving fails.","highlight":false,"components":["web"]}]}
