@@ -7,6 +7,8 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { saveRelayConfig } from '../sessions/relay.js'
 import { JsonDocuments } from '../test/storage.js'
+import { submitFeedback as sendFeedback } from '../feedback.js'
+import { FeedbackSubmitSchema } from '@maudecode/talaria-web-contracts'
 
 type Payload = Record<string, unknown>
 let s: TestServer
@@ -148,4 +150,97 @@ it('enforces the total Relay byte limit and authenticates both routes', async ()
     expect((await protectedServer.get('/api/feedback/diagnostics')).status).toBe(401)
     expect((await protectedServer.get('/api/feedback/submit', { method: 'POST', body: JSON.stringify(input()), headers: { 'Content-Type': 'application/json' } })).status).toBe(401)
   } finally { await protectedServer.close() }
+})
+
+it('removes arbitrary absolute and quoted filesystem paths from the whole feedback flow', async () => {
+  s.deps.log('ERROR could not open /mnt/customer-merger/secret.wav or "/opt/customer project/private notes.txt" or C:\\Customer\\private.wav or "D:\\Customer Project\\private notes.txt"')
+  const preview = await (await s.get('/api/feedback/diagnostics')).json() as { text: string }
+  expect(preview.text).not.toMatch(/customer|private|secret\.wav|Customer/i)
+  expect(preview.text).toContain('<path>')
+  const request = input()
+  expect((await submit(request)).status).toBe(200)
+  expect(calls[0]!.payload.diagnostics).toBe(preview.text)
+  const snapshot = await s.deps.sessionStore.deps.storage.documents.get('feedback', 'state')
+  expect(JSON.stringify(snapshot?.value)).not.toMatch(/customer|private|secret\.wav/i)
+})
+
+it.each(['"', "'"])('redacts a complete long %s-quoted environment assignment before caching', async (quote) => {
+  s.deps.log(`ERROR DATA=${quote}firstword private second word ${'synthetic '.repeat(1600)}${quote} end`)
+  const preview = await (await s.get('/api/feedback/diagnostics')).json() as { text: string }
+  expect(preview.text).not.toMatch(/firstword|private second word|synthetic/)
+  expect(s.deps.recentErrors().join('\n')).not.toMatch(/firstword|private second word|synthetic/)
+  expect((await submit()).status).toBe(200)
+  expect(calls[0]!.payload.diagnostics).toBe(preview.text)
+})
+
+it('fails closed for lowercase environment assignments with adjacent quoted pieces', async () => {
+  s.deps.log("ERROR data='firstword''private second word' tail")
+  const preview = await (await s.get('/api/feedback/diagnostics')).json() as { text: string }
+  expect(preview.text).not.toMatch(/firstword|private second word/)
+})
+
+it('rejects oversized feedback before creating any durable feedback state', async () => {
+  for (let i = 0; i < 3; i++) expect((await submit({ ...input(), body: '\u0000'.repeat(8000) })).status).toBe(400)
+  expect(await s.deps.sessionStore.deps.storage.documents.list('feedback')).toEqual([])
+  expect(calls).toHaveLength(0)
+})
+
+it('limits each principal to twenty fresh request IDs per hour without blocking retries', async () => {
+  const request = { ...input(), includeDiagnostics: false }
+  for (let i = 0; i < 20; i++) expect((await submit({ ...request, requestId: i === 0 ? request.requestId : crypto.randomUUID() })).status).toBe(200)
+  const limited = await submit({ ...request, requestId: crypto.randomUUID() })
+  expect(limited.status).toBe(429)
+  expect(await limited.json()).toMatchObject({ error: 'rate_limited', retryAfterSeconds: expect.any(Number) as number })
+  expect((await submit(request)).status).toBe(200)
+  expect(calls).toHaveLength(20)
+  const other = await s.deps.requestScope.run({ requestProfile: 'default', notificationOwner: 'synthetic-other-member' }, () => sendFeedback(s.deps, s.state, FeedbackSubmitSchema.parse({ ...request, requestId: crypto.randomUUID() })))
+  expect(other.status).toBe('sent')
+  expect(calls).toHaveLength(21)
+})
+
+it('compacts definitive snapshots and expires receipts under a synthetic clock', async () => {
+  const start = Date.now()
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(start)
+  const backend = s.deps.sessionStore.deps.storage.documents
+  expect((await submit()).status).toBe(200)
+  let state = (await backend.get('feedback', 'state'))?.value as { entries: Record<string, unknown>[] }
+  expect(state.entries).toHaveLength(1)
+  expect(state.entries[0]).not.toHaveProperty('snapshot')
+  expect(state.entries[0]?.reportId).toBe('report-1')
+  status = 429
+  expect((await submit()).status).toBe(429)
+  state = (await backend.get('feedback', 'state'))?.value as typeof state
+  expect(state.entries).toHaveLength(2)
+  expect(state.entries[1]).not.toHaveProperty('snapshot')
+  clock.mockReturnValue(start + 3601 * 1000)
+  status = 202
+  expect((await submit()).status).toBe(200)
+  state = (await backend.get('feedback', 'state'))?.value as typeof state
+  expect(state.entries).toHaveLength(2)
+  clock.mockReturnValue(start + (30 * 86400 + 3602) * 1000)
+  expect((await submit()).status).toBe(200)
+  state = (await backend.get('feedback', 'state'))?.value as typeof state
+  expect(state.entries).toHaveLength(1)
+})
+
+it('bounds the whole durable ledger while allowing an existing receipt to be recovered', async () => {
+  const request = { ...input(), includeDiagnostics: false }
+  expect((await submit(request)).status).toBe(200)
+  const backend = s.deps.sessionStore.deps.storage.documents
+  const doc = (await backend.get('feedback', 'state'))!
+  const state = doc.value as { entries: Record<string, unknown>[] }
+  const original = state.entries[0]!
+  state.entries = [original, ...Array.from({ length: 1023 }, (_, i) => ({ ...original, requestId: crypto.randomUUID(), owner: createHash('sha256').update(`synthetic-member-${i}`).digest('hex') }))]
+  await backend.put('feedback', 'state', state, doc.revision)
+  expect((await submit({ ...request, requestId: crypto.randomUUID() })).status).toBe(429)
+  expect((await submit(request)).status).toBe(200)
+  expect(calls).toHaveLength(1)
+  expect(await backend.list('feedback')).toHaveLength(1)
+})
+
+it('serializes concurrent submissions of one request ID before compacting its snapshot', async () => {
+  const request = input()
+  const results = await Promise.all([submit(request), submit(request)])
+  expect(results.map((response) => response.status)).toEqual([200, 200])
+  expect(calls).toHaveLength(1)
 })

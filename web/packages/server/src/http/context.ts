@@ -99,6 +99,7 @@ export interface AppDeps {
   /** Seconds since the epoch when the server started. */
   startedAt: number
   log: (line: string) => void
+  /** Bounded feedback-safe error entries; raw log payloads are never retained here. */
   recentErrors: () => readonly string[]
   /** Accept-loop counters for `/health`. */
   stats: { requestsTotal: number; lastRequestAt: number }

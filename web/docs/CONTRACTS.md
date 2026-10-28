@@ -506,9 +506,17 @@ and Relay validation failures return `invalid`.
 
 Diagnostics contain runtime versions, platform/architecture, registration state,
 configured provider IDs and at most ten recent server errors, each capped at
-300 characters. The shared redactor runs before truncation, followed by path,
-URL, environment-assignment and content-field removal. The complete UTF-8 text
+300 characters. The shared redactor and path, URL, environment-assignment and
+content-field removal all run before caching or truncating an error. Absolute
+POSIX, Windows and quoted paths are removed regardless of their root. The complete UTF-8 text
 is capped at 16 KiB. Feedback never reads transcripts or prompts. The private
-`feedback` document namespace stores the install UUID and per-request redacted
-server snapshots plus an input hash, never the submitted title or body. Submission
+`feedback` document namespace stores one bounded ledger with the install UUID,
+redacted server snapshots and input hashes, never the submitted title or body.
+The full JSON envelope is checked before admission writes. A principal may admit
+20 fresh request IDs per hour; the ledger holds at most 1,024 receipts. Both limits
+return `rate_limited` with a retry interval and allow existing IDs to reconcile.
+Unknown outcomes retain the exact snapshot for up to 30 days. Confirmed sends
+compact to a report-ID receipt; definitive refusals discard diagnostics and retain
+a quota marker for one hour. Expired entries are removed on the next admission.
+Concurrent calls for one request ID serialize through send and compaction. Submission
 logs contain only the request UUID and outcome. There is no client UI in this change.

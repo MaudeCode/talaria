@@ -2,7 +2,7 @@
  * Assemble the application dependencies for one state directory. Used by the
  * launcher and by tests, which pass a temp directory and a fixed environment.
  */
-import { redactSensitive } from './redact.js'
+import { redactFeedbackText } from './feedback.js'
 import { SIDECAR_METHODS, type PendingSteer, type RuntimeDescribe, type SessionGoal, type SessionNotice, type SidecarResult } from '@maudecode/talaria-web-contracts'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { pinnedFetch, systemDnsLookup } from './http/pinned.js'
@@ -100,16 +100,16 @@ export function packageVersion(): string | undefined {
 }
 
 export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
+  const config = loadConfig(opts)
   const recentErrors: string[] = []
   const output = opts.log ?? ((line: string) => { console.log(line) })
   const log = (line: string): void => {
     if (/\b(?:error|failed|failure)\b/i.test(line) && !line.startsWith('[feedback]')) {
-      recentErrors.push(redactSensitive(line).slice(0, 8192))
+      recentErrors.push(redactFeedbackText(line, config).split(/\r?\n/, 1)[0]!.slice(0, 300))
       if (recentErrors.length > 10) recentErrors.shift()
     }
     output(line)
   }
-  const config = loadConfig(opts)
   const env: Env = config.env
   mkdirSync(config.stateDir, { recursive: true })
   mkdirSync(config.sessionDir, { recursive: true })
