@@ -135,9 +135,13 @@ public final class FeedbackComposer {
                 guard isCurrent else { return }
                 hasUnknownOutcome = unresolvedEarlierAttempt || !Self.isRefusal(error)
                 persist()
-                self.error = hasUnknownOutcome
-                    ? SettingsErrorText(String(localized: "The send could not be confirmed. Retry to check the same report."))
-                    : SettingsErrorText(error)
+                if hasUnknownOutcome {
+                    let guidance = String(localized: "The send could not be confirmed. Retry to check the same report.")
+                    let serviceMessage = (error as? APIError)?.feedbackServiceMessage
+                    self.error = SettingsErrorText(serviceMessage.map { "\($0)\n\(guidance)" } ?? guidance)
+                } else {
+                    self.error = SettingsErrorText(error)
+                }
                 confirmation.dismissSuccess()
                 isPresented = true
             }

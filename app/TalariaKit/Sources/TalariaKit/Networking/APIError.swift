@@ -18,6 +18,8 @@ public enum APIError: LocalizedError {
                 return String(localized: "That session no longer exists on the server. Reopen another session or create a new one.")
             }
 
+            if let feedbackServiceMessage { return feedbackServiceMessage }
+
             switch statusCode {
             case -1:
                 return String(localized: "The server response could not be read. Check that the URL points to a Hermes Web UI server.")
@@ -40,7 +42,7 @@ public enum APIError: LocalizedError {
             case 500:
                 return String(localized: "The Hermes server hit an internal error. Check the server logs, then try again.")
             case 502, 503, 504:
-                return String(localized: "The server or Cloudflare tunnel is unavailable. Check that the Mac is awake, hermes-webui is running, and the tunnel is connected.")
+                return String(localized: "The Talaria server is unavailable. Check that it is running and that your network connection is working.")
             default:
                 if let message = Self.boundedServerMessage(from: body) {
                     return String(localized: "Server returned HTTP \(statusCode): \(message)")
@@ -85,6 +87,17 @@ public enum APIError: LocalizedError {
     public var serverMessage: String? {
         guard case .http(_, let body) = self else { return nil }
         return Self.serverErrorMessage(from: body)
+    }
+
+    var feedbackServiceMessage: String? {
+        switch serverMessage {
+        case "feedback_unavailable":
+            return String(localized: "The feedback service is unavailable. Try again later.")
+        case "relay_unreachable":
+            return String(localized: "The Relay feedback service could not complete the request. Try again later.")
+        default:
+            return nil
+        }
     }
 
     /// TAL-1045: the classification a typed refusal carries beside its `code`, such as why an execution mode is unavailable.

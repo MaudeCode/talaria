@@ -1,6 +1,345 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "The feedback service is unavailable. Try again later." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The feedback service is unavailable. Try again later."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "خدمة الملاحظات غير متاحة. حاول مرة أخرى لاحقًا."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Der Feedback-Dienst ist nicht verfügbar. Versuche es später erneut."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "El servicio de comentarios no está disponible. Inténtalo de nuevo más tarde."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Le service de retour d’avis est indisponible. Réessayez plus tard."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "שירות המשוב אינו זמין. נסו שוב מאוחר יותר."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Il servizio di feedback non è disponibile. Riprova più tardi."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "フィードバックサービスを利用できません。後でもう一度お試しください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "피드백 서비스를 사용할 수 없습니다. 나중에 다시 시도하세요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "De feedbackdienst is niet beschikbaar. Probeer het later opnieuw."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Usługa przesyłania opinii jest niedostępna. Spróbuj ponownie później."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "O serviço de feedback está indisponível. Tente novamente mais tarde."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Сервис обратной связи недоступен. Повторите попытку позже."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Geri bildirim hizmeti kullanılamıyor. Daha sonra yeniden deneyin."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "رائے کی خدمت دستیاب نہیں ہے۔ بعد میں دوبارہ کوشش کریں۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "反馈服务不可用。请稍后重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "意見回饋服務無法使用。請稍後再試。"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "意見服務暫時無法使用。請稍後再試。"
+          }
+        }
+      }
+    },
+    "The Relay feedback service could not complete the request. Try again later." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The Relay feedback service could not complete the request. Try again later."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تعذر على خدمة الملاحظات في Relay إكمال الطلب. حاول مرة أخرى لاحقًا."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Der Relay-Feedback-Dienst konnte die Anfrage nicht abschließen. Versuche es später erneut."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "El servicio de comentarios de Relay no pudo completar la solicitud. Inténtalo de nuevo más tarde."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Le service de retour d’avis de Relay n’a pas pu traiter la demande. Réessayez plus tard."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "שירות המשוב של Relay לא הצליח להשלים את הבקשה. נסו שוב מאוחר יותר."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Il servizio di feedback di Relay non ha potuto completare la richiesta. Riprova più tardi."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Relayのフィードバックサービスでリクエストを完了できませんでした。後でもう一度お試しください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Relay 피드백 서비스가 요청을 완료하지 못했습니다. 나중에 다시 시도하세요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "De feedbackdienst van Relay kon het verzoek niet voltooien. Probeer het later opnieuw."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Usługa przesyłania opinii Relay nie mogła dokończyć żądania. Spróbuj ponownie później."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "O serviço de feedback do Relay não conseguiu concluir a solicitação. Tente novamente mais tarde."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Сервис обратной связи Relay не смог выполнить запрос. Повторите попытку позже."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Relay geri bildirim hizmeti isteği tamamlayamadı. Daha sonra yeniden deneyin."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Relay کی رائے کی خدمت درخواست مکمل نہیں کر سکی۔ بعد میں دوبارہ کوشش کریں۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Relay 反馈服务无法完成请求。请稍后重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Relay 意見回饋服務無法完成請求。請稍後再試。"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Relay 意見服務無法完成要求。請稍後再試。"
+          }
+        }
+      }
+    },
+    "The Talaria server is unavailable. Check that it is running and that your network connection is working." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The Talaria server is unavailable. Check that it is running and that your network connection is working."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "خادم Talaria غير متاح. تحقق من أنه يعمل ومن اتصالك بالشبكة."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Der Talaria-Server ist nicht verfügbar. Prüfe, ob er läuft und deine Netzwerkverbindung funktioniert."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "El servidor de Talaria no está disponible. Comprueba que esté en funcionamiento y que tu conexión de red funcione."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Le serveur Talaria est indisponible. Vérifiez qu’il fonctionne et que votre connexion réseau est active."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "שרת Talaria אינו זמין. בדקו שהוא פועל ושחיבור הרשת שלכם תקין."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Il server Talaria non è disponibile. Verifica che sia in esecuzione e che la connessione di rete funzioni."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Talariaサーバーを利用できません。サーバーが稼働していることと、ネットワーク接続を確認してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Talaria 서버를 사용할 수 없습니다. 서버가 실행 중이고 네트워크 연결이 작동하는지 확인하세요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "De Talaria-server is niet beschikbaar. Controleer of deze actief is en je netwerkverbinding werkt."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Serwer Talaria jest niedostępny. Sprawdź, czy działa i czy masz połączenie z siecią."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "O servidor Talaria está indisponível. Verifique se ele está em execução e se sua conexão de rede está funcionando."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Сервер Talaria недоступен. Проверьте, что он работает и подключение к сети исправно."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Talaria sunucusu kullanılamıyor. Sunucunun çalıştığını ve ağ bağlantınızın etkin olduğunu kontrol edin."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Talaria سرور دستیاب نہیں ہے۔ چیک کریں کہ وہ چل رہا ہے اور آپ کا نیٹ ورک کنکشن کام کر رہا ہے۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Talaria 服务器不可用。请检查服务器是否正在运行，以及网络连接是否正常。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Talaria 伺服器無法使用。請檢查伺服器是否正在執行，以及網路連線是否正常。"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Talaria 伺服器暫時無法使用。請檢查伺服器是否正在運作，以及網絡連線是否正常。"
+          }
+        }
+      }
+    },
     "Send Feedback" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -119156,112 +119495,6 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "伺服器收到的請求過多。請稍候，然後重試。"
-          }
-        }
-      }
-    },
-    "The server or Cloudflare tunnel is unavailable. Check that the Mac is awake, hermes-webui is running, and the tunnel is connected." : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "الخادم أو نفق Cloudflare غير متاح. تأكد من أن جهاز Mac نشط، وأن hermes-webui قيد التشغيل، وأن النفق متصل."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Der Server oder der Cloudflare-Tunnel ist nicht verfügbar. Überprüfe, ob der Mac aktiv ist, hermes-webui läuft und der Tunnel verbunden ist."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "El servidor o el túnel de Cloudflare no está disponible. Verifica que el Mac esté activo, que hermes-webui esté en ejecución y que el túnel esté conectado."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Le serveur ou le tunnel Cloudflare est indisponible. Vérifiez que le Mac est éveillé, que hermes-webui est en cours d'exécution et que le tunnel est connecté."
-          }
-        },
-        "he" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "השרת או מנהרת Cloudflare אינם זמינים. ודא שה-Mac ער, ש-hermes-webui פועל, ושהמנהרה מחוברת."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Il server o il tunnel Cloudflare non è disponibile. Verifica che il Mac sia attivo, che hermes-webui sia in esecuzione e che il tunnel sia connesso."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "サーバまたはCloudflareトンネルを利用できません。Macがスリープしていないこと、hermes-webuiが実行中であること、トンネルが接続されていることを確認してください。"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "서버 또는 Cloudflare 터널을 사용할 수 없어요. Mac이 켜져 있고, hermes-webui가 실행 중이며, 터널이 연결되어 있는지 확인하세요."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "De server of Cloudflare-tunnel is niet beschikbaar. Controleer of de Mac wakker is, hermes-webui actief is en de tunnel is verbonden."
-          }
-        },
-        "pl" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Serwer lub tunel Cloudflare jest niedostępny. Sprawdź, czy Mac jest aktywny, hermes-webui działa, a tunel jest połączony."
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "O servidor ou o túnel da Cloudflare está indisponível. Verifique se o Mac está ativo, se o hermes-webui está em execução e se o túnel está conectado."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Сервер или туннель Cloudflare недоступен. Убедитесь, что Mac не спит, hermes-webui запущен, а туннель подключён."
-          }
-        },
-        "tr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Sunucu veya Cloudflare tüneli kullanılamıyor. Mac'in uyanık olduğunu, hermes-webui'nin çalıştığını ve tünelin bağlı olduğunu kontrol edin."
-          }
-        },
-        "ur" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "سرور یا Cloudflare ٹنل دستیاب نہیں ہے۔ یقینی بنائیں کہ Mac بیدار ہے، hermes-webui چل رہا ہے، اور ٹنل منسلک ہے۔"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "服务器或 Cloudflare 隧道不可用。请检查 Mac 是否已唤醒、hermes-webui 是否正在运行以及隧道是否已连接。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "伺服器或 Cloudflare 通道無法使用。請檢查 Mac 是否已喚醒、hermes-webui 是否正在執行，以及通道是否已連線。"
-          }
-        },
-        "zh-HK" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "伺服器或 Cloudflare 通道無法使用。請檢查 Mac 是否已喚醒、hermes-webui 是否正在執行以及通道是否已連線。"
           }
         }
       }

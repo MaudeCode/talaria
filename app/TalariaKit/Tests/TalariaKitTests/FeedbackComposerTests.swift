@@ -136,6 +136,21 @@ final class FeedbackComposerTests: XCTestCase {
         XCTAssertFalse(model.isPresented)
     }
 
+    func testRelayFailureKeepsUncertaintyAndShowsTheServiceError() async throws {
+        let model = FeedbackComposer(server: server, defaults: defaults(), clientMetadata: metadata, submit: { _ in
+            throw APIError.http(statusCode: 502, body: "{\"error\":\"relay_unreachable\"}")
+        })
+        fill(model)
+        let requestID = model.draft.requestId
+        try await XCTUnwrap(model.send()).value
+        XCTAssertTrue(model.hasUnknownOutcome)
+        XCTAssertEqual(model.draft.requestId, requestID)
+        let message = try XCTUnwrap(model.error?.message)
+        XCTAssertTrue(message.contains("The Relay feedback service could not complete the request. Try again later."),
+                      "The rollback must retain the actual Relay error alongside its safe-retry guidance")
+        XCTAssertTrue(message.contains("The send could not be confirmed. Retry to check the same report."))
+    }
+
     func testRefusalAfterAnUnknownAttemptKeepsTheOriginalPayloadLocked() async throws {
         for refusal in [APIError.http(statusCode: 503, body: "{\"error\":\"feedback_unavailable\"}"), .unauthorized] {
             let storage = defaults()

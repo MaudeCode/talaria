@@ -2,6 +2,17 @@ import XCTest
 @testable import TalariaKit
 
 final class APIClientFeedbackTests: APIClientTestCase {
+    func testFeedbackFailuresUseServiceSpecificMessages() {
+        XCTAssertEqual(APIError.http(statusCode: 503, body: "{\"error\":\"feedback_unavailable\"}").localizedDescription,
+                       "The feedback service is unavailable. Try again later.")
+        XCTAssertEqual(APIError.http(statusCode: 502, body: "{\"error\":\"relay_unreachable\"}").localizedDescription,
+                       "The Relay feedback service could not complete the request. Try again later.")
+        for status in [502, 503, 504] {
+            XCTAssertEqual(APIError.http(statusCode: status, body: "<html>Bad gateway</html>").localizedDescription,
+                           "The Talaria server is unavailable. Check that it is running and that your network connection is working.")
+        }
+    }
+
     @MainActor
     func testHeldFeedbackRetryKeepsItsOriginalServersHeadersAfterSwitching() async throws {
         let previousHook = UITestURLSessionHook.configure

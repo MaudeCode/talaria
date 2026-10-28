@@ -290,7 +290,7 @@ extension ChatViewModelSendTests {
         XCTAssertFalse(viewModel.isViewingCachedData)
         XCTAssertEqual(
             viewModel.errorMessage,
-            "The server or Cloudflare tunnel is unavailable. Check that the Mac is awake, hermes-webui is running, and the tunnel is connected."
+            "The Talaria server is unavailable. Check that it is running and that your network connection is working."
         )
         XCTAssertNotNil(viewModel.lastError)
     }

@@ -25,6 +25,20 @@ final class FeedbackHostedTests: XCTestCase {
         XCTAssertTrue(row.accessibilityTraits.contains(.notEnabled))
     }
 
+    func testUnavailableFeedbackShowsTheServiceError() async throws {
+        let model = model(submit: { _ in
+            throw APIError.http(statusCode: 503, body: "{\"error\":\"feedback_unavailable\"}")
+        })
+        model.edit { $0.title = "Synthetic report"; $0.body = "Synthetic details" }
+        try await XCTUnwrap(model.send()).value
+        let window = try hostWindow(FeedbackSheet(model: model))
+        attachHostedScreenshot(window, name: "feedback-service-unavailable")
+        let message = await awaitElement(in: window) {
+            ($0.accessibilityLabel ?? "").contains("The feedback service is unavailable. Try again later.")
+        }
+        XCTAssertNotNil(message, "The service refusal must not blame the Mac, Hermes WebUI, or Cloudflare")
+    }
+
     func testSendClosesBeforeHeldResponseAndRefusalReopensTheSameDraft() async throws {
         var finish: CheckedContinuation<FeedbackResult, Error>?
         var requests: [FeedbackRequest] = []
