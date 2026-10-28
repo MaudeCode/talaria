@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterAll, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest'
-import { bootTestServer, type TestServer } from '../test/harness.js'
+import { bootTestServer, type TestServer, openStateDb } from '../test/harness.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import type { SidecarResult } from '@maudecode/talaria-web-contracts'
 import { SessionSchema } from '@maudecode/talaria-web-contracts'
@@ -26,7 +26,7 @@ const json = async (res: Response): Promise<Json> => (await res.json()) as Json
 /** The Agent's `state.db` columns the projection reads. */
 function createStateDb(path: string): DatabaseSync {
   mkdirSync(join(path, '..'), { recursive: true })
-  const db = new DatabaseSync(path)
+  const db = openStateDb(path)
   db.exec('PRAGMA journal_mode=WAL')
   db.exec(`CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT NOT NULL, user_id TEXT, model TEXT, started_at REAL NOT NULL, message_count INTEGER DEFAULT 0, title TEXT,
     chat_id TEXT, chat_type TEXT, thread_id TEXT, session_key TEXT, origin_chat_id TEXT, origin_user_id TEXT, platform TEXT, parent_session_id TEXT, ended_at REAL, end_reason TEXT);
@@ -151,7 +151,7 @@ describe('absorbed durable identity (TAL-1019)', () => {
       const previousContext = structuredClone(session.context_messages)
       const rawHistory = previousContext.map((m) => { const raw = { ...m }; delete raw._state_db_generation; return raw })
       session.context_messages = rawHistory
-      const concurrent = new DatabaseSync(path)
+      const concurrent = openStateDb(path)
       try { concurrent.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, 'user', 'New CLI request', 200) } finally { concurrent.close() }
       const expected = [prompt.content, reply.content, 'New CLI request']
       expect(s.deps.sessions.mergedTranscript(session, session.messages, await s.deps.sessions.stateDbRows(session)).map((m) => m.content)).toEqual(expected)
@@ -177,7 +177,7 @@ describe('latestCronSessionInfo', () => {
 
   it('merges v0.22.3 scheduler admissions with legacy runs by start time', () => {
     const path = join(dir, 'admissions.db')
-    const db = new DatabaseSync(path)
+    const db = openStateDb(path)
     db.exec(cronSchema.schema.join('\n'))
     for (const [id, started_at] of [['cron_daily_20261020_120000', 100], ['local-daily', 200], ['cron_daily_digest_20261020_120000', 400], ['local-digest', 300]] as const) insertSession(db, { id, source: 'cron', started_at, messages: [['user', started_at]] })
     const admit = db.prepare("INSERT INTO session_admissions (admission_id, request_id, principal_id, target_session_id, lineage_json, payload_json, payload_digest, intent, status) VALUES (?, ?, ?, ?, '[]', '{}', 'synthetic', 'queue', 'terminal')")
@@ -199,7 +199,7 @@ describe('latestCronSessionInfo', () => {
     const sidecar = new FakeSidecar()
     const s = await bootTestServer({ sidecar })
     try {
-      const db = new DatabaseSync(join(s.state, 'state.db'))
+      const db = openStateDb(join(s.state, 'state.db'))
       db.exec(cronSchema.schema.join('\n'))
       insertSession(db, { id: 'local-cron-job1', source: 'cron', started_at: 100, messages: [['user', 100], ['assistant', 101]] })
       db.exec("INSERT INTO session_admissions (admission_id, request_id, principal_id, target_session_id, lineage_json, payload_json, payload_digest, intent, status) VALUES ('fire1', 'cron:job1:exec1', 'cron-owner', 'local-cron-job1', '[]', '{}', 'synthetic', 'queue', 'terminal')")
@@ -227,7 +227,7 @@ describe('latestCronSessionInfo', () => {
 
   it('falls back to id order without started_at and leaves jobs without a session out', () => {
     const path = join(dir, 'no-started-at.db')
-    const db = new DatabaseSync(path)
+    const db = openStateDb(path)
     db.exec("CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT); INSERT INTO sessions VALUES ('cron_x_1', 'cron'), ('cron_x_2', 'cron'), ('cron_y_1', 'telegram')")
     db.close()
     expect(latestCronSessionInfo(path, ['x', 'y', 'z'], ['x', 'y', 'z'])).toEqual(new Map([['x', { session_id: 'cron_x_2', message_count: null }]]))
@@ -236,7 +236,7 @@ describe('latestCronSessionInfo', () => {
   it('answers no enrichment for a missing or unrecognized state.db', () => {
     expect(latestCronSessionInfo(join(dir, 'missing.db'), ['x'], ['x']).size).toBe(0)
     const path = join(dir, 'no-source.db')
-    const db = new DatabaseSync(path)
+    const db = openStateDb(path)
     db.exec("CREATE TABLE sessions (id TEXT PRIMARY KEY); INSERT INTO sessions VALUES ('cron_x_1')")
     db.close()
     expect(latestCronSessionInfo(path, ['x'], ['x']).size).toBe(0)
@@ -582,7 +582,7 @@ describe('state.db projection', () => {
   it('degrades on an older schema without a source column', () => {
     const legacy = join(s.state, 'profiles', 'legacy', 'state.db')
     mkdirSync(join(s.state, 'profiles', 'legacy'), { recursive: true })
-    const old = new DatabaseSync(legacy)
+    const old = openStateDb(legacy)
     old.exec('CREATE TABLE sessions (id TEXT PRIMARY KEY, started_at REAL NOT NULL, message_count INTEGER)')
     old.close()
     const logs: string[] = []
@@ -987,7 +987,7 @@ describe('indexed sidebar window (TAL-1163)', () => {
   const agentDb = (name: string, ddl = ''): string => {
     mkdirSync(join(dir, name))
     const path = join(dir, name, 'state.db')
-    const db = new DatabaseSync(path)
+    const db = openStateDb(path)
     db.exec(agentSchema.schema.join('\n'))
     const session = db.prepare('INSERT INTO sessions (id, source, title, started_at, last_activity_at, message_count) VALUES (?, ?, ?, ?, ?, 2)')
     const message = db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)')
@@ -1055,7 +1055,7 @@ describe('remaining indexed readers (TAL-1188)', () => {
 
   it('bounds cron result batches, uses the source index, and retains infrequent jobs', () => {
     const path = join(dir, 'cron.db')
-    const db = new DatabaseSync(path)
+    const db = openStateDb(path)
     db.exec(agentSchema.schema.join('\n'))
     insertSession(db, { id: 'cron_rare_1', source: 'cron', started_at: 1 })
     for (let i = 0; i < 100; i += 1) insertSession(db, { id: `cron_hot_${i}`, source: 'cron', started_at: i + 2 })
@@ -1076,7 +1076,7 @@ describe('remaining indexed readers (TAL-1188)', () => {
 
   it.each(['indexed', 'no-message-index', 'legacy'])('keeps activity beyond a stale heartbeat on %s schemas', (schema) => {
     const path = join(dir, `insights-stale-${schema}.db`)
-    const db = new DatabaseSync(path)
+    const db = openStateDb(path)
     db.exec(agentSchema.schema.join('\n'))
     for (const [id, source, started_at, messageAt, heartbeat, endedAt] of [
       ['heartbeat', 'cli', 1, 950, 1000, null],
@@ -1102,7 +1102,7 @@ describe('remaining indexed readers (TAL-1188)', () => {
 
   it('range-scans the activity index before checking message freshness', () => {
     const path = join(dir, 'insights.db')
-    const db = new DatabaseSync(path)
+    const db = openStateDb(path)
     db.exec(agentSchema.schema.join('\n'))
     insertSession(db, { id: 'recent', source: 'cli', started_at: 1, messages: [['user', 1050]] })
     insertSession(db, { id: 'old', source: 'cli', started_at: 1, messages: [['user', 2]] })
@@ -1130,7 +1130,7 @@ describe('session lineage report', () => {
   /** The Agent's `sessions` columns, including `session_source` for forks; rows are inserted in the order given. */
   function lineageDb(path: string, rows: { id: string; parent?: string; started_at: number; ended_at?: number; end_reason?: string; source?: string; session_source?: string }[]): string {
     mkdirSync(join(path, '..'), { recursive: true })
-    const db = new DatabaseSync(path)
+    const db = openStateDb(path)
     db.exec(`CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, session_source TEXT, title TEXT, model TEXT, started_at REAL NOT NULL, message_count INTEGER DEFAULT 0,
       parent_session_id TEXT, ended_at REAL, end_reason TEXT);
       CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)`)
@@ -1184,7 +1184,7 @@ describe('session lineage report', () => {
       { id: 'lineage_report_root', started_at: t0, ended_at: t0 + 5, end_reason: 'compression' },
       { id: 'lineage_report_fork', parent: 'lineage_report_root', started_at: t0 + 6, session_source: 'fork' },
     ])
-    const db = new DatabaseSync(path)
+    const db = openStateDb(path)
     db.prepare("INSERT INTO messages (session_id, role, content, timestamp) VALUES ('lineage_report_fork', 'user', 'hello', ?)").run(t0 + 7)
     db.close()
     const rows = readImportableAgentSessionRows(path, { excludeSources: [] })
@@ -1249,7 +1249,7 @@ describe('session lineage report', () => {
       id, started_at: t0 + i * 10, ...(parent(i) ? { parent: parent(i)! } : {}),
       ...(i < length - 1 || cyclic ? { end_reason: 'compression', ...(cyclic ? {} : { ended_at: t0 + i * 10 + 5 }) } : {}),
     })))
-    const db = new DatabaseSync(path)
+    const db = openStateDb(path)
     for (const [i, id] of segments.entries()) db.prepare("INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, 'user', ?, ?)").run(id, `${id} says`, t0 + i * 10 + 1)
     db.close()
     return { path, segments }

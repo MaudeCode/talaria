@@ -1,9 +1,8 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { DatabaseSync } from 'node:sqlite'
 import { SessionEnvelopeSchema } from '@maudecode/talaria-web-contracts'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { bootTestServer, type TestServer } from '../test/harness.js'
+import { bootTestServer, type TestServer, openStateDb } from '../test/harness.js'
 
 type Json = Record<string, unknown>
 const post = (s: TestServer, body: unknown) => s.get('/api/session/new', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
@@ -17,7 +16,7 @@ describe('new-chat conversation references', () => {
   async function seed(id: string, title = id, profile = 'default', privacy: unknown = ['no_training']): Promise<void> {
     const home = profile === 'default' ? s.state : join(s.state, 'profiles', profile)
     mkdirSync(home, { recursive: true })
-    const db = new DatabaseSync(join(home, 'state.db'))
+    const db = openStateDb(join(home, 'state.db'))
     db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, title TEXT, started_at REAL, parent_session_id TEXT, ended_at REAL, end_reason TEXT); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY, session_id TEXT, role TEXT, content TEXT, timestamp REAL, display_metadata TEXT)')
     db.prepare('INSERT INTO sessions VALUES (?, ?, ?, ?, NULL, NULL, NULL)').run(id, 'webui', title, 100)
     db.prepare('INSERT INTO messages (session_id, role, content, timestamp, display_metadata) VALUES (?, ?, ?, ?, ?)').run(id, 'tool', 'SECRET TRANSCRIPT MATERIAL', 101, JSON.stringify({ data_use: privacy }))
@@ -122,7 +121,7 @@ describe('new-chat conversation references', () => {
 
   it('refuses a retained row whose identity was retired', async () => {
     await seed('retired')
-    const db = new DatabaseSync(join(s.state, 'state.db'))
+    const db = openStateDb(join(s.state, 'state.db'))
     db.exec('CREATE TABLE state_meta (key TEXT PRIMARY KEY, value TEXT)')
     db.prepare('INSERT INTO state_meta VALUES (?, ?)').run('gateway.retired_session.v1.retired', '{}')
     db.close()
@@ -132,7 +131,7 @@ describe('new-chat conversation references', () => {
   it('refuses a compressed old tip, accepts its current logical identity, and retains earlier privacy', async () => {
     await seed('root')
     await seed('tip', 'Continued', 'default', ['zero_retention'])
-    const db = new DatabaseSync(join(s.state, 'state.db'))
+    const db = openStateDb(join(s.state, 'state.db'))
     db.prepare('UPDATE sessions SET ended_at = 110, end_reason = ? WHERE id = ?').run('compression', 'root')
     db.prepare('UPDATE sessions SET parent_session_id = ?, started_at = 111 WHERE id = ?').run('root', 'tip')
     db.close()

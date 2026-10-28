@@ -6,7 +6,7 @@ import { chmodSync, closeSync, openSync, readFileSync, rmSync, statSync, writeSy
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { bootTestServer, type TestServer } from '../test/harness.js'
+import { bootTestServer, type TestServer, openStateDb } from '../test/harness.js'
 import { stateDbSessionRead } from './state-db.js'
 
 type Json = Record<string, unknown>
@@ -14,7 +14,7 @@ type Json = Record<string, unknown>
 /** A healthy v31-shaped state.db with enough rows that the sessions table spans pages past the first. */
 function writeStateDb(path: string, opts: { sourceColumn?: boolean } = {}): void {
   for (const suffix of ['', '-wal', '-shm']) rmSync(`${path}${suffix}`, { force: true })
-  const db = new DatabaseSync(path)
+  const db = openStateDb(path)
   db.exec(`CREATE TABLE sessions (id TEXT PRIMARY KEY, ${opts.sourceColumn === false ? '' : 'source TEXT NOT NULL, '}started_at REAL NOT NULL, title TEXT, model TEXT, message_count INTEGER DEFAULT 0);
     CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT, timestamp REAL NOT NULL);
     CREATE VIRTUAL TABLE messages_fts USING fts5(content)`)
@@ -74,7 +74,7 @@ describe('degraded Agent session storage (TAL-785)', () => {
 
   it('reports damage that only a background kind\'s read reaches as corrupt', async () => {
     writeStateDb(dbPath)
-    const db = new DatabaseSync(dbPath)
+    const db = openStateDb(dbPath)
     db.prepare("INSERT INTO sessions (id, source, started_at, title, message_count) VALUES ('cron_job_1', 'cron', 5000, 'Nightly', 2)").run()
     for (const ts of [5000.1, 5000.2]) db.prepare("INSERT INTO messages (session_id, role, content, timestamp) VALUES ('cron_job_1', 'assistant', ?, ?)").run(`CRONPAGE${'c'.repeat(3900)}`, ts)
     db.exec('CREATE INDEX idx_messages_session ON messages(session_id, timestamp)')

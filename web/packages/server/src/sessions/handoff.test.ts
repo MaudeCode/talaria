@@ -5,11 +5,10 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { DatabaseSync } from 'node:sqlite'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
-import { bootTestServer, type TestServer } from '../test/harness.js'
+import { bootTestServer, type TestServer, openStateDb } from '../test/harness.js'
 
 type Json = Record<string, unknown>
 const post = (s: TestServer, path: string, body: unknown): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
@@ -43,18 +42,18 @@ describe('handoff dock routes', () => {
   /** A state.db holding `rows` for `sid`, as the Agent and gateway committed them. */
   function seedStateDb(sid: string, rows: [string, string, number | null][], opts: { profile?: string; source?: string } = {}): void {
     if (opts.profile) mkdirSync(join(s.state, 'profiles', opts.profile), { recursive: true })
-    const db = new DatabaseSync(dbPath(opts.profile))
+    const db = openStateDb(dbPath(opts.profile))
     db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, title TEXT, model TEXT, started_at REAL, message_count INTEGER DEFAULT 0, parent_session_id TEXT, ended_at REAL, end_reason TEXT); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
     db.prepare('INSERT OR REPLACE INTO sessions (id, source, started_at, message_count) VALUES (?, ?, ?, ?)').run(sid, opts.source ?? 'webui', 1, rows.length)
     for (const [role, content, ts] of rows) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, role, content, ts)
     db.close()
   }
   function stateRows(sid: string, profile?: string): Json[] {
-    const db = new DatabaseSync(dbPath(profile))
+    const db = openStateDb(dbPath(profile))
     try { return db.prepare('SELECT role, content FROM messages WHERE session_id = ? ORDER BY id').all(sid) } finally { db.close() }
   }
   function messageCount(sid: string, profile?: string): number {
-    const db = new DatabaseSync(dbPath(profile))
+    const db = openStateDb(dbPath(profile))
     try { return Number((db.prepare('SELECT message_count FROM sessions WHERE id = ?').get(sid) as Json).message_count) } finally { db.close() }
   }
   async function webSession(extra: Json = {}): Promise<string> {
@@ -86,7 +85,7 @@ describe('handoff dock routes', () => {
     // The Agent's `SessionDB.append_message`: one row plus the session's message_count.
     sidecar.respond('state_db.append_message', (params) => {
       appended.push(params)
-      const db = new DatabaseSync(join(params.profile_home, 'state.db'))
+      const db = openStateDb(join(params.profile_home, 'state.db'))
       db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(params.session_id, params.role, params.content, params.timestamp ?? null)
       db.prepare('UPDATE sessions SET message_count = message_count + 1 WHERE id = ?').run(params.session_id)
       db.close()
@@ -129,7 +128,7 @@ describe('handoff dock routes', () => {
     it('carries privacy requirements from before the handoff window into its derived prompt', async () => {
       const sid = await webSession()
       seedStateDb(sid, roundRows(30))
-      const db = new DatabaseSync(dbPath())
+      const db = openStateDb(dbPath())
       db.exec('ALTER TABLE messages ADD COLUMN display_metadata TEXT')
       db.prepare('INSERT INTO messages (session_id, role, content, timestamp, display_metadata) VALUES (?, ?, ?, ?, ?)').run(sid, 'tool', 'private connector result before the selected window', 900, JSON.stringify({ data_use: ['no_training', 'zero_retention'], diff: 'display only' }))
       db.close()
@@ -318,7 +317,7 @@ describe('handoff dock routes', () => {
     work.respond('aux.complete', (params) => { homes.push(params.profile_home); return { model: 'm', text: COMPLETE, usage: null, finish_reason: 'stop' } })
     work.respond('state_db.append_message', (params) => {
       homes.push(params.profile_home)
-      const db = new DatabaseSync(join(params.profile_home, 'state.db'))
+      const db = openStateDb(join(params.profile_home, 'state.db'))
       db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(params.session_id, params.role, params.content, params.timestamp ?? null)
       db.close()
       return { ok: true }
@@ -333,7 +332,7 @@ describe('handoff dock routes', () => {
       const workHome = join(base, 'profiles', 'work')
       mkdirSync(workHome, { recursive: true })
       const seed = (path: string, rows: [string, string, number | null][]): void => {
-        const db = new DatabaseSync(path)
+        const db = openStateDb(path)
         db.exec('CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL, message_count INTEGER DEFAULT 0); CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
         for (const [role, content, ts] of rows) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, role, content, ts)
         db.close()
@@ -344,7 +343,7 @@ describe('handoff dock routes', () => {
       expect((await json(await post(server, '/api/session/conversation-rounds', { session_id: sid }))).rounds).toBe(10)
       expect((await post(server, '/api/session/handoff-summary', { session_id: sid })).status).toBe(200)
       expect(homes).toEqual([workHome, workHome])
-      const db = new DatabaseSync(join(workHome, 'state.db'))
+      const db = openStateDb(join(workHome, 'state.db'))
       try { expect(markers(db.prepare("SELECT role, content FROM messages WHERE role = 'tool'").all() as Json[])).toHaveLength(1) } finally { db.close() }
     } finally {
       await server.close()

@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { bootTestServer, type TestServer } from '../test/harness.js'
+import { bootTestServer, type TestServer, openStateDb } from '../test/harness.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import type { SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
 import { Session } from './session.js'
@@ -22,7 +22,7 @@ describe('canonical Agent ownership (TAL-1036)', () => {
   beforeEach(async () => {
     sidecar = new FakeSidecar()
     s = await bootTestServer({ sidecar })
-    db = new DatabaseSync(join(s.state, 'state.db'))
+    db = openStateDb(join(s.state, 'state.db'))
     db.exec(fixture.schema.join('\n'))
     for (const sql of fixture.inserts) db.exec(sql)
     await s.deps.settings.save({ show_cli_sessions: true })
@@ -784,7 +784,7 @@ describe('canonical Agent ownership (TAL-1036)', () => {
     const sid = fixture.sessions.cli!
     const otherPath = join(s.state, 'profiles', 'work', 'state.db')
     mkdirSync(join(otherPath, '..'), { recursive: true })
-    const other = new DatabaseSync(otherPath)
+    const other = openStateDb(otherPath)
     try {
       other.exec(fixture.schema.join('\n'))
       for (const sql of fixture.inserts) other.exec(sql)

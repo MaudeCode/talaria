@@ -5,11 +5,10 @@ import { sessionDirectory, sessionPath } from '../test/storage.js'
 import { createHash, createPublicKey, verify as cryptoVerify } from 'node:crypto'
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { DatabaseSync } from 'node:sqlite'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { SidecarResult } from '@maudecode/talaria-web-contracts'
 import { FakeSidecar } from '../sidecar/fake.js'
-import { bootTestServer, type TestServer } from '../test/harness.js'
+import { bootTestServer, type TestServer, openStateDb } from '../test/harness.js'
 import * as atomic from '../fs/atomic.js'
 import { loadRelayConfig, saveRelayConfig, PRESENCE_FENCE_SECONDS, PRESENCE_LEASE_SECONDS, PRESENCE_MAX_LEASES, PresenceLeases, RelayPairingError, RelayPublisher, validatedOrigin, type RelayConfig } from './relay.js'
 
@@ -796,7 +795,7 @@ describe('session-started events from the running server', () => {
       const second = await chat('and again')
       expect(((await json(await s.get('/api/sessions'))).sessions as Json[]).map((row) => row.session_id)).toEqual(expect.arrayContaining([first, second]))
 
-      const db = new DatabaseSync(join(s.state, 'state.db'))
+      const db = openStateDb(join(s.state, 'state.db'))
       db.exec(`CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT NOT NULL, model TEXT, started_at REAL NOT NULL, message_count INTEGER DEFAULT 0, title TEXT, parent_session_id TEXT, ended_at REAL, end_reason TEXT);
         CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT, timestamp REAL NOT NULL)`)
       const startedAt = Date.now() / 1000

@@ -1,8 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { DatabaseSync } from 'node:sqlite'
 import { describe, expect, it } from 'vitest'
-import { bootTestServer } from '../test/harness.js'
+import { bootTestServer, openStateDb } from '../test/harness.js'
 import { hydrateAnchorActivityScenes } from './anchor.js'
 import { messageIdentity, messageText, mergeDisplayMessagesAfterAgentResult, sanitizeMessagesForApi } from './merge.js'
 import { stateDbSessionMessages } from './state-db.js'
@@ -18,7 +17,7 @@ describe('recalled memory display (TAL-888)', () => {
   it('projects SessionDB multimodal backfill identically in terminal, reload and export without changing replay', async () => {
     const s = await bootTestServer()
     const path = join(s.state, 'state.db')
-    const db = new DatabaseSync(path)
+    const db = openStateDb(path)
     try {
       db.exec('CREATE TABLE messages (id INTEGER PRIMARY KEY, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
       db.prepare('INSERT INTO messages VALUES (?, ?, ?, ?, ?)').run(fixture.id, fixture.session_id, fixture.role, fixture.content, fixture.timestamp)

@@ -8,7 +8,7 @@ import { Worker } from 'node:worker_threads'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Session } from './session.js'
 import { SidecarClient } from '../sidecar/client.js'
-import { bootTestServer, type TestServer } from '../test/harness.js'
+import { bootTestServer, type TestServer, openStateDb } from '../test/harness.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import type { StateDbWorkerRequest } from './state-db.js'
 
@@ -19,7 +19,7 @@ describe('request-scoped session gate reads', () => {
   beforeEach(async () => {
     const sidecar = new FakeSidecar()
     server = await bootTestServer({ sidecar })
-    const db = new DatabaseSync(join(server.state, 'state.db'))
+    const db = openStateDb(join(server.state, 'state.db'))
     try {
       db.exec(`CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL, parent_session_id TEXT, ended_at REAL, end_reason TEXT, title TEXT, model TEXT, message_count INTEGER);
         CREATE TABLE messages (id INTEGER PRIMARY KEY, session_id TEXT, role TEXT, content TEXT, timestamp REAL)`)
@@ -66,7 +66,7 @@ describe('request-scoped session gate reads', () => {
     else await service[action]('cli-2', true)
     expect(preliminary.filter((r) => r.op === 'sources')).toHaveLength(1)
     expect(preliminary.filter((r) => r.op === 'rowBatches')).toHaveLength(1)
-    const db = new DatabaseSync(join(server!.state, 'state.db'))
+    const db = openStateDb(join(server!.state, 'state.db'))
     try { db.exec("UPDATE sessions SET source = 'subagent' WHERE id = 'cli-2'") } finally { db.close() }
     await expect(service.archive('cli-2', false)).rejects.toMatchObject({ status: 400 })
   })

@@ -4,11 +4,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { request } from 'node:http'
 import { deflateRawSync } from 'node:zlib'
-import { DatabaseSync } from 'node:sqlite'
 import { afterAll, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
-import { bootTestServer, type SseFrame, type TestServer } from '../test/harness.js'
+import { bootTestServer, type SseFrame, type TestServer, openStateDb } from '../test/harness.js'
 import { completedAtSeconds, jobForApi, jobFieldUpdates } from '../tools/crons.js'
 import { readZip } from '../workspace/unzip.js'
 import { ExtensionService, normalizeLoopbackOrigin, normalizeProxyPath, isSafeRelativePath } from '../tools/extensions.js'
@@ -251,7 +250,7 @@ describe('crons, kanban, extensions, terminal', () => {
 
   it('crons/recent answers each active-profile job\'s latest completion, newest first, with the server outcome and newest cron session', async () => {
     const home = s.deps.profileHome('default')
-    const db = new DatabaseSync(join(home, 'state.db'))
+    const db = openStateDb(join(home, 'state.db'))
     db.exec('CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL, message_count INTEGER)')
     const insert = db.prepare('INSERT INTO sessions (id, source, started_at, message_count) VALUES (?, ?, ?, ?)')
     insert.run('cron_a_1', 'cron', 10, 2)
@@ -335,7 +334,7 @@ describe('crons, kanban, extensions, terminal', () => {
     s.deps.profiles.invalidate()
     expect(s.deps.profileHome('work')).toBe(workHome)
     mkdirSync(workHome, { recursive: true })
-    const db = new DatabaseSync(join(workHome, 'state.db'))
+    const db = openStateDb(join(workHome, 'state.db'))
     db.exec("CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL, message_count REAL); INSERT INTO sessions VALUES ('cron_w_1', 'cron', 1, 3.7)")
     db.close()
     sidecar.respond('cron.list', (params) => ({ jobs: (params.profile_home === workHome ? [{ id: 'w', name: 'Work', last_status: 'ok', last_run_at: 10 }] : [{ id: 'd', name: 'Default', last_status: 'ok', last_run_at: 10 }]).map((job) => ({ profile: null, toast_notifications: true, monitor: '', continuity: false, ...job })) }))

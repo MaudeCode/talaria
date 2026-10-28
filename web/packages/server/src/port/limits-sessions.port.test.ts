@@ -8,7 +8,7 @@ import { deflateRawSync } from 'node:zlib'
 import { DatabaseSync } from 'node:sqlite'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
-import { bootTestServer, type TestServer } from '../test/harness.js'
+import { bootTestServer, type TestServer, openStateDb } from '../test/harness.js'
 import { crc32 } from '../workspace/zip.js'
 import { agentSessionRowsExisting } from '../sessions/state-db.js'
 
@@ -204,7 +204,7 @@ describe('pin cap and hidden snapshots', () => {
 })
 
 function createStateDb(path: string): DatabaseSync {
-  const db = new DatabaseSync(path)
+  const db = openStateDb(path)
   db.exec('PRAGMA journal_mode=WAL')
   db.exec(`CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT NOT NULL, user_id TEXT, model TEXT, started_at REAL NOT NULL, message_count INTEGER DEFAULT 0, title TEXT,
     chat_id TEXT, chat_type TEXT, thread_id TEXT, session_key TEXT, origin_chat_id TEXT, origin_user_id TEXT, platform TEXT, parent_session_id TEXT, ended_at REAL, end_reason TEXT);
@@ -279,7 +279,7 @@ describe('state.db windows and probes', () => {
   })
 
   it('a sidecar that claims CLI but whose state.db row says webui lists as a WebUI session', async () => {
-    const db = new DatabaseSync(dbPath)
+    const db = openStateDb(dbPath)
     insertSession(db, { id: 'stale-json', source: 'webui', started_at: 500, messages: [['user', 501]] })
     db.close()
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)

@@ -1,12 +1,12 @@
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, it, vi } from 'vitest'
-import { bootTestServer } from '../test/harness.js'
+import { bootTestServer, openStateDb } from '../test/harness.js'
 import { Session } from './session.js'
 
 it('derives only the requested turns on first open and older pages of 5,000 rows', async () => {
   const server = await bootTestServer()
-  const db = new DatabaseSync(join(server.state, 'state.db'))
+  const db = openStateDb(join(server.state, 'state.db'))
   try {
     const sid = 'range-large'
     db.exec(`CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT);
@@ -145,7 +145,7 @@ it('extends only appended rows and rebuilds the index after a revision replaceme
 })
 
 it.each([false, true])('uses a keyset tail and falls back for an unidentified duplicate=%s', async (duplicate) => {
-  const server = await bootTestServer(), path = join(server.state, 'state.db'), db = new DatabaseSync(path)
+  const server = await bootTestServer(), path = join(server.state, 'state.db'), db = openStateDb(path)
   try {
     db.exec('CREATE TABLE messages (id INTEGER PRIMARY KEY, session_id TEXT, role TEXT, content TEXT, timestamp REAL); CREATE INDEX idx_messages_session ON messages(session_id)')
     const sid = 'range-db'
@@ -295,7 +295,7 @@ it('keeps a running turn record-only tool row in the compression anchor coordina
 import compactionFixture from '../test/fixtures/compaction-replay.json' with { type: 'json' }
 
 it.each(['compacted', 'twiceCompacted', 'editedThenCompacted', 'editedTwiceCompacted', 'reverted'] as const)('keeps the full-build archive and UID identities through a %s tail read', async (stage) => {
-  const server = await bootTestServer(), path = join(server.state, 'state.db'), db = new DatabaseSync(path)
+  const server = await bootTestServer(), path = join(server.state, 'state.db'), db = openStateDb(path)
   try {
     const sid = compactionFixture.sessionId
     const load = (snapshot: keyof typeof compactionFixture.snapshots) => {
@@ -319,7 +319,7 @@ it.each(['compacted', 'twiceCompacted', 'editedThenCompacted', 'editedTwiceCompa
 })
 
 it('invalidates cached tail summaries on a WAL append without rebuilding the sidecar index', async () => {
-  const server = await bootTestServer(), path = join(server.state, 'state.db'), db = new DatabaseSync(path)
+  const server = await bootTestServer(), path = join(server.state, 'state.db'), db = openStateDb(path)
   try {
     const sid = 'range-wal'
     db.exec('PRAGMA journal_mode=WAL; CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT); CREATE TABLE messages (id INTEGER PRIMARY KEY, session_id TEXT, role TEXT, content TEXT, timestamp REAL); CREATE INDEX idx_messages_session ON messages(session_id)')
@@ -375,7 +375,7 @@ it('preserves stored scenes with duplicate content refs and unsettled todo prece
 })
 
 it.each([false, true])('keeps the legacy timestamp merge with a row-id column=%s', async (rowIds) => {
-  const server = await bootTestServer(), path = join(server.state, 'state.db'), db = new DatabaseSync(path)
+  const server = await bootTestServer(), path = join(server.state, 'state.db'), db = openStateDb(path)
   try {
     const sid = 'range-legacy'
     db.exec(`CREATE TABLE messages (${rowIds ? 'id INTEGER PRIMARY KEY,' : ''} session_id TEXT, role TEXT, content TEXT, timestamp REAL); CREATE INDEX idx_messages_session ON messages(session_id)`)
@@ -445,7 +445,7 @@ it('keeps parent review proof outside a page without enumerating the cached pref
 })
 
 it('keeps one global newest answer across indexed pages, appended state.db tails and saved prefix extension (TAL-1114)', async () => {
-  const server = await bootTestServer(), db = new DatabaseSync(join(server.state, 'state.db'))
+  const server = await bootTestServer(), db = openStateDb(join(server.state, 'state.db'))
   try {
     const sid = 'range-newest-reply'
     db.exec('CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT); CREATE TABLE messages (id INTEGER PRIMARY KEY, session_id TEXT, role TEXT, content TEXT, timestamp REAL); CREATE INDEX idx_messages_session ON messages(session_id)')
