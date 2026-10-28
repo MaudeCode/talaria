@@ -1,0 +1,6 @@
+{
+  "tts.synthesize": [
+    { "params": { "profile_home": "<HERMES_HOME>", "text": "Hello", "provider": "piper", "speed": 1.5 }, "result": { "provider": "piper", "format": "mp3", "audio_b64": "SUQzZmFrZS1tcDM=" } },
+    { "params": { "profile_home": "<HERMES_HOME>", "text": "Hello", "provider": "mycmd" }, "result": { "provider": "mycmd", "format": "wav", "audio_b64": "UklGRmZha2Utd2F2" } }
+  ]
+}

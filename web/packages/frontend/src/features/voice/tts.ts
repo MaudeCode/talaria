@@ -1,7 +1,7 @@
 /**
  * Text-to-speech: an extension engine when one is registered, otherwise the
- * browser's speechSynthesis (the Edge server engine was removed; `POST /api/tts`
- * still serves OpenAI and ElevenLabs to API clients). Engine, voice, rate and pitch are
+ * browser's speechSynthesis. `POST /api/tts` serves the Agent's configured
+ * speech providers to API clients. Engine, voice, rate and pitch are
  * device-local preferences on the legacy localStorage keys (Settings > Speech).
  * What is spoken is the server's `spoken_text` (TAL-906), played as is.
  */

@@ -5044,6 +5044,27 @@
     ],
     "additionalProperties": false
   },
+  "tts.synthesize": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "provider": {
+        "type": "string"
+      },
+      "format": {
+        "type": "string"
+      },
+      "audio_b64": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "provider",
+      "format",
+      "audio_b64"
+    ],
+    "additionalProperties": false
+  },
   "cron.blueprints": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

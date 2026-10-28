@@ -1,0 +1,3 @@
+{
+  "entries": [{ "category": "Added", "summary": "Listen to replies with your Agent's configured speech provider, including local voices.", "highlight": false, "components": ["app", "web"] }]
+}
