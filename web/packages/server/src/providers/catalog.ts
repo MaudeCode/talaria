@@ -1143,6 +1143,7 @@ export class ProviderCatalog {
       || ['pending', 'stale', 'error'].includes(snapshot.metadata_status ?? '') || snapshot.allowance_pending === true
       || plan?.gauges.some((g) => g.resets_at_ms !== null && g.resets_at_ms <= this.deps.now() * 1000) === true
     group.plan_stale = stale
+    if (!stale && snapshot.plan_usage === null && !Object.keys(snapshot.usage_levels ?? {}).length && !snapshot.unavailable_model_ids?.length) return
     for (const entry of group.models) {
       const id = parseProviderQualifiedModel(entry.id)?.[0] ?? entry.id
       const level = snapshot.usage_levels?.[id] ?? (plan?.top_tier_model_ids.includes(id) ? 'top_tier' : null)

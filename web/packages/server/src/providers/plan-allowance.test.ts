@@ -119,4 +119,16 @@ describe('native plan allowance (TAL-1508)', () => {
     } finally { await t.s.close() }
   })
 
+  it('keeps plain labels for a confirmed non-window account after leaving a plan', async () => {
+    const t = await setup()
+    try {
+      await t.s.deps.catalog.models(t.home)
+      t.setSnapshot({ metadata_status: 'current', plan_usage: null, usage_levels: {}, unavailable_model_ids: [], free_tier: false })
+      const g = (await t.s.deps.catalog.models(t.home)).groups.find((g) => g.provider_id === 'nous')!
+      expect(g.plan_usage).toBeNull()
+      expect(g.sections).toBeUndefined()
+      expect(g.models.every((m) => m.allowance === undefined)).toBe(true)
+    } finally { await t.s.close() }
+  })
+
 })
