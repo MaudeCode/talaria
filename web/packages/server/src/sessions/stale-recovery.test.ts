@@ -1,9 +1,8 @@
 /** TAL-536: stale-stream cleanup recovers a dead run's journaled output instead of dropping it. */
 import { join } from 'node:path'
-import { DatabaseSync } from 'node:sqlite'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
-import { bootTestServer, type TestServer } from '../test/harness.js'
+import { bootTestServer, type TestServer, openStateDb } from '../test/harness.js'
 import { messageText, pendingUserRow, stripWorkspacePrefix } from './merge.js'
 import type { Message } from './session.js'
 
@@ -101,7 +100,7 @@ describe('stale-stream cleanup with a run journal', () => {
       session.messages = [...history]
       session.context_messages = [...history]
     })
-    const db = new DatabaseSync(join(s.state, 'state.db'))
+    const db = openStateDb(join(s.state, 'state.db'))
     db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
     db.prepare('INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, 'webui', 1)
     const rows: [string, string, number][] = [['user', 'hi', 1], ['assistant', 'hello', 2], ['user', 'from the CLI', startedAt - 60], ['assistant', 'CLI answer', startedAt - 59], ['user', 'summarize the repo', startedAt + 1], ['assistant', 'Checking the tree.', startedAt + 2], ['tool', 'README.md', startedAt + 3]]
@@ -117,7 +116,7 @@ describe('stale-stream cleanup with a run journal', () => {
 
   /** A state.db holding `rows` for `sid`, as the Agent and other clients committed them. */
   const stateDb = (sid: string, rows: [string, string, number][]): void => {
-    const db = new DatabaseSync(join(s.state, 'state.db'))
+    const db = openStateDb(join(s.state, 'state.db'))
     db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
     db.prepare('INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, 'webui', 1)
     for (const [role, content, ts] of rows) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, role, content, ts)

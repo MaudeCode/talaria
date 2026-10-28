@@ -5,7 +5,7 @@ import { Worker } from 'node:worker_threads'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ContextDetailSchema, SessionEnvelopeSchema, ClarifyPendingEnvelopeSchema, ChatEventSchema, type GatewaySnapshot, type GatewaySessionResult } from '@maudecode/talaria-web-contracts'
 import type { StreamFrame } from '../sidecar/client.js'
-import { bootTestServer, type TestServer } from '../test/harness.js'
+import { bootTestServer, type TestServer, openStateDb } from '../test/harness.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { CANONICAL_READ_ONLY_REASON, type StateDbWorkerRequest } from './state-db.js'
 import { GatewaySessions } from './gateway-sessions.js'
@@ -30,7 +30,7 @@ describe('gateway sidebar cache', () => {
   beforeEach(async () => {
     now = 100
     s = await bootTestServer({ now: () => now, gatewayPollMs: 60_000 })
-    db = new DatabaseSync(join(s.state, 'state.db'))
+    db = openStateDb(join(s.state, 'state.db'))
     db.exec(fixture.schema.join('\n'))
     db.prepare('INSERT INTO sessions (id, source, started_at, message_count, title) VALUES (?, ?, ?, ?, ?)').run(sid, 'cli', 100, 2, 'Shared session')
     for (const role of ['user', 'assistant']) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, role, 'first turn', 101)
@@ -97,7 +97,7 @@ describe('canonical owner attachment', () => {
   beforeEach(async () => {
     sidecar = new FakeSidecar()
     s = await bootTestServer({ sidecar })
-    db = new DatabaseSync(join(s.state, 'state.db'))
+    db = openStateDb(join(s.state, 'state.db'))
     db.exec(fixture.schema.join('\n'))
     for (const sql of fixture.inserts) db.exec(sql)
     await s.deps.settings.save({ show_cli_sessions: true })
@@ -433,7 +433,7 @@ describe('canonical owner attachment', () => {
   it('isolates idle transports and channels by profile/session and reattaches after disconnect', async () => {
     const home = join(s.state, 'profiles', 'work')
     mkdirSync(home, { recursive: true })
-    const other = new DatabaseSync(join(home, 'state.db'))
+    const other = openStateDb(join(home, 'state.db'))
     other.exec(fixture.schema.join('\n'))
     for (const sql of fixture.inserts) other.exec(sql)
     const connections = new Map<string, { send: (frame: Omit<StreamFrame, 'seq'>) => void; stop: () => void; signal: AbortSignal }>()
@@ -961,7 +961,7 @@ describe('canonical owner attachment', () => {
   it('isolates native progress for concurrent calls in separate sessions and profile homes', async () => {
     const otherHome = join(s.state, 'profiles', 'work')
     mkdirSync(otherHome, { recursive: true })
-    const other = new DatabaseSync(join(otherHome, 'state.db'))
+    const other = openStateDb(join(otherHome, 'state.db'))
     other.exec(fixture.schema.join('\n'))
     for (const sql of fixture.inserts) other.exec(sql)
     const watches: Awaited<ReturnType<typeof observeOwner>>[] = []
@@ -1465,7 +1465,7 @@ describe('canonical owner attachment', () => {
   it('uses the selected home for same-id attachments and redacts pending text', async () => {
     const otherPath = join(s.state, 'profiles', 'work', 'state.db')
     mkdirSync(join(otherPath, '..'), { recursive: true })
-    const other = new DatabaseSync(otherPath)
+    const other = openStateDb(otherPath)
     try {
       other.exec(fixture.schema.join('\n'))
       for (const sql of fixture.inserts) other.exec(sql)
@@ -1501,7 +1501,7 @@ describe('canonical owner attachment', () => {
   it('refuses another profile stream even when both homes contain the same session id', async () => {
     const otherPath = join(s.state, 'profiles', 'work', 'state.db')
     mkdirSync(join(otherPath, '..'), { recursive: true })
-    const other = new DatabaseSync(otherPath)
+    const other = openStateDb(otherPath)
     try {
       other.exec(fixture.schema.join('\n'))
       for (const sql of fixture.inserts) other.exec(sql)
@@ -1531,7 +1531,7 @@ describe('diagnostic execution modes (TAL-1040)', () => {
   beforeEach(async () => {
     sidecar = new FakeSidecar()
     s = await bootTestServer({ sidecar })
-    db = new DatabaseSync(join(s.state, 'state.db'))
+    db = openStateDb(join(s.state, 'state.db'))
     db.exec(fixture.schema.join('\n'))
     for (const sql of fixture.inserts) db.exec(sql)
     await s.deps.settings.save({ show_cli_sessions: true })

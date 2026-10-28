@@ -1,9 +1,8 @@
-import { DatabaseSync } from 'node:sqlite'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
-import { bootTestServer, type TestServer } from '../test/harness.js'
+import { bootTestServer, type TestServer, openStateDb } from '../test/harness.js'
 
 let s: TestServer | undefined
 afterEach(async () => { await s?.close(); s = undefined })
@@ -95,7 +94,7 @@ it('opens native session buffers without creating a local session document or wo
     return { supported: true, buffers: [{ name: 'native.txt', size: 6, read_only: true }], write_semantics: 'unconditional', ...(action === 'read' ? { content: 'native', size: 6, read_only: true } : {}) }
   })
   s = await bootTestServer({ sidecar: fake })
-  const db = new DatabaseSync(join(s.state, 'state.db'))
+  const db = openStateDb(join(s.state, 'state.db'))
   try { db.exec(fixture.schema.join('\n')); for (const sql of fixture.inserts) db.exec(sql) } finally { db.close() }
   await s.deps.settings.save({ show_cli_sessions: true })
   const res = await s.get(`/api/list?session_id=${fixture.sessions.cli}&source=managed`)

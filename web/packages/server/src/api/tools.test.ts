@@ -2,11 +2,10 @@ import { updateNotificationOwner } from '../tools/update-notifications.js'
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
-import { DatabaseSync } from 'node:sqlite'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { SidecarError } from '../sidecar/client.js'
 import { FakeSidecar, loadSidecarFixtures } from '../sidecar/fake.js'
-import { bootTestServer, type TestServer } from '../test/harness.js'
+import { bootTestServer, type TestServer, openStateDb } from '../test/harness.js'
 import { sanitizeClientEvent, WindowLimiter } from './tools-router.js'
 import type { SessionInfo } from '../auth/store.js'
 import { gatewayStatus } from '../tools/health.js'
@@ -993,7 +992,7 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
       { session_id: 'imported', created_at: now - 100, updated_at: now - 50, input_tokens: 1, output_tokens: 1, message_count: 1, model: 'm' },
     ])
     const dbPath = join(s.deps.profileHome('default'), 'state.db')
-    const db = new DatabaseSync(dbPath)
+    const db = openStateDb(dbPath)
     db.exec('CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT, model TEXT, message_count INTEGER, input_tokens INTEGER, output_tokens INTEGER, cache_read_tokens INTEGER, estimated_cost_usd REAL, started_at REAL, ended_at REAL)')
     const insert = db.prepare('INSERT INTO sessions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
     insert.run('web', 'webui', 'm', 2, 10, 5, 0, 0.5, now - 100, null)
@@ -1009,7 +1008,7 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     try {
       // Both last-message strategies: one grouped scan without `idx_messages_session`, a per-session lookup with it.
       for (const index of [false, true]) {
-        if (index) { const indexDb = new DatabaseSync(dbPath); indexDb.exec('CREATE INDEX idx_messages_session ON messages(session_id, timestamp)'); indexDb.close() }
+        if (index) { const indexDb = openStateDb(dbPath); indexDb.exec('CREATE INDEX idx_messages_session ON messages(session_id, timestamp)'); indexDb.close() }
         const body = await json(await s.get('/api/insights?days=7'))
         expect(body).toMatchObject({ total_sessions: 6, total_messages: 22, total_input_tokens: 178, total_output_tokens: 87, total_cache_read_tokens: 30, total_cost: 2.5 })
         // The claimed session's later CLI turn on `m2` moves its usage to that model.

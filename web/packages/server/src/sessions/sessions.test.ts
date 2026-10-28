@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SidecarResult } from '@maudecode/talaria-web-contracts'
-import { bootTestServer, type TestServer } from '../test/harness.js'
+import { bootTestServer, type TestServer, openStateDb } from '../test/harness.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
 import { str } from '../util.js'
@@ -368,7 +368,7 @@ describe('session lifecycle over HTTP', () => {
 
     // A cron run lives only in state.db; a branch of it links to it there.
     const cron = 'cron_tal454_run'
-    const db = new DatabaseSync(join(s.state, 'state.db'))
+    const db = openStateDb(join(s.state, 'state.db'))
     db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, title TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
     db.prepare('INSERT INTO sessions (id, source, title, started_at) VALUES (?, ?, ?, ?)').run(cron, 'cron', 'Nightly report', 100)
     db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(cron, 'assistant', 'All green.', 101)
@@ -378,7 +378,7 @@ describe('session lifecycle over HTTP', () => {
     const cronBranchId = (await json(cronBranch)).session_id
     expect((await detail(cronBranchId)).branched_from).toEqual({ session_id: cron, title: 'Nightly report' })
     // Once its transcript rows are gone the run no longer opens, so the branch links nowhere.
-    const pruned = new DatabaseSync(join(s.state, 'state.db'))
+    const pruned = openStateDb(join(s.state, 'state.db'))
     pruned.prepare('DELETE FROM messages WHERE session_id = ?').run(cron)
     pruned.close()
     expect((await detail(cronBranchId)).branched_from).toBeNull()
@@ -1010,7 +1010,7 @@ describe('a truncate that discards more than one user turn waits for confirmatio
   beforeAll(async () => {
     s = await bootTestServer()
     // The Agent's state.db, as every profile it has run in has one.
-    const db = new DatabaseSync(join(s.state, 'state.db'))
+    const db = openStateDb(join(s.state, 'state.db'))
     db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
     db.close()
   })
@@ -1080,7 +1080,7 @@ describe('a truncate that discards more than one user turn waits for confirmatio
     const sid = String((await newSession(s)).session_id)
     const rows: [string, string, number][] = [['user', 'u1', 100], ['assistant', 'a1', 101], ['user', 'u2', 102], ['assistant', 'a2', 103], ['user', 'u3', 104], ['assistant', 'a3', 105]]
     await writeMessages(s, sid, rows.slice(0, 2).map(([role, content, timestamp]) => ({ role, content, timestamp })))
-    const db = new DatabaseSync(join(s.state, 'state.db'))
+    const db = openStateDb(join(s.state, 'state.db'))
     db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
     db.prepare('INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, 'cli', 100)
     for (const [role, content, ts] of rows) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, role, content, ts)
@@ -1098,11 +1098,11 @@ describe('a truncate that discards more than one user turn waits for confirmatio
     await writeMessages(s, sid, rows.slice(0, 2).map(([role, content, timestamp]) => ({ role, content, timestamp })))
     const dbPath = join(s.state, 'state.db')
     const insert = (role: string, content: string, ts: number): void => {
-      const db = new DatabaseSync(dbPath)
+      const db = openStateDb(dbPath)
       db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, role, content, ts)
       db.close()
     }
-    const db = new DatabaseSync(dbPath)
+    const db = openStateDb(dbPath)
     db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
     db.prepare('INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, 'cli', 100)
     db.close()
@@ -1129,7 +1129,7 @@ describe('a truncate that discards more than one user turn waits for confirmatio
       stored.context_messages = local.map((m) => ({ ...m }))
       await s.deps.sessionStore.save(stored)
     }
-    const db = new DatabaseSync(join(s.state, 'state.db'))
+    const db = openStateDb(join(s.state, 'state.db'))
     db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
     db.prepare('INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, 'cli', 100)
     for (const [role, content, ts] of rows) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, role, content, ts)
@@ -1176,7 +1176,7 @@ describe('truncation keeps deleted state.db turns deleted (TAL-504)', () => {
     const sid = String((await newSession(s)).session_id)
     const rows: [string, string, number][] = [['user', 'u1', 100], ['assistant', 'a1', 101], ['user', 'u2', 102], ['assistant', 'a2', 103], ['user', 'u3', 104], ['assistant', 'a3', 105]]
     await writeMessages(s, sid, rows.map(([role, content, timestamp]) => ({ role, content, timestamp })))
-    const db = new DatabaseSync(join(s.state, 'state.db'))
+    const db = openStateDb(join(s.state, 'state.db'))
     db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
     db.prepare('INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, 'cli', 100)
     for (const [role, content, ts] of rows) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, role, content, ts)
@@ -1192,7 +1192,7 @@ describe('truncation keeps deleted state.db turns deleted (TAL-504)', () => {
     await writeMessages(s, sid, [{ role: 'user', content: 'u1', timestamp: 100 }, { role: 'assistant', content: 'a1', timestamp: 101 }, { role: 'user', content: 'u2', timestamp: 102 }])
     expect((await post(s, '/api/session/truncate', { session_id: sid, keep_count: 2 })).status).toBe(200)
     const copy = String(((await json(await post(s, '/api/session/duplicate', { session_id: sid }))).session as Json).session_id)
-    const db = new DatabaseSync(join(s.state, 'state.db'))
+    const db = openStateDb(join(s.state, 'state.db'))
     db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
     db.prepare('INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(copy, 'cli', 100)
     for (const [role, content, ts] of [['user', 'u1', 100], ['assistant', 'a1', 101], ['user', 'from the CLI', 200], ['assistant', 'CLI answer', 201]] as const) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(copy, role, content, ts)
@@ -1215,14 +1215,14 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
   const rows = (list: Row[]): Json[] => list.map(([role, content, timestamp]) => ({ role, content, timestamp }))
   /** Commits rows to the Agent's state.db for `sid`, as a CLI or gateway writer would. */
   function commit(sid: string, list: Row[]): void {
-    const db = new DatabaseSync(join(s.state, 'state.db'))
+    const db = openStateDb(join(s.state, 'state.db'))
     db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL, reasoning TEXT)')
     db.prepare('INSERT OR IGNORE INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, 'cli', 100)
     for (const [role, content, ts, reasoning] of list) db.prepare('INSERT INTO messages (session_id, role, content, timestamp, reasoning) VALUES (?, ?, ?, ?, ?)').run(sid, role, content, ts, reasoning ?? null)
     db.close()
   }
   function maxId(sid: string): number {
-    const db = new DatabaseSync(join(s.state, 'state.db'))
+    const db = openStateDb(join(s.state, 'state.db'))
     try { return (db.prepare('SELECT MAX(id) AS id FROM messages WHERE session_id = ?').get(sid) as { id: number }).id } finally { db.close() }
   }
   async function served(sid: string): Promise<unknown[]> {
@@ -1242,7 +1242,7 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     const fresh = await bootTestServer({ sidecar, now: () => 1000 })
     const sid = String((await newSession(fresh)).session_id)
     const path = join(fresh.state, 'state.db')
-    const db = new DatabaseSync(path)
+    const db = openStateDb(path)
     try {
       db.exec('CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
       sidecar.respond('chat.start', (params) => {
@@ -1253,7 +1253,7 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
           insert.run(sid, 'user', 'continue', 202)
           insert.run(sid, 'user', 'Unrelated CLI work', 203)
         } else {
-          const replacement = new DatabaseSync(`${path}.new`)
+          const replacement = openStateDb(`${path}.new`)
           try {
             replacement.exec('CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
             replacement.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, 'user', 'Unrelated CLI work', 1200)
@@ -1452,7 +1452,7 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
    * `compacted = 0`) and re-insert each as a copy that keeps its role, timestamp and tool call.
    */
   function compactInPlace(sid: string, rewrite: (content: string) => string): void {
-    const db = new DatabaseSync(join(s.state, 'state.db'))
+    const db = openStateDb(join(s.state, 'state.db'))
     try {
       ensureAgentColumns(db)
       const live = db.prepare('SELECT role, content, timestamp, tool_call_id FROM messages WHERE session_id = ? AND (active IS NULL OR active != 0) ORDER BY id').all(sid) as { role: string; content: string; timestamp: number; tool_call_id: string | null }[]
@@ -1463,7 +1463,7 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
 
   it('an in-place compaction during a turn adds no rows to the transcript (TAL-709)', async () => {
     const sid = await seeded([['user', 'u1', 100], ['assistant', 'a1 bulky tool output', 101], ['user', 'u2', 102], ['assistant', 'a2', 103]])
-    const db = new DatabaseSync(join(s.state, 'state.db'))
+    const db = openStateDb(join(s.state, 'state.db'))
     try {
       ensureAgentColumns(db)
       db.prepare('INSERT INTO messages (session_id, role, content, timestamp, tool_call_id) VALUES (?, ?, ?, ?, ?)').run(sid, 'tool', 'bulky tool result', 150, 'call_1')
@@ -1498,7 +1498,7 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     await turn(sid, 'second')
     expect(await served(sid)).toContain('typo')
     // The CLI rewinds the row (`active = 0, compacted = 0`) and re-inserts the edited text under the same timestamp.
-    const db = new DatabaseSync(join(s.state, 'state.db'))
+    const db = openStateDb(join(s.state, 'state.db'))
     try {
       ensureAgentColumns(db)
       db.prepare("UPDATE messages SET active = 0, compacted = 0 WHERE session_id = ? AND content = 'typo'").run(sid)
@@ -1700,7 +1700,7 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
   /** TAL-921: commits Agent rows that carry tool calls, tool results, or a steer's display kind to state.db for `sid`. */
   function commitAgentRows(sid: string, list: Json[]): void {
     commit(sid, [])
-    const db = new DatabaseSync(join(s.state, 'state.db'))
+    const db = openStateDb(join(s.state, 'state.db'))
     try {
       const cols = new Set((db.prepare('PRAGMA table_info(messages)').all() as { name: string }[]).map((c) => c.name))
       for (const col of ['tool_calls', 'tool_call_id', 'display_kind']) if (!cols.has(col)) db.exec(`ALTER TABLE messages ADD COLUMN ${col} TEXT`)
@@ -1854,7 +1854,7 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
       await writeMessages(fresh, sid, rows(FOUR))
       const path = join(fresh.state, 'state.db')
       const insert = (session: string, list: Row[]): void => {
-        const db = new DatabaseSync(path)
+        const db = openStateDb(path)
         db.exec('CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
         for (const [role, content, ts] of list) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(session, role, content, ts)
         db.close()
@@ -1881,7 +1881,7 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
       await writeMessages(fresh, sid, rows(FOUR))
       const path = join(fresh.state, 'state.db')
       const build = (target: string, list: Row[]): void => {
-        const db = new DatabaseSync(target)
+        const db = openStateDb(target)
         db.exec('CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
         for (const [role, content, ts] of list) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, role, content, ts)
         db.close()
@@ -1905,7 +1905,7 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
       const sid = String(((await json(await post(legacy, '/api/session/new', {}))).session as Json).session_id)
       await writeMessages(legacy, sid, rows(FOUR))
       const insert = (list: Row[]): void => {
-        const db = new DatabaseSync(join(legacy.state, 'state.db'))
+        const db = openStateDb(join(legacy.state, 'state.db'))
         db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
         for (const [role, content, ts] of list) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, role, content, ts)
         db.close()
@@ -1930,7 +1930,7 @@ describe('a compressed Web session follows its state.db lineage (TAL-529)', () =
 
   /** Runs SQL against the profile's state.db with the Agent's lineage columns. */
   function db<T>(fn: (conn: DatabaseSync) => T): T {
-    const conn = new DatabaseSync(join(s.state, 'state.db'))
+    const conn = openStateDb(join(s.state, 'state.db'))
     try {
       conn.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL, parent_session_id TEXT, ended_at REAL, end_reason TEXT); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
       return fn(conn)
@@ -2021,7 +2021,7 @@ describe('session detail marks background wakeups as updates (TAL-371)', () => {
     const session = (await s.deps.sessionStore.get(sid))
     session.messages = [{ role: 'user', content: 'dispatch', timestamp: 1000 }, { role: 'assistant', content: 'Dispatched.', timestamp: 1001 }]
     await s.deps.sessionStore.save(session)
-    const db = new DatabaseSync(join(s.state, 'state.db'))
+    const db = openStateDb(join(s.state, 'state.db'))
     db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL, display_kind TEXT, display_metadata TEXT)')
     db.prepare('INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, 'webui', 1000)
     db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, 'user', 'dispatch', 1000)
@@ -2053,7 +2053,7 @@ describe('session detail classifies the rows the Agent types for display (TAL-81
   const servedRows = async (query = ''): Promise<Json[]> => {
     const sid = String((await newSession(s)).session_id)
     await writeMessages(s, sid, [])
-    const db = new DatabaseSync(join(s.state, 'state.db'))
+    const db = openStateDb(join(s.state, 'state.db'))
     db.exec(['DROP TABLE IF EXISTS messages; DROP TABLE IF EXISTS system_prompts; DROP TABLE IF EXISTS sessions;', ...typedRows.schema, ...typedRows.inserts].join('\n').replaceAll(`'${typedRows.sessionId}'`, `'${sid}'`))
     db.close()
     return ((await json(await s.get(`/api/session?session_id=${sid}&messages=1${query}`))).session as Json).messages as Json[]
@@ -2105,7 +2105,7 @@ describe('session detail shows mirrored deliveries in a messaging session as del
   const cron = '[Cron delivery: Morning Brief]\nRain until noon.\n\n- Standup at 9'
   /** A state.db `source` session holding `rows` as the gateway and its mirror wrote them. */
   const seed = (sid: string, source: string, rows: [string, string][]): void => {
-    const db = new DatabaseSync(join(s.state, 'state.db'))
+    const db = openStateDb(join(s.state, 'state.db'))
     db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
     db.prepare('INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, source, 1000)
     rows.forEach(([role, content], i) => db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, role, content, 1000 + i))
@@ -2185,7 +2185,7 @@ describe('assistant display normalization on every read (TAL-302)', () => {
     const sid = String((await newSession(s)).session_id)
     await writeMessages(s, sid, stored)
     s.deps.sessionStore.sessions.delete(sid)
-    const db = new DatabaseSync(join(s.state, 'state.db'))
+    const db = openStateDb(join(s.state, 'state.db'))
     db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
     db.prepare('INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, 'webui', 1000)
     db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, 'user', 'from cli', 3000)
@@ -2236,7 +2236,7 @@ describe('session detail stamps compaction markers (TAL-305)', () => {
     session.messages = [{ role: 'user', content: 'start', timestamp: 1000 }, { role: 'assistant', content: 'Started.', timestamp: 1001 }]
     await s.deps.sessionStore.save(session)
     s.deps.sessionStore.sessions.delete(sid)
-    const db = new DatabaseSync(join(s.state, 'state.db'))
+    const db = openStateDb(join(s.state, 'state.db'))
     db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
     db.prepare('INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, 'cli', 1000)
     const rows: [string, string, number][] = [
@@ -2449,7 +2449,7 @@ describe('session detail transcript cursor (TAL-316)', () => {
     const startedAt = Number(start.pending_started_at)
     await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'token' && (f.data as Json).text === 'Done')
     // The Agent has already written the prompt, the first prose segment and the tool round to state.db.
-    const db = new DatabaseSync(join(s.state, 'state.db'))
+    const db = openStateDb(join(s.state, 'state.db'))
     db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL, tool_calls TEXT, tool_call_id TEXT, tool_name TEXT, reasoning TEXT)')
     db.prepare('INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, 'webui', 1000)
     const call = JSON.stringify([{ id: 't1', type: 'function', function: { name: 'read_file', arguments: '{}' } }])
@@ -2636,7 +2636,7 @@ describe('session detail keeps the running turn\'s prompt (TAL-368)', () => {
 
   it('keeps the Agent\'s state.db prompt once, stamped as the running turn with its attachments', async () => {
     const { sid, streamId, startedAt, release } = await heldTurn('from state db', history, [{ name: 'plan.md', path: '/tmp/plan.md', mime: 'text/markdown' }])
-    const db = new DatabaseSync(join(s.state, 'state.db'))
+    const db = openStateDb(join(s.state, 'state.db'))
     db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL, tool_calls TEXT, tool_call_id TEXT, tool_name TEXT)')
     db.prepare('INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, 'webui', 1000)
     for (const [role, content, ts] of [['user', 'continue', 1000], ['assistant', 'earlier reply', 1001], ['user', '[Workspace::v1: /tmp/ws]\nfrom state db', startedAt + 0.5]] as const) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, role, content, ts)
@@ -2659,7 +2659,7 @@ describe('session detail keeps the running turn\'s prompt (TAL-368)', () => {
 
   it('keeps the prompt in a limited window of a long running turn without a journal', async () => {
     const { sid, streamId, startedAt, release } = await heldTurn('long degraded run', history)
-    const db = new DatabaseSync(join(s.state, 'state.db'))
+    const db = openStateDb(join(s.state, 'state.db'))
     db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL, tool_calls TEXT, tool_call_id TEXT, tool_name TEXT)')
     db.prepare('INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, 'webui', 1000)
     for (const [role, content, ts] of [['user', 'continue', 1000], ['assistant', 'earlier reply', 1001], ['user', 'long degraded run', startedAt + 0.1], ['assistant', 'step one', startedAt + 1], ['assistant', 'step two', startedAt + 2], ['assistant', 'step three', startedAt + 3]] as const) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, role, content, ts)

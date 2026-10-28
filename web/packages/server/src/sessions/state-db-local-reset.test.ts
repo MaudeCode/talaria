@@ -6,7 +6,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import fixture from '../test/fixtures/local-reset.json' with { type: 'json' }
 import { readImportableAgentSessionRowBatches, readImportableAgentSessionRows, stateDbCompressionLineage, stateDbLineageReport, stateDbLocalTarget, stateDbSessionMessages, stateDbSessionRead } from './state-db.js'
-import { bootTestServer } from '../test/harness.js'
+import { bootTestServer, openStateDb } from '../test/harness.js'
 import { Session } from './session.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 
@@ -26,7 +26,7 @@ describe('Agent v0.22.1 receipt-backed local reset', () => {
   }
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'local-reset-')); path = join(dir, 'state.db')
-    db = new DatabaseSync(path)
+    db = openStateDb(path)
     load('reset')
   })
   afterEach(() => { db.close(); rmSync(dir, { recursive: true, force: true }) })
@@ -92,7 +92,7 @@ describe('Agent v0.22.1 receipt-backed local reset', () => {
     const sidecar = new FakeSidecar()
     const server = await bootTestServer({ sidecar })
     onTestFinished(async () => { await server.close() })
-    db.close(); path = join(server.state, 'state.db'); db = new DatabaseSync(path); load('compressed')
+    db.close(); path = join(server.state, 'state.db'); db = openStateDb(path); load('compressed')
     const stage = fixture.snapshots.compressed
     expect(stateDbSessionMessages(path, fixture.owner).map((m) => m.content)).toEqual(stage.displayContents)
     expect(stateDbSessionMessages(path, fixture.owner, { stitch: false }).map((m) => m.content)).toEqual(stage.modelContents)
@@ -147,7 +147,7 @@ describe('Agent v0.22.1 receipt-backed local reset', () => {
   it.each(['reset', 'empty', 'multiple'] as const)('serves %s once through list, count, search, detail and reopen', async (stage) => {
     const server = await bootTestServer()
     onTestFinished(async () => { await server.close() })
-    db.close(); path = join(server.state, 'state.db'); db = new DatabaseSync(path); load(stage)
+    db.close(); path = join(server.state, 'state.db'); db = openStateDb(path); load(stage)
     await server.deps.settings.save({ show_cli_sessions: true })
     server.deps.cliSessions.invalidate()
     await server.deps.sessionStore.save(new Session({ session_id: fixture.owner, profile: 'default', source_tag: 'cli', messages: [{ role: 'user', content: 'stale sidecar context' }, { role: 'assistant', content: 'old reply' }, { role: 'user', content: 'another old turn' }] }, (await server.deps.sessionStore.deps.defaults('default'))))
@@ -173,7 +173,7 @@ describe('Agent v0.22.1 receipt-backed local reset', () => {
     const sidecar = new FakeSidecar()
     const server = await bootTestServer({ sidecar })
     onTestFinished(async () => { await server.close() })
-    db.close(); path = join(server.state, 'state.db'); db = new DatabaseSync(path); load('multiple')
+    db.close(); path = join(server.state, 'state.db'); db = openStateDb(path); load('multiple')
     if (persisted) (await server.deps.sessionStore.save(new Session({ session_id: fixture.owner, profile: 'default', source_tag: 'cli', messages: [{ role: 'user', content: 'stale sidecar context' }, { role: 'assistant', content: 'old reply' }, { role: 'user', content: 'another old turn' }] }, (await server.deps.sessionStore.deps.defaults('default')))))
     const before = db.prepare('SELECT * FROM messages').all()
     for (const row of fixture.snapshots.multiple.sessions) {
@@ -188,7 +188,7 @@ describe('Agent v0.22.1 receipt-backed local reset', () => {
   it('collapses all persisted receipt members while keeping the current sidecar metadata', async () => {
     const server = await bootTestServer()
     onTestFinished(async () => { await server.close() })
-    db.close(); path = join(server.state, 'state.db'); db = new DatabaseSync(path); load('multiple')
+    db.close(); path = join(server.state, 'state.db'); db = openStateDb(path); load('multiple')
     await server.deps.settings.save({ show_cli_sessions: true })
     for (const row of [...fixture.snapshots.multiple.sessions].reverse()) {
       const current = row.id === 'reset-empty'
@@ -208,7 +208,7 @@ describe('Agent v0.22.1 receipt-backed local reset', () => {
     const sidecar = new FakeSidecar()
     const server = await bootTestServer({ sidecar })
     onTestFinished(async () => { await server.close() })
-    db.close(); path = join(server.state, 'state.db'); db = new DatabaseSync(path); load('multiple')
+    db.close(); path = join(server.state, 'state.db'); db = openStateDb(path); load('multiple')
     const ids = fixture.snapshots.multiple.sessions.map((row) => row.id)
     const save = async (id: string) => { (await server.deps.sessionStore.save(new Session({ session_id: id, profile: 'default', source_tag: 'cli', messages: [{ role: 'user', content: 'first old turn' }, { role: 'assistant', content: 'old answer' }, { role: 'user', content: 'second old turn' }] }, (await server.deps.sessionStore.deps.defaults('default'))))) }
     for (const id of persisted === 'all' ? ids : [fixture.owner]) (await save(id))
@@ -227,7 +227,7 @@ describe('Agent v0.22.1 receipt-backed local reset', () => {
   it.each([false, true])('preserves saved UI metadata in the read-only tip outside sidebar=%s', async (outside) => {
     const server = await bootTestServer()
     onTestFinished(async () => { await server.close() })
-    db.close(); path = join(server.state, 'state.db'); db = new DatabaseSync(path); load('multiple')
+    db.close(); path = join(server.state, 'state.db'); db = openStateDb(path); load('multiple')
     if (outside) for (let i = 0; i < 25; i += 1) {
       const id = `recent-${i}`
       db.prepare('INSERT INTO sessions (id, source, title, started_at, message_count) VALUES (?, ?, ?, ?, ?)').run(id, 'cli', id, 3_000_000_000 + i, 1)
@@ -254,7 +254,7 @@ describe('Agent v0.22.1 receipt-backed local reset', () => {
   it('refuses a canonical alias mutation before waiting on its lock or evicting its runtime', async () => {
     const server = await bootTestServer({ sidecar: new FakeSidecar() })
     onTestFinished(async () => { await server.close() })
-    db.close(); path = join(server.state, 'state.db'); db = new DatabaseSync(path); load('multiple')
+    db.close(); path = join(server.state, 'state.db'); db = openStateDb(path); load('multiple')
     const workspace = join(server.state, 'workspace', 'updated-workspace'); mkdirSync(workspace)
     let release!: () => void
     const gate = new Promise<void>((resolve) => { release = resolve })
@@ -275,7 +275,7 @@ describe('Agent v0.22.1 receipt-backed local reset', () => {
   it('keeps the profile guard when an alias resolves to a sidecar owned by another profile', async () => {
     const server = await bootTestServer({ sidecar: new FakeSidecar() })
     onTestFinished(async () => { await server.close() })
-    db.close(); path = join(server.state, 'state.db'); db = new DatabaseSync(path); load('multiple')
+    db.close(); path = join(server.state, 'state.db'); db = openStateDb(path); load('multiple')
     for (const [id, profile] of [[fixture.owner, 'default'], ['reset-empty', 'other']] as const) {
       await server.deps.sessionStore.save(new Session({ session_id: id, profile, source_tag: 'cli', title: profile, messages: [{ role: 'user', content: 'synthetic profile history' }] }, (await server.deps.sessionStore.deps.defaults(profile))))
     }
@@ -288,7 +288,7 @@ describe('Agent v0.22.1 receipt-backed local reset', () => {
   it('reconciles saved aliases outside the CLI window before list and search', async () => {
     const server = await bootTestServer()
     onTestFinished(async () => { await server.close() })
-    db.close(); path = join(server.state, 'state.db'); db = new DatabaseSync(path); load('multiple')
+    db.close(); path = join(server.state, 'state.db'); db = openStateDb(path); load('multiple')
     for (let i = 0; i < 25; i += 1) {
       const id = `recent-${i}`
       db.prepare('INSERT INTO sessions (id, source, title, started_at, message_count) VALUES (?, ?, ?, ?, ?)').run(id, 'cli', id, 5000 + i, 1)

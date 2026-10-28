@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { connect } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { createApp } from '../app.js'
 import type { Env } from '../config.js'
 import type { AppDeps } from '../http/context.js'
@@ -11,6 +12,9 @@ import { startServer, type RunningServer } from '../server.js'
 import type { SidecarLike } from '../sidecar/client.js'
 
 export const WEB_ROOT = resolve(import.meta.dirname, '../../../..')
+
+/** A test's own handle on an Agent state.db. A booted server's state.db worker reads the same file, so writes wait out its lock instead of failing with "database is locked". */
+export function openStateDb(path: string): DatabaseSync { return new DatabaseSync(path, { timeout: 5000 }) }
 
 export interface TestServer {
   deps: AppDeps

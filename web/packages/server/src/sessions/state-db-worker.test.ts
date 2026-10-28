@@ -2,10 +2,9 @@ import { sessionDirectory } from '../test/storage.js'
 import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { DatabaseSync } from 'node:sqlite'
 import { Worker } from 'node:worker_threads'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { bootTestServer, type TestServer } from '../test/harness.js'
+import { bootTestServer, type TestServer, openStateDb } from '../test/harness.js'
 import type { SidecarResult } from '@maudecode/talaria-web-contracts'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { str } from '../util.js'
@@ -41,7 +40,7 @@ const ALL_SOURCES = '/api/sessions?show_cli_sessions=1&show_claude_code_sessions
 
 function seedStateDb(path: string, ids: { id: string; source: string; at: number }[]): void {
   mkdirSync(join(path, '..'), { recursive: true })
-  const db = new DatabaseSync(path)
+  const db = openStateDb(path)
   db.exec(`CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT NOT NULL, user_id TEXT, model TEXT, started_at REAL NOT NULL, message_count INTEGER DEFAULT 0, title TEXT,
     chat_id TEXT, chat_type TEXT, thread_id TEXT, session_key TEXT, origin_chat_id TEXT, origin_user_id TEXT, platform TEXT, parent_session_id TEXT, ended_at REAL, end_reason TEXT);
     CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT, timestamp REAL NOT NULL);
@@ -245,7 +244,7 @@ describe('admission authority queue isolation (TAL-1437)', () => {
     try {
       expect(await s.deps.sessions.isSubagentViewOnly(sid)).toBe(source === 'subagent')
       expect(sidebar).not.toHaveBeenCalled()
-      const db = new DatabaseSync(dbPath)
+      const db = openStateDb(dbPath)
       try { db.prepare('UPDATE sessions SET source = ? WHERE id = ?').run(source === 'subagent' ? 'cli' : 'subagent', sid) } finally { db.close() }
       expect(await s.deps.sessions.isSubagentViewOnly(sid)).toBe(source !== 'subagent')
     } finally { sidebar.mockRestore() }
@@ -316,7 +315,7 @@ describe('sidebar probe lane isolation (TAL-1189)', () => {
     s = await bootTestServer()
     dbPath = join(s.state, 'state.db')
     seedStateDb(dbPath, [{ id: 'sidebar-cli', source: 'cli', at: 1000 }, { id: 'cron_job1_1', source: 'cron', at: 1010 }])
-    const db = new DatabaseSync(dbPath)
+    const db = openStateDb(dbPath)
     try { db.exec("UPDATE sessions SET title = NULL WHERE source = 'cron'") } finally { db.close() }
     await s.deps.sessionStore.save(new Session({ session_id: 'sidebar-cli', title: 'Imported', source_tag: 'cli', raw_source: 'cli', read_only: true, messages: [{ role: 'user', content: 'hi', timestamp: 1 }] }, { workspace: s.state, model: null }))
   })
@@ -457,7 +456,7 @@ describe('session list state.db reads off the event loop (TAL-920)', () => {
     const path = join(server.state, 'state.db')
     seedStateDb(path, [{ id: 'cli-probe', source: 'cli', at: server.deps.nowSeconds() }, { id: 'cron_job1_1', source: 'cron', at: 1020 }])
     if (surface === 'handoff') {
-      const db = new DatabaseSync(path)
+      const db = openStateDb(path)
       db.exec("WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM n WHERE x < 20) INSERT INTO messages (session_id, role, content, timestamp) SELECT 'handoff-probe', CASE WHEN x % 2 = 1 THEN 'user' ELSE 'assistant' END, 'synthetic', 1000 + x FROM n")
       db.close()
       await server.deps.sessionStore.save(new Session({ session_id: 'handoff-probe', messages: [] }, { workspace: server.state, model: null }))
@@ -494,7 +493,7 @@ describe('session list state.db reads off the event loop (TAL-920)', () => {
     const server = await bootTestServer()
     const path = join(server.state, 'state.db')
     seedStateDb(path, [{ id: 'cron-parent', source: 'cron', at: 1000 }])
-    const db = new DatabaseSync(path)
+    const db = openStateDb(path)
     db.exec("WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM n WHERE x < 9998) INSERT INTO messages (session_id, role, content, timestamp) SELECT 'cron-parent', 'user', 'synthetic', x + 1002 FROM n")
     db.close()
     await server.deps.sessionStore.save(new Session({ session_id: 'fork-probe', session_source: 'fork', parent_session_id: 'cron-parent', messages: [{ role: 'user', content: 'fork', timestamp: 1 }] }, { workspace: server.state, model: null }))
@@ -569,7 +568,7 @@ describe('session list state.db reads off the event loop (TAL-920)', () => {
     // A sessions table without the columns the listing selects fails the query in the worker, which keeps serving.
     const broken = join(s.state, 'broken')
     mkdirSync(broken, { recursive: true })
-    const db = new DatabaseSync(join(broken, 'state.db'))
+    const db = openStateDb(join(broken, 'state.db'))
     db.exec("CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT); INSERT INTO sessions VALUES ('x', 'cli')")
     db.close()
     const brokenLogs: string[] = []
@@ -674,7 +673,7 @@ describe('single-session state.db lookups off the event loop (TAL-923)', () => {
     }
     // The targeted row is the one the sidebar lists, Web-born state.db rows included.
     seedStateDb(dbPath, [{ id: 'cron_job9_1', source: 'cron', at: 1030 }, { id: 'chain-root', source: 'cli', at: 1040 }, { id: 'chain-tip', source: 'cli', at: 1050 }])
-    const db = new DatabaseSync(dbPath)
+    const db = openStateDb(dbPath)
     db.exec("UPDATE sessions SET end_reason = 'compression', ended_at = 1050 WHERE id = 'chain-root'; UPDATE sessions SET parent_session_id = 'chain-root' WHERE id = 'chain-tip'")
     db.close()
     s.deps.cliSessions.invalidate()
@@ -691,7 +690,7 @@ describe('single-session state.db lookups off the event loop (TAL-923)', () => {
   it('follows only compression continuations when it reads a chain, however many other children hang off it', async () => {
     const forks = Array.from({ length: 1000 }, (_, i) => ({ id: `fan-fork-${String(i)}`, source: 'telegram', at: 3000 + i }))
     seedStateDb(dbPath, [{ id: 'fan-tip1', source: 'cli', at: 2000 }, { id: 'fan-tip2', source: 'cli', at: 2100 }, { id: 'fan-tip3', source: 'cli', at: 2200 }, ...forks])
-    const db = new DatabaseSync(dbPath)
+    const db = openStateDb(dbPath)
     db.exec(`UPDATE sessions SET end_reason = 'compression', ended_at = 2100 WHERE id = 'fan-tip1';
       UPDATE sessions SET parent_session_id = 'fan-tip1', end_reason = 'compression', ended_at = 2200 WHERE id = 'fan-tip2';
       UPDATE sessions SET parent_session_id = 'fan-tip2' WHERE id = 'fan-tip3';
@@ -721,12 +720,12 @@ describe('transcript state.db reads off the event loop (TAL-1162)', () => {
   })
   /** Rows a CLI or the turn's Agent commits to state.db for `sid`. */
   const commit = (sid: string, rows: [string, string, number][]): void => {
-    const db = new DatabaseSync(dbPath)
+    const db = openStateDb(dbPath)
     for (const [role, content, ts] of rows) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, role, content, ts)
     db.close()
   }
   const maxId = (sid: string): number => {
-    const db = new DatabaseSync(dbPath)
+    const db = openStateDb(dbPath)
     try { return (db.prepare('SELECT MAX(id) AS id FROM messages WHERE session_id = ?').get(sid) as { id: number }).id } finally { db.close() }
   }
   /** A WebUI session whose state.db holds its two rows and a CLI row the transcript has not seen yet. */

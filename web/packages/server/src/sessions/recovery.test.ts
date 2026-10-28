@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, utimesSync, w
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { bootTestServer, type TestServer } from '../test/harness.js'
+import { bootTestServer, type TestServer, openStateDb } from '../test/harness.js'
 
 type Json = Record<string, unknown>
 const post = (s: TestServer, path: string, body: unknown, headers: Record<string, string> = {}): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json', ...headers } })
@@ -54,7 +54,7 @@ function legacy(name: string): void {
 
 /** `sessions` with only an id column (the Python audit fixtures). */
 function idOnlyDb(...ids: string[]): void {
-  const db = new DatabaseSync(dbPath())
+  const db = openStateDb(dbPath())
   db.exec('CREATE TABLE sessions (id TEXT PRIMARY KEY)')
   for (const id of ids) db.prepare('INSERT INTO sessions (id) VALUES (?)').run(id)
   db.close()
@@ -63,7 +63,7 @@ function idOnlyDb(...ids: string[]): void {
 interface Row { id: string; source?: string; messages?: number; worktree?: boolean }
 /** Python `_make_state_db`: WebUI rows with a title, model, parent, and `messages` transcript rows. */
 function stateDb(...rows: Row[]): void {
-  const db = new DatabaseSync(dbPath())
+  const db = openStateDb(dbPath())
   db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, title TEXT, model TEXT, started_at REAL, message_count INTEGER, parent_session_id TEXT, workspace TEXT, worktree_path TEXT, worktree_branch TEXT, worktree_repo_root TEXT, worktree_created_at REAL)')
   db.exec('CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
   for (const row of rows) {

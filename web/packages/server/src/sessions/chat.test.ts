@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
-import { bootTestServer, type SseFrame, type TestServer } from '../test/harness.js'
+import { bootTestServer, type SseFrame, type TestServer, openStateDb } from '../test/harness.js'
 import type { SidecarResult } from '@maudecode/talaria-web-contracts'
 import { str } from '../util.js'
 import { sanitizeMessagesForApi } from './merge.js'
@@ -3079,8 +3079,7 @@ describe('chat turns through the sidecar', () => {
     session.context_messages = [{ role: 'user', content: 'from web', timestamp: 5000 }, { role: 'assistant', content: 'web reply', timestamp: 5001 }]
     await s.deps.sessionStore.save(session)
     // A CLI continuation of the same session landed in the profile's state.db.
-    const { DatabaseSync } = await import('node:sqlite')
-    const db = new DatabaseSync(join(s.state, 'state.db'))
+    const db = openStateDb(join(s.state, 'state.db'))
     db.exec("CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL, title TEXT, model TEXT, parent_session_id TEXT, ended_at REAL, end_reason TEXT, model_config TEXT, user_id TEXT, chat_id TEXT); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL, tool_calls TEXT, tool_call_id TEXT, tool_name TEXT, reasoning TEXT)")
     db.prepare('INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, 'webui', 5000)
     for (const [role, content, ts] of [['user', 'from web', 5000], ['assistant', 'web reply', 5001], ['user', 'asked in the CLI', 5100], ['assistant', 'answered in the CLI', 5101]] as [string, string, number][]) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, role, content, ts)
@@ -4008,8 +4007,7 @@ describe('reasoning replay across turns (TAL-927)', () => {
     const details = [{ type: 'reasoning.encrypted', data: 'opaque-signature' }]
     const items = [{ type: 'reasoning', id: 'rs_1', encrypted_content: 'enc-blob' }]
     const now = (): number => Date.now() / 1000
-    const { DatabaseSync } = await import('node:sqlite')
-    const db = new DatabaseSync(join(s.state, 'state.db'))
+    const db = openStateDb(join(s.state, 'state.db'))
     db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL, title TEXT, model TEXT, parent_session_id TEXT, ended_at REAL, end_reason TEXT, model_config TEXT, user_id TEXT, chat_id TEXT); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL, tool_calls TEXT, tool_call_id TEXT, tool_name TEXT, reasoning TEXT, reasoning_content TEXT, reasoning_details TEXT, codex_reasoning_items TEXT, codex_message_items TEXT)')
     db.prepare('INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, 'webui', now())
     db.close()
@@ -4019,7 +4017,7 @@ describe('reasoning replay across turns (TAL-927)', () => {
       const user = { role: 'user', content: str(params.user_message), timestamp: now() }
       const assistant = { role: 'assistant', content: `answer ${String(histories.length)}`, timestamp: now() }
       // The Agent persists its turn, reasoning carriers included, before it returns.
-      const agentDb = new DatabaseSync(join(s.state, 'state.db'))
+      const agentDb = openStateDb(join(s.state, 'state.db'))
       agentDb.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, user.role, user.content, user.timestamp)
       agentDb.prepare('INSERT INTO messages (session_id, role, content, timestamp, reasoning, reasoning_details, codex_reasoning_items) VALUES (?, ?, ?, ?, ?, ?, ?)').run(sid, assistant.role, assistant.content, assistant.timestamp, 'thought', JSON.stringify(details), JSON.stringify(items))
       agentDb.close()
@@ -4032,7 +4030,7 @@ describe('reasoning replay across turns (TAL-927)', () => {
     await turn('first')
     // A CLI turn lands only in state.db.
     const cliDetails = [{ type: 'reasoning.encrypted', data: 'cli-signature' }]
-    const cliDb = new DatabaseSync(join(s.state, 'state.db'))
+    const cliDb = openStateDb(join(s.state, 'state.db'))
     cliDb.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, 'user', 'from the CLI', now())
     cliDb.prepare('INSERT INTO messages (session_id, role, content, timestamp, reasoning_details, codex_message_items) VALUES (?, ?, ?, ?, ?, ?)').run(sid, 'assistant', 'CLI answer', now(), JSON.stringify(cliDetails), JSON.stringify([{ type: 'message', id: 'msg_cli' }]))
     cliDb.close()

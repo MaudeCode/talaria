@@ -1,10 +1,9 @@
 import { mkdtempSync, rmSync, utimesSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { DatabaseSync } from 'node:sqlite'
 import { Worker } from 'node:worker_threads'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { bootTestServer, type TestServer } from '../test/harness.js'
+import { bootTestServer, type TestServer, openStateDb } from '../test/harness.js'
 import { CliSessionSource } from './cli-sessions.js'
 import { Session } from './session.js'
 import type { StateDbWorkerRequest } from './state-db.js'
@@ -21,7 +20,7 @@ describe('batched sidebar reads and targeted lookup cache', () => {
     server = await bootTestServer()
     home = mkdtempSync(join(tmpdir(), 'cli-batches-'))
     path = join(home, 'state.db')
-    const db = new DatabaseSync(path)
+    const db = openStateDb(path)
     db.exec(`CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL, title TEXT, model TEXT, message_count INTEGER);
       CREATE TABLE messages (id INTEGER PRIMARY KEY, session_id TEXT, role TEXT, timestamp REAL);
       CREATE INDEX idx_messages_session ON messages(session_id, timestamp)`)
@@ -66,7 +65,7 @@ describe('batched sidebar reads and targeted lookup cache', () => {
   })
 
   it('invalidates a targeted snapshot on a WAL-only change', async () => {
-    const db = new DatabaseSync(path)
+    const db = openStateDb(path)
     try {
       db.exec('PRAGMA journal_mode=WAL')
       await source.read('default', { sessionIds: ['cli'] })
@@ -87,7 +86,7 @@ describe('batched sidebar reads and targeted lookup cache', () => {
   })
 
   it('isolates malformed background ownership metadata from healthy sidebar windows', async () => {
-    const db = new DatabaseSync(path)
+    const db = openStateDb(path)
     try {
       db.exec('CREATE TABLE worker_executions (session_id TEXT, lineage_json TEXT)')
       db.prepare('INSERT INTO worker_executions VALUES (?, ?)').run('cron', JSON.stringify({ broken: true }))

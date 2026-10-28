@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import fixture from '../test/fixtures/compaction-replay.json' with { type: 'json' }
 import carrier from '../test/fixtures/compaction-carrier.json' with { type: 'json' }
-import { bootTestServer } from '../test/harness.js'
+import { bootTestServer, openStateDb } from '../test/harness.js'
 import { Session } from './session.js'
 import { markerKind, mergeSessionMessagesAppendOnly, stateDbSeenId } from './merge.js'
 import { stateDbSessionRead, stateDbSessionTailRead } from './state-db.js'
@@ -26,7 +26,7 @@ describe('released Agent compaction replay identity (TAL-783)', () => {
   }
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'compaction-replay-')); path = join(dir, 'state.db')
-    db = new DatabaseSync(path); load('compacted')
+    db = openStateDb(path); load('compacted')
   })
   afterEach(() => { db.close(); rmSync(dir, { recursive: true, force: true }) })
 
@@ -181,7 +181,7 @@ describe('released Agent kept-message compaction carrier', () => {
   let dir: string, path: string, db: DatabaseSync
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'compaction-carrier-'))
-    path = join(dir, 'state.db'); db = new DatabaseSync(path)
+    path = join(dir, 'state.db'); db = openStateDb(path)
     db.exec([...carrier.schema, ...carrier.snapshots.compacted].join('\n'))
   })
   afterEach(() => { db.close(); rmSync(dir, { recursive: true, force: true }) })
@@ -229,7 +229,7 @@ describe('released Agent kept-message compaction carrier', () => {
 
   it('exposes one marked summary on full and paginated detail after a durable seen boundary', async () => {
     const server = await bootTestServer()
-    const store = new DatabaseSync(join(server.state, 'state.db'))
+    const store = openStateDb(join(server.state, 'state.db'))
     try {
       store.exec([...carrier.schema, ...carrier.snapshots.initial].join('\n'))
       const initial = stateDbSessionRead(join(server.state, 'state.db'), carrier.sessionId)
