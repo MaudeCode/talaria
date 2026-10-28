@@ -115,6 +115,7 @@ SCENARIOS: list[tuple[str, dict]] = [
     # TAL-901: a top-level block entry, case-folded, after the Agent's built-ins.
     ("personalities.list", {"config": {"personalities": {"Reviewer": "You review code tersely."}}}),
     ("providers.registry", {"profile_home": "{home}"}),
+    ("providers.nous_account", {"profile_home": "{home}"}),
     ("providers.auth_status", {"profile_home": "{home}", "provider": "anthropic"}),
     ("providers.model_ids", {"profile_home": "{home}", "provider": "anthropic"}),
     ("providers.local_models", {"profile_home": "{home}"}),
