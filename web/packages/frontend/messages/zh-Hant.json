@@ -930,7 +930,6 @@
 	"settings_label_update_channel": "更新通道",
 	"settings_update_channel_stable": "穩定版（建議）",
 	"settings_update_channel_experimental": "實驗版",
-	"settings_update_channel_nightly": "每夜版",
 	"settings_desc_update_channel": "穩定版提供經過充分驗證的成熟版本。實驗版會在每個版本發布時立即提供——更快，但可能有粗糙之處。切回穩定版會保留目前版本，直到穩定版趕上。 僅適用於 WebUI 更新。",
 	"settings_label_ignore_agent_updates": "忽略 Agent 更新",
 	"settings_label_bot_name": "助理名稱",

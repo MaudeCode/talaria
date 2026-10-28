@@ -930,7 +930,6 @@
 	"settings_label_update_channel": "Güncelleme kanalı",
 	"settings_update_channel_stable": "Kararlı (önerilir)",
 	"settings_update_channel_experimental": "Deneysel",
-	"settings_update_channel_nightly": "Gecelik",
 	"settings_desc_update_channel": "Kararlı kanal olgunlaşmış, kanıtlanmış sürümleri alır. Deneysel kanal her sürümü çıktığı anda alır — daha hızlı ama pürüzler olabilir. Kararlı'ya geri dönmek, Kararlı yetişene kadar mevcut sürümünüzü korur. Yalnızca WebUI güncellemeleri için geçerlidir.",
 	"settings_label_ignore_agent_updates": "Agent güncellemelerini yoksay",
 	"settings_label_bot_name": "Varsayılan asistanın adı",

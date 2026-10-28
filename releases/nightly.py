@@ -40,11 +40,14 @@ def cutover_running():
 
 
 def select(root, green):
-    """The newest green commit on HEAD's history after the last Nightly; whether the App changed since then; its version."""
+    """The newest green commit on HEAD's history after the last Nightly; whether the App changed since then; its version.
+
+    An unchanged run still names the last source, so Web's `nightly` tag picks up an Experimental build that was
+    published only after that source was recorded."""
     previous = last_nightly(root)
     source = newest_published(root, previous, green, "HEAD")
     if source is None or source == previous:
-        return {"changed": "false"}
+        return {"changed": "false", "source": previous or ""}
     # An unknown base (the first run) selects every suite, so the App uploads.
     suites = subprocess.check_output([sys.executable, str(ROOT / "scripts/changed-components.py"), f"--base={previous or ''}", f"--head={source}"],
                                      cwd=root, text=True).split()
@@ -73,6 +76,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="action", required=True)
     commands.add_parser("select", help="Print the selection as GITHUB_OUTPUT lines.")
+    commands.add_parser("require-no-cutover", help="Fail while a production cutover is queued or running.")
     sending = commands.add_parser("upload", help="Verify the exported IPA and upload it to TestFlight.")
     sending.add_argument("--directory", type=Path, required=True)
     sending.add_argument("--version", required=True)
@@ -81,9 +85,12 @@ def main():
     commands.add_parser("record", help="Move the nightly tag to a completed source.").add_argument("source")
     args = parser.parse_args()
     if args.action == "select":
-        selection = {"changed": "false"} if cutover_running() else select(ROOT, green_commits())
+        selection = {"changed": "false", "source": ""} if cutover_running() else select(ROOT, green_commits())
         print(json.dumps(selection), file=sys.stderr)
         print("\n".join(f"{key}={value}" for key, value in selection.items()))
+    elif args.action == "require-no-cutover":
+        if cutover_running():
+            sys.exit("A production cutover started after Nightly selected its source; the next Nightly uploads instead.")
     elif args.action == "upload":
         upload(args.directory, args.version, args.build_number, args.source)
     else:

@@ -949,7 +949,6 @@
 	"settings_label_update_channel": "Kanál aktualizací",
 	"settings_update_channel_stable": "Stabilní (doporučeno)",
 	"settings_update_channel_experimental": "Experimentální",
-	"settings_update_channel_nightly": "Noční",
 	"settings_desc_update_channel": "Stabilní kanál dostává ověřená, prověřená vydání. Experimentální dostává každé vydání hned — rychlejší, ale může mít nedodělky. Při přepnutí zpět na Stabilní si ponecháte svou současnou verzi, dokud ji Stabilní nedožene. Platí pouze pro aktualizace WebUI.",
 	"settings_label_ignore_agent_updates": "Ignorovat aktualizace Agenta",
 	"settings_label_bot_name": "Výchozí název asistenta",

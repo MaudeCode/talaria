@@ -135,6 +135,14 @@ jobs:
           chmod 600 "${key_path}"
           echo "APP_STORE_CONNECT_KEY_PATH=${key_path}" >> "${GITHUB_ENV}"
 
+      # Nightly checked for a cutover before it started; one dispatched since may hold a selected, unuploaded number.
+      - name: Defer Nightly to a running cutover
+        if: inputs.channel == 'nightly'
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: '"$RELEASE_PYTHON" releases/nightly.py require-no-cutover'
+
       - name: Select App Store Connect build number
         env:
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}

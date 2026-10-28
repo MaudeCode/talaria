@@ -263,8 +263,11 @@ passing `main` push that changes Web or contracts; only `advance` is serialized.
 
 The Nightly channel sits between Experimental and Stable. `nightly.yml` runs daily (and on dispatch):
 `nightly.py select` picks the newest `main` commit whose push CI passed after the `nightly` git tag, and does
-nothing when there is none. `experimental.py advance SOURCE --tag nightly` then moves the forward-only `nightly`
-GHCR tag to the newest Experimental build on that commit's history, so Nightly reuses the Experimental artifact.
+nothing new when there is none, or while a production cutover is queued or running. `experimental.py advance SOURCE
+--tag nightly` then moves the forward-only `nightly` GHCR tag to the newest Experimental build on that commit's history,
+so Nightly reuses the Experimental artifact; it runs even when no new commit was selected, so a build published after
+its source was recorded still reaches Nightly. The App build rechecks for a cutover once it holds the
+`talaria-testflight-publication` queue, so the two never pick the same build number.
 When `scripts/changed-components.py` selects the App since the last Nightly, `ios-release-build.yml` with
 `channel: nightly` builds it as the next patch after the latest `app-v` tag, and `nightly.py upload` sends it to
 TestFlight internal testing through the same upload and `VALID` readback as production. Only after both succeed

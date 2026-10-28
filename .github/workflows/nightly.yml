@@ -49,7 +49,8 @@ jobs:
   web:
     name: Move Web's nightly tag
     needs: select
-    if: needs.select.outputs.changed == 'true'
+    # Also on an unchanged run: an Experimental build published after the recorded source still reaches Nightly.
+    if: needs.select.outputs.source != ''
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

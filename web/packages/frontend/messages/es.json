@@ -885,7 +885,6 @@
 	"settings_label_update_channel": "Canal de actualizaciones",
 	"settings_update_channel_stable": "Estable (recomendado)",
 	"settings_update_channel_experimental": "Experimental",
-	"settings_update_channel_nightly": "Nocturna",
 	"settings_desc_update_channel": "Estable recibe versiones probadas y maduradas. Experimental recibe cada versión en cuanto sale: más rápido, pero puede tener asperezas. Al volver a Estable conservas tu versión actual hasta que Estable la alcance. Se aplica solo a las actualizaciones de la WebUI.",
 	"settings_label_ignore_agent_updates": "Ignore Agent updates",
 	"settings_label_bot_name": "Nombre predeterminado del asistente",

@@ -33,6 +33,9 @@ class NightlyTests(unittest.TestCase):
         self.git("commit", "-m", path)
         return self.git("rev-parse", "HEAD")
 
+    def test_a_first_run_with_nothing_green_does_nothing(self):
+        self.assertEqual(select(self.root, []), {"changed": "false", "source": ""})
+
     def test_the_first_run_selects_the_newest_green_commit_and_uploads_the_app(self):
         first = self.git("rev-parse", "HEAD")
         newest = self.commit("docs/guide.md")
@@ -50,8 +53,9 @@ class NightlyTests(unittest.TestCase):
         app = self.commit("app/Talaria/View.swift")
         self.assertEqual(select(self.root, [docs, app])["app"], "true")
         # Nothing green after the last Nightly: the run does nothing.
-        self.assertEqual(select(self.root, [previous]), {"changed": "false"})
-        self.assertEqual(select(self.root, []), {"changed": "false"})
+        # Nothing green after the last Nightly: only Web's tag is refreshed against the recorded source.
+        self.assertEqual(select(self.root, [previous]), {"changed": "false", "source": previous})
+        self.assertEqual(select(self.root, []), {"changed": "false", "source": previous})
 
 
 if __name__ == "__main__":
