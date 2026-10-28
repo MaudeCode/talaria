@@ -128,6 +128,13 @@ function fileKey(f: File): string {
  * the session is created comes along too.
  */
 let handoff: { draft: { readonly current: string }; files: File[]; sessionId: string | null } | null = null
+/** Hands the hand-off to the composer of its session once. Kept outside the component: the React Compiler inlines a local alias of module state. */
+function takeHandoff(sessionId: string) {
+  const h = handoff
+  if (h?.sessionId !== sessionId) return null
+  handoff = null
+  return h
+}
 
 export const Composer = memo(function Composer(props: ComposerProps) {
   const { sessionId, session, busy, streamId, settings, onEnsureSession, onLocalCommand, terminalOpen, onToggleTerminal, onModelChange, onWorkspaceChange, onNewWorktreeChat, onRemoveWorktree, onToolsetsChange, onExecutionModeChange, onReasoningChange, reasoning, reasoningLevels, reasoningSupported = true, pendingChoices, locked = false, yolo, onToggleYolo, queued, onQueue, onQueueChange, clarify, notices = EMPTY_NOTICES } = props
@@ -347,8 +354,8 @@ export const Composer = memo(function Composer(props: ComposerProps) {
 
   // Adopt a hand-off from the empty chat's composer (see addFiles). Runs after the session-change reset above.
   useEffect(() => {
-    if (!sessionId || handoff?.sessionId !== sessionId) return
-    const h = handoff; handoff = null
+    const h = sessionId ? takeHandoff(sessionId) : null
+    if (!sessionId || !h) return
     adopted.current = sessionId
     // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time adoption of module state left by the composer that unmounted
     setText(h.draft.current)
