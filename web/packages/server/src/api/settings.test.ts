@@ -1156,6 +1156,64 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     }
   })
 
+  it('preserves provider catalog fallback when optional Nous status is unavailable', async () => {
+    const fake = new FakeSidecar()
+    const account = { account_id: 'confirmed-account', email: 'u***@example.test', state: 'claimed' as const, lines: ['Apps moved.'], moved: ['calendar'], dropped: ['gmail'], reconnect: ['gmail'], poll_after: null }
+    let available = false
+    fake.respond('providers.nous_account', () => {
+      if (!available) throw new SidecarError('private native diagnostic', { condition: 'agent_runtime_stale' })
+      return { nous_account: account }
+    })
+    const isolated = await bootTestServer({ sidecar: fake })
+    const read = async () => {
+      const response = await isolated.get('/api/providers')
+      expect(response.status).toBe(200)
+      const body = await json(response)
+      expect((body.providers as Json[]).some((row) => row.id === 'anthropic')).toBe(true)
+      expect(JSON.stringify(body)).not.toContain('private native diagnostic')
+      return (body.providers as Json[]).find((row) => row.id === 'nous')!
+    }
+    try {
+      const cold = await read()
+      expect(cold).toMatchObject({ nous_account: null, nous_account_error: 'Connected-app transfer status is unavailable.' })
+      available = true
+      expect(await read()).toMatchObject({ nous_account: account, nous_account_error: null })
+      available = false
+      expect(await read()).toMatchObject({ nous_account: { ...account, state: 'unavailable', reconnect: [], poll_after: 5 }, nous_account_error: 'Connected-app transfer status is unavailable.' })
+      writeFileSync(join(isolated.state, 'auth.json'), JSON.stringify({ providers: { nous: { fixture: 'replacement-account' } } }))
+      const changed = await read()
+      expect(changed).toMatchObject({ nous_account: null, nous_account_error: 'Connected-app transfer status is unavailable.' })
+      expect(JSON.stringify(changed)).not.toContain(account.email)
+    } finally { await isolated.close() }
+  })
+
+  it('provider refresh reads current Nous account results outside the model catalog cache', async () => {
+    const account = { account_id: 'current-account', email: 'u***@example.test', state: 'retrying' as const, lines: ['Moving apps.'], moved: [], dropped: [], reconnect: [], poll_after: 5 }
+    const fake = new FakeSidecar()
+    let current: typeof account | null = account
+    fake.respond('providers.nous_account', () => ({ nous_account: current }))
+    const isolated = await bootTestServer({ sidecar: fake })
+    try {
+      const first = await json(await isolated.get('/api/providers'))
+      expect((first.providers as Json[]).find((row) => row.id === 'nous')).toMatchObject({ nous_account: account })
+      current = null
+      const second = await json(await isolated.get('/api/providers'))
+      expect((second.providers as Json[]).find((row) => row.id === 'nous')).toMatchObject({ nous_account: null })
+      expect(fake.calls.filter((call) => call.method === 'providers.nous_account').map((call) => call.params)).toEqual([
+        { profile_home: isolated.state }, { profile_home: isolated.state },
+      ])
+    } finally { await isolated.close() }
+  })
+
+  it('retains the safe Nous completion independently of handoff failure', async () => {
+    const account = { account_id: 'account-1', email: 'u***@example.test', state: 'failed', lines: ['Your free-tier apps could not be moved.'], moved: [], dropped: ['gmail'], reconnect: ['gmail'], poll_after: null }
+    sidecar.respond('oauth.poll', () => ({ flow_id: 'nous-result', provider: 'nous', status: 'approved', error: null, nous_account: account } as never))
+    const response = await s.get('/api/onboarding/oauth/poll?flow_id=nous-result')
+    expect(response.status).toBe(200)
+    expect(await json(response)).toMatchObject({ ok: true, status: 'approved', nous_account: account })
+    sidecar.respond('oauth.poll', () => ({ flow_id: 'nous-result', provider: 'nous', status: 'cancelled', error: null }))
+  })
+
   it('onboarding OAuth runs the device flow through the sidecar: success, expiry, denial and cancel', async () => {
     // Synthetic flows: each flow id answers its scripted statuses in order; nothing reaches a real provider or credential.
     const scripts = new Map<string, { provider: string; statuses: string[]; error?: string }>([

@@ -11,7 +11,7 @@ import { RunStatusSchema } from './run-status.js'
 import { AgentRefreshConfirmationSchema, AgentUpdateOperationSchema } from './sidecar/runtime.js'
 import { SpeedTierSchema } from './speed.js'
 import { ExecutionModeSchema, OwnerAttachmentSchema, MessageReactionViewSchema } from './gateway-session.js'
-import { KanbanInspectionNodeSchema, KanbanInspectionSnapshotSchema, CanonicalBotChatSchema, GatewayModeSchema, PluginOAuthClientSchema, PluginSettingFieldSchema, SkillCatalogIdentitySchema } from './sidecar/namespaces.js'
+import { NousAccountSchema, KanbanInspectionNodeSchema, KanbanInspectionSnapshotSchema, CanonicalBotChatSchema, GatewayModeSchema, PluginOAuthClientSchema, PluginSettingFieldSchema, SkillCatalogIdentitySchema } from './sidecar/namespaces.js'
 
 export { SpeedTierSchema } from './speed.js'
 
@@ -721,6 +721,7 @@ export type KeySourceKind = z.infer<typeof KeySourceKindSchema>
 export const ProviderSchema = z.looseObject({
   id: z.string(), display_name: z.string().optional(), has_key: z.boolean().optional(), configured: z.boolean().optional(), configurable: z.boolean().optional(), is_oauth: z.boolean().optional(), is_plugin_provider: z.boolean().optional(), is_self_hosted: z.boolean().optional(),
   is_custom: z.boolean().optional(), key_source: z.string().optional(), base_url: NullableString.optional(), auth_error: NullableString.optional(), env_var: NullableString.optional(), models: z.array(ModelEntrySchema).optional(), models_total: z.number().optional(),
+  nous_account: NousAccountSchema.nullable().optional(), nous_account_error: NullableString.optional(),
   is_active: z.boolean().optional(), key_source_kind: KeySourceKindSchema.nullable().optional(), removable: z.boolean().optional(),
 })
 export const ProvidersSchema = z.looseObject({ availability: CatalogAvailabilitySchema.optional(), providers: z.array(ProviderSchema), active_provider: NullableString.optional() })
@@ -1174,6 +1175,7 @@ export const OnboardingProbeSchema = z.looseObject({ ok: z.boolean().optional(),
  * `user_code`, `verification_url`, `expires_in` and `interval` (seconds between polls) come with the start.
  */
 export const OnboardingOAuthSchema = z.looseObject({
+  nous_account: NousAccountSchema.nullable().optional(),
   ok: z.boolean().optional(), status: z.string().optional(), url: z.string().optional(), verification_url: z.string().optional(), user_code: z.string().optional(), message: z.string().optional(),
   error: z.string().nullable().optional(), flow_id: z.string().optional(), provider: z.string().optional(), expires_in: z.number().int().optional(), interval: z.number().int().optional(),
   /**

@@ -3,6 +3,8 @@ import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { isDefiniteRefusal } from '../../contracts/common'
 import { Button } from '../../ui/Button'
+import type { NousAccount, ConnectorOperationView } from '@maudecode/talaria-web-contracts'
+import { PageConnect } from '../connectors/ConnectTargets'
 
 type Flow = Awaited<ReturnType<typeof api.onboardingOauthStart>>
 
@@ -14,12 +16,23 @@ const message = (e: unknown): string => (e instanceof Error ? e.message : String
  * TAL-1276: a plugin client's browser sign-in has no code; its panel names the hosts the server reports, and `children`
  * adds what the flow takes besides the link (the pasted redirect address). `compact` leaves the signed-in line to the caller.
  */
-export function OAuthSignIn({ provider, label, signedIn, onApproved, idPrefix = 'onboardingOauth', compact = false, children }: {
-  provider: string; label: string; signedIn: boolean; onApproved: (provider: string) => void; idPrefix?: string; compact?: boolean; children?: (flow: Flow) => ReactNode
-}) {
+interface OAuthSignInProps {
+  provider: string; label: string; signedIn: boolean; onApproved: (provider: string) => void; idPrefix?: string; compact?: boolean; children?: (flow: Flow) => ReactNode; account?: NousAccount | null; accountError?: string | null; resultOnly?: boolean
+}
+
+export function OAuthSignIn(props: OAuthSignInProps) {
+  // A provider change retires the old request owner, including starts still in flight.
+  return <OAuthSignInPanel key={props.provider} {...props} />
+}
+
+function OAuthSignInPanel({ provider, label, signedIn, onApproved, idPrefix = 'onboardingOauth', compact = false, children, account, accountError, resultOnly = false }: OAuthSignInProps) {
   const [flow, setFlow] = useState<Flow | null>(null)
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
+  const [acknowledged, setAcknowledged] = useState(false)
+  const [operation, setOperation] = useState<{ accountId: string; view: ConnectorOperationView } | null>(null)
+  const polls = useRef(0)
+  const notified = useRef(false)
   const pendingId = flow?.status === 'pending' ? flow.flow_id ?? null : null
   const pendingRef = useRef<string | null>(null)
 
@@ -35,35 +48,53 @@ export function OAuthSignIn({ provider, label, signedIn, onApproved, idPrefix = 
     }
   }, [])
 
-  const waitMs = Math.max(1, flow?.interval ?? 5) * 1000
+  const pollId = pendingId ?? (flow?.status === 'approved' && flow.nous_account?.poll_after ? flow.flow_id : null)
+  const waitMs = Math.max(1, flow?.status === 'approved' ? flow.nous_account?.poll_after ?? 5 : flow?.interval ?? 5) * 1000
   useEffect(() => {
-    if (!pendingId) return
+    if (!pollId) return
     let stopped = false
     let timer: number | undefined
     const tick = async () => {
       try {
-        const next = await api.onboardingOauthPoll(pendingId)
+        const next = await api.onboardingOauthPoll(pollId)
         if (stopped) return
-        setFlow((current) => ({ ...current, ...next }))
-        if (next.status === 'pending') timer = window.setTimeout(() => { void tick() }, waitMs)
+        setFlow((current) => current?.flow_id === pollId ? { ...current, ...next } : current)
+        setFailure(null)
+        if (next.status === 'approved') polls.current += 1
+        if (next.status === 'pending' || (next.nous_account?.poll_after && polls.current < 120)) timer = window.setTimeout(() => { void tick() }, waitMs)
       } catch (e) {
         if (stopped) return
-        // The panel gives up on this flow, so the server must too: otherwise a later approval would still save.
-        void api.onboardingOauthCancel(pendingId).catch(() => undefined)
-        setFailure(message(e))
-        setFlow(null)
+        if (pendingId) {
+          // Abandoning sign-in also cancels its still-unsaved credential.
+          void api.onboardingOauthCancel(pendingId).catch(() => undefined)
+          setFailure(message(e))
+          setFlow(null)
+        } else {
+          setFailure(m.oauth_result_unavailable())
+          polls.current += 1
+          if (polls.current < 120) timer = window.setTimeout(() => { void tick() }, waitMs)
+        }
       }
     }
     timer = window.setTimeout(() => { void tick() }, waitMs)
     return () => { stopped = true; window.clearTimeout(timer) }
-  }, [pendingId, waitMs])
+  }, [pollId, pendingId, waitMs])
 
   const approved = flow?.status === 'approved'
-  useEffect(() => { if (approved) onApproved(provider) }, [approved, onApproved, provider])
+  const result = flow?.status === 'approved' ? flow.nous_account : account
+  const activeOperation = operation?.accountId === result?.account_id ? operation?.view : null
+  const needsAcknowledgement = approved && flow.nous_account != null && !acknowledged
+  useEffect(() => {
+    if (approved && !needsAcknowledgement && !notified.current) { notified.current = true; onApproved(provider) }
+  }, [approved, needsAcknowledgement, onApproved, provider])
 
   async function start() {
     setBusy(true)
     setFailure(null)
+    setAcknowledged(false)
+    setOperation(null)
+    polls.current = 0
+    notified.current = false
     try {
       const started = await api.onboardingOauthStart(provider)
       if (mounted.current) setFlow(started)
@@ -72,6 +103,17 @@ export function OAuthSignIn({ provider, label, signedIn, onApproved, idPrefix = 
     } catch (e) {
       if (mounted.current) setFailure(message(e))
     }
+    if (mounted.current) setBusy(false)
+  }
+
+  async function reconnect(connector: string) {
+    if (!result) return
+    setBusy(true)
+    setFailure(null)
+    try {
+      const next = await api.connectConnector(connector, result.account_id)
+      if (mounted.current) setOperation({ accountId: result.account_id, view: next })
+    } catch (e) { if (mounted.current) setFailure(message(e)) }
     if (mounted.current) setBusy(false)
   }
 
@@ -109,16 +151,23 @@ export function OAuthSignIn({ provider, label, signedIn, onApproved, idPrefix = 
   }
 
   const done = approved || signedIn
-  const ended = failure ?? (flow?.status === 'denied' ? m.oauth_denied()
+  const ended = failure ?? accountError ?? (flow?.status === 'denied' ? m.oauth_denied()
     : flow?.status === 'expired' ? m.oauth_codex_expired()
       : flow?.status === 'cancelled' ? m.oauth_cancelled()
         : flow?.status === 'error' ? `${m.oauth_codex_error()}: ${flow.error ?? ''}` : null)
   return (
     <div className="onboarding-oauth flex flex-col gap-2 text-sm" id={`${idPrefix}Panel`}>
-      {ended ? <p className="text-warning" role="alert">{ended}</p> : done && !compact && <p className="text-success" role="status">{m.oauth_signed_in({ provider: label })}</p>}
-      <Button className="w-fit" variant={done ? 'default' : 'primary'} disabled={busy} onClick={() => { void start() }} id={`${idPrefix}StartBtn`}>
+      {ended && <p className="text-warning" role="alert">{ended}</p>}
+      {result ? <div role="status" className="flex flex-col gap-1 break-words" data-handoff-state={result.state}>
+        <p className="text-success">{result.email ? m.oauth_signed_in_as({ email: result.email }) : m.oauth_signed_in({ provider: label })}</p>
+        {result.lines.map((line, i) => <p className="text-muted" key={i}>{line}</p>)}
+      </div> : !ended && done && !compact && <p className="text-success" role="status">{m.oauth_signed_in({ provider: label })}</p>}
+      {result && !activeOperation && result.reconnect.map((connector) => <Button key={connector} className="w-fit" disabled={busy} onClick={() => { void reconnect(connector) }}>{m.oauth_reconnect({ app: connector })}</Button>)}
+      {activeOperation && <PageConnect initial={activeOperation} name={label} onDone={() => setOperation(null)} />}
+      {needsAcknowledgement && <Button className="w-fit" variant="primary" onClick={() => setAcknowledged(true)}>{m.oauth_result_continue()}</Button>}
+      {!resultOnly && <Button className="w-fit" variant={done ? 'default' : 'primary'} disabled={busy} onClick={() => { void start() }} id={`${idPrefix}StartBtn`}>
         {done ? m.oauth_sign_in_again() : m.oauth_sign_in({ provider: label })}
-      </Button>
+      </Button>}
     </div>
   )
 }

@@ -1,5 +1,5 @@
 import { reconcileProviderQuotas } from '../../lib/providerQuotas'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { RefreshCw } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
@@ -18,6 +18,7 @@ import { useSettingField } from './useSettingField'
 import { OpenRouterCost } from './OpenRouterCost'
 import { ProviderQuotaPace } from './ProviderQuotaPace'
 import { QuotaThresholdsForm } from './QuotaThresholds'
+import { OAuthSignIn } from '../onboarding/OAuthSignIn'
 
 const setProviderKey = (provider: string, api_key: string | null) => post('api/providers', { provider, api_key }, OkSchema, { retries: 0 })
 
@@ -27,7 +28,11 @@ export function ProvidersSection() {
     const response = await api.fetchProviderQuotas(refresh)
     return reconcileProviderQuotas(qc.getQueryData(keys.providerQuotas), response)
   }
-  const providers = useQuery({ queryKey: keys.providers, queryFn: api.fetchProviders, staleTime: 30_000 })
+  const reads = useRef(0)
+  const providers = useQuery({ queryKey: keys.providers, queryFn: () => { reads.current += 1; return api.fetchProviders() }, staleTime: 30_000, refetchInterval: (query) => {
+    const interval = query.state.data?.providers.find((p) => p.id === 'nous')?.nous_account?.poll_after
+    return interval && reads.current < 120 ? interval * 1000 : false
+  } })
   // The server recomputes pace on every read (provider calls are cached 45 s), so a reset replaces an expired pace within a minute.
   const quotas = useQuery({ queryKey: keys.providerQuotas, queryFn: () => fetchQuotas(), staleTime: 60_000, refetchInterval: 60_000 })
   const { str } = useSettingField(['default_model'])
@@ -45,7 +50,7 @@ export function ProvidersSection() {
   })
   const refreshModels = useMutation({ mutationFn: (id: string) => api.refreshModels(id), onSuccess: () => { showToast(m.providers_models_refreshed()); invalidate() }, onError: toastError })
   if (providers.isPending) return <LoadingState />
-  if (providers.isError) return <ErrorState error={providers.error} onRetry={() => { void providers.refetch() }} />
+  if (providers.isError && !providers.data) return <ErrorState error={providers.error} onRetry={() => { void providers.refetch() }} />
   const active = providers.data.active_provider
   const defaultModel = chosenModel ?? str('default_model')
   const quotaNotice = quotas.data?.availability?.unavailable_reason ?? providers.data.availability?.unavailable_reason
@@ -55,6 +60,7 @@ export function ProvidersSection() {
         <span>{m.providers_active()}: <strong className="text-text">{active ?? '—'}</strong></span>
         <Button onClick={() => { void qc.cancelQueries({ queryKey: keys.providerQuotas }).then(() => qc.query({ queryKey: keys.providerQuotas, queryFn: () => fetchQuotas(true), staleTime: 0 })).then(() => { void qc.invalidateQueries({ queryKey: keys.providerCostHistory }) }).catch(() => undefined) }}>{m.providers_quota_refresh()}</Button>
       </div>
+      {providers.isError && <p role="alert" className="text-warning">{m.oauth_result_unavailable()}</p>}
       {quotaNotice && <p role="status" className="text-xs text-muted">{quotaNotice}</p>}
       <QuotaThresholdsForm />
       <ul className="flex flex-col gap-2">
@@ -87,6 +93,7 @@ export function ProvidersSection() {
                   )}
                 </div>
               </div>
+              {p.id === 'nous' && <OAuthSignIn provider={p.id} label={p.display_name ?? p.id} signedIn={p.has_key === true} account={p.nous_account ?? null} accountError={p.nous_account_error ?? null} resultOnly compact idPrefix="providersNousOauth" onApproved={invalidate} />}
               {isEditing && p.is_self_hosted && <SelfHostedForm key={p.id} id={p.id} baseUrl={p.base_url ?? ''} saving={saveHosted.isPending} onSubmit={(body) => saveHosted.mutate({ id: p.id, name: p.display_name ?? p.id, ...body })} />}
               {isEditing && !p.is_self_hosted && <ProviderKeyForm key={p.id} label={`${p.display_name ?? p.id} API key`} hasKey={p.has_key === true} saving={saveKey.isPending} onSubmit={(key) => saveKey.mutate({ id: p.id, key })} />}
               {sources.map((s) => <ProviderQuotaPace key={s.source_id} source={s} showAccount={sources.length > 1} />)}

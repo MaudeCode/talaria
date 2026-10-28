@@ -163,7 +163,12 @@ def test_refresh_adopts_external_identity_and_does_not_borrow_another_profile(pa
 
 
 def test_only_explicit_connect_enters_the_guest_creation_gate(page, monkeypatch):
-    monkeypatch.setattr(connectors, "connect", lambda home, slug: {"started": slug})
+    def connect(home, slug, *, account_id=None):
+        assert home == page.home
+        assert account_id is None
+        return {"started": slug}
+
+    monkeypatch.setattr(connectors, "connect", connect)
     assert page.call("connectors.connect", connector="gmail") == {"started": "gmail"}
     assert page.calls == ["create"]
     assert (page.home / "auth.json").exists()

@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "See your signed-in Nous account and connected-app transfer result, with explicit reconnect actions.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

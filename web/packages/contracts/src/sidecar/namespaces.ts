@@ -309,6 +309,15 @@ export const MCP_METHODS = {
 } as const
 
 // ── connectors (TAL-818) ───────────────────────────────────────────────
+/** Safe current-account display. Authentication success is independent of native app handoff state. */
+export const NousAccountSchema = z.object({
+  account_id: z.string().min(1), email: z.string().nullable(),
+  state: z.enum(['idle', 'pending', 'retrying', 'claimed', 'gone', 'failed', 'paused', 'unknown', 'unavailable']),
+  lines: z.array(z.string()), moved: z.array(z.string()), dropped: z.array(z.string()), reconnect: z.array(z.string()),
+  poll_after: z.number().int().min(1).nullable(),
+})
+export type NousAccount = z.infer<typeof NousAccountSchema>
+
 const ConnectorSlug = z.string().regex(/^[a-z0-9][a-z0-9_-]*$/)
 /** One portal policy layer's rules (the Agent's `PolicyBody`): `allow` names the apps that stay on, `deny` the ones off; `tools` turns single tools off. */
 export const ConnectorPolicyBodySchema = z.object({
@@ -342,7 +351,7 @@ export const CONNECTORS_METHODS = {
   /** One member-rule change: `enabled` turns the app on or off; `tool` with `tool_enabled` turns one of its tools on or off. */
   'connectors.policy.set': { params: ProfileHomeParams.extend({ connector: ConnectorSlug, expected_revision: z.string().min(1), enabled: z.boolean().optional(), tool: z.string().min(1).optional(), tool_enabled: z.boolean().optional() }), result: z.object({ revision: z.string() }) },
   /** Starts (or rejoins) the account-owned connect and waits for its authorization link. */
-  'connectors.connect': { params: ProfileHomeParams.extend({ connector: ConnectorSlug }), result: ConnectorOperationSnapshotSchema },
+  'connectors.connect': { params: ProfileHomeParams.extend({ connector: ConnectorSlug, nous_account_id: z.string().min(1).optional() }), result: ConnectorOperationSnapshotSchema },
   'connectors.operation': { params: ConnectorOp, result: ConnectorOperationSnapshotSchema },
   'connectors.respond': { params: ConnectorOp.extend({ action: z.enum(['skip', 'retry', 'approve', 'continue']), target: z.string().optional(), env: z.record(z.string(), z.string()).optional() }), result: ConnectorOperationSnapshotSchema },
 } as const
@@ -430,6 +439,7 @@ export const CRON_METHODS = {
  */
 export const PROVIDERS_METHODS = {
   'providers.registry': { params: ProfileHomeParams, result: z.object({ providers: z.record(z.string(), z.object({ id: z.string(), name: z.string(), auth_type: z.string() }).catchall(Json)) }) },
+  'providers.nous_account': { params: ProfileHomeParams, result: z.object({ nous_account: NousAccountSchema.nullable() }) },
   'providers.auth_status': { params: ProfileHomeParams.extend({ provider: z.string().nullable().optional() }), result: z.object({ status: z.object({ logged_in: z.boolean() }).catchall(Json) }) },
   'providers.model_ids': { params: ProfileHomeParams.extend({ provider: z.string().min(1), force_refresh: z.boolean().optional() }), result: z.object({ provider: z.string(), model_ids: z.array(z.string()), fallback: z.boolean().default(false) }) },
   'providers.local_models': { params: ProfileHomeParams, result: z.object({ provider_id: z.string(), models: z.array(z.string()), current_endpoint: z.string().nullable() }) },
@@ -456,7 +466,7 @@ export const PROVIDERS_METHODS = {
  * other address, `oauth_flow_ended` once the flow ended).
  */
 export const OAuthFlowStatusSchema = z.enum(['pending', 'approved', 'denied', 'expired', 'cancelled', 'error'])
-const OAuthFlow = z.object({ flow_id: z.string(), provider: z.string(), status: OAuthFlowStatusSchema, error: z.string().nullable() })
+const OAuthFlow = z.object({ flow_id: z.string(), provider: z.string(), status: OAuthFlowStatusSchema, error: z.string().nullable(), nous_account: NousAccountSchema.nullable().optional() })
 const OAuthFlowParams = ProfileHomeParams.extend({ flow_id: z.string().min(1) })
 export const OAUTH_METHODS = {
   'oauth.start': { params: ProfileHomeParams.extend({ provider: z.string().min(1) }), result: z.object({ flow_id: z.string(), provider: z.string(), status: z.literal('pending'), user_code: z.string().optional(), verification_url: z.string(), expires_in: z.number().int(), interval: z.number().int(), redirect_uri: z.string().optional(), authorize_host: z.string().optional(), token_host: z.string().optional() }) },

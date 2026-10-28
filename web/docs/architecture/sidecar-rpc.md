@@ -829,3 +829,37 @@ Package-only rows cannot be edited; native overrides inherit omitted package key
 Every view reports `provenance: declared_estimate`, `reload_required: true` and
 `runtime_state: unknown`. Saved declarations do not attest any owner's loaded
 policy. The existing profile-scoped Reload MCP command remains an explicit action.
+
+### Nous account result
+
+RPC version 60 adds `providers.nous_account`, the optional `nous_account` OAuth
+completion field, and the optional `nous_account_id` fence on `connectors.connect`.
+The shared `NousAccountSchema` also appears on public provider rows and OAuth
+responses. `approved` still means credentials were saved, independently of handoff
+state. The sidecar reads native `handoff_status` / `wire_status`, masks email,
+allowlists app IDs and copy inputs, and proves the selected record's destination
+with the native binding helper even for terminal records. Raw native records,
+credentials and exception details never enter this projection.
+
+The bounded display cache holds at most 32 profile/account identities and retains
+last-confirmed fields with `unavailable` on native read failure. It never writes a
+transfer ledger or dispatches retries. The native worker owns progress. A flow
+captures its account identity inside the persistence guard; late completion or
+polling cannot adopt a replacement account. A response whose identity changes
+during its read is discarded. Unknown identity clears the display.
+
+The shared sign-in panel observes sequentially, at server `poll_after`, for at
+most 120 reads per start. Provider rows use the same field with one Query owner
+and the same bound. Reopening or refreshing reads native state again. A failed
+transport read retains the last display with an unavailable notice. Provider RPC
+failures use the catalog's existing source-fenced lookup cache and the optional
+`nous_account_error` field without failing other provider rows. Changed credential
+or configuration fingerprints discard the cached identity and reconnect actions. Reconnect is
+explicit and checks profile/account identity, the current dropped-app result and
+live catalog before composing the native connector operation, without provisioning
+an identity. The native account starter always creates a live-credential client in
+its later thread, so result reconnects instead reuse its `ConnectionOperation`,
+`ConnectorClient`, `managed_kind` and `drive_operation` with an injected header
+provider. Every request verifies both the current profile identity and the bearer
+subject without refreshing. Rejoins, reads and retries keep that fence; an account
+change settles the operation and removes its link from the current account's view. App presentation of these optional fields is tracked separately.

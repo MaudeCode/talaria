@@ -67640,6 +67640,102 @@
                           "models_total": {
                             "type": "number"
                           },
+                          "nous_account": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "account_id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "email": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "state": {
+                                    "enum": [
+                                      "idle",
+                                      "pending",
+                                      "retrying",
+                                      "claimed",
+                                      "gone",
+                                      "failed",
+                                      "paused",
+                                      "unknown",
+                                      "unavailable"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "lines": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "moved": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "dropped": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "reconnect": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "poll_after": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "maximum": 9007199254740991
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "account_id",
+                                  "email",
+                                  "state",
+                                  "lines",
+                                  "moved",
+                                  "dropped",
+                                  "reconnect",
+                                  "poll_after"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "nous_account_error": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "is_active": {
                             "type": "boolean"
                           },
@@ -70587,6 +70683,92 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "nous_account": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "account_id": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "email": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "state": {
+                              "enum": [
+                                "idle",
+                                "pending",
+                                "retrying",
+                                "claimed",
+                                "gone",
+                                "failed",
+                                "paused",
+                                "unknown",
+                                "unavailable"
+                              ],
+                              "type": "string"
+                            },
+                            "lines": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "moved": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "dropped": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "reconnect": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "poll_after": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "account_id",
+                            "email",
+                            "state",
+                            "lines",
+                            "moved",
+                            "dropped",
+                            "reconnect",
+                            "poll_after"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "ok": {
                       "type": "boolean"
                     },
@@ -70680,6 +70862,92 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "nous_account": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "account_id": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "email": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "state": {
+                              "enum": [
+                                "idle",
+                                "pending",
+                                "retrying",
+                                "claimed",
+                                "gone",
+                                "failed",
+                                "paused",
+                                "unknown",
+                                "unavailable"
+                              ],
+                              "type": "string"
+                            },
+                            "lines": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "moved": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "dropped": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "reconnect": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "poll_after": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "account_id",
+                            "email",
+                            "state",
+                            "lines",
+                            "moved",
+                            "dropped",
+                            "reconnect",
+                            "poll_after"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "ok": {
                       "type": "boolean"
                     },
@@ -70768,6 +71036,92 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "nous_account": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "account_id": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "email": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "state": {
+                              "enum": [
+                                "idle",
+                                "pending",
+                                "retrying",
+                                "claimed",
+                                "gone",
+                                "failed",
+                                "paused",
+                                "unknown",
+                                "unavailable"
+                              ],
+                              "type": "string"
+                            },
+                            "lines": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "moved": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "dropped": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "reconnect": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "poll_after": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "account_id",
+                            "email",
+                            "state",
+                            "lines",
+                            "moved",
+                            "dropped",
+                            "reconnect",
+                            "poll_after"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "ok": {
                       "type": "boolean"
                     },
@@ -76979,6 +77333,22 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "nous_account_id": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK",
@@ -78298,6 +78668,92 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "nous_account": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "account_id": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "email": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "state": {
+                              "enum": [
+                                "idle",
+                                "pending",
+                                "retrying",
+                                "claimed",
+                                "gone",
+                                "failed",
+                                "paused",
+                                "unknown",
+                                "unavailable"
+                              ],
+                              "type": "string"
+                            },
+                            "lines": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "moved": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "dropped": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "reconnect": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "poll_after": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "account_id",
+                            "email",
+                            "state",
+                            "lines",
+                            "moved",
+                            "dropped",
+                            "reconnect",
+                            "poll_after"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "ok": {
                       "type": "boolean"
                     },

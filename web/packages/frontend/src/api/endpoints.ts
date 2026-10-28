@@ -319,7 +319,7 @@ export const fetchConnectors = () => orpc().connectors.page()
 export const fetchConnectorTools = (connector: string) => orpc().connectors.tools({ connector })
 export const setConnectorRule = (connector: string, revision: string, change: { enabled: boolean } | { tool: string; tool_enabled: boolean }) => orpc().connectors.setPolicy({ connector, revision, ...change })
 /** A connect waits for the app's authorization link (up to 31 s on the server). */
-export const connectConnector = (connector: string) => orpc().connectors.connect({ connector }, { signal: timeout(60_000) })
+export const connectConnector = (connector: string, nous_account_id?: string) => orpc().connectors.connect({ connector, ...(nous_account_id ? { nous_account_id } : {}) }, { signal: timeout(60_000) })
 export const removeConnectorAccount = (connection_id: string) => orpc().connectors.removeAccount({ connection_id })
 export const fetchConnectorOperation = (op_id: string) => orpc().connectors.operation({ op_id })
 export const respondConnectorOperation = (move: { op_id: string; action: 'skip' | 'retry' | 'approve' | 'continue'; target?: string; env?: Record<string, string> }) =>

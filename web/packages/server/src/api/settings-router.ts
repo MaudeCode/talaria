@@ -232,7 +232,7 @@ export async function oauthCall<M extends 'oauth.start' | 'oauth.poll' | 'oauth.
 /** One flow's state as the onboarding view renders it: `ok` is false for every ending without a credential. */
 export function oauthView(flow: SidecarResult<'oauth.poll'>): Dict {
   if (flow.status !== 'pending') forgetPluginFlow(flow.flow_id)
-  return { ok: flow.status === 'pending' || flow.status === 'approved', flow_id: flow.flow_id, provider: flow.provider, status: flow.status, error: flow.error }
+  return { ok: flow.status === 'pending' || flow.status === 'approved', flow_id: flow.flow_id, provider: flow.provider, status: flow.status, error: flow.error, ...(flow.nous_account !== undefined ? { nous_account: flow.nous_account } : {}) }
 }
 
 function oauthFlowId(raw: unknown): string {

@@ -140,6 +140,52 @@ def test_a_page_connect_turns_connected_without_a_chat_session(connected, hermes
     assert condition(call(connected, "connectors.respond", hermes_home, op_id=started["op_id"], action="continue")) == "operation_settled"
 
 
+def test_result_reconnect_uses_an_account_fenced_native_operation(hermes_home, portal):
+    if not (AGENT_DIR / "hermes_cli/guest_handoff.py").is_file():
+        pytest.skip("Agent predates native handoff results")
+    shared = hermes_home / "fixture-shared"
+    shared.mkdir()
+    (shared / "guest_handoff.json").write_text(json.dumps({"_schema": 1, "records": {"synthetic": {
+        "state": "claimed", "destination": "user-synthetic", "profiles": [str(hermes_home.resolve())],
+        "updated_at": "2026-10-01T00:00:00Z", "result": {"connectors_kind": "moved", "moved_toolkits": ["calendar"], "dropped_toolkits": ["gmail"]},
+    }}}))
+    with serve(portal) as origin:
+        env = {**seed_identity(hermes_home, origin), "HERMES_SHARED_AUTH_DIR": str(shared)}
+        proc = SidecarProcess(hermes_home, env=env)
+        try:
+            assert proc.result("runtime.handshake", {"rpc_version": SIDECAR_RPC_VERSION})["compatible"]
+            account = result(proc, "providers.nous_account", hermes_home)["nous_account"]
+            assert account["reconnect"] == ["gmail"]
+            auth_before = (hermes_home / "auth.json").read_bytes()
+            started = result(proc, "connectors.connect", hermes_home, connector="gmail", nous_account_id=account["account_id"])
+            assert started["targets"][0]["connect_url"] == "https://vendor.example.test/authorize/conn-gmail-1"
+            assert result(proc, "connectors.connect", hermes_home, connector="gmail", nous_account_id=account["account_id"])["op_id"] == started["op_id"]
+            assert portal.connect_count == 1 and (hermes_home / "auth.json").read_bytes() == auth_before
+            portal.finish_authorization("gmail")
+            deadline = time.monotonic() + 20
+            while not (view := result(proc, "connectors.operation", hermes_home, op_id=started["op_id"]))["settled"]:
+                assert time.monotonic() < deadline
+                time.sleep(0.1)
+            assert view["targets"][0]["state"] == "connected"
+            with portal.lock:
+                portal.accounts.pop("conn-gmail-1")
+            again = result(proc, "connectors.connect", hermes_home, connector="gmail", nous_account_id=account["account_id"])
+            import base64
+            document = json.loads(auth_before)
+            token = document["providers"]["nous"]["access_token"]
+            header, payload, signature = token.split(".")
+            claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+            claims["sub"] = "another-account"
+            payload = base64.urlsafe_b64encode(json.dumps(claims).encode()).rstrip(b"=").decode()
+            document["providers"]["nous"]["access_token"] = f"{header}.{payload}.{signature}"
+            (hermes_home / "auth.json").write_text(json.dumps(document))
+            assert condition(call(proc, "connectors.operation", hermes_home, op_id=again["op_id"])) == "operation_not_found"
+            assert condition(call(proc, "connectors.connect", hermes_home, connector="gmail", nous_account_id=account["account_id"])) == "connectors_forbidden"
+            assert portal.connect_count == 2
+        finally:
+            proc.close()
+
+
 def test_skip_ends_a_page_connect(connected, hermes_home):
     started = result(connected, "connectors.connect", hermes_home, connector="gmail")
     skipped = result(connected, "connectors.respond", hermes_home, op_id=started["op_id"], action="skip", target="gmail")

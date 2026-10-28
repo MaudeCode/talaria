@@ -548,6 +548,13 @@ def register(reg) -> None:
         with scoped_home(profile_home_param(params)):
             return {"providers": registry()}
 
+    @reg.method("providers.nous_account")
+    def nous_account_(ctx: CallContext, params: dict) -> dict:
+        from . import nous_account
+        home = profile_home_param(params)
+        with scoped_home(home):
+            return {"nous_account": nous_account.read(home)}
+
     @reg.method("providers.auth_status")
     def auth(ctx: CallContext, params: dict) -> dict:
         with scoped_home(profile_home_param(params)):

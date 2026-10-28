@@ -1,0 +1,45 @@
+{
+  "moved": {
+    "account_id": "synthetic-account-1",
+    "email": "u***@example.test",
+    "state": "claimed",
+    "lines": [
+      "Your apps moved to u***@example.test: calendar.",
+      "Reconnect in u***@example.test: gmail."
+    ],
+    "moved": [
+      "calendar"
+    ],
+    "dropped": [
+      "gmail"
+    ],
+    "reconnect": [
+      "gmail"
+    ],
+    "poll_after": null
+  },
+  "no_apps": {
+    "account_id": "synthetic-account-1",
+    "email": "u***@example.test",
+    "state": "claimed",
+    "lines": [
+      "There were no free-tier apps to move."
+    ],
+    "moved": [],
+    "dropped": [],
+    "reconnect": [],
+    "poll_after": null
+  },
+  "retrying": {
+    "account_id": "synthetic-account-1",
+    "email": "u***@example.test",
+    "state": "retrying",
+    "lines": [
+      "Moving your free-tier apps to this account; Hermes keeps trying in the background."
+    ],
+    "moved": [],
+    "dropped": [],
+    "reconnect": [],
+    "poll_after": 5
+  }
+}

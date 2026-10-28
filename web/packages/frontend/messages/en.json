@@ -2732,5 +2732,9 @@
 	"reaction_add": "React with {emoji}",
 	"reaction_remove": "Remove {emoji} reaction",
 	"reaction_clear": "Remove reaction",
-	"message_reaction_group": "Reactions for message {number}"
+	"message_reaction_group": "Reactions for message {number}",
+	"oauth_signed_in_as": "Signed in as {email}.",
+	"oauth_result_continue": "Continue",
+	"oauth_reconnect": "Reconnect {app}",
+	"oauth_result_unavailable": "Connected-app transfer status is unavailable."
 }
