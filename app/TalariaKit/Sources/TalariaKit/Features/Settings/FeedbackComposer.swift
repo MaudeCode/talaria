@@ -5,6 +5,7 @@ import Observation
 @MainActor
 @Observable
 public final class FeedbackComposer {
+    private static let composers = NSHashTable<FeedbackComposer>(options: [.weakMemory, .objectPointerPersonality])
     public private(set) var draft: FeedbackRequest
     public var isPresented = false
     public private(set) var error: SettingsErrorText?
@@ -17,6 +18,7 @@ public final class FeedbackComposer {
 
     private let defaults: UserDefaults
     private let storageKey: String
+    private let cacheGeneration: Int
     private let clientMetadata: FeedbackClient
     private let submit: (FeedbackRequest) async throws -> FeedbackResult
     private let diagnostics: () async throws -> FeedbackDiagnostics
@@ -32,14 +34,17 @@ public final class FeedbackComposer {
         self.server = server
         self.defaults = defaults
         self.clientMetadata = clientMetadata
-        storageKey = "feedback-draft.\(server?.absoluteString ?? "disconnected")"
+        storageKey = Self.storageKey(for: server)
+        cacheGeneration = server.map { ServerCacheGeneration.current(for: $0) } ?? 0
         let stored = defaults.data(forKey: storageKey).flatMap { try? JSONDecoder().decode(Stored.self, from: $0) }
         draft = stored?.draft ?? FeedbackRequest()
         hasUnknownOutcome = stored?.hasUnknownOutcome ?? false
         if stored?.hasUnknownOutcome == true {
             error = SettingsErrorText(String(localized: "The send could not be confirmed. Retry to check the same report."))
         }
-        let client = server.map { APIClient(baseURL: $0) }
+        // Like the auth probe, keep credentials bound to the server that opened this composer.
+        let headers = CustomHeaderStore.shared.snapshot()
+        let client = server.map { APIClient(baseURL: $0, customHeaderProvider: { headers }) }
         self.submit = submit ?? { request in
             guard let client else { throw APIError.invalidServerURL }
             return try await client.submitFeedback(request)
@@ -48,10 +53,11 @@ public final class FeedbackComposer {
             guard let client else { throw APIError.invalidServerURL }
             return try await client.feedbackDiagnostics()
         }
+        Self.composers.add(self)
     }
 
     public var canSend: Bool {
-        server != nil && !isSending
+        isCurrent && server != nil && !isSending
             && !draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !draft.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && validationError == nil
@@ -68,7 +74,7 @@ public final class FeedbackComposer {
     }
 
     public func edit(_ change: (inout FeedbackRequest) -> Void) {
-        guard !isSending, !hasUnknownOutcome else { return }
+        guard isCurrent, !isSending, !hasUnknownOutcome else { return }
         var edited = draft
         change(&edited)
         guard edited != draft else { return }
@@ -81,9 +87,16 @@ public final class FeedbackComposer {
     }
 
     public func loadDiagnostics() async {
+        guard isCurrent else { return }
         diagnosticsError = nil
-        do { diagnosticsText = try await diagnostics().text }
-        catch { diagnosticsError = SettingsErrorText(error) }
+        do {
+            let result = try await diagnostics()
+            guard isCurrent else { return }
+            diagnosticsText = result.text
+        } catch {
+            guard isCurrent else { return }
+            diagnosticsError = SettingsErrorText(error)
+        }
     }
 
     /// Presentation changes synchronously, before the task can reach the transport.
@@ -92,6 +105,7 @@ public final class FeedbackComposer {
         guard canSend else { return nil }
         if draft.client == nil { draft.client = clientMetadata }
         let request = draft
+        let previouslyUnknown = hasUnknownOutcome
         hasUnknownOutcome = true
         persist()
         isSending = true
@@ -99,13 +113,18 @@ public final class FeedbackComposer {
         isPresented = false
         confirmation.showSuccess(GitActionSuccess(title: String(localized: "Feedback sent")))
         return Task {
+            guard isCurrent else { return }
+            var unresolvedEarlierAttempt = previouslyUnknown
             do {
                 let result: FeedbackResult
                 do { result = try await submit(request) }
                 catch {
+                    guard isCurrent else { return }
                     guard Self.shouldRetry(error) else { throw error }
+                    unresolvedEarlierAttempt = true
                     result = try await submit(request)
                 }
+                guard isCurrent else { return }
                 guard result.status == "sent", !result.reportId.isEmpty else {
                     throw APIError.decoding(underlying: CocoaError(.coderReadCorrupt))
                 }
@@ -113,7 +132,8 @@ public final class FeedbackComposer {
                 hasUnknownOutcome = false
                 defaults.removeObject(forKey: storageKey)
             } catch {
-                hasUnknownOutcome = !Self.isRefusal(error)
+                guard isCurrent else { return }
+                hasUnknownOutcome = unresolvedEarlierAttempt || !Self.isRefusal(error)
                 persist()
                 self.error = hasUnknownOutcome
                     ? SettingsErrorText(String(localized: "The send could not be confirmed. Retry to check the same report."))
@@ -126,9 +146,33 @@ public final class FeedbackComposer {
     }
 
     private func persist() {
+        guard isCurrent else { return }
         if let data = try? JSONEncoder().encode(Stored(draft: draft, hasUnknownOutcome: hasUnknownOutcome)) {
             defaults.set(data, forKey: storageKey)
         }
+    }
+
+    /// Called after the shared server generation advances, for sign-out, removal, and identity changes.
+    static func discardDraft(for server: URL, defaults: UserDefaults) {
+        defaults.removeObject(forKey: storageKey(for: server))
+        for composer in composers.allObjects where composer.server == server {
+            composer.draft = FeedbackRequest()
+            composer.diagnosticsText = nil
+            composer.diagnosticsError = nil
+            composer.error = nil
+            composer.hasUnknownOutcome = false
+            composer.isPresented = false
+            composer.isSending = false
+            composer.confirmation.dismissSuccess()
+        }
+    }
+
+    private var isCurrent: Bool {
+        server.map { ServerCacheGeneration.current(for: $0) == cacheGeneration } ?? true
+    }
+
+    private static func storageKey(for server: URL?) -> String {
+        "feedback-draft.\(server?.absoluteString ?? "disconnected")"
     }
 
     private static func isRefusal(_ error: Error) -> Bool {

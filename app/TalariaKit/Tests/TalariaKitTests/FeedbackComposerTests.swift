@@ -1,4 +1,5 @@
 import XCTest
+import SwiftData
 @testable import TalariaKit
 
 @MainActor
@@ -133,5 +134,81 @@ final class FeedbackComposerTests: XCTestCase {
         XCTAssertEqual(requests.first, requests.last)
         XCTAssertTrue(model.draft.title.isEmpty)
         XCTAssertFalse(model.isPresented)
+    }
+
+    func testRefusalAfterAnUnknownAttemptKeepsTheOriginalPayloadLocked() async throws {
+        for refusal in [APIError.http(statusCode: 503, body: "{\"error\":\"feedback_unavailable\"}"), .unauthorized] {
+            let storage = defaults()
+            var requests: [FeedbackRequest] = []
+            let model = FeedbackComposer(server: server, defaults: storage, clientMetadata: metadata, submit: { request in
+                requests.append(request)
+                if requests.count == 1 { throw URLError(.networkConnectionLost) }
+                throw refusal
+            })
+            fill(model)
+            try await XCTUnwrap(model.send()).value
+            XCTAssertEqual(requests.count, 2)
+            XCTAssertTrue(model.hasUnknownOutcome, "A retry's refusal cannot reject the earlier unknown attempt")
+            let original = model.draft
+            model.edit { $0.title = "Another report" }
+            XCTAssertEqual(model.draft, original)
+            try await XCTUnwrap(model.send()).value
+            XCTAssertEqual(requests.count, 3)
+            XCTAssertTrue(model.hasUnknownOutcome, "A later manual retry must preserve the earlier uncertainty too")
+            XCTAssertTrue(requests.allSatisfy { $0 == original })
+            let restored = FeedbackComposer(server: server, defaults: storage, clientMetadata: metadata)
+            XCTAssertEqual(restored.draft, original)
+            XCTAssertTrue(restored.hasUnknownOutcome)
+        }
+    }
+
+    func testServerResetPurgesAndInvalidatesDraftsAndHeldCompletions() async throws {
+        for succeeds in [true, false] {
+            let storage = defaults()
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent("feedback-reset-\(UUID())")
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let container = try ModelContainer(for: CachedSession.self, CachedMessage.self,
+                configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none))
+            let reset = AuthManager.serverScopedStateReset(cacheContainer: container,
+                draftStore: ChatDraftStore(persistence: ChatDraftFilePersistence(directoryURL: root)),
+                defaults: storage, responseCacheRoot: root)
+            let started = expectation(description: "Old identity submission held")
+            var finish: CheckedContinuation<FeedbackResult, Error>?
+            var attempts = 0
+            let old = FeedbackComposer(server: server, defaults: storage, clientMetadata: metadata, submit: { _ in
+                attempts += 1
+                guard attempts == 1 else { throw APIError.unauthorized }
+                return try await withCheckedThrowingContinuation { finish = $0; started.fulfill() }
+            }, diagnostics: { FeedbackDiagnostics(text: "old identity diagnostics", bytes: 24) })
+            fill(old)
+            await old.loadDiagnostics()
+            let task = try XCTUnwrap(old.send())
+            await fulfillment(of: [started], timeout: 5)
+            let other = FeedbackComposer(server: URL(string: "https://kept-feedback.example.test")!, defaults: storage, clientMetadata: metadata)
+            fill(other)
+            let kept = other.draft
+            try await reset(server)
+            XCTAssertTrue(old.draft.title.isEmpty, "Reset must erase a live composer's previous identity")
+            XCTAssertNil(old.diagnosticsText)
+            XCTAssertFalse(old.isPresented)
+            XCTAssertNil(old.confirmation.success)
+            old.edit { $0.title = "Stale write" }
+            XCTAssertTrue(old.draft.title.isEmpty)
+            XCTAssertNil(old.send(), "An invalidated composer cannot submit with the new identity")
+            let current = FeedbackComposer(server: server, defaults: storage, clientMetadata: metadata)
+            XCTAssertTrue(current.draft.title.isEmpty, "The previous identity's durable draft must be removed")
+            fill(current)
+            let currentDraft = current.draft
+            if succeeds { finish?.resume(returning: FeedbackResult(status: "sent", reportId: "old-report")) }
+            else { finish?.resume(throwing: URLError(.timedOut)) }
+            await task.value
+            XCTAssertEqual(attempts, 1, "A retired identity must not start an automatic retry")
+            XCTAssertFalse(old.isPresented)
+            XCTAssertTrue(old.draft.title.isEmpty)
+            XCTAssertEqual(FeedbackComposer(server: server, defaults: storage, clientMetadata: metadata).draft, currentDraft,
+                           "An old completion must neither restore nor erase the new identity's draft")
+            XCTAssertEqual(other.draft, kept)
+        }
     }
 }

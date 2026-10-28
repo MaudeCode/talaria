@@ -230,6 +230,7 @@ public final class AuthManager {
         { server in
             // First, so a screen still open on the previous identity cannot write back what follows.
             ServerCacheGeneration.advance(for: server)
+            FeedbackComposer.discardDraft(for: server, defaults: defaults)
             SessionNavigationPersistence.save(nil, for: server, defaults: defaults)
             SessionRowDisplaySettings.clearServerScopedSettings(for: server, in: defaults)
             InsightsResponseCache(server: server, defaults: defaults).clear()
