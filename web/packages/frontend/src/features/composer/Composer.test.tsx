@@ -615,7 +615,7 @@ describe('Composer', () => {
     await waitFor(() => expect(api.fetchCommands).toHaveBeenCalled())
     const box = screen.getByRole('textbox')
     await userEvent.type(box, '/reload_skills {Enter}')
-    await waitFor(() => expect(api.execCommand).toHaveBeenCalledWith('/reload_skills', 's1'))
+    await waitFor(() => expect(api.execCommand).toHaveBeenCalledWith('/reload_skills', 's1', expect.any(AbortSignal)))
     const openOutput = async () => { await userEvent.click(await screen.findByRole('button', { name: /^Command output: \/reload/ })); return screen.findByRole('region', { name: 'Command output' }) }
     await waitFor(() => expect(screen.getByRole('button', { name: /^Command output:/ })).not.toHaveTextContent('Running'))
     // Screen readers hear the output without opening it.

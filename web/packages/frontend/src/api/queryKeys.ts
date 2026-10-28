@@ -31,6 +31,7 @@ export const keys = {
   projects: ['projects'] as const,
   prompts: ['prompts'] as const,
   commands: ['commands'] as const,
+  commandExec: (sessionId: string | null) => ['command-exec', sessionId] as const,
   workspaces: ['workspaces'] as const,
   files: {
     lists: (workspace: string) => ['files', 'list', workspace] as const,

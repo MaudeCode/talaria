@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Answer interactive plugin command questions from the chat composer.",
+      "highlight": false,
+      "components": ["web", "app"]
+    }
+  ]
+}

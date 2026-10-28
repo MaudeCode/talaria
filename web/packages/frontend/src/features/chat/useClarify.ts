@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useIsMutating, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ClarifyPending, ClarifyStep } from '../../contracts'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
@@ -27,9 +27,10 @@ export interface Clarify {
   send: (text: string) => void
 }
 
-/** The session's clarify queue head while its turn runs; every reader shares one query, which `useClarify` re-reads on frames. */
+/** The session's clarify queue head while a turn or command runs; every reader shares one query. */
 export function useClarifyHead(sessionId: string | null, live: LiveTurn | null) {
-  const running = !!sessionId && !!live && !isTerminal(live.status)
+  const commands = useIsMutating({ mutationKey: keys.commandExec(sessionId) })
+  const running = !!sessionId && (commands > 0 || (!!live && !isTerminal(live.status)))
   const query = useQuery({
     queryKey: keys.clarify(sessionId ?? ''),
     queryFn: () => api.fetchClarifyPending(sessionId ?? ''),
@@ -40,7 +41,7 @@ export function useClarifyHead(sessionId: string | null, live: LiveTurn | null) 
 }
 
 /**
- * While the session's turn runs (the only time the Agent can park on a question), reads the canonical queue head
+ * While the session's turn or command runs, reads the canonical queue head
  * from `/api/clarify/pending` (docs/sse-streams.md: re-read on every chat-stream `clarify` frame and (re)attach,
  * 1.5 s polls while the stream is unhealthy, a 15 s safety poll otherwise), so a refresh, cold attach, reconnect, or
  * expiry converges on the server's queue. It walks the head's server-ordered steps. Answers stay local until the last step, then go

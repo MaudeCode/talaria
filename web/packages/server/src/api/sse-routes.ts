@@ -22,7 +22,7 @@ import { completedToolIndex, publicToolFrame, withToolId } from '../redact.js'
 export const SSE_HEARTBEAT_INTERVAL_MS = 5_000
 const SESSION_SSE_SENT_EVENT_ID_LIMIT = 4096
 
-/** Python `promote_request_to_stream`: bounded concurrent SSE clients (503 `client_stream_limit`). */
+/** Shared keyed concurrency budget; SSE uses it for Python `promote_request_to_stream`. */
 export class StreamSlots {
   private readonly held = new Map<string, number>()
 

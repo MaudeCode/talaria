@@ -42,6 +42,13 @@ stream's health:
   subscribe.
 - A hidden tab issues no polls at all; one catch-up poll runs when it is shown.
 
+Dedicated plugin commands can ask without a chat turn. While a session-bound
+command request is in flight, Web reads the same clarification queue at the
+existing recovery cadence. App opens its existing prompt monitors for that
+request and keeps its 150-second command timeout. Both render server-owned
+steps and submit the usual keyed answers. Leaving the command context cancels
+the request and withdraws its question; it does not replay the command.
+
 Non-browser clients that hold the chat stream open can follow the same rule.
 
 A clarify head carries server-owned `steps` (`qid`, `question`, `choices`,

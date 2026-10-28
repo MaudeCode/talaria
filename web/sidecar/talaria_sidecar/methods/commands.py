@@ -847,11 +847,12 @@ def register(registry) -> None:
             output = execute_agent_command(command, session_id, workspace)
             source = "agent"
             if output is None:
-                from .chat import _turn_identity
+                from .chat import _turn_identity, command_choices
 
                 # TAL-904: a chat's plugin command runs under that chat's session and workspace, as its turns do.
-                with _turn_identity(session_id, workspace) if session_id else contextlib.nullcontext():
+                with command_choices(ctx, params), (_turn_identity(session_id, workspace) if session_id else contextlib.nullcontext()):
                     output = execute_plugin_command(command, session_id)
+                ctx.check_cancelled()
                 source = "plugin"
         if output is None:
             raise RpcError(f"unknown command {parse_slash_command(command)[0]!r}", condition="command_not_found")

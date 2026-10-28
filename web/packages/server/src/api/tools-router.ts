@@ -7,6 +7,7 @@ import { toolsContract, type GatewayMode, type GatewayStatus, type PluginOAuthCl
 import { HttpError, requireFields, type ApiContext } from './router.js'
 import { requestSessionIdGuard } from './session-visibility.js'
 import type { RequestContext } from '../http/context.js'
+import { clientStreamKey } from './sse-routes.js'
 import { activeProfileName, ensureTrustedAuthSession, sessionCanManageServer } from '../auth/gate.js'
 import { currentChatReadiness, HttpFailure } from '../sessions/service.js'
 import { SessionNotFound } from '../sessions/store.js'
@@ -474,7 +475,7 @@ export const toolsRouter = os.router({
       } catch { /* the client commands still list without the Agent registry */ }
       return { commands: commandCatalog(agent) }
     })),
-    exec: os.commands.exec.handler(({ input, context: { ctx } }) => run(async () => {
+    exec: os.commands.exec.handler(({ input, signal, context: { ctx } }) => run(async () => {
       const command = str(input.command).trim()
       if (!command) throw new HttpError(400, 'command is required')
       const [, name = '', args = ''] = /^\/?(\S*)\s*([\s\S]*)$/.exec(command) ?? []
@@ -487,11 +488,48 @@ export const toolsRouter = os.router({
       // TAL-904: a chat's command runs under that chat's session and the workspace its next turn would use. An unknown
       // chat (404) or a workspace that turn would refuse (400) refuses the command rather than run it half-bound.
       const chat = sessionId ? { session_id: sessionId, workspace: (await ctx.deps.sessions.turnWorkspace((await ctx.deps.sessionStore.get(sessionId, { metadataOnly: true })))) } : {}
+      // Workspace resolution can yield to native adoption; recheck at the local execution boundary.
+      if (sessionId) await ctx.deps.sessions.assertWritable(sessionId)
+      const releasePrincipal = ctx.deps.commandSlots.claim(JSON.stringify(['principal', ctx.notificationOwner ?? clientStreamKey(ctx)]))
+      const releaseProfile = releasePrincipal ? ctx.deps.commandSlots.claim(JSON.stringify(['profile', home(ctx)])) : null
+      if (!releaseProfile) {
+        releasePrincipal?.()
+        throw new HttpError(429, 'Too many running commands; wait for one to finish.')
+      }
       let output: string
+      const controller = new AbortController()
+      const prompts = new Set<string>()
+      const cancel = () => {
+        controller.abort()
+        for (const id of prompts) ctx.deps.pending.resolveClarify(sessionId, id)
+        prompts.clear()
+      }
+      signal?.addEventListener('abort', cancel, { once: true })
+      ctx.res.once('close', cancel)
+      if (signal?.aborted || ctx.res.destroyed) cancel()
       try {
-        output = (await runningSidecar(ctx).call('commands.exec', { profile_home: home(ctx), command, ...chat }, { timeoutMs: 120_000 })).output
+        output = (await runningSidecar(ctx).call('commands.exec', { profile_home: home(ctx), command, ...chat }, {
+          timeoutMs: 120_000,
+          signal: controller.signal,
+          onStream: (frame) => {
+            if (!sessionId || controller.signal.aborted || !frame.data || typeof frame.data !== 'object') return
+            const data = frame.data as Record<string, unknown>
+            const id = str(data.clarify_id)
+            if (!id || data.session_id !== sessionId) return
+            if (frame.event === 'clarify') {
+              prompts.add(id)
+              ctx.deps.pending.submitClarify(sessionId, data, 'command')
+            } else if (frame.event === 'clarify_resolved' && prompts.delete(id)) ctx.deps.pending.resolveClarify(sessionId, id)
+          },
+        })).output
       } catch (error) {
         return commandFailure(error, 'command_not_found', 'Plugin command not found')
+      } finally {
+        releaseProfile()
+        releasePrincipal?.()
+        signal?.removeEventListener('abort', cancel)
+        ctx.res.off('close', cancel)
+        for (const id of prompts) ctx.deps.pending.resolveClarify(sessionId, id)
       }
       // TAL-1274: an /autoprune answer typed in the composer withdraws the profile's open auto-prune question.
       if (name.toLowerCase() === 'autoprune') {

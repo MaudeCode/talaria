@@ -18,6 +18,7 @@ import importlib.util
 import inspect
 import json
 import logging
+import math
 import os
 import queue
 import re
@@ -69,6 +70,12 @@ class _Run:
         self.session_ended = False
         self.home = None  # the profile home its agent runs under, set by ``start``
         self.mcp_discovery_outcome = "ok"
+        self.deadline: float | None = None
+
+    def prompt_cancelled(self, data: dict) -> bool:
+        # Vault answers racing a clear retain their existing unlock-then-release cleanup at turn end.
+        ended = self.session_ended and not str(data.get("kind") or "").startswith("vault_")
+        return self.ctx.cancelled or self.cancel.is_set() or self.finished.is_set() or ended
 
 
 class _ClarifyEntry:
@@ -80,7 +87,77 @@ class _ClarifyEntry:
         self.deadline: float | None = None
 
 
+def _ask_clarify(run: _Run, data: dict, timeout: int, emit=None) -> str | None:
+    """Park on a prompt the server relays until it is answered, the turn is cancelled or ends, or ``timeout``
+    passes (``<= 0``: no limit). The answer, or None, goes back to the Agent and is never emitted."""
+    emit = emit or run.ctx.emit
+    entry = _ClarifyEntry(data)
+    entry.data["clarify_id"] = entry.clarify_id
+    entry.deadline = None if timeout <= 0 else time.monotonic() + float(timeout)
+    if run.deadline is not None:
+        entry.deadline = min(entry.deadline, run.deadline) if entry.deadline is not None else run.deadline
+    with run.lock:
+        if run.prompt_cancelled(data) or (entry.deadline is not None and entry.deadline <= time.monotonic()):
+            return None
+        run.clarify_entries[entry.clarify_id] = entry
+    try:
+        emit("clarify", dict(entry.data))
+        while not entry.event.is_set():
+            if run.prompt_cancelled(data):
+                break
+            if entry.deadline is None:
+                entry.event.wait(0.1)
+                continue
+            remaining = entry.deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            entry.event.wait(min(0.1, remaining))
+    finally:
+        with run.lock:
+            run.clarify_entries.pop(entry.clarify_id, None)
+        emit("clarify_resolved", {"clarify_id": entry.clarify_id, "session_id": run.session_id})
+    return None if run.prompt_cancelled(data) else entry.result
+
+
+def _clarify_callback(run: _Run, params: dict, emit=None):
+    def clarify_callback(question, choices=None, multi_select=False, questions=None):
+        # TAL-351: remove the legacy signature path when v0.21.6 is the oldest supported Agent.
+        structured = isinstance(question, list)
+        if structured:
+            questions, question = question, ""
+        choices_list = [str(c) for c in (choices or [])]
+        # Predecessor `_clarify_timeout_seconds`: the Agent's own resolver over this profile's config
+        # (``clarify.timeout`` else ``agent.clarify_timeout`` else 3600); ``<= 0`` waits until answered or cancelled.
+        # The advertised ``timeout_seconds`` is what the clients count down, so it is the same number.
+        timeout = _clarify_timeout(params)
+        if run.deadline is not None:
+            remaining = max(1, math.ceil(run.deadline - time.monotonic()))
+            timeout = min(timeout, remaining) if timeout > 0 else remaining
+        data = {"question": str(question or ""), "choices_offered": choices_list, "session_id": run.session_id, "kind": "clarify", "requested_at": time.time(), "timeout_seconds": timeout}
+        if multi_select:
+            data["multi_select"] = True
+        # Batch prompts (the Agent's ``_run_batch``) carry no top-level question and expect the ``{"answers": {...}}`` reply.
+        if isinstance(questions, list) and questions:
+            data["questions"] = questions
+        answer = _ask_clarify(run, data, timeout, emit)
+        if answer is not None:
+            if structured:
+                return {"answers": json.loads(answer)["answers"], "outcome": "submitted"}
+            return answer
+        cancelled = run.prompt_cancelled(data)
+        if structured:
+            return {"answers": {}, "outcome": "cancelled" if cancelled else "timed_out",
+                    "notice": "The user cancelled the clarification." if cancelled else "The clarification timed out."}
+        # Older tools have no outcome field. A batch understands timed_out; a single needs an empty answer.
+        if questions:
+            return json.dumps({"answers": {}, "timed_out": not cancelled})
+        return ""
+
+    return clarify_callback
+
+
 _RUNS: dict[str, _Run] = {}
+_COMMAND_RUNS: dict[str, _Run] = {}
 _RUNS_BY_SESSION: dict[str, str] = {}
 # Which run owns the Agent's gateway approval callback per session; register/unregister happen under one lock so a
 # stale run can never remove a successor's callback, and a successor can never leak a predecessor's.
@@ -106,6 +183,43 @@ _MCP_DISCOVERY_LOCK = threading.Lock()
 _MCP_CLOSING_HOMES: set[str] = set()
 _MCP_REDISCOVERY_WAIT = 2.0
 _MCP_PENDING_KEY = "mcp_discovery_pending"
+
+
+def cancel_command_choices(session_id: str | None = None, home=None) -> None:
+    with _RUNS_LOCK:
+        for run in _COMMAND_RUNS.values():
+            if (session_id is None or run.session_id == session_id) and (home is None or run.home == os.path.realpath(home)):
+                run.session_ended = True
+                run.cancel.set()
+
+
+@contextlib.contextmanager
+def command_choices(ctx: CallContext, params: dict):
+    session_id = str(params.get("session_id") or "").strip()
+    try:
+        from hermes_cli.plugin_choices import bind_asker, clarify_asker
+    except ImportError:
+        yield
+        return
+    if not session_id:
+        yield
+        return
+    run = _Run(uuid.uuid4().hex, session_id, ctx)
+    # The server's commands.exec budget includes every question and the handler's final output.
+    run.deadline = time.monotonic() + 120
+    run.home = os.path.realpath(profile_home_param(params))
+    with _MCP_DISCOVERY_LOCK, _RUNS_LOCK:
+        ctx.check_cancelled()
+        if _DRAINING.is_set() or run.home in _MCP_CLOSING_HOMES:
+            raise RpcError("Command profile is unavailable", condition="profile_unavailable")
+        _COMMAND_RUNS[run.stream_id] = run
+    try:
+        with bind_asker(clarify_asker(_clarify_callback(run, params))):
+            yield
+    finally:
+        run.finished.set()
+        with _RUNS_LOCK:
+            _COMMAND_RUNS.pop(run.stream_id, None)
 
 
 def _snippet(raw: Any, limit: int = _TOOL_RESULT_SNIPPET_MAX) -> str:
@@ -1364,6 +1478,7 @@ def _cancel_background_reviews(entries, message: str) -> list[threading.Thread]:
 
 def evict_all_agents() -> int:
     """Drop every cached agent (credentials or environment changed underneath them)."""
+    cancel_command_choices()
     with _AGENT_CACHE_LOCK:
         entries = list(_AGENT_CACHE.values())
         _AGENT_CACHE.clear()
@@ -1388,7 +1503,7 @@ def drain_agents(timeout: float = _AGENT_RELEASE_TIMEOUT) -> None:
         run.cancel.set()
     while time.monotonic() < deadline:
         with _AGENT_CACHE_LOCK, _RUNS_LOCK:
-            if not _COMMITTING and not any(_RUNS.get(run.stream_id) is run for run in runs):
+            if not _COMMITTING and not _COMMAND_RUNS and not any(_RUNS.get(run.stream_id) is run for run in runs):
                 break
         time.sleep(0.05)
     # A turn may have cached its agent after the first eviction.
@@ -1441,6 +1556,7 @@ def release_profile_agents(home):
             raise RpcError("The profile is already being deleted.", condition="profile_unavailable")
         _MCP_CLOSING_HOMES.add(target)
     try:
+        cancel_command_choices(home=home)
         with _AGENT_CACHE_LOCK:
             entries = [_AGENT_CACHE.pop(sid) for sid, entry in list(_AGENT_CACHE.items()) if os.path.realpath(entry[2]) == target]
             started = _release_agents_locked(entries)
@@ -1471,8 +1587,8 @@ def release_profile_agents(home):
 
 
 def _holding_home(target: str) -> bool:
-    with _AGENT_CACHE_LOCK:
-        return any(os.path.realpath(home) == target for _agent, home in _COMMITTING)
+    with _AGENT_CACHE_LOCK, _RUNS_LOCK:
+        return any(os.path.realpath(home) == target for _agent, home in _COMMITTING) or any(run.home == target for run in _COMMAND_RUNS.values())
 
 
 def _acquire_session_db(home):
@@ -1890,28 +2006,7 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
                 emit("notice_clear", {"key": str(key)})
 
         def ask(data: dict, timeout: int) -> str | None:
-            """Park on a prompt the server relays until it is answered, the turn is cancelled or ends, or ``timeout``
-            passes (``<= 0``: no limit). The answer, or None, goes back to the Agent and is never emitted."""
-            entry = _ClarifyEntry(data)
-            entry.data["clarify_id"] = entry.clarify_id
-            entry.deadline = None if timeout <= 0 else time.monotonic() + float(timeout)
-            with run.lock:
-                run.clarify_entries[entry.clarify_id] = entry
-            emit("clarify", dict(entry.data))
-            while not entry.event.is_set():
-                if run.cancel.is_set() or run.finished.is_set() or (data.get("kind") == "skill_secret" and (ctx.cancelled or run.session_ended)):
-                    break
-                if entry.deadline is None:
-                    entry.event.wait(1.0)
-                    continue
-                remaining = entry.deadline - time.monotonic()
-                if remaining <= 0:
-                    break
-                entry.event.wait(min(1.0, remaining))
-            with run.lock:
-                run.clarify_entries.pop(entry.clarify_id, None)
-            emit("clarify_resolved", {"clarify_id": entry.clarify_id, "session_id": session_id})
-            return entry.result
+            return _ask_clarify(run, data, timeout, emit)
 
         def ask_vault(kind: str, fields: dict) -> str:
             """TAL-887: a password-manager prompt; an empty answer is the Agent's decline, as are expiry and cancel."""
@@ -1967,35 +2062,7 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             except Exception:  # noqa: BLE001 - never expose an exception that could include the submitted value
                 return {**skipped, "success": False}
 
-        def clarify_callback(question, choices=None, multi_select=False, questions=None):
-            # TAL-351: remove the legacy signature path when v0.21.6 is the oldest supported Agent.
-            structured = isinstance(question, list)
-            if structured:
-                questions, question = question, ""
-            choices_list = [str(c) for c in (choices or [])]
-            # Predecessor `_clarify_timeout_seconds`: the Agent's own resolver over this profile's config
-            # (``clarify.timeout`` else ``agent.clarify_timeout`` else 3600); ``<= 0`` waits until answered or cancelled.
-            # The advertised ``timeout_seconds`` is what the clients count down, so it is the same number.
-            timeout = _clarify_timeout(params)
-            data = {"question": str(question or ""), "choices_offered": choices_list, "session_id": session_id, "kind": "clarify", "requested_at": time.time(), "timeout_seconds": timeout}
-            if multi_select:
-                data["multi_select"] = True
-            # Batch prompts (the Agent's ``_run_batch``) carry no top-level question and expect the ``{"answers": {...}}`` reply.
-            if isinstance(questions, list) and questions:
-                data["questions"] = questions
-            answer = ask(data, timeout)
-            if answer is not None:
-                if structured:
-                    return {"answers": json.loads(answer)["answers"], "outcome": "submitted"}
-                return answer
-            cancelled = run.cancel.is_set() or run.finished.is_set()
-            if structured:
-                return {"answers": {}, "outcome": "cancelled" if cancelled else "timed_out",
-                        "notice": "The user cancelled the clarification." if cancelled else "The clarification timed out."}
-            # Older tools have no outcome field. A batch understands timed_out; a single needs an empty answer.
-            if questions:
-                return json.dumps({"answers": {}, "timed_out": not cancelled})
-            return ""
+        clarify_callback = _clarify_callback(run, params, emit)
 
         # TAL-818: a ``manage_connections`` card (a hosted connect, an MCP install) opened; the server turns the frame into
         # the chat's connect card, which reads and answers the operation through ``connectors.operation`` / ``respond``.
@@ -2466,10 +2533,18 @@ def refine(params: dict) -> str:
     return f"⚗ Reviewing this conversation in the background{tail} — any memory/skill updates will be reported when done."
 
 
-def _run_for(params: dict) -> _Run | None:
+def _run_for(params: dict, *, include_commands: bool = False) -> _Run | None:
     stream_id = str(params.get("stream_id") or "").strip()
     session_id = str(params.get("session_id") or "").strip()
     with _RUNS_LOCK:
+        clarify_id = str(params.get("clarify_id") or "")
+        home = params.get("profile_home")
+        if include_commands and clarify_id and session_id and home:
+            for run in _COMMAND_RUNS.values():
+                if run.session_id == session_id and run.home == os.path.realpath(home):
+                    with run.lock:
+                        if clarify_id in run.clarify_entries:
+                            return run
         if stream_id:
             return _RUNS.get(stream_id)
         if session_id:
@@ -2620,6 +2695,7 @@ def register(registry) -> None:
         in place."""
         session_id = str(params.get("session_id") or "").strip()
         end_session = params.get("clear_session") is True
+        cancel_command_choices(session_id)
         with _AGENT_CACHE_LOCK:
             with _RUNS_LOCK:
                 run = _RUNS.get(_RUNS_BY_SESSION.get(session_id) or "")
@@ -2776,7 +2852,7 @@ def register(registry) -> None:
     def clarify_respond_(ctx: CallContext, params: dict) -> dict:
         response = str(params.get("response") or "")
         clarify_id = str(params.get("clarify_id") or "").strip()
-        run = _run_for(params)
+        run = _run_for(params, include_commands=True)
         if run is None:
             return {"ok": False}
         if params.get("session_id") and str(params["session_id"]) != run.session_id:
@@ -2787,7 +2863,7 @@ def register(registry) -> None:
             if target is None or target.event.is_set() or (target.deadline is not None and time.monotonic() >= target.deadline):
                 return {"ok": False}
             skill_secret = target.data.get("kind") == "skill_secret"
-            if skill_secret and (not clarify_id or ctx.cancelled or run.ctx.cancelled or run.cancel.is_set() or run.finished.is_set() or run.session_ended):
+            if ctx.cancelled or run.prompt_cancelled(target.data) or (skill_secret and not clarify_id):
                 return {"ok": False}
             # Secure answers are as typed; an empty reply is their decline. Only the first answer releases a waiter.
             secure = str(target.data.get("kind") or "").startswith("vault_") or skill_secret

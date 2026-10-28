@@ -716,6 +716,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     connectorOffers: new ConnectorOffers(storage.documents),
     groups: new Groups(() => deps),
     streamSlots,
+    commandSlots: new StreamSlots(() => 2),
     profileHome,
     agentConfig,
     catalog,

@@ -151,6 +151,7 @@ export interface AppDeps {
   promptQueues: PromptQueues
   groups: Groups
   streamSlots: StreamSlots
+  commandSlots: StreamSlots
   // ── settings, profiles, providers, onboarding (checkpoint 7a) ──
   /** Home directory for a logical profile name (root aliases and invalid names clamp to the base home). */
   profileHome: (name: string) => string
