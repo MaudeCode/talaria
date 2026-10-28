@@ -78,6 +78,12 @@ bytes or open descriptors. Uncached ranges may omit an ETag. Buffered reads
 recheck the descriptor signature before publishing a validator; streamed bodies
 own their descriptors through completion or cancellation.
 
+Workspace editor saves stage a complete replacement in an exclusively created sibling file,
+carry over the destination's permission mode, sync it, then atomically rename it over the original.
+The anchored directory walk owns staging, replacement and failure cleanup in one descriptor-relative
+operation, using the verified cwd fallback on macOS. A failed write, sync or replacement leaves the
+original bytes intact. Symlinks and non-regular targets remain refused.
+
 A sidebar cache miss sends its interactive and background windows in one worker
 request. The windows share a read-only SQLite snapshot, schema probes, validated
 local lineages and one ownership lookup over their combined candidates. Storage

@@ -20,7 +20,7 @@ import { isBlockedSystemPath, REMOTE_WORKSPACE_UNSUPPORTED_CODE, REMOTE_WORKSPAC
 import { isWithin, resolvePathLikePython } from '../workspace/paths.js'
 import { fileSourceSession, managedBuffers } from '../workspace/managed-buffers.js'
 import { previewUrl, readFilePreview } from '../workspace/preview.js'
-import { dirSignature, FileExistsError, listDir, makeAnchoredDir, NotFoundError, openAnchoredCreateFd, openAnchoredWriteFd, PathTraversalError, renameAnchored, rmtreeAnchored, safeResolve, serializeEntriesForBrowser, unlinkAnchored, FileTooLargeError } from '../workspace/fs.js'
+import { dirSignature, FileExistsError, listDir, makeAnchoredDir, NotFoundError, openAnchoredCreateFd, replaceAnchoredFile, PathTraversalError, renameAnchored, rmtreeAnchored, safeResolve, serializeEntriesForBrowser, unlinkAnchored, FileTooLargeError } from '../workspace/fs.js'
 import { randomUUID } from 'node:crypto'
 import { pyOsError, pyRepr, str } from '../util.js'
 import { ensureTrustedAuthSession, sessionCanManageServer } from '../auth/gate.js'
@@ -619,8 +619,7 @@ export const sessionsRouter = os.router({
         if (!existsSync(target)) throw new HttpError(404, 'File not found')
         if (statSync(target).isDirectory()) throw new HttpError(400, 'Cannot save: path is a directory')
         const data = Buffer.from(input.content ?? '', 'utf8')
-        const fd = openAnchoredWriteFd(root, target)
-        try { writeFully(fd, data) } finally { closeSync(fd) }
+        replaceAnchoredFile(root, target, data)
         return { ok: true as const, path: input.path, size: data.length }
       } catch (error) {
         throw fileError(error)

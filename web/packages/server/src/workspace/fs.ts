@@ -11,11 +11,12 @@
  * a pathname swapped underneath us can never be followed. The sections are
  * synchronous, so nothing else in the process observes the temporary cwd.
  */
-import { closeSync, constants, existsSync, fstatSync, ftruncateSync, lstatSync, mkdirSync, openSync, readdirSync, readlinkSync, renameSync, rmdirSync, statSync, unlinkSync, type Stats } from 'node:fs'
+import { closeSync, constants, existsSync, fchmodSync, fsyncSync, fstatSync, ftruncateSync, lstatSync, mkdirSync, openSync, readdirSync, readlinkSync, renameSync, rmdirSync, statSync, unlinkSync, type Stats } from 'node:fs'
 import { createHash, randomBytes } from 'node:crypto'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { isWithin, resolvePathLikePython } from './paths.js'
 import { isBlockedSystemPath } from './workspaces.js'
+import { writeFully } from '../fs/atomic.js'
 
 export const MAX_FILE_BYTES = 400_000
 
@@ -222,6 +223,48 @@ export function openAnchoredWriteFd(root: string, target: string): number {
     })
   } catch {
     throw new NotFoundError(`Not found: ${target}`)
+  } finally {
+    dir.close()
+  }
+}
+
+/** Stage and replace an existing regular file without truncating it on a failed save. */
+export function replaceAnchoredFile(root: string, target: string, data: Uint8Array): void {
+  const { dir, leaf } = openAnchoredParent(root, target)
+  try {
+    // Keep staging, commit and cleanup in one cwd anchor, even if the parent pathname is swapped mid-write.
+    dir.anchored(() => {
+      const dest = dir.child(leaf)
+      let original: number
+      try { original = openSync(dest, constants.O_WRONLY | O_NOFOLLOW | O_NONBLOCK) } catch { throw new NotFoundError(`Not found: ${target}`) }
+      try {
+        const before = fstatSync(original)
+        if (!before.isFile()) throw new NotFoundError(`Not a file: ${target}`)
+        const staged = dir.child(`.talaria-save-${randomBytes(16).toString('hex')}`)
+        let fd: number | undefined
+        let created = false
+        let committed = false
+        try {
+          fd = openSync(staged, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | O_NOFOLLOW, 0o600)
+          created = true
+          writeFully(fd, data)
+          fchmodSync(fd, before.mode & 0o777)
+          fsyncSync(fd)
+          const stagedStat = fstatSync(fd)
+          closeSync(fd)
+          fd = undefined
+          // Refuse a swapped destination or staging entry; rename never follows a symlink's referent.
+          if (!sameFile(before, lstatSync(dest)) || !sameFile(stagedStat, lstatSync(staged))) throw new NotFoundError(`File changed: ${target}`)
+          renameSync(staged, dest)
+          committed = true
+        } finally {
+          if (fd !== undefined) { try { closeSync(fd) } catch { /* already closed */ } }
+          if (created && !committed) { try { unlinkSync(staged) } catch { /* already removed */ } }
+        }
+      } finally {
+        closeSync(original)
+      }
+    })
   } finally {
     dir.close()
   }

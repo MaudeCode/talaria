@@ -1,12 +1,13 @@
 /** Anchored file helpers: descriptor-relative walks refuse symlinked components at every depth (Python `openat`). */
 import { spawnSync } from 'node:child_process'
-import { closeSync, fstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, closeSync, fstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
 // Lets a test act between the walk's lstat of an entry and its descent into it.
 const afterLstat = vi.hoisted(() => ({ hook: null as ((path: string) => void) | null }))
+const afterChmod = vi.hoisted(() => ({ hook: null as (() => void) | null }))
 vi.mock('node:fs', async (importOriginal) => {
   const fs = await importOriginal<typeof import('node:fs')>()
   const lstatSync = ((path: string, opts?: unknown) => {
@@ -14,10 +15,10 @@ vi.mock('node:fs', async (importOriginal) => {
     afterLstat.hook?.(path)
     return result
   }) as typeof fs.lstatSync
-  return { ...fs, default: { ...fs, lstatSync }, lstatSync }
+  return { ...fs, default: { ...fs, lstatSync }, lstatSync, fchmodSync: (fd: number, mode: number) => { fs.fchmodSync(fd, mode); afterChmod.hook?.() } }
 })
 
-import { dirSignature, FileExistsError, listDir, makeAnchoredDir, NotFoundError, openAnchoredCreateFd, openAnchoredFd, openAnchoredWriteFd, PathTraversalError, renameAnchored, rmtreeAnchored, serializeEntriesForBrowser, unlinkAnchored } from './fs.js'
+import { dirSignature, FileExistsError, listDir, makeAnchoredDir, NotFoundError, openAnchoredCreateFd, openAnchoredFd, openAnchoredWriteFd, PathTraversalError, renameAnchored, replaceAnchoredFile, rmtreeAnchored, serializeEntriesForBrowser, unlinkAnchored } from './fs.js'
 
 describe('anchored walk', () => {
   let root = ''
@@ -33,7 +34,70 @@ describe('anchored walk', () => {
     symlinkSync(join(outside, 'secret.txt'), join(root, 'a', 'link-file'))
   })
   afterAll(() => { rmSync(root, { recursive: true, force: true }); rmSync(outside, { recursive: true, force: true }) })
-  afterEach(() => { vi.restoreAllMocks(); afterLstat.hook = null })
+  afterEach(() => { vi.restoreAllMocks(); afterLstat.hook = null; afterChmod.hook = null })
+
+  it('atomic replacement leaves existing readers on the original complete inode and preserves executable mode', () => {
+    const target = join(root, 'atomic.txt')
+    writeFileSync(target, 'original')
+    chmodSync(target, 0o751)
+    const fd = openAnchoredFd(root, target, { wantDir: false })
+    try {
+      replaceAnchoredFile(root, target, Buffer.from('complete replacement'))
+      expect(readFileSync(fd, 'utf8')).toBe('original')
+      expect(readFileSync(target, 'utf8')).toBe('complete replacement')
+      expect(statSync(target).mode & 0o777).toBe(0o751)
+    } finally { closeSync(fd) }
+    expect(readdirSync(root).filter((n) => n.startsWith('.talaria-save-'))).toEqual([])
+  })
+
+  it('replacement refuses unsafe targets and symlinked parents', () => {
+    expect(() => { replaceAnchoredFile(root, join(root, 'a', 'link-file'), Buffer.from('bad')); }).toThrow(NotFoundError)
+    expect(() => { replaceAnchoredFile(root, join(root, 'link-dir', 'secret.txt'), Buffer.from('bad')); }).toThrow(NotFoundError)
+    expect(() => { replaceAnchoredFile(root, join(root, 'a'), Buffer.from('bad')); }).toThrow(NotFoundError)
+    expect(() => { replaceAnchoredFile(root, join(root, 'missing'), Buffer.from('bad')); }).toThrow(NotFoundError)
+    expect(() => { replaceAnchoredFile(root, join(outside, 'secret.txt'), Buffer.from('bad')); }).toThrow(PathTraversalError)
+    expect(readFileSync(join(outside, 'secret.txt'), 'utf8')).toBe('outside')
+  })
+
+  it.each([false, true])('a parent swapped during staging cannot redirect replacement or cleanup, failure=%s', (fail) => {
+    const parent = join(root, `save-parent-${String(fail)}`)
+    mkdirSync(parent)
+    writeFileSync(join(parent, 'secret.txt'), 'original')
+    const cwd = process.cwd()
+    afterChmod.hook = () => {
+      afterChmod.hook = null
+      renameSync(parent, `${parent}-held`)
+      symlinkSync(outside, parent)
+      if (fail) throw new Error('synthetic staging failure')
+    }
+    const save = () => { replaceAnchoredFile(root, join(parent, 'secret.txt'), Buffer.from('replacement')) }
+    if (fail) expect(save).toThrow('synthetic staging failure')
+    else save()
+    expect(process.cwd()).toBe(cwd)
+    expect(readFileSync(join(outside, 'secret.txt'), 'utf8')).toBe('outside')
+    expect(readFileSync(join(`${parent}-held`, 'secret.txt'), 'utf8')).toBe(fail ? 'original' : 'replacement')
+    expect(readdirSync(`${parent}-held`)).toEqual(['secret.txt'])
+  })
+
+  it.each(['destination', 'staging'])('refuses a %s entry swapped for a symlink during staging', (entry) => {
+    const parent = join(root, `save-swap-${entry}`)
+    mkdirSync(parent)
+    const target = join(parent, 'secret.txt')
+    writeFileSync(target, 'original')
+    const cwd = process.cwd()
+    afterChmod.hook = () => {
+      afterChmod.hook = null
+      const victim = entry === 'destination' ? target : join(parent, readdirSync(parent).find((n) => n.startsWith('.talaria-save-'))!)
+      if (entry === 'destination') renameSync(victim, `${target}.original`)
+      else unlinkSync(victim)
+      symlinkSync(join(outside, 'secret.txt'), victim)
+    }
+    expect(() => { replaceAnchoredFile(root, target, Buffer.from('replacement')); }).toThrow(NotFoundError)
+    expect(process.cwd()).toBe(cwd)
+    expect(readFileSync(join(outside, 'secret.txt'), 'utf8')).toBe('outside')
+    expect(readFileSync(entry === 'destination' ? `${target}.original` : target, 'utf8')).toBe('original')
+    expect(readdirSync(parent).filter((n) => n.startsWith('.talaria-save-'))).toEqual([])
+  })
 
   it('reads a real file through the walk', () => {
     const fd = openAnchoredFd(root, join(root, 'a', 'b', 'f.txt'), { wantDir: false })
@@ -220,6 +284,7 @@ describe('anchored walk', () => {
     try { expect(fstatSync(fd).isFile()).toBe(false) } finally { closeSync(fd) }
     // Writes: refused before any truncation.
     expect(() => openAnchoredWriteFd(root, fifo)).toThrow(NotFoundError)
+    expect(() => { replaceAnchoredFile(root, fifo, Buffer.from('bad')); }).toThrow(NotFoundError)
   })
 })
 
