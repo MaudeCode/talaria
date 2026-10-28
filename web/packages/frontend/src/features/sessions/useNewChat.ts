@@ -37,5 +37,5 @@ export async function createSessionNow(opts: { source_references?: SourceReferen
 export function useCreationId(choices: object) {
   const id = useRef<string | null>(null)
   useEffect(() => { id.current = null }, [choices])
-  return useMemo(() => ({ next: () => (id.current ??= randomHex()), settle: () => { id.current = null } }), [])
+  return useMemo(() => ({ next: () => { const next = id.current ?? randomHex(); id.current = next; return next }, settle: () => { id.current = null } }), [])
 }

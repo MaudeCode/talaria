@@ -463,7 +463,8 @@ export const Composer = memo(function Composer(props: ComposerProps) {
     if (!value && files.length === 0) return
     if (files.some((f) => f.status === 'uploading')) { showToast(m.loading()); return }
     submitting.current = true
-    try {
+    // `.finally` rather than try/finally: React Compiler cannot lower a `finally` clause.
+    const submit = async () => {
       const interrupt = (replacement: string) => {
         if (!sessionId) return
         onQueue(queueEntry(replacement))
@@ -556,12 +557,11 @@ export const Composer = memo(function Composer(props: ComposerProps) {
         const attachments = files.flatMap((f) => (f.status === 'done' && f.upload ? [f.upload] : []))
         await startTurn({ sessionId: target.session_id, message: value, files, request: { ...turnRequest(target, bootstrap.profile?.name ?? 'default'), ...(attachments.length ? { attachments } : {}) } })
       } catch (e) {
-        if (scope !== getStreamContext()) return
-        showToast(e instanceof Error ? e.message : String(e), 5000, 'error')
-      } finally {
-        textarea.current?.focus()
+        if (scope === getStreamContext()) showToast(e instanceof Error ? e.message : String(e), 5000, 'error')
       }
-    } finally { submitting.current = false }
+      textarea.current?.focus()
+    }
+    await submit().finally(() => { submitting.current = false })
   }, [nativeOwner, localStateId, text, files, sending, session, onEnsureSession, busy, busyMode, sessionId, trySteer, locked, queueEntry, onQueue, onLocalCommand, bootstrap.profile, askBtw, runCommand, catalog, launchBackground])
 
   const applySuggestion = (s: CommandSuggestion) => { setText(`/${s.name} `); textarea.current?.focus() }

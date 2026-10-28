@@ -4,7 +4,6 @@ import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRe
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { m } from '../../paraglide/messages.js'
-import { useLocale } from '../../i18n/useLocale'
 import { cn } from '../../ui/cn'
 import { MAIN_VIEW } from '../../shell/AppShell'
 import { PanelRight, TerminalSquare } from 'lucide-react'
@@ -68,7 +67,6 @@ const admissionResource = (sessionId: string, admissionId: string) => `owner-adm
 
 export function ChatView({ sessionId }: { sessionId: string | null }) {
   const bootstrap = useBootstrap()
-  const locale = useLocale()
   const qc = useQueryClient()
   const { mutate: renameSession } = useResourceMutation({ resource: () => `session:${sessionId}`, effect: (title: string) => ({ fields: { title } }), mutationFn: (title) => { if (!sessionId) throw new Error(m.error_generic()); return api.renameSession(sessionId, title) }, onError: (e) => showErrorToast(e) })
 
@@ -170,7 +168,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   const onNewWorktreeChat = useCallback((workspace: string | undefined) => { void newWorktreeChat(workspace) }, [newWorktreeChat])
 
   // Reasoning effort is server state shared with the CLI (config.yaml), keyed on the session's model.
-  const reasoningKey = ['reasoning', session?.model ?? null, session?.model_provider ?? null] as const
+  const reasoningKey = useMemo(() => ['reasoning', session?.model ?? null, session?.model_provider ?? null] as const, [session?.model, session?.model_provider])
   const reasoningStatus = useQuery({ queryKey: reasoningKey, queryFn: () => api.fetchReasoning(session?.model, session?.model_provider), enabled: !!sessionId, staleTime: 30_000 })
   const reasoningEffect = useResourceEffects<string | null>()[JSON.stringify(reasoningKey)]
   // The chosen effort shows at once; the server's answer replaces it.
@@ -186,10 +184,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     onError: (e) => showErrorToast(e),
   })
   const sendReasoning = reasoningWrite.mutate
-  const setReasoning = useCallback((level: string | null) => {
-    sendReasoning({ key: reasoningKey, level, sid: sessionId ?? undefined })
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- reasoningKey is derived from session model/provider
-  }, [sendReasoning, sessionId, session?.model, session?.model_provider])
+  const setReasoning = useCallback((level: string | null) => { sendReasoning({ key: reasoningKey, level, sid: sessionId ?? undefined }) }, [sendReasoning, reasoningKey, sessionId])
   // The CLI's reasoning display (config.yaml): nothing here shows it, so only a refusal reports; an unknown outcome rereads
   // the reasoning status, which carries `show_reasoning`.
   const { mutate: setReasoningDisplay } = useResourceMutation({
@@ -281,7 +276,8 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   const followCompression = useCallback(async (sid: string, start: () => Promise<number | null | undefined>) => {
     const { signal } = (compression.current = new AbortController())
     setCompressingSince(Date.now())
-    try {
+    // A rejected follow rather than try/finally: React Compiler cannot lower `finally` or a `throw` inside `try`.
+    const follow = async () => {
       const startedAt = await start()
       signal.throwIfAborted()
       followed.current = startedAt ?? null
@@ -302,11 +298,9 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
         return
       }
       throw new Error(m.compress_failed_label())
-    } catch (e) {
-      if (!signal.aborted) showToast(e instanceof Error ? e.message : String(e), 5000, 'error')
-    } finally {
-      setCompressingSince(null)
     }
+    await follow().catch((e: unknown) => { if (!signal.aborted) showToast(e instanceof Error ? e.message : String(e), 5000, 'error') })
+    setCompressingSince(null)
   }, [qc, navigate, refresh])
   const runCompression = useCallback((sid: string) => followCompression(sid, async () => (await api.compressSession(sid)).started_at), [followCompression])
   // TAL-1006: a manual job the session reports running (started in another tab, or before this view opened) shows and
@@ -430,14 +424,13 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
 
   const onRetry = useCallback(() => { void onRegenerate() }, [onRegenerate])
   const runtime = useRuntimeNotices({ live, onRetry, compressingSince, agentNotices: session?.notices, goal: session?.goal })
-  const notices = useMemo(() => [
+  const notices = [
     ...runtime.notices,
     ...(modelNotice ? [modelNotice] : []),
     ...(operation ? [{ id: 'history', content: <span role="status">{operation}</span> }] : []),
     ...(session?.owner_attachment?.restarting ? [{ id: 'owner-restarting', content: <span role="status">{m.owner_restarting()}</span> }] : []),
     ...(failedQueued && queued.some((q) => q.id === failedQueued) ? [{ id: 'queue-failed', tone: 'error' as const, content: m.composer_queue_failed(), action: { label: m.retry(), run: () => setFailedQueued(null) } }] : []),
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- Paraglide messages read the active locale implicitly.
-  ], [runtime.notices, modelNotice, operation, session?.owner_attachment?.restarting, failedQueued, queued, locale])
+  ]
   const notFound = query.isError && isApiError(query.error) && query.error.status === 404
   const otherProfile = query.isError && isApiError(query.error) && query.error.status === 409
 

@@ -152,14 +152,7 @@ export function settleOnNextRead(qc: QueryClient, current: () => boolean, clear:
   })
 }
 
-/**
- * One optimistic owner per resource across sidebar, menus and detail; independent resources proceed concurrently.
- * The effect shows at once. Success keeps it until a fresh read confirms the server value, a definite refusal rolls
- * it back at once, and an unknown outcome keeps it while a fresh read decides. A repeated write to the same resource
- * replaces the shown result and runs after its predecessor (last write wins); an `exclusive` write (create, delete)
- * is never queued behind or replayed over another, and refuses with `resource_change_busy` instead.
- */
-export function useResourceMutation<V, R, T = unknown>(options: {
+interface ResourceMutationOptions<V, R, T> {
   resource: (variables: V) => string | string[]
   effect: (variables: V) => ResourceEffect<T>
   exclusive?: boolean
@@ -168,76 +161,86 @@ export function useResourceMutation<V, R, T = unknown>(options: {
   mutationFn: (variables: V) => Promise<R>
   onSuccess?: (result: R, variables: V) => void
   onError?: (error: unknown) => void
-}) {
+}
+
+/**
+ * One optimistic owner per resource across sidebar, menus and detail; independent resources proceed concurrently.
+ * The effect shows at once. Success keeps it until a fresh read confirms the server value, a definite refusal rolls
+ * it back at once, and an unknown outcome keeps it while a fresh read decides. A repeated write to the same resource
+ * replaces the shown result and runs after its predecessor (last write wins); an `exclusive` write (create, delete)
+ * is never queued behind or replayed over another, and refuses with `resource_change_busy` instead.
+ */
+export function useResourceMutation<V, R, T = unknown>(options: ResourceMutationOptions<V, R, T>) {
   const qc = useQueryClient()
-  return useMutation({
-    mutationFn: async (variables: V) => {
-      qc.setQueryDefaults(effectKey, { structuralSharing: false })
-      const resources = options.resource(variables)
-      const ids = typeof resources === 'string' ? [resources] : resources
-      const id = ids[0]
-      if (id === undefined) throw new Error(m.error_generic())
-      const context = getStreamContext()
-      const effects = () => qc.getQueryData<Record<string, OwnedEffect>>(effectKey) ?? empty
-      const shown = options.effect(variables)
-      const exclusive = !!options.exclusive || !!shown.remove
-      const predecessors = ids.map((id) => effects()[id]).filter((effect): effect is OwnedEffect => effect?.context === context)
-      if (predecessors.some((effect) => effect.exclusive) || exclusive && predecessors.length) {
-        const busy = new Error(m.resource_change_busy())
-        options.onError?.(busy)
-        throw busy
+  return useMutation({ mutationFn: (variables: V) => runResourceMutation(qc, options, variables) })
+}
+
+// Module scope: React Compiler cannot lower its try/finally, so it stays outside the hook.
+async function runResourceMutation<V, R, T>(qc: QueryClient, options: ResourceMutationOptions<V, R, T>, variables: V) {
+  qc.setQueryDefaults(effectKey, { structuralSharing: false })
+  const resources = options.resource(variables)
+  const ids = typeof resources === 'string' ? [resources] : resources
+  const id = ids[0]
+  if (id === undefined) throw new Error(m.error_generic())
+  const context = getStreamContext()
+  const effects = () => qc.getQueryData<Record<string, OwnedEffect>>(effectKey) ?? empty
+  const shown = options.effect(variables)
+  const exclusive = !!options.exclusive || !!shown.remove
+  const predecessors = ids.map((id) => effects()[id]).filter((effect): effect is OwnedEffect => effect?.context === context)
+  if (predecessors.some((effect) => effect.exclusive) || exclusive && predecessors.length) {
+    const busy = new Error(m.resource_change_busy())
+    options.onError?.(busy)
+    throw busy
+  }
+  let release!: () => void
+  const settled = new Promise((resolve) => { release = () => resolve(undefined) })
+  // A replacing write keeps the fields of the write it replaces that it does not set itself (rename, then recolor).
+  const mine: Record<string, OwnedEffect> = Object.fromEntries(ids.map((id) => {
+    const before = effects()[id]?.context === context ? effects()[id]?.fields : undefined
+    const fields = before && shown.fields ? { ...before, ...shown.fields } : shown.fields ?? before
+    return [id, { ...shown, ...(fields ? { fields } : {}), context, exclusive, settled }]
+  }))
+  // A later write may replace this one on some of its resources; this write still owns the rest.
+  const owned = () => getStreamContext() === context ? ids.filter((id) => effects()[id] === mine[id]) : []
+  const current = () => owned().length > 0
+  const clear = () => {
+    const mine = owned()
+    if (!mine.length) return
+    qc.setQueryData(effectKey, (old: Record<string, OwnedEffect> = empty) => {
+      return Object.fromEntries(Object.entries(old).filter(([key]) => !mine.includes(key)))
+    })
+  }
+  qc.setQueryData(effectKey, { ...effects(), ...mine })
+  let outcome: 'confirmed' | 'refused' | 'unknown' = 'unknown'
+  try {
+    // A replaced write still reaches the server first, so the newest request lands last.
+    await Promise.all(predecessors.map((effect) => effect.settled))
+    if (!current()) throw new Error(m.resource_change_busy())
+    const result = await options.mutationFn(variables)
+    if (!current()) return result
+    if (result && typeof result === 'object') {
+      if ('error' in result && typeof result.error === 'string' && result.error) throw new Error(result.error)
+      if ('ok' in result && result.ok === false) throw new Error(m.error_generic())
+    }
+    outcome = 'confirmed'
+    options.onSuccess?.(result, variables)
+    return result
+  } catch (error) {
+    if (outcome === 'unknown' && isDefiniteRefusal(error)) outcome = 'refused'
+    if (current()) options.onError?.(error)
+    throw error
+  } finally {
+    release()
+    if (outcome === 'refused') {
+      clear()
+      // The refusal may mean this snapshot is out of date (a task changed since it was read); refresh it behind the rollback.
+      void reconcileSnapshot(qc, () => getStreamContext() === context, id, options.queryKey, options.readKeys?.(variables)).catch(() => undefined)
+    } else if (current()) {
+      // The shown result stays until a read taken after the write confirms or replaces it.
+      try { await reconcile(qc, current, id, options.queryKey, options.readKeys?.(variables)); clear() } catch {
+        // An unknown outcome is never retried as another write; the next successful read settles it.
+        settleOnNextRead(qc, current, clear, options.queryKey, options.readKeys?.(variables))
       }
-      let release!: () => void
-      const settled = new Promise((resolve) => { release = () => resolve(undefined) })
-      // A replacing write keeps the fields of the write it replaces that it does not set itself (rename, then recolor).
-      const mine: Record<string, OwnedEffect> = Object.fromEntries(ids.map((id) => {
-        const before = effects()[id]?.context === context ? effects()[id]?.fields : undefined
-        const fields = before && shown.fields ? { ...before, ...shown.fields } : shown.fields ?? before
-        return [id, { ...shown, ...(fields ? { fields } : {}), context, exclusive, settled }]
-      }))
-      // A later write may replace this one on some of its resources; this write still owns the rest.
-      const owned = () => getStreamContext() === context ? ids.filter((id) => effects()[id] === mine[id]) : []
-      const current = () => owned().length > 0
-      const clear = () => {
-        const mine = owned()
-        if (!mine.length) return
-        qc.setQueryData(effectKey, (old: Record<string, OwnedEffect> = empty) => {
-          return Object.fromEntries(Object.entries(old).filter(([key]) => !mine.includes(key)))
-        })
-      }
-      qc.setQueryData(effectKey, { ...effects(), ...mine })
-      let outcome: 'confirmed' | 'refused' | 'unknown' = 'unknown'
-      try {
-        // A replaced write still reaches the server first, so the newest request lands last.
-        await Promise.all(predecessors.map((effect) => effect.settled))
-        if (!current()) throw new Error(m.resource_change_busy())
-        const result = await options.mutationFn(variables)
-        if (!current()) return result
-        if (result && typeof result === 'object') {
-          if ('error' in result && typeof result.error === 'string' && result.error) throw new Error(result.error)
-          if ('ok' in result && result.ok === false) throw new Error(m.error_generic())
-        }
-        outcome = 'confirmed'
-        options.onSuccess?.(result, variables)
-        return result
-      } catch (error) {
-        if (outcome === 'unknown' && isDefiniteRefusal(error)) outcome = 'refused'
-        if (current()) options.onError?.(error)
-        throw error
-      } finally {
-        release()
-        if (outcome === 'refused') {
-          clear()
-          // The refusal may mean this snapshot is out of date (a task changed since it was read); refresh it behind the rollback.
-          void reconcileSnapshot(qc, () => getStreamContext() === context, id, options.queryKey, options.readKeys?.(variables)).catch(() => undefined)
-        } else if (current()) {
-          // The shown result stays until a read taken after the write confirms or replaces it.
-          try { await reconcile(qc, current, id, options.queryKey, options.readKeys?.(variables)); clear() } catch {
-            // An unknown outcome is never retried as another write; the next successful read settles it.
-            settleOnNextRead(qc, current, clear, options.queryKey, options.readKeys?.(variables))
-          }
-        }
-      }
-    },
-  })
+    }
+  }
 }

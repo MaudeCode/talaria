@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Chats redraw less while a reply streams, so the transcript and composer stay responsive.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

@@ -77,8 +77,7 @@ export function OnboardingPage() {
       form.setFieldValue('baseUrl', current.base_url ?? '')
     }
     if (data.completed) void navigate({ to: '/' })
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data])
+  }, [data, form, navigate])
 
   const key = STEPS[step] ?? 'system'
   const system = useMemo(() => data?.system ?? {}, [data])
@@ -141,7 +140,8 @@ export function OnboardingPage() {
 
   async function next() {
     setBusy(true)
-    try {
+    // A rejected advance rather than try/finally: React Compiler cannot lower `finally` or a `throw` inside `try`.
+    const advance = async () => {
       const v = form.state.values
       if (key === 'setup') {
         if (!v.provider) throw new Error(m.onboarding_error_provider_required())
@@ -165,11 +165,9 @@ export function OnboardingPage() {
       }
       setErrorNotice(null)
       setStep(step + 1)
-    } catch (e) {
-      setNotice({ text: e instanceof Error ? e.message : String(e), kind: 'warn' })
-    } finally {
-      setBusy(false)
     }
+    await advance().catch((e: unknown) => { setNotice({ text: e instanceof Error ? e.message : String(e), kind: 'warn' }) })
+    setBusy(false)
   }
 
   async function skip() {

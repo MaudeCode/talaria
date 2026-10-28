@@ -65,75 +65,78 @@ export function useSaveSettings() {
   useIntent([])
   return useMutation({
     mutationKey: keys.settings,
-    mutationFn: async (patch: Record<string, unknown>) => {
-      const currentQuery = () => qc.getQueryCache().find({ queryKey: intentKey, exact: true })
-      let owner = owners.get(qc)
-      if (owner?.context !== getStreamContext() || owner.query !== currentQuery()) {
-        owner = makeOwner(qc)
-        owners.set(qc, owner)
+    mutationFn: (patch: Record<string, unknown>) => writeSettings(qc, patch),
+  })
+}
+
+// Module scope: React Compiler cannot lower its try/finally, so it stays outside the hook.
+async function writeSettings(qc: QueryClient, patch: Record<string, unknown>) {
+  const currentQuery = () => qc.getQueryCache().find({ queryKey: intentKey, exact: true })
+  let owner = owners.get(qc)
+  if (owner?.context !== getStreamContext() || owner.query !== currentQuery()) {
+    owner = makeOwner(qc)
+    owners.set(qc, owner)
+  }
+  const state = owner
+  const current = () => state.context === getStreamContext() && state.query === currentQuery()
+  const publish = () => {
+    if (current()) qc.setQueryData<Intent>(intentKey, { context: state.context, fields: Object.fromEntries([...state.fields].map(([key, field]) => [key, field.value])) })
+  }
+  const sequence = ++state.next
+  const fields = Object.keys(patch)
+  // Keep disjoint writes concurrent, but persist repeated edits in user order.
+  const predecessors = [...state.active.values()].filter((write) => write.keys.some((key) => fields.includes(key))).map((write) => write.done)
+  let release!: () => void
+  const done = new Promise<void>((resolve) => { release = resolve })
+  state.active.set(sequence, { keys: fields, done })
+  for (const key of fields) {
+    state.writes.add(key)
+    if (shown(key)) state.fields.set(key, { sequence, value: patch[key] })
+  }
+  publish()
+  let unknown = false
+  try {
+    await qc.cancelQueries({ queryKey: keys.settings })
+    await Promise.all(predecessors)
+    if (!current()) throw new Error(m.error_generic())
+    const data = await api.saveSettings(patch)
+    if (!current()) return data
+    if (typeof data.error === 'string' && data.error) throw new Error(data.error)
+    if (data.ok === false) throw new Error(m.error_generic())
+    qc.setQueryData<Settings>(keys.settings, (previous) => {
+      const confirmed = { ...previous }
+      for (const [key, value] of Object.entries(data)) {
+        // Full responses can contain stale copies of other writes' fields.
+        if (state.writes.has(key) && !fields.includes(key) || (state.versions.get(key) ?? 0) > sequence) continue
+        confirmed[key] = value
+        state.versions.set(key, sequence)
       }
-      const state = owner
-      const current = () => state.context === getStreamContext() && state.query === currentQuery()
-      const publish = () => {
-        if (current()) qc.setQueryData<Intent>(intentKey, { context: state.context, fields: Object.fromEntries([...state.fields].map(([key, field]) => [key, field.value])) })
-      }
-      const sequence = ++state.next
-      const fields = Object.keys(patch)
-      // Keep disjoint writes concurrent, but persist repeated edits in user order.
-      const predecessors = [...state.active.values()].filter((write) => write.keys.some((key) => fields.includes(key))).map((write) => write.done)
-      let release!: () => void
-      const done = new Promise<void>((resolve) => { release = resolve })
-      state.active.set(sequence, { keys: fields, done })
-      for (const key of fields) {
-        state.writes.add(key)
-        if (shown(key)) state.fields.set(key, { sequence, value: patch[key] })
-      }
+      return confirmed
+    })
+    return data
+  } catch (error) {
+    unknown = !isDefiniteRefusal(error)
+    throw error
+  } finally {
+    const settle = () => {
+      for (const key of fields) if (state.fields.get(key)?.sequence === sequence) state.fields.delete(key)
       publish()
-      let unknown = false
+    }
+    // A refusal rolls back at once; an unknown outcome keeps the shown value until a successful read decides it.
+    if (!unknown) settle()
+    state.active.delete(sequence)
+    release()
+    if (unknown && current()) {
       try {
         await qc.cancelQueries({ queryKey: keys.settings })
-        await Promise.all(predecessors)
-        if (!current()) throw new Error(m.error_generic())
-        const data = await api.saveSettings(patch)
-        if (!current()) return data
-        if (typeof data.error === 'string' && data.error) throw new Error(data.error)
-        if (data.ok === false) throw new Error(m.error_generic())
-        qc.setQueryData<Settings>(keys.settings, (previous) => {
-          const confirmed = { ...previous }
-          for (const [key, value] of Object.entries(data)) {
-            // Full responses can contain stale copies of other writes' fields.
-            if (state.writes.has(key) && !fields.includes(key) || (state.versions.get(key) ?? 0) > sequence) continue
-            confirmed[key] = value
-            state.versions.set(key, sequence)
-          }
-          return confirmed
-        })
-        return data
-      } catch (error) {
-        unknown = !isDefiniteRefusal(error)
-        throw error
-      } finally {
-        const settle = () => {
-          for (const key of fields) if (state.fields.get(key)?.sequence === sequence) state.fields.delete(key)
-          publish()
-        }
-        // A refusal rolls back at once; an unknown outcome keeps the shown value until a successful read decides it.
-        if (!unknown) settle()
-        state.active.delete(sequence)
-        release()
-        if (unknown && current()) {
-          try {
-            await qc.cancelQueries({ queryKey: keys.settings })
-            await qc.query({ queryKey: keys.settings, queryFn: api.fetchSettings, staleTime: 0 })
-            settle()
-          } catch {
-            settleOnNextRead(qc, () => current() && [...fields].some((key) => state.fields.get(key)?.sequence === sequence), settle, keys.settings)
-          }
-        } else if (current() && state.active.size === 0) {
-          await qc.cancelQueries({ queryKey: keys.settings })
-          if (current()) await qc.invalidateQueries({ queryKey: keys.settings })
-        }
+        await qc.query({ queryKey: keys.settings, queryFn: api.fetchSettings, staleTime: 0 })
+        settle()
+      } catch {
+        settleOnNextRead(qc, () => current() && [...fields].some((key) => state.fields.get(key)?.sequence === sequence), settle, keys.settings)
       }
-    },
-  })
+    } else if (current() && state.active.size === 0) {
+      await qc.cancelQueries({ queryKey: keys.settings })
+      if (current()) await qc.invalidateQueries({ queryKey: keys.settings })
+    }
+  }
 }

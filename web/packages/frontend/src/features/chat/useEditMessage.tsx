@@ -53,9 +53,11 @@ export function useEditMessage(sessionId: string | null, refresh: (accepted?: un
     const life = lifecycle.current
     const current = () => active.current === owner && life !== null && lifecycle.current === life && scope === getStreamContext()
     if (cutFrom === undefined) setOperation(label)
-    try { const accepted = cutFrom === undefined ? await run(current) : await sendCut({ sid: sessionId, from: cutFrom, run: () => run(current) }); return current() && accepted !== false }
-    catch (e) { if (current() && !(e instanceof ConfirmationAsked)) showErrorToast(e); return false }
-    finally { if (active.current === owner) { active.current = null; if (lifecycle.current === life) setOperation(null) } }
+    let accepted = false
+    try { const result = cutFrom === undefined ? await run(current) : await sendCut({ sid: sessionId, from: cutFrom, run: () => run(current) }); accepted = current() && result !== false }
+    catch (e) { if (current() && !(e instanceof ConfirmationAsked)) showErrorToast(e) }
+    if (active.current === owner) { active.current = null; if (lifecycle.current === life) setOperation(null) }
+    return accepted
   }, [sessionId, sendCut])
   const edit = useCallback(async (sid: string, row: VisibleMessage, text: string, token?: string) => {
     await runHistory(m.editing(), async (current) => {
