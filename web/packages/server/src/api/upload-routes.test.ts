@@ -76,8 +76,7 @@ const COMPRESSORS: Record<string, (tar: Buffer) => Buffer> = {
   '.txz': (tar) => cli('xz', tar),
 }
 
-function multipart(fields: Record<string, string>, files: [string, string, Buffer][]): { body: Buffer; headers: Record<string, string> } {
-  const boundary = `b${Math.random().toString(16).slice(2)}`
+function multipart(fields: Record<string, string>, files: [string, string, Buffer][], boundary = `b${Math.random().toString(16).slice(2)}`): { body: Buffer; headers: Record<string, string> } {
   const parts: Buffer[] = []
   for (const [name, value] of Object.entries(fields)) parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`))
   for (const [name, filename, data] of files) parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"; filename="${filename}"\r\nContent-Type: application/octet-stream\r\n\r\n`), data, Buffer.from('\r\n'))
@@ -199,6 +198,24 @@ describe('archive extraction, workspace upload, and copy path', () => {
   })
 
   describe('POST /api/workspace/upload', () => {
+    it('preserves the complete boundary-like payload and reports its real size', async () => {
+      const payload = Buffer.from('prefix--AaB03xmiddle-suffix')
+      const { body, headers } = multipart({ session_id: sid }, [['file', 'boundary.txt', payload]], 'AaB03x')
+      const res = await s.get('/api/workspace/upload', { method: 'POST', body, headers })
+      expect(res.status).toBe(200)
+      expect(readFileSync(join(ws, 'boundary.txt'))).toEqual(payload)
+      expect(await res.json()).toMatchObject({ size: payload.length })
+    })
+
+    it.each(['/api/workspace/upload', '/api/upload', '/api/upload/extract', '/api/transcribe'])('rejects incomplete multipart framing before %s stores or processes files', async (route) => {
+      const { body, headers } = multipart({ session_id: sid }, [['file', 'incomplete.txt', Buffer.from('bytes')]], 'AaB03x')
+      const res = await s.get(route, { method: 'POST', body: body.subarray(0, -Buffer.byteLength('--AaB03x--\r\n')), headers })
+      expect(res.status).toBe(400)
+      expect(await res.json()).toMatchObject({ error: expect.stringMatching(/multipart/i) as unknown })
+      expect(existsSync(join(ws, 'incomplete.txt'))).toBe(false)
+      expect(existsSync(join(inbox(), 'incomplete.txt'))).toBe(false)
+    })
+
     it('stores one file at the root or in a created subdirectory and answers its metadata', async () => {
       let { status, body } = await wsUpload('hello.txt', Buffer.from('hello workspace'))
       expect(status, JSON.stringify(body)).toBe(200)
