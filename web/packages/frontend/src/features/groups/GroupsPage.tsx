@@ -91,7 +91,8 @@ function Discussion({ roomId, provisionalName, onDisband }: { roomId: string; pr
   const view = useQuery({ queryKey: key, queryFn: ({ signal }) => api.fetchGroup(roomId, before, signal), enabled: provisionalName === undefined })
   const [intent, setIntent] = useState<{ identity: string; text: string; id: string; eventId: string | null; unknown: boolean; files: PendingFile[] } | null>(null)
   const [renameDraft, setRenameDraft] = useState<{ identity: string; value: string } | null>(null)
-  const [renameIntent, setRenameIntent] = useState<{ identity: string; value: string; id: string; unknown: boolean } | null>(null)
+  const [renameIntent, setRenameIntent] = useState<{ identity: string; value: string; id: string; revision: number; unknown: boolean } | null>(null)
+  const [composerRoom, setComposerRoom] = useState<GroupRoom | null>(null)
   const [stopping, setStopping] = useState<string | null>(null)
   useEffect(() => {
     if (before !== undefined || provisionalName !== undefined) return
@@ -103,10 +104,15 @@ function Discussion({ roomId, provisionalName, onDisband }: { roomId: string; pr
     return () => { active = false; stream.close() }
   }, [roomId, before, qc, bootstrap.profile?.name, provisionalName])
   const data = view.data, room = data?.room
+  // Keep draft/file custody through a read gap; current server fields still authorize every write.
+  if (room && room !== composerRoom) setComposerRoom(room)
+  const retainedRoom = room ?? composerRoom
   const committedIntent = intent?.identity === room?.identity && intent?.eventId !== null && data?.rows.some((row) => row.message.message_id === intent?.eventId)
   const currentIntent = intent?.identity === room?.identity && !committedIntent ? intent : null
   if (committedIntent) setIntent(null)
-  const currentRename = renameIntent?.identity === room?.identity ? renameIntent : null
+  const settledRename = room && renameIntent?.identity === room.identity && (room.name === renameIntent.value || room.revision > renameIntent.revision)
+  const currentRename = renameIntent?.identity === room?.identity && !settledRename ? renameIntent : null
+  if (settledRename) setRenameIntent(null)
   const currentDraft = renameDraft?.identity === room?.identity ? renameDraft : null
   const refresh = () => qc.invalidateQueries({ queryKey: ['groups', bootstrap.profile?.name, roomId] })
   const write = async (operation: GroupOperation) => {
@@ -145,7 +151,7 @@ function Discussion({ roomId, provisionalName, onDisband }: { roomId: string; pr
     if (!currentDraft || !room) return
     const id = crypto.randomUUID(), identity = room.identity, value = currentDraft.value
     setRenameDraft(null)
-    setRenameIntent({ id, identity, value, unknown: false })
+    setRenameIntent({ id, identity, value, revision: room.revision, unknown: false })
     void write({ action: 'rename', room_id: roomId, event_id: id, name: value }).then(() => {
       setRenameIntent((current) => current?.id === id ? null : current)
     }, (error: unknown) => {
@@ -178,10 +184,10 @@ function Discussion({ roomId, provisionalName, onDisband }: { roomId: string; pr
         waiting: () => groupActionWaiting(room, action),
       }} /> : action.kind !== 'approval' ? <GroupRecoveryAction key={`${room.identity}:${action.task_id}:${action.kind}`} room={room} member={member} action={action} focus={focus} onControl={write} onResolved={() => { void refresh() }} /> : null))}
       {currentIntent?.unknown && <ComposerNotices fallbackFocus={focus} notices={[{ id: 'unknown', tone: 'error', content: m.group_unknown(), action: { label: m.refresh(), run: () => { const id = currentIntent.id; void api.fetchGroupReceipt(roomId, id).then((receipt) => { void refresh(); if (receipt.outcome === 'confirmed') setIntent((current) => current?.id === id ? null : current) }).catch(showErrorToast) } } }]} />}
-      {currentRename?.unknown && <ComposerNotices fallbackFocus={focus} notices={[{ id: 'rename-unknown', tone: 'error', content: m.group_unknown(), action: { label: m.refresh(), run: () => { const pending = currentRename; void api.fetchGroup(roomId).then((next) => { if (next.room?.identity !== pending.identity) return; qc.setQueryData(key, next); if (next.room.name === pending.value) setRenameIntent((current) => current?.id === pending.id ? null : current) }).catch(showErrorToast) } } }]} />}
+      {currentRename?.unknown && <ComposerNotices fallbackFocus={focus} notices={[{ id: 'rename-unknown', tone: 'error', content: m.group_unknown(), action: { label: m.refresh(), run: () => { const pending = currentRename; void api.fetchGroup(roomId).then((next) => { if (next.room?.identity !== pending.identity) return; qc.setQueryData(key, next) }).catch(showErrorToast) } } }]} />}
     </div>
-    {room && !room.disbanded && <Composer key={room.identity} settings={settings.data} room={{ identity: room.identity, maxUploadBytes: room.max_upload_bytes, maxAttachments: room.attachment_limit, canSend: room.actions.includes('send') && !currentIntent && before === undefined,
-      onSend: send, onUpload: async (file) => { const result = await api.uploadGroupFile(roomId, room.identity, file); if (!result.attachment || result.outcome !== 'confirmed') throw new Error(m.group_write_refused()); return result.attachment } }} />}
+    {retainedRoom && !retainedRoom.disbanded && <Composer key={retainedRoom.identity} settings={settings.data} room={{ identity: retainedRoom.identity, maxUploadBytes: retainedRoom.max_upload_bytes, maxAttachments: retainedRoom.attachment_limit, canSend: !!data?.available && !view.isError && !!room?.actions.includes('send') && !currentIntent && before === undefined,
+      onSend: send, onUpload: async (file) => { if (!data?.available || view.isError || !room) throw new Error(m.group_unavailable()); const result = await api.uploadGroupFile(roomId, room.identity, file); if (!result.attachment || result.outcome !== 'confirmed') throw new Error(m.group_write_refused()); return result.attachment } }} />}
     <Dialog open={currentDraft !== null} onOpenChange={(open) => { if (!open) setRenameDraft(null) }} title={m.rename()}><form className="flex gap-2" onSubmit={(event) => { event.preventDefault(); renameRoom() }}><TextInput value={currentDraft?.value ?? ''} aria-label={m.group_name()} onChange={(e) => setRenameDraft((current) => current ? { ...current, value: e.target.value } : current)} required maxLength={GROUP_ROOM_NAME_LIMIT} /><Button type="submit">{m.save()}</Button></form></Dialog>
   </div>
 }

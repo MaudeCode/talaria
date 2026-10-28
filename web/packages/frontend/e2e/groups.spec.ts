@@ -144,3 +144,60 @@ for (const timing of ['response delayed', 'unknown then committed'] as const) te
     await expect.poll(() => sidecar.calls.filter((c) => c.method === 'gateway.groups' && (c.params as { operation: { action: string } }).operation.action === 'send').length).toBe(2)
   } finally { release.resolve(undefined); await page.goto('about:blank').catch(() => undefined); await server.close() }
 })
+
+for (const observed of ['Submitted title', 'Superseding title']) test(`retires an unknown rename after authoritative revision: ${observed}`, async ({ page }) => {
+  const { sidecar, fixture, server } = await discussionServer()
+  const native = sidecar.responderFor('gateway.groups')!
+  sidecar.respond('gateway.groups', (params, emit, options) => params.operation.action === 'rename' ? { state: 'unknown', reason: 'unknown', value: null } : native(params, emit, options))
+  try {
+    await page.goto(`${server.base}/groups?room=discussion`)
+    await page.getByRole('button', { name: 'Rename', exact: true }).click()
+    await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Submitted title')
+    await page.getByRole('button', { name: 'Save', exact: true }).click()
+    await expect(page.locator('[data-notice=rename-unknown]')).toBeVisible()
+    fixture.state.room.name = observed
+    fixture.state.room.revision++
+    await expect(page.locator('[data-notice=rename-unknown]')).toHaveCount(0)
+    fixture.state.room.name = 'Renamed from another browser'
+    fixture.state.room.revision++
+    await expect(page.getByText('Renamed from another browser', { exact: true })).toBeVisible()
+  } finally { await page.goto('about:blank').catch(() => undefined); await server.close() }
+})
+
+test('keeps draft files and uploads across unavailable snapshots but resets a replaced owner', async ({ page }) => {
+  const { sidecar, fixture, server } = await discussionServer()
+  const native = sidecar.responderFor('gateway.groups')!
+  const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  sidecar.respond('gateway.groups', async (params, emit, options) => {
+    if (params.operation.action === 'attachment.upload' && params.operation.name === 'uploading.txt') {
+      entered.resolve(undefined)
+      await release.promise
+    }
+    return native(params, emit, options)
+  })
+  try {
+    await page.goto(`${server.base}/groups?room=discussion`)
+    await expect(page.locator('#msg')).toBeVisible()
+    await page.locator('#fileInput').setInputFiles({ name: 'done.txt', mimeType: 'text/plain', buffer: Buffer.from('done') })
+    await expect(page.locator('.attach-tray [data-status=done]')).toHaveCount(1)
+    await page.locator('#fileInput').setInputFiles({ name: 'uploading.txt', mimeType: 'text/plain', buffer: Buffer.from('uploading') })
+    await entered.promise
+    await expect(page.locator('.attach-tray [data-status=uploading]')).toHaveCount(1)
+    await page.locator('#msg').fill('Draft with two files')
+    fixture.state.available = false
+    await expect(page.getByText('Discussions are unavailable from the current Agent gateway.', { exact: true }).last()).toBeVisible()
+    await expect(page.locator('#msg')).toHaveValue('Draft with two files')
+    await expect(page.locator('.attach-tray [data-status=done]')).toHaveCount(1)
+    await expect(page.locator('.attach-tray [data-status=uploading]')).toHaveCount(1)
+    await expect(page.getByRole('button', { name: 'Send message', exact: true })).toBeDisabled()
+    fixture.state.available = true
+    release.resolve(undefined)
+    await expect(page.getByText('Discussions are unavailable from the current Agent gateway.', { exact: true })).toHaveCount(0)
+    await expect(page.locator('.attach-tray [data-status=done]')).toHaveCount(2)
+    await expect(page.locator('#msg')).toHaveValue('Draft with two files')
+    await expect(page.getByRole('button', { name: 'Send message', exact: true })).toBeEnabled()
+    fixture.state.room.authority_epoch++
+    await expect(page.locator('.attach-tray [data-status=done]')).toHaveCount(0)
+    await expect(page.locator('#msg')).toHaveValue('')
+  } finally { fixture.state.available = true; release.resolve(undefined); await page.goto('about:blank').catch(() => undefined); await server.close() }
+})
