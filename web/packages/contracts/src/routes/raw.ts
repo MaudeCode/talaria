@@ -18,6 +18,16 @@ export interface RawRoute {
 
 export const RAW_ROUTES: readonly RawRoute[] = [
   {
+    method: 'GET', path: '/api/groups/stream', summary: 'Authorized discussion snapshots, projected from the native monotonic room log. Reconnect replaces the bounded window; clients never replay raw native events.', tags: ['groups'],
+    query: { room_id: { description: 'Discussion in the active profile and authenticated owner scope.', required: true } },
+    responses: { 200: { description: 'GroupStreamEvent snapshot stream with keepalives.', contentType: 'text/event-stream' }, 400: { description: 'Invalid room identity.', contentType: 'application/json' }, 409: { description: 'Native room unavailable.', contentType: 'application/json' }, 503: { description: 'Client stream limit reached.', contentType: 'application/json' } },
+  },
+  {
+    method: 'GET', path: '/api/groups/file', summary: 'Authenticated, event-bound native discussion attachment bytes. Native digest, size and custody are rechecked; Agent paths are never accepted.', tags: ['groups'],
+    query: { room_id: { description: 'Discussion id.', required: true }, identity: { description: 'Opaque current room identity.', required: true }, event_id: { description: 'Committed native message event.', required: true }, attachment_id: { description: 'Native attachment capability.', required: true } },
+    responses: { 200: { description: 'Verified attachment bytes.', contentType: 'application/octet-stream' }, 404: { description: 'Attachment unavailable.', contentType: 'application/json' }, 409: { description: 'Room identity changed.', contentType: 'application/json' } },
+  },
+  {
     method: 'GET', path: '/api/auth/oidc/start', summary: 'Redirect the browser to the configured OIDC provider (302, `Cache-Control: no-store`).', tags: ['auth'],
     query: { next: { description: 'Safe path-absolute return target after login.' }, native_flow: { description: 'Pending native handoff id from `/api/auth/oidc/native/start`.' } },
     responses: { 302: { description: 'Provider authorization URL in `Location`.' }, 404: { description: 'OIDC is not configured.', contentType: 'application/json' }, 502: { description: 'Provider discovery failed.', contentType: 'application/json' } },

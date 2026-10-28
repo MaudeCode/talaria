@@ -3,6 +3,7 @@
  * ZIPs, transcript exports, and multipart uploads. Each mirrors its Python
  * handler and reuses the anchored file helpers.
  */
+import { handleGroupFile } from './groups-router.js'
 import { closeSync, createReadStream, existsSync, mkdirSync, readdirSync, statSync, realpathSync } from 'node:fs'
 import { Readable } from 'node:stream'
 import { OwnerExportFormatSchema } from '@maudecode/talaria-web-contracts'
@@ -37,6 +38,7 @@ const DANGEROUS_TYPES = new Set(['text/html', 'application/xhtml+xml', 'image/sv
 type RawHandler = (ctx: RequestContext) => Promise<void> | void
 
 export const RAW_GET_ROUTES: Record<string, RawHandler> = {
+  '/api/groups/file': handleGroupFile,
   '/api/auth/oidc/start': handleOidcStart,
   '/api/auth/oidc/callback': handleOidcCallback,
   '/api/file/raw': handleFileRaw,

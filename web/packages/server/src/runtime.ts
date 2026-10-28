@@ -20,6 +20,7 @@ import { CompletionDrain } from './sessions/completions.js'
 import { BackgroundActivity, BackgroundTaskStore } from './sessions/background-tasks.js'
 import { PromptQueues } from './sessions/prompt-queues.js'
 import { ConnectorOffers } from './tools/connectors.js'
+import { Groups } from './sessions/groups.js'
 import { HygieneTicker } from './tools/hygiene.js'
 import { PruneAdvice } from './tools/prune-advice.js'
 import { McpHealthProber } from './tools/mcp-health.js'
@@ -713,6 +714,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     background,
     promptQueues: new PromptQueues(storage.documents, () => deps),
     connectorOffers: new ConnectorOffers(storage.documents),
+    groups: new Groups(() => deps),
     streamSlots,
     profileHome,
     agentConfig,

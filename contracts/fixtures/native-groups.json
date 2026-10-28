@@ -1,0 +1,144 @@
+{
+  "catalog": {
+    "available": true,
+    "reason": null,
+    "profiles": [
+      {
+        "profile": "default",
+        "label": "Writer"
+      },
+      {
+        "profile": "helper",
+        "label": "Reviewer"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "discussion",
+        "name": "Design review",
+        "identity": "fixture-room-identity",
+        "revision": 1,
+        "disbanded": false,
+        "members": [
+          {
+            "member_id": "one",
+            "profile": "default",
+            "handle": "one",
+            "display_name": "Writer",
+            "phase": "idle",
+            "actions": []
+          },
+          {
+            "member_id": "two",
+            "profile": "helper",
+            "handle": "two",
+            "display_name": "Reviewer",
+            "phase": "idle",
+            "actions": []
+          }
+        ],
+        "actions": [],
+        "max_upload_bytes": 15000000,
+        "attachment_limit": 8
+      }
+    ],
+    "actions": [
+      "create"
+    ],
+    "next_offset": null,
+    "identity": "fixture-catalog-identity"
+  },
+  "view": {
+    "available": true,
+    "reason": null,
+    "room": {
+      "id": "discussion",
+      "name": "Design review",
+      "identity": "fixture-room-identity",
+      "revision": 1,
+      "disbanded": false,
+      "members": [
+        {
+          "member_id": "one",
+          "profile": "default",
+          "handle": "one",
+          "display_name": "Writer",
+          "phase": "queued",
+          "actions": []
+        },
+        {
+          "member_id": "two",
+          "profile": "helper",
+          "handle": "two",
+          "display_name": "Reviewer",
+          "phase": "running",
+          "actions": []
+        }
+      ],
+      "actions": [
+        "send",
+        "rename",
+        "disband",
+        "stop"
+      ],
+      "max_upload_bytes": 15000000,
+      "attachment_limit": 8
+    },
+    "rows": [
+      {
+        "key": "1:event-1",
+        "index": 1,
+        "author": "",
+        "message": {
+          "role": "user",
+          "content": "Review the proposal",
+          "message_id": "event-1",
+          "timestamp": 1001,
+          "_turn_id": "event-1",
+          "attachments": []
+        },
+        "attachments": []
+      },
+      {
+        "key": "2:event-2",
+        "index": 2,
+        "author": "Writer",
+        "message": {
+          "role": "assistant",
+          "content": "Writer reply",
+          "message_id": "event-2",
+          "timestamp": 1002,
+          "_turn_id": "event-2",
+          "attachments": []
+        },
+        "attachments": []
+      },
+      {
+        "key": "3:event-3",
+        "index": 3,
+        "author": "Reviewer",
+        "message": {
+          "role": "assistant",
+          "content": "Reviewer reply",
+          "message_id": "event-3",
+          "timestamp": 1003,
+          "_turn_id": "event-3",
+          "attachments": []
+        },
+        "attachments": []
+      }
+    ],
+    "cursor": 3,
+    "has_more": false,
+    "next_before_seq": null
+  },
+  "inactive": {
+    "available": false,
+    "reason": "driver_inactive",
+    "profiles": [],
+    "rooms": [],
+    "actions": [],
+    "next_offset": null,
+    "identity": null
+  }
+}

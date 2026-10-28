@@ -111,7 +111,7 @@ def _refused(state: str, reason: str) -> dict:
 
 
 @asynccontextmanager
-async def _connect(home: Path, endpoint):
+async def _connect(home: Path, endpoint, *, subject: str | None = None):
     from hermes_constants import get_hermes_home
     from hermes_cli.gateway_client import GatewayClientError, connect_gateway
 
@@ -119,7 +119,7 @@ async def _connect(home: Path, endpoint):
     # override is mandatory so its bootstrap ticket cannot fall back to the launch profile.
     if Path(get_hermes_home()).resolve() != home:
         raise GatewayClientError("profile_mismatch")
-    async with connect_gateway(endpoint) as client:
+    async with connect_gateway(endpoint, **({"subject": subject} if subject is not None else {})) as client:
         websocket = client.websocket
         # GatewayClient queues server requests as events. Drain continuously, including
         # during an RPC, so unsupported sudo/secure inputs never wait for a Web renderer.

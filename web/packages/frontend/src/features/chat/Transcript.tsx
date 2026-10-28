@@ -28,7 +28,7 @@ const HAND_SCROLL_MS = 250
 export interface TranscriptProps {
   rows: VisibleMessage[]
   showReasoning?: boolean | undefined
-  disclosureScope?: string
+  disclosureScope?: string | undefined
   live: LiveTurn | null
   /** The connected chat owns its text subscription here; controlled transcript views pass `live` alone. */
   subscribeToStream?: boolean
@@ -184,7 +184,7 @@ export function Transcript(props: TranscriptProps) {
   // Follow while pinned: track every size change of the content (each streamed line, each
   // folding disclosure) and of the pane itself before paint, instead of catching up in jumps.
   const innerRef = useRef<HTMLDivElement>(null)
-  const empty = rows.length === 0 && !showLive && !pending && !liveUserText
+  const empty = rows.length === 0 && !truncated && !showLive && !pending && !liveUserText
   // The disclosure provider below is keyed by this scope, so a new session brings a new pane to observe.
   const scope = props.disclosureScope ?? sessionId
   useLayoutEffect(() => {
@@ -354,7 +354,7 @@ export function Transcript(props: TranscriptProps) {
       ? <DeliveryRow key={row.key} row={row} />
       : row.message.role === 'user'
       ? <UserMessageRow key={row.key} row={row} renderMarkdown={renderUserMarkdown} sessionId={sessionId} actions={actions} />
-      : <AssistantMessageRow sessionId={sessionId} scope={props.disclosureScope} key={row.key} row={row} name={assistantName} mode={mode} actions={actions} tts={tts} isLast={i === lastAssistantIndex && !showLive} retainHeight={i === lastAssistantIndex} continuation={row === continued ? continuedTurn : undefined} />
+      : <AssistantMessageRow sessionId={sessionId} scope={props.disclosureScope} key={row.key} row={row} name={row.author ?? assistantName} mode={mode} actions={actions} tts={tts} isLast={i === lastAssistantIndex && !showLive} retainHeight={i === lastAssistantIndex} continuation={row === continued ? continuedTurn : undefined} />
   )
   // Reuse mounted history; the opt-in virtualizer still creates only its visible window.
   const renderedRows = virtualize ? null : rows.map(renderRow)

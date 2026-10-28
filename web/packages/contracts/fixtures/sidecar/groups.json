@@ -1,0 +1,18 @@
+{
+  "gateway.groups": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "subject": "fixture-owner",
+        "operation": {
+          "action": "capabilities"
+        }
+      },
+      "result": {
+        "state": "unavailable",
+        "reason": "stopped",
+        "value": null
+      }
+    }
+  ]
+}

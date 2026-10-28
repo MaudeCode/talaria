@@ -53,6 +53,7 @@ SCENARIOS: list[tuple[str, dict]] = [
     ("gateway.mode", {"profile_home": "{home}", "name": "default", "is_default": True}),
     ("gateway.session", {"profile_home": "{home}", "session_id": "not-running", "action": "snapshot"}),
     ("gateway.create", {"profile_home": "{home}", "probe": True}),
+    ("gateway.groups", {"profile_home": "{home}", "subject": "fixture-owner", "operation": {"action": "capabilities"}}),
     ("gateway.mode", {"profile_home": "{profile}", "name": "alpha", "is_default": False}),
     # skills (the seeded profile has bundled skills)
     ("skills.list", {"profile_home": "{profile}"}),

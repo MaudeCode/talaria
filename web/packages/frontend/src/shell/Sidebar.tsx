@@ -81,7 +81,7 @@ export function Sidebar({ panel }: { panel: ReactNode }) {
 export function PanelHead({ title, actions, children }: { title: ReactNode; actions?: ReactNode; children?: ReactNode }) {
   return (
     <div className="panel-head flex items-center justify-between gap-2 min-h-11 px-3.5 py-2 border-b border-border text-[13px] font-semibold text-text normal-case tracking-[-.01em] shrink-0">
-      <span>{title}</span>
+      <span className="min-w-0 truncate" title={typeof title === 'string' ? title : undefined}>{title}</span>
       {actions && <div className="panel-head-actions flex items-center gap-1 normal-case tracking-normal">{actions}</div>}
       {children}
     </div>

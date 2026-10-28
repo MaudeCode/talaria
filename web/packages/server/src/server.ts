@@ -95,6 +95,7 @@ export async function startServer(app: App, config: ServerConfig, opts: { log?: 
       }
     }
     await settle('prompt queues', () => app.deps.promptQueues.close())
+    await settle('groups', () => app.deps.groups.close())
     app.deps.updates.stopAutoApply()
     // TAL-953: start no post-update gateway restart, and let one in flight finish before the sidecar goes away.
     const gatewayRestarts = settle('gateway restart', () => app.deps.gatewayRestarts.quiesce())

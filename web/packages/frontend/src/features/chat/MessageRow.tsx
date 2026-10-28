@@ -57,7 +57,7 @@ function AttachmentList({ message, sessionId }: { message: Message; sessionId: s
   const images: LightboxImage[] = []
   const items = (message.attachments ?? []).map((a, i) => {
     const name = a.filename ?? a.name ?? a.path?.split('/').pop() ?? `file-${i + 1}`
-    const href = a.path && sessionId ? appUrl(rawFileUrl(sessionId, a.path)).href : undefined
+    const href = a.download_url ? appUrl(a.download_url).href : a.path && sessionId ? appUrl(rawFileUrl(sessionId, a.path)).href : undefined
     const image = a.is_image && href ? images.push({ name, src: href }) - 1 : undefined
     return { name, href, image }
   })
@@ -231,7 +231,7 @@ export const AssistantMessageRow = memo(function AssistantMessageRow({ row, name
   const run = row.message as { _turnDuration?: number | null; _usedModel?: string | null }
   const meta = [typeof run._turnDuration === 'number' && run._turnDuration >= 0.5 ? `${run._turnDuration < 10 ? run._turnDuration.toFixed(1) : Math.round(run._turnDuration)}s` : null, run._usedModel || null].filter(Boolean).join(' · ')
   return (
-    <div className="msg-row assistant-turn" data-role="assistant" data-msg-idx={row.index} data-message-key={row.key} data-latest={retainHeight ? '1' : undefined}>
+    <div className="msg-row assistant-turn" data-role="assistant" data-member-author={row.author === undefined ? undefined : '1'} data-msg-idx={row.index} data-message-key={row.key} data-latest={retainHeight ? '1' : undefined}>
       <div className="msg-role assistant"><span className="msg-role-name">{name}</span>{row.message.badge && <span className="msg-badge">{row.message.badge}</span>}</div>
       <div className="assistant-turn-blocks">
         <TurnActivityView activity={activity} mode={mode} sessionId={sessionId} scope={scope} />

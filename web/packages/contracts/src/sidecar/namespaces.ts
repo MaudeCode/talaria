@@ -1,4 +1,5 @@
 import { DelegationRegistrySchema, DelegationBlockSchema } from '../delegation.js'
+import { GroupSidecarParamsSchema, GroupSidecarResultSchema } from '../groups-native.js'
 import { OutboundDraftRefSchema, OutboundDraftFieldsSchema, OutboundDraftResultSchema } from '../outbound-drafts.js'
 import { McpCostPolicyDataSchema } from '../mcp-cost-policy.js'
 import { ContextDetailSchema } from '../context-detail.js'
@@ -844,3 +845,4 @@ export const GATEWAY_METHODS = {
   /** TAL-805: the gateway mode of the profile `name` at `profile_home`; the root profile (`is_default`) is the host itself. */
   'gateway.mode': { params: ProfileHomeParams.extend({ name: z.string().min(1), is_default: z.boolean() }), result: z.object({ gateway_mode: GatewayModeSchema }) },
 } as const
+export const GROUP_METHODS = { 'gateway.groups': { params: GroupSidecarParamsSchema, result: GroupSidecarResultSchema } } as const

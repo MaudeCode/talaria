@@ -39,6 +39,7 @@ import { stopSpeaking } from '../voice/tts'
 export type BusyMode = 'steer' | 'queue' | 'interrupt'
 
 export interface ComposerProps {
+  room?: RoomComposerProps['room']
   sessionId: string | null
   session: Session | null
   /** Choices made on the unsaved chat, shown by the chips until the session exists. */
@@ -76,6 +77,18 @@ export interface ComposerProps {
   clarify?: Clarify | null | undefined
   /** Status chips from outside the composer (connection and runtime state); they follow the running turn's chip. */
   notices?: ComposerNotice[] | undefined
+}
+
+interface RoomComposerProps {
+  settings: Settings | undefined
+  room: {
+    identity: string
+    maxUploadBytes: number
+    maxAttachments: number
+    canSend: boolean
+    onSend: (text: string, files: PendingFile[]) => Promise<boolean>
+    onUpload: (file: File) => Promise<NonNullable<PendingFile['groupAttachment']>>
+  }
 }
 
 const PHONE = '(max-width: 640px)'
@@ -136,11 +149,22 @@ function takeHandoff(sessionId: string) {
   return h
 }
 
-export function Composer(props: ComposerProps) {
+const unusedChatControl = () => undefined
+export function Composer(props: ComposerProps | RoomComposerProps) {
+  if (!('onEnsureSession' in props)) return <ComposerBody {...props} sessionId={null} session={null} busy={false} streamId={null}
+    onEnsureSession={() => Promise.reject(new Error('Discussion is not a chat'))} onLocalCommand={() => Promise.resolve(false)}
+    terminalOpen={false} onToggleTerminal={unusedChatControl} onModelChange={unusedChatControl} onWorkspaceChange={unusedChatControl} onToolsetsChange={unusedChatControl}
+    onReasoningChange={unusedChatControl} reasoning={null} yolo={false} onToggleYolo={unusedChatControl} queued={[]} onQueue={unusedChatControl} onQueueChange={unusedChatControl}
+    locked={!props.room.canSend} />
+  return <ComposerBody {...props} />
+}
+
+function ComposerBody(props: ComposerProps) {
   const { sessionId, session, busy, streamId, settings, onEnsureSession, onLocalCommand, terminalOpen, onToggleTerminal, onModelChange, onWorkspaceChange, onNewWorktreeChat, onRemoveWorktree, onToolsetsChange, onExecutionModeChange, onReasoningChange, reasoning, reasoningLevels, reasoningSupported = true, pendingChoices, locked = false, yolo, onToggleYolo, queued, onQueue, onQueueChange, clarify, notices = EMPTY_NOTICES } = props
   const bootstrap = useBootstrap()
   const launchBackground = useStartBackground()
-  const localStateId = composerStateId(session)
+  const room = props.room
+  const localStateId = room ? `group:${room.identity}` : composerStateId(session)
   const [text, setText] = useState(() => (localStateId ? readLocalDraft(localStateId) : ''))
   const [draftIdentity, setDraftIdentity] = useState(localStateId)
   const [files, setFiles] = useState<PendingFile[]>([])
@@ -236,11 +260,11 @@ export function Composer(props: ComposerProps) {
     if (next.trim()) clarify.clearSelection()
   }
   const canAnswer = !!value.trim() || !!clarify?.selected.length
-  const palette = useCommandPalette(clarify ? '' : text)
+  const palette = useCommandPalette(clarify || room ? '' : text)
   const catalog = palette.catalog
   // A newly resolved identity first adopts its text. Persisting the previous render would erase
   // the loaded draft or copy another owner's text; the identity state also preserves early typing.
-  useDraftPersistence(draftIdentity === localStateId ? localStateId : null, text, !session?.owner_attachment)
+  useDraftPersistence(draftIdentity === localStateId ? localStateId : null, text, !room && !session?.owner_attachment)
   useServerDraft(session && !session.owner_attachment ? sessionId : null, setText)
 
   // T3 Code's resting composer: a hand scroll of an overflowing transcript flattens the card to one row until the next
@@ -291,9 +315,23 @@ export function Composer(props: ComposerProps) {
 
   const draft = useRef(text)
   useLayoutEffect(() => { draft.current = text })
-  const maxBytes = bootstrap.max_upload_bytes
+  const maxBytes = room?.maxUploadBytes ?? bootstrap.max_upload_bytes
   useEffect(() => { const attempts = inflight.current; return () => { attempts.clear() } }, [])
   const upload = (key: string, file: File) => {
+    if (room) {
+      const attempt = {}
+      inflight.current.set(key, attempt)
+      void room.onUpload(file).then((receipt) => {
+        if (inflight.current.get(key) !== attempt) return
+        inflight.current.delete(key)
+        setFiles((prev) => prev.map((p) => p.key === key ? { ...p, status: 'done', groupAttachment: receipt } : p))
+      }, (error: unknown) => {
+        if (inflight.current.get(key) !== attempt) return
+        inflight.current.delete(key)
+        setFiles((prev) => prev.map((p) => p.key === key ? { ...p, status: 'error', error: error instanceof Error ? error.message : String(error) } : p))
+      })
+      return
+    }
     if (!sessionId) return
     const scope = getStreamContext()
     const attempt = {}
@@ -322,13 +360,17 @@ export function Composer(props: ComposerProps) {
     // One chip and one upload per file, however often it is picked, pasted or handed off.
     const list = Array.from(incoming).filter((file, i, all) => all.findIndex((f) => fileKey(f) === fileKey(file)) === i)
     if (list.length === 0) return
+    if (room && files.length + list.filter((file) => !files.some((f) => f.key === fileKey(file))).length > room.maxAttachments) {
+      showToast(m.group_attachment_limit({ n: room.maxAttachments }), 4000, 'error')
+      return
+    }
     const pending = list.map((file): PendingFile => ({ key: fileKey(file), file, status: 'uploading' }))
     const add = (rows: PendingFile[]) => setFiles((prev) => [...prev, ...rows.filter((r) => !prev.some((p) => p.key === r.key))])
     // Attaching to the empty chat: the index route and the session route mount separate composers, so the navigation
     // that lazy session creation causes would drop this state. Hand the draft and files to the composer that mounts
     // for the new session; it runs the uploads. A selected session uploads by its id, loaded or not, so attaching
     // while its transcript loads never creates another session.
-    if (!sessionId) {
+    if (!sessionId && !room) {
       add(pending)
       // One session per hand-off: files attached while it is created join it.
       if (handoff) { const h = handoff; h.files.push(...list.filter((file) => !h.files.some((f) => fileKey(f) === fileKey(file)))); return }
@@ -469,6 +511,21 @@ export function Composer(props: ComposerProps) {
     if (submitting.current || sending || (sessionId && getTurnIntent(sessionId).send)) return
     if (!value && files.length === 0) return
     if (files.some((f) => f.status === 'uploading')) { showToast(m.loading()); return }
+    if (room) {
+      if (files.some((f) => f.status !== 'done')) return
+      submitting.current = true
+      const sentFiles = files
+      setText('')
+      setFiles([])
+      void room.onSend(value, sentFiles).then((accepted) => {
+        if (!accepted) { setText((current) => current ? `${current}\n\n${value}` : value); setFiles((current) => [...sentFiles, ...current]) }
+      }, (error: unknown) => {
+        setText((current) => current ? `${current}\n\n${value}` : value)
+        setFiles((current) => [...sentFiles, ...current])
+        showErrorToast(error)
+      }).finally(() => { submitting.current = false })
+      return
+    }
     submitting.current = true
     // `.finally` rather than try/finally: React Compiler cannot lower a `finally` clause.
     const submit = async () => {
@@ -750,7 +807,7 @@ export function Composer(props: ComposerProps) {
           aria-expanded={palette.open ? true : undefined}
         />
         <div ref={footer} className={cn('composer-footer', stage !== 'full' && 'cf-icons', stage === 'burger' && 'cf-burger', collapsed && 'cf-collapsed')}>
-          <ComposerControls {...controls} placement="footer" />
+          {!room && <ComposerControls {...controls} placement="footer" />}
           <div className="composer-right flex gap-1.5 items-center shrink-0 max-[641px]:flex-none max-[641px]:w-auto max-[641px]:justify-end max-[641px]:min-w-0">
             <div className="composer-tools flex items-center gap-0.5">
               {attachmentsSupported && !hide('hide_composer_attach') && (
@@ -761,7 +818,7 @@ export function Composer(props: ComposerProps) {
               )}
               {!hide('hide_composer_mic') && (liveOffered || dictationSupported()) && <button type="button" className={cn('icon-btn mic-btn has-tooltip', dictating && 'active')} id="btnMic" data-tooltip={dictating ? m.voice_dictate_active() : m.voice_dictate()} aria-label={dictating ? m.voice_dictate_active() : m.voice_dictate()} aria-pressed={dictating} onClick={toggleDictation}><Mic size={16} aria-hidden="true" /></button>}
             </div>
-            {!hide('hide_composer_context') && <ContextRing {...context} />}
+            {!room && !hide('hide_composer_context') && <ContextRing {...context} />}
             {clarify && (
               <button type="button" onClick={() => clarify.send(value)} disabled={!canAnswer} className="send-btn has-tooltip has-tooltip--left" id="btnClarifySend" data-tooltip={clarify.index < clarify.total - 1 ? m.composer_clarify_next() : m.composer_clarify()} aria-label={clarify.index < clarify.total - 1 ? m.composer_clarify_next() : m.composer_clarify()}>
                 <ArrowUp size={14} aria-hidden="true" />
@@ -785,11 +842,11 @@ export function Composer(props: ComposerProps) {
               </button>
             )}
           </div>
-          <ComposerControls {...controls} placement="panel" />
+          {!room && <ComposerControls {...controls} placement="panel" />}
         </div>
       </div>
       {/* T3 Code's context strip: where the message runs (workspace, toolsets, profile), tucked under the card. */}
-      <ComposerControls {...controls} placement="strip" />
+      {!room && <ComposerControls {...controls} placement="strip" />}
     </div>
   )
 }

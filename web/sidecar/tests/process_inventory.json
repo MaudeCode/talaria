@@ -29,6 +29,13 @@
         ""
       ]
     },
+    "tests/test_groups.py::test_native_group_round_trip": {
+      "layer": "compatibility",
+      "reason": "Real native room service, authenticated sidecar RPC, two disposable profile authorities and loopback inference prove durable create/send, attributed replies, pagination and disband without installed state. Boundary fakes cannot establish native task execution and custody.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_guest_handoff.py::test_standalone_resumes_native_guest_handoffs": {
       "layer": "compatibility",
       "reason": "Real Agent handoff worker, auth-store locks, destination proof and private credential cleanup across seed and standalone stdio processes. Controlled native timer/clock and HTTPX transport keep all state synthetic; retained, plain-device, foreign-profile, wrong-account and deleted-profile cases prove native API behavior unavailable to boundary fakes.",

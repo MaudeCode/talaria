@@ -19,6 +19,7 @@ import { writePersisted } from '../../lib/persisted'
 export { TRANSCRIPT_WINDOW } from '@maudecode/talaria-web-contracts'
 
 export interface VisibleMessage {
+  author?: string
   index: number
   message: Message
   key: string

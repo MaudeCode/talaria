@@ -1,7 +1,7 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState, type DragEvent } from 'react'
 import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Archive, ArchiveRestore, Filter, GitBranch, Plus, Search, Upload, X } from 'lucide-react'
+import { Archive, ArchiveRestore, Filter, GitBranch, Plus, Search, Upload, Users, X } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
@@ -316,6 +316,7 @@ export function SessionListPanel() {
         title={m.tab_chat()}
         actions={
           <>
+            <PanelHeadButton label={m.group_discussions()} onClick={() => { void navigate({ to: '/groups' }) }}><Users size={16} aria-hidden="true" /></PanelHeadButton>
             <PanelHeadButton label={m.filter_conversations()} active={searchOpen} onClick={() => { setSearchOpen((o) => !o); if (searchOpen) setFilter('') }}>
               <Filter size={16} aria-hidden="true" />
             </PanelHeadButton>

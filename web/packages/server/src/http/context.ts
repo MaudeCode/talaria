@@ -4,6 +4,7 @@
  * security headers, CSP report-only policy, sliding-session renewal, queued
  * cookies, and the structured access log.
  */
+import type { Groups } from '../sessions/groups.js'
 import { StartupTiming } from '../startup-timing.js'
 import type { AsyncLocalStorage } from 'node:async_hooks'
 import type { DnsLookup, PinnedFetch } from './pinned.js'
@@ -148,6 +149,7 @@ export interface AppDeps {
   background: BackgroundActivity
   connectorOffers: ConnectorOffers
   promptQueues: PromptQueues
+  groups: Groups
   streamSlots: StreamSlots
   // ── settings, profiles, providers, onboarding (checkpoint 7a) ──
   /** Home directory for a logical profile name (root aliases and invalid names clamp to the base home). */
