@@ -19,16 +19,18 @@ beforeEach(() => {
   vi.mocked(api.previewAgentImport).mockResolvedValue(preview)
   vi.mocked(api.applyAgentImport).mockResolvedValue({ ...preview, status: 'applied', receipt: null, can_apply: false })
 })
-async function setup() {
+async function setup(chooseSource = true) {
   const close = vi.fn()
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   const invalidate = vi.spyOn(qc, 'invalidateQueries')
   render(<QueryClientProvider client={qc}><AgentImportDialog onClose={close} /></QueryClientProvider>)
-  const user = userEvent.setup()
-  const select = await screen.findByRole('combobox', { name: 'Source' })
-  select.focus()
-  await user.keyboard('{ArrowDown}')
-  await user.click(await screen.findByRole('option', { name: 'Cursor' }))
+  if (chooseSource) {
+    const user = userEvent.setup()
+    const select = await screen.findByRole('combobox', { name: 'Source' })
+    select.focus()
+    await user.keyboard('{ArrowDown}')
+    await user.click(await screen.findByRole('option', { name: 'Cursor' }))
+  }
   return { close, invalidate }
 }
 async function review() {
@@ -78,4 +80,13 @@ it('ignores a late preview from another profile', async () => {
   held.resolve(preview)
   await waitFor(() => expect(api.previewAgentImport).toHaveBeenCalledTimes(1))
   expect(screen.queryByRole('button', { name: 'Import' })).not.toBeInTheDocument()
+})
+
+
+it('shows a configuration refusal without suggesting a plugin installation', async () => {
+  vi.mocked(api.discoverAgentImports).mockResolvedValue({ ...available, status: 'unavailable', sources: [], catalog_required: false, message: 'Profile configuration is managed.' })
+  await setup(false)
+  expect(await screen.findByText('Profile configuration is managed.')).toBeVisible()
+  expect(screen.queryByRole('link', { name: 'Open plugin catalog' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Preview' })).not.toBeInTheDocument()
 })

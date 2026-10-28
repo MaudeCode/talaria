@@ -66,3 +66,15 @@ test('unknown import outcomes offer readback without replaying the write', async
   expect(applies).toBe(1)
   expect(reads).toBe(1)
 })
+
+test('configuration refusals keep the profile unchanged and offer no unrelated install action', async ({ page }, testInfo) => {
+  await page.route('**/api/profile/import', (route) => route.fulfill({ json: { status: 'unavailable', sources: [], items: [], stripped_secrets: [], receipt: null, can_apply: false, catalog_required: false, message: 'Profile configuration is managed or its write policy cannot be verified. Import is unavailable.' } }))
+  await page.goto('/profiles')
+  await settle(page)
+  await page.getByRole('button', { name: 'Import agent setup' }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog.getByText('Profile configuration is managed', { exact: false })).toBeVisible()
+  await expect(dialog.getByRole('link', { name: 'Open plugin catalog' })).toHaveCount(0)
+  await expect(dialog.getByRole('button', { name: 'Preview', exact: true })).toHaveCount(0)
+  await page.screenshot({ path: `/tmp/TAL-1493-evidence/config-refusal-${testInfo.project.name}.png` })
+})

@@ -247,6 +247,10 @@ function oauthFlowId(raw: unknown): string {
 
 async function importProfile(ctx: RequestContext, input: Omit<SidecarParams<'profiles.import'>, 'profile_home'>) {
   if (!await canManageServer(ctx)) throw new HttpError(403, 'Only the server owner can import agent setup.')
+  const profileHome = home(ctx)
+  if (input.action !== 'result' && ctx.deps.agentConfig.path(profileHome) !== ctx.deps.agentConfig.path(profileHome, { profileFile: true })) {
+    return { status: 'unavailable' as const, sources: [], items: [], stripped_secrets: [], receipt: null, can_apply: false, catalog_required: false, message: 'Importing setup requires the active profile default config path. Custom configuration paths are unsupported.' }
+  }
   const sidecar = ctx.deps.sidecar()
   if (!sidecar) return { status: input.action === 'result' ? 'unknown' as const : 'unavailable' as const, sources: [], items: [], stripped_secrets: [], receipt: null, can_apply: false, message: 'Install and enable Agent Importers from the plugin catalog.' }
   try {

@@ -439,8 +439,12 @@ App adoption is tracked separately in TAL-1494.
 
 The adapter requires an installed, enabled catalog `agent-importers` plugin at
 the immutable revision in `sidecar/agent_importer.json`, with matching native
-API hashes. It never installs or enables a plugin. Unavailable imports link to
-the existing Plugins catalog. No OpenClaw, credential migration, overwrite mode,
+API hashes. It never installs or enables a plugin. The real owning profile must
+pass the shared config-write management guard before inspection and before
+publication. An unavailable policy fails closed. The server refuses imports
+with a custom active config path because the native API targets the default
+profile config file. `catalog_required: false` hides unrelated installation
+actions on these refusals. Unavailable plugins link to the existing catalog. No OpenClaw, credential migration, overwrite mode,
 provider sign-in or automatic sync scheduling is included.
 
 Preview writes no source or profile files. Read-only home binding skips credential hydration, terminal initialization and process recovery; unsupported catalog pins refuse before importing legacy config owners. The native path-based API receives

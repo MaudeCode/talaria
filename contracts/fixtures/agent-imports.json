@@ -34,6 +34,17 @@
     "stripped_secrets": [],
     "receipt": null,
     "can_apply": false,
-    "message": "Install and enable Agent Importers from the plugin catalog."
+    "message": "Install and enable Agent Importers from the plugin catalog.",
+    "catalog_required": true
+  },
+  "config_unavailable": {
+    "status": "unavailable",
+    "sources": [],
+    "items": [],
+    "stripped_secrets": [],
+    "receipt": null,
+    "can_apply": false,
+    "message": "Profile configuration is managed or its write policy cannot be verified. Import is unavailable.",
+    "catalog_required": false
   }
 }

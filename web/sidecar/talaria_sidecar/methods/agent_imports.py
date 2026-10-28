@@ -14,8 +14,8 @@ import tempfile
 import time
 
 from .. import home as homes
-from ..errors import InvalidParams
-from . import memory, plugin_catalog
+from ..errors import InvalidParams, RpcError
+from . import config, memory, plugin_catalog
 
 _SOURCES = {'claude-code': ('.claude', 'Claude Code'), 'codex': ('.codex', 'Codex CLI'), 'cursor': ('.cursor', 'Cursor')}
 _CREDENTIALS = {'.credentials.json', 'auth.json', 'credentials.json', 'cli-config.json', '.env'}
@@ -27,9 +27,9 @@ _MAX_BYTES = 16 * 1024 * 1024
 _LEDGER = '.talaria-agent-imports'
 
 
-def _result(status, *, items=None, stripped=None, receipt=None, sources=None, message=None, can_apply=False):
+def _result(status, *, items=None, stripped=None, receipt=None, sources=None, message=None, can_apply=False, catalog_required=False):
     return dict(status=status, items=items or [], stripped_secrets=stripped or [], receipt=receipt,
-                sources=sources or [], message=message, can_apply=can_apply)
+                sources=sources or [], message=message, can_apply=can_apply, catalog_required=catalog_required)
 
 
 @contextmanager
@@ -252,9 +252,13 @@ def run(ctx, params):
                         # Fence a late apply that never reached the consumption record.
                         _PREVIEWS.pop(token, None)
                         return _result('changed', message='No import was confirmed. Preview again.')
+                try:
+                    config.assert_config_writable(home)
+                except RpcError:
+                    return _result('unavailable', message='Profile configuration is managed or its write policy cannot be verified. Import is unavailable.')
                 native = plugin_catalog.reviewed_importer(home)
                 if native is None:
-                    return _result('unavailable', message='Install and enable Agent Importers from the plugin catalog.')
+                    return _result('unavailable', message='Install and enable Agent Importers from the plugin catalog.', catalog_required=True)
                 importer, sync, plugin = native
                 if action == 'discover':
                     sources = []
@@ -314,6 +318,7 @@ def run(ctx, params):
                         manifest = json.loads(manifest_path.read_text())
                         manifest['agents'][agent]['source'] = str(source)
                         manifest_path.write_text(json.dumps(manifest))
+                        config.assert_config_writable(home)
                         output, output_identity = _snapshot(stage_target, _TARGETS)
                         # Check original objects again before publication; no write resolves a client/native path.
                         fresh_source = _source(agent)

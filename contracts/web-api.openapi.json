@@ -67179,6 +67179,9 @@
                         "maxLength": 200
                       }
                     },
+                    "catalog_required": {
+                      "type": "boolean"
+                    },
                     "receipt": {
                       "anyOf": [
                         {
@@ -67336,6 +67339,9 @@
                         "maxLength": 200
                       }
                     },
+                    "catalog_required": {
+                      "type": "boolean"
+                    },
                     "receipt": {
                       "anyOf": [
                         {
@@ -67482,6 +67488,9 @@
                         "type": "string",
                         "maxLength": 200
                       }
+                    },
+                    "catalog_required": {
+                      "type": "boolean"
                     },
                     "receipt": {
                       "anyOf": [
@@ -67636,6 +67645,9 @@
                         "type": "string",
                         "maxLength": 200
                       }
+                    },
+                    "catalog_required": {
+                      "type": "boolean"
                     },
                     "receipt": {
                       "anyOf": [

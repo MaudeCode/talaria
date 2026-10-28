@@ -1,3 +1,6 @@
+import { randomUUID } from 'node:crypto'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { afterEach, expect, it } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { FakeSidecar } from '../sidecar/fake.js'
@@ -46,4 +49,16 @@ it('returns typed unavailable or unknown outcomes without exposing native except
   }
   expect(sidecar.calls.filter((c) => c.method === 'profiles.import')).toHaveLength(4)
   expect(server.logs.join('\n')).not.toContain('DECOY')
+})
+
+it('refuses imports with a custom active config path before reaching the native importer', async () => {
+  const sidecar = new FakeSidecar()
+  server = await bootTestServer({ sidecar, env: { HERMES_CONFIG_PATH: join(tmpdir(), `talaria-config-${randomUUID()}.yaml`) } })
+  const replies = []
+  for (const [path, body] of [['/api/profile/import', null], ['/api/profile/import/preview', { agent: 'cursor' }], ['/api/profile/import/apply', { receipt: 'old-preview' }]] as const) {
+    const response = await server.get(path, body ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {})
+    replies.push(await response.json())
+  }
+  expect(sidecar.calls.some((call) => call.method === 'profiles.import'), 'Custom config imports must refuse before invoking the default-path importer').toBe(false)
+  for (const reply of replies) expect(reply).toMatchObject({ status: 'unavailable', can_apply: false, catalog_required: false })
 })

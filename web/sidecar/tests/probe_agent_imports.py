@@ -83,6 +83,21 @@ with patch.object(catalog, 'fetch_live_catalog', side_effect=AssertionError('Imp
         assert next_preview['can_apply'], next_preview
         assert call('apply', receipt=next_preview['receipt'])['status'] == 'applied'
         assert 'Synthetic ' + name + ' instruction.' in (home / 'memories/MEMORY.md').read_text()
+    (source / 'mcp.json').write_text('{"mcpServers":{"managed_probe":{"command":"never-run"}}}')
+    managed_preview = call('preview', agent='cursor')
+    assert managed_preview['can_apply'], managed_preview
+    (home / '.managed').write_text('nix')
+    before_managed = {str(p): p.read_bytes() for p in home.rglob('*') if p.is_file()}
+    refused = call('apply', receipt=managed_preview['receipt'])
+    assert refused['status'] == 'unavailable', 'Package-managed config import must be refused: ' + repr(refused)
+    assert {str(p): p.read_bytes() for p in home.rglob('*') if p.is_file()} == before_managed
+    (home / '.managed').unlink()
+    with patch('hermes_constants.get_managed_system', side_effect=RuntimeError('DECOY-POLICY-ERROR')):
+        before_unknown = {str(p): p.read_bytes() for p in home.rglob('*') if p.is_file()}
+        refused = call('preview', agent='cursor')
+        assert refused['status'] == 'unavailable'
+        assert 'DECOY' not in json.dumps(refused)
+        assert {str(p): p.read_bytes() for p in home.rglob('*') if p.is_file()} == before_unknown
     (home / 'config.yaml').write_text('plugins:\n  disabled: [agent-importers]\n')
     assert call('discover')['status'] == 'unavailable'
 print('NATIVE_IMPORT=' + json.dumps({'preview': preview, 'applied': result}))

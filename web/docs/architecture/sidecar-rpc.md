@@ -881,7 +881,7 @@ Both native context-local and legacy environment profile bindings retain those
 flags. Other calls retain their existing process-recovery behavior. A v61 peer
 is rejected at handshake before Agent loading.
 
-RPC v62 adds `profiles.import` with `discover`, `preview`, `apply` and read-only
+RPC v63 adds `profiles.import` with `discover`, `preview`, `apply` and read-only
 `result` actions. The shared result is `AgentImportResultSchema`. The adapter
 loads attested structured importer/sync APIs, not plugin CLI output or Desktop
 code. See Coding-agent profile import in `docs/CONTRACTS.md`.

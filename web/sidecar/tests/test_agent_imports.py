@@ -53,6 +53,7 @@ def imports(monkeypatch, tmp_path):
     monkeypatch.setattr(Path, 'home', lambda: root)
     monkeypatch.setattr(subject.homes, 'scoped_home', lambda *a, **kw: nullcontext())
     monkeypatch.setattr(subject.plugin_catalog, 'reviewed_importer', lambda _home: (Importer, SimpleNamespace(update_sync_manifest=sync), [state['pin']]) if state['supported'] else None)
+    monkeypatch.setattr(subject.config, 'assert_config_writable', lambda _home: None)
     monkeypatch.setattr(subject, '_PREVIEWS', {})
     monkeypatch.setattr(subject, '_refresh_runtime', lambda _home: True)
     methods = build_methods(SimpleNamespace(load=lambda: None, ensure_current=lambda: None))
@@ -271,3 +272,20 @@ def test_import_rejects_an_escaped_memory_lock_before_publication(imports):
     assert i.call('preview', agent='cursor')['status'] == 'unavailable'
     assert tree(i.other) == before
     assert i.effects == []
+
+
+def test_import_rechecks_config_policy_after_native_staging(imports, monkeypatch):
+    from talaria_sidecar.errors import RpcError
+
+    i = imports
+    preview = i.call('preview', agent='cursor')
+    checks = []
+    def policy(home):
+        checks.append(home)
+        if len(checks) > 1:
+            raise RpcError('Configuration became managed', condition='config_write_refused')
+    monkeypatch.setattr(i.subject.config, 'assert_config_writable', policy)
+    assert i.call('apply', receipt=preview['receipt'])['status'] == 'unknown'
+    assert (i.target / 'config.yaml').read_text() == 'existing config'
+    assert not (i.target / 'memories').exists()
+    assert i.call('result', receipt=preview['receipt'])['status'] == 'unknown'

@@ -53,7 +53,7 @@ export function AgentImportDialog({ onClose }: { onClose: () => void }) {
       {discovery.isPending && <LoadingState />}
       {discovery.isError && <ErrorState error={discovery.error} onRetry={() => { void discovery.refetch() }} />}
       {shown?.message && <p role="status" className="text-sm text-warning">{shown.message}</p>}
-      {shown?.status === 'unavailable' && <a className="text-sm text-accent underline" href={appUrl('settings/plugins').href}>{m.profile_import_catalog()}</a>}
+      {shown?.status === 'unavailable' && shown.catalog_required !== false && <a className="text-sm text-accent underline" href={appUrl('settings/plugins').href}>{m.profile_import_catalog()}</a>}
       {discovery.data?.status === 'available' && <>
         <FieldRow label={m.profile_import_source()} htmlFor="agent-import-source">
           <Select className="min-h-11" id="agent-import-source" value={agent} onValueChange={(value) => { generation.current++; setAgent(value as AgentImportSource); setReport(null); setLastReceipt(null); operation.reset() }}>
