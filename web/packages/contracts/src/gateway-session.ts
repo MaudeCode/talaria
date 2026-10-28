@@ -78,7 +78,7 @@ export const GatewaySessionParamsSchema = z.object({
   authority_epoch: z.number().int().nonnegative().optional(), replay_epoch: z.string().min(1).optional(),
   request_id: z.string().min(1).max(128).optional(), text: z.string().optional(),
   submission_id: z.string().min(1).max(128).optional(),
-  show_reasoning: z.boolean().optional().describe('The profile display preference negotiated for an owner watch.'),
+  show_reasoning: z.boolean().optional().describe('Whether the owner sends reasoning to the server observer; client visibility uses the current profile preference.'),
   admission_id: z.string().optional(), execution_generation: z.number().int().nonnegative().optional(),
   prompt_id: z.string().optional(), choice: z.enum(['once', 'session', 'always', 'deny']).optional(),
   question_id: z.string().min(1).optional(), answer: z.string().optional(),

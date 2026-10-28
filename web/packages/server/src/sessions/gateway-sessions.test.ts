@@ -1054,7 +1054,7 @@ describe('canonical owner attachment', () => {
     expect.soft(frames.filter((frame) => frame.event === 'token').map((frame) => frame.data)).toEqual([{ text: 'Still observable' }])
     expect.soft(frames.some((frame) => frame.event === 'apperror')).toBe(false)
     expect.soft(frames.some((frame) => frame.event === 'reasoning')).toBe(false)
-    expect.soft(sidecar.calls.find((call) => call.method === 'gateway.session' && (call.params as { action: string }).action === 'watch')?.params).toMatchObject({ show_reasoning: false })
+    expect.soft(sidecar.calls.find((call) => call.method === 'gateway.session' && (call.params as { action: string }).action === 'watch')?.params).toMatchObject({ show_reasoning: true })
   })
 
   it('clears prior reasoning titles and usage when a queued execution advances the generation', async () => {
@@ -1365,6 +1365,20 @@ describe('canonical owner attachment', () => {
     expect(sidecar.calls.some((c) => c.method === 'chat.start')).toBe(false)
   })
 
+  it('applies Show to an already-attached owner watch that started hidden (TAL-996)', async () => {
+    let show = false
+    writeFileSync(join(s.state, 'config.yaml'), '# synthetic display preference')
+    sidecar.respond('config.get', () => ({ path: join(s.state, 'config.yaml'), exists: true, config: { display: { platforms: { webui: { show_reasoning: show } } } } }))
+    const watch = await observeOwner(snapshot({ running: true, pending: [admission()] }))
+    await vi.waitFor(() => { expect(watch.attached).toBe(true) })
+    show = true
+    s.deps.agentConfig.invalidate()
+    watch.event('reasoning.delta', { text: 'Restored owner reasoning' })
+    watch.finish()
+    const frames = await watch.read
+    expect(frames.some((frame) => frame.event === 'reasoning' && (frame.data as { text?: string }).text === 'Restored owner reasoning')).toBe(true)
+  })
+
   it.each([true, false])('projects recorded v0.22.3 reasoning, subagent activity and usage through existing chat frames (reasoning=%s)', async (show) => {
     writeFileSync(join(s.state, 'config.yaml'), '# synthetic display preference')
     sidecar.respond('config.get', () => ({ path: join(s.state, 'config.yaml'), exists: true, config: { display: { show_reasoning: !show, platforms: { webui: { show_reasoning: show } } } } }))
@@ -1379,7 +1393,7 @@ describe('canonical owner attachment', () => {
     const frames = await watch.read
     const reasoning = frames.filter((f) => f.event === 'reasoning').map((f) => (f.data as { text: string }).text).join('')
     expect.soft(reasoning).toBe(show ? ownerEvents.events.filter((e) => e.type === 'reasoning.delta').map((e) => (e.payload as { text: string }).text).join('') : '')
-    expect.soft(sidecar.calls.find((c) => c.method === 'gateway.session' && (c.params as { action: string }).action === 'watch')?.params).toMatchObject({ show_reasoning: show })
+    expect.soft(sidecar.calls.find((c) => c.method === 'gateway.session' && (c.params as { action: string }).action === 'watch')?.params).toMatchObject({ show_reasoning: true })
     for (const frame of frames.filter((f) => ['reasoning', 'tool', 'tool_complete', 'metering', 'done'].includes(f.event))) expect.soft(ChatEventSchema.safeParse(frame).success, JSON.stringify(frame)).toBe(true)
     const progress = frames.filter((f) => f.event === 'tool' || f.event === 'tool_complete')
     expect.soft(progress).toHaveLength(ownerEvents.events.filter((e) => String(e.type).startsWith('subagent.')).length)

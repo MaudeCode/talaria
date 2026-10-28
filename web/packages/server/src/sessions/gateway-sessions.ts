@@ -152,10 +152,10 @@ export class GatewaySessions {
     this.observations.set(target.key, observation)
     this.noticeState(target, snapshot)
     observation.ended = (async () => {
-      const showReasoning = await this.deps.showReasoning(target.home).catch(() => false)
       const sidecar = this.deps.sidecar()
       if (!sidecar || observation.controller.signal.aborted) return { state: 'unavailable' as const, reason: 'sidecar_unavailable', snapshot: null, receipt: null }
-      return sidecar.call('gateway.session', { profile_home: target.home, session_id: target.sid, action: 'watch', show_reasoning: showReasoning }, {
+      // Keep reasoning available when Show changes during this observation; delivery applies the current preference.
+      return sidecar.call('gateway.session', { profile_home: target.home, session_id: target.sid, action: 'watch', show_reasoning: true }, {
         signal: observation.controller.signal, timeoutMs: 0,
         onStream: (frame) => {
           if (observation.controller.signal.aborted || this.observations.get(target.key) !== observation) return
@@ -692,7 +692,6 @@ export class GatewaySessions {
       const journalSession = ownerStateId(target.key)
       const writer = await this.deps.journal.writer(journalSession, watch.stream)
       closeWriter = writer
-      const showReasoning = await this.deps.showReasoning(target.home).catch(() => false)
       let completion: { admission: string; message: string; type: 'cron_session_read_only'; code: 'cron_session_read_only'; retryable: false } | null = null
       let replaying = true
       let liveRunning = false
@@ -844,17 +843,18 @@ export class GatewaySessions {
             if (event.authority_epoch !== watch.snapshot.authority_epoch || event.execution_generation !== watch.snapshot.execution_generation) return
             if (kind === 'message.delta') {
               const stable = titles.stableSnapshot(reasoning)
-              if (stable !== null) await put('reasoning', { text: '', titles: stable })
+              if (stable !== null && await this.deps.showReasoning(target.home).catch(() => false)) await put('reasoning', { text: '', titles: stable })
               await put('token', { text: str(data.text || data.delta || data.content) })
             }
-            else if (kind === 'reasoning.delta' && showReasoning) {
+            else if (kind === 'reasoning.delta') {
               reasoning += str(data.text)
-              await put('reasoning', titles.prepare(reasoningEventPayload(data.text, reasoning)))
+              if (await this.deps.showReasoning(target.home).catch(() => false)) await put('reasoning', titles.prepare(reasoningEventPayload(data.text, reasoning)))
             }
             else if (kind.startsWith('subagent.') && str(data.subagent_id)) {
               // Reuse the delegate activity row; each child keeps one identity through progress and completion.
               const complete = kind === 'subagent.complete'
-              const preview = kind === 'subagent.thinking' && !showReasoning ? '' : str(data.summary || data.tool_preview || data.text)
+              const visible = kind !== 'subagent.thinking' || await this.deps.showReasoning(target.home).catch(() => false)
+              const preview = visible ? str(data.summary || data.tool_preview || data.text) : ''
               await put(complete ? 'tool_complete' : 'tool', { id: `owner-subagent-${str(data.subagent_id)}`, name: 'subagent_progress',
                 args: { task: str(data.goal) }, preview: preview || null,
                 ...(complete ? { is_error: data.status !== 'completed', duration: data.duration_seconds } : {}) })
