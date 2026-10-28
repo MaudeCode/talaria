@@ -47,7 +47,7 @@ the Live Activity widget do not read synced records and must not gain access.
 later. `ConfigurationSyncTests` fails when the app writes a record type this
 file does not declare.
 
-Release-signed builds (TestFlight, App Store, DevApps Talaria Dev) use the
+Release-signed builds, including TestFlight and App Store builds, use the
 **Production** environment, which cannot create record types at runtime. A
 missing type fails with "Cannot create new type … in production schema".
 Apply the schema to each container: `iCloud.dev.kil.talaria` and

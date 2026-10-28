@@ -30,7 +30,7 @@ Run simulator-hosted XCTest only through `scripts/test-ios [test-identifier ...]
 
 1. Run the smallest focused test identifier that covers the change.
 2. Wait for it to finish.
-3. For App changes, run `swift test --package-path TalariaKit` and `scripts/test-ios TalariaTests` before review or commit. HTTP/SSE changes also require the contract checks. For UI changes, also run the flows they touch from [phone checks](../../../app/docs/phone-checks.md) on a DevApps build.
+3. For App changes, run `swift test --package-path TalariaKit` and `scripts/test-ios TalariaTests` before review or commit. HTTP/SSE changes also require the contract checks. For UI changes, also run the flows they touch from [phone checks](../../../app/docs/phone-checks.md) on a signed physical-device build.
 
 CI (pull requests and main pushes) runs, for every App change, `swift test` for
 TalariaKit, the App build for testing (App, extensions and the test bundle) and

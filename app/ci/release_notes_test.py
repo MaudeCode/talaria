@@ -487,6 +487,21 @@ class ReleaseNotesTests(unittest.TestCase):
         self.commit("TAL-3: change the shipped branch")
         self.cli("validate", "--base", base, error="require user-facing entries")
 
+    def test_xcconfig_comments_and_export_options_can_skip(self):
+        self.write("Config/Dev.xcconfig", "// Development app\nPRODUCT_NAME = Dev\n")
+        self.write("Config/DevExportOptions.plist", "<plist/>\n")
+        self.add_fragment(2)
+        self.commit("TAL-2: config")
+        base = self.git("rev-parse", "HEAD")
+        self.write("Config/Dev.xcconfig", "// Development app, installed beside production\n\nPRODUCT_NAME = Dev\n")
+        self.git("rm", "-q", "Config/DevExportOptions.plist")
+        self.write("changelog.d/TAL-3.json", '{"skip":"Comments and export settings only"}')
+        self.commit("TAL-3: tidy config")
+        self.cli("validate", "--base", base)
+        self.write("Config/Dev.xcconfig", "// Development app, installed beside production\n\nPRODUCT_NAME = Other\n")
+        self.commit("TAL-3: change a build setting")
+        self.cli("validate", "--base", base, error="require user-facing entries")
+
     def test_app_changes_cannot_use_only_skip_or_another_tickets_metadata(self):
         self.write("Talaria/Feature.swift", "// fixture\n")
         self.write("changelog.d/TAL-2.json", '{"skip":"Docs only"}')

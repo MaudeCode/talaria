@@ -212,10 +212,6 @@ identity in `Config/Dev.xcconfig`: bundle ID `dev.kil.talaria.branch` (plus its
 has its own data and server setup, so it never replaces the App Store or
 TestFlight app.
 
-- `scripts/publish-devapps --ticket TAL-<n> --ticket-title <title> --title <build title> --notes <notes>`
-  archives Talaria Dev, exports a `release-testing` IPA and publishes it to
-  <https://devapps.thezoo.house/apps/talaria-dev/>. This is the normal way to
-  deliver a build to the phone.
 - `scripts/run-ios-device` installs a Debug Talaria Dev build over USB or local
   Wi-Fi and refuses any other bundle ID.
 
