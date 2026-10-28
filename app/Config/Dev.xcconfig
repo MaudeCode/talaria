@@ -1,7 +1,6 @@
 // Talaria Dev: the side-by-side development app, installed beside the App Store
 // or TestFlight app without sharing its data. Used for USB installs
-// (scripts/run-ios-device), DevApps delivery (scripts/publish-devapps) and
-// branch TestFlight uploads (TESTFLIGHT.md).
+// (scripts/run-ios-device) and branch TestFlight uploads (TESTFLIGHT.md).
 //
 // Use with:
 // xcodebuild ... -xcconfig Config/Dev.xcconfig

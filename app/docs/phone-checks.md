@@ -2,7 +2,7 @@
 
 Talaria's automated tests run in process: hosted presentation tests in `TalariaTests` and TalariaKit unit tests
 (TAL-856). They cover what the App does with a gesture, a system sheet or a launch, but not the system delivering it.
-The flows below need the real device, through a DevApps build (`$talaria-device-deploy`). Run the ones a release's
+The flows below need a signed build installed on a real device. Run the ones a release's
 changes touch before it ships.
 
 | Flow | Check on the phone | In-process coverage |

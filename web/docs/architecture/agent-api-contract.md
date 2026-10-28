@@ -432,15 +432,8 @@ existing recovery escape, still behind the same writer and compatibility gates.
 Update checks do not restore stashes or mutate source. Interrupted local changes
 are reconciled only on an explicit apply within the writer lease.
 
-The compatibility gate proves Talaria's existing calls still work; it cannot see
-new Agent capabilities. For what a release or `main` SHA adds, modifies,
-deprecates or removes, run the
-[`upstream-release-review`](../../../.agents/skills/upstream-release-review/SKILL.md)
-skill: `python3 scripts/review-agent-range.py prepare --base <reviewed SHA>
---candidate <tag|main>` prepares the exact range, and the skill classifies each
-change against the sidecar, contracts, server and UI. It files validated bugs
-and features in Kaneo, holds other findings for owner approval, and never
-changes the pin.
+The compatibility gate proves Talaria's existing calls still work. New Agent
+capabilities need their own contract and consumer validation before adoption.
 
 ## Dependency classes
 

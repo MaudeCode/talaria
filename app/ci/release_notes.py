@@ -144,6 +144,8 @@ def repository_only(path):
         ))
         or TEST_DIRECTORY.match(path) is not None
         or path in {".gitignore", ".gitattributes", ".gitleaksignore", "CLAUDE.md"}
+        # Archive export options configure signing and upload, never the App bundle's contents.
+        or re.fullmatch(r"Config/\w*ExportOptions\.plist", path) is not None
     )
 
 
@@ -296,6 +298,10 @@ def test_support_only(base, target, path):
         return scheme_test_only(base, target, prefix + path)
     if path.endswith(".swift"):
         return debug_only(base, target, prefix + path)
+    if path.endswith(".xcconfig"):
+        # A comment-only edit leaves every build setting as before.
+        return all(not lines[number].strip() or lines[number].lstrip().startswith("//")
+                   for lines, indices in changed_lines(base, target, prefix + path) for number in indices)
     return False
 
 
