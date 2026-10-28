@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { SidecarResult } from '@maudecode/talaria-web-contracts'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
@@ -206,5 +206,99 @@ describe('TAL-818: the Connectors page and connect card', () => {
     // Only a client that draws the card asks the Agent for one; any other client keeps the Agent's plain links.
     expect(asked).toEqual([true])
     for (const method of ['connectors.operation', 'connectors.respond', 'chat.start'] as const) sidecar.respond(method, undefined)
+  })
+})
+
+describe('TAL-1507: native scheduled connector sign-in offers', () => {
+  let s: TestServer
+  let sidecar: FakeSidecar
+  let status: SidecarResult<'connectors.offer.status'>
+  let claims: number
+  beforeAll(async () => {
+    sidecar = new FakeSidecar()
+    status = { available: true, eligible: true, guest_id: 'guest-a', due_in: 0, claimed: false }
+    claims = 0
+    sidecar.respond('connectors.offer.status', () => status)
+    sidecar.respond('connectors.offer.claim', (params) => {
+      const claimed = status.available && status.eligible && status.due_in === 0 && params.guest_id === status.guest_id
+      if (claimed) { claims += 1; status = { ...status, due_in: null } }
+      return { ...status, claimed }
+    })
+    s = await bootTestServer({ sidecar })
+  })
+  afterAll(() => s.close())
+
+  it('claims once across simultaneous tabs, retains lost delivery and reopens from durable page state', async () => {
+    // Ignore one response body, as when the browser loses delivery after the server handles the read.
+    await s.get('/api/connectors')
+    const pages = await Promise.all(Array.from({ length: 6 }, async () => await json(await s.get('/api/connectors'))))
+    const offer = pages[0]!.sign_in_offer as Json
+    expect(offer).toMatchObject({ available: true, due: true, visible: true, actions: ['sign_in', 'dismiss'] })
+    expect(new Set(pages.map((page) => (page.sign_in_offer as Json).offer_id)).size).toBe(1)
+    expect(claims).toBe(1)
+    const { ConnectorOffers } = await import('../tools/connectors.js')
+    const { JsonDocuments } = await import('../sessions/storage/json-documents.js')
+    const originalOwner = s.deps.connectorOffers
+    const documents = new JsonDocuments(s.deps.config.stateDir)
+    try {
+      s.deps.connectorOffers = new ConnectorOffers(documents)
+      expect((await json(await s.get('/api/connectors'))).sign_in_offer).toEqual(offer)
+      sidecar.respond('connectors.offer.status', () => { throw new SidecarError('offline', { condition: 'sidecar_unavailable' }) })
+      expect((await json(await s.get('/api/connectors'))).sign_in_offer).toMatchObject({ visible: true, available: false, actions: ['dismiss'], offer_id: offer.offer_id })
+      sidecar.respond('connectors.offer.status', () => status)
+      status = { ...status, available: false, eligible: false }
+      expect((await json(await s.get('/api/connectors'))).sign_in_offer).toMatchObject({ visible: true, available: false, actions: ['dismiss'], offer_id: offer.offer_id })
+      status = { ...status, available: true, eligible: true }
+      await post(s, '/api/connectors/sign-in-offer/dismiss', { offer_id: offer.offer_id })
+      expect(await json(await post(s, '/api/connectors/sign-in-offer/dismiss', { offer_id: offer.offer_id }))).toMatchObject({ visible: false })
+      expect((await json(await s.get('/api/connectors'))).sign_in_offer).toMatchObject({ visible: false, due: false })
+      expect(claims).toBe(1)
+      // Only the Agent can re-arm. A stale acknowledgement cannot dismiss that later native offer.
+      status = { ...status, due_in: 0 }
+      const later = (await json(await s.get('/api/connectors'))).sign_in_offer as Json
+      expect(later.offer_id).not.toBe(offer.offer_id)
+      expect(await json(await post(s, '/api/connectors/sign-in-offer/dismiss', { offer_id: offer.offer_id }))).toMatchObject({ visible: true, offer_id: later.offer_id })
+      expect(claims).toBe(2)
+    } finally { s.deps.connectorOffers = originalOwner; await documents.close() }
+  })
+
+  it('retains a successful native claim through a document revision retry', async () => {
+    const { ConnectorOffers } = await import('../tools/connectors.js')
+    const { JsonDocuments } = await import('../sessions/storage/json-documents.js')
+    const { RevisionConflict } = await import('../sessions/storage/backend.js')
+    const documents = new JsonDocuments(s.deps.config.stateDir)
+    const put = vi.spyOn(documents, 'put').mockRejectedValueOnce(new RevisionConflict('offer'))
+    status = { available: true, eligible: true, guest_id: 'guest-c', due_in: 0, claimed: false }
+    const before = claims
+    try {
+      const owner = new ConnectorOffers(documents)
+      const offered = await owner.view('/synthetic/storage-retry', sidecar)
+      expect(offered.visible).toBe(true)
+      expect(claims).toBe(before + 1)
+      expect(put).toHaveBeenCalledTimes(2)
+      expect((await owner.view('/synthetic/storage-retry', sidecar)).offer_id).toBe(offered.offer_id)
+    } finally { await documents.close() }
+  })
+
+  it('withdraws a signed-in, opted-out or replaced guest and never exposes another profile result', async () => {
+    status = { ...status, available: true, eligible: false }
+    expect((await json(await s.get('/api/connectors'))).sign_in_offer).toMatchObject({ visible: false, actions: [] })
+    status = { ...status, guest_id: 'guest-b', eligible: true, due_in: null }
+    expect((await json(await s.get('/api/connectors'))).sign_in_offer).toMatchObject({ visible: false })
+    status = { ...status, guest_id: null, eligible: false }
+    expect((await json(await s.get('/api/connectors'))).sign_in_offer).toMatchObject({ visible: false })
+    status = { ...status, guest_id: 'guest-b', eligible: true, due_in: 0 }
+    const own = (await json(await s.get('/api/connectors'))).sign_in_offer as Json
+    status = { ...status, due_in: null }
+    const other = await s.deps.connectorOffers.view('/synthetic/other-profile', sidecar)
+    expect(other.visible).toBe(false)
+    expect(other.offer_id).not.toBe(own.offer_id)
+  })
+
+  it.each(['no app', 'welcome trial', 'signed in', 'opted out', 'older Agent', 'unavailable'])('does not invent eligibility for %s', async (scenario) => {
+    status = { available: !['older Agent', 'unavailable'].includes(scenario), eligible: false, guest_id: null, due_in: null, claimed: false }
+    const before = claims
+    expect((await json(await s.get('/api/connectors'))).sign_in_offer).toMatchObject({ due: false, visible: false, actions: [] })
+    expect(claims).toBe(before)
   })
 })

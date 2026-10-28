@@ -340,7 +340,10 @@ const ConnectorOp = ProfileHomeParams.extend({ op_id: z.string().min(1) })
  * `connector_not_found`, `connection_not_found`, `policy_conflict` (the member rules changed since `expected_revision`), `policy_invalid`,
  * `operation_not_found`, `operation_settled`, `operation_refused`, `connectors_failed`.
  */
+const ConnectorOfferStatus = z.object({ available: z.boolean(), guest_id: z.string().nullable(), eligible: z.boolean(), due_in: z.number().int().nonnegative().nullable(), claimed: z.boolean() })
 export const CONNECTORS_METHODS = {
+  'connectors.offer.status': { params: ProfileHomeParams, result: ConnectorOfferStatus },
+  'connectors.offer.claim': { params: ProfileHomeParams.extend({ guest_id: z.string().min(1) }), result: ConnectorOfferStatus },
   /** The Agent's `connectors_available()`; never creates an identity. */
   'connectors.available': { params: ProfileHomeParams, result: z.object({ available: z.boolean() }) },
   'connectors.catalog': { params: ProfileHomeParams, result: z.object({ connectors: z.array(z.object({ slug: z.string(), name: z.string(), description: z.string(), category: z.string(), logo_url: z.string().nullable() })) }) },

@@ -15,6 +15,7 @@ import { useResourceEffects, useResourceMutation, withEffects } from '../session
 import { ResourceSwitch } from '../sessions/ResourceSwitch'
 import { PageConnect } from './ConnectTargets'
 import { OAuthSignIn } from '../onboarding/OAuthSignIn'
+import { useStreamContext } from '../../stream/connection'
 
 type Rule = { enabled: boolean } | { tool: string; tool_enabled: boolean }
 const ruleResource = (connector: string, rule: Rule) => JSON.stringify(['connector-rule', connector, 'tool' in rule ? rule.tool : null])
@@ -59,7 +60,18 @@ function useRule() {
 
 /** TAL-818: Nous tool-gateway apps from the server's page view: connect, disconnect, and the member rules for apps and tools. */
 export function ConnectorsSection() {
-  const page = useQuery({ queryKey: keys.connectors.page, queryFn: api.fetchConnectors, staleTime: 30_000 })
+  const page = useQuery({ queryKey: keys.connectors.page, queryFn: api.fetchConnectors, staleTime: 30_000,
+    refetchInterval: (query) => query.state.data?.sign_in_offer?.refresh_after ? query.state.data.sign_in_offer.refresh_after * 1000 : false })
+  const context = useStreamContext()
+  const [signInContext, setSignInContext] = useState<object | null>(null)
+  const signInActive = signInContext === context
+  const effects = useResourceEffects()
+  const dismiss = useResourceMutation({
+    resource: (id: string) => `connector-offer:${id}`, effect: () => ({ remove: true }),
+    queryKey: keys.connectors.all, readKeys: () => [keys.connectors.page],
+    mutationFn: (id: string) => api.dismissConnectorOffer(id),
+    onError: (error) => showToast(error instanceof Error ? error.message : m.connectors_failed(), 5000, 'error'),
+  })
   const rule = useRule()
   const { refetch } = page
   const refresh = () => { void refetch() }
@@ -67,10 +79,15 @@ export function ConnectorsSection() {
   if (page.isError && !page.data) return <ErrorState error={page.error} onRetry={() => { void page.refetch() }} />
   if (!page.data?.available) return <EmptyState>{m.connectors_unavailable()}</EmptyState>
   const revision = page.data.policy_revision
+  const offer = page.data.sign_in_offer
+  const offered = offer?.visible && !effects[`connector-offer:${offer.offer_id}`]?.remove
   return (
     <>
-    {page.data.sign_in_required && <OAuthSignIn provider="nous" label="Nous Portal" signedIn={false} compact idPrefix="connectorsOauth"
-      onApproved={refresh} />}
+    {(page.data.sign_in_required || offered || signInActive) && <OAuthSignIn provider="nous" label="Nous Portal" signedIn={false} compact idPrefix="connectorsOauth"
+      resultOnly={!page.data.sign_in_required && !offer?.actions.includes('sign_in')}
+      canStart={page.data.sign_in_required || offer?.actions.includes('sign_in')} onStart={() => setSignInContext(context)}
+      onDismiss={offered && offer?.actions.includes('dismiss') ? () => { if (offer.offer_id) { setSignInContext(null); dismiss.mutate(offer.offer_id) } } : undefined}
+      onApproved={() => { setSignInContext(null); refresh() }} />}
     {!page.data.sign_in_required && page.data.rules_error && <p role="status" className="mb-2 text-xs text-error" data-connectors-rules-error>{page.data.rules_error}</p>}
     {page.data.connectors.length === 0 && !page.data.sign_in_required && <EmptyState>{m.connectors_empty()}</EmptyState>}
     <ul className="flex flex-col divide-y divide-border-subtle" aria-label={m.settings_section_connectors_title()} data-section="connectors">

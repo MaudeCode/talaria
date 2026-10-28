@@ -214,5 +214,34 @@
         "status": "removed"
       }
     }
+  ],
+  "connectors.offer.status": [
+    {
+      "params": {
+        "profile_home": "<home>"
+      },
+      "result": {
+        "available": true,
+        "guest_id": null,
+        "eligible": false,
+        "due_in": null,
+        "claimed": false
+      }
+    }
+  ],
+  "connectors.offer.claim": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "guest_id": "synthetic-guest"
+      },
+      "result": {
+        "available": true,
+        "guest_id": null,
+        "eligible": false,
+        "due_in": null,
+        "claimed": false
+      }
+    }
   ]
 }

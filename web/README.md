@@ -256,6 +256,11 @@ Opening or refreshing Settings → Connectors never provisions a Nous identity o
 Without an identity, Agents with a public catalog let you browse apps; older Agents offer sign-in.
 Rules stay off and read-only until the portal returns them. Sign in or choose **Connect** to authorize
 account setup; after signing in through the Agent, refresh the page to load that account.
+For a guest with connected apps, Hermes may schedule a sign-in offer. **Not now**
+keeps its native backoff, and the offer stays available across reloads until handled.
+A connected-app sighting may set Hermes' existing guest flag; it never creates or
+refreshes credentials. Sign-in starts only when chosen, and its account and app
+transfer result stays readable until **Continue**.
 
 The Memory page offers **Preview compaction** for saved Memory and User profile entries. It uses the configured
 Compression auxiliary model, shows the source, proposal and diff, and saves only after **Apply compaction**.

@@ -162,3 +162,74 @@ test('the Connectors entry follows the server flag (TAL-818)', async ({ page }, 
     }
   })
 }
+
+test('scheduled guest offer reuses OAuth, preserves the result, and dismisses without signing in (TAL-1507)', async ({ page }, testInfo) => {
+  let visible = false
+  let signedIn = false
+  let approved = false
+  let starts = 0
+  let dismisses = 0
+  const offer = () => ({ available: true, due: visible, visible: visible && !signedIn, offer_id: visible && !signedIn ? 'offer-1' : null,
+    actions: visible && !signedIn ? ['sign_in', 'dismiss'] : [], refresh_after: 1 })
+  await page.route('**/api/connectors/available', (route) => route.fulfill({ json: { available: true } }))
+  await page.route('**/api/connectors', (route) => route.fulfill({ json: { ...shared.page, sign_in_offer: offer() } }))
+  await page.route('**/api/connectors/sign-in-offer/dismiss', async (route) => {
+    dismisses += 1
+    expect(route.request().postDataJSON()).toEqual({ offer_id: 'offer-1' })
+    visible = false
+    await route.fulfill({ json: offer() })
+  })
+  await page.route('**/api/onboarding/oauth/start', async (route) => {
+    starts += 1
+    expect(route.request().postDataJSON()).toEqual({ provider: 'nous' })
+    await route.fulfill({ json: { ok: true, status: 'pending', flow_id: 'offer-flow', provider: 'nous', user_code: 'TEST-1507', verification_url: 'https://auth.example.test/device', interval: 1 } })
+  })
+  await page.route('**/api/onboarding/oauth/cancel', (route) => route.fulfill({ json: { ok: true, status: 'cancelled', flow_id: 'offer-flow' } }))
+  await page.route('**/api/onboarding/oauth/poll?**', (route) => route.fulfill({ json: approved ? {
+    ok: true, status: 'approved', flow_id: 'offer-flow', nous_account: { account_id: 'account-1', email: 'u***@example.test', state: 'retrying', lines: ['Moving connected apps.'], moved: [], dropped: [], reconnect: [], poll_after: null },
+  } : { ok: true, status: 'pending', flow_id: 'offer-flow' } }))
+  await page.goto('/settings/connectors')
+  await settle(page)
+  await page.screenshot({ path: testInfo.outputPath(`offer-before-${testInfo.project.name}.png`) })
+  visible = true
+  const signIn = page.getByRole('button', { name: 'Sign in with Nous Portal' })
+  const later = page.getByRole('button', { name: 'Not now' })
+  await expect(later).toBeVisible()
+  expect(starts).toBe(0)
+  if (testInfo.project.name === 'mobile') {
+    expect((await signIn.boundingBox())!.height).toBeGreaterThanOrEqual(44)
+    expect((await later.boundingBox())!.height).toBeGreaterThanOrEqual(44)
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath(`offer-after-${testInfo.project.name}.png`) })
+  if (testInfo.project.name === 'desktop') {
+    await page.setViewportSize({ width: 1024, height: 768 })
+    await page.screenshot({ path: testInfo.outputPath('offer-after-laptop.png') })
+  }
+  await later.focus()
+  await page.keyboard.press('Enter')
+  await expect(later).toHaveCount(0)
+  expect(dismisses).toBe(1)
+  expect(starts).toBe(0)
+  await page.reload()
+  await settle(page)
+  await expect(later).toHaveCount(0)
+  visible = true  // a later native due offer
+  await expect(signIn).toBeVisible()
+  await signIn.focus()
+  await page.keyboard.press('Enter')
+  await expect(page.getByText('TEST-1507')).toBeVisible()
+  expect(starts).toBe(1)
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await expect(page.getByRole('alert')).toContainText('cancelled')
+  await signIn.click()
+  approved = true
+  signedIn = true  // account refresh may withdraw the offer before the OAuth result is acknowledged
+  await expect(page.getByText('u***@example.test', { exact: false })).toBeVisible()
+  await expect(page.getByText('Moving connected apps.')).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath(`offer-result-${testInfo.project.name}.png`) })
+  await page.getByRole('button', { name: 'Continue', exact: true }).click()
+  await expect(later).toHaveCount(0)
+  await expect(page.getByText('Moving connected apps.')).toHaveCount(0)
+  expect(starts).toBe(2)
+})

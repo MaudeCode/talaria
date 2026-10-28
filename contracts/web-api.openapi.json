@@ -78608,6 +78608,61 @@
                       "type": "boolean",
                       "default": false
                     },
+                    "sign_in_offer": {
+                      "type": "object",
+                      "properties": {
+                        "available": {
+                          "type": "boolean"
+                        },
+                        "due": {
+                          "type": "boolean"
+                        },
+                        "visible": {
+                          "type": "boolean"
+                        },
+                        "offer_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "actions": {
+                          "type": "array",
+                          "items": {
+                            "enum": [
+                              "sign_in",
+                              "dismiss"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "refresh_after": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "available",
+                        "due",
+                        "visible",
+                        "offer_id",
+                        "actions",
+                        "refresh_after"
+                      ]
+                    },
                     "connectors": {
                       "type": "array",
                       "items": {
@@ -78749,6 +78804,98 @@
                     "connectors",
                     "policy_revision",
                     "rules_error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/connectors/sign-in-offer/dismiss": {
+      "post": {
+        "operationId": "connectors.dismissOffer",
+        "summary": "Acknowledge the current profile guest offer. Idempotent for the same offer; preserves native backoff.",
+        "tags": [
+          "tools"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "offer_id": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "offer_id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "available": {
+                      "type": "boolean"
+                    },
+                    "due": {
+                      "type": "boolean"
+                    },
+                    "visible": {
+                      "type": "boolean"
+                    },
+                    "offer_id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "actions": {
+                      "type": "array",
+                      "items": {
+                        "enum": [
+                          "sign_in",
+                          "dismiss"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "refresh_after": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991,
+                          "exclusiveMinimum": 0
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "available",
+                    "due",
+                    "visible",
+                    "offer_id",
+                    "actions",
+                    "refresh_after"
                   ]
                 }
               }

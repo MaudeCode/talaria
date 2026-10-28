@@ -1,5 +1,15 @@
 # Sidecar RPC (TAL-245)
 
+RPC v61 adds `connectors.offer.status` and `connectors.offer.claim`. The Agent
+owns connector guest eligibility, sightings, install-wide claim-once and backoff.
+Status is noncreating. Only a profile-bound opaque guest identity leaves the
+sidecar. The server retains each claimed page result in its document backend
+until Not now or native ineligibility; OAuth uses the existing account/result
+flow and keeps that result readable after the offer is withdrawn. Page refresh
+uses the server interval, following the native due value. No client schedules
+or signs in automatically. Older Agents report the offer unavailable.
+
+
 RPC v59 adds `tts.synthesize` alongside STT. The profile-scoped Agent owns provider
 registration, credentials, voice configuration and synthesis. Unknown names fail
 before the Agent's implicit Edge fallback. One request owns a temporary directory

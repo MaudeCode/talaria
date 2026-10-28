@@ -1122,7 +1122,12 @@ export const ConnectorViewSchema = z.object({
  * so no switch changes them. `sign_in_required` offers Nous sign-in without creating a guest on reads.
  * `rules_error`: why the rules could not be read; every app then reads off (fails closed).
  */
-export const ConnectorsPageSchema = z.object({ available: z.boolean(), sign_in_required: z.boolean().default(false), connectors: z.array(ConnectorViewSchema), policy_revision: z.string().nullable(), rules_error: z.string().nullable() })
+export const ConnectorSignInOfferSchema = z.object({
+  available: z.boolean(), due: z.boolean(), visible: z.boolean(), offer_id: z.string().nullable(),
+  actions: z.array(z.enum(['sign_in', 'dismiss'])), refresh_after: z.number().int().positive().nullable(),
+})
+export type ConnectorSignInOffer = z.infer<typeof ConnectorSignInOfferSchema>
+export const ConnectorsPageSchema = z.object({ available: z.boolean(), sign_in_required: z.boolean().default(false), sign_in_offer: ConnectorSignInOfferSchema.optional(), connectors: z.array(ConnectorViewSchema), policy_revision: z.string().nullable(), rules_error: z.string().nullable() })
 /**
  * TAL-818: one app's tools: `enabled`: Hermes may use it (the member rules leave it on and nothing locks it); `locked`: an
  * organization or role rule (by name or tag) keeps it off. `editable`: its switch may change the member rule (readable rules, the app on in them, and no lock).
