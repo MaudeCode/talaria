@@ -283,7 +283,7 @@ export class WorkspaceRegistry {
 
   async load(profile: string | null = null, options: { forWrite?: boolean } = {}): Promise<WorkspaceEntry[]> {
     if (options.forWrite) this.requireResolvedConfig(profile)
-    return (await this.read(profile, false))
+    return (await this.read(profile, false, options.forWrite ?? false))
   }
 
   /** TAL-303: the registry as named for display: never rewritten on read, and complete before a profile's config is cached. */
@@ -291,10 +291,11 @@ export class WorkspaceRegistry {
     return (await this.read(profile, true))
   }
 
-  private async read(profile: string | null, forNames: boolean): Promise<WorkspaceEntry[]> {
+  private async read(profile: string | null, forNames: boolean, forWrite = false): Promise<WorkspaceEntry[]> {
     try {
       const key = `${this.profileKey(profile)}.registry`
       const record = await this.deps.documents.get('workspaces', key)
+      if (forWrite) this.requireResolvedConfig(profile)
       if (record) {
         const resolved = this.configResolved(profile)
         const cleaned = this.cleanWorkspaceList(record.value, profile, forNames)
@@ -303,7 +304,10 @@ export class WorkspaceRegistry {
         }
         return cleaned.length ? cleaned : [{ path: this.profileConfigDefaultWorkspace(profile), name: 'Home' }]
       }
-    } catch { /* malformed or unavailable registry falls back to the profile default */ }
+    } catch (error) {
+      if (forWrite && error instanceof ConfigUnavailable) throw error
+      // Malformed or unavailable registry falls back to the profile default.
+    }
     return [{ path: this.profileConfigDefaultWorkspace(profile), name: 'Home' }]
   }
 

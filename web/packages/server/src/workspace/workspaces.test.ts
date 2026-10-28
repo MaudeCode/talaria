@@ -52,6 +52,19 @@ describe('workspace registry config availability (TAL-730)', () => {
     expect(readFileSync(f.file, 'utf8')).toBe(f.bytes)
   })
 
+  it('refuses mutation reads if config becomes unresolved while loading the registry', async () => {
+    const f = fixture()
+    f.profileConfig.mockReturnValue({})
+    const read = f.documents.get.bind(f.documents)
+    vi.spyOn(f.documents, 'get').mockImplementation(async (...args) => {
+      const record = await read(...args)
+      f.profileConfig.mockReturnValue(null)
+      return record
+    })
+    await expect(f.registry.load(null, { forWrite: true })).rejects.toBeInstanceOf(ConfigUnavailable)
+    expect(readFileSync(f.file, 'utf8')).toBe(f.bytes)
+  })
+
   it('still persists pruning for a resolved remote backend', async () => {
     const f = fixture()
     f.profileConfig.mockReturnValue({ terminal: { backend: 'ssh', cwd: '/srv' } })
