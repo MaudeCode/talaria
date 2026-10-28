@@ -12,6 +12,11 @@ on:
       artifacts:
         required: true
         type: string
+      # `production` builds the cutover's release plan; `nightly` (TAL-1569) builds the nightly source and uploads it here.
+      channel:
+        required: false
+        default: production
+        type: string
     outputs:
       artifacts:
         value: ${{ jobs.build.outputs.artifacts }}
@@ -27,9 +32,17 @@ defaults:
 jobs:
   build:
     name: Build signed iOS release
-    if: github.ref == 'refs/heads/main' && github.workflow_ref == 'MaudeCode/talaria/.github/workflows/production-cutover.yml@refs/heads/main'
+    if: >-
+      github.ref == 'refs/heads/main' && (
+      inputs.channel == 'production' && github.workflow_ref == 'MaudeCode/talaria/.github/workflows/production-cutover.yml@refs/heads/main' ||
+      inputs.channel == 'nightly' && github.workflow_ref == 'MaudeCode/talaria/.github/workflows/nightly.yml@refs/heads/main')
     runs-on: xcode-27
     environment: testflight
+    # Production and Nightly (TAL-1569) can build the same App train: selecting a build number and uploading
+    # it must not interleave, so both join the TestFlight publication queue.
+    concurrency:
+      group: talaria-testflight-publication
+      cancel-in-progress: false
     timeout-minutes: 60
     env:
       PROJECT_PATH: Talaria.xcodeproj
@@ -51,12 +64,14 @@ jobs:
       - uses: ./.github/actions/release-python
 
       - name: Restore verified release plan
+        if: inputs.channel == 'production'
         working-directory: .
         env:
           GH_TOKEN: ${{ github.token }}
         run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan'
 
       - name: Verify production build authority
+        if: inputs.channel == 'production'
         working-directory: .
         run: |
           "$RELEASE_PYTHON" -c 'import sys; sys.path.insert(0,"releases"); from cli import load; from publish import authorize; import os; authorize(load(os.environ["RUNNER_TEMP"]+"/release-plan/plan.json"))'
@@ -119,6 +134,14 @@ jobs:
           fi
           chmod 600 "${key_path}"
           echo "APP_STORE_CONNECT_KEY_PATH=${key_path}" >> "${GITHUB_ENV}"
+
+      # Nightly checked for a cutover before it started; one dispatched since may hold a selected, unuploaded number.
+      - name: Defer Nightly to a running cutover
+        if: inputs.channel == 'nightly'
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: '"$RELEASE_PYTHON" releases/nightly.py require-no-cutover'
 
       - name: Select App Store Connect build number
         env:
@@ -301,7 +324,20 @@ jobs:
             -exportOptionsPlist "${EXPORT_OPTIONS_PATH}"
 
 
+      - name: Upload the Nightly build to TestFlight
+        if: inputs.channel == 'nightly'
+        working-directory: .
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          RELEASE_SOURCE: ${{ inputs.ref }}
+        run: |
+          "$RELEASE_PYTHON" releases/nightly.py upload --directory "$EXPORT_PATH" --version "$MARKETING_VERSION" \
+            --build-number "$BUILD_NUMBER" --source "$RELEASE_SOURCE"
+
       - name: Record the verified signed build
+        if: inputs.channel == 'production'
         working-directory: .
         run: |
           "$RELEASE_PYTHON" releases/publish.py build-app-receipt --plan "$RUNNER_TEMP/release-plan/plan.json" \
@@ -309,11 +345,13 @@ jobs:
 
       # Three artifacts, so publication downloads the IPA without the dSYMs and receipt assembly neither.
       - name: Stage the verified build receipt
+        if: inputs.channel == 'production'
         id: store-receipt
         working-directory: .
         run: '"$RELEASE_PYTHON" releases/artifacts.py put app-build "$RUNNER_TEMP/app-build"'
 
-      - uses: actions/upload-artifact@v7
+      - if: inputs.channel == 'production'
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.store-receipt.outputs.handoff_name }}
           path: ${{ steps.store-receipt.outputs.handoff_path }}

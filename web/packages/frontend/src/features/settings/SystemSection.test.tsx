@@ -10,6 +10,8 @@ import { ApiError } from '../../contracts/common'
 import { keys } from '../../api/queryKeys'
 
 let settingsState: Record<string, unknown> = {}
+/** Fields the server derives into every settings response (TAL-1569). */
+const SERVER_FIELDS = { update_channels: ['stable', 'nightly', 'experimental'] }
 vi.mock('../../api/endpoints', () => ({
   restartAgent: vi.fn(), shutdownServer: vi.fn(), passkeyRegisterOptions: vi.fn(), passkeyRegister: vi.fn(), passkeyDelete: vi.fn(),
   fetchSettings: vi.fn(() => Promise.resolve(settingsState)),
@@ -47,7 +49,7 @@ function renderSystem() {
 describe('automatic update summaries (TAL-1008)', () => {
   beforeEach(() => { vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ cached: true, webui: current, agent: current }); vi.mocked(api.saveSettings).mockReset() })
   it('defaults on and saves the owner choice', async () => {
-    settingsState = { check_for_updates: true }
+    settingsState = { ...SERVER_FIELDS, check_for_updates: true }
     renderSystem()
     const control = await screen.findByRole('switch', { name: 'Summarize updates with AI automatically' })
     expect(control).toBeChecked()
@@ -55,7 +57,7 @@ describe('automatic update summaries (TAL-1008)', () => {
     await waitFor(() => expect(api.saveSettings).toHaveBeenCalledWith({ summarize_updates_automatically: false }))
   })
   it('is disabled when update checks are off', async () => {
-    settingsState = { check_for_updates: false }
+    settingsState = { ...SERVER_FIELDS, check_for_updates: false }
     renderSystem()
     const control = await screen.findByRole('switch', { name: 'Summarize updates with AI automatically' })
     await waitFor(() => expect(control).toHaveAttribute('aria-disabled', 'true'))
@@ -171,7 +173,7 @@ describe('SystemSection "Check now"', () => {
     expect(api.cancelUpdateNotification).not.toHaveBeenCalled()
   })
 
-  beforeEach(() => { settingsState = { bot_name: 'Hermes', check_for_updates: false, auto_apply_updates: false, update_channel: 'experimental' }; vi.mocked(api.checkUpdatesNow).mockReset(); vi.mocked(api.applyUpdates).mockReset(); vi.mocked(api.cancelUpdateNotification).mockClear(); vi.mocked(api.saveSettings).mockReset(); vi.mocked(showToast).mockReset(); vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ cached: true, webui: current, agent: current }) })
+  beforeEach(() => { settingsState = { ...SERVER_FIELDS, bot_name: 'Hermes', check_for_updates: false, auto_apply_updates: false, update_channel: 'experimental' }; vi.mocked(api.checkUpdatesNow).mockReset(); vi.mocked(api.applyUpdates).mockReset(); vi.mocked(api.cancelUpdateNotification).mockClear(); vi.mocked(api.saveSettings).mockReset(); vi.mocked(showToast).mockReset(); vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ cached: true, webui: current, agent: current }) })
 
   it('does not call unavailable private release metadata up to date', async () => {
     vi.mocked(api.fetchUpdatesCheck).mockResolvedValue(UpdatesCheckSchema.parse({ webui: target('check_failed', { behind: null, current_sha: null, manual_update: true, error: 'Private release access unavailable', manual_link: true }) }))
@@ -310,8 +312,7 @@ describe('SystemSection "Check now"', () => {
     await screen.findByText('Talaria Web is up to date')
     await userEvent.click(screen.getByRole('combobox', { name: /^web update channel$/i }))
     const experimental = await screen.findByRole('option', { name: /experimental/i })
-    expect(screen.getAllByRole('option')).toHaveLength(2)
-    expect(screen.getByRole('option', { name: /^stable$/i })).toBeInTheDocument()
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['Stable', 'Nightly', 'Experimental'])
     await userEvent.click(experimental)
     await userEvent.click(screen.getByRole('button', { name: /^check web and agent now$/i }))
     await waitFor(() => expect(api.checkUpdatesNow).toHaveBeenCalledWith('experimental', 'stable'))
@@ -362,7 +363,7 @@ describe('SystemSection "Check now"', () => {
 })
 
 describe('SystemSection update paths', () => {
-  beforeEach(() => { settingsState = { bot_name: 'Hermes', check_for_updates: true, update_channel: 'stable', agent_update_channel: 'stable' }; vi.mocked(api.applyUpdates).mockReset(); vi.mocked(api.fetchUpdatesSummary).mockReset() })
+  beforeEach(() => { settingsState = { ...SERVER_FIELDS, bot_name: 'Hermes', check_for_updates: true, update_channel: 'stable', agent_update_channel: 'stable' }; vi.mocked(api.applyUpdates).mockReset(); vi.mocked(api.fetchUpdatesSummary).mockReset() })
   const path = (name: string) => screen.getByRole('region', { name })
 
   it('names the Stable Agent release instead of a Git commit distance', async () => {
@@ -508,7 +509,7 @@ describe('SystemSection version list (TAL-946)', () => {
   /** The shared fixture is the server's own view: Web 1.16.0 → 1.19.0 with two releases between, Agent v2026.9.24 → v0.21.7 with v0.21.6 between. */
   const fixture = () => UpdatesCheckSchema.parse(JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../../contracts/fixtures/updates-check.json'), 'utf8')))
   beforeEach(() => {
-    settingsState = { bot_name: 'Hermes', check_for_updates: true, update_channel: 'stable', agent_update_channel: 'stable' }
+    settingsState = { ...SERVER_FIELDS, bot_name: 'Hermes', check_for_updates: true, update_channel: 'stable', agent_update_channel: 'stable' }
     vi.mocked(api.applyUpdates).mockReset()
     vi.mocked(api.fetchUpdatesCheck).mockResolvedValue(fixture())
   })

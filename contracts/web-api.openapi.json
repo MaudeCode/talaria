@@ -66835,6 +66835,18 @@
                     "update_channel": {
                       "type": "string"
                     },
+                    "update_channels": {
+                      "type": "array",
+                      "items": {
+                        "enum": [
+                          "stable",
+                          "nightly",
+                          "experimental"
+                        ],
+                        "type": "string"
+                      },
+                      "description": "TAL-1569: the Web update channels this server offers, in display order."
+                    },
                     "agent_update_channel": {
                       "enum": [
                         "stable",
@@ -67091,6 +67103,18 @@
                     },
                     "update_channel": {
                       "type": "string"
+                    },
+                    "update_channels": {
+                      "type": "array",
+                      "items": {
+                        "enum": [
+                          "stable",
+                          "nightly",
+                          "experimental"
+                        ],
+                        "type": "string"
+                      },
+                      "description": "TAL-1569: the Web update channels this server offers, in display order."
                     },
                     "agent_update_channel": {
                       "enum": [
@@ -84620,6 +84644,7 @@
                             "channel": {
                               "enum": [
                                 "stable",
+                                "nightly",
                                 "experimental"
                               ],
                               "type": "string"
@@ -84884,6 +84909,7 @@
                             "channel": {
                               "enum": [
                                 "stable",
+                                "nightly",
                                 "experimental"
                               ],
                               "type": "string"
@@ -85332,6 +85358,7 @@
                             "channel": {
                               "enum": [
                                 "stable",
+                                "nightly",
                                 "experimental"
                               ],
                               "type": "string"
@@ -85596,6 +85623,7 @@
                             "channel": {
                               "enum": [
                                 "stable",
+                                "nightly",
                                 "experimental"
                               ],
                               "type": "string"

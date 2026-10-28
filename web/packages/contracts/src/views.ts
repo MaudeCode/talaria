@@ -652,13 +652,16 @@ export const QuotaThresholdsSchema = z.object({
 })
 export type QuotaThresholds = z.infer<typeof QuotaThresholdsSchema>
 export const LoginResponseSchema = z.looseObject({ ok: z.literal(true), message: z.string().optional() })
+/** TAL-1569: Talaria Web update channels, in display order. Nightly is a daily snapshot of the Experimental artifact. */
+export const WebUpdateChannelSchema = z.enum(['stable', 'nightly', 'experimental'])
+export type WebUpdateChannel = z.infer<typeof WebUpdateChannelSchema>
 export const SettingsSchema = z.looseObject({
   bot_name: z.string().optional(), default_model: z.string().optional(), default_workspace: z.string().optional(), language: z.string().optional(), send_key: z.string().optional(), font_size: z.string().optional(),
   full_width_chat: z.boolean().optional(), chat_width: z.enum(['comfortable', 'wide', 'full']).optional(), auto_scroll_follow: z.boolean().optional(), render_user_markdown: z.boolean().optional(), chat_activity_display_mode: z.string().optional(), default_message_mode: z.string().optional(),
   fade_text_effect: z.boolean().optional(), hidden_tabs: z.array(z.string()).optional(), composer_control_order: z.array(z.string()).optional(), show_cli_sessions: z.boolean().optional(), show_claude_code_sessions: z.boolean().optional(),
   show_cron_sessions: z.boolean().optional(), show_webhook_sessions: z.boolean().optional(), show_kanban_sessions: z.boolean().optional(), check_for_updates: z.boolean().optional(), summarize_updates_automatically: z.boolean().optional(), ignore_agent_updates: z.boolean().optional(),
   auth_enabled: z.boolean().optional(), password_auth_enabled: z.boolean().optional(), password_env_var: z.boolean().optional(), passkeys_enabled: z.boolean().optional(), passwordless_enabled: z.boolean().optional(),
-  auth_disabled_acknowledged: z.boolean().optional(), webui_version: z.string().optional(), agent_version: z.string().optional(), update_channel: z.string().optional(), agent_update_channel: z.enum(['stable', 'experimental']).optional(), update_channel_version: NullableString.optional(),
+  auth_disabled_acknowledged: z.boolean().optional(), webui_version: z.string().optional(), agent_version: z.string().optional(), update_channel: z.string().optional(), update_channels: z.array(WebUpdateChannelSchema).optional().describe('TAL-1569: the Web update channels this server offers, in display order.'), agent_update_channel: z.enum(['stable', 'experimental']).optional(), update_channel_version: NullableString.optional(),
   max_tokens: NullableNumber.optional(), max_tokens_effective: NullableNumber.optional(), max_tokens_fallback: NullableNumber.optional(), tts_engine: z.string().optional(), tts_voice: z.string().optional(),
   dictation_append: z.boolean().optional(), persisted_speech_keys: z.array(z.string()).optional(),
   /** TAL-279: ask before opening external chat links; `trusted_link_hosts` are exact, server-normalized hostnames that skip the ask. */
@@ -964,7 +967,7 @@ export const UpdateVersionSchema = z.object({
 export type UpdateVersion = z.infer<typeof UpdateVersionSchema>
 export const UpdateTargetSchema = z.looseObject({
   failed_update: z.object({ version: z.string(), restored_version: z.string() }).optional().describe('Web only: the update that failed before HTTP readiness and the restored package version. Manual retry remains available.'),
-  name: z.string().optional(), channel: z.enum(['stable', 'experimental']).optional(),
+  name: z.string().optional(), channel: WebUpdateChannelSchema.optional(),
   unsupported: z.boolean().optional().describe('Deprecated (TAL-350): `support === \'unchecked\'`, kept for older clients.'),
   support: AgentSupportSchema.optional().describe('Agent target only (TAL-350): `supported` when the target revision is exactly a release in the verified Agent window, else `unchecked`; an `unchecked` apply requires `confirmed_agent_revision`.'),
   support_label: z.string().optional().describe('Agent target only (TAL-946): `support` worded to fit one phone line.'),

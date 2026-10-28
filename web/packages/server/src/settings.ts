@@ -10,6 +10,7 @@
 import { InvalidDocument, RevisionConflict, type DocumentBackend } from './sessions/storage/backend.js'
 import { resolveDefaultWorkspace, type Env } from './config.js'
 import { normalizeTrustedLinkHosts } from './links.js'
+import { WebUpdateChannelSchema } from '@maudecode/talaria-web-contracts'
 
 export type Settings = Record<string, unknown>
 
@@ -136,7 +137,7 @@ export function settingsDefaults(opts: { defaultWorkspace: string; botName: stri
 const ENUM_VALUES: Record<string, Set<string>> = {
   send_key: new Set(['enter', 'ctrl+enter', 'shift+enter']),
   sidebar_density: new Set(['compact', 'detailed']),
-  update_channel: new Set(['stable', 'experimental']),
+  update_channel: new Set(WebUpdateChannelSchema.options),
   agent_update_channel: new Set(['stable', 'experimental']),
   font_size: new Set(['small', 'default', 'large', 'xlarge']),
   chat_width: new Set(['comfortable', 'wide', 'full']),

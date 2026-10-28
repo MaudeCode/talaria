@@ -3,6 +3,7 @@ import { dashboardScope } from '../tools/dashboard-plugins.js'
 import { implement } from '@orpc/server'
 import { RuntimeCredentialError, writeRuntimeCredential } from '../providers/runtime-env.js'
 import { settingsContract } from '@maudecode/talaria-web-contracts'
+import { WEB_UPDATE_CHANNELS } from '../tools/updates.js'
 import { HttpError, type ApiContext } from './router.js'
 import { requestSessionIdGuard } from './session-visibility.js'
 import type { RequestContext } from '../http/context.js'
@@ -128,6 +129,7 @@ async function derivedFields(ctx: RequestContext, into: Dict): Promise<void> {
   into.webui_version = deps.version
   into.agent_version = deps.agentVersion()
   into.update_channel = str(into.update_channel) || 'stable'
+  into.update_channels = [...WEB_UPDATE_CHANNELS]
   into.update_channel_version = deps.version
   Reflect.deleteProperty(into, QUOTA_THRESHOLDS_BY_PROFILE_KEY)
   into.provider_quota_thresholds = (await deps.settings.quotaThresholds(activeProfileName(ctx)))

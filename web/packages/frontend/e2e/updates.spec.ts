@@ -15,7 +15,7 @@ async function closeUpdating(page: Page, name: string, text: string) {
 test.use({ serviceWorkers: 'block' })
 
 test('automatic updates retain the selected channel and can apply a Stable npm update', async ({ page }, testInfo) => {
-  let settings = { update_channel: 'stable', check_for_updates: true, auto_apply_updates: false }
+  let settings = { update_channel: 'stable', update_channels: ['stable', 'nightly', 'experimental'], check_for_updates: true, auto_apply_updates: false }
   let applied = false
   await page.route('**/api/settings', (route) => {
     if (route.request().method() === 'POST') settings = { ...settings, ...route.request().postDataJSON() as Partial<typeof settings> }
@@ -113,7 +113,7 @@ test('Experimental uses the existing check and update buttons', async ({ page },
       const body = route.request().postDataJSON() as { update_channel: string }
       channel = body.update_channel
     }
-    return route.fulfill({ json: { update_channel: channel, check_for_updates: true, ignore_agent_updates: true } })
+    return route.fulfill({ json: { update_channel: channel, update_channels: ['stable', 'nightly', 'experimental'], check_for_updates: true, ignore_agent_updates: true } })
   })
   await page.route('**/api/updates/check', (route) => route.fulfill({ json: updatesCheckView({
     channel, cached: false, webui: { channel, branch: 'origin/main', release_based: false, behind,
@@ -128,6 +128,9 @@ test('Experimental uses the existing check and update buttons', async ({ page },
   await page.goto('/settings/system')
   await settle(page)
   await page.getByRole('combobox', { name: 'Web update channel', exact: true }).click()
+  // TAL-1569: the options are the server's channel list, in its order.
+  await expect(page.getByRole('option')).toHaveText(['Stable', 'Nightly', 'Experimental'])
+  await page.screenshot({ path: testInfo.outputPath('channel-options.png'), fullPage: true })
   await page.getByRole('option', { name: 'Experimental', exact: true }).click()
   await expect.poll(() => channel).toBe('experimental')
   await page.getByRole('button', { name: 'Check Web now', exact: true }).click()

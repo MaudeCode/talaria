@@ -100,8 +100,8 @@ function githubHistory(main: HistoryCommit[], fallback: GetJson = stableGetJson)
   }
 }
 
-interface Ghcr { artifactType?: string; redirect?: string; served?: Buffer; version?: string; source?: string; tags?: string[] }
-/** A fake GHCR speaking the token, manifest, and redirected-blob protocol for one `experimental` artifact. */
+interface Ghcr { artifactType?: string; redirect?: string; served?: Buffer; version?: string; source?: string; tags?: string[]; tag?: string }
+/** A fake GHCR speaking the token, manifest, and redirected-blob protocol for one artifact under the moving `tag` (default `experimental`). */
 function fakeGhcr(tarball: Buffer, opts: Ghcr = {}) {
   const digest = `sha256:${createHash('sha256').update(tarball).digest('hex')}`
   const requests: { url: string; auth: string | null }[] = []
@@ -110,7 +110,7 @@ function fakeGhcr(tarball: Buffer, opts: Ghcr = {}) {
     const auth = new Headers(init?.headers).get('authorization')
     requests.push({ url, auth })
     if (url === 'https://ghcr.io/token?scope=repository:maudecode/talaria-web-experimental:pull') return Promise.resolve(Response.json({ token: 'anonymous-pull' }))
-    if (url === 'https://ghcr.io/v2/maudecode/talaria-web-experimental/manifests/experimental') {
+    if (url === `https://ghcr.io/v2/maudecode/talaria-web-experimental/manifests/${opts.tag ?? 'experimental'}`) {
       return Promise.resolve(Response.json({
         schemaVersion: 2, mediaType: 'application/vnd.oci.image.manifest.v1+json', artifactType: opts.artifactType ?? 'application/vnd.maudecode.talaria-web.experimental.v1',
         config: { mediaType: 'application/vnd.oci.empty.v1+json', digest: `sha256:${'4'.repeat(64)}`, size: 2 },
@@ -404,5 +404,62 @@ describe('Experimental npm updates (TAL-378)', () => {
     expect(result.channel_switch).toBeUndefined()
     expect(n.version()).toBe('2.0.0')
     expect(existsSync(join(state, 'backups'))).toBe(false)
+  })
+})
+
+describe('Nightly npm updates (TAL-1569)', () => {
+  const OLD = release(`web-exp-v${expVersion('2.0.0', OLD_EXP)}`, expVersion('2.0.0', OLD_EXP), OLD_EXP)
+  // main, newest first: the newer build only Experimental has, then the one Nightly names.
+  const main = githubHistory([{ sha: NEW_EXP, message: 'newer', date: '2026-10-02T00:00:00Z' }, { sha: OLD_EXP, message: 'nightly', date: '2026-10-01T00:00:00Z' }])
+  const nightly = (source: string, version: unknown) => fakeGhcr(TARBALL, { tag: 'nightly', source, version: String(version) })
+  const manifests = (g: ReturnType<typeof fakeGhcr>) => g.requests.filter((r) => r.url.includes('/manifests/')).map((r) => r.url.split('/').at(-1))
+
+  it('updates a Nightly npm install from the nightly tag without a backup', async () => {
+    const n = npmInstall(OLD, { [tgzKey]: EXPERIMENTAL })
+    const g = nightly(NEW_EXP, EXPERIMENTAL.version)
+    expect(await checkWebUpdate(n.packageRoot, 'web-exp', 'nightly', runGit, main, identity(OLD), n.npm, g.registry))
+      .toMatchObject({ channel: 'nightly', branch: 'nightly', manual_update: false, latest_sha: NEW_EXP, message: `Nightly update ${String(EXPERIMENTAL.version)} is available.` })
+    const state = tmp()
+    const result = await applyWebUpdate(n.packageRoot, 'nightly', runGit, main, identity(OLD), n.npm, () => true, { registry: g.registry, stateDir: state })
+    expect(result).toMatchObject({ ok: true, sourceRevision: NEW_EXP })
+    expect(result.channel_switch).toBeUndefined()
+    expect(n.version()).toBe(EXPERIMENTAL.version)
+    expect(existsSync(join(state, 'backups'))).toBe(false)
+    expect(new Set(manifests(g))).toEqual(new Set(['nightly']))
+  })
+
+  it('keeps an install taken from Experimental that is ahead of Nightly', async () => {
+    const n = npmInstall(EXPERIMENTAL, { [tgzKey]: OLD })
+    const g = nightly(OLD_EXP, OLD.version)
+    expect(await checkWebUpdate(n.packageRoot, 'web-exp', 'nightly', runGit, main, identity(EXPERIMENTAL), n.npm, g.registry))
+      .toMatchObject({ behind: 0, manual_update: true, current_sha: NEW_EXP, latest_sha: OLD_EXP, message: 'This npm installation is ahead of the Nightly build; it updates once Nightly passes it.' })
+    expect(await applyWebUpdate(n.packageRoot, 'nightly', runGit, main, identity(EXPERIMENTAL), n.npm, () => true, { registry: g.registry, stateDir: tmp() }))
+      .toMatchObject({ ok: false, manual_update: true })
+    expect(n.installs).toEqual([])
+    expect(n.version()).toBe(EXPERIMENTAL.version)
+  })
+
+  it('fails closed when the install cannot be ordered against Nightly', async () => {
+    const n = npmInstall(OLD, { [tgzKey]: EXPERIMENTAL })
+    const g = nightly(NEW_EXP, EXPERIMENTAL.version)
+    const unorderable: GetJson = (path, opts) => (path.startsWith('/compare/') ? Promise.reject(new Error('GitHub is down')) : main(path, opts))
+    expect(await checkWebUpdate(n.packageRoot, 'web-exp', 'nightly', runGit, unorderable, identity(OLD), n.npm, g.registry))
+      .toMatchObject({ manual_update: true, stale_check: true, error: 'Cannot order this installation against the Nightly build' })
+    expect(await applyWebUpdate(n.packageRoot, 'nightly', runGit, unorderable, identity(OLD), n.npm, () => true, { registry: g.registry, stateDir: tmp() }))
+      .toMatchObject({ ok: false, message: 'Cannot order this installation against the Nightly build' })
+    expect(n.installs).toEqual([])
+  })
+
+  it('switches Stable to Nightly, backing up the persisted stores first', async () => {
+    const running = release('web-v3.0.0', '3.0.0', 'c'.repeat(40))
+    const n = npmInstall(running, { [tgzKey]: EXPERIMENTAL })
+    const g = nightly(NEW_EXP, EXPERIMENTAL.version)
+    const state = tmp()
+    write(join(state, 'settings.json'), '{"update_channel":"nightly"}')
+    expect(await checkWebUpdate(n.packageRoot, 'web-v3.0.0', 'nightly', runGit, stableGetJson, identity(running), n.npm, g.registry))
+      .toMatchObject({ channel_switch: true, manual_update: false, message: `Switching to Nightly installs ${String(EXPERIMENTAL.version)}.` })
+    const result = await applyWebUpdate(n.packageRoot, 'nightly', runGit, stableGetJson, identity(running), n.npm, () => true, { registry: g.registry, stateDir: state })
+    expect(result).toMatchObject({ ok: true, channel_switch: true, sourceRevision: NEW_EXP })
+    expect(readFileSync(join(String(result.backup_dir), 'settings.json'), 'utf8')).toBe('{"update_channel":"nightly"}')
   })
 })

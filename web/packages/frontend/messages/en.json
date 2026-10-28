@@ -1109,6 +1109,7 @@
 	"settings_label_update_channel": "Update channel",
 	"settings_update_channel_stable": "Stable",
 	"settings_update_channel_experimental": "Experimental",
+	"settings_update_channel_nightly": "Nightly",
 	"settings_desc_update_channel": "Stable gets completed releases. Experimental source installs follow every relevant Web or shared-contract commit on main. Switching back to Stable keeps your current version until Stable catches up. Applies to WebUI updates only.",
 	"settings_label_ignore_agent_updates": "Ignore Agent updates",
 	"settings_label_bot_name": "Default assistant name",

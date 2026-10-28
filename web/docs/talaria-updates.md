@@ -1,7 +1,7 @@
 # Talaria Web updates
 
-Talaria Web keeps the **Stable** and **Experimental** update-channel choices
-and the existing Update button. **Check for updates** polls at startup and every
+Talaria Web offers the **Stable**, **Nightly** and **Experimental** update channels
+and the existing Update button. The server sends the list as `update_channels` in settings. **Check for updates** polls at startup and every
 five minutes while the server is running. **Automatically apply Web updates** is
 opt-in and requires update checks to be enabled. It applies only Web updates and
 retries blocked or failed attempts on the next check. Existing chats and manual cron
@@ -163,7 +163,13 @@ Failed installation or verification preserves the previous package. The service
 user needs write access to the installation directory and room for both versions;
 the updater never invokes sudo. It never follows `latest` independently.
 On Experimental, a direct global npm installation follows the public
-`ghcr.io/maudecode/talaria-web-experimental:experimental` artifact with no token. The
+`ghcr.io/maudecode/talaria-web-experimental:experimental` artifact with no token.
+Nightly follows the `nightly` tag of the same package, which the daily Nightly workflow moves
+forward to the newest Experimental build on that day's green `main` commit; everything below
+applies to it too. Experimental and Nightly install the same artifacts, so moving between them is
+an ordinary update with no backup. An installation taken from Experimental that is ahead of the
+`nightly` tag stays put until Nightly passes it; when GitHub cannot order the two, the check is
+unavailable rather than moving the installation back. The
 updater requests an anonymous pull token and reads the manifest. It requires the
 Experimental artifact type, one npm tarball layer, and revision and version
 annotations. It downloads the layer only through GHCR's redirect to
