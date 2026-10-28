@@ -1,3 +1,4 @@
+import { DelegationWriteSchema } from '../delegation.js'
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
 import { SettingsSchema, ReasoningStatusSchema, PersonalitiesSchema, ModelsSchema, ModelsLiveSchema, ProvidersSchema, ProfileSchema, ProfilesSchema, ActiveProfileSchema, ProfileSwitchSchema, AuxiliaryModelsSchema, ProviderQuotaSchema, ProviderQuotasSchema, ProviderCostHistorySchema, OnboardingStatusSchema, OnboardingProbeSchema, OnboardingOAuthSchema } from '../views.js'
@@ -28,6 +29,7 @@ export const settingsContract = {
     delete: oc.route({ method: 'POST', path: '/api/profile/delete', tags }).input(z.object({ name: z.string().optional(), profile: z.string().optional() })).output(z.object({ ok: z.literal(true), name: z.string() })),
   },
   models: {
+    delegation: oc.route({ method: 'POST', path: '/api/model/auxiliary/delegation', tags, summary: 'Persist a native delegation backend or replace one complete named route block.' }).input(DelegationWriteSchema).output(AuxiliaryModelsSchema),
     list: oc.route({ method: 'GET', path: '/api/models', tags }).input(z.object({ freshness: z.string().optional() })).output(ModelsSchema),
     live: oc.route({ method: 'GET', path: '/api/models/live', tags }).input(z.object({ provider: z.string().optional() })).output(ModelsLiveSchema),
     refresh: oc.route({ method: 'POST', path: '/api/models/refresh', tags, summary: "Evict the live model cache for one provider (or all when omitted) and answer the rebuilt catalog; a named provider is re-read past the Agent's own catalog cache." }).input(z.object({ provider: z.string().optional() })).output(z.object({ ok: z.literal(true), provider: z.string().nullable(), models: ModelsSchema })),

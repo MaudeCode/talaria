@@ -8,7 +8,7 @@
  */
 import { homedir } from 'node:os'
 import { join, resolve as resolvePath } from 'node:path'
-import type { SidecarResult } from '@maudecode/talaria-web-contracts'
+import type { SidecarResult, DelegationSettings, DelegationWrite } from '@maudecode/talaria-web-contracts'
 import type { SidecarLike } from '../sidecar/client.js'
 import { LOCAL_RUNTIME_PROVIDER, PORTAL_PROVIDERS, PROVIDER_ALIASES, PROVIDER_DISPLAY, PROVIDER_MODELS, VALID_REASONING_EFFORTS, AUXILIARY_TASK_CATALOG, RETIRED_AUX_TASK_SLOTS } from '../providers/tables.js'
 import { str } from '../util.js'
@@ -132,6 +132,64 @@ export class AgentConfig {
     // A failed listing offers the built-in table only, so a plugin slot is never assignable without the Agent vouching for it.
     const listed = sidecar ? await sidecar.call('aux.tasks', { profile_home: profileHome }).catch(() => null) : null
     return listed ? { slots: listed.tasks, reserved: listed.reserved } : { slots: AUXILIARY_TASK_CATALOG.map((slot) => ({ ...slot, inherit_from: null, reasoning_effort: null, effective: null })), reserved: null }
+  }
+
+  async delegation(profileHome: string, config: Config): Promise<DelegationSettings> {
+    const section = dict(config.delegation)
+    const configured = str(section.backend).trim().toLowerCase() || 'default'
+    const sidecar = this.deps.sidecar()
+    const registry = sidecar ? await sidecar.call('aux.delegation', { profile_home: profileHome, config }).catch(() => null) : null
+    const blocks = dict(section.backends)
+    const block = (key: string, field: 'options' | 'profiles') => {
+      const saved = dict(blocks[key])
+      const rows = Array.isArray(saved[field]) ? saved[field] as unknown[] : []
+      return { default: str(saved.default) || null, [field]: rows.filter(isDict).map((row) => {
+        // Request overrides and credentials stay private and round-trip by original route identity.
+        const visible = ['name', 'description', 'provider', 'model', 'base_url', 'api_mode', 'reasoning_effort', 'service_tier', 'profile', 'label']
+        return { ...Object.fromEntries(visible.filter((key) => typeof row[key] === 'string').map((key) => [key, row[key]])), name: str(row.name), api_key_set: Boolean(row.api_key),
+          ...(Array.isArray(row.fallback_providers) && row.fallback_providers.every((value) => typeof value === 'string') ? { fallback_providers: row.fallback_providers } : {}) }
+      }) }
+    }
+    return { ...(registry ?? { supported: false, configured, effective: null, available: false, fixed_model_active: false,
+      blocked_reason: 'Delegation modes are unavailable. Update or reconnect Hermes Agent.', backends: [{ name: configured, label: configured, description: '', available: false, reason: 'Reconnect Hermes Agent.' }], profiles: [] }),
+      model_map: block('model_map', 'options'), profile_routes: block('profile_routes', 'profiles') }
+  }
+
+  private async selectDelegationBackend(profileHome: string, backend: string): Promise<void> {
+    const sidecar = this.deps.sidecar()
+    if (!sidecar) throw new ConfigUnavailable('Delegation settings are unavailable')
+    await sidecar.call('aux.delegation_backend', { profile_home: profileHome, config_path: this.path(profileHome), backend })
+    this.invalidate(profileHome)
+  }
+
+  /** Shares the existing per-config write queue with every model and settings edit. */
+  async setDelegation(profileHome: string, write: DelegationWrite): Promise<void> {
+    await this.update(profileHome, async (config) => {
+      const sidecar = this.deps.sidecar()
+      if (!sidecar) throw new ConfigUnavailable('Delegation settings are unavailable')
+      if (write.action === 'backend') {
+        await this.selectDelegationBackend(profileHome, write.backend)
+        return false
+      }
+      const section = dict(config.delegation)
+      const blocks = dict(section.backends)
+      const block = { ...write.block, ...(write.block.options ? { options: write.block.options.map((row) => {
+        const [provider, model] = auxiliarySelection(row.provider ?? '', row.model ?? '')
+        return { ...row, provider, model }
+      }) } : {}) }
+      const validated = await sidecar.call('aux.delegation_routes', { profile_home: profileHome, backend: write.backend, block, current: dict(blocks[write.backend]) })
+      config.delegation = { ...section, backends: { ...blocks, [write.backend]: validated.block } }
+    })
+  }
+
+  async resetDelegation(profileHome: string, config: Config): Promise<void> {
+    const state = await this.delegation(profileHome, config)
+    if (!state.supported) {
+      if ((str(dict(config.delegation).backend) || 'default') !== 'default') throw new ConfigUnavailable('Update Hermes Agent to restore the saved delegation backend')
+      return
+    }
+    await this.selectDelegationBackend(profileHome, 'default')
+    config.delegation = { ...dict(config.delegation), backend: 'default' }
   }
 
   /** TAL-901: the personalities the profile's Agent offers for its config; throws when the Agent cannot list them. */
@@ -565,11 +623,12 @@ export async function setAuxiliaryModel(store: AgentConfig, home: string, task: 
   const slots = listing.slots.map((slot) => slot.key)
   if (task !== '__reset__' && !slots.includes(task)) throw new Error(`Unknown auxiliary task slot: '${task}'. Valid: [${slots.map((s) => `'${s}'`).join(', ')}]`)
   const [provider, model] = task === '__reset__' ? ['auto', ''] : auxiliarySelection(providerRaw, modelRaw)
-  await store.update(home, (config) => {
+  await store.update(home, async (config) => {
     const aux = dict(config.auxiliary)
     // Auto clears the override, including a custom endpoint's base_url (which would otherwise keep routing there).
     const autoSlot = (entry: unknown): Dict => { const slot: Dict = { ...dict(entry), provider: 'auto', model: '' }; Reflect.deleteProperty(slot, 'base_url'); return slot }
     if (task === '__reset__') {
+      await store.resetDelegation(home, config)
       for (const retired of RETIRED_AUX_TASK_SLOTS) Reflect.deleteProperty(aux, retired)
       // A route block the Agent neither lists nor owns is a disabled or removed plugin's task: Reset All clears it too, so
       // re-enabling the plugin does not bring back a pin the user reset. Unknown ownership (no listing) leaves it alone.
@@ -581,6 +640,8 @@ export async function setAuxiliaryModel(store: AgentConfig, home: string, task: 
       return
     }
     if (task === DELEGATION_TASK) {
+      const state = await store.delegation(home, config)
+      if (!state.fixed_model_active) throw new ConfigUnavailable(state.blocked_reason ?? 'The selected delegation mode does not use the fixed model')
       config.delegation = delegationRoute(config.delegation, provider, model, advanced)
       return
     }

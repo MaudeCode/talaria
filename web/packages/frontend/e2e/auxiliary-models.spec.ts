@@ -1,3 +1,4 @@
+import type { DelegationSettings } from '@maudecode/talaria-web-contracts'
 import { expect, settle, test } from './fixtures'
 
 // Service-worker requests bypass page routing; these fixtures own every response.
@@ -59,5 +60,56 @@ for (const width of [1280, 390]) {
     await expect(dialog.getByRole('button', { name: 'Gemini 2.5 Flash' })).toBeVisible()
     await expect(dialog.getByRole('region', { name: 'Anthropic' })).toHaveCount(0)
     await page.screenshot({ path: testInfo.outputPath(`auxiliary-search-${String(width)}.png`) })
+  })
+}
+
+for (const width of [1280, 390]) {
+  test(`delegation mode recovery and route editing fit at ${width}px`, async ({ page }, testInfo) => {
+    const { default: fixtures } = await import('../../../../contracts/fixtures/delegation-settings.json', { with: { type: 'json' } })
+    let delegation: DelegationSettings = structuredClone(fixtures.missing)
+    const tasks = [...auxiliary.tasks, { task: 'delegation', label: 'Delegation', description: 'subagent model (delegate_task)', provider: 'auto', model: '', is_auto: true, value_label: '', provider_label: '', selected_option_id: null, in_catalog: true, inherit_from: null, reasoning_effort: '' }]
+    await page.setViewportSize({ width, height: width > 600 ? 900 : 844 })
+    await page.route('**/api/model/auxiliary', (route) => route.fulfill({ json: { ...auxiliary, tasks, delegation } }))
+    await page.route('**/api/models', (route) => route.fulfill({ json: models }))
+    await page.route('**/api/model/auxiliary/delegation', async (route) => {
+      const write = route.request().postDataJSON() as { action: string; backend: string; block: typeof delegation.model_map }
+      if (write.action === 'backend') delegation = { ...fixtures.default, configured: write.backend, effective: write.backend, fixed_model_active: write.backend === 'default' }
+      else delegation = { ...delegation, [write.backend]: write.block }
+      await route.fulfill({ json: { ...auxiliary, tasks, delegation } })
+    })
+    await page.goto('/settings/preferences')
+    await settle(page)
+    await page.getByRole('button', { name: 'Manage', exact: true }).click()
+    await page.getByRole('list', { name: 'Auxiliary Models' }).getByRole('button', { name: /Delegation/ }).click()
+    await expect(page.getByRole('dialog').getByRole('status')).toContainText('Install or enable')
+    await expect(page.getByRole('button', { name: 'Fixed model' })).toHaveCount(0)
+    await page.screenshot({ path: testInfo.outputPath(`delegation-unavailable-${String(width)}.png`) })
+    await page.getByRole('button', { name: 'Restore Default' }).click()
+    await expect(page.getByRole('combobox', { name: 'Mode' })).toContainText('Default')
+    await page.getByRole('combobox', { name: 'Mode' }).click()
+    await page.getByRole('option', { name: 'Named model routes', exact: true }).click()
+    await expect(page.getByRole('button', { name: 'Fixed model' })).toHaveCount(0)
+    await page.getByRole('button', { name: 'Model routes', exact: true }).click()
+    await expect(page.getByRole('button', { name: 'Edit Research' })).toBeVisible()
+    await page.screenshot({ path: testInfo.outputPath(`delegation-routes-${String(width)}.png`) })
+    await page.getByRole('button', { name: 'Edit Research' }).click()
+    await expect(page.getByRole('textbox', { name: 'Name', exact: true })).toHaveValue('Research')
+    await expect(page.getByRole('combobox', { name: 'Service tier' })).toContainText('Normal')
+    await page.screenshot({ path: testInfo.outputPath(`delegation-edit-${String(width)}.png`) })
+    await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Deep research')
+    await page.getByRole('button', { name: 'Save', exact: true }).scrollIntoViewIfNeeded()
+    await page.screenshot({ path: testInfo.outputPath(`delegation-edit-actions-${String(width)}.png`) })
+    await page.getByRole('button', { name: 'Save', exact: true }).click()
+    await expect(page.getByRole('button', { name: 'Edit Deep research' })).toBeVisible()
+    await page.getByRole('button', { name: 'Delete Deep research' }).click()
+    await expect(page.getByRole('button', { name: 'Edit Deep research' })).toHaveCount(0)
+    await page.getByRole('button', { name: 'Back', exact: true }).click()
+    await page.getByRole('button', { name: 'Profile routes', exact: true }).click()
+    await page.getByRole('button', { name: 'Add route', exact: true }).click()
+    await expect(page.getByText('This profile lends its credentials, SOUL, skills and terminal policy to subagents.')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled()
+    await page.screenshot({ path: testInfo.outputPath(`delegation-profile-${String(width)}.png`) })
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await page.getByRole('dialog').press('Escape')
   })
 }

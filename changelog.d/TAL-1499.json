@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Choose subagent modes and manage named model and profile routes in Auxiliary Models settings.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

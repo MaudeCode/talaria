@@ -56,7 +56,7 @@ const auxiliaryState = async (ctx: RequestContext): Promise<Dict> => {
   const model = str(main.default ?? main.name).trim()
   // Speed availability must not prevent reading or editing the independent auxiliary slots.
   const [tiers = []] = model ? await ctx.deps.agentConfig.speedTiers(home(ctx), config, [{ model, provider: str(main.provider) }]).catch(() => []) : []
-  return stampAuxiliarySelections(auxiliaryModels(config, tiers, (await ctx.deps.agentConfig.auxiliarySlots(home(ctx))).slots), await ctx.deps.catalog.models(home(ctx)))
+  return { ...stampAuxiliarySelections(auxiliaryModels(config, tiers, (await ctx.deps.agentConfig.auxiliarySlots(home(ctx))).slots), await ctx.deps.catalog.models(home(ctx))), delegation: await ctx.deps.agentConfig.delegation(home(ctx), config) }
 }
 const CLEAR_PERSONALITY = new Set(['none', 'default', 'clear'])
 const truthy = (v: string | undefined): boolean => ['1', 'true', 'yes', 'on'].includes((v ?? '').trim().toLowerCase())
@@ -305,6 +305,12 @@ export const settingsRouter = os.router({
       // The Agent keeps its own catalog cache; a provider refresh reaches past it.
       if (provider) await ctx.deps.catalog.liveModelIds(home(ctx), provider, { force: true })
       return { ok: true as const, provider, models: await ctx.deps.catalog.pickerModels(home(ctx), activeProfileName(ctx)) }
+    })),
+    delegation: os.models.delegation.handler(({ context: { ctx }, input }) => run(async () => {
+      try {
+        await ctx.deps.agentConfig.setDelegation(home(ctx), input)
+        return await auxiliaryState(ctx)
+      } catch (error) { return failure(error, 400) }
     })),
     auxiliary: os.models.auxiliary.handler(({ context: { ctx } }) => run(() => auxiliaryState(ctx) as never)),
     set: os.models.set.handler(({ input, context: { ctx } }) => run(async () => {

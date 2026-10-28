@@ -152,5 +152,63 @@
         ]
       }
     }
+  ],
+  "aux.delegation": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "config": {}
+      },
+      "result": {
+        "supported": true,
+        "configured": "default",
+        "effective": "default",
+        "available": true,
+        "blocked_reason": null,
+        "fixed_model_active": true,
+        "backends": [
+          {
+            "name": "default",
+            "label": "Default",
+            "description": "Fixed model or inherit the parent",
+            "available": true,
+            "reason": ""
+          }
+        ],
+        "profiles": [
+          "default"
+        ]
+      }
+    }
+  ],
+  "aux.delegation_backend": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "config_path": "<home>/config.yaml",
+        "backend": "default"
+      },
+      "result": {
+        "ok": true
+      }
+    }
+  ],
+  "aux.delegation_routes": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "backend": "model_map",
+        "block": {
+          "options": [],
+          "default": null
+        },
+        "current": {}
+      },
+      "result": {
+        "block": {
+          "options": []
+        }
+      }
+    }
   ]
 }
