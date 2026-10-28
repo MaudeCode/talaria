@@ -1859,6 +1859,21 @@
                               }
                             ]
                           },
+                          "sidebar_group": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "pinned",
+                                  "recent"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "TAL-1534: the sidebar group `GET /api/sessions` files the row under; null for an archived row. Other routes omit it."
+                          },
                           "context_used_tokens": {
                             "anyOf": [
                               {
@@ -2643,6 +2658,21 @@
                               }
                             ]
                           },
+                          "sidebar_group": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "pinned",
+                                  "recent"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "TAL-1534: the sidebar group `GET /api/sessions` files the row under; null for an archived row. Other routes omit it."
+                          },
                           "context_used_tokens": {
                             "anyOf": [
                               {
@@ -3266,6 +3296,21 @@
                               }
                             ]
                           },
+                          "sidebar_group": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "pinned",
+                                  "recent"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "TAL-1534: the sidebar group `GET /api/sessions` files the row under; null for an archived row. Other routes omit it."
+                          },
                           "context_used_tokens": {
                             "anyOf": [
                               {
@@ -3400,6 +3445,29 @@
                     "webhook_sessions_truncated": {
                       "type": "boolean"
                     },
+                    "sidebar_groups": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "enum": [
+                              "pinned",
+                              "recent"
+                            ],
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "title"
+                        ]
+                      },
+                      "description": "TAL-1534: the groups the unarchived `sessions` rows fill, in display order; a client captions only these."
+                    },
                     "agent_storage": {
                       "type": "object",
                       "properties": {
@@ -3466,6 +3534,7 @@
                     "scheduled_sessions_truncated",
                     "webhook_session_count",
                     "webhook_sessions_truncated",
+                    "sidebar_groups",
                     "agent_storage"
                   ],
                   "additionalProperties": {}
@@ -4163,6 +4232,21 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "sidebar_group": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "pinned",
+                                  "recent"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "TAL-1534: the sidebar group `GET /api/sessions` files the row under; null for an archived row. Other routes omit it."
                           },
                           "context_used_tokens": {
                             "anyOf": [
@@ -15499,6 +15583,21 @@
                             }
                           ]
                         },
+                        "sidebar_group": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "pinned",
+                                "recent"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1534: the sidebar group `GET /api/sessions` files the row under; null for an archived row. Other routes omit it."
+                        },
                         "context_used_tokens": {
                           "anyOf": [
                             {
@@ -16169,6 +16268,21 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "sidebar_group": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "pinned",
+                                "recent"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1534: the sidebar group `GET /api/sessions` files the row under; null for an archived row. Other routes omit it."
                         },
                         "context_used_tokens": {
                           "anyOf": [
@@ -16847,6 +16961,21 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "sidebar_group": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "pinned",
+                                "recent"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1534: the sidebar group `GET /api/sessions` files the row under; null for an archived row. Other routes omit it."
                         },
                         "context_used_tokens": {
                           "anyOf": [
@@ -20730,6 +20859,21 @@
                                 }
                               ]
                             },
+                            "sidebar_group": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "pinned",
+                                    "recent"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "TAL-1534: the sidebar group `GET /api/sessions` files the row under; null for an archived row. Other routes omit it."
+                            },
                             "context_used_tokens": {
                               "anyOf": [
                                 {
@@ -21430,6 +21574,21 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "sidebar_group": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "pinned",
+                                "recent"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1534: the sidebar group `GET /api/sessions` files the row under; null for an archived row. Other routes omit it."
                         },
                         "context_used_tokens": {
                           "anyOf": [
@@ -25696,6 +25855,21 @@
                             }
                           ]
                         },
+                        "sidebar_group": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "pinned",
+                                "recent"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1534: the sidebar group `GET /api/sessions` files the row under; null for an archived row. Other routes omit it."
+                        },
                         "context_used_tokens": {
                           "anyOf": [
                             {
@@ -26364,6 +26538,21 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "sidebar_group": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "pinned",
+                                "recent"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1534: the sidebar group `GET /api/sessions` files the row under; null for an archived row. Other routes omit it."
                         },
                         "context_used_tokens": {
                           "anyOf": [
@@ -42527,6 +42716,21 @@
                             }
                           ]
                         },
+                        "sidebar_group": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "pinned",
+                                "recent"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1534: the sidebar group `GET /api/sessions` files the row under; null for an archived row. Other routes omit it."
+                        },
                         "context_used_tokens": {
                           "anyOf": [
                             {
@@ -43194,6 +43398,21 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "sidebar_group": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "pinned",
+                                "recent"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1534: the sidebar group `GET /api/sessions` files the row under; null for an archived row. Other routes omit it."
                         },
                         "context_used_tokens": {
                           "anyOf": [

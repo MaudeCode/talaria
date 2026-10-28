@@ -12,11 +12,13 @@ public struct SessionsResponse: Decodable {
     public let automatedSessionCounts: AutomatedSessionCounts?
     /// The Agent's session storage health (`agent_storage`, TAL-785); nil from older servers.
     public let agentStorage: AgentStorage?
+    /// The groups the rows fill, in display order (`sidebar_groups`, TAL-1534); nil from older servers.
+    public let sidebarGroups: [SessionSidebarGroup]?
     let serverTime: Double?
     let serverTz: String?
 
     enum CodingKeys: String, CodingKey {
-        case sessions, cliCount, archivedCount, agentStorage, serverTime, serverTz
+        case sessions, cliCount, archivedCount, agentStorage, sidebarGroups, serverTime, serverTz
         case scheduledSessionCount, scheduledSessionsTruncated, webhookSessionCount, webhookSessionsTruncated
     }
 
@@ -26,6 +28,7 @@ public struct SessionsResponse: Decodable {
         archivedCount: Int? = nil,
         automatedSessionCounts: AutomatedSessionCounts? = nil,
         agentStorage: AgentStorage? = nil,
+        sidebarGroups: [SessionSidebarGroup]? = nil,
         serverTime: Double? = nil,
         serverTz: String? = nil
     ) {
@@ -34,6 +37,7 @@ public struct SessionsResponse: Decodable {
         self.archivedCount = archivedCount
         self.automatedSessionCounts = automatedSessionCounts
         self.agentStorage = agentStorage
+        self.sidebarGroups = sidebarGroups
         self.serverTime = serverTime
         self.serverTz = serverTz
     }
@@ -55,6 +59,7 @@ public struct SessionsResponse: Decodable {
             automatedSessionCounts = nil
         }
         agentStorage = try? container.decodeIfPresent(AgentStorage.self, forKey: .agentStorage)
+        sidebarGroups = try? container.decodeIfPresent([SessionSidebarGroup].self, forKey: .sidebarGroups)
         serverTime = container.decodeLossyDoubleIfPresent(forKey: .serverTime)
         serverTz = container.decodeLossyStringIfPresent(forKey: .serverTz)
     }
@@ -291,6 +296,18 @@ struct SessionStatusResponse: Decodable, Equatable {
 /// The server's classification of where a session came from (`source_kind`, TAL-310).
 /// An older server omits it, so the row has no kind and reads as an ordinary session;
 /// a kind this build does not know decodes as `.other`.
+/// One group the server's session list fills (`sidebar_groups`, TAL-1534), in display order. `kind` names the
+/// group its rows carry in `sidebar_group`; `title` is the server's English caption for a kind this build does not know.
+public struct SessionSidebarGroup: Decodable, Equatable, Sendable {
+    public let kind: String
+    public let title: String
+
+    public init(kind: String, title: String) {
+        self.kind = kind
+        self.title = title
+    }
+}
+
 public enum SessionSourceKind: String, Sendable, Hashable {
     case webui, cli, messaging, cron, webhook, subagent, claudeCode = "claude_code", kanban, api, other
 
@@ -352,6 +369,8 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
     public let sortTs: Double?
     public let pinned: Bool?
     public let archived: Bool?
+    /// The server's sidebar group (`sidebar_group`, TAL-1534); nil from older servers and detail payloads.
+    public let sidebarGroup: String?
     public let projectId: String?
     public let profile: String?
     public let inputTokens: Int?
@@ -403,6 +422,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         sortTs: Double? = nil,
         pinned: Bool? = nil,
         archived: Bool? = nil,
+        sidebarGroup: String? = nil,
         projectId: String? = nil,
         profile: String? = nil,
         inputTokens: Int? = nil,
@@ -446,6 +466,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         self.sortTs = sortTs
         self.pinned = pinned
         self.archived = archived
+        self.sidebarGroup = sidebarGroup
         self.projectId = projectId
         self.profile = profile
         self.inputTokens = inputTokens
@@ -480,7 +501,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         case sessionId, title, workspace, workspaceName, model, modelProvider
         case modelOptionID = "modelOptionId"
         case messageCount, createdAt, updatedAt, lastMessageAt, sortTs
-        case pinned, archived, projectId, profile
+        case pinned, archived, sidebarGroup, projectId, profile
         case inputTokens, outputTokens, estimatedCost
         case activeStreamId, isStreaming, isCliSession
         case userMessageCount, hasPendingUserMessage, pendingStartedAt, worktreePath
@@ -514,6 +535,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         sortTs = container.decodeLossyDoubleIfPresent(forKey: .sortTs)
         pinned = container.decodeLossyBoolIfPresent(forKey: .pinned)
         archived = container.decodeLossyBoolIfPresent(forKey: .archived)
+        sidebarGroup = container.decodeLossyStringIfPresent(forKey: .sidebarGroup)
         projectId = container.decodeLossyStringIfPresent(forKey: .projectId)
         profile = container.decodeLossyStringIfPresent(forKey: .profile)
         inputTokens = container.decodeLossyIntIfPresent(forKey: .inputTokens)
@@ -582,6 +604,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         sortTs = detail.sortTs
         pinned = detail.pinned
         archived = detail.archived
+        sidebarGroup = nil
         projectId = detail.projectId
         profile = detail.profile
         inputTokens = detail.inputTokens
@@ -635,6 +658,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
             sortTs: sortTs,
             pinned: pinned,
             archived: archived,
+            sidebarGroup: sidebarGroup,
             projectId: projectId,
             profile: profile,
             inputTokens: inputTokens,
@@ -706,6 +730,8 @@ extension SessionSummary {
             sortTs: sortTs ?? row.sortTs,
             pinned: pinned ?? row.pinned,
             archived: archived ?? row.archived,
+            // A detail carries no group; once its pin or archive state replaces the row's, the row's group is stale.
+            sidebarGroup: sidebarGroup ?? (pinned == nil && archived == nil ? row.sidebarGroup : nil),
             projectId: projectId ?? row.projectId,
             profile: profile ?? row.profile,
             inputTokens: inputTokens ?? row.inputTokens,
@@ -742,6 +768,12 @@ extension SessionSummary {
     /// is writable, and the server still refuses a mutation it does not allow.
     public var isSessionReadOnly: Bool {
         readOnly == true
+    }
+
+    /// The sidebar group the row is captioned under: the server's `sidebar_group` (TAL-1534). A row from an older
+    /// server, or one the list adds before the server lists it, falls back to its pin until the server floor ships the field.
+    public var sidebarGroupKind: String? {
+        sidebarGroup ?? (archived == true ? nil : pinned == true ? "pinned" : "recent")
     }
 
     /// The time the row is labelled and date-bucketed by: the server's `sort_ts`, else

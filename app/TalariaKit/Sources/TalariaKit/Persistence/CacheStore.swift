@@ -509,6 +509,7 @@ private extension SessionSummary {
         sortTs = cachedSession.sortTs
         pinned = cachedSession.pinned
         archived = cachedSession.archived
+        sidebarGroup = cachedSession.sidebarGroup
         projectId = cachedSession.projectId
         profile = cachedSession.profile
         inputTokens = cachedSession.inputTokens

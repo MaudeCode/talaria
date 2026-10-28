@@ -26,6 +26,8 @@ public final class CachedSession {
     var sortTs: Double?
     var pinned: Bool?
     var archived: Bool?
+    /// The server's `sidebar_group` (TAL-1534). Optional so the unversioned store opens without a migration.
+    var sidebarGroup: String?
     var projectId: String?
     var profile: String?
     var inputTokens: Int?
@@ -114,6 +116,7 @@ public final class CachedSession {
         update(\.sortTs, session.sortTs)
         update(\.pinned, session.pinned)
         update(\.archived, session.archived)
+        update(\.sidebarGroup, session.sidebarGroup)
         update(\.projectId, session.projectId)
         update(\.profile, session.profile)
         update(\.inputTokens, session.inputTokens)

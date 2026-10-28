@@ -581,6 +581,39 @@ final class SessionListHostedTests: XCTestCase {
         XCTAssertNotNil(HostedAccessibility.elements(in: window).first { $0.accessibilityLabel?.contains(", Pinned") == true })
     }
 
+    /// The sidebar captions follow the server's `sidebar_group` rows and `sidebar_groups` list (TAL-1534), never the
+    /// row's pin flag; an older server that ships neither keeps the pinned-first boundary captions.
+    func testSidebarCaptionsFollowTheServersGroups() async throws {
+        let pinnedRow = #"{"session_id":"group-a","title":"Group row A","pinned":true,"source_kind":"webui""#
+        let recentRow = #"{"session_id":"group-b","title":"Group row B","pinned":false,"source_kind":"webui""#
+        let cases: [(name: String, json: String, captions: Set<String>, inserted: SessionSummary?)] = [
+            ("server groups", #"{"sessions":[\#(pinnedRow),"sidebar_group":"pinned"},\#(recentRow),"sidebar_group":"recent"}],"sidebar_groups":[{"kind":"pinned","title":"Pinned"},{"kind":"recent","title":"Recents"}]}"#, ["Pinned", "Recents"], nil),
+            // A chat the list inserts after a pinned-only response still opens Recents.
+            ("row inserted after a pinned-only list", #"{"sessions":[\#(pinnedRow),"sidebar_group":"pinned"},\#(recentRow),"sidebar_group":"pinned"}],"sidebar_groups":[{"kind":"pinned","title":"Pinned"}]}"#, ["Pinned", "Recents"], SessionSummary(sessionId: "group-c", title: "Group row C")),
+            ("server lists no pinned group", #"{"sessions":[\#(pinnedRow),"sidebar_group":"recent"},\#(recentRow),"sidebar_group":"recent"}],"sidebar_groups":[{"kind":"recent","title":"Recents"}]}"#, ["Recents"], nil),
+            ("older server", #"{"sessions":[\#(pinnedRow)},\#(recentRow)}]}"#, ["Pinned", "Recents"], nil),
+        ]
+        defer { SidebarGroupsProtocol.json = nil }
+        for (name, json, captions, inserted) in cases {
+            SidebarGroupsProtocol.json = json
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [SidebarGroupsProtocol.self]
+            let server = URL(string: "https://sidebar-groups.test")!
+            let viewModel = SessionListViewModel(server: server, client: APIClient(baseURL: server, session: URLSession(configuration: configuration)))
+            _ = await viewModel.load()
+            XCTAssertEqual(viewModel.sessions.count, 2, name)
+            let window = try hostWindow(List {
+                SessionListRowsSection(viewModel: viewModel, sessions: viewModel.sessions + (inserted.map { [$0] } ?? []), emptyTitle: "", emptyDescription: nil, isSearchActive: false, searchText: "", selectedSessionID: nil, actions: fixtureRowActions)
+            }.environment(\.sessionRowStyle, .sidebar))
+            let listed = await awaitElement(in: window) { $0.accessibilityLabel?.hasPrefix("Group row B") == true }
+            XCTAssertNotNil(listed, "\(name): rows did not render")
+            let shown = Set(HostedAccessibility.labels(in: window).filter { $0 == "Pinned" || $0 == "Recents" })
+            XCTAssertEqual(shown, captions, name)
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+    }
+
     /// Archiving a chat removes it and offers Undo, which restores it from the server (TAL-443).
     func testUndoRestoresAnArchivedChat() async throws {
         let fixture = try FixtureApp(["--ui-test-hold-archive-undo"], for: self)
@@ -1869,6 +1902,19 @@ private struct ObservedSessionRow: View {
             SessionInteractiveRow(viewModel: viewModel, session: session, selectedSessionID: nil, actions: actions)
         }
     }
+}
+
+private final class SidebarGroupsProtocol: URLProtocol {
+    nonisolated(unsafe) static var json: String?
+    override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "sidebar-groups.test" }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let body = request.url?.path == "/api/sessions" ? Self.json ?? #"{"sessions":[]}"# : "{}"
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(body.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
 }
 
 private final class HeldRowMutationProtocol: URLProtocol {

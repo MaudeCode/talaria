@@ -104,6 +104,31 @@ describe('canonical session-list order (TAL-306)', () => {
   })
 })
 
+describe('sidebar groups (TAL-1534)', () => {
+  const overlay: RuntimeOverlay = { activeStreamIds: new Set(), runningCronJobs: new Map(), live: () => undefined, attention: () => null }
+  const body = (stored: Row[]) => sessionListResponse({ sessions: stored, sidebar_reference_sessions: [], archived_limit: null } as unknown as ListPayload, overlay, false, 0, () => null).body
+  const row = (id: string, ts: number, extra: Row = {}): Row => ({ session_id: id, title: id, updated_at: ts, last_message_at: ts, ...extra })
+  const groups = (stored: Row[]) => { const b = body(stored); return { rows: b.sessions.map((r) => [r.session_id, r.sidebar_group]), groups: b.sidebar_groups } }
+  const PINNED = { kind: 'pinned', title: 'Pinned' }
+  const RECENT = { kind: 'recent', title: 'Recents' }
+
+  it('lists no pinned group when no row is pinned', () => {
+    expect(groups([row('a', 2), row('b', 1)])).toEqual({ rows: [['a', 'recent'], ['b', 'recent']], groups: [RECENT] })
+  })
+
+  it('lists only the pinned group when every row is pinned', () => {
+    expect(groups([row('a', 2, { pinned: true }), row('b', 1, { pinned: true })])).toEqual({ rows: [['a', 'pinned'], ['b', 'pinned']], groups: [PINNED] })
+  })
+
+  it('lists pinned before recent for mixed rows, in the canonical order', () => {
+    expect(groups([row('new', 3), row('pin', 1, { pinned: true }), row('old', 2)])).toEqual({ rows: [['pin', 'pinned'], ['new', 'recent'], ['old', 'recent']], groups: [PINNED, RECENT] })
+  })
+
+  it('files archived rows under no group and counts no group for them', () => {
+    expect(groups([row('kept', 2), row('gone', 3, { pinned: true, archived: true })])).toEqual({ rows: [['gone', null], ['kept', 'recent']], groups: [RECENT] })
+  })
+})
+
 describe('Web-created diagnostic chats (TAL-1040)', () => {
   const opts = { showCli: false, showCron: false, showWebhook: false, showKanban: false, sourceFilter: null, requestVisibilityOverrides: true }
   it('keeps a compressed chat whose receipt names its lineage root while external sessions are hidden', () => {

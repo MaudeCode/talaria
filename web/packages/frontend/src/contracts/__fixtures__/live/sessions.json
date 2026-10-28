@@ -47,7 +47,8 @@
         "source_tag": "claude_code",
         "title": "You are executing a job explicitly authorized by the user's T3 Factory scheduler",
         "updated_at": 1789438252.937,
-        "workspace": "/tmp/hermes-state/workspace"
+        "workspace": "/tmp/hermes-state/workspace",
+        "sidebar_group": "recent"
       },
       {
         "archived": false,
@@ -78,7 +79,8 @@
         "source_tag": "claude_code",
         "title": "ping",
         "updated_at": 1789433365.749,
-        "workspace": "/tmp/hermes-state/workspace"
+        "workspace": "/tmp/hermes-state/workspace",
+        "sidebar_group": "recent"
       },
       {
         "archived": false,
@@ -109,7 +111,8 @@
         "source_tag": "claude_code",
         "title": "We need to redo the UI of the webapp. Keep nothing visual, make this look nice b",
         "updated_at": 1789428464.091,
-        "workspace": "/tmp/hermes-state/workspace"
+        "workspace": "/tmp/hermes-state/workspace",
+        "sidebar_group": "recent"
       },
       {
         "archived": false,
@@ -140,7 +143,8 @@
         "source_tag": "claude_code",
         "title": "You are executing a job explicitly authorized by Kilian's T3 Factory scheduler, ",
         "updated_at": 1789417045.779,
-        "workspace": "/tmp/hermes-state/workspace"
+        "workspace": "/tmp/hermes-state/workspace",
+        "sidebar_group": "recent"
       },
       {
         "archived": false,
@@ -171,7 +175,8 @@
         "source_tag": "claude_code",
         "title": "ping",
         "updated_at": 1789415363.153,
-        "workspace": "/tmp/hermes-state/workspace"
+        "workspace": "/tmp/hermes-state/workspace",
+        "sidebar_group": "recent"
       },
       {
         "archived": false,
@@ -202,7 +207,8 @@
         "source_tag": "claude_code",
         "title": "ping",
         "updated_at": 1789397360.303,
-        "workspace": "/tmp/hermes-state/workspace"
+        "workspace": "/tmp/hermes-state/workspace",
+        "sidebar_group": "recent"
       },
       {
         "archived": false,
@@ -233,7 +239,8 @@
         "source_tag": "claude_code",
         "title": "You are executing a job explicitly authorized by Kilian's T3 Factory scheduler, ",
         "updated_at": 1789380885.493,
-        "workspace": "/tmp/hermes-state/workspace"
+        "workspace": "/tmp/hermes-state/workspace",
+        "sidebar_group": "recent"
       },
       {
         "archived": false,
@@ -264,7 +271,8 @@
         "source_tag": "claude_code",
         "title": "ping",
         "updated_at": 1789379357.116,
-        "workspace": "/tmp/hermes-state/workspace"
+        "workspace": "/tmp/hermes-state/workspace",
+        "sidebar_group": "recent"
       },
       {
         "archived": false,
@@ -295,7 +303,8 @@
         "source_tag": "claude_code",
         "title": "ping",
         "updated_at": 1789361351.941,
-        "workspace": "/tmp/hermes-state/workspace"
+        "workspace": "/tmp/hermes-state/workspace",
+        "sidebar_group": "recent"
       },
       {
         "archived": false,
@@ -326,7 +335,8 @@
         "source_tag": "claude_code",
         "title": "ping",
         "updated_at": 1789343349.085,
-        "workspace": "/tmp/hermes-state/workspace"
+        "workspace": "/tmp/hermes-state/workspace",
+        "sidebar_group": "recent"
       },
       {
         "archived": false,
@@ -357,7 +367,8 @@
         "source_tag": "claude_code",
         "title": "There are still loading inefficiencies when loading a session cold, I see \"loadi",
         "updated_at": 1789343127.617,
-        "workspace": "/tmp/hermes-state/workspace"
+        "workspace": "/tmp/hermes-state/workspace",
+        "sidebar_group": "recent"
       },
       {
         "archived": false,
@@ -388,7 +399,8 @@
         "source_tag": "claude_code",
         "title": "I need for all agents to stop reporting things as \"hours\" and \"days\" because tho",
         "updated_at": 1789336095.901,
-        "workspace": "/tmp/hermes-state/workspace"
+        "workspace": "/tmp/hermes-state/workspace",
+        "sidebar_group": "recent"
       },
       {
         "archived": false,
@@ -419,7 +431,8 @@
         "source_tag": "claude_code",
         "title": "ping",
         "updated_at": 1789325342.855,
-        "workspace": "/tmp/hermes-state/workspace"
+        "workspace": "/tmp/hermes-state/workspace",
+        "sidebar_group": "recent"
       },
       {
         "archived": false,
@@ -450,7 +463,8 @@
         "source_tag": "claude_code",
         "title": "TAL-91",
         "updated_at": 1789313706.097,
-        "workspace": "/tmp/hermes-state/workspace"
+        "workspace": "/tmp/hermes-state/workspace",
+        "sidebar_group": "recent"
       },
       {
         "archived": false,
@@ -481,7 +495,8 @@
         "source_tag": "claude_code",
         "title": "ping",
         "updated_at": 1789307340.174,
-        "workspace": "/tmp/hermes-state/workspace"
+        "workspace": "/tmp/hermes-state/workspace",
+        "sidebar_group": "recent"
       },
       {
         "archived": false,
@@ -512,7 +527,8 @@
         "source_tag": "claude_code",
         "title": "ping",
         "updated_at": 1789289336.191,
-        "workspace": "/tmp/hermes-state/workspace"
+        "workspace": "/tmp/hermes-state/workspace",
+        "sidebar_group": "recent"
       },
       {
         "archived": false,
@@ -543,7 +559,8 @@
         "source_tag": "claude_code",
         "title": "ping",
         "updated_at": 1789271332.219,
-        "workspace": "/tmp/hermes-state/workspace"
+        "workspace": "/tmp/hermes-state/workspace",
+        "sidebar_group": "recent"
       },
       {
         "archived": false,
@@ -574,7 +591,8 @@
         "source_tag": "claude_code",
         "title": "ping",
         "updated_at": 1789253328.728,
-        "workspace": "/tmp/hermes-state/workspace"
+        "workspace": "/tmp/hermes-state/workspace",
+        "sidebar_group": "recent"
       },
       {
         "archived": false,
@@ -605,7 +623,8 @@
         "source_tag": "claude_code",
         "title": "You are executing a job explicitly authorized by Kilian's T3 Factory scheduler, ",
         "updated_at": 1789244252.527,
-        "workspace": "/tmp/hermes-state/workspace"
+        "workspace": "/tmp/hermes-state/workspace",
+        "sidebar_group": "recent"
       },
       {
         "archived": false,
@@ -636,7 +655,14 @@
         "source_tag": "claude_code",
         "title": "You are executing a job explicitly authorized by Kilian's T3 Factory scheduler, ",
         "updated_at": 1789241679.553,
-        "workspace": "/tmp/hermes-state/workspace"
+        "workspace": "/tmp/hermes-state/workspace",
+        "sidebar_group": "recent"
+      }
+    ],
+    "sidebar_groups": [
+      {
+        "kind": "recent",
+        "title": "Recents"
       }
     ],
     "sidebar_reference_sessions": [],

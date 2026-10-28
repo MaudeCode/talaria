@@ -221,7 +221,7 @@ describe('session list date groups (TAL-306)', () => {
     const week = new Date(today); week.setDate(today.getDate() - 7)
     const buckets = ['pinned', 'today', 'yesterday', 'week', 'older'] as const
     const timestamps = [0, today.getTime(), yesterday.getTime(), week.getTime(), week.getTime() - 1]
-    const many = Array.from({ length: 1_000 }, (_, i) => row(`group-${String(i)}`, 'Grouped', { pinned: i % 5 === 0, sort_ts: timestamps[i % 5]! / 1000 }))
+    const many = Array.from({ length: 1_000 }, (_, i) => row(`group-${String(i)}`, 'Grouped', { pinned: i % 5 === 0, sidebar_group: i % 5 === 0 ? 'pinned' : 'recent', sort_ts: timestamps[i % 5]! / 1000 }))
     const groups = groupSessionRows(many, today.getTime() + 3_600_000)
     expect(groups.map((g) => g.id)).toEqual(buckets)
     groups.forEach((g, index) => expect(g.rows).toEqual(many.filter((_, i) => i % 5 === index)))
