@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ConnectorOperationView, ConnectorToolsView, ConnectorView } from '@maudecode/talaria-web-contracts'
 import { ChevronDown, ChevronRight } from 'lucide-react'
@@ -62,7 +62,7 @@ export function ConnectorsSection() {
   const page = useQuery({ queryKey: keys.connectors.page, queryFn: api.fetchConnectors, staleTime: 30_000 })
   const rule = useRule()
   const { refetch } = page
-  const refresh = useCallback(() => { void refetch() }, [refetch])
+  const refresh = () => { void refetch() }
   if (page.isPending) return <LoadingState />
   if (page.isError && !page.data) return <ErrorState error={page.error} onRetry={() => { void page.refetch() }} />
   if (!page.data?.available) return <EmptyState>{m.connectors_unavailable()}</EmptyState>

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useSyncExternalStore, type SetStateAction } from 'react'
+import { useSyncExternalStore, type SetStateAction } from 'react'
 import type { z } from 'zod'
 import { readPersisted, readPersistedJson, removePersisted, writePersistedJson } from '../../lib/persisted'
 import { QueuedTurnsSchema, type QueuedTurnSchema } from '../../contracts/persisted'
@@ -21,7 +21,7 @@ export function composerStateId(session: Pick<Session, 'session_id' | 'composer_
  * follow each change, so a message one tab sends never stays queued in another.
  */
 export function useQueuedTurns(sessionId: string | null) {
-  const subscribe = useCallback((changed: () => void) => {
+  const subscribe = (changed: () => void) => {
     if (!sessionId) return () => undefined
     const subscribed = listeners.get(sessionId) ?? new Set<() => void>()
     subscribed.add(changed)
@@ -33,17 +33,17 @@ export function useQueuedTurns(sessionId: string | null) {
       if (subscribed.size === 0) listeners.delete(sessionId)
       window.removeEventListener('storage', onStorage)
     }
-  }, [sessionId])
-  const raw = useSyncExternalStore(subscribe, useCallback(() => sessionId ? readPersisted(key(sessionId)) : null, [sessionId]), () => null)
-  const queued = useMemo(() => raw === null ? [] : read(sessionId), [sessionId, raw])
+  }
+  const raw = useSyncExternalStore(subscribe, () => sessionId ? readPersisted(key(sessionId)) : null, () => null)
+  const queued = raw === null ? [] : read(sessionId)
   // Persistence belongs to the mutation, so a captured acknowledgement still commits after this view unmounts.
-  const setQueued = useCallback((update: SetStateAction<QueuedTurn[]>) => {
+  const setQueued = (update: SetStateAction<QueuedTurn[]>) => {
     if (!sessionId) return
     const current = read(sessionId)
     const next = typeof update === 'function' ? update(current) : update
     if (next.length) writePersistedJson(key(sessionId), next)
     else removePersisted(key(sessionId))
     for (const listener of listeners.get(sessionId) ?? []) listener()
-  }, [sessionId])
+  }
   return [queued, setQueued] as const
 }

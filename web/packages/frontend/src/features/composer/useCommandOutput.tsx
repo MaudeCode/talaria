@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Loader2, SquareTerminal } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
@@ -17,7 +17,7 @@ export function useCommandOutput(sessionId: string | null): { run: (command: str
   const generation = useRef(0)
   useEffect(() => () => { generation.current += 1; setCurrent(null) }, [sessionId])
 
-  const run = useCallback(async (command: string) => {
+  const run = async (command: string) => {
     const gen = ++generation.current
     setCurrent({ sessionId, command, output: '', state: 'running' })
     const settle = (output: string, state: Run['state']): void => { if (generation.current === gen) setCurrent((r) => (r ? { ...r, output, state } : r)) }
@@ -26,9 +26,9 @@ export function useCommandOutput(sessionId: string | null): { run: (command: str
     } catch (e) {
       settle(`${m.command_failed()}${e instanceof Error ? e.message : String(e)}`, 'failed')
     }
-  }, [sessionId])
+  }
 
-  const notice = useMemo<ComposerNotice | null>(() => current?.sessionId === sessionId ? {
+  const notice: ComposerNotice | null = current?.sessionId === sessionId ? {
     id: 'command',
     tone: current.state === 'failed' ? 'error' : undefined,
     content: (
@@ -53,6 +53,6 @@ export function useCommandOutput(sessionId: string | null): { run: (command: str
     },
     announcement: current.state === 'running' ? m.command_running() : current.output,
     onDismiss: () => { generation.current += 1; setCurrent(null) },
-  } : null, [current, sessionId])
+  } : null
   return { run, notice }
 }

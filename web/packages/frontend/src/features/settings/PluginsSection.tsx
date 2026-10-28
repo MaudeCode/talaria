@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { PluginInstallResult, PluginOAuthClientView, PluginSettingView, PluginUpdateResult } from '@maudecode/talaria-web-contracts'
 import { m } from '../../paraglide/messages.js'
@@ -166,7 +166,7 @@ const OAUTH_STATE: Record<PluginOAuthClientView['state'], { label: () => string;
 /** TAL-1276: one OAuth client the plugin declares, its sign-in state, and its Sign in / Sign out actions for the server owner. */
 function PluginOAuthClientRow({ pluginKey, client, editable }: { pluginKey: string; client: PluginOAuthClientView; editable: boolean }) {
   const qc = useQueryClient()
-  const refresh = useCallback(() => { void qc.invalidateQueries({ queryKey: keys.plugins }) }, [qc])
+  const refresh = () => { void qc.invalidateQueries({ queryKey: keys.plugins }) }
   const signOut = useMutation({
     mutationFn: () => api.pluginOauthLogout(pluginKey, client.id),
     onSuccess: refresh,

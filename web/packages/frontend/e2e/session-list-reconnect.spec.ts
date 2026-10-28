@@ -8,6 +8,11 @@ import { openStateDb } from './server'
 test.use({ serviceWorkers: 'block', video: 'on' })
 
 test('a healthy sidebar skips polling and resyncs on reconnect', async ({ page }, testInfo) => {
+  // A preceding test can enable sound; loading that preference legitimately replaces the feed once.
+  await page.route('**/api/settings', async (route) => {
+    const response = await route.fetch()
+    await route.fulfill({ response, json: { ...await response.json(), sound_enabled: false } })
+  })
   let stream: ServerResponse | undefined
   let connections = 0
   const server = createServer((_request, response) => {

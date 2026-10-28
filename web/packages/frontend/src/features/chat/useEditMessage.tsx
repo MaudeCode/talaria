@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { ConfirmDialog } from '../../ui/Dialog'
@@ -46,7 +46,7 @@ export function useEditMessage(sessionId: string | null, refresh: (accepted?: un
   })
   const sendCut = cut.mutateAsync
   /** `cutFrom` shows the history change at once; without it (retry) the server produces the result and a status shows. */
-  const runHistory = useCallback(async (label: string, run: (current: () => boolean) => Promise<unknown>, cutFrom?: number) => {
+  const runHistory = async (label: string, run: (current: () => boolean) => Promise<unknown>, cutFrom?: number) => {
     if (!sessionId || active.current || getTurnIntent(sessionId).send || getTurnIntent(sessionId).stop) return false
     const owner = {}; active.current = owner
     const scope = getStreamContext()
@@ -58,8 +58,8 @@ export function useEditMessage(sessionId: string | null, refresh: (accepted?: un
     catch (e) { if (current() && !(e instanceof ConfirmationAsked)) showErrorToast(e) }
     if (active.current === owner) { active.current = null; if (lifecycle.current === life) setOperation(null) }
     return accepted
-  }, [sessionId, sendCut])
-  const edit = useCallback(async (sid: string, row: VisibleMessage, text: string, token?: string) => {
+  }
+  const edit = async (sid: string, row: VisibleMessage, text: string, token?: string) => {
     await runHistory(m.editing(), async (current) => {
       const r = await api.truncateSession(sid, row.index, token)
       if (!current()) return
@@ -68,8 +68,8 @@ export function useEditMessage(sessionId: string | null, refresh: (accepted?: un
       returnToComposer(sid, text)
       await refresh(r.session)
     }, row.index)
-  }, [refresh, runHistory])
-  const onEdit = useCallback((row: VisibleMessage, text: string) => (sessionId ? edit(sessionId, row, text) : Promise.resolve()), [sessionId, edit])
+  }
+  const onEdit = (row: VisibleMessage, text: string) => (sessionId ? edit(sessionId, row, text) : Promise.resolve())
   const shown = pending?.sessionId === sessionId && pending.scope === context ? pending : null
   const dialog = (
     <ConfirmDialog

@@ -4,7 +4,7 @@
  * Mermaid, math via KaTeX, and CJK. Hermes structures are typed components
  * elsewhere and are never passed through here as HTML.
  */
-import { memo, use, useEffect, useMemo, useRef, useState } from 'react'
+import { use, useEffect, useRef, useState } from 'react'
 import { Streamdown, parseMarkdownIntoBlocks, type LinkSafetyConfig, type LinkSafetyModalProps } from 'streamdown'
 import { cjk } from '@streamdown/cjk'
 import { appUrl } from '../../../lib/appRoot'
@@ -68,18 +68,18 @@ function LinkSafetyDialog({ isOpen, onClose, onConfirm, url, host }: LinkSafetyM
   )
 }
 
-export default memo(function MarkdownRenderer({ text, streaming = false, className, dir = 'auto' }: MarkdownProps) {
+export default function MarkdownRenderer({ text, streaming = false, className, dir = 'auto' }: MarkdownProps) {
   const check = use(LinkCheckContext)
-  const parseBlocks = useMemo(() => streaming ? createIncrementalMarkdownParser() : parseMarkdownIntoBlocks, [streaming])
+  const parseBlocks = streaming ? createIncrementalMarkdownParser() : parseMarkdownIntoBlocks
   // Syntax detection selects display assets only; transcript state and link decisions remain server-owned.
   const mermaid = useLazyPlugin(/(?:`{3,}|~{3,})mermaid\b/.test(text), loadMermaid)
   // The existing plugin parses double-dollar math; ordinary prices must not load KaTeX.
   const math = useLazyPlugin(text.includes('$$'), loadMath)
-  const plugins = useMemo(() => ({ ...PLUGINS, ...(mermaid ? { mermaid } : {}), ...(math ? { math } : {}) }), [mermaid, math])
+  const plugins = ({ ...PLUGINS, ...(mermaid ? { mermaid } : {}), ...(math ? { math } : {}) })
   // Streamdown opens the dialog only after onLinkCheck settles, so the host is recorded before the dialog renders.
   const hosts = useRef(new Map<string, string | null>())
   // Streamdown re-renders blocks when this object's identity changes, so it follows the checker only.
-  const linkSafety = useMemo<LinkSafetyConfig>(() => ({
+  const linkSafety: LinkSafetyConfig = ({
     enabled: true,
     onLinkCheck: async (url) => {
       if (!check) return false
@@ -88,7 +88,7 @@ export default memo(function MarkdownRenderer({ text, streaming = false, classNa
       return answer.opens_directly
     },
     renderModal: (props) => <LinkSafetyDialog {...props} host={hosts.current.get(props.url)} />,
-  }), [check])
+  })
   return (
     <LineEndedContext value={streaming && text.endsWith('\n')}>
       <Streamdown
@@ -108,4 +108,4 @@ export default memo(function MarkdownRenderer({ text, streaming = false, classNa
       </Streamdown>
     </LineEndedContext>
   )
-})
+}

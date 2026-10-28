@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Archive, ArchiveRestore, Filter, GitBranch, Plus, Search, Upload, X } from 'lucide-react'
@@ -153,8 +153,8 @@ export function SessionListPanel() {
   const newChat = useNewChat()
   const data = list.data
   const effects = useResourceEffects()
-  const rows = useMemo(() => withEffects(data?.sessions ?? [], (r) => `session:${r.session_id}`, effects).filter((r) => showArchived || !r.archived), [data, effects, showArchived])
-  const cliCount = useMemo(() => rows.filter((r) => r.is_cli_session).length, [rows])
+  const rows = withEffects(data?.sessions ?? [], (r) => `session:${r.session_id}`, effects).filter((r) => showArchived || !r.archived)
+  const cliCount = rows.filter((r) => r.is_cli_session).length
   // TAL-308: the server searches within the visible project, source tab and archive state; the local title filter covers the wait.
   const q = useDebounced(filter.trim(), 200)
   const [retainSearchMatches, setRetainSearchMatches] = useState(false)
@@ -173,13 +173,13 @@ export function SessionListPanel() {
   // TAL-785: the server says when state.db could not serve the Agent sessions; an empty list alone would read as deleted history.
   const storage = data?.agent_storage
   const storageNotice = storage?.state === 'corrupt' ? m.agent_storage_corrupt() : storage?.state === 'unavailable' ? m.agent_storage_unavailable() : storage?.state === 'outdated' ? m.agent_storage_outdated() : null
-  const hasUnprojected = useMemo(() => rows.some((r) => !r.project_id), [rows])
-  const projectList = useMemo(() => withEffects(projects.data?.projects ?? [], (p) => `project:${p.project_id}`, effects), [projects.data, effects])
-  const projectsById = useMemo(() => new Map(projectList.map((p) => [p.project_id, p])), [projectList])
+  const hasUnprojected = rows.some((r) => !r.project_id)
+  const projectList = withEffects(projects.data?.projects ?? [], (p) => `project:${p.project_id}`, effects)
+  const projectsById = new Map(projectList.map((p) => [p.project_id, p]))
   const newName = effects['project:new']?.fields?.name
   // The provisional chip gives way as soon as the server's list carries the created project.
   const newProject = typeof newName === 'string' && !projectList.some((p) => p.name === newName) ? newName : null
-  const filtered = useMemo(() => {
+  const filtered = (() => {
     const term = q.toLowerCase()
     let visible = rows
     if (cliCount > 0) visible = visible.filter((r) => (source === 'cli' ? !!r.is_cli_session : !r.is_cli_session))
@@ -188,9 +188,9 @@ export function SessionListPanel() {
     if (!term) return visible
     if (q.length >= 2 && search.data) return withEffects(search.data.sessions, (r) => `session:${r.session_id}`, effects).filter((r) => showArchived || !r.archived)
     return visible.filter((r) => r.title.toLowerCase().includes(term))
-  }, [rows, q, cliCount, source, project, search.data, effects, showArchived])
-  const previews = useMemo(() => new Map((q.length >= 2 ? search.data?.sessions ?? [] : []).flatMap((r) => (r.match_preview ? [[r.session_id, r.match_preview] as const] : []))), [q, search.data])
-  const groups = useMemo(() => groupSessionRows(filtered).map((g) => ({ ...g, label: GROUP_LABEL[g.id]() })), [filtered])
+  })()
+  const previews = new Map((q.length >= 2 ? search.data?.sessions ?? [] : []).flatMap((r) => (r.match_preview ? [[r.session_id, r.match_preview] as const] : [])))
+  const groups = groupSessionRows(filtered).map((g) => ({ ...g, label: GROUP_LABEL[g.id]() }))
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({})
   const archive = useResourceMutation({
     resource: ({ id }: { id: string; archived: boolean }) => `session:${id}`,
@@ -199,7 +199,7 @@ export function SessionListPanel() {
     onError: (e) => showErrorToast(e),
   })
   const mutateArchive = archive.mutate
-  const onArchive = useCallback((id: string, archived: boolean) => mutateArchive({ id, archived }), [mutateArchive])
+  const onArchive = (id: string, archived: boolean) => mutateArchive({ id, archived })
   const createProject = useResourceMutation({
     resource: () => 'project:new',
     effect: (name: string) => ({ fields: { name } }),

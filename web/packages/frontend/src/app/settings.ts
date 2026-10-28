@@ -1,4 +1,3 @@
-import { useMemo } from 'react'
 import { replaceEqualDeep, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { keys } from '../api/queryKeys'
 import * as api from '../api/endpoints'
@@ -47,11 +46,11 @@ export function useSettingsQuery(fields?: readonly string[]) {
   const settings = useQuery({ queryKey: keys.settings, queryFn: api.fetchSettings, staleTime: 30_000, select: (data) => pickFields(data, fields) })
   const intent = useIntent(fields).data
   const confirmed = settings.data
-  const overlay = useMemo(() => confirmed && intent ? { ...confirmed, ...intent.fields } : undefined, [confirmed, intent])
+  const overlay = confirmed && intent ? { ...confirmed, ...intent.fields } : undefined
   const isError = overlay ? settings.isError : false
   const error = overlay ? settings.error : null
   const refetch = settings.refetch
-  const result = useMemo(() => overlay ? { data: overlay, isPending: false as const, isError, error, refetch } : undefined, [overlay, isError, error, refetch])
+  const result = overlay ? { data: overlay, isPending: false as const, isError, error, refetch } : undefined
   return result ?? settings
 }
 

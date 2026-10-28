@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useId, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useId, useState, type ReactNode } from 'react'
 import { z } from 'zod'
 import { ChevronRight } from 'lucide-react'
 import { cn } from '../../../ui/cn'
@@ -23,16 +23,16 @@ export function WorklogDisclosureProvider({ scope, children }: { scope: string; 
   const storageKey = `hermes-worklog:v1:${scope}`
   const [choices, setChoices] = useState(() => readPersistedJson(storageKey, z.record(z.string(), z.boolean())) ?? {})
   useEffect(() => { writePersistedJson(storageKey, choices) }, [storageKey, choices])
-  const choose = useCallback((key: string, open: boolean) => {
+  const choose = (key: string, open: boolean) => {
     setChoices((previous) => {
       const next = Object.fromEntries([...Object.entries(previous).filter(([k]) => k !== key), [key, open]].slice(-200)) as Record<string, boolean>
       return next
     })
-  }, [])
-  const forget = useCallback((key: string) => {
+  }
+  const forget = (key: string) => {
     setChoices((previous) => key in previous ? Object.fromEntries(Object.entries(previous).filter(([k]) => k !== key)) : previous)
-  }, [])
-  const value = useMemo(() => ({ choices, choose, forget }), [choices, choose, forget])
+  }
+  const value = ({ choices, choose, forget })
   return <DisclosureContext value={value}>{children}</DisclosureContext>
 }
 

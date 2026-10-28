@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
 import { chatConditionText } from './chatCondition'
@@ -94,7 +94,7 @@ export function useServerProbe() {
     enabled: online,
   })
   const { refetch } = probe
-  const retry = useCallback(() => { void refetch() }, [refetch])
+  const retry = () => { void refetch() }
   return { online, probe, failures: online ? (probe.data?.failures ?? 0) : 0, retry }
 }
 

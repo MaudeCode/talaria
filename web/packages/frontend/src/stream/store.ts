@@ -1,5 +1,5 @@
 /** Live turns and device-local send/Stop intent, kept outside the server-state query cache. */
-import { useMemo, useSyncExternalStore } from 'react'
+import { useSyncExternalStore } from 'react'
 import { initialStreamState, streamReducer, type LiveTurn, type StreamAction, type StreamState } from './reducer'
 import type { StartTurnInput } from './connection'
 import type { ChatEventName } from '../contracts/sse'
@@ -88,7 +88,7 @@ function createTurnSnapshot(sessionId: string | null, equal: (previous: LiveTurn
 
 /** React reads the last publication; a subscriber can retain its snapshot while irrelevant fields change. */
 export function useLiveTurn(sessionId: string | null, equal: (previous: LiveTurn | null, next: LiveTurn | null) => boolean = Object.is): LiveTurn | null {
-  const turn = useMemo(() => createTurnSnapshot(sessionId, equal), [sessionId, equal])
+  const turn = createTurnSnapshot(sessionId, equal)
   return useSyncExternalStore(subscribe, turn, turn)
 }
 

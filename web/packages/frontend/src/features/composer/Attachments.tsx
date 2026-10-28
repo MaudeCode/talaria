@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { X, FileText, LoaderCircle, RotateCw } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import type { UploadResponse } from '../../contracts'
@@ -30,8 +30,8 @@ function useObjectUrls(files: readonly File[]): ReadonlyMap<File, string> {
  * hanging from the card's top edge, the mirror of the control strip under it; a thumbnail opens the image, retries a
  * failed upload, and carries a remove badge. Placement `card`: other files as chips inside the card, above the text.
  */
-export const AttachmentTray = memo(function AttachmentTray({ files, placement, onRemove, onRetry }: { files: PendingFile[]; placement: 'strip' | 'card'; onRemove: (key: string) => void; onRetry: (key: string) => void }) {
-  const shown = useMemo(() => files.filter((f) => isImage(f) === (placement === 'strip')), [files, placement])
+export function AttachmentTray({ files, placement, onRemove, onRetry }: { files: PendingFile[]; placement: 'strip' | 'card'; onRemove: (key: string) => void; onRetry: (key: string) => void }) {
+  const shown = files.filter((f) => isImage(f) === (placement === 'strip'))
   if (shown.length === 0) return null
   if (placement === 'strip') return <ImageStrip images={shown} onRemove={onRemove} onRetry={onRetry} />
   return (
@@ -48,10 +48,10 @@ export const AttachmentTray = memo(function AttachmentTray({ files, placement, o
       ))}
     </ul>
   )
-})
+}
 
 function ImageStrip({ images, onRemove, onRetry }: { images: PendingFile[]; onRemove: (key: string) => void; onRetry: (key: string) => void }) {
-  const urls = useObjectUrls(useMemo(() => images.map((f) => f.file), [images]))
+  const urls = useObjectUrls(images.map((f) => f.file))
   // The enlarged image by key: an earlier upload finishing reorders `ready` but never switches the open image.
   const [enlarged, setEnlarged] = useState<string | null>(null)
   const ready = images.flatMap((f) => { const src = urls.get(f.file); return f.status === 'done' && src ? [{ key: f.key, src, name: f.file.name }] : [] })

@@ -10,6 +10,7 @@ export const keys = {
   profiles: ['profiles'] as const,
   activeProfile: ['profile', 'active'] as const,
   models: ['models'] as const,
+  reasoning: (model: string | null | undefined, provider: string | null | undefined) => ['reasoning', model ?? null, provider ?? null] as const,
   providers: ['providers'] as const,
   providerQuotas: ['providers', 'quotas'] as const,
   providerCostHistory: ['providers', 'cost-history', 'openrouter'] as const,

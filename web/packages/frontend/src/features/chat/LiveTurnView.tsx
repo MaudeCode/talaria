@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react'
 import { Link } from '@tanstack/react-router'
 import { m } from '../../paraglide/messages.js'
 import { useLocale } from '../../i18n/useLocale'
@@ -21,7 +21,7 @@ import type { ActivityMode } from './blocks/Worklog'
 /** `omitToolIds`: tools the running scene this turn continues already shows (TAL-374). */
 export function LiveTurnView({ turn, name, mode, userVisible, omitToolIds }: { turn: LiveTurn; name: string; mode: ActivityMode; userVisible: boolean; omitToolIds?: ReadonlySet<string> | undefined }) {
   const { segments, tools, status, terminalState, turnId, streamId } = turn
-  const activity = useMemo(() => liveActivity({ segments, tools, status, terminalState, turnId, streamId }, omitToolIds), [segments, tools, status, terminalState, turnId, streamId, omitToolIds])
+  const activity = liveActivity({ segments, tools, status, terminalState, turnId, streamId }, omitToolIds)
   const streaming = activity.status === 'running'
   const rowRef = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
