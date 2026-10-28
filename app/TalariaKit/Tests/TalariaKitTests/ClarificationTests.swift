@@ -3,6 +3,93 @@ import Observation
 @testable import TalariaKit
 
 final class ClarificationTests: APIClientTestCase {
+    @MainActor
+    func testLeavingOrCancellingPluginCommandStopsMonitoringWithoutReplay() async throws {
+        for leavesSession in [true, false] {
+            let server = URL(string: "https://cancel-plugin-\(leavesSession).test")!
+            let requests = DeferredRequests()
+            let started = expectation(description: "Command started")
+            DeferredMockURLProtocol.setOnRequest({ request in
+                _ = requests.append(request)
+                started.fulfill()
+            }, forHost: server.host!)
+            defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: server.host!) }
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [DeferredMockURLProtocol.self]
+            let client = APIClient(baseURL: server, session: URLSession(configuration: configuration))
+            let stream = ClarificationSpySSEStreamingClient()
+            let model = ChatViewModel(session: try makeSession(), server: server, client: client,
+                                      streamClient: ClarificationSpySSEStreamingClient(), approvalStreamClient: ClarificationSpySSEStreamingClient(),
+                                      clarifyStreamClient: stream, liveActivityManager: SpyChatLiveActivityManager())
+            let command = Task { await model.executeServerCommand("/probe-choice") }
+            await fulfillment(of: [started], timeout: 5)
+            if leavesSession {
+                model.suspendStreamForNavigation()
+                model.cleanupPollingTasks()
+            } else { command.cancel() }
+            _ = await command.value
+            XCTAssertEqual(requests.count, 1)
+            XCTAssertNil(model.currentNotice)
+            XCTAssertNil(model.lastError)
+            XCTAssertGreaterThan(stream.stopCount, 0)
+            XCTAssertNil(model.clarificationPrompt)
+        }
+    }
+
+    @MainActor
+    func testPluginCommandClarificationWithoutChatTurn() async throws {
+        let stream = ClarificationSpySSEStreamingClient()
+        let started = expectation(description: "Command request started")
+        let server = URL(string: "https://plugin-command.test")!
+        let requests = DeferredRequests()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [DeferredMockURLProtocol.self]
+        let client = APIClient(baseURL: server, session: URLSession(configuration: configuration))
+        DeferredMockURLProtocol.setOnRequest({ pending in
+            let request = pending.request
+            switch request.url?.path {
+            case "/api/commands/exec":
+                _ = requests.append(pending)
+                XCTAssertEqual(request.timeoutInterval, 150)
+                started.fulfill()
+            case "/api/clarify/respond":
+                let body = try? apiTestJSONBody(from: request)
+                XCTAssertEqual(body?["clarify_id"] as? String, "command-choice")
+                XCTAssertEqual(try? submittedAnswers(body ?? [:]), ["q0": .string("Development")])
+                pending.complete(withJSON: #"{"ok":true}"#)
+                requests.request(at: 0).complete(withJSON: #"{"output":"private-dev"}"#)
+            case "/api/clarify/pending":
+                pending.complete(withJSON: #"{"pending":null}"#)
+            default:
+                XCTFail("Unexpected request: \(request.url?.path ?? "nil")")
+                pending.fail(with: URLError(.badURL))
+            }
+        }, forHost: server.host!)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: server.host!) }
+        let model = ChatViewModel(session: try makeSession(), server: server, client: client,
+                                  streamClient: ClarificationSpySSEStreamingClient(), approvalStreamClient: ClarificationSpySSEStreamingClient(),
+                                  clarifyStreamClient: stream, liveActivityManager: SpyChatLiveActivityManager())
+        let command = Task { await model.executeServerCommand("/probe-choice") }
+        defer { command.cancel(); model.cleanupPollingTasks() }
+        await fulfillment(of: [started], timeout: 5)
+        XCTAssertEqual(stream.startedURLs.first?.path, "/api/clarify/stream")
+        XCTAssertNil(model.activeStreamID)
+        stream.emit(.clarificationPending(ClarificationPendingResponse(
+            pending: PendingClarification(clarifyId: "command-choice", sessionId: "session-abc", steps: [clarifyStep("Environment?", choices: ["Development", "Production"])]), pendingCount: 1
+        )))
+        let prompt = try XCTUnwrap(model.clarificationPrompt)
+        model.setClarificationDraftResponse("Development", promptID: prompt.id)
+        let answered = await model.submitClarificationDraft(promptID: prompt.id)
+        XCTAssertTrue(answered)
+        let result = await command.value
+        XCTAssertEqual(result, .executed(message: nil))
+        XCTAssertEqual(model.currentNotice?.text, "private-dev")
+        XCTAssertEqual(requests.count, 1)
+        XCTAssertTrue(model.messages.isEmpty)
+        XCTAssertNil(model.clarificationPrompt)
+        XCTAssertGreaterThan(stream.stopCount, 0)
+    }
+
     func testServerStepsOnlyFramesRenderEveryStep() throws {
         let payload = #"{"steps":[{"qid":"branch","question":"Which branch?","choices":["main","dev"],"multi_select":false},{"qid":"checks","question":"Which checks?","choices":["unit","ui"],"multi_select":true}]}"#
         for eventType in ["initial", "clarify"] {

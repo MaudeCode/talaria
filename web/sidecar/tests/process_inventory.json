@@ -2777,6 +2777,13 @@
       "cases": [
         ""
       ]
+    },
+    "tests/test_plugin_choices.py::test_real_plugin_command_choice_round_trip": {
+      "layer": "compatibility",
+      "reason": "Real installed Agent plugin registration, dispatch and ask_choice must round-trip through concurrent stdio commands.exec/clarify.respond with native private-value mapping and old-Agent/async fallback. One disposable sidecar isolates native imports and proves the blocked handler does not block its reply transport; no provider or account.",
+      "cases": [
+        ""
+      ]
     }
   }
 }

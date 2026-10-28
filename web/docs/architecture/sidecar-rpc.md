@@ -1,5 +1,18 @@
 # Sidecar RPC (TAL-245)
 
+RPC v62 lets session-bound `commands.exec` emit the existing `clarify` and
+`clarify_resolved` frames. The Agent's `bind_asker` and `clarify_asker` own choice
+labels and private-value mapping. Commands reuse the chat clarification waiter
+and callback without creating an Agent or chat turn. Each invocation has its
+own prompt IDs, profile home, cancellation state and total 120-second budget.
+`clarify.respond` accepts optional `profile_home`; command replies require it
+alongside the exact session and prompt ID. Older Agents and commands without a
+session retain their no-prompt behavior. Async handlers retain native fallback.
+Session eviction, profile removal, credential changes and shutdown cancel these
+waiters. Profile deletion waits for their handlers to return. The server withdraws
+only the command's prompts on disconnect, error or completion and never replays
+a handler after an unknown outcome. Turn cleanup preserves command-owned prompts.
+
 RPC v61 adds `connectors.offer.status` and `connectors.offer.claim`. The Agent
 owns connector guest eligibility, sightings, install-wide claim-once and backoff.
 Status is noncreating. Only a profile-bound opaque guest identity leaves the
@@ -8,7 +21,6 @@ until Not now or native ineligibility; OAuth uses the existing account/result
 flow and keeps that result readable after the offer is withdrawn. Page refresh
 uses the server interval, following the native due value. No client schedules
 or signs in automatically. Older Agents report the offer unavailable.
-
 
 RPC v59 adds `tts.synthesize` alongside STT. The profile-scoped Agent owns provider
 registration, credentials, voice configuration and synthesis. Unknown names fail
@@ -260,10 +272,10 @@ directory metadata invalidate discovery immediately; missing paths watch their
 nearest existing ancestor. Recovery probes and repair operations scan uncached.
 This does not add detection of dirty tracked files to the revision-drift guard.
 
-One sidecar per server. Concurrency inside the sidecar is thread-per-call for
-long-running methods (chat turns, cron runs, auxiliary LLM calls) and a
-single dispatcher thread for everything else. A session has at most one chat
-run at a time.
+One sidecar per server. Each admitted RPC runs on a worker thread, bounded by
+the transport's call limit. Cancellation reaches an active call without taking
+another slot. A session has at most one chat run at a time; command waiters have
+independent invocation identities.
 
 Provider-plugin listings retain the scoped home's manifest enable/disable gate. With
 `plugins.isolation: host`, the sidecar maps enabled plugin directories through the

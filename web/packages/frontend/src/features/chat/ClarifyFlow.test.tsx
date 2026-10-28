@@ -35,14 +35,14 @@ let qc: QueryClient
 
 /** ChatView's clarify wiring: the flyout card above the composer, both driven by one `useClarify`. */
 let chatRenders = 0
-function Chat({ live = streaming }: { live?: LiveTurn }) {
+function Chat({ live = streaming }: { live?: LiveTurn | null }) {
   chatRenders++
   const clarify = useClarify('s1', live)
   return (
     <>
       {clarify && <ClarifyCard key={clarify.pending.clarify_id} clarify={clarify} />}
       <Composer
-        sessionId="s1" session={session} busy={!isTerminal(live.status)} streamId={live.streamId ?? null} settings={undefined} onEnsureSession={() => Promise.resolve(session)} onLocalCommand={() => Promise.resolve(false)}
+        sessionId="s1" session={session} busy={!!live && !isTerminal(live.status)} streamId={live?.streamId ?? null} settings={undefined} onEnsureSession={() => Promise.resolve(session)} onLocalCommand={() => Promise.resolve(false)}
         terminalOpen={false} onToggleTerminal={noop} onModelChange={noop} onWorkspaceChange={noop} onToolsetsChange={noop} onReasoningChange={noop} reasoning={null}
         yolo={false} onToggleYolo={noop} queued={[]} onQueue={onQueue} onQueueChange={noop} clarify={clarify}
       />
@@ -50,7 +50,7 @@ function Chat({ live = streaming }: { live?: LiveTurn }) {
   )
 }
 
-const tree = (live?: LiveTurn) => <QueryClientProvider client={qc}><BootstrapContext.Provider value={DEFAULT_BOOTSTRAP}><Chat {...(live ? { live } : {})} /></BootstrapContext.Provider></QueryClientProvider>
+const tree = (live?: LiveTurn | null) => <QueryClientProvider client={qc}><BootstrapContext.Provider value={DEFAULT_BOOTSTRAP}><Chat {...(live !== undefined ? { live } : {})} /></BootstrapContext.Provider></QueryClientProvider>
 let view: ReturnType<typeof render>
 const renderChat = () => { view = render(tree()); return view }
 /** The server's queue head changes: a new head arrives as a chat-stream `clarify` frame, a cleared one on the next poll. */
@@ -77,6 +77,20 @@ describe('clarification through the composer (TAL-362)', () => {
     vi.mocked(api.steerChat).mockClear()
     vi.mocked(connection.startTurn).mockClear()
     onQueue.mockClear()
+  })
+
+  it('answers a server clarification while a command runs without a chat turn', async () => {
+    head = single
+    let finish!: () => void
+    const command = qc.getMutationCache().build(qc, { mutationKey: keys.commandExec('s1'), mutationFn: () => new Promise<void>((resolve) => { finish = resolve }) }).execute(undefined)
+    view = render(tree(null))
+    const box = await screen.findByRole('textbox', { name: 'Which env?' })
+    await userEvent.type(box, 'Development')
+    await userEvent.keyboard('{Enter}')
+    expect(api.respondClarify).toHaveBeenCalledWith({ session_id: 's1', clarify_id: 'single-1', answers: { q0: 'Development' } })
+    expect(connection.startTurn).not.toHaveBeenCalled()
+    finish()
+    await command
   })
 
   it('keeps clarification typing local to the composer instead of re-rendering ChatView wiring', async () => {

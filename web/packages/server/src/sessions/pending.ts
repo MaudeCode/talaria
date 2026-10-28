@@ -148,7 +148,7 @@ function withTimeoutMetadata(data: Record<string, unknown>, now: number): Record
 }
 
 function dedupeIdentity(data: Record<string, unknown>): string {
-  // Two vault prompts never look alike by question: only a re-sent frame (same id) is the same prompt.
+  // Secure prompts without an explicit id never deduplicate by content.
   if (data.vault) return JSON.stringify(['vault', str(data.clarify_id)])
   const questions = data.questions
   if (Array.isArray(questions) && questions.length) return JSON.stringify(questions.map((q) => { const item = q as Record<string, unknown>; return [str(item.qid), str(item.question), (item.choices as unknown[] | undefined ?? []).map(String), Boolean(item.multi_select)] }))
@@ -157,6 +157,7 @@ function dedupeIdentity(data: Record<string, unknown>): string {
 
 class Queue {
   readonly entries: Record<string, unknown>[] = []
+  readonly commandIds = new Set<string>()
   readonly subscribers = new Set<PendingSubscriber>()
 }
 
@@ -285,7 +286,7 @@ export class PendingPrompts {
   }
 
   // ── clarify ──
-  submitClarify(sid: string, data: Record<string, unknown>): Record<string, unknown> {
+  submitClarify(sid: string, data: Record<string, unknown>, lifetime: 'turn' | 'command' = 'turn'): Record<string, unknown> {
     const item = withTimeoutMetadata(data, this.now())
     const vault = vaultKind(item.kind)
     if (vault) {
@@ -299,14 +300,15 @@ export class PendingPrompts {
     else delete item.questions
     item.steps = vault ? [] : clarifySteps(item)
     const q = this.queue(this.clarifies, sid)
-    const last = q.entries[q.entries.length - 1]
+    const last = item.clarify_id ? q.entries.find((e) => e.clarify_id === item.clarify_id) : q.entries[q.entries.length - 1]
     let entry: Record<string, unknown>
-    if (last && dedupeIdentity(last) === dedupeIdentity(item)) entry = last
+    if (last && (item.clarify_id || dedupeIdentity(last) === dedupeIdentity(item))) entry = last
     else {
       entry = item
       entry.clarify_id = str(item.clarify_id) || randomUUID().replace(/-/g, '')
       q.entries.push(entry)
     }
+    if (lifetime === 'command') q.commandIds.add(str(entry.clarify_id))
     this.notify(q)
     this.events.publish('attention_pending')
     return entry
@@ -333,6 +335,7 @@ export class PendingPrompts {
     const index = clarifyId ? q.entries.findIndex((e) => e.clarify_id === clarifyId) : 0
     if (index < 0) return { entry: null, head: null }
     const [entry] = q.entries.splice(index, 1)
+    q.commandIds.delete(str(entry?.clarify_id))
     this.prune(this.clarifies, sid, q)
     this.notify(q)
     this.events.publish('attention_resolved')
@@ -342,8 +345,12 @@ export class PendingPrompts {
   clearClarifies(sid: string): number {
     const q = this.clarifies.get(sid)
     if (!q) return 0
-    const n = q.entries.length
-    q.entries.length = 0
+    let n = 0
+    for (let index = q.entries.length - 1; index >= 0; index -= 1) {
+      if (q.commandIds.has(str(q.entries[index]?.clarify_id))) continue
+      q.entries.splice(index, 1)
+      n += 1
+    }
     this.prune(this.clarifies, sid, q)
     this.notify(q)
     if (n) this.events.publish('attention_resolved')

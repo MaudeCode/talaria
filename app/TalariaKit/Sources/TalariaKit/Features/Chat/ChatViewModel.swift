@@ -416,6 +416,7 @@ public final class ChatViewModel {
     /// How long a notice of each kind stays; tests shorten it.
     @ObservationIgnored var noticeLifetime: (SessionNotice.Level) -> Duration = { $0.noticeLifetime }
     @ObservationIgnored private var noticeDismissTask: Task<Void, Never>?
+    @ObservationIgnored private var serverCommands: [UUID: Task<String, Error>] = [:]
     /// The Agent's active notices for the session, oldest first (TAL-831): the server's list, from the session and the
     /// stream's `notices`.
     public private(set) var sessionNotices: [SessionNotice] = []
@@ -774,6 +775,7 @@ public final class ChatViewModel {
     }
 
     deinit {
+        for command in serverCommands.values { command.cancel() }
         backgroundPollTask?.cancel()
         pendingStreamingScrollTriggerTask?.cancel()
         pendingStreamingContentFlushTask?.cancel()
@@ -3697,10 +3699,28 @@ public final class ChatViewModel {
     /// Runs a catalog command the server marks `exec` (TAL-918), such as `/refine`, and shows the server's output as a
     /// notice; no chat turn starts.
     func executeServerCommand(_ text: String) async -> SlashCommandExecutionResult {
+        guard !Task.isCancelled else { return .executed(message: nil) }
+        let id = UUID()
+        let client = client
+        let sessionID = sessionID
+        let command = Task { try await client.execCommand(text, sessionID: sessionID).output ?? "" }
+        serverCommands[id] = command
+        pendingActionCoordinator.startMonitoring()
+        defer {
+            serverCommands[id] = nil
+            if activeStreamID == nil, serverCommands.isEmpty {
+                pendingActionCoordinator.stopMonitoring(clearPrompt: true)
+            }
+        }
         do {
-            showNotice(try await client.execCommand(text, sessionID: sessionID).output ?? "")
+            let result = try await withTaskCancellationHandler {
+                try await command.value
+            } onCancel: { command.cancel() }
+            guard !command.isCancelled else { return .executed(message: nil) }
+            showNotice(result)
             return .executed(message: nil)
         } catch {
+            guard !command.isCancelled else { return .executed(message: nil) }
             lastError = error
             return .unsupported(friendlyMessage: error.localizedDescription)
         }
@@ -5449,6 +5469,8 @@ public final class ChatViewModel {
     }
 
     public func cleanupPollingTasks() {
+        for command in serverCommands.values { command.cancel() }
+        serverCommands.removeAll()
         stopBackgroundPolling(clearTrackedPrompts: true)
         pendingActionCoordinator.stopMonitoring(clearPrompt: true)
     }
@@ -6749,7 +6771,7 @@ public final class ChatViewModel {
 
 extension ChatViewModel: ChatPendingActionCoordinatorDelegate {
     var pendingActionSessionID: String? { sessionID }
-    var pendingActionHasActiveStream: Bool { activeStreamID != nil }
+    var pendingActionHasActiveStream: Bool { activeStreamID != nil || !serverCommands.isEmpty }
     var pendingActionHasRunningClarificationTool: Bool {
         liveToolCalls.contains {
             !$0.isCompleted && ($0.name?.lowercased() == "clarify" || $0.args?["questions"] != nil)
@@ -6830,7 +6852,9 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
     }
 
     public func streamCoordinatorStopAuxiliaryMonitoring(clearPrompt: Bool) {
-        pendingActionCoordinator.stopMonitoring(clearPrompt: clearPrompt)
+        if serverCommands.isEmpty {
+            pendingActionCoordinator.stopMonitoring(clearPrompt: clearPrompt)
+        }
     }
 
     public func streamCoordinatorSaveSnapshotIfNeeded() {

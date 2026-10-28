@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { bootTestServer, type TestServer, openStateDb } from '../test/harness.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import type { SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
@@ -437,11 +437,11 @@ describe('canonical Agent ownership (TAL-1036)', () => {
     expect(sidecar.calls.filter((c) => c.method === 'goals.evaluate')).toEqual([])
   })
 
-  it('refuses other session-bound commands for canonical sidecars', async () => {
+  it.each(['/clear', '/probe-choice'])('refuses session-bound %s for canonical sidecars without local execution', async (command) => {
     const sid = fixture.sessions.cli!
     await cache(sid)
     sidecar.respond('commands.exec', () => ({ output: 'would change session state', source: 'agent' }))
-    const response = await post(s, '/api/commands/exec', { session_id: sid, command: '/clear' })
+    const response = await post(s, '/api/commands/exec', { session_id: sid, command })
     expect(response.status, JSON.stringify(await json(response))).toBe(403)
     expect(sidecar.calls.filter((c) => c.method === 'commands.exec')).toEqual([])
   })
@@ -464,6 +464,24 @@ describe('canonical Agent ownership (TAL-1036)', () => {
       expect((await response).status).toBe(403)
       expect(sidecar.calls.filter((c) => c.method === 'goals.command')).toEqual([])
     } finally { release(); await response }
+  })
+
+  it('rechecks plugin command ownership after resolving its workspace', async () => {
+    const sid = fixture.sessions.cli!
+    makeLegacy(sid)
+    await cache(sid)
+    const resolveWorkspace = s.deps.sessions.turnWorkspace.bind(s.deps.sessions)
+    const workspace = vi.spyOn(s.deps.sessions, 'turnWorkspace').mockImplementation(async (session) => {
+      const result = await resolveWorkspace(session)
+      adopt(sid)
+      return result
+    })
+    sidecar.respond('commands.exec', () => ({ output: 'would execute locally', source: 'plugin' }))
+    try {
+      const response = await post(s, '/api/commands/exec', { session_id: sid, command: '/probe-choice' })
+      expect(response.status).toBe(403)
+      expect(sidecar.calls.filter((c) => c.method === 'commands.exec')).toEqual([])
+    } finally { workspace.mockRestore() }
   })
 
   it.each(['title', 'usage', 'delete', 'clear'] as const)('fences canonical %s RPC callbacks at their write boundary', async (action) => {
