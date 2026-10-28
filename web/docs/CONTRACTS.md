@@ -338,3 +338,28 @@ proposed revision; neither server nor client blindly replays the write.
 carry the same preview/apply interface for the downstream App consumer. These
 user-requested previews are distinct from the Agent's pending-write queue; both
 use the shared Web proposal review presentation.
+
+## Saved skill revisions
+
+`GET /api/skills/revisions` is read-only. It inspects the enabled, consented,
+reviewed Hermetic store without importing producer code, calling its API,
+creating directories, migrating legacy data or recovering background processes.
+The fixed native registration/source gate is shared with outbound draft review.
+Unsupported backends and ambiguous declared skill names are unavailable.
+
+The sidecar reads at most 64 directory entries, 32 KiB and 512 lines per revision,
+and 256 KiB of provenance. It opens the profile ancestors, skill and history
+files without following symlinks and validates each saved filename's hash prefix
+against the full SHA-256 of its bytes. No saved revision is synthesized from
+current content. Metadata includes full content hashes, the reviewed backend
+revision, actual timestamps and known actors. Missing provenance stays unknown.
+Revision IDs bind profile home, resolved skill identity and content; stale or
+foreign selections are refused. Clients render the sidecar's ordering, current
+markers, selected content and comparison. The HTTP projection redacts display
+text and actors, retaining raw content hashes only as provenance.
+
+`replay_available` is always false. Revision availability never grants execution,
+provider use, a judge, skill edits or tool effects. Bounded replay is tracked
+separately. The shared synthetic fixture is
+`contracts/fixtures/skill-revisions.json` at the repository root. Existing skill
+content/edit/delete/toggle/linked-file endpoints retain their contracts.

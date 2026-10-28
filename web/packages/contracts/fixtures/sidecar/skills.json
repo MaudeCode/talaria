@@ -123,7 +123,7 @@
             "declared_name": "baoyu-infographic",
             "status": "unique",
             "tier": 1,
-            "description": "Infographics: 21 layouts x 21 styles (信息图, 可视化).",
+            "description": "Infographics: 21 layouts x 21 styles (\u4fe1\u606f\u56fe, \u53ef\u89c6\u5316).",
             "category": "creative",
             "disabled": false
           },
@@ -687,7 +687,7 @@
         "related_skills": [
           "obsidian"
         ],
-        "content": "---\nname: apple-notes\ndescription: \"Manage Apple Notes via memo CLI: create, search, edit.\"\nversion: 1.0.1\nauthor: Hermes Agent\nlicense: MIT\nplatforms: [macos]\nmetadata:\n  hermes:\n    tags: [Notes, Apple, macOS, note-taking]\n    related_skills: [obsidian]\nprerequisites:\n  commands: [memo]\n---\n\n# Apple Notes\n\nUse `memo` to manage Apple Notes directly from the terminal. Notes sync across all Apple devices via iCloud.\n\n## Prerequisites\n\n- **macOS** with Notes.app\n- Install: `brew tap antoniorodr/memo && brew install antoniorodr/memo/memo`\n- Grant Automation access to Notes.app when prompted (System Settings → Privacy → Automation)\n\n## When to Use\n\n- User asks to create, view, or search Apple Notes\n- Saving information to Notes.app for cross-device access\n- Organizing notes into folders\n- Exporting notes to Markdown/HTML\n\n## When NOT to Use\n\n- Obsidian vault management → use the `obsidian` skill\n- Bear Notes → separate app (not supported here)\n- Quick agent-only notes → use the `memory` tool instead\n\n## Quick Reference\n\n### View Notes\n\n```bash\nmemo notes                        # List all notes\nmemo notes -f \"Folder Name\"       # Filter by folder\nmemo notes -s \"query\"             # Search notes (fuzzy)\n```\n\n### Create Notes\n\n```bash\nmemo notes -a                     # Add a note (opens your $EDITOR)\nmemo notes -a -f \"Folder Name\"    # Add a note into a specific folder\n```\n\n`-a`/`--add` is a bare flag — it opens your `$EDITOR` to compose the note; it does\nnot take a title argument. Use `-f/--folder` to target a folder. Set `$EDITOR`\nfirst (e.g. `export EDITOR=vim`).\n\n### Edit Notes\n\n```bash\nmemo notes -e                     # Interactive selection to edit\n```\n\n### Delete Notes\n\n```bash\nmemo notes -d                     # Interactive selection to delete\n```\n\n### Move Notes\n\n```bash\nmemo notes -m                     # Move note to folder (interactive)\n```\n\n### Export Notes\n\n```bash\nmemo notes -ex                    # Export to HTML/Markdown\n```\n\n## Limitations\n\n- Cannot edit notes containing images or attachments\n- Interactive prompts require terminal access (use pty=true if needed)\n- macOS only — requires Apple Notes.app\n\n## Rules\n\n1. Prefer Apple Notes when user wants cross-device sync (iPhone/iPad/Mac)\n2. Use the `memory` tool for agent-internal notes that don't need to sync\n3. Use the `obsidian` skill for Markdown-native knowledge management\n",
+        "content": "---\nname: apple-notes\ndescription: \"Manage Apple Notes via memo CLI: create, search, edit.\"\nversion: 1.0.1\nauthor: Hermes Agent\nlicense: MIT\nplatforms: [macos]\nmetadata:\n  hermes:\n    tags: [Notes, Apple, macOS, note-taking]\n    related_skills: [obsidian]\nprerequisites:\n  commands: [memo]\n---\n\n# Apple Notes\n\nUse `memo` to manage Apple Notes directly from the terminal. Notes sync across all Apple devices via iCloud.\n\n## Prerequisites\n\n- **macOS** with Notes.app\n- Install: `brew tap antoniorodr/memo && brew install antoniorodr/memo/memo`\n- Grant Automation access to Notes.app when prompted (System Settings \u2192 Privacy \u2192 Automation)\n\n## When to Use\n\n- User asks to create, view, or search Apple Notes\n- Saving information to Notes.app for cross-device access\n- Organizing notes into folders\n- Exporting notes to Markdown/HTML\n\n## When NOT to Use\n\n- Obsidian vault management \u2192 use the `obsidian` skill\n- Bear Notes \u2192 separate app (not supported here)\n- Quick agent-only notes \u2192 use the `memory` tool instead\n\n## Quick Reference\n\n### View Notes\n\n```bash\nmemo notes                        # List all notes\nmemo notes -f \"Folder Name\"       # Filter by folder\nmemo notes -s \"query\"             # Search notes (fuzzy)\n```\n\n### Create Notes\n\n```bash\nmemo notes -a                     # Add a note (opens your $EDITOR)\nmemo notes -a -f \"Folder Name\"    # Add a note into a specific folder\n```\n\n`-a`/`--add` is a bare flag \u2014 it opens your `$EDITOR` to compose the note; it does\nnot take a title argument. Use `-f/--folder` to target a folder. Set `$EDITOR`\nfirst (e.g. `export EDITOR=vim`).\n\n### Edit Notes\n\n```bash\nmemo notes -e                     # Interactive selection to edit\n```\n\n### Delete Notes\n\n```bash\nmemo notes -d                     # Interactive selection to delete\n```\n\n### Move Notes\n\n```bash\nmemo notes -m                     # Move note to folder (interactive)\n```\n\n### Export Notes\n\n```bash\nmemo notes -ex                    # Export to HTML/Markdown\n```\n\n## Limitations\n\n- Cannot edit notes containing images or attachments\n- Interactive prompts require terminal access (use pty=true if needed)\n- macOS only \u2014 requires Apple Notes.app\n\n## Rules\n\n1. Prefer Apple Notes when user wants cross-device sync (iPhone/iPad/Mac)\n2. Use the `memory` tool for agent-internal notes that don't need to sync\n3. Use the `obsidian` skill for Markdown-native knowledge management\n",
         "path": "apple-notes/SKILL.md",
         "skill_dir": "<profile>/skills/apple/apple-notes",
         "linked_files": {},
@@ -727,6 +727,23 @@
         "available_skills_truncated": true,
         "total_skills": 57,
         "hint": "Showing 20 of 57 skills. Use skills_list to see all available skills"
+      }
+    }
+  ],
+  "skills.revisions": [
+    {
+      "params": {
+        "profile_home": "<profile>",
+        "name": "apple-notes"
+      },
+      "result": {
+        "state": "unavailable",
+        "reason": "backend_unavailable",
+        "backend_revision": null,
+        "revisions": [],
+        "selected": null,
+        "comparison": null,
+        "replay_available": false
       }
     }
   ]

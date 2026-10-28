@@ -300,6 +300,16 @@ def view_skill(profile_home: Path, name: str) -> dict:
 
 
 def register(registry) -> None:
+    @registry.method("skills.revisions")
+    def revisions(ctx: CallContext, params: dict) -> dict:
+        from .skill_revisions import inspect_revisions
+        home = profile_home_param(params)
+        ctx.check_cancelled()
+        with scoped_home(home, load_plugins=False, recover_processes=False):
+            result = inspect_revisions(home, params.get('name'), params.get('revision'), params.get('compare_to'))
+        ctx.check_cancelled()
+        return result
+
     @registry.method("skills.list")
     def list_(ctx: CallContext, params: dict) -> dict:
         home = profile_home_param(params)

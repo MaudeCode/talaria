@@ -1,0 +1,33 @@
+{
+  "state": "available",
+  "reason": null,
+  "backend_revision": "f7026c949d8831b26910f2ebd3434e8c58cdff89",
+  "revisions": [
+    {
+      "id": "c90c31a27b54b0780133445e20c79272c5638154ca78a3e62245f4442c1c3bb0",
+      "sha256": "92cdc45de5094d40adcad9403c26d5d199773a20217311909aa0f2c21f0acb56",
+      "label": "92cdc45de509",
+      "saved_at": "2026-01-02T00:00:00+00:00",
+      "actor": "user",
+      "current": true
+    },
+    {
+      "id": "6048797235b54c5212fbd2d6c9510e079b66f1c0673131893aa10cf485466dc8",
+      "sha256": "2275ec836c9d45100d0bf2313979375345ada41e0ae195e6339b12d728cf6a37",
+      "label": "2275ec836c9d",
+      "saved_at": "2026-01-01T00:00:00+00:00",
+      "actor": "user",
+      "current": false
+    }
+  ],
+  "selected": {
+    "revision": "c90c31a27b54b0780133445e20c79272c5638154ca78a3e62245f4442c1c3bb0",
+    "content": "Use recorded results.\nKeep answers concise.\n"
+  },
+  "comparison": {
+    "from_revision": "6048797235b54c5212fbd2d6c9510e079b66f1c0673131893aa10cf485466dc8",
+    "to_revision": "c90c31a27b54b0780133445e20c79272c5638154ca78a3e62245f4442c1c3bb0",
+    "diff": "--- 2275ec836c9d\n+++ 92cdc45de509\n@@ -1 +1,2 @@\n Use recorded results.\n+Keep answers concise.\n"
+  },
+  "replay_available": false
+}

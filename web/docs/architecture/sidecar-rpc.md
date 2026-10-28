@@ -873,3 +873,10 @@ its later thread, so result reconnects instead reuse its `ConnectionOperation`,
 provider. Every request verifies both the current profile identity and the bearer
 subject without refreshing. Rejoins, reads and retries keep that fence; an account
 change settles the operation and removes its link from the current account's view. App presentation of these optional fields is tracked separately.
+
+RPC v62 adds `skills.revisions`, the bounded read-only store adapter described in
+[Saved skill revisions](../CONTRACTS.md#saved-skill-revisions). Inspection passes
+`load_plugins=False` and `recover_processes=False` to the existing profile scope.
+Both native context-local and legacy environment profile bindings retain those
+flags. Other calls retain their existing process-recovery behavior. A v61 peer
+is rejected at handshake before Agent loading.

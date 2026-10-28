@@ -2737,5 +2737,15 @@
 	"oauth_signed_in_as": "Signed in as {email}.",
 	"oauth_result_continue": "Continue",
 	"oauth_reconnect": "Reconnect {app}",
-	"oauth_result_unavailable": "Connected-app transfer status is unavailable."
+	"oauth_result_unavailable": "Connected-app transfer status is unavailable.",
+	"skill_revisions_title": "Saved revisions",
+	"skill_revisions_missing": "No saved revisions are available for this skill.",
+	"skill_revisions_identity_unavailable": "Saved history cannot be attributed to this skill copy.",
+	"skill_revisions_invalid": "Saved history could not be verified or exceeds inspection limits.",
+	"skill_revisions_backend_unavailable": "Revision history backend is unavailable.",
+	"skill_revisions_current": "Current",
+	"skill_revisions_revision": "Revision",
+	"skill_revisions_compare_with": "Compare with",
+	"skill_revisions_content": "Saved revision content",
+	"skill_revisions_comparison": "Revision comparison"
 }

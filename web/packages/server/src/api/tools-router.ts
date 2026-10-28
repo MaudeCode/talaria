@@ -396,6 +396,13 @@ export const toolsRouter = os.router({
     runningSidecar(ctx).call('toolsets.catalog', { profile_home: home(ctx), enabled_toolsets: input.toolsets }),
   )),
   skills: {
+    revisions: os.skills.revisions.handler(({ input, context: { ctx } }) => run(async () => {
+      const history = await ctx.deps.skills.revisions(home(ctx), input)
+      const redact = (text: string) => redactString(text, ctx.deps.sessions.deps.redactEnabled())
+      return { ...history, revisions: history.revisions.map((row) => ({ ...row, actor: row.actor === null ? null : redact(row.actor) })),
+        selected: history.selected && { ...history.selected, content: redact(history.selected.content) },
+        comparison: history.comparison && { ...history.comparison, diff: redact(history.comparison.diff) } }
+    })),
     list: os.skills.list.handler(({ input, context: { ctx } }) => run(async () => ({ skills: await ctx.deps.skills.list(home(ctx), str(input.category).trim() || null) }))),
     usage: os.skills.usage.handler(({ context: { ctx } }) => run(() => ctx.deps.skills.usage(home(ctx)) as Promise<never>)),
     content: os.skills.content.handler(({ input, context: { ctx } }) => run(async () => {

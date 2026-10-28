@@ -5,6 +5,8 @@ import { closeSync, fstatSync, mkdirSync, lstatSync, readFileSync, writeFileSync
 import { readdir } from 'node:fs/promises'
 import { join, relative, resolve, sep } from 'node:path'
 import type { SidecarLike } from '../sidecar/client.js'
+import { SidecarError } from '../sidecar/client.js'
+import type { SidecarResult } from '@maudecode/talaria-web-contracts'
 import { dict, isDict, type AgentConfig, type Dict } from '../config/agent-config.js'
 import { HttpFailure } from '../sessions/service.js'
 import { str } from '../util.js'
@@ -27,6 +29,18 @@ export class SkillsService {
   async list(profileHome: string, category: string | null) {
     const result = await this.sidecar().call('skills.list', { profile_home: profileHome, category })
     return result.skills
+  }
+
+  async revisions(profileHome: string, input: { name: string; revision?: string | undefined; compare_to?: string | undefined }): Promise<SidecarResult<'skills.revisions'>> {
+    const unavailable: SidecarResult<'skills.revisions'> = { state: 'unavailable', reason: 'backend_unavailable', backend_revision: null, revisions: [], selected: null, comparison: null, replay_available: false }
+    const sidecar = this.deps.sidecar()
+    if (sidecar?.status !== 'ready') return unavailable
+    try { return await sidecar.call('skills.revisions', { profile_home: profileHome, name: input.name, ...(input.revision ? { revision: input.revision } : {}), ...(input.compare_to ? { compare_to: input.compare_to } : {}) }) }
+    catch (error) {
+      if (error instanceof SidecarError && error.code === -32601) return unavailable
+      if (error instanceof SidecarError && error.code === -32602) throw new HttpFailure(400, error.message)
+      throw error
+    }
   }
 
   /** Python `/api/skills/usage`: `.usage.json` counters merged with the skill inventory. */

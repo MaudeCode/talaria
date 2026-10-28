@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Inspect saved skill revisions and compare their contents in Skills.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
