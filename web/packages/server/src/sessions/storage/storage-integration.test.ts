@@ -47,6 +47,39 @@ it('batches session saves that commit during an index flush into one follow-up f
   } finally { vi.restoreAllMocks(); await server.close() }
 })
 
+it('diagnoses only after in-flight index publication and preserves corrupt raw index evidence', async () => {
+  const server = await bootTestServer()
+  let release!: () => void
+  const held = new Promise<void>((resolve) => { release = resolve })
+  let entered!: () => void
+  const started = new Promise<void>((resolve) => { entered = resolve })
+  try {
+    const store = server.deps.sessionStore
+    const first = await store.newSession()
+    first.messages = [{ role: 'user', content: 'first retained session' }]
+    await store.save(first)
+    await store.readIndexEntries()
+    const backend = store.deps.storage.sessions
+    const persist = backend.writeIndex.bind(backend)
+    vi.spyOn(backend, 'writeIndex').mockImplementationOnce(async (entries) => { entered(); await held; await persist(entries) })
+    const session = await store.newSession()
+    session.messages = [{ role: 'user', content: 'new retained session' }]
+    await store.save(session)
+    await started
+    let settled = false
+    const diagnosis = store.diagnose().then((issues) => { settled = true; return issues })
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    expect(settled, 'diagnosis must wait for the held index publication').toBe(false)
+    release()
+    expect((await diagnosis).filter((issue) => issue.session_id === session.session_id)).toEqual([])
+    const index = join(server.state, 'sessions', '_index.json')
+    writeFileSync(index, '{corrupt index')
+    const before = readFileSync(index, 'utf8')
+    expect((await store.diagnose()).some((issue) => issue.kind === 'index_unreadable')).toBe(true)
+    expect(readFileSync(index, 'utf8')).toBe(before)
+  } finally { release(); vi.restoreAllMocks(); await server.close() }
+})
+
 it('admits only one turn while persistence outlasts the stale-state grace period', async () => {
   let now = 1000
   let releaseWrite!: () => void
