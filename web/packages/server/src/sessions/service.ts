@@ -2675,15 +2675,19 @@ export class SessionService {
   async cleanup(zeroOnly: boolean): Promise<Record<string, unknown>> {
     let cleaned = 0
     const removed = new Set<string>()
-    for (const s of (await this.store.scanAll())) {
-      const shouldDelete = zeroOnly ? s.messages.length === 0 : s.title === 'Untitled' && s.messages.length === 0
-      if (!shouldDelete || (await this.isReadOnly(s))) continue
-      // A cleared session keeps its share; keep the session (and its revoke route) if the share cannot be revoked.
-      try { (await this.deps.shares.revoke(s)) } catch { continue }
-      this.store.sessions.delete(s.session_id)
-      await this.store.delete(s.session_id, { tombstone: false })
-      cleaned += 1
-      removed.add(s.session_id)
+    for (const candidate of (await this.store.scanAll())) {
+      await this.store.withLock(candidate.session_id, async () => {
+        let s: Session
+        try { s = await this.store.get(candidate.session_id) }
+        catch (error) { if (error instanceof SessionNotFound) return; throw error }
+        const shouldDelete = zeroOnly ? s.messages.length === 0 : s.title === 'Untitled' && s.messages.length === 0
+        if (!shouldDelete || (await this.isReadOnly(s))) return
+        // Keep the session (and its revoke route) if its share cannot be revoked.
+        try { (await this.deps.shares.revoke(s)) } catch { return }
+        if (!await this.store.delete(s.session_id, { tombstone: false })) return
+        cleaned += 1
+        removed.add(s.session_id)
+      })
     }
     let rewroteIndex = false
     try {
@@ -2924,39 +2928,54 @@ export class SessionService {
 
   // ── shares ───────────────────────────────────────────────────────────────
 
-  async createShare(sid: string): Promise<Record<string, unknown>> {
-    this.rejectClaudeCode(sid, 'shared')
-    let s = (await this.get404(sid))
-    if (!this.visibleToActiveProfile(s.profile)) throw new HttpFailure(404, 'Session not found')
-    s = (await this.store.ensureFull(sid, s))
-    let snapshot
-    try {
-      snapshot = buildShareSnapshot(s, s.messages, { hermesHome: this.deps.hermesHome, attachmentRoot: this.deps.attachmentDir('').replace(/\/[^/]*$/, ''), home: this.deps.home })
-    } catch (error) {
-      throw new HttpFailure(400, (error as Error).message)
-    }
-    const meta = (await this.deps.shares.createOrRefresh(s, snapshot))
-    s.share_token = meta.share_token
-    s.share_created_at = meta.share_created_at
-    await this.store.save(s, { touchUpdatedAt: false })
-    this.publish('session_share_create', s.profile, sid)
-    return {
-      ok: true,
-      share: { token: meta.share_token, url: sharePath(meta.share_token) ?? '', title: meta.share_title, message_count: meta.share_message_count, created_at: meta.share_created_at, updated_at: meta.share_updated_at },
-      session: (await this.publicSession(s)),
+  private async withShareLock<T>(sid: string, fn: (session: Session) => Promise<T>): Promise<T> {
+    sid = await this.resolveSessionId(sid)
+    return this.store.withLock(sid, async () => {
+      const session = await this.get404(sid)
+      if (!this.visibleToActiveProfile(session.profile)) throw new HttpFailure(404, 'Session not found')
+      return fn(await this.store.ensureFull(sid, session))
+    })
+  }
+
+  private async saveShareOwnership(session: Session, token: string | null, createdAt: number | null): Promise<void> {
+    const previous = { share_token: session.share_token, share_created_at: session.share_created_at }
+    session.share_token = token
+    session.share_created_at = createdAt
+    try { await this.store.save(session, { touchUpdatedAt: false }) }
+    catch (error) {
+      Object.assign(session, previous)
+      // A failed acknowledgement may follow a commit; the next operation must read persisted ownership.
+      this.store.sessions.delete(session.session_id)
+      throw error
     }
   }
 
+  async createShare(sid: string): Promise<Record<string, unknown>> {
+    this.rejectClaudeCode(sid, 'shared')
+    return this.withShareLock(sid, async (s) => {
+      let snapshot
+      try {
+        snapshot = buildShareSnapshot(s, s.messages, { hermesHome: this.deps.hermesHome, attachmentRoot: this.deps.attachmentDir('').replace(/\/[^/]*$/, ''), home: this.deps.home })
+      } catch (error) {
+        throw new HttpFailure(400, (error as Error).message)
+      }
+      const meta = await this.deps.shares.createOrRefresh(s, snapshot, (owner) => this.saveShareOwnership(s, owner.share_token, owner.share_created_at))
+      this.publish('session_share_create', s.profile, s.session_id)
+      return {
+        ok: true,
+        share: { token: meta.share_token, url: sharePath(meta.share_token) ?? '', title: meta.share_title, message_count: meta.share_message_count, created_at: meta.share_created_at, updated_at: meta.share_updated_at },
+        session: (await this.publicSession(s)),
+      }
+    })
+  }
+
   async revokeShare(sid: string): Promise<Record<string, unknown>> {
-    let s = (await this.get404(sid))
-    if (!this.visibleToActiveProfile(s.profile)) throw new HttpFailure(404, 'Session not found')
-    s = (await this.store.ensureFull(sid, s))
-    await this.deps.shares.revoke(s)
-    s.share_token = null
-    s.share_created_at = null
-    await this.store.save(s, { touchUpdatedAt: false })
-    this.publish('session_share_revoke', s.profile, sid)
-    return { ok: true, session: (await this.publicSession(s)) }
+    return this.withShareLock(sid, async (s) => {
+      await this.deps.shares.revoke(s)
+      await this.saveShareOwnership(s, null, null)
+      this.publish('session_share_revoke', s.profile, s.session_id)
+      return { ok: true, session: (await this.publicSession(s)) }
+    })
   }
 
   async loadShare(token: string): Promise<Record<string, unknown>> {
