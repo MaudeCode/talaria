@@ -1601,6 +1601,13 @@
         "[model-providers-host]"
       ]
     },
+    "tests/test_plugin_providers.py::test_runtime_resolution_refuses_another_profiles_plugin": {
+      "layer": "compatibility",
+      "reason": "Real Agent provider discovery and runtime lookup must reject a named profile's plugin from another home in both the providers RPC and shared chat/aux resolver. Synthetic plugin CLI is never spawned.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_plugin_providers.py::test_hosted_plugins_with_a_shared_provider_id_are_not_attributed_by_name": {
       "layer": "compatibility",
       "reason": "Supported-Agent API compatibility: hosted plugins with a shared provider id are not attributed by name. Uses the real installed release, not a fabricated API response.",

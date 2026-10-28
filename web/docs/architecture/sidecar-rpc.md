@@ -252,6 +252,12 @@ user registry. Provider ids may differ from manifest names. In-process and older
 Agents retain module ownership checks, so another profile's plugins stay hidden.
 Hosted ids claimed by multiple directories remain `not_loaded`, including collisions
 with disabled or manifest-less plugins. Their model catalogs remain empty.
+Explicit provider runtime requests use the same ownership check before Agent
+resolution in both `providers.resolve_runtime` and the shared chat/auxiliary
+resolver. A foreign, disabled, ambiguous or unverifiable plugin returns
+`credential_missing`; a process-wide Agent registry cannot authorize its execution
+in another profile. Built-in providers and requests without a provider retain the
+Agent's normal resolution.
 
 `plugins.isolation` reads each profile's `plugins.isolation` and counts the plugin
 directories under its `plugins/` without loading them; the server's `/api/plugins`

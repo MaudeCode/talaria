@@ -12,7 +12,7 @@ import textwrap
 
 import pytest
 
-from conftest import AGENT_DIR, SidecarProcess, load_schema, requires_agent, validate
+from conftest import AGENT_DIR, AGENT_PYTHON, SidecarProcess, load_schema, requires_agent, validate
 
 PROFILE = textwrap.dedent(
     """
@@ -133,6 +133,53 @@ def test_a_named_profiles_plugin_reads_the_same_whichever_profile_lists_first(tm
         finally:
             sidecar.close()
     assert seen[0] == seen[1], seen
+
+
+@requires_agent
+def test_runtime_resolution_refuses_another_profiles_plugin(tmp_path: pathlib.Path) -> None:
+    home = tmp_path / "home" / ".hermes"
+    other = home / "profiles" / "other"
+    other.mkdir(parents=True)
+    for profile in (home, other):
+        (profile / "config.yaml").write_text("plugins:\n  isolation: in_process\n")
+    cli = tmp_path / "fake-cli"
+    cli.write_text("#!/bin/sh\nexit 97\n")
+    cli.chmod(0o755)
+    _plugin(other / "plugins", "fake-other", "fake-other-provider", name="fake-other", display="Fake Other",
+            command=str(cli), models=("other-1",))
+    # Expose the actual chat/aux resolver without constructing an Agent or spawning the plugin CLI.
+    script = textwrap.dedent("""
+        from pathlib import Path
+        from talaria_sidecar import __main__ as main
+        from talaria_sidecar.home import scoped_home
+        from talaria_sidecar.methods.chat import _resolve_runtime
+        build = main.build_methods
+        def methods(runtime):
+            handlers = build(runtime)
+            def chat_runtime(ctx, params):
+                runtime.load()
+                with scoped_home(Path(params["profile_home"])):
+                    return _resolve_runtime(params["requested"], "other-1")
+            handlers["test.chat_runtime"] = chat_runtime
+            return handlers
+        main.build_methods = methods
+        raise SystemExit(main.main())
+    """)
+    sidecar = SidecarProcess(home, command=[AGENT_PYTHON, "-c", script])
+    try:
+        rows = sidecar.result("plugins.providers", {"profile_home": str(other)})["providers"]
+        outcomes = {}
+        for method in ("providers.resolve_runtime", "test.chat_runtime"):
+            denied, _ = sidecar.call(method, {"profile_home": str(home), "requested": "fake-other"})
+            outcomes[method] = denied
+        assert all(reply.get("error", {}).get("data", {}).get("condition") == "credential_missing"
+                   for reply in outcomes.values()), outcomes
+        for method in outcomes:
+            owned, _ = sidecar.call(method, {"profile_home": str(other), "requested": "fake-other"})
+            # Agent 0.21.3's auth snapshot cannot resolve a plugin first loaded by a named profile.
+            assert ("result" in owned) == (rows[0]["setup"] == "ready"), owned
+    finally:
+        sidecar.close()
 
 
 @requires_agent

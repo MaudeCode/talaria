@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Prevent chats from using a provider plugin installed only in another profile.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
