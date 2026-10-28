@@ -1,0 +1,54 @@
+name: Relay feedback bridge image
+
+on:
+  pull_request:
+    paths:
+      - relay/bridge/**
+      - .github/workflows/relay-bridge-image.yml
+  push:
+    branches: [main]
+    paths:
+      - relay/bridge/**
+      - .github/workflows/relay-bridge-image.yml
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    name: Build feedback bridge image
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    # Serialize publication; stale queued runs may publish only their SHA tag.
+    concurrency:
+      group: relay-bridge-image-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build and smoke-test the non-root image
+        run: |
+          set -euo pipefail
+          image=ghcr.io/maudecode/talaria-feedback-bridge
+          docker build --tag "$image:sha-${GITHUB_SHA:0:12}" --tag "$image:main" relay/bridge
+          test "$(docker run --rm --entrypoint id "$image:main" -u)" != 0
+          # The standalone Node entry must start without package metadata or dependencies.
+          status=0
+          docker run --rm "$image:main" > "$RUNNER_TEMP/bridge-output" 2>&1 || status=$?
+          test "$status" = 2
+          grep -q 'missing RELAY_URL' "$RUNNER_TEMP/bridge-output"
+      - name: Publish immutable and main tags
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          image=ghcr.io/maudecode/talaria-feedback-bridge
+          printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          docker push "$image:sha-${GITHUB_SHA:0:12}"
+          git fetch --no-tags origin main
+          if [[ "$(git rev-parse FETCH_HEAD)" == "$GITHUB_SHA" ]]; then
+            docker push "$image:main"
+          fi

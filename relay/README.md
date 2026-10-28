@@ -51,6 +51,44 @@ environment. It verifies readiness and provenance before Web or App publication.
 
 The production HTTP origin is `https://relay.talaria.kil.dev`.
 
+## Feedback bridge
+
+`node bridge/bridge.ts` runs once on Node 24 using only built-in modules. It
+pulls up to 50 pending reports from Relay, creates quarantined Inbox tickets
+through Kanvil's create-only intake scope, acknowledges successful deliveries,
+and exits. Reports and diagnostics remain fenced untrusted text; install IDs
+are hashed before inclusion in ticket metadata.
+
+| Environment variable | Purpose |
+| --- | --- |
+| `RELAY_URL` | Relay HTTP origin |
+| `FEEDBACK_OPERATOR_TOKEN` | Bearer token whose hash is configured on Relay |
+| `KANVIL_URL` | Cluster-internal Kanvil base URL |
+| `KANVIL_INTAKE_KEY` | Create-only `intake` key bound to Talaria Inbox |
+| `KANVIL_PROJECT_ID` | Talaria Inbox project ID |
+
+Use the `intake` scope provided by KAN-67. It forces human triage and disables
+automation on created tickets. The bridge sends exactly the `user-report`,
+trust-tier, and client-platform labels; Kanvil adds its own `intake` label.
+Credentials stay in the cluster and are never logged. Missing variables or an
+invalid base URL exit 2 and name only the variable. Queue failures exit 1.
+Individual create or acknowledgement failures leave reports pending, continue
+with the rest, then exit 1. Each HTTP request has a 30-second timeout and refuses
+redirects. A rerun resends the same report request ID and identical ticket input,
+so a lost acknowledgement cannot create another ticket. Exit 0 means all
+reports in the fetched batch were delivered, or the queue was empty.
+
+The image is `ghcr.io/maudecode/talaria-feedback-bridge`, tagged `sha-<12-hex>`
+and `main`. Pull requests build and smoke-test it; bridge changes on main also
+publish it. The image runs as the non-root `node` user and contains only the
+standalone entry file beyond the base image. No package installation is needed.
+
+Deployment is separate. The intended in-cluster Kubernetes CronJob schedule is
+`*/2 * * * *` with `concurrencyPolicy: Forbid`, the five variables above supplied
+from cluster configuration/secrets, and a pinned SHA image. Kanvil remains
+internal; only the bridge connects outbound to Relay. These source changes do
+not configure a deployment or enable Relay's feedback routes.
+
 ## Remaining real-boundary proof
 
 After Apple enables Sign in with Apple for the Talaria App ID and production configuration is installed:
