@@ -32,6 +32,13 @@ def green_commits():
     return sorted(set(output.split()))
 
 
+def cutover_running():
+    """A production cutover in flight may be shipping the same App train; Nightly then waits a day."""
+    return any(subprocess.check_output(["gh", "api", f"repos/{REPOSITORY}/actions/workflows/{workflow}/runs?status={status}&per_page=1",
+                                        "--jq", ".total_count"], text=True).strip() != "0"
+               for workflow in ("production-cutover.yml", "recover-cutover.yml") for status in ("queued", "in_progress", "waiting"))
+
+
 def select(root, green):
     """The newest green commit on HEAD's history after the last Nightly; whether the App changed since then; its version."""
     previous = last_nightly(root)
@@ -74,7 +81,7 @@ def main():
     commands.add_parser("record", help="Move the nightly tag to a completed source.").add_argument("source")
     args = parser.parse_args()
     if args.action == "select":
-        selection = select(ROOT, green_commits())
+        selection = {"changed": "false"} if cutover_running() else select(ROOT, green_commits())
         print(json.dumps(selection), file=sys.stderr)
         print("\n".join(f"{key}={value}" for key, value in selection.items()))
     elif args.action == "upload":

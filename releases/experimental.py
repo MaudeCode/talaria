@@ -80,8 +80,9 @@ def push(build):
 
 
 def advance(source, moving=MOVING):
-    """`experimental` moves to the newest build on main, including the one this run pushed as `source`;
-    `nightly` to the newest build on `source`'s history, which need not have one of its own."""
+    """`experimental` moves to the newest build on main, including the one this run pushed as `source`, then prunes;
+    `nightly` moves to the newest build on `source`'s history, which need not have one of its own. Only the
+    serialized `experimental` advance prunes, so two runs never delete from stale listings at once."""
     if not re.fullmatch(r"[a-f0-9]{40}", source):
         raise ValueError("advance requires a 40-hex source revision")
     # Main may have moved past this run's checkout; later published commits must be orderable.
@@ -98,6 +99,8 @@ def advance(source, moving=MOVING):
     if target != current:
         subprocess.run(["oras", "tag", f"{REGISTRY}:sha-{target}", moving], check=True)
     print(f"{moving} is at {target}.")
+    if moving != MOVING:
+        return
     for version_id in pruned(versions, protected=(MOVING, NIGHTLY, f"sha-{target}")):
         subprocess.run(["gh", "api", "--method", "DELETE", f"{PACKAGE}/versions/{version_id}"], check=True)
 
@@ -107,7 +110,7 @@ def main():
     commands = parser.add_subparsers(dest="action", required=True)
     commands.add_parser("push", help="Push the build as its immutable sha- tag.").add_argument(
         "build", type=Path, help="The build.py web --experimental output directory.")
-    forward = commands.add_parser("advance", help="Move a tag forward to the newest build up to a source, then prune.")
+    forward = commands.add_parser("advance", help="Move a tag forward to the newest build up to a source; experimental also prunes.")
     forward.add_argument("source")
     forward.add_argument("--tag", choices=(MOVING, NIGHTLY), default=MOVING)
     args = parser.parse_args()

@@ -38,6 +38,11 @@ jobs:
       inputs.channel == 'nightly' && github.workflow_ref == 'MaudeCode/talaria/.github/workflows/nightly.yml@refs/heads/main')
     runs-on: xcode-27
     environment: testflight
+    # Production and Nightly (TAL-1569) can build the same App train: selecting a build number and uploading
+    # it must not interleave, so both join the TestFlight publication queue.
+    concurrency:
+      group: talaria-testflight-publication
+      cancel-in-progress: false
     timeout-minutes: 60
     env:
       PROJECT_PATH: Talaria.xcodeproj

@@ -37,6 +37,7 @@ export const RESTART_MAX_WAIT_S = 300
 export const DEFAULT_CHANNEL = 'stable'
 /** An Agent update channel, and the artifact family a Web channel installs from. */
 export type Channel = 'stable' | 'experimental'
+/** A Web update channel (TAL-1569): Stable, Nightly or Experimental. */
 export type WebChannel = WebUpdateChannel
 
 const SHA = /^[a-f0-9]{40}$/
@@ -53,6 +54,8 @@ export const isWebChannel = (channel: unknown): channel is WebChannel => WebUpda
 export const normalizeWebChannel = (channel: unknown): WebChannel => (isWebChannel(channel) ? channel : 'stable')
 /** TAL-1569: Nightly installs the same GHCR artifacts as Experimental, one daily `nightly` tag behind it. */
 const webFamily = (channel: WebChannel): Channel => (channel === 'stable' ? 'stable' : 'experimental')
+/** A packaged `web-v` or `web-exp-v` version label of the channel's artifact family. */
+const familyVersion = (channel: WebChannel, label: string): RegExpExecArray | null => new RegExp(`^${webFamily(channel) === 'experimental' ? 'web-exp-v' : 'web-v'}${VERSION}$`).exec(label)
 
 /** TAL-946: one Stable release newer than the installed one; an apply names it by `ref`. */
 export interface UpdateVersion { version: string; ref: string; sha?: string; release_url: string | null }
@@ -363,7 +366,7 @@ export interface ExperimentalRelease { tag: string; version: string; sourceRevis
 
 export interface ExperimentalRegistry {
   /** The artifact the channel's moving tag (`experimental` or `nightly`) names. */
-  release: (channel?: Exclude<WebChannel, 'stable'>) => Promise<ExperimentalRelease>
+  release: (channel: Exclude<WebChannel, 'stable'>) => Promise<ExperimentalRelease>
   /** The layer bytes, verified against the release digest and size. */
   download: (release: ExperimentalRelease) => Promise<Buffer>
   /** Source revisions with a published build: every retained `sha-<commit>` tag. */
@@ -390,7 +393,7 @@ export function ghcrExperimental(fetchImpl: typeof fetch): ExperimentalRegistry 
     return body.token
   }
   return {
-    release: async (channel = 'experimental') => {
+    release: async (channel) => {
       const auth = { Authorization: `Bearer ${await token()}` }
       const m = await json(await send(`${GHCR}/v2/${EXPERIMENTAL_REPOSITORY}/manifests/${channel}`, { headers: { ...auth, Accept: 'application/vnd.oci.image.manifest.v1+json' }, signal: AbortSignal.timeout(5000) }), 'manifest')
       const layers = Array.isArray(m.layers) ? m.layers.map(dict) : []
@@ -517,11 +520,11 @@ const CHANNEL_NAMES: Record<WebChannel, string> = { stable: 'Stable', nightly: '
 const AHEAD_OF_NIGHTLY = 'This npm installation is ahead of the Nightly build; it updates once Nightly passes it.'
 
 /**
- * TAL-1569: whether the installed source is newer than the `nightly` build. Nightly trails Experimental, so an
- * install taken from Experimental is ahead of it and must not move back. Unorderable sources fail closed.
+ * TAL-1569: whether a Nightly install (not a switch) holds a source newer than the `nightly` build. Nightly trails
+ * Experimental, so an install taken from Experimental is ahead of it and must not move back. Unorderable sources fail closed.
  */
-async function aheadOfNightly(installed: string | null, nightly: string, getJson: GetJson): Promise<boolean> {
-  if (!installed || installed === nightly) return false
+async function aheadOfNightly(channel: WebChannel, switching: boolean, installed: string | null, nightly: string, getJson: GetJson): Promise<boolean> {
+  if (channel !== 'nightly' || switching || !installed || installed === nightly) return false
   let status: unknown
   try { status = dict(await getJson(`/compare/${nightly}...${installed}`, { asset: false })).status } catch { status = null }
   if (status === 'ahead') return true
@@ -539,7 +542,7 @@ async function checkNpmExperimental(result: Dict, installed: NpmInstallInfo, id:
   let ahead = false
   try {
     release = await registry.release(channel)
-    ahead = channel === 'nightly' && !switching && disk?.sourceRevision !== release.sourceRevision && await aheadOfNightly(current, release.sourceRevision, getJson)
+    ahead = await aheadOfNightly(channel, switching, current, release.sourceRevision, getJson)
   } catch (error) {
     const unavailable = error instanceof ReleaseUnavailable ? error : new ReleaseUnavailable(`The ${name} artifact is unavailable`)
     return { ...result, install_kind: 'npm', manual_update: true, error: unavailable.message, ...(unavailable.transient ? { stale_check: true } : {}) }
@@ -568,12 +571,11 @@ export async function checkWebUpdate(webRoot: string | null, currentVersion: str
   const result: Dict = { name: 'webui', channel, repo_url: REPOSITORY_URL, current_version: currentVersion, behind: null, no_git: root === null }
   if (root !== null) return { ...result, manual_update: true, message: CONTRIBUTOR_CHECKOUT_MESSAGE }
   if (channel !== 'stable' && npmInstall && registry) return checkNpmExperimental(result, npmInstall, id, registry, getJson, channel)
-  const family = webFamily(channel)
-  const packaged = new RegExp(`^${family === 'experimental' ? 'web-exp-v' : 'web-v'}${VERSION}$`).exec(currentVersion)?.slice(1, 4).join('.')
+  const packaged = familyVersion(channel, currentVersion)?.slice(1, 4).join('.')
   const installed = npmInstall?.version ?? packaged
   let release: PublishedRelease
   try {
-    release = await publishedWebRelease(family, getJson, undefined, installed && new RegExp(`^${VERSION}$`).test(installed) ? installed : undefined)
+    release = await publishedWebRelease(webFamily(channel), getJson, undefined, installed && new RegExp(`^${VERSION}$`).test(installed) ? installed : undefined)
   } catch (error) {
     if (error instanceof ReleaseUnavailable) return { ...result, manual_update: true, error: error.message, ...(error.transient ? { stale_check: true } : {}) }
     return { ...result, manual_update: true, error: 'Talaria release metadata is unavailable. Private repositories require TALARIA_RELEASE_TOKEN with Contents read access.' }
@@ -594,7 +596,7 @@ export async function checkWebUpdate(webRoot: string | null, currentVersion: str
       return { ...result, current_sha: release.sourceRevision, behind: 0, no_git: true, install_kind: 'npm', npm: release.npm, manual_update: false, metadata_repair: metadataRepair, ...(metadataRepair ? { message: 'The npm package is current; finish the update to restart with that version.' } : {}) }
     }
     const current = id.release().sourceRevision ?? null
-    const version = new RegExp(`^${family === 'experimental' ? 'web-exp-v' : 'web-v'}${VERSION}$`).exec(currentVersion)
+    const version = familyVersion(channel, currentVersion)
     let behind: number | null = version && current === release.sourceRevision ? 0 : null
     if (behind === null && version) {
       const installed = version.slice(1).map(Number)
@@ -638,8 +640,7 @@ async function applyNpmWebUpdate(webRoot: string | null, channel: WebChannel, ge
     let release: ExperimentalRelease
     try {
       release = await packaged.registry.release(channel)
-      if (channel === 'nightly' && !switching && onDisk?.sourceRevision !== release.sourceRevision
-        && await aheadOfNightly(str(onDisk?.sourceRevision ?? id.release().sourceRevision) || null, release.sourceRevision, getJson)) return { ok: false, manual_update: true, target: 'webui', channel, message: AHEAD_OF_NIGHTLY }
+      if (await aheadOfNightly(channel, switching, str(onDisk?.sourceRevision ?? id.release().sourceRevision) || null, release.sourceRevision, getJson)) return { ok: false, manual_update: true, target: 'webui', channel, message: AHEAD_OF_NIGHTLY }
     } catch (error) { return { ok: false, message: error instanceof ReleaseUnavailable ? error.message : `The ${name} artifact is unavailable.` } }
     const identity = { tag: release.tag, version: release.version, sourceRevision: release.sourceRevision, releaseSet: release.sourceRevision }
     // validateReleaseInfo (in diskRelease) already applies Stable's contract and Agent-pin checks to the packaged files.

@@ -411,7 +411,7 @@ describe('Nightly npm updates (TAL-1569)', () => {
   const OLD = release(`web-exp-v${expVersion('2.0.0', OLD_EXP)}`, expVersion('2.0.0', OLD_EXP), OLD_EXP)
   // main, newest first: the newer build only Experimental has, then the one Nightly names.
   const main = githubHistory([{ sha: NEW_EXP, message: 'newer', date: '2026-10-02T00:00:00Z' }, { sha: OLD_EXP, message: 'nightly', date: '2026-10-01T00:00:00Z' }])
-  const nightly = (source: string, version: string) => fakeGhcr(TARBALL, { tag: 'nightly', source, version })
+  const nightly = (source: string, version: unknown) => fakeGhcr(TARBALL, { tag: 'nightly', source, version: String(version) })
   const manifests = (g: ReturnType<typeof fakeGhcr>) => g.requests.filter((r) => r.url.includes('/manifests/')).map((r) => r.url.split('/').at(-1))
 
   it('updates a Nightly npm install from the nightly tag without a backup', async () => {

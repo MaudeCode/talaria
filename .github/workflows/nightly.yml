@@ -20,6 +20,8 @@ concurrency:
 jobs:
   select:
     name: Select the Nightly source
+    # A dispatch from a branch would skip the App build yet still record the source.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
