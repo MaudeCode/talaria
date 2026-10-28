@@ -1,7 +1,7 @@
 /**
  * Owns every chat EventSource. One live connection per session; the reducer
  * owns the projected state. Side effects that cross module boundaries (Query
- * cache, todo store, toasts) are applied here from typed events only.
+ * cache, toasts) are applied here from typed events only.
  */
 import { useSyncExternalStore } from 'react'
 import type { QueryClient } from '@tanstack/react-query'
@@ -15,7 +15,6 @@ import { forgetOwnSteer, resetComposerReturns, returnStoppedSteer } from '../fea
 import { RELAY_CLOSE_EVENTS } from '../contracts/sse'
 import { clearTurnIntents, dispatch, getStreamState, getTurnIntent, setTurnIntent } from './store'
 import { isTerminal } from './reducer'
-import { setTodoState } from '../features/todos/todoStore'
 import { showErrorToast } from '../features/toast/errorToast'
 import { m } from '../paraglide/messages.js'
 import type { PendingFile } from '../features/composer/Attachments'
@@ -75,7 +74,7 @@ function applySideEffects(sessionId: string, event: ChatEvent): void {
       queryClient?.setQueryData(keys.sessions.detail(sessionId), { session: event.data.session })
       break
     case 'todo_state':
-      setTodoState(sessionId, event.data)
+      queryClient?.setQueryData<{ session: Session }>(keys.sessions.detail(sessionId), (old) => old ? { ...old, session: { ...old.session, todo_state: event.data } } : old)
       break
     // TAL-425: a Stop gives a pending steer's text back to the tab that sent it.
     case 'steer_withdrawn':

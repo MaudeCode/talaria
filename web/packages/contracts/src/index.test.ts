@@ -14,6 +14,15 @@ import { CronBlueprintsSchema, CronBlueprintFillSchema, AgentHealthSchema, Error
 const shared = (path: string): unknown => JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../contracts', path), 'utf8'))
 
 describe('contracts package', () => {
+  it('shares explicit native todo display values and counts while accepting older owner omission', () => {
+    const fixture = shared('fixtures/web-native-todos.json') as { owner: Record<string, unknown>; public: Record<string, unknown>; session: Record<string, unknown> }
+    const state = { ...fixture.owner, ...fixture.public }
+    const session = SessionSchema.parse(fixture.session)
+    expect(session.todo_state).toMatchObject(fixture.public)
+    const event = ChatEventSchema.parse({ event: 'todo_state', data: { session_id: 'native-todo', ...state } })
+    expect(event.data).toMatchObject(fixture.public)
+    expect(SessionSchema.parse({ ...fixture.session, todo_state: undefined }).todo_state).toBeUndefined()
+  })
   it('pins server reasoning visibility and the older-server fallback', () => {
     const fixture = shared('fixtures/reasoning-display.json') as Record<string, unknown>
     const hidden = SessionSchema.parse(fixture.hidden)

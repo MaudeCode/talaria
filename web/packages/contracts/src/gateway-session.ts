@@ -34,6 +34,8 @@ export const GatewaySnapshotSchema = z.object({
   running: z.boolean(), authority_epoch: z.number().int(), replay_epoch: z.string(), last_sequence: z.number().int(),
   subscription_id: z.string(), revision: z.number().int(), execution_generation: z.number().int(),
   reactions_supported: z.boolean().optional(),
+  todo_state: z.object({ todos: z.array(ObjectSchema), revision: z.number().int().nonnegative().optional() }).nullable().optional()
+    .describe('Canonical owner plan. Null clears it; omission retains transcript fallback for older owners.'),
   pending: z.array(GatewayAdmissionSchema), prompts: z.array(ObjectSchema), info: ObjectSchema,
 })
 /** Owner mutation receipts are distinct from prompt admissions. Applied mutations have no status. */

@@ -357,9 +357,21 @@ export type AcceptedSourceReference = z.infer<typeof AcceptedSourceReferenceSche
 export const SessionActivityPhaseSchema = z.enum(['starting', 'running', 'waiting_for_approval', 'waiting_for_input', 'completed', 'failed', 'cancelled', 'stale'])
 export type SessionActivityPhase = z.infer<typeof SessionActivityPhaseSchema>
 
+/** Raw rows remain for older clients; current clients render only the server-normalized display items. */
+export const TodoItemSchema = z.looseObject({ id: z.union([z.string(), z.number()]).optional(), text: z.string().optional(), content: z.string().optional(), title: z.string().optional(), status: z.string().optional(), done: z.boolean().optional(), completed: z.boolean().optional() })
+export const TodoStateSchema = z.looseObject({
+  display_items: z.array(z.object({ id: z.union([z.string(), z.number()]).optional(), text: z.string(), state: z.enum(['pending', 'in_progress', 'completed', 'cancelled']) })).optional(),
+  total_count: z.number().int().nonnegative().optional(), completed_count: z.number().int().nonnegative().optional(),
+  pending_count: z.number().int().nonnegative().optional(), in_progress_count: z.number().int().nonnegative().optional(), cancelled_count: z.number().int().nonnegative().optional(),
+  session_id: z.string().optional(), todos: z.array(TodoItemSchema).optional(), summary: z.record(z.string(), z.unknown()).optional(),
+  version: z.number().optional(), ts: z.number().optional(), source: z.string().optional(), description: z.string().optional(),
+})
+export type TodoState = z.infer<typeof TodoStateSchema>
+
 export const SessionSchema = z.looseObject({
   show_reasoning: z.boolean().optional().describe('Server-resolved display preference. Hidden reasoning is omitted from live events, history and activity scenes; older servers omit this field.'),
   activity_phase: SessionActivityPhaseSchema.optional(),
+  todo_state: TodoStateSchema.optional(),
   source_references: z.array(AcceptedSourceReferenceSchema).optional(),
   context_detail_key: z.string().nullable().optional().describe('Opaque identity for open-only context details; changes with owner epoch, model and context.'),
   composer_state_key: z.string().optional().describe('Opaque profile-home and owner identity for device-local composer state; never an API session id.'),
@@ -1151,9 +1163,7 @@ export const WikiStatusSchema = z.object({
 })
 export const WikiBrowseSchema = z.object({ pages: z.array(z.object({ name: z.string(), path: z.string(), size: z.number().int(), mtime: z.number().int() })) })
 export const WikiPageSchema = z.object({ content: z.string(), path: z.string() })
-export const TodoItemSchema = z.looseObject({ id: z.union([z.string(), z.number()]).optional(), text: z.string().optional(), content: z.string().optional(), title: z.string().optional(), status: z.string().optional(), done: z.boolean().optional(), completed: z.boolean().optional() })
-export const TodoStateSchema = z.looseObject({ session_id: z.string().optional(), todos: z.array(TodoItemSchema).optional(), summary: z.record(z.string(), z.unknown()).optional(), version: z.number().optional(), ts: z.number().optional(), source: z.string().optional(), description: z.string().optional(), pending_count: z.number().optional() })
-export type TodoState = z.infer<typeof TodoStateSchema>
+
 
 // ── onboarding ───────────────────────────────────────────────────────────
 

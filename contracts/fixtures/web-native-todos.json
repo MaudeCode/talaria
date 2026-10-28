@@ -1,0 +1,85 @@
+{
+  "owner": {
+    "todos": [
+      {
+        "id": "a",
+        "content": "Owner task",
+        "status": "in_progress"
+      },
+      {
+        "id": "b",
+        "text": "Finished task",
+        "completed": true
+      }
+    ],
+    "revision": 3
+  },
+  "public": {
+    "display_items": [
+      {
+        "id": "a",
+        "text": "Owner task",
+        "state": "in_progress"
+      },
+      {
+        "id": "b",
+        "text": "Finished task",
+        "state": "completed"
+      }
+    ],
+    "total_count": 2,
+    "pending_count": 0,
+    "in_progress_count": 1,
+    "completed_count": 1,
+    "cancelled_count": 0
+  },
+  "session": {
+    "session_id": "native-todo",
+    "title": "Owner plan",
+    "active_stream_id": null,
+    "is_streaming": false,
+    "read_only": true,
+    "can_branch": false,
+    "can_pin": false,
+    "can_archive": false,
+    "can_delete": false,
+    "can_duplicate": false,
+    "source_kind": "cli",
+    "is_messaging_session": false,
+    "sort_ts": 100,
+    "agent_running": false,
+    "read_only_reason": "This session is owned by the Agent gateway and is display-only in Talaria.",
+    "todo_state": {
+      "todos": [
+        {
+          "id": "a",
+          "content": "Owner task",
+          "status": "in_progress"
+        },
+        {
+          "id": "b",
+          "text": "Finished task",
+          "completed": true
+        }
+      ],
+      "revision": 3,
+      "display_items": [
+        {
+          "id": "a",
+          "text": "Owner task",
+          "state": "in_progress"
+        },
+        {
+          "id": "b",
+          "text": "Finished task",
+          "state": "completed"
+        }
+      ],
+      "total_count": 2,
+      "pending_count": 0,
+      "in_progress_count": 1,
+      "completed_count": 1,
+      "cancelled_count": 0
+    }
+  }
+}
