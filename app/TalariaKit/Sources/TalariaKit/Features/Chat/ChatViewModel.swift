@@ -201,6 +201,8 @@ public final class ChatViewModel {
         let key = Self.earlierSceneRowsKey(transcriptMessage)
         guard earlierSceneRows[key] == nil, loadingEarlierSceneRows.insert(key).inserted else { return }
         defer { loadingEarlierSceneRows.remove(key) }
+        let displayGeneration = reasoningDisplayGeneration
+        let showingReasoning = showsReasoning
         var rows: [AssistantActivitySceneRow] = []
         var before = scene.activityRowsOffset
         do {
@@ -215,6 +217,7 @@ public final class ChatViewModel {
                 rows = page.rows + rows
                 before = page.start
             }
+            guard displayGeneration == reasoningDisplayGeneration, showingReasoning == showsReasoning else { return }
             earlierSceneRows[key] = rows
         } catch {
             errorMessage = String(localized: "Could not load earlier steps.")
@@ -269,13 +272,25 @@ public final class ChatViewModel {
     }
     /// TAL-833: the standing `/goal` every session detail carries; nil hides its chip.
     public private(set) var sessionGoal: SessionGoal?
+    /// The server's display choice, with only this user's write shown optimistically.
+    public var showsReasoning: Bool { requestedReasoningDisplay ?? serverShowsReasoning ?? true }
+    private var serverShowsReasoning: Bool?
+    private var requestedReasoningDisplay: Bool?
+    @ObservationIgnored private var reasoningDisplayWrite: Task<ReasoningStatusResponse, Error>?
+    @ObservationIgnored private var reasoningDisplayGeneration = 0
+    @ObservationIgnored private var reasoningDisplayReadFloor = 0
     /// Mirrors the list-row merge rule: the server's `read_only` replaces the
     /// seeded flag; a detail that omits it keeps it. A load passes the notices count it fetched at.
-    private func applyReadOnlyState(from session: SessionDetail?, noticesChangesAtFetch: Int? = nil) {
+    private func applyReadOnlyState(from session: SessionDetail?, noticesChangesAtFetch: Int? = nil, reasoningReadGeneration: Int? = nil) {
         if let session {
             ownerAttachment = session.ownerAttachment
             presentOwnerModelConfirmation()
             executionMode = session.executionMode
+        }
+        if let show = session?.showReasoning,
+           reasoningReadGeneration.map({ $0 > reasoningDisplayReadFloor }) ?? true {
+            serverShowsReasoning = show
+            if reasoningDisplayWrite == nil { requestedReasoningDisplay = nil }
         }
         if let readOnly = session?.readOnly { isSessionReadOnly = readOnly }
         if let canBranch = session?.canBranch { self.canBranch = canBranch }
@@ -1802,7 +1817,7 @@ public final class ChatViewModel {
                     else { continue }
                     Self.insertLocalOptimisticMessage(message, into: &mergedMessages)
                 }
-                applyReadOnlyState(from: session, noticesChangesAtFetch: noticesChangesAtFetch)
+                applyReadOnlyState(from: session, noticesChangesAtFetch: noticesChangesAtFetch, reasoningReadGeneration: loadRequestGeneration)
                 serverConfirmsDeepTruncate = session?.confirmsDeepTruncate == true
                 let newerSteerRows = pendingSteerRows(changedAfter: steerChangesAtFetch)
                 applyReloadedMessages(
@@ -1836,7 +1851,7 @@ public final class ChatViewModel {
             streamCoordinator.applySessionActivityPhase(session?.activityPhase)
             // After load arbitration only: a superseded response must not leave its
             // read-only flag behind once its transcript has been rejected.
-            applyReadOnlyState(from: session, noticesChangesAtFetch: noticesChangesAtFetch)
+            applyReadOnlyState(from: session, noticesChangesAtFetch: noticesChangesAtFetch, reasoningReadGeneration: loadRequestGeneration)
             serverConfirmsDeepTruncate = session?.confirmsDeepTruncate == true
             applyCompressionReference(from: session)
             applyBranchedFrom(from: session, modelContext: modelContext)
@@ -4005,6 +4020,10 @@ public final class ChatViewModel {
             return .unsupported(friendlyMessage: String(localized: "Usage: /reasoning show|hide|none|minimal|low|medium|high|xhigh"))
         }
 
+        if Self.reasoningDisplayArgs.contains(reasoning) {
+            return await changeReasoningDisplay(reasoning)
+        }
+
         guard canRunConfigurationSlashCommand(String(localized: "change reasoning")) else {
             return .unsupported(friendlyMessage: composerConfigurationErrorMessage ?? String(localized: "Reasoning changes are unavailable."))
         }
@@ -4016,9 +4035,7 @@ public final class ChatViewModel {
         defer { isUpdatingComposerConfiguration = false }
 
         do {
-            if Self.reasoningDisplayArgs.contains(reasoning) {
-                _ = try await client.saveReasoningDisplay(reasoning)
-            } else if Self.reasoningEffortArgs.contains(reasoning) {
+            if Self.reasoningEffortArgs.contains(reasoning) {
                 let response = try await client.saveReasoningEffort(reasoning, sessionID: sessionID)
                 selectedReasoningEffort = response.effectiveEffort ?? reasoning
             } else {
@@ -4029,6 +4046,88 @@ public final class ChatViewModel {
             lastError = error
             composerConfigurationErrorMessage = error.localizedDescription
             return .unsupported(friendlyMessage: error.localizedDescription)
+        }
+    }
+
+    private func changeReasoningDisplay(_ display: String) async -> SlashCommandExecutionResult {
+        guard !isViewingCachedData else {
+            return .unsupported(friendlyMessage: String(localized: "Reconnect to the server to change reasoning."))
+        }
+        let show = display == "show" || display == "on"
+        reasoningDisplayGeneration &+= 1
+        let generation = reasoningDisplayGeneration
+        reasoningDisplayReadFloor = sessionLoadRequestGeneration
+        requestedReasoningDisplay = show
+        composerConfigurationErrorMessage = nil
+        lastError = nil
+        let previous = reasoningDisplayWrite
+        let profile = currentProfile
+        let write = Task { [client] in
+            _ = try? await previous?.value
+            guard self.ownsCurrentCache, self.currentProfile == profile else { throw CancellationError() }
+            let response = try await client.saveReasoningDisplay(display)
+            guard self.ownsCurrentCache, self.currentProfile == profile else { throw CancellationError() }
+            self.serverShowsReasoning = response.showReasoning ?? show
+            return response
+        }
+        reasoningDisplayWrite = write
+        do {
+            _ = try await write.value
+            guard generation == reasoningDisplayGeneration else { return .executed(message: nil) }
+            reasoningDisplayReadFloor = sessionLoadRequestGeneration
+            if show { await refreshReasoningHistory(generation: generation) }
+            guard generation == reasoningDisplayGeneration else { return .executed(message: nil) }
+            requestedReasoningDisplay = nil
+            reasoningDisplayWrite = nil
+            return .executed(message: nil)
+        } catch {
+            guard generation == reasoningDisplayGeneration else { return .executed(message: nil) }
+            guard ownsCurrentCache, currentProfile == profile else {
+                requestedReasoningDisplay = nil
+                reasoningDisplayWrite = nil
+                return .executed(message: nil)
+            }
+            if APIError.isDefinitiveWriteFailure(error) {
+                requestedReasoningDisplay = nil
+            } else if let confirmed = try? await client.reasoning(), let show = confirmed.showReasoning {
+                guard generation == reasoningDisplayGeneration else { return .executed(message: nil) }
+                serverShowsReasoning = show
+                requestedReasoningDisplay = nil
+                if show { await refreshReasoningHistory(generation: generation) }
+            }
+            guard generation == reasoningDisplayGeneration else { return .executed(message: nil) }
+            reasoningDisplayReadFloor = sessionLoadRequestGeneration
+            reasoningDisplayWrite = nil
+            lastError = error
+            composerConfigurationErrorMessage = error.localizedDescription
+            return .unsupported(friendlyMessage: error.localizedDescription)
+        }
+    }
+
+    /// Refresh the already-loaded prefix too; a tail reload intentionally preserves those reader-owned rows.
+    private func refreshReasoningHistory(generation: Int) async {
+        let earliest = messagesOffset
+        let id = sessionID
+        await loadMessages(waitsForPendingMessageSend: false, isRoutineReconciliation: true)
+        guard generation == reasoningDisplayGeneration, sessionID == id, let id else { return }
+        earlierSceneRows.removeAll()
+        var before = recentMessagesOffset ?? messagesOffset
+        do {
+            while before > earliest {
+                let response = try await client.session(id: id, includeMessages: true, messageLimit: Self.messagePageLimit, messageBefore: before)
+                guard generation == reasoningDisplayGeneration, sessionID == id,
+                      let page = response.session, let offset = page.messagesOffset, offset < before,
+                      let rows = page.messages, !rows.isEmpty else { return }
+                var refreshed = messages
+                for (index, row) in rows.enumerated() {
+                    let position = offset + index - messagesOffset
+                    if refreshed.indices.contains(position), refreshed[position].id == row.id { refreshed[position] = row }
+                }
+                if refreshed != messages { messages = refreshed }
+                before = offset
+            }
+        } catch {
+            if generation == reasoningDisplayGeneration { lastError = error; composerConfigurationErrorMessage = error.localizedDescription }
         }
     }
 

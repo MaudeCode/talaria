@@ -4,6 +4,7 @@ import { createServer, type ServerResponse } from 'node:http'
 import { expect, test } from './fixtures'
 import { fullToolResult, hydrateAnchorActivityScenes, withTurnIds } from '../../server/dist/sessions/anchor.js'
 import { publicToolFrame, redactSessionData } from '../../server/dist/redact.js'
+import { reasoningProjection } from '../../server/dist/sessions/reasoning-display.js'
 
 /** Mocked transcripts pass through the server's own turn and public projection, so the page sees exactly what the server sends. */
 const asServer = (messages: unknown[]): unknown[] => redactSessionData({ messages: hydrateAnchorActivityScenes(withTurnIds(messages), {}) }, true).messages as unknown[]
@@ -638,4 +639,48 @@ test('shows only the rows the server marks to show on their own (TAL-600)', asyn
   for (const key of ['1', '7']) expect(keys).toContain(key)
   for (const key of ['3', '4', '5', '8']) expect(keys).not.toContain(key)
   await expect(page.getByText('[SILENT]')).toHaveCount(0)
+})
+
+
+test('reasoning display follows the server and hides optimistically (TAL-996)', async ({ page }, testInfo) => {
+  let show = true
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => { release = resolve })
+  const messages = [
+    { role: 'user', content: 'Check this calculation', _turn_id: 'reasoning-turn' },
+    { role: 'assistant', content: 'The calculation is correct.', reasoning: 'I checked each step against the original values.', _turn_id: 'reasoning-turn' },
+  ]
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: {
+    session_id: 'reasoning-display', title: 'Check the calculation', show_reasoning: show,
+    messages: reasoningProjection(hydrateAnchorActivityScenes(withTurnIds(messages), {}, { showReasoning: show }), show),
+  } } }))
+  await page.route('**/api/reasoning', async (route) => {
+    if (route.request().method() === 'POST') {
+      const display = route.request().postDataJSON().display
+      if (display === 'hide') await gate
+      show = display === 'show'
+    }
+    await route.fulfill({ json: { show_reasoning: show, reasoning_effort: 'high' } })
+  })
+  await page.goto('/session/reasoning-display')
+  const summary = page.locator('.tool-worklog-summary').first()
+  await expect(summary).toBeVisible()
+  await summary.click()
+  await expect(page.locator('.thinking-card')).toBeVisible()
+  await page.locator('.thinking-card-header').click()
+  await expect(page.getByText('I checked each step against the original values.', { exact: true })).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath(`reasoning-before-${testInfo.project.name}.png`), fullPage: true })
+  const composer = page.locator('textarea').first()
+  await composer.fill('/reasoning hide')
+  await page.getByRole('button', { name: 'Send message', exact: true }).click()
+  await expect(page.locator('.thinking-card')).not.toBeVisible()
+  release()
+  await expect(page.locator('.thinking-card')).toHaveCount(0)
+  await expect(page.getByText('The calculation is correct.', { exact: true })).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath(`reasoning-after-${testInfo.project.name}.png`), fullPage: true })
+  await composer.fill('/reasoning show')
+  await page.getByRole('button', { name: 'Send message', exact: true }).click()
+  await expect(summary).toBeVisible()
+  if (await summary.getAttribute('aria-expanded') === 'false') await summary.click()
+  await expect(page.locator('.thinking-card')).toBeVisible()
 })

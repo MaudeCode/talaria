@@ -295,7 +295,7 @@ its snapshots and events through the existing foreign-history, pending-prompt, c
 components. It never materializes a writable Talaria session or settles the owner's transcript locally.
 The Agent owns admission, execution, recovery, and revision/generation-fenced mutations. Talaria's
 observational journals and stream scope include the complete profile home and session identity.
-Watches negotiate the profile's Web reasoning display preference with the owner and map reasoning, subagent lifecycle and usage events into the existing chat frames. Unsupported display negotiation leaves older owners observable.
+Watches request reasoning from the owner so Show can resume it on an existing observation. The server applies the current profile display preference to reasoning and subagent-thinking frames, and maps subagent lifecycle and usage events into the existing chat frames. Unsupported display negotiation leaves older owners observable.
 Unknown admissions require an explicit recovery decision. On Agents with `clarify.lock` (v0.22.3+), the
 owner's native CLI clarify batch reaches the attached watch once, as a `clarify_batch` stream event; the
 server shows it as one clarify card, locks each answer, and clears it on the owner's `request.cancel`.

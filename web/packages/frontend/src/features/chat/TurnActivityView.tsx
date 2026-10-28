@@ -1,4 +1,4 @@
-import { Fragment, useLayoutEffect, useRef, type ReactNode } from 'react'
+import { Fragment, useContext, useLayoutEffect, useRef, type ReactNode } from 'react'
 import { CornerUpRight } from 'lucide-react'
 import { useInfiniteQuery } from '@tanstack/react-query'
 import { fetchAnchorScene } from '../../api/endpoints'
@@ -8,7 +8,7 @@ import { sceneItems } from './turnActivity'
 import { Markdown } from './render/Markdown'
 import { ReasoningBlock } from './blocks/ReasoningBlock'
 import { ToolCard, toolCardLabel } from './blocks/ToolCard'
-import { DisclosureTurnContext, terminalOutcomeLabel, Worklog, type ActivityMode } from './blocks/Worklog'
+import { DisclosureTurnContext, WorklogDisclosureContext, terminalOutcomeLabel, Worklog, type ActivityMode } from './blocks/Worklog'
 import { useLocale } from '../../i18n/useLocale'
 import type { ActivityItem, TurnActivity } from './turnActivity'
 import type { PendingSteerRow } from '../../stream/reducer'
@@ -99,7 +99,10 @@ function ActivityHistory({ activity, history, mode, sessionId, scope }: { activi
 }
 
 function ActivityBody({ activity, mode, earlier, sessionId }: { activity: TurnActivity; mode: ActivityMode; earlier?: ReactNode; sessionId?: string | undefined }) {
-  const { items, finalAnswer, status } = activity
+  const { items: receivedItems, finalAnswer, status } = activity
+  const showReasoning = useContext(WorklogDisclosureContext)?.showReasoning !== false
+  // Render the server preference, including the user's own optimistic choice, over already-received live content.
+  const items = showReasoning ? receivedItems : receivedItems.filter((item) => item.kind !== 'reasoning')
   const locale = useLocale()
   const running = status === 'running'
   // Only the newest row of a running turn is active; live rows that continue a running scene take that over.

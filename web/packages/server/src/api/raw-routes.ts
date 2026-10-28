@@ -359,7 +359,7 @@ async function handleSessionExport(ctx: RequestContext): Promise<void> {
   }
   if (!ctx.deps.profilesMatch(session.profile, ctx.deps.activeProfile())) throw new HttpError(404, 'Session not found')
   // Python `public_session_projection(s.__dict__)`: the whole session document (tool_calls, context_messages, ...) redacted.
-  const safe = ctx.deps.sessions.publicSessionDocument(session)
+  const safe = await ctx.deps.sessions.publicSessionDocument(session)
   let payload: string
   let contentType: string
   let ext: string

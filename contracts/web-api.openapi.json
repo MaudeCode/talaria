@@ -4613,6 +4613,10 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "show_reasoning": {
+                          "type": "boolean",
+                          "description": "Server-resolved display preference. Hidden reasoning is omitted from live events, history and activity scenes; older servers omit this field."
+                        },
                         "activity_phase": {
                           "enum": [
                             "starting",
@@ -8638,6 +8642,10 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "show_reasoning": {
+                          "type": "boolean",
+                          "description": "Server-resolved display preference. Hidden reasoning is omitted from live events, history and activity scenes; older servers omit this field."
+                        },
                         "activity_phase": {
                           "enum": [
                             "starting",
@@ -11849,6 +11857,10 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "show_reasoning": {
+                          "type": "boolean",
+                          "description": "Server-resolved display preference. Hidden reasoning is omitted from live events, history and activity scenes; older servers omit this field."
+                        },
                         "activity_phase": {
                           "enum": [
                             "starting",
@@ -17092,6 +17104,10 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "show_reasoning": {
+                          "type": "boolean",
+                          "description": "Server-resolved display preference. Hidden reasoning is omitted from live events, history and activity scenes; older servers omit this field."
+                        },
                         "activity_phase": {
                           "enum": [
                             "starting",
@@ -21910,6 +21926,10 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "show_reasoning": {
+                          "type": "boolean",
+                          "description": "Server-resolved display preference. Hidden reasoning is omitted from live events, history and activity scenes; older servers omit this field."
+                        },
                         "activity_phase": {
                           "enum": [
                             "starting",
@@ -27451,6 +27471,10 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "show_reasoning": {
+                          "type": "boolean",
+                          "description": "Server-resolved display preference. Hidden reasoning is omitted from live events, history and activity scenes; older servers omit this field."
+                        },
                         "activity_phase": {
                           "enum": [
                             "starting",
@@ -30611,6 +30635,10 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "show_reasoning": {
+                          "type": "boolean",
+                          "description": "Server-resolved display preference. Hidden reasoning is omitted from live events, history and activity scenes; older servers omit this field."
+                        },
                         "activity_phase": {
                           "enum": [
                             "starting",
@@ -33833,6 +33861,10 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "show_reasoning": {
+                          "type": "boolean",
+                          "description": "Server-resolved display preference. Hidden reasoning is omitted from live events, history and activity scenes; older servers omit this field."
+                        },
                         "activity_phase": {
                           "enum": [
                             "starting",
@@ -37053,6 +37085,10 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "show_reasoning": {
+                          "type": "boolean",
+                          "description": "Server-resolved display preference. Hidden reasoning is omitted from live events, history and activity scenes; older servers omit this field."
+                        },
                         "activity_phase": {
                           "enum": [
                             "starting",
@@ -49674,6 +49710,10 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "show_reasoning": {
+                          "type": "boolean",
+                          "description": "Server-resolved display preference. Hidden reasoning is omitted from live events, history and activity scenes; older servers omit this field."
+                        },
                         "activity_phase": {
                           "enum": [
                             "starting",
@@ -52882,6 +52922,10 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "show_reasoning": {
+                          "type": "boolean",
+                          "description": "Server-resolved display preference. Hidden reasoning is omitted from live events, history and activity scenes; older servers omit this field."
+                        },
                         "activity_phase": {
                           "enum": [
                             "starting",
@@ -56478,6 +56522,10 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "show_reasoning": {
+                          "type": "boolean",
+                          "description": "Server-resolved display preference. Hidden reasoning is omitted from live events, history and activity scenes; older servers omit this field."
+                        },
                         "activity_phase": {
                           "enum": [
                             "starting",
@@ -59976,6 +60024,10 @@
                         "session": {
                           "type": "object",
                           "properties": {
+                            "show_reasoning": {
+                              "type": "boolean",
+                              "description": "Server-resolved display preference. Hidden reasoning is omitted from live events, history and activity scenes; older servers omit this field."
+                            },
                             "activity_phase": {
                               "enum": [
                                 "starting",

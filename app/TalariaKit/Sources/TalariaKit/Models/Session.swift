@@ -980,6 +980,8 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
     public let confirmsDeepTruncate: Bool?
     /// TAL-833: the standing `/goal`; nil when none runs or from a server that predates it.
     public let goal: SessionGoal?
+    /// Server-resolved visibility. Reasoning arrives only when shown; nil preserves older-server presentation.
+    public let showReasoning: Bool?
     public let messages: [ChatMessage]?
     public let toolCalls: [PersistedToolCall]?
     public let messagesTruncated: Bool?
@@ -1051,6 +1053,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
         case assistantName
         case confirmsDeepTruncate
         case goal
+        case showReasoning
         case messages
         case toolCalls
         case messagesTruncated
@@ -1068,6 +1071,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        showReasoning = container.decodeLossyBoolIfPresent(forKey: .showReasoning)
         sessionId = container.decodeLossyStringIfPresent(forKey: .sessionId)
         title = container.decodeLossyStringIfPresent(forKey: .title)
         workspace = container.decodeLossyStringIfPresent(forKey: .workspace)

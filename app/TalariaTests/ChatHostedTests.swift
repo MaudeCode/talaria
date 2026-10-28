@@ -9,6 +9,58 @@ import XCTest
 /// The fixture chat's media, long bodies, background work and pending steers, hosted in process (TAL-856).
 @MainActor
 final class ChatHostedTests: XCTestCase {
+    func testReasoningHideClearsRetainedLiveContentAndTitles() async throws {
+        let fixture = try FixtureApp(for: self)
+        let stream = ScriptedSSEStreamingClient()
+        var show = true
+        let summary = SessionSummary(sessionId: "session-abc", title: "Reasoning visibility")
+        let model = try makeScriptedChatViewModel(streamClient: stream, sessionSummary: summary) { request in
+            switch request.url?.path {
+            case "/api/chat/start":
+                return apiTestJSONResponse(#"{"session_id":"session-abc","stream_id":"reasoning-run"}"#, for: request)
+            case "/api/session":
+                return apiTestJSONResponse("""
+                {"session":{"session_id":"session-abc","title":"Reasoning visibility","show_reasoning":\(show),"active_stream_id":"reasoning-run","messages":[{"role":"user","content":"Check this","message_id":"prompt"}]}}
+                """, for: request)
+            case "/api/chat/stream/status":
+                return apiTestJSONResponse(#"{"active":true,"stream_id":"reasoning-run"}"#, for: request)
+            case "/api/reasoning":
+                if request.httpMethod == "POST" { show = (try apiTestJSONBody(from: request))["display"] as? String == "show" }
+                return apiTestJSONResponse("{\"show_reasoning\":\(show)}", for: request)
+            default:
+                return apiTestJSONResponse("{}", for: request)
+            }
+        }
+        defer {
+            model.suspendStreamForNavigation()
+            model.cleanupPollingTasks()
+            stream.stop()
+            ChatViewModel.resetActiveStreamSnapshotsForTesting()
+        }
+        let window = try hostWindow(NavigationStack {
+            ChatView(session: summary, server: URL(string: "https://example.test")!, onAPIError: { _ in },
+                     loadsInitialMessages: false, viewModel: model)
+        }.modelContainer(fixture.cache))
+        let started = await model.sendMessage("Check this")
+        XCTAssertTrue(started)
+        stream.emit(.reasoning(ReasoningStreamEvent(text: "Private retained reasoning", titles: ["Private retained heading"])))
+        _ = try await requireElement(in: window) { $0.accessibilityLabel?.contains("Private retained heading") == true }
+        attachHostedScreenshot(window, name: "reasoning-live-before-hide")
+        let result = await model.executeSlashCommand(try XCTUnwrap(SlashCommandCatalog.command(named: "reasoning")), args: "hide")
+        XCTAssertEqual(result, .executed(message: nil), "Display changes must remain available during a live turn")
+        let hidden = await awaitCondition {
+            !HostedAccessibility.labels(in: window).contains { $0.contains("Private retained heading") || $0.contains("Private retained reasoning") }
+        }
+        XCTAssertTrue(hidden, "The explicit display choice must hide retained live content and summary titles")
+        let transcript = try transcriptScrollView(in: window)
+        _ = try await requireElement(in: window) {
+            $0.accessibilityLabel?.contains("Check this") == true
+                && window.convert(transcript.bounds, from: transcript).intersects(window.convert($0.accessibilityFrame, from: nil))
+        }
+        XCTAssertNotNil(model.activeStreamID, "Hiding reasoning must keep the generic running state")
+        attachHostedScreenshot(window, name: "reasoning-live-after-hide")
+    }
+
     private struct FoldHost: View {
         let content: AnyView
         var division = CGRect(x: 430, y: -100, width: 40, height: 2000)

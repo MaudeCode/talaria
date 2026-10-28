@@ -92,10 +92,10 @@ export function useTranscript(sessionId: string | null, equalLive?: (previous: L
   const olderError = pageState.scope === pageScope && pageState.error
   const attachedStream = useRef<string | null>(null)
   const session: Session | null = query.data?.session ?? null
-  // The owner can change metadata on any loaded row. Keep older pages in the same Query invalidation
-  // family as the tail, so reaction reconciliation covers every displayed snapshot without dropping scroll history.
-  const olderOwner = useQuery({
-    queryKey: [...keys.sessions.detail(sessionId ?? ''), 'owner-history', windowOffset, older.length],
+  // Owners can change row metadata; reasoning visibility changes direct history too. Keep every loaded
+  // page in the tail's invalidation family without dropping scroll history.
+  const olderHistory = useQuery({
+    queryKey: [...keys.sessions.detail(sessionId ?? ''), 'owner-history', windowOffset, older.length, session?.show_reasoning],
     queryFn: async ({ signal }) => {
       const start = Math.max(0, windowOffset - older.length)
       let before = windowOffset
@@ -111,7 +111,7 @@ export function useTranscript(sessionId: string | null, equalLive?: (previous: L
       if (refreshed.length !== older.length) throw new Error('Owner history window changed')
       return refreshed
     },
-    enabled: !!sessionId && !!session?.owner_attachment && older.length > 0,
+    enabled: !!sessionId && (!!session?.owner_attachment || session?.show_reasoning !== undefined) && older.length > 0,
     retry: false, refetchOnWindowFocus: false,
   })
   const live = useLiveTurn(sessionId, equalLive)
@@ -172,7 +172,7 @@ export function useTranscript(sessionId: string | null, equalLive?: (previous: L
 
   const messages = (() => {
     const current = session?.messages ?? []
-    return older.length ? [...(olderOwner.data ?? older), ...current] : current
+    return older.length ? [...(olderHistory.data ?? older), ...current] : current
   })()
 
   const base = Math.max(0, (session?._messages_offset ?? 0) - older.length)

@@ -1,6 +1,6 @@
 import Foundation
 
-public struct ReasoningStatusResponse: Decodable, Equatable {
+public struct ReasoningStatusResponse: Decodable, Equatable, Sendable {
     let ok: Bool?
     let showReasoning: Bool?
     let reasoningEffort: String?

@@ -1,3 +1,4 @@
+import { reasoningProjection } from './reasoning-display.js'
 import { CHECKPOINT_DIFF_MAX_BYTES, ReactionEmojiSchema, unavailableContextDetail, type ReactionState, type MessageReactionView, type CheckpointDiff, type SessionActivityPhase, type ContextDetail } from '@maudecode/talaria-web-contracts'
 import { checkpointDiffFiles } from '../workspace/rollback.js'
 /** One native-owner seam. Talaria observes its history and never settles it into a local Session. */
@@ -9,7 +10,7 @@ import type { SidecarLike, StreamFrame } from '../sidecar/client.js'
 import { redactNestedMessageContainers, publicToolFrame, redactString } from '../redact.js'
 import { str } from '../util.js'
 import { PendingPrompts } from './pending.js'
-import { wrapExportHtml } from './export.js'
+import { wrapExportHtml, renderSessionHtml, renderSessionMarkdown } from './export.js'
 import { clarifyReply } from './pending.js'
 import type { SessionService } from './service.js'
 import { HttpFailure } from './service.js'
@@ -151,10 +152,10 @@ export class GatewaySessions {
     this.observations.set(target.key, observation)
     this.noticeState(target, snapshot)
     observation.ended = (async () => {
-      const showReasoning = await this.deps.showReasoning(target.home).catch(() => false)
       const sidecar = this.deps.sidecar()
       if (!sidecar || observation.controller.signal.aborted) return { state: 'unavailable' as const, reason: 'sidecar_unavailable', snapshot: null, receipt: null }
-      return sidecar.call('gateway.session', { profile_home: target.home, session_id: target.sid, action: 'watch', show_reasoning: showReasoning }, {
+      // Keep reasoning available when Show changes during this observation; delivery applies the current preference.
+      return sidecar.call('gateway.session', { profile_home: target.home, session_id: target.sid, action: 'watch', show_reasoning: true }, {
         signal: observation.controller.signal, timeoutMs: 0,
         onStream: (frame) => {
           if (observation.controller.signal.aborted || this.observations.get(target.key) !== observation) return
@@ -326,24 +327,29 @@ export class GatewaySessions {
     const target = await this.target(sid)
     if (!target) return null
     const redact = this.deps.redactEnabled()
-    const result = await this.call(target, { action: 'export', format, redact })
+    const show = await this.deps.showReasoning(target.home).catch(() => false)
+    const requestedFormat = show ? format : 'json'
+    const result = await this.call(target, { action: 'export', format: requestedFormat, redact })
     const value = result.export
     if (result.reason === 'export_too_large') throw new HttpFailure(413, 'The owner transcript exceeds the export limit')
-    if (result.state !== 'attached' || value?.format !== format) {
+    if (result.state !== 'attached' || value?.format !== requestedFormat) {
       throw new HttpFailure(409, 'The Agent owner cannot export this chat. Check that its gateway is running and supports transcript export.', { code: 'owner_export_unavailable' })
     }
     if (Buffer.byteLength(value.content, 'utf8') > OWNER_EXPORT_MAX_BYTES) throw new HttpFailure(413, 'The owner transcript exceeds the export limit')
     let content: string
     try {
       // The owner redacts HTML's structured transcript before rendering. A shell/text redactor corrupts its markup.
-      content = format === 'html' ? wrapExportHtml(value.content) : format === 'json'
+      if (!show) {
+        const document = reasoningProjection(redactNestedMessageContainers(JSON.parse(value.content) as unknown, redact), false) as Row
+        content = format === 'html' ? renderSessionHtml(document) : format === 'markdown' ? renderSessionMarkdown(document) : JSON.stringify(document, null, 2)
+      } else content = format === 'html' ? wrapExportHtml(value.content) : format === 'json'
         ? JSON.stringify(redactNestedMessageContainers(JSON.parse(value.content) as unknown, redact), null, 2)
         : redactString(value.content, redact)
     } catch {
       throw new HttpFailure(409, 'The Agent owner returned an invalid transcript export', { code: 'owner_export_invalid' })
     }
     if (Buffer.byteLength(content, 'utf8') > OWNER_EXPORT_MAX_BYTES) throw new HttpFailure(413, 'The owner transcript exceeds the export limit')
-    return { ...value, content }
+    return { ...value, format, content }
   }
 
   private async createCall(params: GatewayCreateParams): Promise<GatewaySessionResult> {
@@ -452,7 +458,8 @@ export class GatewaySessions {
 
   private async view(base: Row, result: GatewaySessionResult, stream: string | null, target: Target, limit: number | null = 120, before: number | null = null, withMessages = true): Promise<Row> {
     const snapshot = result.snapshot
-    const fields: Row = { ...base, owner_attachment: this.attachment({ ...result, model_change: this.currentModelChange(target, snapshot) }), composer_state_key: ownerStateId(target.key), context_detail_key: this.contextDetailKey(target, snapshot), active_stream_id: stream, is_streaming: Boolean(stream) }
+    const showReasoning = await this.deps.service.deps.showReasoning?.(target.profile) ?? true
+    const fields: Row = { ...base, show_reasoning: showReasoning, owner_attachment: this.attachment({ ...result, model_change: this.currentModelChange(target, snapshot) }), composer_state_key: ownerStateId(target.key), context_detail_key: this.contextDetailKey(target, snapshot), active_stream_id: stream, is_streaming: Boolean(stream) }
     if (snapshot) {
       fields.notices = this.nativeNotices(target, snapshot)
       const observed = this.watches.get(target.key)?.snapshot
@@ -467,7 +474,7 @@ export class GatewaySessions {
         nativeRows.push({ ...pendingUserRow(active.text ?? '', [], null, str(snapshot.info.source) || 'gateway', stream), message_id: active.admission_id })
       }
       const messages = start < 0 ? nativeRows : nativeRows.map((row, index) => index >= start ? { ...row, _turn_id: stream } : row)
-      const projected = withMessages ? this.deps.service.foreignMessages(messages, base) : []
+      const projected = withMessages ? this.deps.service.foreignMessages(messages, base, showReasoning) : []
       const [rows, offset] = messageWindowForDisplay(projected, limit, before)
       const model = str(snapshot.info.model) || str(base.model) || null
       const provider = Object.hasOwn(snapshot.info, 'provider')
@@ -685,7 +692,6 @@ export class GatewaySessions {
       const journalSession = ownerStateId(target.key)
       const writer = await this.deps.journal.writer(journalSession, watch.stream)
       closeWriter = writer
-      const showReasoning = await this.deps.showReasoning(target.home).catch(() => false)
       let completion: { admission: string; message: string; type: 'cron_session_read_only'; code: 'cron_session_read_only'; retryable: false } | null = null
       let replaying = true
       let liveRunning = false
@@ -837,17 +843,18 @@ export class GatewaySessions {
             if (event.authority_epoch !== watch.snapshot.authority_epoch || event.execution_generation !== watch.snapshot.execution_generation) return
             if (kind === 'message.delta') {
               const stable = titles.stableSnapshot(reasoning)
-              if (stable !== null) await put('reasoning', { text: '', titles: stable })
+              if (stable !== null && await this.deps.showReasoning(target.home).catch(() => false)) await put('reasoning', { text: '', titles: stable })
               await put('token', { text: str(data.text || data.delta || data.content) })
             }
-            else if (kind === 'reasoning.delta' && showReasoning) {
+            else if (kind === 'reasoning.delta') {
               reasoning += str(data.text)
-              await put('reasoning', titles.prepare(reasoningEventPayload(data.text, reasoning)))
+              if (await this.deps.showReasoning(target.home).catch(() => false)) await put('reasoning', titles.prepare(reasoningEventPayload(data.text, reasoning)))
             }
             else if (kind.startsWith('subagent.') && str(data.subagent_id)) {
               // Reuse the delegate activity row; each child keeps one identity through progress and completion.
               const complete = kind === 'subagent.complete'
-              const preview = kind === 'subagent.thinking' && !showReasoning ? '' : str(data.summary || data.tool_preview || data.text)
+              const visible = kind !== 'subagent.thinking' || await this.deps.showReasoning(target.home).catch(() => false)
+              const preview = visible ? str(data.summary || data.tool_preview || data.text) : ''
               await put(complete ? 'tool_complete' : 'tool', { id: `owner-subagent-${str(data.subagent_id)}`, name: 'subagent_progress',
                 args: { task: str(data.goal) }, preview: preview || null,
                 ...(complete ? { is_error: data.status !== 'completed', duration: data.duration_seconds } : {}) })

@@ -402,3 +402,22 @@ it('keeps all loaded owner history when reaction readback crosses the server win
   expect(result.current.rows[0]?.index).toBe(120)
   expect(result.current.rows[0]?.message.id).toBe(120)
 })
+
+it('refreshes already-loaded direct history when reasoning is shown again (TAL-996)', async () => {
+  let show = false
+  const tail = () => sessionFixture({ session_id: 'reasoning-history', show_reasoning: show, messages: [{ id: 241, role: 'user', content: 'latest' }], message_count: 241, _messages_offset: 240, _messages_truncated: true })
+  vi.mocked(api.fetchSession).mockImplementation((_sid, opts) => Promise.resolve({ session: opts?.msg_before !== undefined
+    ? sessionFixture({ ...tail(), _messages_offset: 239, messages: [{ id: 240, role: 'assistant', content: 'older answer', reasoning: show ? 'Restored older reasoning' : '' }] }) : tail() }))
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  qc.setQueryData(keys.sessions.detail('reasoning-history'), { session: tail() })
+  configureStream({ queryClient: qc })
+  const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+  const { result } = renderHook(() => useTranscript('reasoning-history'), { wrapper })
+  await act(async () => { await result.current.loadOlder() })
+  expect(result.current.rows[0]?.message).toMatchObject({ content: 'older answer', reasoning: '' })
+  show = true
+  await act(async () => { await qc.invalidateQueries({ queryKey: keys.sessions.detail('reasoning-history') }) })
+  await waitFor(() => expect(result.current.rows[0]?.message.reasoning).toBe('Restored older reasoning'))
+  expect(result.current.rows.map((row) => row.message.content)).toEqual(['older answer', 'latest'])
+  qc.clear()
+})

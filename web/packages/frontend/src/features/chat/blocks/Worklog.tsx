@@ -10,7 +10,7 @@ import type { ToolCardData } from './ToolCard'
 
 export type ActivityMode = 'compact_worklog' | 'transparent_stream' | 'hide_all_activity'
 
-const DisclosureContext = createContext<{ choices: Record<string, boolean>; choose: (key: string, open: boolean) => void; forget: (key: string) => void } | null>(null)
+export const WorklogDisclosureContext = createContext<{ showReasoning: boolean; choices: Record<string, boolean>; choose: (key: string, open: boolean) => void; forget: (key: string) => void } | null>(null)
 export const DisclosureTurnContext = createContext('')
 /**
  * A turn worklog's Expand all / Collapse all: every row disclosure inside it, nested groups included, registers a reset,
@@ -19,7 +19,7 @@ export const DisclosureTurnContext = createContext('')
 const ExpandAllContext = createContext<{ resets: Set<() => void>; open: boolean | undefined } | null>(null)
 
 /** Renderer preferences only, scoped to profile/session and bounded to recent disclosures. */
-export function WorklogDisclosureProvider({ scope, children }: { scope: string; children: ReactNode }) {
+export function WorklogDisclosureProvider({ scope, showReasoning = true, children }: { scope: string; showReasoning?: boolean | undefined; children: ReactNode }) {
   const storageKey = `hermes-worklog:v1:${scope}`
   const [choices, setChoices] = useState(() => readPersistedJson(storageKey, z.record(z.string(), z.boolean())) ?? {})
   useEffect(() => { writePersistedJson(storageKey, choices) }, [storageKey, choices])
@@ -32,12 +32,12 @@ export function WorklogDisclosureProvider({ scope, children }: { scope: string; 
   const forget = (key: string) => {
     setChoices((previous) => key in previous ? Object.fromEntries(Object.entries(previous).filter(([k]) => k !== key)) : previous)
   }
-  const value = ({ choices, choose, forget })
-  return <DisclosureContext value={value}>{children}</DisclosureContext>
+  const value = ({ choices, choose, forget, showReasoning })
+  return <WorklogDisclosureContext value={value}>{children}</WorklogDisclosureContext>
 }
 
 export function useDisclosure(id: string, defaultOpen: boolean): [boolean, () => void] {
-  const context = useContext(DisclosureContext)
+  const context = useContext(WorklogDisclosureContext)
   const turn = useContext(DisclosureTurnContext)
   const key = JSON.stringify([turn, id])
   const [local, setLocal] = useState<boolean | undefined>()

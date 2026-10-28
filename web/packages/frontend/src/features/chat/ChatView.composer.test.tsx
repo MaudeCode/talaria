@@ -157,8 +157,13 @@ it.each([
   await waitFor(() => expect(screen.getByRole('textbox')).toHaveValue(''))
   await waitFor(() => expect(adapter.calls.filter((call) => call.url.pathname.endsWith('/api/reasoning'))).toHaveLength(1))
   expect(JSON.parse(adapter.calls.find((call) => call.url.pathname.endsWith('/api/reasoning'))!.body as string)).toEqual({ display: 'hide' })
+  expect(view.container.querySelector('#mainChat')).toHaveAttribute('data-show-reasoning', 'false')
+  if (!error) vi.mocked(api.fetchSession).mockResolvedValue({ session: { ...session, show_reasoning: false } })
   answer()
-  if (error) await waitFor(() => expect(showToast).toHaveBeenCalledWith(error, 4000, 'error'))
+  if (error) {
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith(error, 4000, 'error'))
+    await waitFor(() => expect(view.container.querySelector('#mainChat')).toHaveAttribute('data-show-reasoning', 'true'))
+  }
   else { await waitFor(() => expect(qc.isMutating()).toBe(0)); expect(showToast).not.toHaveBeenCalledWith(expect.anything(), 4000, 'error') }
   view.unmount()
   qc.clear()

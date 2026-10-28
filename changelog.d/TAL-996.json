@@ -1,0 +1,3 @@
+{
+  "entries": [{"category": "Fixed", "summary": "Hiding reasoning now hides it from chat streams, saved history and exports while keeping it available when shown again.", "highlight": false, "components": ["app", "web"]}]
+}

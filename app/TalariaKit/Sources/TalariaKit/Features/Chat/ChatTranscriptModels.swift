@@ -84,8 +84,10 @@ public struct AssistantTurnLayout: Equatable {
         message: ChatMessage,
         liveRows: [AssistantActivityRow],
         archivedRows: [AssistantActivityRow],
-        earlierSceneRows: [AssistantActivitySceneRow] = []
+        earlierSceneRows: [AssistantActivitySceneRow] = [],
+        showsReasoning: Bool = true
     ) {
+        let rows: [AssistantActivityRow]
         if message.activityScene?.terminalState == "running",
            let scene = AssistantActivityTimeline.authoritativeScene(message: message, earlierRows: earlierSceneRows) {
             // A run with no journal to replay (TAL-374): the server's running scene is the persisted prefix, and the rows
@@ -125,6 +127,10 @@ public struct AssistantTurnLayout: Equatable {
             rows = archivedRows
             foldsWork = false
             isLive = false
+        }
+        self.rows = showsReasoning ? rows : rows.filter { row in
+            if case .reasoning = row.content { return false }
+            return true
         }
     }
 

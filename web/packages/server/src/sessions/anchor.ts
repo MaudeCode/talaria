@@ -1,3 +1,4 @@
+import { reasoningProjection } from './reasoning-display.js'
 /**
  * Anchor activity scenes: the compacted worklog the browser settles onto an
  * assistant message (Python `_handle_session_anchor_scene`,
@@ -258,13 +259,13 @@ function transportRows(scene: Record<string, unknown>): SceneRow[] {
 }
 
 /** Tail-only transport preview of a durable scene. */
-export function anchorActivitySceneTransportPreview(stored: Record<string, unknown>, sceneRef = ''): Record<string, unknown> {
+export function anchorActivitySceneTransportPreview(stored: Record<string, unknown>, sceneRef = '', showReasoning = true): Record<string, unknown> {
   // A stored or client-posted answer leaves in the row's display shape too; its excerpt is cut from it afterwards.
   const scene = 'final_answer' in stored ? { ...stored, final_answer: splitDisplayText(str(stored.final_answer))[0] } : stored
   const preview: Record<string, unknown> = {}
   for (const [k, v] of Object.entries(scene)) if (k !== 'activity_rows' && k !== 'final_answer_excerpt') preview[k] = structuredClone(v)
   if ('turn_duration' in scene) preview.turn_duration = finite(Number(scene.turn_duration ?? NaN))
-  const rows = transportRows(scene)
+  const rows = reasoningProjection(transportRows(scene), showReasoning)
   const total = rows.length
   const offset = Math.max(0, total - ANCHOR_SCENE_PREVIEW_ROWS)
   preview.activity_rows = rows.slice(offset)
@@ -529,12 +530,12 @@ function sceneLookup(messages: unknown[], records: Record<string, unknown>) {
  * Before display excerpts are derived, user rows lose recalled-memory fences and assistant rows leave in their
  * one display shape, after each scene is built from the stored rows.
  */
-export function hydrateAnchorActivityScenes(messages: unknown[], records: Record<string, unknown>, opts: { activeTurnId?: string | null; runningScene?: boolean; clipToolResults?: boolean; baseIndex?: number; refCounts?: Pick<Map<string, number>, 'get'> } = {}): unknown[] {
+export function hydrateAnchorActivityScenes(messages: unknown[], records: Record<string, unknown>, opts: { activeTurnId?: string | null; runningScene?: boolean; clipToolResults?: boolean; baseIndex?: number; refCounts?: Pick<Map<string, number>, 'get'>; showReasoning?: boolean } = {}): unknown[] {
   if (!messages.length) return messages
   const lookup: { byRef: Map<string, Record<string, unknown>>; byIndex: Map<number, Record<string, unknown>>; refCounts: Pick<Map<string, number>, 'get'> } = sceneLookup(messages, records)
   if (opts.refCounts) lookup.refCounts = opts.refCounts
   // Any scene carried inline leaves in the one normalized shape, even off a turn's last row.
-  const out = messages.map((m) => (isDict(m) && isDict(m._anchor_activity_scene) ? { ...m, _anchor_activity_scene: anchorActivitySceneTransportPreview(m._anchor_activity_scene, str(m._anchor_activity_scene.activity_scene_ref)) } : m))
+  const out = messages.map((m) => (isDict(m) && isDict(m._anchor_activity_scene) ? { ...m, _anchor_activity_scene: anchorActivitySceneTransportPreview(m._anchor_activity_scene, str(m._anchor_activity_scene.activity_scene_ref), opts.showReasoning) } : m))
   for (const [turnId, turn] of turnsOf(messages)) {
     const running = Boolean(opts.activeTurnId) && turnId === opts.activeTurnId
     if (running && opts.runningScene !== true) continue
@@ -547,12 +548,12 @@ export function hydrateAnchorActivityScenes(messages: unknown[], records: Record
     const inline = running ? undefined : message._anchor_activity_scene
     const next: Record<string, unknown> = { ...message }
     if (record && isDict(record.scene)) {
-      next._anchor_activity_scene = withStoredOutcome(anchorActivitySceneTransportPreview(withStoredFinalAnswer(record.scene, built), str(record.message_ref) || assistantAnchorSceneMessageRef(message)), built)
+      next._anchor_activity_scene = withStoredOutcome(anchorActivitySceneTransportPreview(withStoredFinalAnswer(record.scene, built), str(record.message_ref) || assistantAnchorSceneMessageRef(message), opts.showReasoning), built)
       if (record.stream_id) next._anchor_stream_id = str(record.stream_id)
     } else if (isDict(inline)) {
-      next._anchor_activity_scene = withStoredOutcome(anchorActivitySceneTransportPreview(withStoredFinalAnswer(inline, built), str(inline.activity_scene_ref)), built)
+      next._anchor_activity_scene = withStoredOutcome(anchorActivitySceneTransportPreview(withStoredFinalAnswer(inline, built), str(inline.activity_scene_ref), opts.showReasoning), built)
     } else if (built) {
-      next._anchor_activity_scene = anchorActivitySceneTransportPreview(built, assistantAnchorSceneMessageRef(message))
+      next._anchor_activity_scene = anchorActivitySceneTransportPreview(built, assistantAnchorSceneMessageRef(message), opts.showReasoning)
     }
     out[index] = next
   }
@@ -580,7 +581,7 @@ export function storeAnchorScene(session: Session, body: Record<string, unknown>
 }
 
 /** Page through one stored scene's rows (the GET semantics). */
-export function readAnchorSceneRows(session: Session, query: { messageRef: string; messageIndex: number | null; before: number | null; limit: number | null }, transcript: unknown[] = []): Record<string, unknown> | null {
+export function readAnchorSceneRows(session: Session, query: { messageRef: string; messageIndex: number | null; before: number | null; limit: number | null }, transcript: unknown[] = [], showReasoning = true): Record<string, unknown> | null {
   const records = anchorSceneRecords(session)
   let record: Record<string, unknown> | null = null
   if (query.messageRef) {
@@ -606,7 +607,7 @@ export function readAnchorSceneRows(session: Session, query: { messageRef: strin
   const scene = stored ?? built
   const sceneRef = record ? str(record.message_ref || query.messageRef) : query.messageRef
   if (!scene || !Array.isArray(scene.activity_rows)) return null
-  const rows = stored ? withBuiltToolFlags(transportRows(scene), built) : transportRows(scene)
+  const rows = reasoningProjection(stored ? withBuiltToolFlags(transportRows(scene), built) : transportRows(scene), showReasoning)
   const total = rows.length
   const before = Math.max(0, Math.min(total, query.before ?? total))
   const limit = Math.max(1, Math.min(200, query.limit ?? 80))

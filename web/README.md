@@ -148,6 +148,11 @@ client-IP selection as rate limiting and is limited to 256 characters.
 
 ### How chat runs
 
+`/reasoning hide` hides reasoning in Web and iOS streams, saved-history views,
+activity details and exports. `/reasoning show` restores it. Stored reasoning and
+the generic running indicator remain available. The Web-specific display setting
+takes precedence over the global setting, including quoted boolean values.
+
 On a new chat, **Earlier conversations** selects up to five retained conversations
 in the active profile. The chat stores their accepted search pointers and titles,
 without copying transcripts. The Agent can consult them with `session_search`.

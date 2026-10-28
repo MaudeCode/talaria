@@ -41,7 +41,7 @@ function read(url: string, paused = false): { done: Promise<{ text: string; erro
 /** One `SseWriter` per request on a real HTTP server, so backpressure comes from a real socket. */
 async function serve(handler: (sse: SseWriter, res: ServerResponse) => Promise<void> | void, release: () => void = () => undefined): Promise<{ url: string; close: () => Promise<void> }> {
   const server = createServer((_req, res) => {
-    const ctx = { res, pendingCookies: [], securityHeaders: () => ({}), markFinished: () => undefined, deps: { log: () => undefined } } as unknown as RequestContext
+    const ctx = { res, pendingCookies: [], securityHeaders: () => ({}), markFinished: () => undefined, deps: { log: () => undefined, agentConfig: { peek: () => null }, profileHome: () => '/synthetic/profile', activeProfile: () => 'default' } } as unknown as RequestContext
     void handler(new SseWriter(ctx, release, true), res)
   })
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
