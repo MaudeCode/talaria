@@ -436,7 +436,7 @@ struct ChatTranscriptView: View {
     ) -> some View {
         TranscriptHistorySentinel(isAvailable: hasOlderMessages, isLoading: isLoadingOlderMessages,
                                   isNearTop: isHistoryNearTop, pageRevision: historyLayoutRevision,
-                                  canPrefetch: scrollPositionController.shouldPrefetchHistory,
+                                  canPrefetch: canPrefetchHistory,
                                   onLoad: { await loadOlderMessagesPreservingPosition(proxy: proxy) }) { historyIndicator in
             VStack(spacing: transcriptMessageSpacing) {
                 if let branchedFrom { branchedFromButton(branchedFrom) }
@@ -661,6 +661,15 @@ struct ChatTranscriptView: View {
     private func transcriptContentWidth(for viewportWidth: CGFloat) -> CGFloat {
         let columnWidth = min(viewportWidth, AdaptiveReadableContentWidth.chat)
         return max(0, columnWidth - (transcriptHorizontalPadding * 2))
+    }
+
+    /// The history sentinel's live check. A refusal means the near-top report it acted on is stale. If
+    /// the reader returns before the next coalesced scroll report, that report repeats "near top" and
+    /// fires no load; clearing the report makes the return a fresh edge.
+    private func canPrefetchHistory() -> Bool {
+        let canPrefetch = scrollPositionController.shouldPrefetchHistory()
+        if !canPrefetch { isHistoryNearTop = false }
+        return canPrefetch
     }
 
     private func preserveReaderForRealization() {
