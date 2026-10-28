@@ -222,3 +222,25 @@ it('renders server-denied delegation management read-only while retaining the lo
   expect(screen.queryByRole('button', { name: 'Restore Default' })).not.toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Fixed model' })).toBeEnabled()
 })
+
+it.each(['model_map', 'profile_routes'] as const)('preserves No default when creating a named route with %s', async (backend) => {
+  const delegation = { ...delegationFixtures.default, model_map: { options: [], default: null } }
+  vi.mocked(api.fetchAuxiliaryModels).mockResolvedValue({ ...auxState(), delegation })
+  vi.mocked(api.setDelegation).mockReturnValue(new Promise(() => undefined))
+  renderSetting()
+  await userEvent.click((await openList()).getByRole('button', { name: /Delegation/ }))
+  await userEvent.click(screen.getByRole('button', { name: backend === 'model_map' ? 'Model routes' : 'Profile routes' }))
+  await userEvent.click(screen.getByRole('button', { name: 'Add route' }))
+  if (backend === 'model_map') {
+    await userEvent.type(screen.getByRole('textbox', { name: 'Name' }), 'New route')
+    await userEvent.type(screen.getByRole('textbox', { name: 'Description' }), 'Research tasks')
+    await userEvent.type(screen.getByRole('textbox', { name: 'Model' }), 'synthetic')
+    await userEvent.type(screen.getByRole('textbox', { name: 'Provider' }), 'openai')
+  } else {
+    await userEvent.click(screen.getByRole('combobox', { name: 'Profile' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'research' }))
+    await userEvent.click(screen.getByRole('checkbox'))
+  }
+  await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+  expect(api.setDelegation).toHaveBeenCalledWith(expect.objectContaining({ action: 'routes', backend, block: expect.objectContaining({ default: null, [backend === 'model_map' ? 'options' : 'profiles']: [expect.objectContaining({ name: backend === 'model_map' ? 'New route' : 'research' })] }) }))
+})

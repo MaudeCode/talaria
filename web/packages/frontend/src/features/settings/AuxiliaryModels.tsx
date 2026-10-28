@@ -173,7 +173,7 @@ function DelegationEditor({ task, state, onDone }: { task: AuxTask; state: Deleg
   if (section === 'fixed') return <AuxiliaryModelPicker task={task} onDone={() => setSection(null)} />
   if (editing && section) return <DelegationRouteEditor key={original ?? 'new'} task={task} route={editing} profiles={section === 'profile_routes' ? state.profiles : null} onCancel={() => setEditing(null)} onSave={(route) => {
     const next = original === null ? [...rows, route] : rows.map((row) => row.name === original ? { ...route, original_name: original } : row)
-    writeRows(next, block.default === original ? route.name : block.default)
+    writeRows(next, original !== null && block.default === original ? route.name : block.default)
     setEditing(null)
   }} />
   return <div className="flex min-h-0 flex-col gap-3 [&_button]:min-h-11">
