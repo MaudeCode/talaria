@@ -3,7 +3,7 @@ import { m } from '../../paraglide/messages.js'
 import { useBootstrap } from '../../app/bootstrap'
 import * as api from '../../api/endpoints'
 import { appUrl } from '../../lib/appRoot'
-import { removePersistedByPrefix } from '../../lib/persisted'
+import { resetIdentityCache } from '../../api/queryClient'
 import { safeNextPath } from './safeNextPath'
 import { decodeRequestOptions, encodeAssertion, passkeysSupported } from './passkeys'
 import { isApiError } from '../../contracts/common'
@@ -18,8 +18,7 @@ export function LoginPage({ next }: { next: string | undefined }) {
 
   const finish = () => {
     // Whoever signs in next must not inherit the previous identity's boot snapshots.
-    removePersistedByPrefix('hermes-boot:')
-    removePersistedByPrefix('hermes-webui-session')
+    resetIdentityCache()
     window.location.assign(target === './' ? appUrl('').href : appUrl(target).href)
   }
 

@@ -2,7 +2,7 @@ import { teardownAll } from '../../stream/connection'
 import { useCallback } from 'react'
 import * as api from '../../api/endpoints'
 import { appUrl } from '../../lib/appRoot'
-import { removePersistedByPrefix } from '../../lib/persisted'
+import { resetIdentityCache } from '../../api/queryClient'
 
 export function useLogout() {
   return useCallback(async () => {
@@ -10,8 +10,7 @@ export function useLogout() {
       await api.logout()
     } finally {
       teardownAll()
-      removePersistedByPrefix('hermes-boot:')
-      removePersistedByPrefix('hermes-webui-session')
+      resetIdentityCache()
       window.location.assign(appUrl('login').href)
     }
   }, [])
