@@ -58,6 +58,74 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
   })
   afterAll(() => s.close())
 
+  it('projects the saved delegation backend and redacted named routes instead of a fixed model alone (TAL-1499)', async () => {
+    const before = structuredClone(configs.get(s.state))
+    sidecar.respond('aux.delegation', () => ({ supported: true, configured: 'missing_plugin', effective: null, available: false, blocked_reason: 'Install or enable the saved plugin, or restore Default.', fixed_model_active: false, backends: [], profiles: ['default'] }))
+    configs.set(s.state, { delegation: { backend: 'missing_plugin', backends: { model_map: { options: [{ name: 'Research', description: 'Deep research', provider: 'openai', model: 'synthetic-model', api_key: 'synthetic-private-key', service_tier: 'normal', fallback_providers: [] }], default: 'Research' } } } })
+    s.deps.agentConfig.invalidate(s.state)
+    try {
+      const body = await json(await s.get('/api/model/auxiliary'))
+      expect(body.delegation).toMatchObject({ configured: 'missing_plugin', effective: null, fixed_model_active: false, model_map: { default: 'Research', options: [{ name: 'Research', api_key_set: true, service_tier: 'normal', fallback_providers: [] }] } })
+      expect(JSON.stringify(body)).not.toContain('synthetic-private-key')
+      const confirmed = structuredClone(configs.get(s.state))
+      expect((await post(s, '/api/model/set', { scope: 'auxiliary', task: 'delegation', provider: 'openai', model: 'synthetic-model' })).status).toBe(503)
+      expect(configs.get(s.state)).toEqual(confirmed)
+    } finally {
+      sidecar.respond('aux.delegation', undefined)
+      configs.set(s.state, before ?? {})
+      s.deps.agentConfig.invalidate(s.state)
+    }
+  })
+
+  it('serializes native backend and route writes with other profile settings and rejects managed edits (TAL-1499)', async () => {
+    const before = structuredClone(configs.get(s.state))
+    const methods = ['aux.delegation_backend', 'aux.delegation_routes', 'aux.delegation', 'config.set'] as const
+    const responders = methods.map((method) => sidecar.responderFor(method))
+    const saveConfig = sidecar.responderFor('config.set')!
+    sidecar.respond('aux.delegation_backend', async (params, emit, opts) => {
+      const config = structuredClone(configs.get(params.profile_home) ?? {})
+      config.delegation = { ...dictOf(config.delegation), backend: params.backend }
+      await saveConfig({ profile_home: params.profile_home, config_path: params.config_path, config }, emit, opts)
+      return { ok: true }
+    })
+    sidecar.respond('aux.delegation_routes', (params) => ({ block: { ...params.block, options: params.block.options?.map((row) => ({ ...row, api_key: 'synthetic-retained-key' })) } }))
+    try {
+      expect((await post(s, '/api/model/auxiliary/delegation', { action: 'backend', backend: 'model_map' })).status).toBe(200)
+      expect(dictOf(configs.get(s.state)?.delegation).backend).toBe('model_map')
+      const route = { name: 'Research', description: 'Research tasks', provider: 'anthropic', model: '@anthropic:synthetic-model', service_tier: 'normal', fallback_providers: [] }
+      const responses = await Promise.all([
+        post(s, '/api/model/auxiliary/delegation', { action: 'routes', backend: 'model_map', block: { options: [route], default: 'Research' } }),
+        post(s, '/api/settings', { max_tokens: 1234 }),
+      ])
+      expect(responses.map((res) => res.status)).toEqual([200, 200])
+      expect(configs.get(s.state)?.max_tokens).toBe(1234)
+      const saved = dictOf(dictOf(dictOf(configs.get(s.state)?.delegation).backends).model_map)
+      expect(saved.options).toMatchObject([{ model: 'synthetic-model', service_tier: 'normal', fallback_providers: [] }])
+      const body = await json(responses[0])
+      expect(JSON.stringify(body)).not.toContain('synthetic-retained-key')
+      expect(dictOf(body.delegation).model_map).toMatchObject({ options: [{ api_key_set: true }] })
+      sidecar.respond('aux.delegation_routes', () => ({ block: { options: [] } }))
+      expect((await post(s, '/api/model/auxiliary/delegation', { action: 'routes', backend: 'model_map', block: { options: [], default: null } })).status).toBe(200)
+      expect(dictOf(dictOf(dictOf(configs.get(s.state)?.delegation).backends).model_map).options).toEqual([])
+      expect((await post(s, '/api/model/set', { scope: 'auxiliary', task: '__reset__', provider: 'auto', model: '' })).status).toBe(200)
+      expect(dictOf(configs.get(s.state)?.delegation).backend).toBe('default')
+      const confirmed = structuredClone(configs.get(s.state))
+      const refusal = () => { throw new SidecarError('config.yaml is package-managed. Update the declarative configuration instead.', { condition: 'config_write_refused' }) }
+      sidecar.respond('config.set', refusal)
+      sidecar.respond('aux.delegation_backend', refusal)
+      for (const write of [{ action: 'backend', backend: 'default' }, { action: 'routes', backend: 'model_map', block: { options: [], default: null } }]) {
+        const res = await post(s, '/api/model/auxiliary/delegation', write)
+        expect(res.status).toBe(409)
+        expect(await json(res)).toMatchObject({ condition: 'config_write_refused' })
+        expect(configs.get(s.state)).toEqual(confirmed)
+      }
+    } finally {
+      methods.forEach((method, index) => { sidecar.respond(method, responders[index]) })
+      configs.set(s.state, before ?? {})
+      s.deps.agentConfig.invalidate(s.state)
+    }
+  })
+
   it('GET /api/settings carries auth state, max_tokens, and version badges without the password hash', async () => {
     const res = await s.get('/api/settings')
     expect(res.status).toBe(200)
@@ -1872,4 +1940,40 @@ describe('Agent speed tiers (TAL-788)', () => {
     } finally { fake.respond('models.speed_tiers', responder) }
   })
 
+})
+
+it('refuses delegation configuration and hides other profile identities for a bound non-owner (TAL-1499)', async () => {
+  const native = new FakeSidecar()
+  const server = await bootTestServer({ sidecar: native, env: { HERMES_WEBUI_PASSWORD: 'synthetic-test-password' } })
+  const configs = fakeConfigStore(native)
+  const path = join(server.state, 'config.yaml')
+  writeFileSync(path, '# owned config\n')
+  configs.set(server.state, {})
+  mkdirSync(join(server.state, 'profiles', 'victim'), { recursive: true })
+  native.respond('aux.delegation', () => ({ supported: true, configured: 'default', effective: 'default', available: true, fixed_model_active: true, blocked_reason: null, backends: [{ name: 'default', label: 'Default', available: true, description: '', reason: '' }], profiles: ['default', 'victim'] }))
+  native.respond('aux.delegation_routes', (params) => ({ block: { ...params.block } }))
+  const value = server.deps.auth.createSession({ authType: 'password', boundProfile: 'default' })
+  const headers = { cookie: `${server.deps.auth.cookieName()}=${value}`, origin: server.base, 'x-csrf-token': server.deps.auth.csrfTokenForSession(value) ?? '' }
+  try {
+    expect((await json(await server.get('/api/auth/status', { headers }))).can_manage_server).toBe(false)
+    const before = structuredClone(configs.get(server.state))
+    for (const write of [
+      { action: 'routes', backend: 'profile_routes', block: { profiles: [{ name: 'victim' }], default: 'victim' } },
+      { action: 'routes', backend: 'model_map', block: { options: [{ name: 'borrow', description: 'borrow', model: 'synthetic', provider: 'openai', profile: 'victim' }], default: 'borrow' } },
+      { action: 'backend', backend: 'profile_routes' },
+    ]) {
+      const res = await post(server, '/api/model/auxiliary/delegation', write, headers)
+      expect(res.status).toBe(403)
+      expect(configs.get(server.state)).toEqual(before)
+    }
+    expect(native.calls.some((call) => ['aux.delegation_routes', 'aux.delegation_backend', 'config.set'].includes(call.method))).toBe(false)
+    expect((await post(server, '/api/model/set', { scope: 'auxiliary', task: '__reset__' }, headers)).status).toBe(403)
+    const read = await json(await server.get('/api/model/auxiliary', { headers }))
+    expect(read.delegation).toMatchObject({ can_edit: false, profiles: [] })
+    expect(JSON.stringify(read.delegation)).not.toContain('victim')
+    const owner = server.deps.auth.createSession({ authType: 'password' })
+    const ownerHeaders = { cookie: `${server.deps.auth.cookieName()}=${owner}`, origin: server.base, 'x-csrf-token': server.deps.auth.csrfTokenForSession(owner) ?? '' }
+    expect((await post(server, '/api/model/auxiliary/delegation', { action: 'routes', backend: 'profile_routes', block: { profiles: [{ name: 'victim' }], default: 'victim' } }, ownerHeaders)).status).toBe(200)
+    expect((await json(await server.get('/api/model/auxiliary', { headers: ownerHeaders }))).delegation).toMatchObject({ can_edit: true, profiles: ['default', 'victim'] })
+  } finally { await server.close() }
 })

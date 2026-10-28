@@ -67589,6 +67589,718 @@
         }
       }
     },
+    "/api/model/auxiliary/delegation": {
+      "post": {
+        "operationId": "models.delegation",
+        "summary": "Persist a native delegation backend or replace one complete named route block.",
+        "tags": [
+          "settings"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "action": {
+                        "const": "backend"
+                      },
+                      "backend": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "action",
+                      "backend"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "action": {
+                        "const": "routes"
+                      },
+                      "backend": {
+                        "enum": [
+                          "model_map",
+                          "profile_routes"
+                        ],
+                        "type": "string"
+                      },
+                      "block": {
+                        "type": "object",
+                        "properties": {
+                          "options": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "name": {
+                                  "type": "string"
+                                },
+                                "description": {
+                                  "type": "string"
+                                },
+                                "original_name": {
+                                  "type": "string"
+                                },
+                                "provider": {
+                                  "type": "string"
+                                },
+                                "model": {
+                                  "type": "string"
+                                },
+                                "base_url": {
+                                  "type": "string"
+                                },
+                                "api_mode": {
+                                  "type": "string"
+                                },
+                                "api_key_set": {
+                                  "type": "boolean"
+                                },
+                                "api_key": {
+                                  "type": "string"
+                                },
+                                "api_key_clear": {
+                                  "type": "boolean"
+                                },
+                                "reasoning_effort": {
+                                  "type": "string"
+                                },
+                                "service_tier": {
+                                  "type": "string"
+                                },
+                                "fallback_providers": {
+                                  "type": "array",
+                                  "items": {}
+                                },
+                                "request_overrides": {},
+                                "profile": {
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "name"
+                              ]
+                            }
+                          },
+                          "profiles": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "name": {
+                                  "type": "string"
+                                },
+                                "description": {
+                                  "type": "string"
+                                },
+                                "original_name": {
+                                  "type": "string"
+                                },
+                                "provider": {
+                                  "type": "string"
+                                },
+                                "model": {
+                                  "type": "string"
+                                },
+                                "base_url": {
+                                  "type": "string"
+                                },
+                                "api_mode": {
+                                  "type": "string"
+                                },
+                                "api_key_set": {
+                                  "type": "boolean"
+                                },
+                                "api_key": {
+                                  "type": "string"
+                                },
+                                "api_key_clear": {
+                                  "type": "boolean"
+                                },
+                                "reasoning_effort": {
+                                  "type": "string"
+                                },
+                                "service_tier": {
+                                  "type": "string"
+                                },
+                                "fallback_providers": {
+                                  "type": "array",
+                                  "items": {}
+                                },
+                                "request_overrides": {},
+                                "profile": {
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "name"
+                              ]
+                            }
+                          },
+                          "default": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "default"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "action",
+                      "backend",
+                      "block"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "delegation": {
+                      "type": "object",
+                      "properties": {
+                        "supported": {
+                          "type": "boolean"
+                        },
+                        "configured": {
+                          "type": "string"
+                        },
+                        "effective": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "available": {
+                          "type": "boolean"
+                        },
+                        "blocked_reason": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "fixed_model_active": {
+                          "type": "boolean"
+                        },
+                        "backends": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "description": {
+                                "type": "string"
+                              },
+                              "available": {
+                                "type": "boolean"
+                              },
+                              "reason": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "label",
+                              "description",
+                              "available",
+                              "reason"
+                            ]
+                          }
+                        },
+                        "profiles": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "can_edit": {
+                          "type": "boolean",
+                          "description": "Only server owners may edit delegation modes and named routes."
+                        },
+                        "model_map": {
+                          "type": "object",
+                          "properties": {
+                            "options": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "description": {
+                                    "type": "string"
+                                  },
+                                  "provider": {
+                                    "type": "string"
+                                  },
+                                  "model": {
+                                    "type": "string"
+                                  },
+                                  "base_url": {
+                                    "type": "string"
+                                  },
+                                  "api_mode": {
+                                    "type": "string"
+                                  },
+                                  "api_key_set": {
+                                    "type": "boolean"
+                                  },
+                                  "reasoning_effort": {
+                                    "type": "string"
+                                  },
+                                  "service_tier": {
+                                    "type": "string"
+                                  },
+                                  "fallback_providers": {
+                                    "type": "array",
+                                    "items": {
+                                      "anyOf": [
+                                        {},
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "profile": {
+                                    "type": "string"
+                                  },
+                                  "label": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "name"
+                                ]
+                              }
+                            },
+                            "profiles": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "description": {
+                                    "type": "string"
+                                  },
+                                  "provider": {
+                                    "type": "string"
+                                  },
+                                  "model": {
+                                    "type": "string"
+                                  },
+                                  "base_url": {
+                                    "type": "string"
+                                  },
+                                  "api_mode": {
+                                    "type": "string"
+                                  },
+                                  "api_key_set": {
+                                    "type": "boolean"
+                                  },
+                                  "reasoning_effort": {
+                                    "type": "string"
+                                  },
+                                  "service_tier": {
+                                    "type": "string"
+                                  },
+                                  "fallback_providers": {
+                                    "type": "array",
+                                    "items": {
+                                      "anyOf": [
+                                        {},
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "profile": {
+                                    "type": "string"
+                                  },
+                                  "label": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "name"
+                                ]
+                              }
+                            },
+                            "default": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "default"
+                          ]
+                        },
+                        "profile_routes": {
+                          "type": "object",
+                          "properties": {
+                            "options": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "description": {
+                                    "type": "string"
+                                  },
+                                  "provider": {
+                                    "type": "string"
+                                  },
+                                  "model": {
+                                    "type": "string"
+                                  },
+                                  "base_url": {
+                                    "type": "string"
+                                  },
+                                  "api_mode": {
+                                    "type": "string"
+                                  },
+                                  "api_key_set": {
+                                    "type": "boolean"
+                                  },
+                                  "reasoning_effort": {
+                                    "type": "string"
+                                  },
+                                  "service_tier": {
+                                    "type": "string"
+                                  },
+                                  "fallback_providers": {
+                                    "type": "array",
+                                    "items": {
+                                      "anyOf": [
+                                        {},
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "profile": {
+                                    "type": "string"
+                                  },
+                                  "label": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "name"
+                                ]
+                              }
+                            },
+                            "profiles": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "description": {
+                                    "type": "string"
+                                  },
+                                  "provider": {
+                                    "type": "string"
+                                  },
+                                  "model": {
+                                    "type": "string"
+                                  },
+                                  "base_url": {
+                                    "type": "string"
+                                  },
+                                  "api_mode": {
+                                    "type": "string"
+                                  },
+                                  "api_key_set": {
+                                    "type": "boolean"
+                                  },
+                                  "reasoning_effort": {
+                                    "type": "string"
+                                  },
+                                  "service_tier": {
+                                    "type": "string"
+                                  },
+                                  "fallback_providers": {
+                                    "type": "array",
+                                    "items": {
+                                      "anyOf": [
+                                        {},
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "profile": {
+                                    "type": "string"
+                                  },
+                                  "label": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "name"
+                                ]
+                              }
+                            },
+                            "default": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "default"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "supported",
+                        "configured",
+                        "effective",
+                        "available",
+                        "blocked_reason",
+                        "fixed_model_active",
+                        "backends",
+                        "profiles",
+                        "can_edit",
+                        "model_map",
+                        "profile_routes"
+                      ]
+                    },
+                    "main": {
+                      "type": "object",
+                      "properties": {
+                        "model": {
+                          "type": "string"
+                        },
+                        "provider": {
+                          "type": "string"
+                        },
+                        "base_url": {
+                          "type": "string"
+                        },
+                        "api_key_set": {
+                          "type": "boolean"
+                        },
+                        "service_tier": {
+                          "enum": [
+                            "",
+                            "default",
+                            "priority",
+                            "ultrafast"
+                          ],
+                          "type": "string",
+                          "description": "Empty string is the Standard value returned by older servers."
+                        },
+                        "supported_speed_tiers": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "enum": [
+                                  "standard",
+                                  "priority",
+                                  "ultrafast",
+                                  "fast"
+                                ],
+                                "type": "string"
+                              },
+                              "service_tier": {
+                                "enum": [
+                                  "default",
+                                  "priority",
+                                  "ultrafast"
+                                ],
+                                "type": "string",
+                                "description": "Value to save; Anthropic Fast is persisted as priority and sent as speed: fast."
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "service_tier"
+                            ]
+                          }
+                        }
+                      },
+                      "additionalProperties": {}
+                    },
+                    "tasks": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "task": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "provider": {
+                            "type": "string"
+                          },
+                          "model": {
+                            "type": "string"
+                          },
+                          "base_url": {
+                            "type": "string"
+                          },
+                          "api_key_set": {
+                            "type": "boolean"
+                          },
+                          "is_auto": {
+                            "type": "boolean"
+                          },
+                          "value_label": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "provider_label": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "selected_option_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "in_catalog": {
+                            "type": "boolean"
+                          },
+                          "inherit_from": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "reasoning_effort": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "task",
+                          "label",
+                          "description",
+                          "provider",
+                          "model",
+                          "is_auto",
+                          "value_label",
+                          "provider_label",
+                          "selected_option_id",
+                          "in_catalog",
+                          "inherit_from",
+                          "reasoning_effort"
+                        ],
+                        "additionalProperties": {}
+                      }
+                    }
+                  },
+                  "required": [
+                    "main",
+                    "tasks"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/models": {
       "get": {
         "operationId": "models.list",
@@ -68552,6 +69264,352 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "delegation": {
+                      "type": "object",
+                      "properties": {
+                        "supported": {
+                          "type": "boolean"
+                        },
+                        "configured": {
+                          "type": "string"
+                        },
+                        "effective": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "available": {
+                          "type": "boolean"
+                        },
+                        "blocked_reason": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "fixed_model_active": {
+                          "type": "boolean"
+                        },
+                        "backends": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "description": {
+                                "type": "string"
+                              },
+                              "available": {
+                                "type": "boolean"
+                              },
+                              "reason": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "label",
+                              "description",
+                              "available",
+                              "reason"
+                            ]
+                          }
+                        },
+                        "profiles": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "can_edit": {
+                          "type": "boolean",
+                          "description": "Only server owners may edit delegation modes and named routes."
+                        },
+                        "model_map": {
+                          "type": "object",
+                          "properties": {
+                            "options": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "description": {
+                                    "type": "string"
+                                  },
+                                  "provider": {
+                                    "type": "string"
+                                  },
+                                  "model": {
+                                    "type": "string"
+                                  },
+                                  "base_url": {
+                                    "type": "string"
+                                  },
+                                  "api_mode": {
+                                    "type": "string"
+                                  },
+                                  "api_key_set": {
+                                    "type": "boolean"
+                                  },
+                                  "reasoning_effort": {
+                                    "type": "string"
+                                  },
+                                  "service_tier": {
+                                    "type": "string"
+                                  },
+                                  "fallback_providers": {
+                                    "type": "array",
+                                    "items": {
+                                      "anyOf": [
+                                        {},
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "profile": {
+                                    "type": "string"
+                                  },
+                                  "label": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "name"
+                                ]
+                              }
+                            },
+                            "profiles": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "description": {
+                                    "type": "string"
+                                  },
+                                  "provider": {
+                                    "type": "string"
+                                  },
+                                  "model": {
+                                    "type": "string"
+                                  },
+                                  "base_url": {
+                                    "type": "string"
+                                  },
+                                  "api_mode": {
+                                    "type": "string"
+                                  },
+                                  "api_key_set": {
+                                    "type": "boolean"
+                                  },
+                                  "reasoning_effort": {
+                                    "type": "string"
+                                  },
+                                  "service_tier": {
+                                    "type": "string"
+                                  },
+                                  "fallback_providers": {
+                                    "type": "array",
+                                    "items": {
+                                      "anyOf": [
+                                        {},
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "profile": {
+                                    "type": "string"
+                                  },
+                                  "label": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "name"
+                                ]
+                              }
+                            },
+                            "default": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "default"
+                          ]
+                        },
+                        "profile_routes": {
+                          "type": "object",
+                          "properties": {
+                            "options": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "description": {
+                                    "type": "string"
+                                  },
+                                  "provider": {
+                                    "type": "string"
+                                  },
+                                  "model": {
+                                    "type": "string"
+                                  },
+                                  "base_url": {
+                                    "type": "string"
+                                  },
+                                  "api_mode": {
+                                    "type": "string"
+                                  },
+                                  "api_key_set": {
+                                    "type": "boolean"
+                                  },
+                                  "reasoning_effort": {
+                                    "type": "string"
+                                  },
+                                  "service_tier": {
+                                    "type": "string"
+                                  },
+                                  "fallback_providers": {
+                                    "type": "array",
+                                    "items": {
+                                      "anyOf": [
+                                        {},
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "profile": {
+                                    "type": "string"
+                                  },
+                                  "label": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "name"
+                                ]
+                              }
+                            },
+                            "profiles": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "description": {
+                                    "type": "string"
+                                  },
+                                  "provider": {
+                                    "type": "string"
+                                  },
+                                  "model": {
+                                    "type": "string"
+                                  },
+                                  "base_url": {
+                                    "type": "string"
+                                  },
+                                  "api_mode": {
+                                    "type": "string"
+                                  },
+                                  "api_key_set": {
+                                    "type": "boolean"
+                                  },
+                                  "reasoning_effort": {
+                                    "type": "string"
+                                  },
+                                  "service_tier": {
+                                    "type": "string"
+                                  },
+                                  "fallback_providers": {
+                                    "type": "array",
+                                    "items": {
+                                      "anyOf": [
+                                        {},
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "profile": {
+                                    "type": "string"
+                                  },
+                                  "label": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "name"
+                                ]
+                              }
+                            },
+                            "default": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "default"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "supported",
+                        "configured",
+                        "effective",
+                        "available",
+                        "blocked_reason",
+                        "fixed_model_active",
+                        "backends",
+                        "profiles",
+                        "can_edit",
+                        "model_map",
+                        "profile_routes"
+                      ]
+                    },
                     "main": {
                       "type": "object",
                       "properties": {
@@ -68802,6 +69860,352 @@
                     "auxiliary": {
                       "type": "object",
                       "properties": {
+                        "delegation": {
+                          "type": "object",
+                          "properties": {
+                            "supported": {
+                              "type": "boolean"
+                            },
+                            "configured": {
+                              "type": "string"
+                            },
+                            "effective": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "available": {
+                              "type": "boolean"
+                            },
+                            "blocked_reason": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "fixed_model_active": {
+                              "type": "boolean"
+                            },
+                            "backends": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "label": {
+                                    "type": "string"
+                                  },
+                                  "description": {
+                                    "type": "string"
+                                  },
+                                  "available": {
+                                    "type": "boolean"
+                                  },
+                                  "reason": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "label",
+                                  "description",
+                                  "available",
+                                  "reason"
+                                ]
+                              }
+                            },
+                            "profiles": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "can_edit": {
+                              "type": "boolean",
+                              "description": "Only server owners may edit delegation modes and named routes."
+                            },
+                            "model_map": {
+                              "type": "object",
+                              "properties": {
+                                "options": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "name": {
+                                        "type": "string"
+                                      },
+                                      "description": {
+                                        "type": "string"
+                                      },
+                                      "provider": {
+                                        "type": "string"
+                                      },
+                                      "model": {
+                                        "type": "string"
+                                      },
+                                      "base_url": {
+                                        "type": "string"
+                                      },
+                                      "api_mode": {
+                                        "type": "string"
+                                      },
+                                      "api_key_set": {
+                                        "type": "boolean"
+                                      },
+                                      "reasoning_effort": {
+                                        "type": "string"
+                                      },
+                                      "service_tier": {
+                                        "type": "string"
+                                      },
+                                      "fallback_providers": {
+                                        "type": "array",
+                                        "items": {
+                                          "anyOf": [
+                                            {},
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "profile": {
+                                        "type": "string"
+                                      },
+                                      "label": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "name"
+                                    ]
+                                  }
+                                },
+                                "profiles": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "name": {
+                                        "type": "string"
+                                      },
+                                      "description": {
+                                        "type": "string"
+                                      },
+                                      "provider": {
+                                        "type": "string"
+                                      },
+                                      "model": {
+                                        "type": "string"
+                                      },
+                                      "base_url": {
+                                        "type": "string"
+                                      },
+                                      "api_mode": {
+                                        "type": "string"
+                                      },
+                                      "api_key_set": {
+                                        "type": "boolean"
+                                      },
+                                      "reasoning_effort": {
+                                        "type": "string"
+                                      },
+                                      "service_tier": {
+                                        "type": "string"
+                                      },
+                                      "fallback_providers": {
+                                        "type": "array",
+                                        "items": {
+                                          "anyOf": [
+                                            {},
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "profile": {
+                                        "type": "string"
+                                      },
+                                      "label": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "name"
+                                    ]
+                                  }
+                                },
+                                "default": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "default"
+                              ]
+                            },
+                            "profile_routes": {
+                              "type": "object",
+                              "properties": {
+                                "options": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "name": {
+                                        "type": "string"
+                                      },
+                                      "description": {
+                                        "type": "string"
+                                      },
+                                      "provider": {
+                                        "type": "string"
+                                      },
+                                      "model": {
+                                        "type": "string"
+                                      },
+                                      "base_url": {
+                                        "type": "string"
+                                      },
+                                      "api_mode": {
+                                        "type": "string"
+                                      },
+                                      "api_key_set": {
+                                        "type": "boolean"
+                                      },
+                                      "reasoning_effort": {
+                                        "type": "string"
+                                      },
+                                      "service_tier": {
+                                        "type": "string"
+                                      },
+                                      "fallback_providers": {
+                                        "type": "array",
+                                        "items": {
+                                          "anyOf": [
+                                            {},
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "profile": {
+                                        "type": "string"
+                                      },
+                                      "label": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "name"
+                                    ]
+                                  }
+                                },
+                                "profiles": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "name": {
+                                        "type": "string"
+                                      },
+                                      "description": {
+                                        "type": "string"
+                                      },
+                                      "provider": {
+                                        "type": "string"
+                                      },
+                                      "model": {
+                                        "type": "string"
+                                      },
+                                      "base_url": {
+                                        "type": "string"
+                                      },
+                                      "api_mode": {
+                                        "type": "string"
+                                      },
+                                      "api_key_set": {
+                                        "type": "boolean"
+                                      },
+                                      "reasoning_effort": {
+                                        "type": "string"
+                                      },
+                                      "service_tier": {
+                                        "type": "string"
+                                      },
+                                      "fallback_providers": {
+                                        "type": "array",
+                                        "items": {
+                                          "anyOf": [
+                                            {},
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "profile": {
+                                        "type": "string"
+                                      },
+                                      "label": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "name"
+                                    ]
+                                  }
+                                },
+                                "default": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "default"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "supported",
+                            "configured",
+                            "effective",
+                            "available",
+                            "blocked_reason",
+                            "fixed_model_active",
+                            "backends",
+                            "profiles",
+                            "can_edit",
+                            "model_map",
+                            "profile_routes"
+                          ]
+                        },
                         "main": {
                           "type": "object",
                           "properties": {

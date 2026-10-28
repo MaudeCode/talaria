@@ -1,3 +1,4 @@
+import { DelegationSettingsSchema } from './delegation.js'
 import { McpCostPolicySchema } from './mcp-cost-policy.js'
 /**
  * Pinned response shapes shared by every consumer (formerly the frontend's
@@ -824,7 +825,7 @@ export const AuxiliaryTaskSchema = z.looseObject({
   /** TAL-800: the reasoning effort the slot runs with (the Agent's default until one is saved; `''` = provider default); null when the Agent does not report its slots. */
   reasoning_effort: z.string().nullable(),
 })
-export const AuxiliaryModelsSchema = z.looseObject({ main: z.looseObject({ model: z.string().optional(), provider: z.string().optional(), base_url: z.string().optional(), api_key_set: z.boolean().optional(), service_tier: z.enum(['', 'default', 'priority', 'ultrafast']).optional().describe('Empty string is the Standard value returned by older servers.'), supported_speed_tiers: z.array(SpeedTierSchema).optional() }), tasks: z.array(AuxiliaryTaskSchema) })
+export const AuxiliaryModelsSchema = z.looseObject({ delegation: DelegationSettingsSchema.optional(), main: z.looseObject({ model: z.string().optional(), provider: z.string().optional(), base_url: z.string().optional(), api_key_set: z.boolean().optional(), service_tier: z.enum(['', 'default', 'priority', 'ultrafast']).optional().describe('Empty string is the Standard value returned by older servers.'), supported_speed_tiers: z.array(SpeedTierSchema).optional() }), tasks: z.array(AuxiliaryTaskSchema) })
 export const MaxTokensSchema = z.looseObject({ max_tokens: NullableNumber, max_tokens_effective: NullableNumber, max_tokens_fallback: NullableNumber })
 
 // ── workspaces, files, git ───────────────────────────────────────────────

@@ -184,3 +184,6 @@ UNEXERCISED = {"plugins.catalog", "plugins.install", "plugins.update", "models.s
 
 # Enabling a plugin is covered with synthetic profile fixtures by test_dashboard_plugins.py and test_dashboard_host_compat.py.
 UNEXERCISED.add("plugins.dashboard_toggle")
+
+# Delegation edits are covered by the disposable native configuration contract test.
+UNEXERCISED.update({"aux.delegation", "aux.delegation_backend", "aux.delegation_routes"})

@@ -1,3 +1,4 @@
+import { DelegationRegistrySchema, DelegationBlockSchema } from '../delegation.js'
 import { OutboundDraftRefSchema, OutboundDraftFieldsSchema, OutboundDraftResultSchema } from '../outbound-drafts.js'
 import { McpCostPolicyDataSchema } from '../mcp-cost-policy.js'
 import { ContextDetailSchema } from '../context-detail.js'
@@ -499,6 +500,9 @@ export const AUX_METHODS = {
    * of the task's auxiliary route; `credential_missing` means it has no credential. `finish_reason` is the provider's, when known.
    */
   'aux.complete': { params: ProfileHomeParams.extend({ task: z.string().min(1), messages: z.array(Loose).min(1), main_runtime: Loose.nullable().optional(), main_fallback: z.boolean().optional(), max_tokens: z.number().int().nullable().optional(), temperature: z.number().nullable().optional(), model: z.string().nullable().optional(), provider: z.string().nullable().optional() }), result: z.object({ model: z.string(), text: z.string(), usage: AuxUsageSchema.nullable(), finish_reason: z.string().nullable().default(null) }), stream: z.discriminatedUnion('event', [z.object({ event: z.literal('token'), data: z.object({ text: z.string() }) })]) },
+  'aux.delegation': { params: ProfileHomeParams.extend({ config: Loose }), result: DelegationRegistrySchema },
+  'aux.delegation_backend': { params: ProfileHomeParams.extend({ backend: z.string(), config_path: z.string() }), result: Ok },
+  'aux.delegation_routes': { params: ProfileHomeParams.extend({ backend: z.enum(['model_map', 'profile_routes']), block: DelegationBlockSchema, current: Loose }), result: z.object({ block: Loose }) },
   /**
    * TAL-800: the profile's auxiliary slots in Agent order (built-ins, then the profile's plugin tasks). `reasoning_effort`
    * is the slot's resolved effort (`''` = provider default); `effective` is the route an `inherit_from` task resolves to now.

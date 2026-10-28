@@ -7002,6 +7002,114 @@
     ],
     "additionalProperties": false
   },
+  "aux.delegation": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "supported": {
+        "type": "boolean"
+      },
+      "configured": {
+        "type": "string"
+      },
+      "effective": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "available": {
+        "type": "boolean"
+      },
+      "blocked_reason": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "fixed_model_active": {
+        "type": "boolean"
+      },
+      "backends": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "available": {
+              "type": "boolean"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "label",
+            "description",
+            "available",
+            "reason"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "profiles": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "required": [
+      "supported",
+      "configured",
+      "effective",
+      "available",
+      "blocked_reason",
+      "fixed_model_active",
+      "backends",
+      "profiles"
+    ],
+    "additionalProperties": false
+  },
+  "aux.delegation_backend": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "ok": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "ok"
+    ],
+    "additionalProperties": false
+  },
+  "aux.delegation_routes": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "block": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {}
+      }
+    },
+    "required": [
+      "block"
+    ],
+    "additionalProperties": false
+  },
   "aux.tasks": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

@@ -1,0 +1,198 @@
+{
+  "default": {
+    "supported": true,
+    "configured": "default",
+    "effective": "default",
+    "available": true,
+    "blocked_reason": null,
+    "fixed_model_active": true,
+    "backends": [
+      {
+        "name": "default",
+        "label": "Default",
+        "description": "Fixed model or inherit parent",
+        "available": true,
+        "reason": ""
+      },
+      {
+        "name": "model_map",
+        "label": "Named model routes",
+        "description": "Choose a named model route",
+        "available": true,
+        "reason": ""
+      },
+      {
+        "name": "profile_routes",
+        "label": "Profile routes",
+        "description": "Use existing profiles",
+        "available": true,
+        "reason": ""
+      }
+    ],
+    "profiles": [
+      "default",
+      "research"
+    ],
+    "model_map": {
+      "options": [
+        {
+          "name": "Research",
+          "description": "Research tasks",
+          "provider": "openai",
+          "model": "synthetic-model",
+          "api_key_set": true,
+          "service_tier": "normal",
+          "fallback_providers": []
+        }
+      ],
+      "default": "Research"
+    },
+    "profile_routes": {
+      "profiles": [],
+      "default": null
+    },
+    "can_edit": true
+  },
+  "missing": {
+    "supported": true,
+    "configured": "missing_backend",
+    "effective": null,
+    "available": false,
+    "blocked_reason": "Install or enable the saved backend plugin, or restore Default.",
+    "fixed_model_active": false,
+    "backends": [
+      {
+        "name": "default",
+        "label": "Default",
+        "description": "Fixed model or inherit parent",
+        "available": true,
+        "reason": ""
+      },
+      {
+        "name": "model_map",
+        "label": "Named model routes",
+        "description": "Choose a named model route",
+        "available": true,
+        "reason": ""
+      },
+      {
+        "name": "profile_routes",
+        "label": "Profile routes",
+        "description": "Use existing profiles",
+        "available": true,
+        "reason": ""
+      },
+      {
+        "name": "missing_backend",
+        "label": "missing_backend",
+        "description": "",
+        "available": false,
+        "reason": "Install or enable the saved backend plugin, or restore Default."
+      }
+    ],
+    "profiles": [
+      "default",
+      "research"
+    ],
+    "model_map": {
+      "options": [
+        {
+          "name": "Research",
+          "description": "Research tasks",
+          "provider": "openai",
+          "model": "synthetic-model",
+          "api_key_set": true,
+          "service_tier": "normal",
+          "fallback_providers": []
+        }
+      ],
+      "default": "Research"
+    },
+    "profile_routes": {
+      "profiles": [],
+      "default": null
+    },
+    "can_edit": true
+  },
+  "older": {
+    "supported": false,
+    "configured": "missing_backend",
+    "effective": null,
+    "available": false,
+    "blocked_reason": "Update Hermes Agent to configure delegation modes.",
+    "fixed_model_active": false,
+    "backends": [
+      {
+        "name": "missing_backend",
+        "label": "missing_backend",
+        "description": "",
+        "available": false,
+        "reason": "Install or enable the saved backend plugin, or restore Default."
+      }
+    ],
+    "profiles": [
+      "default",
+      "research"
+    ],
+    "model_map": {
+      "options": [
+        {
+          "name": "Research",
+          "description": "Research tasks",
+          "provider": "openai",
+          "model": "synthetic-model",
+          "api_key_set": true,
+          "service_tier": "normal",
+          "fallback_providers": []
+        }
+      ],
+      "default": "Research"
+    },
+    "profile_routes": {
+      "profiles": [],
+      "default": null
+    },
+    "can_edit": true
+  },
+  "readonly": {
+    "supported": true,
+    "configured": "default",
+    "effective": "default",
+    "available": true,
+    "blocked_reason": null,
+    "fixed_model_active": true,
+    "backends": [
+      {
+        "name": "default",
+        "label": "Default",
+        "description": "Fixed model or inherit parent",
+        "available": true,
+        "reason": ""
+      },
+      {
+        "name": "model_map",
+        "label": "Named model routes",
+        "description": "Choose a named model route",
+        "available": true,
+        "reason": ""
+      },
+      {
+        "name": "profile_routes",
+        "label": "Profile routes",
+        "description": "Use existing profiles",
+        "available": true,
+        "reason": ""
+      }
+    ],
+    "profiles": [],
+    "model_map": {
+      "options": [],
+      "default": null
+    },
+    "profile_routes": {
+      "profiles": [],
+      "default": null
+    },
+    "can_edit": false
+  }
+}

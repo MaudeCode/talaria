@@ -1,3 +1,4 @@
+import type { DelegationSettings, DelegationWrite } from '@maudecode/talaria-web-contracts'
 /** Query hooks for shared server resources. Keys live in api/queryKeys.ts. */
 import { useMutation, useQuery, useQueryClient, type UseQueryOptions } from '@tanstack/react-query'
 import { teardownAll } from '../stream/connection'
@@ -42,17 +43,32 @@ export function useAuxiliaryModelsQuery(enabled = true) {
 
 /** One auxiliary slot's write owner; `__reset__` owns every slot. */
 export const auxResource = (task: string) => `aux-model:${task}`
-interface AuxWrite { task: string; model: string; provider?: string | null; tasks?: string[] | undefined; shown: Record<string, unknown> }
+interface AuxWrite { task: string; model: string; provider?: string | null; tasks?: string[] | undefined; shown: Record<string, unknown>; delegation?: DelegationSettings | undefined }
 
 /** Writes one auxiliary slot (or resets all): the slot shows the pick at once, and the server's state replaces the list. */
 export function useSetAuxiliaryModel() {
   const qc = useQueryClient()
   return useResourceMutation({
     resource: ({ task, tasks }: AuxWrite) => task === '__reset__' ? (tasks ?? []).map(auxResource) : auxResource(task),
+    exclusive: true,
     queryKey: keys.auxiliaryModels, readKeys: () => [{ queryKey: keys.auxiliaryModels, exact: true }],
-    effect: ({ shown }) => ({ fields: shown }),
+    effect: ({ shown, delegation }) => ({ fields: shown, value: delegation }),
     mutationFn: ({ task, model, provider }) => api.setAuxiliaryModel(task, model, provider),
     onSuccess: (res) => { if (res.auxiliary) qc.setQueryData(keys.auxiliaryModels, res.auxiliary) },
+    onError: toastError,
+  })
+}
+
+/** Backend and whole-block saves share the delegation slot's optimistic owner. */
+export function useSetDelegation() {
+  const qc = useQueryClient()
+  return useResourceMutation({
+    resource: () => auxResource('delegation'),
+    exclusive: true,
+    queryKey: keys.auxiliaryModels, readKeys: () => [{ queryKey: keys.auxiliaryModels, exact: true }],
+    effect: ({ shown }: { write: DelegationWrite; shown: DelegationSettings }) => ({ value: shown }),
+    mutationFn: ({ write }) => api.setDelegation(write),
+    onSuccess: (res) => qc.setQueryData(keys.auxiliaryModels, res),
     onError: toastError,
   })
 }

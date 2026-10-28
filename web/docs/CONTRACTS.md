@@ -363,3 +363,29 @@ provider use, a judge, skill edits or tool effects. Bounded replay is tracked
 separately. The shared synthetic fixture is
 `contracts/fixtures/skill-revisions.json` at the repository root. Existing skill
 content/edit/delete/toggle/linked-file endpoints retain their contracts.
+
+## Persistent delegation settings
+
+`GET /api/model/auxiliary` includes optional `delegation` settings. The native
+Agent registry supplies configured/effective mode, availability, recovery reason,
+fixed-model eligibility, registered modes and current profile names. Missing or
+unavailable modes retain their saved identity and never select another backend.
+Older Agents report unsupported mode editing while retaining saved route blocks.
+
+`POST /api/model/auxiliary/delegation` selects a backend through native
+`set_global_backend`, or replaces one complete `model_map` / `profile_routes`
+block through the existing serialized config owner. Mode/route writes and Reset All
+require the existing server-owner authority. Non-owners receive `can_edit: false`,
+an empty profile registry and no named route blocks; the ordinary profile-local
+fixed-model picker remains available when active. Native canonical route keys
+and parsers validate saves. Read responses omit API keys and request overrides;
+`original_name` preserves hidden values across renames. An omitted fallback list
+keeps its native meaning, and an empty list stays explicitly empty. Profile routes
+require existing native profile identities and explicit lending consent in Web.
+The shared fixture is `contracts/fixtures/delegation-settings.json`.
+
+All auxiliary writes use the existing exclusive optimistic resource owner: show
+the choice immediately, roll back refusals, reconcile unknown outcomes without
+replaying, and fence stale responses after a profile switch. Reset All restores
+the native Default backend as well as fixed model overrides. Session overrides
+and delegation execution are separate. This extends sidecar RPC version 63.

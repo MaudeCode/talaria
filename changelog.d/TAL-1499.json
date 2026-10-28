@@ -1,0 +1,20 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Choose subagent modes and manage named model and profile routes in Auxiliary Models settings.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    },
+    {
+      "category": "Security",
+      "summary": "Restrict subagent routing changes and profile lending to server owners.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

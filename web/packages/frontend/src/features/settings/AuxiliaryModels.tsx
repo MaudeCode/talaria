@@ -3,11 +3,13 @@ import { useState, type ReactNode } from 'react'
 import { Check, ChevronLeft, ChevronRight } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import type { fetchAuxiliaryModels } from '../../api/endpoints'
-import { auxResource, useAuxiliaryModelsQuery, useModelsQuery, useSetAuxiliaryModel } from '../../app/queries'
+import { auxResource, useAuxiliaryModelsQuery, useModelsQuery, useSetAuxiliaryModel, useSetDelegation } from '../../app/queries'
+import type { DelegationSettings, DelegationRoute } from '@maudecode/talaria-web-contracts'
 import { useResourceEffects, withEffects } from '../sessions/useResourceMutation'
 import { Button } from '../../ui/Button'
 import { ConfirmDialog, Dialog } from '../../ui/Dialog'
 import { FieldRow, TextInput } from '../../ui/Field'
+import { Select } from '../../ui/Select'
 import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
 import { cn } from '../../ui/cn'
 
@@ -32,12 +34,13 @@ function AuxiliaryModelsDialog({ onClose }: { onClose: () => void }) {
   const reset = useSetAuxiliaryModel()
   const [editing, setEditing] = useState<string | null>(null)
   const [confirmReset, setConfirmReset] = useState(false)
-  const effects = useResourceEffects()
+  const effects = useResourceEffects<DelegationSettings>()
   const tasks = withEffects(aux.data?.tasks ?? [], (t) => auxResource(t.task), effects)
   const task = tasks.find((t) => t.task === editing)
+  const delegation = effects[auxResource('delegation')]?.value ?? aux.data?.delegation
   return (
-    <Dialog open onOpenChange={(open) => { if (!open) onClose() }} title={task?.label ?? m.settings_label_auxiliary_models()} description={task?.description} className="flex max-h-[85vh] flex-col">
-      {aux.isPending ? <LoadingState /> : aux.isError ? <ErrorState error={aux.error} onRetry={() => { void aux.refetch() }} /> : task ? <AuxiliaryModelPicker task={task} onDone={() => setEditing(null)} /> : (
+    <Dialog open onOpenChange={(open) => { if (!open) onClose() }} title={task?.label ?? m.settings_label_auxiliary_models()} description={task?.task === 'delegation' ? undefined : task?.description} className="flex max-h-[85vh] flex-col overflow-y-auto">
+      {aux.isPending ? <LoadingState /> : aux.isError ? <ErrorState error={aux.error} onRetry={() => { void aux.refetch() }} /> : task ? task.task === 'delegation' && delegation ? <DelegationEditor key={delegation.configured} task={task} state={delegation} onDone={() => setEditing(null)} /> : <AuxiliaryModelPicker task={task} onDone={() => setEditing(null)} /> : (
         <>
           <ul className="-mx-2 max-h-[60vh] overflow-y-auto" aria-label={m.settings_label_auxiliary_models()}>
             {tasks.map((t) => (
@@ -46,7 +49,7 @@ function AuxiliaryModelsDialog({ onClose }: { onClose: () => void }) {
                   <span className="min-w-0 flex-1">
                     <span className="block text-sm text-text">{t.label}</span>
                     <span className="block text-xs text-muted">{t.description}</span>
-                    <TaskValue task={t} />
+                    {t.task === 'delegation' && delegation ? <span className="block text-xs text-text">{delegation.configured}</span> : <TaskValue task={t} />}
                   </span>
                   <ChevronRight size={16} className="shrink-0 text-muted" aria-hidden="true" />
                 </button>
@@ -54,17 +57,17 @@ function AuxiliaryModelsDialog({ onClose }: { onClose: () => void }) {
             ))}
           </ul>
           <div className="mt-3 flex justify-end">
-            <Button onClick={() => setConfirmReset(true)}>{m.settings_btn_reset_aux_models()}</Button>
+            <Button disabled={delegation?.can_edit === false} onClick={() => setConfirmReset(true)}>{m.settings_btn_reset_aux_models()}</Button>
           </div>
           <ConfirmDialog
             open={confirmReset}
             onOpenChange={setConfirmReset}
             title={m.settings_aux_reset_confirm_title()}
-            description={m.settings_aux_reset_confirm_msg()}
+            description={m.delegation_reset_confirm()}
             confirmLabel={m.settings_btn_reset_aux_models()}
             cancelLabel={m.cancel()}
             danger
-            onConfirm={() => reset.mutate({ task: '__reset__', model: '', tasks: tasks.map((t) => t.task), shown: AUTO })}
+            onConfirm={() => reset.mutate({ task: '__reset__', model: '', tasks: tasks.map((t) => t.task), shown: AUTO, delegation: delegation ? { ...delegation, configured: 'default', fixed_model_active: true } : undefined })}
           />
         </>
       )}
@@ -93,12 +96,13 @@ function OptionButton({ selected, onClick, children }: { selected: boolean; onCl
 }
 
 /** One task's model choice: Auto, the saved off-catalog model, the catalog grouped by provider, or a typed id. */
-function AuxiliaryModelPicker({ task, onDone }: { task: AuxTask; onDone: () => void }) {
+function AuxiliaryModelPicker({ task, onDone, onPick }: { task: AuxTask; onDone: () => void; onPick?: (model: string, provider: string) => void }) {
   const models = useModelsQuery()
   const save = useSetAuxiliaryModel()
   const [query, setQuery] = useState('')
   // The list shows the pick at once with the labels the user chose from; the server's state replaces them.
   const pick = (model: string, provider?: string, labels: { provider_label?: string; value_label?: string } = {}): void => {
+    if (onPick) { onPick(model, provider ?? ''); return }
     save.mutate({ task: task.task, model, provider: provider ?? null, shown: provider === 'auto' ? AUTO : { is_auto: false, in_catalog: true, selected_option_id: model, provider_label: labels.provider_label ?? '', value_label: labels.value_label ?? model } })
     onDone()
   }
@@ -113,11 +117,11 @@ function AuxiliaryModelPicker({ task, onDone }: { task: AuxTask; onDone: () => v
       </div>
       <TextInput type="search" aria-label={m.model_search_placeholder()} placeholder={m.model_search_placeholder()} value={query} onChange={(e) => setQuery(e.target.value)} autoFocus />
       <div className="-mx-2 max-h-[45vh] overflow-y-auto px-2">
-        <OptionButton selected={task.is_auto} onClick={() => pick('', 'auto')}>
+        {!onPick && <OptionButton selected={task.is_auto} onClick={() => pick('', 'auto')}>
           <span className="block">{m.auxiliary_models_auto()}</span>
           <span className="block text-xs text-muted">{m.settings_aux_provider_auto()}</span>
-        </OptionButton>
-        {!task.in_catalog && (
+        </OptionButton>}
+        {!onPick && !task.in_catalog && (
           <OptionButton selected onClick={() => pick(task.model, task.provider, { provider_label: task.provider_label ?? '', value_label: task.value_label ?? '' })}>
             <span className="block truncate">{[task.provider_label, task.value_label].filter(Boolean).join(' · ')}</span>
             <span className="block text-xs text-muted">{m.auxiliary_models_not_in_catalog()}</span>
@@ -127,7 +131,7 @@ function AuxiliaryModelPicker({ task, onDone }: { task: AuxTask; onDone: () => v
           <section key={g.provider_id ?? g.provider} aria-label={catalogGroupLabel(g)} className="mt-2">
             <h3 className="px-2 py-1 text-xs font-medium uppercase tracking-wide text-muted">{catalogGroupLabel(g)}</h3>
             {g.rows.map((mm) => (
-              <OptionButton key={mm.id} selected={mm.id === task.selected_option_id} onClick={() => pick(mm.id, g.provider_id, { provider_label: catalogGroupLabel(g), value_label: mm.label ?? mm.id })}>
+              <OptionButton key={mm.id} selected={!onPick && mm.id === task.selected_option_id} onClick={() => pick(mm.id, g.provider_id, { provider_label: catalogGroupLabel(g), value_label: mm.label ?? mm.id })}>
                 {mm.label ?? mm.id}
               </OptionButton>
             ))}
@@ -151,4 +155,91 @@ function CustomModelInput({ onPick }: { onPick: (model: string) => void }) {
       </div>
     </form>
   )
+}
+
+/** Extends the delegation task in the existing dialog; the fixed-model editor remains shared. */
+function DelegationEditor({ task, state, onDone }: { task: AuxTask; state: DelegationSettings; onDone: () => void }) {
+  const save = useSetDelegation()
+  const [section, setSection] = useState<'fixed' | 'model_map' | 'profile_routes' | null>(null)
+  const [editing, setEditing] = useState<DelegationRoute | null>(null)
+  const [original, setOriginal] = useState<string | null>(null)
+  const block = section === 'profile_routes' ? state.profile_routes : state.model_map
+  const rows = section === 'profile_routes' ? block.profiles ?? [] : block.options ?? []
+  const writeRows = (next: DelegationRoute[], defaultName: string | null) => {
+    if (section !== 'model_map' && section !== 'profile_routes') return
+    const nextBlock = { [section === 'model_map' ? 'options' : 'profiles']: next, default: defaultName }
+    save.mutate({ write: { action: 'routes', backend: section, block: nextBlock }, shown: { ...state, [section]: nextBlock } })
+  }
+  if (section === 'fixed') return <AuxiliaryModelPicker task={task} onDone={() => setSection(null)} />
+  if (editing && section) return <DelegationRouteEditor key={original ?? 'new'} task={task} route={editing} profiles={section === 'profile_routes' ? state.profiles : null} onCancel={() => setEditing(null)} onSave={(route) => {
+    const next = original === null ? [...rows, route] : rows.map((row) => row.name === original ? { ...route, original_name: original } : row)
+    writeRows(next, original !== null && block.default === original ? route.name : block.default)
+    setEditing(null)
+  }} />
+  return <div className="flex min-h-0 flex-col gap-3 [&_button]:min-h-11">
+    <Button variant="ghost" className="self-start" onClick={section ? () => setSection(null) : onDone}><ChevronLeft size={14} aria-hidden="true" />{m.back()}</Button>
+    {section ? <>
+      <h3 className="text-sm font-medium">{section === 'model_map' ? m.delegation_routes() : m.delegation_profiles()}</h3>
+      <FieldRow label={m.delegation_default()} htmlFor="delegationDefault">
+        <Select id="delegationDefault" value={block.default ?? ''} onValueChange={(value) => writeRows(rows, value || null)}>
+          <option value="">{m.delegation_no_default()}</option>
+          {rows.map((row) => <option key={row.name} value={row.name}>{row.name}</option>)}
+        </Select>
+      </FieldRow>
+      <ul aria-label={section === 'model_map' ? m.delegation_routes() : m.delegation_profiles()}>
+        {rows.map((row) => <li key={row.name} className="flex min-w-0 items-center gap-2 border-b border-border py-2">
+          <div className="min-w-0 flex-1"><span className="block break-words text-sm">{row.name}</span><span className="block break-words text-xs text-muted">{row.description}</span></div>
+          <Button aria-label={`${m.edit()} ${row.name}`} onClick={() => { setOriginal(row.name); setEditing(row) }}>{m.edit()}</Button>
+          <Button aria-label={`${m.delete()} ${row.name}`} onClick={() => writeRows(rows.filter((r) => r.name !== row.name), block.default === row.name ? null : block.default)}>{m.delete()}</Button>
+        </li>)}
+      </ul>
+      {!rows.length && <EmptyState>{m.delegation_empty()}</EmptyState>}
+      <Button className="self-start" onClick={() => { setOriginal(null); setEditing({ name: '', description: '' }) }}>{m.delegation_add_route()}</Button>
+    </> : <>
+      <FieldRow label={m.delegation_mode()} hint={state.can_edit ? undefined : m.delegation_owner_required()} htmlFor="delegationMode">
+        <Select id="delegationMode" value={state.configured} disabled={!state.supported || !state.can_edit} onValueChange={(backend) => save.mutate({ write: { action: 'backend', backend }, shown: { ...state, configured: backend } })}>
+          {state.backends.map((backend) => <option key={backend.name} value={backend.name} disabled={!backend.available}>{backend.label}</option>)}
+        </Select>
+      </FieldRow>
+      {state.blocked_reason && <p role="status" className="break-words text-sm text-muted">{state.blocked_reason}</p>}
+      {state.supported && state.can_edit && <Button className="self-start" onClick={() => save.mutate({ write: { action: 'backend', backend: 'default' }, shown: { ...state, configured: 'default' } })}>{m.delegation_restore()}</Button>}
+      {state.fixed_model_active ? <Button className="self-start" onClick={() => setSection('fixed')}>{m.delegation_fixed()}<ChevronRight size={14} aria-hidden="true" /></Button> : <p className="text-xs text-muted">{m.delegation_inactive()}</p>}
+      {state.supported && state.can_edit && <div className="flex flex-wrap gap-2">
+        <Button onClick={() => setSection('model_map')}>{m.delegation_routes()}</Button>
+        <Button onClick={() => setSection('profile_routes')}>{m.delegation_profiles()}</Button>
+      </div>}
+    </>}
+  </div>
+}
+
+/** Uses the auxiliary picker and standard field/select controls; route edits are local drafts until Save. */
+function DelegationRouteEditor({ task, route, profiles, onCancel, onSave }: { task: AuxTask; route: DelegationRoute; profiles: string[] | null; onCancel: () => void; onSave: (route: DelegationRoute) => void }) {
+  const [draft, setDraft] = useState(route)
+  const [picking, setPicking] = useState(false)
+  const [consent, setConsent] = useState(false)
+  const text = (key: 'name' | 'description' | 'provider' | 'model' | 'base_url' | 'api_key' | 'reasoning_effort', label: string, type = 'text') => <FieldRow key={key} label={label} htmlFor={`route-${key}`}>
+    <TextInput id={`route-${key}`} type={type} value={draft[key] ?? ''} autoComplete="off" onChange={(e) => setDraft({ ...draft, [key]: e.target.value })} />
+  </FieldRow>
+  if (picking) return <AuxiliaryModelPicker task={task} onDone={() => setPicking(false)} onPick={(model, provider) => { setDraft({ ...draft, model, provider }); setPicking(false) }} />
+  return <form className="flex min-h-0 flex-col gap-2 [&_button]:min-h-11" onSubmit={(e) => { e.preventDefault(); onSave(draft) }}>
+    {profiles ? <>
+      <FieldRow label={m.delegation_profile()} htmlFor="route-profile"><Select id="route-profile" value={draft.name} onValueChange={(name) => setDraft({ ...draft, name })}>{profiles.map((name) => <option key={name} value={name}>{name}</option>)}</Select></FieldRow>
+      <p className="text-sm text-muted">{m.delegation_profile_consent()}</p>
+      <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />{m.delegation_profile_opt_in()}</label>
+    </> : text('name', m.delegation_route_name())}
+    {text('description', m.delegation_route_description())}
+    {!profiles && <>
+      <Button className="self-start" onClick={() => setPicking(true)}>{m.delegation_choose_model()}</Button>
+      {text('model', m.delegation_route_model())}
+      {text('provider', m.delegation_route_provider())}
+      {text('base_url', m.delegation_route_endpoint())}
+      {text('api_key', draft.api_key_set ? m.delegation_route_key_saved() : m.delegation_route_key(), 'password')}
+      {draft.api_key_set && <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" checked={draft.api_key_clear ?? false} onChange={(e) => setDraft({ ...draft, api_key_clear: e.target.checked })} />{m.delegation_route_key_clear()}</label>}
+      {text('reasoning_effort', m.delegation_route_effort())}
+      <FieldRow label={m.delegation_route_tier()} htmlFor="route-tier"><Select id="route-tier" value={draft.service_tier ?? ''} onValueChange={(service_tier) => setDraft({ ...draft, service_tier })}>
+        <option value="">{m.delegation_inherit()}</option><option value="normal">{m.delegation_normal()}</option><option value="fast">{m.delegation_fast()}</option><option value="ultrafast">{m.delegation_ultrafast()}</option>
+      </Select></FieldRow>
+    </>}
+    <div className="flex justify-end gap-2 py-2"><Button onClick={onCancel}>{m.cancel()}</Button><Button type="submit" disabled={!draft.name.trim() || !!profiles && !consent}>{m.save()}</Button></div>
+  </form>
 }

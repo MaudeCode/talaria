@@ -2756,6 +2756,13 @@
       "cases": [
         ""
       ]
+    },
+    "tests/test_config_write.py::test_native_delegation_settings_and_lossless_routes": {
+      "layer": "compatibility",
+      "reason": "Real installed Agent delegation registry, backend selection, native route keys/parsers and managed refusal in a disposable interpreter. Synthetic registered providers never execute; socket connections are forbidden. Boundary fakes cannot establish native API compatibility.",
+      "cases": [
+        ""
+      ]
     }
   }
 }
