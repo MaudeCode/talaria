@@ -1166,6 +1166,35 @@ describe('canonical owner attachment', () => {
     expect.soft(sidecar.calls.find((call) => call.method === 'gateway.session' && (call.params as { action: string }).action === 'watch')?.params).toMatchObject({ show_reasoning: true })
   })
 
+  it('preserves canonical counters when native usage also carries its compact nested view (TAL-1508)', async () => {
+    const gauge = { id: 'day', label: 'Today', used_bp: 8300, resets_at_ms: null }
+    const watch = await observeOwner(snapshot({ running: true, pending: [admission()] }))
+    watch.event('session.usage', { api_calls: 1, prompt_tokens: 100, input_tokens: 20, completion_tokens: 30,
+      cache_read_tokens: 80, cache_write_tokens: 0,
+      usage: { calls: 1, prompt: 100, input: 20, output: 30, cache_hit_pct: 80, plan_gauge: gauge } })
+    watch.finish()
+    const frames = await watch.read
+    expect(frames.find((f) => f.event === 'metering')?.data).toMatchObject({ usage: {
+      input_tokens: 100, output_tokens: 30, cache_read_tokens: 80, cache_write_tokens: 0, cache_hit_percent: 80, plan_gauge: gauge,
+    } })
+  })
+
+  it('retains a gauge on partial owner ticks and clears it on complete omission (TAL-1508)', async () => {
+    const gauge = { id: 'day', label: 'Today', used_bp: 8300, resets_at_ms: null }
+    const watch = await observeOwner(snapshot({ running: true, pending: [admission()] }))
+    watch.event('session.usage', { usage: { calls: 1, input: 100, output: 20, cache_read_tokens: 0, cache_write_tokens: 0, plan_gauge: gauge } })
+    watch.event('session.usage', { usage: { output: 30 } })
+    watch.event('session.usage', { usage: { calls: 2, output: 40 } })
+    watch.finish()
+    const frames = await watch.read
+    const meters = frames.filter((f) => f.event === 'metering').map((f) => (f.data as Record<string, unknown>).usage)
+    expect(meters).toEqual(expect.arrayContaining([
+      expect.objectContaining({ output_tokens: 20, plan_gauge: gauge }),
+      expect.objectContaining({ output_tokens: 30, plan_gauge: gauge }),
+      expect.objectContaining({ output_tokens: 40, plan_gauge: null }),
+    ]))
+  })
+
   it('clears prior reasoning titles and usage when a queued execution advances the generation', async () => {
     const watch = await observeOwner(snapshot({ running: false, execution_generation: 1, pending: [{ ...admission('queued'), execution_generation: null }] }))
     watch.event('reasoning.delta', { text: '**Previous heading**\nPrevious execution\n' })
@@ -1195,6 +1224,19 @@ describe('canonical owner attachment', () => {
     expect(body.session.composer_state_key).toMatch(/^owner-[a-f0-9]{64}$/)
     expect(body.session.messages).toEqual(expect.arrayContaining([expect.objectContaining({ content: 'owner answer' })]))
     expect(sidecar.calls.filter((c) => c.method === 'chat.start')).toEqual([])
+  })
+
+  it('reopens the native gauge through detail and the existing usage endpoint without keeping an omitted gauge (TAL-1508)', async () => {
+    const gauge = { id: 'day', label: 'Today', used_bp: 8300, resets_at_ms: null }
+    let current: typeof gauge | null = gauge
+    sidecar.respond('gateway.session', () => attached(snapshot({ plan_gauge: current })))
+    for (const expected of [gauge, null]) {
+      const detail = await s.get(`/api/session?session_id=${sid}`)
+      expect((await detail.json() as { session: { plan_gauge: unknown } }).session.plan_gauge).toEqual(expected)
+      const usage = await s.get(`/api/session/usage?session_id=${sid}`)
+      expect(await usage.json()).toMatchObject({ plan_gauge: expected, input_tokens: expect.any(Number) as number })
+      current = null
+    }
   })
 
   it('preserves an explicit null provider in the owner model projection', async () => {

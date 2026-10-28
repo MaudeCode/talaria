@@ -1,4 +1,5 @@
 import { DelegationSettingsSchema } from './delegation.js'
+import { PlanGaugeSchema, PlanUsageSchema, ModelAllowanceSchema, ModelSectionsSchema } from './plan-usage.js'
 import { McpCostPolicySchema } from './mcp-cost-policy.js'
 /**
  * Pinned response shapes shared by every consumer (formerly the frontend's
@@ -371,6 +372,7 @@ export const TodoStateSchema = z.looseObject({
 export type TodoState = z.infer<typeof TodoStateSchema>
 
 export const SessionSchema = z.looseObject({
+  plan_gauge: PlanGaugeSchema.nullable().optional(),
   show_reasoning: z.boolean().optional().describe('Server-resolved display preference. Hidden reasoning is omitted from live events, history and activity scenes; older servers omit this field.'),
   activity_phase: SessionActivityPhaseSchema.optional(),
   todo_state: TodoStateSchema.optional(),
@@ -463,7 +465,7 @@ export const SessionStatusSchema = z.looseObject({
   profile: NullableString.optional(), workspace: z.string().optional(), input_tokens: z.number().optional(), output_tokens: z.number().optional(), total_tokens: z.number().optional(), estimated_cost: NullableNumber.optional(), updated_at: UnixSeconds.optional(),
 })
 export type SessionStatus = z.infer<typeof SessionStatusSchema>
-export const SessionUsageSchema = z.looseObject({ input_tokens: z.number().optional(), output_tokens: z.number().optional(), total_tokens: z.number().optional(), estimated_cost: NullableNumber.optional(), model: NullableString.optional() })
+export const SessionUsageSchema = z.looseObject({ plan_gauge: PlanGaugeSchema.nullable().optional(), input_tokens: z.number().optional(), output_tokens: z.number().optional(), total_tokens: z.number().optional(), estimated_cost: NullableNumber.optional(), model: NullableString.optional() })
 
 export const ProjectSchema = z.looseObject({ project_id: z.string(), name: z.string(), color: z.string().nullable().optional(), profile: NullableString.optional(), created_at: z.number().optional() })
 export const ProjectsSchema = z.looseObject({ projects: z.array(ProjectSchema), active_profile: z.string(), all_profiles: z.boolean(), other_profile_count: z.number().int() })
@@ -700,6 +702,7 @@ export type QuotaLevel = z.infer<typeof QuotaLevelSchema>
  * TAL-807: `limit` is present while the provider's credential pool cannot serve this model until `resets_at` (ISO-8601 UTC).
  */
 export const ModelEntrySchema = z.looseObject({
+  allowance: ModelAllowanceSchema.optional(),
   id: z.string(), label: z.string().optional(), provider: z.string().optional(), provider_id: z.string().optional(), bare_id: z.string().optional(), supports_fast_tier: z.boolean().optional(), supported_speed_tiers: z.array(SpeedTierSchema).optional(),
   limit: z.object({ scope: z.literal('model'), resets_at: z.string() }).optional(),
 })
@@ -716,6 +719,7 @@ export const ModelGroupLimitSchema = z.discriminatedUnion('scope', [
 export const CatalogAvailabilitySchema = z.object({ status: z.enum(['available', 'stale', 'unavailable']), authoritative: z.boolean(), unavailable_reason: NullableString, generation: z.string().min(1).describe('Opaque source generation; cached data from another generation must never be merged.') })
 export type CatalogAvailability = z.infer<typeof CatalogAvailabilitySchema>
 export const ModelGroupSchema = z.looseObject({
+  plan_usage: PlanUsageSchema.nullable().optional(), plan_stale: z.boolean().optional(), sections: ModelSectionsSchema.optional(),
   availability: CatalogAvailabilitySchema.optional(),
   provider: z.string(), provider_id: z.string().optional(), models: z.array(ModelEntrySchema), extra_models: z.array(ModelEntrySchema).optional(),
   limit: ModelGroupLimitSchema.optional(), quota_level: QuotaLevelSchema.optional(),
@@ -763,6 +767,7 @@ export const QuotaWindowSchema = z.looseObject({
 })
 const QuotaWindowIndex = z.number().int().nullable().optional()
 export const QuotaSourceSchema = z.looseObject({
+  plan_usage: PlanUsageSchema.nullable().optional(), plan_stale: z.boolean().optional(),
   computed_at: z.string().optional().describe('Original reference time of this source, retained with stale windows.'),
   source_id: z.string(), provider_id: z.string().optional(), provider_label: z.string().optional(), account_label: z.string().optional(), status: z.string().optional(), supported: z.boolean().optional(), message: z.string().nullable().optional(),
   is_active_provider: z.boolean().optional(), quota: Json.optional(), windows: z.array(QuotaWindowSchema).optional(), balances: Json.optional(), plan: Json.optional(), details: Json.optional(), unavailable_reason: Json.optional(), retry_after: Json.optional(), fetched_at: Json.optional(),
@@ -772,6 +777,7 @@ export const QuotaSourceSchema = z.looseObject({
 })
 /** An account-usage provider's normalised snapshot on `/api/provider/quota` (the same windows and indexes as a quotas source). */
 export const QuotaAccountLimitsSchema = z.looseObject({
+  plan_usage: PlanUsageSchema.nullable().optional(), plan_stale: z.boolean().optional(),
   available: z.boolean().optional(), stale: z.boolean().optional(), title: z.string().optional(), plan: Json.optional(), unavailable_reason: NullableString.optional(),
   windows: z.array(QuotaWindowSchema), details: Json.optional(), fetched_at: NullableString.describe('ISO-8601 UTC.'),
   pace_window_index: QuotaWindowIndex, session_window_index: QuotaWindowIndex, weekly_window_index: QuotaWindowIndex,

@@ -1,3 +1,4 @@
+import { applyPlanGauge } from './session.js'
 /**
  * One agent turn: admission, pending-state persistence, the sidecar
  * `chat.start` call, live frame relay into the journal and stream channel,
@@ -177,10 +178,11 @@ interface ErrorClassification { label: string; type: string; hint: string }
 const COMPRESSION_EXHAUSTED: ErrorClassification = { label: 'Context compression exhausted', type: 'compression_exhausted', hint: 'The conversation context is too large to compress safely. Start a new conversation or retry with a narrower task.' }
 
 type ChatUsage = SidecarResult<'chat.start'>['usage']
-type UsageCounters = Pick<Session, 'input_tokens' | 'output_tokens' | 'estimated_cost' | 'cache_read_tokens' | 'cache_write_tokens'>
+type UsageCounters = Pick<Session, 'input_tokens' | 'output_tokens' | 'estimated_cost' | 'cache_read_tokens' | 'cache_write_tokens'> & Partial<Pick<Session, 'plan_gauge'>>
 
 /** The Agent's session counters onto a session's: a zero or missing reading keeps the figure it already has. */
 function applyAgentUsage(target: UsageCounters, usage: ChatUsage): void {
+  applyPlanGauge(target, usage, true)
   if (usage.prompt_tokens > 0) target.input_tokens = usage.prompt_tokens
   if (usage.completion_tokens > 0) target.output_tokens = usage.completion_tokens
   if (usage.estimated_cost_usd !== null) target.estimated_cost = usage.estimated_cost_usd
@@ -190,6 +192,7 @@ function applyAgentUsage(target: UsageCounters, usage: ChatUsage): void {
 
 /** TAL-397: the `metering` frame's counters, the same figures the session persists. */
 const meteringUsage = (c: UsageCounters): Record<string, unknown> => ({
+  plan_gauge: c.plan_gauge ?? null,
   input_tokens: c.input_tokens || 0, output_tokens: c.output_tokens || 0, estimated_cost: typeof c.estimated_cost === 'number' ? c.estimated_cost : null,
   cache_read_tokens: c.cache_read_tokens || 0, cache_write_tokens: c.cache_write_tokens || 0,
 })
@@ -697,7 +700,7 @@ export class TurnRunner {
     let tokenSent = false
     let firstTokenAt: number | null = null
     // TAL-397: the live meter. Counters start from the session's and follow the Agent's; the rate counts text deltas.
-    const liveUsage: UsageCounters = { input_tokens: s.input_tokens, output_tokens: s.output_tokens, estimated_cost: s.estimated_cost, cache_read_tokens: s.cache_read_tokens, cache_write_tokens: s.cache_write_tokens }
+    const liveUsage: UsageCounters = { plan_gauge: null, input_tokens: s.input_tokens, output_tokens: s.output_tokens, estimated_cost: s.estimated_cost, cache_read_tokens: s.cache_read_tokens, cache_write_tokens: s.cache_write_tokens }
     const meter = { deltas: 0, first: 0, last: 0, sentAt: null as number | null }
     const putMetering = async (force: boolean, now = deps.now()): Promise<void> => {
       if (!force && meter.sentAt !== null && now - meter.sentAt < METERING_INTERVAL_S) return
@@ -1177,7 +1180,7 @@ export class TurnRunner {
       const turnInput = Math.max(0, inputTokens - prevInputTokens)
       const turnCacheRead = Math.max(0, cacheReadTokens - prevCacheReadTokens)
       const doneUsage: Record<string, unknown> = {
-        input_tokens: s.input_tokens, output_tokens: s.output_tokens, estimated_cost: s.estimated_cost, cache_read_tokens: s.cache_read_tokens, cache_write_tokens: s.cache_write_tokens,
+        plan_gauge: s.plan_gauge, input_tokens: s.input_tokens, output_tokens: s.output_tokens, estimated_cost: s.estimated_cost, cache_read_tokens: s.cache_read_tokens, cache_write_tokens: s.cache_write_tokens,
         cache_hit_percent: cacheHit(cacheReadTokens, inputTokens), turn_cache_hit_percent: cacheHit(turnCacheRead, turnInput), duration_seconds: Math.round(duration * 1000) / 1000,
         context_length: s.context_length ?? 0, threshold_tokens: s.threshold_tokens ?? 0, last_prompt_tokens: s.last_prompt_tokens ?? 0,
       }

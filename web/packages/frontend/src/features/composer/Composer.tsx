@@ -695,7 +695,7 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
   const placeholder = clarify ? (clarify.step.choices.length ? m.clarify_composer_placeholder_choices() : m.clarify_composer_placeholder()) : busy && !nativeOwner ? (busyMode === 'queue' ? m.composer_placeholder_busy_queue() : busyMode === 'interrupt' ? m.composer_placeholder_busy_interrupt() : m.composer_placeholder_busy_steer()) : m.composer_placeholder()
   const onCompress = () => { void onLocalCommand('compress', '') }
   const context: ContextFigures = ({
-    sessionId: sessionId ?? undefined, detailKey: session?.context_detail_key,
+    planGauge: session?.plan_gauge, sessionId: sessionId ?? undefined, detailKey: session?.context_detail_key,
     percent: session?.context_usage_percent, used: session?.context_used_tokens, window: session?.context_window_tokens, thresholdPercent: session?.context_threshold_percent,
     input: session?.input_tokens, output: session?.output_tokens, cacheRead: session?.cache_read_tokens, cacheWrite: session?.cache_write_tokens, cacheHitPercent: session?.cache_hit_percent, cost: session?.estimated_cost,
     // The same manual compression `/compress` runs, offered only when the server says it would start.

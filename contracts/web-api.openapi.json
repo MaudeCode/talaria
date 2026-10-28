@@ -4613,6 +4613,49 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "plan_gauge": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "maxLength": 128
+                                },
+                                "label": {
+                                  "type": "string",
+                                  "maxLength": 256
+                                },
+                                "used_bp": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 10000
+                                },
+                                "resets_at_ms": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "label",
+                                "used_bp",
+                                "resets_at_ms"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "show_reasoning": {
                           "type": "boolean",
                           "description": "Server-resolved display preference. Hidden reasoning is omitted from live events, history and activity scenes; older servers omit this field."
@@ -8594,6 +8637,49 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "plan_gauge": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "maxLength": 128
+                            },
+                            "label": {
+                              "type": "string",
+                              "maxLength": 256
+                            },
+                            "used_bp": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 10000
+                            },
+                            "resets_at_ms": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "label",
+                            "used_bp",
+                            "resets_at_ms"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "input_tokens": {
                       "type": "number"
                     },
@@ -8774,6 +8860,49 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "plan_gauge": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "maxLength": 128
+                                },
+                                "label": {
+                                  "type": "string",
+                                  "maxLength": 256
+                                },
+                                "used_bp": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 10000
+                                },
+                                "resets_at_ms": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "label",
+                                "used_bp",
+                                "resets_at_ms"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "show_reasoning": {
                           "type": "boolean",
                           "description": "Server-resolved display preference. Hidden reasoning is omitted from live events, history and activity scenes; older servers omit this field."
@@ -12121,6 +12250,49 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "plan_gauge": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "maxLength": 128
+                                },
+                                "label": {
+                                  "type": "string",
+                                  "maxLength": 256
+                                },
+                                "used_bp": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 10000
+                                },
+                                "resets_at_ms": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "label",
+                                "used_bp",
+                                "resets_at_ms"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "show_reasoning": {
                           "type": "boolean",
                           "description": "Server-resolved display preference. Hidden reasoning is omitted from live events, history and activity scenes; older servers omit this field."
@@ -17500,6 +17672,49 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "plan_gauge": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "maxLength": 128
+                                },
+                                "label": {
+                                  "type": "string",
+                                  "maxLength": 256
+                                },
+                                "used_bp": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 10000
+                                },
+                                "resets_at_ms": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "label",
+                                "used_bp",
+                                "resets_at_ms"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "show_reasoning": {
                           "type": "boolean",
                           "description": "Server-resolved display preference. Hidden reasoning is omitted from live events, history and activity scenes; older servers omit this field."
@@ -22458,6 +22673,49 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "plan_gauge": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "maxLength": 128
+                                },
+                                "label": {
+                                  "type": "string",
+                                  "maxLength": 256
+                                },
+                                "used_bp": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 10000
+                                },
+                                "resets_at_ms": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "label",
+                                "used_bp",
+                                "resets_at_ms"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "show_reasoning": {
                           "type": "boolean",
                           "description": "Server-resolved display preference. Hidden reasoning is omitted from live events, history and activity scenes; older servers omit this field."
@@ -28135,6 +28393,49 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "plan_gauge": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "maxLength": 128
+                                },
+                                "label": {
+                                  "type": "string",
+                                  "maxLength": 256
+                                },
+                                "used_bp": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 10000
+                                },
+                                "resets_at_ms": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "label",
+                                "used_bp",
+                                "resets_at_ms"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "show_reasoning": {
                           "type": "boolean",
                           "description": "Server-resolved display preference. Hidden reasoning is omitted from live events, history and activity scenes; older servers omit this field."
@@ -31431,6 +31732,49 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "plan_gauge": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "maxLength": 128
+                                },
+                                "label": {
+                                  "type": "string",
+                                  "maxLength": 256
+                                },
+                                "used_bp": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 10000
+                                },
+                                "resets_at_ms": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "label",
+                                "used_bp",
+                                "resets_at_ms"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "show_reasoning": {
                           "type": "boolean",
                           "description": "Server-resolved display preference. Hidden reasoning is omitted from live events, history and activity scenes; older servers omit this field."
@@ -34789,6 +35133,49 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "plan_gauge": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "maxLength": 128
+                                },
+                                "label": {
+                                  "type": "string",
+                                  "maxLength": 256
+                                },
+                                "used_bp": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 10000
+                                },
+                                "resets_at_ms": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "label",
+                                "used_bp",
+                                "resets_at_ms"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "show_reasoning": {
                           "type": "boolean",
                           "description": "Server-resolved display preference. Hidden reasoning is omitted from live events, history and activity scenes; older servers omit this field."
@@ -38145,6 +38532,49 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "plan_gauge": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "maxLength": 128
+                                },
+                                "label": {
+                                  "type": "string",
+                                  "maxLength": 256
+                                },
+                                "used_bp": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 10000
+                                },
+                                "resets_at_ms": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "label",
+                                "used_bp",
+                                "resets_at_ms"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "show_reasoning": {
                           "type": "boolean",
                           "description": "Server-resolved display preference. Hidden reasoning is omitted from live events, history and activity scenes; older servers omit this field."
@@ -50902,6 +51332,49 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "plan_gauge": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "maxLength": 128
+                                },
+                                "label": {
+                                  "type": "string",
+                                  "maxLength": 256
+                                },
+                                "used_bp": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 10000
+                                },
+                                "resets_at_ms": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "label",
+                                "used_bp",
+                                "resets_at_ms"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "show_reasoning": {
                           "type": "boolean",
                           "description": "Server-resolved display preference. Hidden reasoning is omitted from live events, history and activity scenes; older servers omit this field."
@@ -54246,6 +54719,49 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "plan_gauge": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "maxLength": 128
+                                },
+                                "label": {
+                                  "type": "string",
+                                  "maxLength": 256
+                                },
+                                "used_bp": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 10000
+                                },
+                                "resets_at_ms": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "label",
+                                "used_bp",
+                                "resets_at_ms"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "show_reasoning": {
                           "type": "boolean",
                           "description": "Server-resolved display preference. Hidden reasoning is omitted from live events, history and activity scenes; older servers omit this field."
@@ -57982,6 +58498,49 @@
                     "session": {
                       "type": "object",
                       "properties": {
+                        "plan_gauge": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "maxLength": 128
+                                },
+                                "label": {
+                                  "type": "string",
+                                  "maxLength": 256
+                                },
+                                "used_bp": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 10000
+                                },
+                                "resets_at_ms": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "label",
+                                "used_bp",
+                                "resets_at_ms"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "show_reasoning": {
                           "type": "boolean",
                           "description": "Server-resolved display preference. Hidden reasoning is omitted from live events, history and activity scenes; older servers omit this field."
@@ -61616,6 +62175,49 @@
                         "session": {
                           "type": "object",
                           "properties": {
+                            "plan_gauge": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "id": {
+                                      "type": "string",
+                                      "maxLength": 128
+                                    },
+                                    "label": {
+                                      "type": "string",
+                                      "maxLength": 256
+                                    },
+                                    "used_bp": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 10000
+                                    },
+                                    "resets_at_ms": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "label",
+                                    "used_bp",
+                                    "resets_at_ms"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
                             "show_reasoning": {
                               "type": "boolean",
                               "description": "Server-resolved display preference. Hidden reasoning is omitted from live events, history and activity scenes; older servers omit this field."
@@ -69119,6 +69721,150 @@
                       "items": {
                         "type": "object",
                         "properties": {
+                          "plan_usage": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "const": "usage_window"
+                                  },
+                                  "plan": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "gauges": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "label": {
+                                          "type": "string"
+                                        },
+                                        "left_fraction": {
+                                          "type": "number",
+                                          "minimum": 0,
+                                          "maximum": 1
+                                        },
+                                        "style": {
+                                          "enum": [
+                                            "green",
+                                            "yellow",
+                                            "red"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "resets_at_ms": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": 0,
+                                              "maximum": 8640000000000000
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "scope": {
+                                          "type": "string"
+                                        },
+                                        "title": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "label",
+                                        "left_fraction",
+                                        "style",
+                                        "resets_at_ms",
+                                        "scope",
+                                        "title"
+                                      ]
+                                    }
+                                  },
+                                  "top_tier_model_ids": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "featured_model_ids": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "paused_reason": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "credits_pay": {
+                                    "anyOf": [
+                                      {
+                                        "type": "boolean"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "plan",
+                                  "gauges",
+                                  "top_tier_model_ids",
+                                  "featured_model_ids",
+                                  "paused_reason",
+                                  "credits_pay"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "plan_stale": {
+                            "type": "boolean"
+                          },
+                          "sections": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "enum": [
+                                    "recommended",
+                                    "other"
+                                  ],
+                                  "type": "string"
+                                },
+                                "model_ids": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "model_ids"
+                              ]
+                            }
+                          },
                           "availability": {
                             "type": "object",
                             "properties": {
@@ -69167,6 +69913,54 @@
                             "items": {
                               "type": "object",
                               "properties": {
+                                "allowance": {
+                                  "type": "object",
+                                  "properties": {
+                                    "state": {
+                                      "enum": [
+                                        "included",
+                                        "free",
+                                        "blocked",
+                                        "credits",
+                                        "unknown"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "usage_level": {
+                                      "anyOf": [
+                                        {
+                                          "enum": [
+                                            "free",
+                                            "low",
+                                            "medium",
+                                            "top_tier"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "resets_at_ms": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 8640000000000000
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "state",
+                                    "usage_level",
+                                    "resets_at_ms"
+                                  ]
+                                },
                                 "id": {
                                   "type": "string"
                                 },
@@ -69242,6 +70036,54 @@
                             "items": {
                               "type": "object",
                               "properties": {
+                                "allowance": {
+                                  "type": "object",
+                                  "properties": {
+                                    "state": {
+                                      "enum": [
+                                        "included",
+                                        "free",
+                                        "blocked",
+                                        "credits",
+                                        "unknown"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "usage_level": {
+                                      "anyOf": [
+                                        {
+                                          "enum": [
+                                            "free",
+                                            "low",
+                                            "medium",
+                                            "top_tier"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "resets_at_ms": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 8640000000000000
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "state",
+                                    "usage_level",
+                                    "resets_at_ms"
+                                  ]
+                                },
                                 "id": {
                                   "type": "string"
                                 },
@@ -69469,6 +70311,54 @@
                       "items": {
                         "type": "object",
                         "properties": {
+                          "allowance": {
+                            "type": "object",
+                            "properties": {
+                              "state": {
+                                "enum": [
+                                  "included",
+                                  "free",
+                                  "blocked",
+                                  "credits",
+                                  "unknown"
+                                ],
+                                "type": "string"
+                              },
+                              "usage_level": {
+                                "anyOf": [
+                                  {
+                                    "enum": [
+                                      "free",
+                                      "low",
+                                      "medium",
+                                      "top_tier"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "resets_at_ms": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 8640000000000000
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "state",
+                              "usage_level",
+                              "resets_at_ms"
+                            ]
+                          },
                           "id": {
                             "type": "string"
                           },
@@ -69681,6 +70571,150 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "plan_usage": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "const": "usage_window"
+                                      },
+                                      "plan": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "gauges": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "label": {
+                                              "type": "string"
+                                            },
+                                            "left_fraction": {
+                                              "type": "number",
+                                              "minimum": 0,
+                                              "maximum": 1
+                                            },
+                                            "style": {
+                                              "enum": [
+                                                "green",
+                                                "yellow",
+                                                "red"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "resets_at_ms": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "integer",
+                                                  "minimum": 0,
+                                                  "maximum": 8640000000000000
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "scope": {
+                                              "type": "string"
+                                            },
+                                            "title": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "label",
+                                            "left_fraction",
+                                            "style",
+                                            "resets_at_ms",
+                                            "scope",
+                                            "title"
+                                          ]
+                                        }
+                                      },
+                                      "top_tier_model_ids": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "featured_model_ids": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "paused_reason": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "credits_pay": {
+                                        "anyOf": [
+                                          {
+                                            "type": "boolean"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "plan",
+                                      "gauges",
+                                      "top_tier_model_ids",
+                                      "featured_model_ids",
+                                      "paused_reason",
+                                      "credits_pay"
+                                    ]
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "plan_stale": {
+                                "type": "boolean"
+                              },
+                              "sections": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "enum": [
+                                        "recommended",
+                                        "other"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "model_ids": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "model_ids"
+                                  ]
+                                }
+                              },
                               "availability": {
                                 "type": "object",
                                 "properties": {
@@ -69729,6 +70763,54 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "allowance": {
+                                      "type": "object",
+                                      "properties": {
+                                        "state": {
+                                          "enum": [
+                                            "included",
+                                            "free",
+                                            "blocked",
+                                            "credits",
+                                            "unknown"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "usage_level": {
+                                          "anyOf": [
+                                            {
+                                              "enum": [
+                                                "free",
+                                                "low",
+                                                "medium",
+                                                "top_tier"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "resets_at_ms": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": 0,
+                                              "maximum": 8640000000000000
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "state",
+                                        "usage_level",
+                                        "resets_at_ms"
+                                      ]
+                                    },
                                     "id": {
                                       "type": "string"
                                     },
@@ -69804,6 +70886,54 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "allowance": {
+                                      "type": "object",
+                                      "properties": {
+                                        "state": {
+                                          "enum": [
+                                            "included",
+                                            "free",
+                                            "blocked",
+                                            "credits",
+                                            "unknown"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "usage_level": {
+                                          "anyOf": [
+                                            {
+                                              "enum": [
+                                                "free",
+                                                "low",
+                                                "medium",
+                                                "top_tier"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "resets_at_ms": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": 0,
+                                              "maximum": 8640000000000000
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "state",
+                                        "usage_level",
+                                        "resets_at_ms"
+                                      ]
+                                    },
                                     "id": {
                                       "type": "string"
                                     },
@@ -71298,6 +72428,54 @@
                             "items": {
                               "type": "object",
                               "properties": {
+                                "allowance": {
+                                  "type": "object",
+                                  "properties": {
+                                    "state": {
+                                      "enum": [
+                                        "included",
+                                        "free",
+                                        "blocked",
+                                        "credits",
+                                        "unknown"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "usage_level": {
+                                      "anyOf": [
+                                        {
+                                          "enum": [
+                                            "free",
+                                            "low",
+                                            "medium",
+                                            "top_tier"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "resets_at_ms": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 8640000000000000
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "state",
+                                    "usage_level",
+                                    "resets_at_ms"
+                                  ]
+                                },
                                 "id": {
                                   "type": "string"
                                 },
@@ -71759,6 +72937,125 @@
                         {
                           "type": "object",
                           "properties": {
+                            "plan_usage": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "const": "usage_window"
+                                    },
+                                    "plan": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "gauges": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "label": {
+                                            "type": "string"
+                                          },
+                                          "left_fraction": {
+                                            "type": "number",
+                                            "minimum": 0,
+                                            "maximum": 1
+                                          },
+                                          "style": {
+                                            "enum": [
+                                              "green",
+                                              "yellow",
+                                              "red"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "resets_at_ms": {
+                                            "anyOf": [
+                                              {
+                                                "type": "integer",
+                                                "minimum": 0,
+                                                "maximum": 8640000000000000
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "scope": {
+                                            "type": "string"
+                                          },
+                                          "title": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "label",
+                                          "left_fraction",
+                                          "style",
+                                          "resets_at_ms",
+                                          "scope",
+                                          "title"
+                                        ]
+                                      }
+                                    },
+                                    "top_tier_model_ids": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "featured_model_ids": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "paused_reason": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "credits_pay": {
+                                      "anyOf": [
+                                        {
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "plan",
+                                    "gauges",
+                                    "top_tier_model_ids",
+                                    "featured_model_ids",
+                                    "paused_reason",
+                                    "credits_pay"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "plan_stale": {
+                              "type": "boolean"
+                            },
                             "available": {
                               "type": "boolean"
                             },
@@ -72196,6 +73493,125 @@
                       "items": {
                         "type": "object",
                         "properties": {
+                          "plan_usage": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "const": "usage_window"
+                                  },
+                                  "plan": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "gauges": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "label": {
+                                          "type": "string"
+                                        },
+                                        "left_fraction": {
+                                          "type": "number",
+                                          "minimum": 0,
+                                          "maximum": 1
+                                        },
+                                        "style": {
+                                          "enum": [
+                                            "green",
+                                            "yellow",
+                                            "red"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "resets_at_ms": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": 0,
+                                              "maximum": 8640000000000000
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "scope": {
+                                          "type": "string"
+                                        },
+                                        "title": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "label",
+                                        "left_fraction",
+                                        "style",
+                                        "resets_at_ms",
+                                        "scope",
+                                        "title"
+                                      ]
+                                    }
+                                  },
+                                  "top_tier_model_ids": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "featured_model_ids": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "paused_reason": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "credits_pay": {
+                                    "anyOf": [
+                                      {
+                                        "type": "boolean"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "plan",
+                                  "gauges",
+                                  "top_tier_model_ids",
+                                  "featured_model_ids",
+                                  "paused_reason",
+                                  "credits_pay"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "plan_stale": {
+                            "type": "boolean"
+                          },
                           "computed_at": {
                             "type": "string",
                             "description": "Original reference time of this source, retained with stale windows."
@@ -73364,6 +74780,150 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "plan_usage": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "const": "usage_window"
+                                      },
+                                      "plan": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "gauges": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "label": {
+                                              "type": "string"
+                                            },
+                                            "left_fraction": {
+                                              "type": "number",
+                                              "minimum": 0,
+                                              "maximum": 1
+                                            },
+                                            "style": {
+                                              "enum": [
+                                                "green",
+                                                "yellow",
+                                                "red"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "resets_at_ms": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "integer",
+                                                  "minimum": 0,
+                                                  "maximum": 8640000000000000
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "scope": {
+                                              "type": "string"
+                                            },
+                                            "title": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "label",
+                                            "left_fraction",
+                                            "style",
+                                            "resets_at_ms",
+                                            "scope",
+                                            "title"
+                                          ]
+                                        }
+                                      },
+                                      "top_tier_model_ids": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "featured_model_ids": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "paused_reason": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "credits_pay": {
+                                        "anyOf": [
+                                          {
+                                            "type": "boolean"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "plan",
+                                      "gauges",
+                                      "top_tier_model_ids",
+                                      "featured_model_ids",
+                                      "paused_reason",
+                                      "credits_pay"
+                                    ]
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "plan_stale": {
+                                "type": "boolean"
+                              },
+                              "sections": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "enum": [
+                                        "recommended",
+                                        "other"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "model_ids": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "model_ids"
+                                  ]
+                                }
+                              },
                               "availability": {
                                 "type": "object",
                                 "properties": {
@@ -73412,6 +74972,54 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "allowance": {
+                                      "type": "object",
+                                      "properties": {
+                                        "state": {
+                                          "enum": [
+                                            "included",
+                                            "free",
+                                            "blocked",
+                                            "credits",
+                                            "unknown"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "usage_level": {
+                                          "anyOf": [
+                                            {
+                                              "enum": [
+                                                "free",
+                                                "low",
+                                                "medium",
+                                                "top_tier"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "resets_at_ms": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": 0,
+                                              "maximum": 8640000000000000
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "state",
+                                        "usage_level",
+                                        "resets_at_ms"
+                                      ]
+                                    },
                                     "id": {
                                       "type": "string"
                                     },
@@ -73487,6 +75095,54 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "allowance": {
+                                      "type": "object",
+                                      "properties": {
+                                        "state": {
+                                          "enum": [
+                                            "included",
+                                            "free",
+                                            "blocked",
+                                            "credits",
+                                            "unknown"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "usage_level": {
+                                          "anyOf": [
+                                            {
+                                              "enum": [
+                                                "free",
+                                                "low",
+                                                "medium",
+                                                "top_tier"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "resets_at_ms": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": 0,
+                                              "maximum": 8640000000000000
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "state",
+                                        "usage_level",
+                                        "resets_at_ms"
+                                      ]
+                                    },
                                     "id": {
                                       "type": "string"
                                     },
@@ -74026,6 +75682,150 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "plan_usage": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "const": "usage_window"
+                                      },
+                                      "plan": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "gauges": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "label": {
+                                              "type": "string"
+                                            },
+                                            "left_fraction": {
+                                              "type": "number",
+                                              "minimum": 0,
+                                              "maximum": 1
+                                            },
+                                            "style": {
+                                              "enum": [
+                                                "green",
+                                                "yellow",
+                                                "red"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "resets_at_ms": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "integer",
+                                                  "minimum": 0,
+                                                  "maximum": 8640000000000000
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "scope": {
+                                              "type": "string"
+                                            },
+                                            "title": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "label",
+                                            "left_fraction",
+                                            "style",
+                                            "resets_at_ms",
+                                            "scope",
+                                            "title"
+                                          ]
+                                        }
+                                      },
+                                      "top_tier_model_ids": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "featured_model_ids": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "paused_reason": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "credits_pay": {
+                                        "anyOf": [
+                                          {
+                                            "type": "boolean"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "plan",
+                                      "gauges",
+                                      "top_tier_model_ids",
+                                      "featured_model_ids",
+                                      "paused_reason",
+                                      "credits_pay"
+                                    ]
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "plan_stale": {
+                                "type": "boolean"
+                              },
+                              "sections": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "enum": [
+                                        "recommended",
+                                        "other"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "model_ids": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "model_ids"
+                                  ]
+                                }
+                              },
                               "availability": {
                                 "type": "object",
                                 "properties": {
@@ -74074,6 +75874,54 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "allowance": {
+                                      "type": "object",
+                                      "properties": {
+                                        "state": {
+                                          "enum": [
+                                            "included",
+                                            "free",
+                                            "blocked",
+                                            "credits",
+                                            "unknown"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "usage_level": {
+                                          "anyOf": [
+                                            {
+                                              "enum": [
+                                                "free",
+                                                "low",
+                                                "medium",
+                                                "top_tier"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "resets_at_ms": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": 0,
+                                              "maximum": 8640000000000000
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "state",
+                                        "usage_level",
+                                        "resets_at_ms"
+                                      ]
+                                    },
                                     "id": {
                                       "type": "string"
                                     },
@@ -74149,6 +75997,54 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "allowance": {
+                                      "type": "object",
+                                      "properties": {
+                                        "state": {
+                                          "enum": [
+                                            "included",
+                                            "free",
+                                            "blocked",
+                                            "credits",
+                                            "unknown"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "usage_level": {
+                                          "anyOf": [
+                                            {
+                                              "enum": [
+                                                "free",
+                                                "low",
+                                                "medium",
+                                                "top_tier"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "resets_at_ms": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": 0,
+                                              "maximum": 8640000000000000
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "state",
+                                        "usage_level",
+                                        "resets_at_ms"
+                                      ]
+                                    },
                                     "id": {
                                       "type": "string"
                                     },

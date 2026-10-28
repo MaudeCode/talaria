@@ -6399,6 +6399,153 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "properties": {
+      "metadata_status": {
+        "type": "string",
+        "enum": [
+          "current",
+          "pending",
+          "stale",
+          "error",
+          "unsupported"
+        ]
+      },
+      "plan_usage": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "usage_window"
+              },
+              "plan": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "gauges": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "label": {
+                      "type": "string"
+                    },
+                    "left_fraction": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "style": {
+                      "type": "string",
+                      "enum": [
+                        "green",
+                        "yellow",
+                        "red"
+                      ]
+                    },
+                    "resets_at_ms": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 8640000000000000
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "scope": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "label",
+                    "left_fraction",
+                    "style",
+                    "resets_at_ms",
+                    "scope",
+                    "title"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "top_tier_model_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "featured_model_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "paused_reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "credits_pay": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "plan",
+              "gauges",
+              "top_tier_model_ids",
+              "featured_model_ids",
+              "paused_reason",
+              "credits_pay"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "usage_levels": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {
+          "type": "string",
+          "enum": [
+            "free",
+            "low",
+            "medium",
+            "top_tier"
+          ]
+        }
+      },
+      "unavailable_model_ids": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "allowance_pending": {
+        "type": "boolean"
+      },
+      "free_tier": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
       "provider": {
         "type": "string"
       },
@@ -8205,6 +8352,50 @@
           {
             "type": "object",
             "properties": {
+              "plan_gauge": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "maxLength": 128
+                      },
+                      "label": {
+                        "type": "string",
+                        "maxLength": 256
+                      },
+                      "used_bp": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 10000
+                      },
+                      "resets_at_ms": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "label",
+                      "used_bp",
+                      "resets_at_ms"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "session_id": {
                 "type": "string"
               },
@@ -8982,6 +9173,50 @@
           {
             "type": "object",
             "properties": {
+              "plan_gauge": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "maxLength": 128
+                      },
+                      "label": {
+                        "type": "string",
+                        "maxLength": 256
+                      },
+                      "used_bp": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 10000
+                      },
+                      "resets_at_ms": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "label",
+                      "used_bp",
+                      "resets_at_ms"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "session_id": {
                 "type": "string"
               },
@@ -10416,6 +10651,50 @@
       "usage": {
         "type": "object",
         "properties": {
+          "plan_gauge": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "label": {
+                    "type": "string",
+                    "maxLength": 256
+                  },
+                  "used_bp": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 10000
+                  },
+                  "resets_at_ms": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "label",
+                  "used_bp",
+                  "resets_at_ms"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "prompt_tokens": {
             "type": "integer",
             "minimum": -9007199254740991,

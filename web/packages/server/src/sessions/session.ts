@@ -1,3 +1,4 @@
+import { PlanGaugeSchema, type PlanGauge } from '@maudecode/talaria-web-contracts'
 import type { SessionPrefixIndex } from './prefix-index.js'
 /**
  * The persisted WebUI session record (Python `api/models.Session`). The file
@@ -243,6 +244,7 @@ export class Session {
   pinned: boolean
   archived: boolean
   project_id: string | null
+  plan_gauge: PlanGauge | null
   input_tokens: number
   output_tokens: number
   estimated_cost: unknown
@@ -357,6 +359,7 @@ export class Session {
     this.archived = Boolean(take('archived', false))
     const projectId = take('project_id', null)
     this.project_id = projectId ? str(projectId) : null
+    this.plan_gauge = PlanGaugeSchema.safeParse(take('plan_gauge', null)).data ?? null
     this.input_tokens = Number(take('input_tokens', 0) ?? 0) || 0
     this.output_tokens = Number(take('output_tokens', 0) ?? 0) || 0
     this.estimated_cost = take('estimated_cost', null)
@@ -469,6 +472,7 @@ export class Session {
       meta.pending_started_at = null
       meta.pending_user_source = null
     }
+    if (this.plan_gauge !== null) meta.plan_gauge = this.plan_gauge
     meta.message_count = this.messages.length
     meta.anchor_scene_index = anchorSceneIndexFromRecords(this.anchor_activity_scenes)
     this.anchorSceneIndex = { ...(meta.anchor_scene_index as Record<string, number>) }
@@ -516,6 +520,7 @@ export class Session {
       archived: this.archived,
       project_id: this.project_id,
       profile: this.profile,
+      ...(this.plan_gauge !== null ? { plan_gauge: this.plan_gauge } : {}),
       input_tokens: this.input_tokens,
       output_tokens: this.output_tokens,
       estimated_cost: this.estimated_cost,
@@ -636,4 +641,9 @@ export function sortKeys(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sortKeys)
   if (isDict(value)) return Object.fromEntries(Object.keys(value).sort().map((k) => [k, sortKeys(value[k])]))
   return value
+}
+
+/** Complete snapshots clear omitted gauges; partial ticks keep the last confirmed value. */
+export function applyPlanGauge(target: { plan_gauge?: PlanGauge | null }, data: Record<string, unknown>, complete: boolean): void {
+  if (complete || Object.hasOwn(data, 'plan_gauge')) target.plan_gauge = PlanGaugeSchema.safeParse(data.plan_gauge).data ?? null
 }

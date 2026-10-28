@@ -466,3 +466,23 @@ After publication the existing Skills/MCP reload owners refresh runtime views;
 a failed reload leaves imported files saved and reports the remaining reload.
 Server config/catalog caches and Web profile, memory, skill and MCP query
 families invalidate. No service restarts. Stable ignores the additive record.
+
+## Plan allowance display
+
+The optional `plan_usage`, model `allowance`, and catalog `sections` fields extend
+existing model and quota responses. Native inventory supplies plan gauges, model
+usage levels, and `credits_pay`; the profile-scoped catalog owns classification
+and Recommended/Other membership, including saved models outside the inventory.
+An unknown tier, pending entitlement, expired window, or unknown credit balance
+never becomes a promise of included usage or credit coverage. Only native
+`credits_pay: true` permits coverage wording. Repeated pending reads retain labels
+and recommendations within the same credential generation and mark gauges stale.
+
+Direct and owner usage carry optional `plan_gauge` through metering, terminal
+frames, persisted sessions, and journal replay. A complete direct snapshot, owner
+payload with `calls`/`api_calls`, or terminal owner usage clears an omitted gauge;
+partial owner ticks retain it. Owner snapshot reads bind stats to the same home,
+authority, replay epoch, and execution generation. A replacement owner or turn
+starts with no retained gauge. These additions use sidecar RPC version 66 and
+remain optional for independently updated clients. They add no billing writer,
+model switching, prompt retry, or failed-turn recovery policy.

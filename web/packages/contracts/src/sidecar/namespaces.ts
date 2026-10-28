@@ -1,5 +1,6 @@
 import { DelegationRegistrySchema, DelegationBlockSchema } from '../delegation.js'
 import { GroupSidecarParamsSchema, GroupSidecarResultSchema } from '../groups-native.js'
+import { PlanGaugeSchema, ModelAllowanceSnapshotSchema } from '../plan-usage.js'
 import { OutboundDraftRefSchema, OutboundDraftFieldsSchema, OutboundDraftResultSchema } from '../outbound-drafts.js'
 import { McpCostPolicyDataSchema } from '../mcp-cost-policy.js'
 import { ContextDetailSchema } from '../context-detail.js'
@@ -461,7 +462,7 @@ export const PROVIDERS_METHODS = {
   'providers.registry': { params: ProfileHomeParams, result: z.object({ providers: z.record(z.string(), z.object({ id: z.string(), name: z.string(), auth_type: z.string() }).catchall(Json)) }) },
   'providers.nous_account': { params: ProfileHomeParams, result: z.object({ nous_account: NousAccountSchema.nullable() }) },
   'providers.auth_status': { params: ProfileHomeParams.extend({ provider: z.string().nullable().optional() }), result: z.object({ status: z.object({ logged_in: z.boolean() }).catchall(Json) }) },
-  'providers.model_ids': { params: ProfileHomeParams.extend({ provider: z.string().min(1), force_refresh: z.boolean().optional() }), result: z.object({ provider: z.string(), model_ids: z.array(z.string()), fallback: z.boolean().default(false) }) },
+  'providers.model_ids': { params: ProfileHomeParams.extend({ provider: z.string().min(1), force_refresh: z.boolean().optional() }), result: ModelAllowanceSnapshotSchema.extend({ provider: z.string(), model_ids: z.array(z.string()), fallback: z.boolean().default(false) }) },
   'providers.local_models': { params: ProfileHomeParams, result: z.object({ provider_id: z.string(), models: z.array(z.string()), current_endpoint: z.string().nullable() }) },
   'providers.resolve_runtime': { params: ProfileHomeParams.extend({ requested: z.string().nullable().optional(), api_key: z.string().nullable().optional(), base_url: z.string().nullable().optional(), target_model: z.string().nullable().optional() }), result: z.object({ runtime: Loose }) },
   'providers.credential_pool': { params: ProfileHomeParams.extend({ provider: z.string().min(1) }), result: z.object({ available: z.boolean(), strategy: z.string(), entries: z.array(Loose) }) },
@@ -666,7 +667,7 @@ export const CHECKPOINTS_METHODS = {
   },
 } as const
 // ── chat / approval / clarify ──────────────────────────────────────────
-export const ChatUsageSchema = z.object({ prompt_tokens: z.number().int(), completion_tokens: z.number().int(), cache_read_tokens: z.number().int(), cache_write_tokens: z.number().int(), estimated_cost_usd: z.number().nullable() })
+export const ChatUsageSchema = z.object({ plan_gauge: PlanGaugeSchema.nullable().optional(), prompt_tokens: z.number().int(), completion_tokens: z.number().int(), cache_read_tokens: z.number().int(), cache_write_tokens: z.number().int(), estimated_cost_usd: z.number().nullable() })
 /**
  * `failed`, `partial`, and `compression_exhausted` are the Agent's own turn-result flags, forwarded as sent; `failed` also sets `status: 'error'`.
  * `max_iterations_summary_request` is the Agent's text for the user row it appends to ask for a summary once its tool budget runs out

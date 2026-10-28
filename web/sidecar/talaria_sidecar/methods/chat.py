@@ -313,8 +313,14 @@ def _usage(agent: Any) -> dict:
         value = getattr(agent, name, None)
         return value if isinstance(value, (int, float)) else 0
 
+    try:
+        from gateway.session_usage import plan_gauge
+        gauge = plan_gauge(agent)
+    except Exception:  # noqa: BLE001 - older Agent capability omission clears a complete snapshot
+        gauge = None
     cost = getattr(agent, "session_estimated_cost_usd", None)
     return {
+        "plan_gauge": gauge,
         "prompt_tokens": int(_num("session_prompt_tokens")),
         "completion_tokens": int(_num("session_completion_tokens")),
         "cache_read_tokens": int(_num("session_cache_read_tokens")),

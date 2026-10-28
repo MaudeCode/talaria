@@ -69,7 +69,7 @@ export interface LiveTurn {
   reasoningTitles: string[]
   lastEventId: string
   lastSeq: number
-  usage: unknown
+  usage: { plan_gauge?: import('@maudecode/talaria-web-contracts').PlanGauge | null | undefined; [key: string]: unknown } | null
   tps: number | null
   contextStatus: { state?: string | undefined; message?: string | undefined } | null
   warning: string | null

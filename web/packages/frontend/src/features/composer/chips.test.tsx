@@ -54,6 +54,26 @@ function renderChip(props: { model: string | null; optionId: string | null }, on
 }
 
 describe('ModelChip', () => {
+  it('renders server-owned allowance labels and sections, including an unknown saved model', async () => {
+    catalog = { groups: [{ provider: 'Nous', provider_id: 'nous', plan_usage: null,
+      sections: [{ kind: 'recommended', model_ids: ['included'] }, { kind: 'other', model_ids: ['saved', 'free', 'large'] }],
+      models: [
+        { id: 'saved', label: 'Saved model', allowance: { state: 'unknown', usage_level: null, resets_at_ms: null } },
+        { id: 'included', label: 'Included model', allowance: { state: 'included', usage_level: 'low', resets_at_ms: null } },
+        { id: 'free', label: 'Free model', allowance: { state: 'free', usage_level: 'free', resets_at_ms: null } },
+        { id: 'large', label: 'Large model', allowance: { state: 'blocked', usage_level: 'top_tier', resets_at_ms: null } },
+      ],
+    }] }
+    renderChip({ model: 'saved', optionId: 'saved' })
+    await userEvent.click(screen.getByRole('button'))
+    expect(await screen.findByText('Recommended')).toBeVisible()
+    expect(screen.getByText('Other')).toBeVisible()
+    expect(screen.getAllByRole('menuitemradio').map((el) => el.textContent)).toEqual([
+      'Included model · Included', 'Saved model · Allowance unknown', 'Free model · Free', 'Large model · Large · Allowance exhausted',
+    ])
+    expect(screen.getByRole('menuitemradio', { name: 'Saved model · Allowance unknown' })).not.toHaveAttribute('aria-disabled', 'true')
+  })
+
   it('keeps model-search focus through initialization and closes on Escape', async () => {
     catalog = COLON_CATALOG
     renderChip({ model: null, optionId: null })

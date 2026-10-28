@@ -335,6 +335,35 @@ def model_ids(provider_id: str, *, force_refresh: bool) -> tuple[list[str], bool
         return [], False
 
 
+def model_allowance_snapshot(provider_id: str, *, force_refresh: bool) -> dict:
+    """Native picker metadata in this call's scoped home; no billing write or second usage poll."""
+    if provider_id != "nous":
+        return {}
+    try:
+        from hermes_cli.inventory import build_model_options_payload, load_picker_context
+        from hermes_cli.model_picker_usage import nous_picker_usage
+    except ImportError:
+        return {"metadata_status": "unsupported"}
+    try:
+        payload = build_model_options_payload(load_picker_context(), refresh=force_refresh)
+        row = next((r for r in payload.get("providers", []) if r.get("slug") == provider_id), {})
+        pending = row.get("pricing_pending") is True or row.get("free_tier_pending") is True
+        plan = row.get("plan_usage")
+        fresh = nous_picker_usage() if isinstance(plan, dict) else None
+        return {
+            "metadata_status": "pending" if pending else "stale" if plan and fresh is None else "current",
+            "plan_usage": plan if isinstance(plan, dict) else None,
+            "usage_levels": {mid: level for mid, level in (row.get("usage_levels") or {}).items()
+                             if isinstance(mid, str) and level in ("free", "low", "medium", "top_tier")},
+            "unavailable_model_ids": [mid for mid in row.get("unavailable_models", []) if isinstance(mid, str)] if not pending else [],
+            "allowance_pending": pending,
+            "free_tier": row.get("free_tier") if isinstance(row.get("free_tier"), bool) else None,
+        }
+    except Exception:  # noqa: BLE001 - unknown entitlement is not unavailability
+        log.debug("native picker allowance unavailable", exc_info=True)
+        return {"metadata_status": "error"}
+
+
 def _requests_local_runtime(requested: str | None) -> bool:
     """Whether a resolution asks for the Agent's managed llama.cpp provider, picked the way the Agent picks it: the
     named provider, else the profile's, else ``HERMES_INFERENCE_PROVIDER``."""
@@ -567,7 +596,8 @@ def register(reg) -> None:
             raise InvalidParams("provider is required")
         with scoped_home(profile_home_param(params)):
             ids, fallback = model_ids(provider, force_refresh=bool(params.get("force_refresh", False)))
-            return {"provider": provider, "model_ids": ids, "fallback": fallback}
+            return {"provider": provider, "model_ids": ids, "fallback": fallback,
+                    **model_allowance_snapshot(provider, force_refresh=bool(params.get("force_refresh", False)))}
 
     @reg.method("providers.local_models")
     def local(ctx: CallContext, params: dict) -> dict:

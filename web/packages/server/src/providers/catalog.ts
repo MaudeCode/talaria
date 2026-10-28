@@ -16,7 +16,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { atomicWriteText } from '../fs/atomic.js'
 import type { SidecarLike } from '../sidecar/client.js'
-import type { CatalogAvailability, KeySourceKind, SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
+import type { CatalogAvailability, ModelAllowance, PlanUsage, KeySourceKind, SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
 import { str } from '../util.js'
 import { QUOTA_THRESHOLD_DEFAULTS, type QuotaThresholds } from '../settings.js'
 import { loadEnvFile } from './env-file.js'
@@ -28,12 +28,13 @@ import {
   modelSection, parseProviderQualifiedModel, providerIdentity, resolveProviderAlias, type AgentConfig, type Config, type Dict, type SpeedTier,
 } from '../config/agent-config.js'
 
-export interface ModelEntry { id: string; label: string; supports_fast_tier?: boolean; supported_speed_tiers?: SpeedTier[]; provider_id?: string; bare_id?: string; limit?: { scope: 'model'; resets_at: string } }
+export interface ModelEntry { id: string; label: string; supports_fast_tier?: boolean; supported_speed_tiers?: SpeedTier[]; provider_id?: string; bare_id?: string; allowance?: ModelAllowance; limit?: { scope: 'model'; resets_at: string } }
 type PluginProvider = SidecarResult<'plugins.providers'>['providers'][number]
 interface QuotaSourceRow extends Dict { source_id: string; provider_id: string; account_label: string }
 interface CatalogLookup<T> { value: T | null; authoritative: boolean }
 export interface ModelGroup {
   availability?: CatalogAvailability
+  plan_usage?: PlanUsage | null; plan_stale?: boolean; sections?: { kind: 'recommended' | 'other'; model_ids: string[] }[]
   provider: string; provider_id: string; models: ModelEntry[]; extra_models?: ModelEntry[]
   limit?: { scope: 'account'; resets_at: string } | { scope: 'models'; models: Record<string, string> }; quota_level?: QuotaLevel
 }
@@ -526,7 +527,7 @@ export class ProviderCatalog {
   /** Failed live lookups by home, provider, and the `sourceFingerprint` they ran under (TAL-542). */
   private readonly liveFailed = new Set<string>()
   /** `source`: the `sourceFingerprint` the ids were fetched under; another one makes them stale (TAL-542). `ttl`: seconds they stay fresh. */
-  private readonly liveIds = new Map<string, { at: number; ids: string[]; source: string; ttl: number; confirmed: boolean }>()
+  private readonly liveIds = new Map<string, { at: number; ids: string[]; source: string; ttl: number; confirmed: boolean; snapshot?: SidecarResult<'providers.model_ids'> }>()
   private readonly liveInflight = new Map<string, Promise<string[]>>()
   /** `pooled`: the fill's `poolProviders` answer, null when unknown (TAL-638). */
   private readonly providersCache = new Map<string, { at: number; key: string; payload: { providers: Dict[]; active_provider: string | null; availability: CatalogAvailability }; pooled: string[] | null }>()
@@ -765,13 +766,20 @@ export class ProviderCatalog {
       .then((r) => {
         if (source !== this.sourceFingerprint(profileHome)) { this.liveFailed.add(flightKey); return [] }
         if (r.fallback && hit?.source === source && hit.confirmed) { this.liveFailed.add(flightKey); return hit.ids }
-        this.liveIds.set(key, { at: this.deps.now(), ids: r.model_ids, source, ttl: r.fallback ? FALLBACK_TTL_S : LIVE_TTL_S, confirmed: !r.fallback })
+        const retaining = ['pending', 'stale', 'error'].includes(r.metadata_status ?? '') || r.allowance_pending
+        const prior = hit?.source === source ? hit.snapshot : undefined
+        const plan = r.plan_usage && prior?.plan_usage && retaining ? { ...r.plan_usage,
+          featured_model_ids: r.plan_usage.featured_model_ids.length ? r.plan_usage.featured_model_ids : prior.plan_usage.featured_model_ids,
+        } : r.plan_usage ?? (retaining ? prior?.plan_usage : undefined)
+        const snapshot = retaining && prior ? { ...r, plan_usage: plan, usage_levels: { ...prior.usage_levels, ...r.usage_levels } } : r
+        const ids = retaining && !r.model_ids.length && hit?.source === source ? hit.ids : r.model_ids
+        this.liveIds.set(key, { at: this.deps.now(), ids, source, ttl: r.fallback ? FALLBACK_TTL_S : pid === 'nous' ? ACCOUNT_USAGE_CACHE_TTL_S : LIVE_TTL_S, confirmed: !r.fallback, snapshot })
         // TAL-799: the Agent's curated placeholder for an unreachable catalog is a failed lookup that still lists models.
         if (r.fallback) this.liveFailed.add(flightKey)
         else this.liveFailed.delete(flightKey)
-        return r.model_ids
+        return ids
       })
-      .catch((error: unknown) => { this.deps.log(`[catalog] live model ids for ${pid} failed: ${str((error as Error).message)}`); this.liveFailed.add(flightKey); return hit?.source === source && source === this.sourceFingerprint(profileHome) ? hit.ids : [] })
+      .catch((error: unknown) => { this.deps.log(`[catalog] live model ids for ${pid} failed: ${str((error as Error).message)}`); this.liveFailed.add(flightKey); if (hit?.source === source && hit.snapshot) hit.snapshot.metadata_status = 'error'; return hit?.source === source && source === this.sourceFingerprint(profileHome) ? hit.ids : [] })
       .finally(() => { this.liveInflight.delete(flightKey) })
     this.liveInflight.set(flightKey, run)
     return run
@@ -1078,6 +1086,10 @@ export class ProviderCatalog {
         else if (groups.length) groups.push({ provider: 'Default', provider_id: active ?? 'default', models: [{ id: defaultModel, label }] })
       }
     }
+    for (const g of groups) if (g.provider_id === 'nous') {
+      await this.liveModelIds(profileHome, g.provider_id, { source })
+      this.applyPlanAllowance(profileHome, g, source)
+    }
     deduplicateModelIds(groups)
     // Python: every group is split into visible rows plus `extra_models`; Nous decorates its label with "(15 of N)".
     const selectedId = str(model.model).trim() || defaultModel
@@ -1112,7 +1124,46 @@ export class ProviderCatalog {
       return this.remember(profileHome, { source, generation, unconfirmed, attempt }, { ...defaults, groups: [{ provider: 'Default', provider_id: providerId, models: stampModelEntries([{ id: defaultModel, label: labelForModel(defaultModel, []) }], providerId) }], aliases: {}, configured_model_badges: {} })
     }
     const stamped = kept.map((g) => ({ ...g, models: stampModelEntries(g.models, g.provider_id), ...(g.extra_models ? { extra_models: stampModelEntries(g.extra_models, g.provider_id) } : {}) }))
+    for (const g of stamped) if (g.plan_usage) {
+      const featured = new Set(g.plan_usage.featured_model_ids)
+      g.sections = (['recommended', 'other'] as const).map((kind) => ({ kind,
+        model_ids: [...g.models, ...(g.extra_models ?? [])].filter((m) => featured.has(m.bare_id ?? m.id) === (kind === 'recommended')).map((m) => m.id),
+      })).filter((section) => section.model_ids.length)
+    }
     return this.remember(profileHome, { source, generation, unconfirmed, attempt }, { ...defaults, groups: stamped, aliases, configured_model_badges: this.badges(kept, active, defaultModel, fallbackCfg) })
+  }
+
+  private applyPlanAllowance(profileHome: string, group: ModelGroup, source = this.sourceFingerprint(profileHome)): void {
+    const hit = this.liveIds.get(`${profileHome}\0${group.provider_id}`)
+    const snapshot = hit?.source === source ? hit.snapshot : undefined
+    if (!snapshot || snapshot.metadata_status === 'unsupported') return
+    const plan = snapshot.plan_usage
+    group.plan_usage = plan ?? null
+    const stale = this.liveLookupFailed(profileHome, group.provider_id, source) || this.deps.now() - hit!.at > ACCOUNT_USAGE_CACHE_TTL_S
+      || ['pending', 'stale', 'error'].includes(snapshot.metadata_status ?? '') || snapshot.allowance_pending === true
+      || plan?.gauges.some((g) => g.resets_at_ms !== null && g.resets_at_ms <= this.deps.now() * 1000) === true
+    group.plan_stale = stale
+    for (const entry of group.models) {
+      const id = parseProviderQualifiedModel(entry.id)?.[0] ?? entry.id
+      const level = snapshot.usage_levels?.[id] ?? (plan?.top_tier_model_ids.includes(id) ? 'top_tier' : null)
+      const gauges = plan?.gauges.filter((g) => g.scope === 'all' || g.scope === 'top_tier' && level === 'top_tier') ?? []
+      const expired = gauges.some((g) => g.resets_at_ms !== null && g.resets_at_ms <= this.deps.now() * 1000)
+      const exhausted = gauges.filter((g) => g.left_fraction <= 0)
+      const reset = exhausted.length && exhausted.every((g) => g.resets_at_ms !== null) ? Math.max(...exhausted.map((g) => g.resets_at_ms!)) : null
+      let state: ModelAllowance['state'] = 'unknown'
+      if (!stale && !expired) {
+        if (level === 'free') state = 'free'
+        else if (snapshot.unavailable_model_ids?.includes(id) || level !== null && plan?.paused_reason) state = 'blocked'
+        else if (plan && level !== null && gauges.some((g) => g.scope === 'all')) state = exhausted.length
+          ? plan.credits_pay === true ? 'credits' : plan.credits_pay === false ? 'blocked' : 'unknown'
+          : 'included'
+      }
+      entry.allowance = { state, usage_level: level, resets_at_ms: stale || expired ? null : reset }
+    }
+    if (plan) {
+      const rank = new Map(plan.featured_model_ids.map((id, i) => [id, i]))
+      group.models.sort((a, b) => (rank.get(parseProviderQualifiedModel(a.id)?.[0] ?? a.id) ?? Infinity) - (rank.get(parseProviderQualifiedModel(b.id)?.[0] ?? b.id) ?? Infinity))
+    }
   }
 
   private readonly pickerLimitsCache = new Map<string, { source: string; at?: number; limits: SidecarResult<'usage.limits'>['limits']; read?: Promise<void> }>()
@@ -1366,6 +1417,18 @@ export class ProviderCatalog {
     if (credential && credential.status !== 'available') {
       return answer(false, 'unavailable', `${name} credential is unavailable. ${str(credential.unavailable_reason)}`.trim(), { account_limits: poolEntryLimits(credential, at) })
     }
+    if (provider === 'nous' && !credential) {
+      await this.liveModelIds(profileHome, provider)
+      const group: ModelGroup = { provider: name, provider_id: provider, models: [] }
+      this.applyPlanAllowance(profileHome, group)
+      if (group.plan_usage) {
+        const windows = group.plan_usage.gauges.map((g) => ({ label: g.title || g.label, used_percent: (1 - g.left_fraction) * 100,
+          remaining_percent: g.left_fraction * 100, resets_at: g.resets_at_ms === null ? null : new Date(g.resets_at_ms).toISOString(), scope: g.scope === 'all' ? 'account' : 'model' }))
+        const limits = { available: true, title: group.plan_usage.plan ?? 'Plan allowance', plan_usage: group.plan_usage, plan_stale: group.plan_stale,
+          fetched_at: null, ...normalizeQuotaWindows(windows, at) }
+        return answer(true, group.plan_stale ? 'stale' : 'available', '', { account_limits: limits })
+      }
+    }
     if (ACCOUNT_USAGE_PROVIDERS.has(provider)) {
       const sidecar = this.deps.sidecar()
       let limits: Dict | null = null
@@ -1552,7 +1615,7 @@ export class ProviderCatalog {
       const entries = found.value?.entries ?? []
       const accounts = entries.map((e) => ({ source_id: sourceId(pid, e.credential_id), provider_id: pid, provider_label: label, account_label: e.label, credential: e }))
       // The provider's own key is a source unless a pool account already holds it.
-      const ownKey = found.authoritative && ((!entries.length && (p.has_key === true || p.is_custom === true) && !pooled.has(pid)) || ((apiKey !== null || found.value?.has_api_key === true) && !entries.some((e) => e.matches_api_key)))
+      const ownKey = found.authoritative && ((pid === 'nous' && p.has_key === true && !entries.some((e) => e.matches_api_key)) || (!entries.length && (p.has_key === true || p.is_custom === true) && !pooled.has(pid)) || ((apiKey !== null || found.value?.has_api_key === true) && !entries.some((e) => e.matches_api_key)))
       return ownKey ? [{ source_id: sourceId(pid, 'provider'), provider_id: pid, provider_label: label, account_label: label, credential: null }, ...accounts] : accounts
     }))
     let descriptors = uniqueQuotaSources(perProvider.flat())
@@ -1566,7 +1629,7 @@ export class ProviderCatalog {
       return classifyQuotaSource({
         computed_at: isoAt(at), source_id: d.source_id, provider_id: d.provider_id, provider_label: d.provider_label, account_label: d.account_label,
         is_active_provider: d.provider_id === active, supported: q.supported === true, status: str(limits.status) || str(q.status) || 'unavailable',
-        plan: limits.plan ?? null, windows: (limits.windows ?? []) as QuotaWindow[], pace_window_index: (limits.pace_window_index ?? null) as number | null, session_window_index: limits.session_window_index ?? null, weekly_window_index: limits.weekly_window_index ?? null, quota: q.quota ?? null, balances: q.balances ?? [], details: limits.details ?? [],
+        plan_usage: limits.plan_usage ?? null, plan_stale: limits.plan_stale ?? false, plan: limits.plan ?? null, windows: (limits.windows ?? []) as QuotaWindow[], pace_window_index: (limits.pace_window_index ?? null) as number | null, session_window_index: limits.session_window_index ?? null, weekly_window_index: limits.weekly_window_index ?? null, quota: q.quota ?? null, balances: q.balances ?? [], details: limits.details ?? [],
         unavailable_reason: limits.unavailable_reason ?? null, retry_after: limits.retry_after ?? null, fetched_at: limits.fetched_at ?? null, message: q.message ?? null,
       }, thresholds)
     }))

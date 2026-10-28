@@ -1,4 +1,4 @@
-import { oc } from '@orpc/contract'
+import { oc, type EnhancedContractRouter } from '@orpc/contract'
 import { coreContract } from './routes/core.js'
 import { sessionsContract } from './routes/sessions.js'
 import { workspacesContract } from './routes/workspaces.js'
@@ -12,9 +12,14 @@ import { groupsContract } from './routes/groups.js'
 /**
  * The composed route contract. Domain segments are added per checkpoint
  * (docs/architecture/contract-package.md); the server implements exactly this
- * router and the OpenAPI document is generated from it.
+ * router and the OpenAPI document is generated from it. Keep domain types named
+ * so declaration emit does not expand the entire schema tree.
  */
-export const routeContract = oc.router({
+export const routeContract: EnhancedContractRouter<
+  typeof coreContract & typeof sessionsContract & typeof workspacesContract & typeof gitContract
+  & typeof chatContract & typeof settingsContract & typeof toolsContract & typeof automationContract & typeof groupsContract,
+  Record<never, never>
+> = oc.router({
   ...coreContract,
   ...sessionsContract,
   ...workspacesContract,

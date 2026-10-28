@@ -1,3 +1,4 @@
+import { PlanGaugeSchema } from './plan-usage.js'
 import { ContextDetailSchema } from './context-detail.js'
 import { z } from 'zod'
 import { CheckpointReadSchema } from './checkpoint.js'
@@ -30,6 +31,7 @@ export const GatewayAdmissionSchema = z.object({
   text: z.string().optional(), input_id: z.string().optional(),
 })
 export const GatewaySnapshotSchema = z.object({
+  plan_gauge: PlanGaugeSchema.nullable().optional(),
   session_id: z.string(), stored_session_id: z.string(), messages: z.array(ObjectSchema), message_count: z.number().int(),
   running: z.boolean(), authority_epoch: z.number().int(), replay_epoch: z.string(), last_sequence: z.number().int(),
   subscription_id: z.string(), revision: z.number().int(), execution_generation: z.number().int(),
