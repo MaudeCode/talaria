@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useId, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useEffectEvent, useId, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { Archive, FolderPlus, Plus, RefreshCw, X } from 'lucide-react'
@@ -118,7 +118,7 @@ export function KanbanPage() {
   // assignee lanes, which only its reread brings, so turning them on keeps the switch busy until then.
   const lanesOff = requestedView?.value === false
   const lanesStarting = requestedView?.value === true
-  const boardList = useMemo(() => withEffects(boards.data?.boards ?? [], (b) => boardResource(b.slug), effects), [boards.data, effects])
+  const boardList = withEffects(boards.data?.boards ?? [], (b) => boardResource(b.slug), effects)
   // Archiving the current board returns the server to its board that cannot be removed; the reread confirms which.
   const confirmedBoard = boards.data?.current && effects[boardResource(boards.data.current)]?.remove ? boardList.find((b) => !b.removable)?.slug : boards.data?.current
   const current = typeof requestedBoard?.value === 'string' ? requestedBoard.value : confirmedBoard
@@ -164,7 +164,7 @@ export function KanbanPage() {
     mutationFn: ({ board, title, description, status }) => api.createKanbanTask(board, { title, description: description || undefined, status: status || undefined }),
     onError: toastError,
   })
-  const columns = useMemo(() => withCardEffects(board.data?.columns ?? [], current, effects), [board.data, current, effects])
+  const columns = withCardEffects(board.data?.columns ?? [], current, effects)
   const serverReadOnly = !!board.data?.read_only
   // Filter placeholders cannot authorize writes; every write names its board, so a pending switch can.
   const stale = board.isPlaceholderData || !board.data
@@ -172,10 +172,10 @@ export function KanbanPage() {
   const currentBoard = boardList.find((b) => b.slug === current)
   // The dialog follows the board's current copy of the task, so its actions track every refetch; a pending move
   // shows in it even when the target column is off screen.
-  const openTask = useMemo(() => {
+  const openTask = (() => {
     const found = (board.data?.columns ?? []).flatMap((c) => c.tasks).find((t) => String(t.id) === openTaskId)
     return found ? withEffect(found, effects[cardResource(current, String(found.id))]) : null
-  }, [board.data, openTaskId, current, effects])
+  })()
   // Selection is local UI state; a selected card a later filter hides drops out, so bulk acts only on cards on screen.
   const shown = new Set(columns.flatMap((c) => c.tasks.map((t) => String(t.id))))
   const shownSelected = selected.filter((id) => shown.has(id))

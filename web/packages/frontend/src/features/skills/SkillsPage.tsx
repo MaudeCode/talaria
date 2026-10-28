@@ -1,4 +1,4 @@
-import { memo, useMemo, useState } from 'react'
+import { memo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronLeft, Search } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
@@ -23,12 +23,12 @@ export function SkillsPage() {
   const skills = useQuery({ queryKey: keys.skills.all, queryFn: () => api.fetchSkills(), staleTime: 30_000 })
   const usage = useQuery({ queryKey: keys.skills.usage, queryFn: api.fetchSkillsUsage, staleTime: 60_000 })
   const effects = useResourceEffects<boolean>()
-  const list = useMemo(() => withEffects(skills.data?.skills ?? [], (s) => `skill:${s.name}`, effects), [skills.data, effects])
-  const categories = useMemo(() => [...new Set(list.map((s) => s.category).filter((c): c is string => !!c))].sort(), [list])
-  const filtered = useMemo(() => {
+  const list = withEffects(skills.data?.skills ?? [], (s) => `skill:${s.name}`, effects)
+  const categories = [...new Set(list.map((s) => s.category).filter((c): c is string => !!c))].sort()
+  const filtered = (() => {
     const q = query.trim().toLowerCase()
     return list.filter((s) => (!category || s.category === category) && (!q || s.name.toLowerCase().includes(q) || (s.description ?? '').toLowerCase().includes(q)))
-  }, [list, query, category])
+  })()
   const toggle = useResourceMutation({ resource: ({ name }: { name: string; enabled: boolean }) => `skill:${name}`, effect: ({ enabled }) => ({ value: enabled }), queryKey: keys.skills.all, readKeys: () => [{ queryKey: keys.skills.all, exact: true }], mutationFn: ({ name, enabled }: { name: string; enabled: boolean }) => api.toggleSkill(name, enabled), onError: (e) => showErrorToast(e) })
 
   if (selected) return <SkillDetail name={selected} onBack={() => setSelected(null)} />

@@ -3,7 +3,7 @@
  * selected job (or the create/edit form). Selection lives in `?job=` so a task
  * can be linked and the browser back button works; the editor is transient.
  */
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useMutation, useMutationState, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { Copy, ListOrdered, Pause, Play, Plus, RefreshCw, Trash2 } from 'lucide-react'
@@ -99,9 +99,9 @@ export function useTasksWorkbench(selectedId: string | null, onSelect: (id: stri
     onSuccess: (_res, vars) => { if (vars.context === getStreamContext()) { showToast(m.cron_job_triggered()); void invalidate() } },
     onError: (e, vars) => { if (vars.context === getStreamContext()) showErrorToast(e) },
   })
-  const jobs = useMemo(() => withCreated(withEffects(crons.data?.jobs ?? [], cronResource, effects), 'cron', effects), [crons.data, effects])
+  const jobs = withCreated(withEffects(crons.data?.jobs ?? [], cronResource, effects), 'cron', effects)
   const unwritable = crons.data?.unwritable_stores ?? []
-  const running = useMemo(() => runningIds(status.data), [status.data])
+  const running = runningIds(status.data)
   // A run that just finished has written its output file and updated last_run/last_status:
   // the mutation's invalidation fired when /run started, so refetch again when the running set shrinks.
   const wasRunning = useRef(running)

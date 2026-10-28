@@ -5,6 +5,13 @@ import reactHooks from 'eslint-plugin-react-hooks'
 /** Files allowed to talk to the network directly: the single typed client. */
 const NETWORK_ALLOWED = ['src/api/client.ts', 'src/api/sse.ts', 'src/sw.ts', 'src/lib/clientEvents.ts', 'src/features/presence/presence.ts', 'src/features/voice/tts.ts']
 
+const DOM_RESTRICTIONS = [
+  { selector: "JSXAttribute[name.name='dangerouslySetInnerHTML']", message: 'Raw HTML sinks are forbidden; render typed components or Streamdown.' },
+  { selector: "MemberExpression[property.name='innerHTML']", message: 'innerHTML is forbidden; render through React.' },
+  { selector: "MemberExpression[property.name='outerHTML']", message: 'outerHTML is forbidden; render through React.' },
+  { selector: "CallExpression[callee.property.name='insertAdjacentHTML']", message: 'insertAdjacentHTML is forbidden.' },
+]
+
 export default tseslint.config(
   { ignores: ['node_modules', 'dist', 'src/paraglide', 'src/routeTree.gen.ts', 'playwright-report', 'test-results', '.tanstack'] },
   ...tseslint.configs.strictTypeChecked,
@@ -28,10 +35,9 @@ export default tseslint.config(
         { name: 'EventSource', message: 'Use the SSE helper in src/api/sse.ts' },
       ],
       'no-restricted-syntax': ['error',
-        { selector: "JSXAttribute[name.name='dangerouslySetInnerHTML']", message: 'Raw HTML sinks are forbidden; render typed components or Streamdown.' },
-        { selector: "MemberExpression[property.name='innerHTML']", message: 'innerHTML is forbidden; render through React.' },
-        { selector: "MemberExpression[property.name='outerHTML']", message: 'outerHTML is forbidden; render through React.' },
-        { selector: "CallExpression[callee.property.name='insertAdjacentHTML']", message: 'insertAdjacentHTML is forbidden.' },
+        ...DOM_RESTRICTIONS,
+        { selector: "ImportDeclaration[source.value='react'] > ImportSpecifier[imported.name=/^use(Memo|Callback)$/]", message: 'React Compiler handles memoization; remove the manual hook.' },
+        { selector: "MemberExpression[property.name=/^use(Memo|Callback)$/]", message: 'React Compiler handles memoization; remove the manual hook.' },
       ],
     },
   },
@@ -43,6 +49,11 @@ export default tseslint.config(
   {
     files: NETWORK_ALLOWED,
     rules: { 'no-restricted-globals': 'off', 'no-restricted-properties': 'off' },
+  },
+  {
+    // TanStack Virtual is the sole compiler bailout; keep any required hook identities explicit here.
+    files: ['src/features/chat/VirtualHistory.tsx'],
+    rules: { 'no-restricted-syntax': ['error', ...DOM_RESTRICTIONS] },
   },
   {
     files: ['**/*.test.ts', '**/*.test.tsx', 'e2e/**', 'scripts/**', 'src/test/**'],

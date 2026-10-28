@@ -3,7 +3,7 @@
  * loading with msg_limit/msg_before), plus reattachment to a run the server
  * reports as active. Teardown on session change releases the transport only.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
@@ -74,11 +74,11 @@ export function useTranscript(sessionId: string | null, equalLive?: (previous: L
   })
   // The subscribed window; a moved boundary retires its prefix and pending pages together.
   const windowOffset = query.data?.session._messages_offset ?? 0
-  const pageScope = useMemo(() => ({ sessionId, windowOffset, streamContext }), [sessionId, windowOffset, streamContext])
+  const pageScope = ({ sessionId, windowOffset, streamContext })
   const [olderState, setOlderState] = useState<{ scope: typeof pageScope; items: Message[] }>({ scope: pageScope, items: [] })
   if (olderState.scope !== pageScope) setOlderState({ scope: pageScope, items: [] })
-  const older = useMemo(() => (olderState.scope === pageScope ? olderState.items : []), [olderState, pageScope])
-  const setOlder = useCallback((update: (prev: Message[]) => Message[]) => setOlderState((s) => ({ scope: pageScope, items: update(s.scope === pageScope ? s.items : []) })), [pageScope])
+  const older = (olderState.scope === pageScope ? olderState.items : [])
+  const setOlder = (update: (prev: Message[]) => Message[]) => setOlderState((s) => ({ scope: pageScope, items: update(s.scope === pageScope ? s.items : []) }))
   const [pageState, setPageState] = useState({ scope: pageScope, loading: false, error: false })
   if (pageState.scope !== pageScope) setPageState({ scope: pageScope, loading: false, error: false })
   const retiredPages = useRef(new WeakSet<object>())
@@ -170,15 +170,15 @@ export function useTranscript(sessionId: string | null, equalLive?: (previous: L
     return () => { teardown(sessionId) }
   }, [sessionId])
 
-  const messages = useMemo(() => {
+  const messages = (() => {
     const current = session?.messages ?? []
     return older.length ? [...(olderOwner.data ?? older), ...current] : current
-  }, [session, older, olderOwner.data])
+  })()
 
   const base = Math.max(0, (session?._messages_offset ?? 0) - older.length)
-  const rows = useMemo(() => projectMessages(messages, base), [messages, base])
+  const rows = projectMessages(messages, base)
   const truncated = !!session?._messages_truncated && (session._messages_offset ?? 0) > older.length
-  const loadOlder = useCallback(async (retry = false, beforePrepend?: () => void) => {
+  const loadOlder = async (retry = false, beforePrepend?: () => void) => {
     if (retiredPages.current.has(pageScope)) return
     if (paging.current.scope !== pageScope) paging.current = { scope: pageScope, loading: false, error: false }
     const request = paging.current
@@ -205,9 +205,9 @@ export function useTranscript(sessionId: string | null, equalLive?: (previous: L
     }
     request.loading = false
     if (current()) setPageState({ scope: pageScope, loading: false, error: request.error })
-  }, [sessionId, session, truncated, older.length, setOlder, pageScope, qc, windowOffset])
+  }
 
-  const refresh = useCallback(async (accepted?: unknown, historyCut = false) => {
+  const refresh = async (accepted?: unknown, historyCut = false) => {
     if (accepted !== undefined || historyCut) {
       // Retire both the response and its admission/error state when history is replaced.
       paging.current = { scope: pageScope, loading: false, error: false }
@@ -227,7 +227,7 @@ export function useTranscript(sessionId: string | null, equalLive?: (previous: L
     // Older/mutation row-only responses need a fresh authoritative transcript.
     if (accepted !== undefined || historyCut) setOlder(() => [])
     await qc.invalidateQueries({ queryKey: keys.sessions.detail(sessionId ?? '') })
-  }, [qc, sessionId, setOlder, pageScope])
+  }
 
   return { query, session, rows, base, live, truncated, loadOlder, loadingOlder, olderError, refresh }
 }

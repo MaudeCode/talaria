@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { useForm } from '@tanstack/react-form'
@@ -54,8 +54,8 @@ export function OnboardingPage() {
   const [busy, setBusy] = useState(false)
   const data = status.data
 
-  const providers = useMemo(() => data?.setup?.providers ?? [], [data])
-  const workspaces = useMemo(() => data?.workspaces?.items ?? [], [data])
+  const providers = data?.setup?.providers ?? []
+  const workspaces = data?.workspaces?.items ?? []
 
   const form = useForm({
     defaultValues: { provider: 'openrouter', apiKey: '', baseUrl: '', workspace: '', model: '', password: '' },
@@ -80,10 +80,10 @@ export function OnboardingPage() {
   }, [data, form, navigate])
 
   const key = STEPS[step] ?? 'system'
-  const system = useMemo(() => data?.system ?? {}, [data])
-  const settings = useMemo(() => data?.settings ?? {}, [data])
+  const system = data?.system ?? {}
+  const settings = data?.settings ?? {}
 
-  const stepNotice = useMemo<Notice>(() => {
+  const stepNotice = ((): Notice => {
     if (!data) return null
     if (key === 'system') {
       const ok = !!system.chat_ready
@@ -95,7 +95,7 @@ export function OnboardingPage() {
     if (key === 'workspace') return { text: m.onboarding_notice_workspace(), kind: 'info' }
     if (key === 'password') return { text: settings.password_enabled ? m.onboarding_notice_password_enabled() : m.onboarding_notice_password_recommended(), kind: settings.password_enabled ? 'success' : 'info' }
     return { text: m.onboarding_notice_finish(), kind: 'success' }
-  }, [key, data, system, settings])
+  })()
   const notice = errorNotice ?? stepNotice
   const setNotice = (n: Notice) => setErrorNotice(n)
 
@@ -103,10 +103,10 @@ export function OnboardingPage() {
   // A sign-in saves the credential server-side: the server's `approved` counts until the refreshed status reports `signed_in`.
   const [approvedSignIns, setApprovedSignIns] = useState<ReadonlySet<string>>(() => new Set())
   const signedIn = (p: { id: string; signed_in?: boolean | undefined } | null) => !!p && (!!p.signed_in || approvedSignIns.has(p.id))
-  const onSignedIn = useCallback((id: string) => {
+  const onSignedIn = (id: string) => {
     setApprovedSignIns((current) => (current.has(id) ? current : new Set(current).add(id)))
     void qc.invalidateQueries({ queryKey: keys.onboarding })
-  }, [qc])
+  }
 
   async function saveProviderSetup(v: FormValues) {
     const current = data?.setup?.current ?? {}
@@ -181,11 +181,11 @@ export function OnboardingPage() {
     }
   }
 
-  const modelChoices = useMemo(() => {
+  const modelChoices = (() => {
     const pid = form.state.values.provider
     const group = data?.models?.groups.find((g) => g.provider_id === pid || g.provider === pid)
     return group?.models.map((mm) => mm.id) ?? data?.models?.groups.flatMap((g) => g.models.map((mm) => mm.id)) ?? []
-  }, [data, form.state.values.provider])
+  })()
 
   return (
     <main className="onboarding-overlay flex min-h-full items-start justify-center overflow-y-auto bg-bg p-4 text-text md:items-center" id="onboardingOverlay">

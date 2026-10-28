@@ -1,5 +1,5 @@
 import { randomHex } from '../../lib/randomHex'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ModelConfirmationRequiredSchema, type ModelChange, type OwnerAttachment, type Session } from '@maudecode/talaria-web-contracts'
 import * as api from '../../api/endpoints'
 import { ApiError } from '../../contracts/common'
@@ -44,14 +44,14 @@ export function useSessionUpdate(sessionId: string | null, refresh: (session?: S
     setPending(null)
     return () => { lifecycle.current = null }
   }, [sessionId])
-  const presentNative = useCallback((change: ModelChange | undefined, explicitPick = false) => {
+  const presentNative = (change: ModelChange | undefined, explicitPick = false) => {
     if (change?.state === 'confirmation_required' && change.confirm && change.model && sessionId) {
       if (!explicitPick && offered.current === change.confirm) return
       offered.current = change.confirm
       setPending({ sessionId, native: true, body: { model: change.model, ...(change.provider !== undefined ? { model_provider: change.provider } : {}) },
         decision: { error: change.message ?? '', confirm_token: change.confirm }, scope: getStreamContext() })
     } else setPending((p) => p?.native ? null : p)
-  }, [sessionId])
+  }
   useEffect(() => {
     // Owner events can resolve a deferred pick after the original HTTP request has ended.
     // eslint-disable-next-line react-hooks/set-state-in-effect -- synchronize an external owner decision
@@ -77,7 +77,7 @@ export function useSessionUpdate(sessionId: string | null, refresh: (session?: S
     },
   })
   const send = write.mutate
-  const updateSession = useCallback((body: Update) => {
+  const updateSession = (body: Update) => {
     if (!sessionId) return
     if (nativeOwner && (nativeOwner.revision === null || nativeOwner.execution_generation === null)) return
     const life = lifecycle.current
@@ -98,17 +98,17 @@ export function useSessionUpdate(sessionId: string | null, refresh: (session?: S
         else { setPending(null); showErrorToast(error) }
       },
     })
-  }, [sessionId, refresh, nativeOwner, presentNative, send])
+  }
   const shown = pending?.sessionId === sessionId && pending?.scope === context ? pending : null
   const dialog = <ConfirmDialog open={shown !== null} onOpenChange={(open) => { if (!open) setPending((p) => p === shown ? null : p) }}
     title={m.dialog_confirm_title()} description={shown?.decision.error} confirmLabel={m.dialog_confirm_btn()} cancelLabel={m.cancel()}
     onConfirm={() => shown ? updateSession({ ...shown.body, confirm_token: shown.decision.confirm_token }) : undefined} />
   const change = nativeOwner?.model_change
   const deferredMessage = m.model_change_deferred()
-  const notice = useMemo<ComposerNotice | null>(() => change?.state === 'deferred'
+  const notice: ComposerNotice | null = change?.state === 'deferred'
     ? { id: 'model-change', tone: 'info', content: deferredMessage, announcement: deferredMessage }
     : change?.state === 'refused'
       ? { id: 'model-change', tone: 'error', content: change.message, announcement: change.message }
-      : null, [change, deferredMessage])
+      : null
   return { updateSession, dialog, notice, confirming: shown?.body ?? null }
 }

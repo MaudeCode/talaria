@@ -1,7 +1,7 @@
 import { Dialog as BaseDialog } from '@base-ui/react/dialog'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Bell, Trash2, X } from 'lucide-react'
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
@@ -84,7 +84,7 @@ export function UpdateNotificationProvider({ children }: { children: ReactNode }
   const [following, setFollowing] = useState<string | null>(null)
   const tabUpdate = notifications.data?.tab_update ?? null
   const tabJoinedAt = notifications.data?.tab_joined_at ?? null
-  const records = useMemo(() => { const rows = notifications.data?.notifications ?? []; return tabUpdate && !rows.some((row) => row.id === tabUpdate.id) ? [tabUpdate, ...rows] : rows }, [notifications.data, tabUpdate])
+  const records = (() => { const rows = notifications.data?.notifications ?? []; return tabUpdate && !rows.some((row) => row.id === tabUpdate.id) ? [tabUpdate, ...rows] : rows })()
   const started = tracking && tabUpdate?.target === tracking.target && (tabUpdate.id === tracking.notificationId || recordKey(tabUpdate, tabJoinedAt) !== tracking.baseline) ? tabUpdate : null
   const presenting = (tabUpdate?.presents_dialog ? tabUpdate : null) ?? records.find((row) => row.presents_dialog) ?? null
   // Once the record this tab started arrives, or the server presents one, the dialog follows that record.
@@ -93,7 +93,7 @@ export function UpdateNotificationProvider({ children }: { children: ReactNode }
   if (started && tracking) setTracking(null)
   const dialogRow = started ?? presenting ?? records.find((row) => row.id === following) ?? null
   const dialogRowId = dialogRow?.id ?? null
-  const closeDialog = useCallback(() => { setTracking(null); setFollowing(null) }, [])
+  const closeDialog = () => { setTracking(null); setFollowing(null) }
   const autoClose = dialogRow?.dialog_close === 'auto' ? `${dialogRow.id}@${dialogRow.updated_at}` : null
   useEffect(() => {
     if (!autoClose) return
@@ -102,7 +102,7 @@ export function UpdateNotificationProvider({ children }: { children: ReactNode }
   }, [autoClose, closeDialog])
   // The dialog replaces this record's phase toasts while it shows them.
   const shownRowId = dialogRowId
-  const progress = useMemo<UpdateProgress>(() => ({
+  const progress: UpdateProgress = ({
     begin: (target) => {
       setFollowing(null)
       setTracking({ target, baseline: recordKey(tabUpdate, tabJoinedAt), notificationId: null, lostAt: null, message: null })
@@ -119,7 +119,7 @@ export function UpdateNotificationProvider({ children }: { children: ReactNode }
       void qc.invalidateQueries({ queryKey: keys.updateNotifications })
     },
     dismiss: () => { closeDialog() },
-  }), [tabUpdate, tabJoinedAt, qc, closeDialog])
+  })
   useEffect(() => () => { for (const toastId of visibleServerToasts.current) removeToast(toastId) }, [])
   // A new service worker taking over is a signal that the server may serve a newer build: recheck now.
   useEffect(() => {
@@ -174,19 +174,19 @@ export function UpdateNotificationProvider({ children }: { children: ReactNode }
   const unread = Math.max(0, (notifications.data?.unread_count ?? 0) - readNow)
 
   const readMutate = read.mutate
-  const markRead = useCallback((row: UpdateNotification) => { if (row.unread) readMutate(row.id) }, [readMutate])
-  const openDestination = useCallback((row: UpdateNotification) => {
+  const markRead = (row: UpdateNotification) => { if (row.unread) readMutate(row.id) }
+  const openDestination = (row: UpdateNotification) => {
     if (row.destination?.key !== 'settings.system') return
     setOpen(false)
     void navigate({ to: '/settings/$section', params: { section: 'system' } })
-  }, [navigate])
-  const interact = useCallback((row: UpdateNotification, options: { navigate?: boolean; closeToast?: boolean } = {}) => {
+  }
+  const interact = (row: UpdateNotification, options: { navigate?: boolean; closeToast?: boolean } = {}) => {
     if (options.closeToast) dismissToast(`server-${row.id}`)
     if (options.navigate) openDestination(row)
     markRead(row)
-  }, [markRead, openDestination])
+  }
   const performMutation = action.mutateAsync
-  const performAction = useCallback((row: UpdateNotification, actionId: string) => performMutation({ id: row.id, actionId }).then(() => undefined), [performMutation])
+  const performAction = (row: UpdateNotification, actionId: string) => performMutation({ id: row.id, actionId }).then(() => undefined)
 
   useEffect(() => {
     if (!notifications.data) return

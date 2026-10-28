@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useRef, useState } from 'react'
+import { memo, useRef, useState } from 'react'
 import { Popover } from '@base-ui/react/popover'
 import { ChevronDown, Cpu, Brain, Wrench, FolderOpen, GitBranch, Shield } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
@@ -64,12 +64,12 @@ export function ModelChip({ model, optionId, onChange, row }: { model: string | 
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const searchInput = useRef<HTMLInputElement>(null)
-  const groups = useMemo(() => {
+  const groups = (() => {
     const q = query.trim().toLowerCase()
     if (!open) return []
     return (models.data?.groups ?? []).map((g) => ({ ...g, models: g.models.filter((mm) => !q || mm.id.toLowerCase().includes(q) || (mm.label ?? '').toLowerCase().includes(q)) })).filter((g) => g.models.length > 0)
-  }, [models.data, query, open])
-  const onSelect = useCallback((id: string) => onChange(id, catalogEntryById(models.data, id)?.provider_id ?? null), [onChange, models.data])
+  })()
+  const onSelect = (id: string) => onChange(id, catalogEntryById(models.data, id)?.provider_id ?? null)
   const selected = catalogEntryById(models.data, model ? optionId : models.data?.default_option_id)
   const label = selected ? selected.label ?? selected.id : (model ?? models.data?.default_model) || '—'
   return (
@@ -236,7 +236,7 @@ function contextStats({ percent, used, window, thresholdPercent, input, output, 
 const COMPRESS_CLASS = 'self-start rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-fg outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring) disabled:opacity-60'
 
 /** The footer ring; a click opens the usage figures and Compress now, as legacy's ring did. */
-export const ContextRing = memo(function ContextRing(figures: ContextFigures) {
+export function ContextRing(figures: ContextFigures) {
   const [open, setOpen] = useState(false)
   const st = contextStats(figures)
   if (!st) return null
@@ -267,7 +267,7 @@ export const ContextRing = memo(function ContextRing(figures: ContextFigures) {
       </Popover.Root>
     </div>
   )
-})
+}
 
 /** Context readout row for the overflow panel on phones, where the footer ring is hidden. */
 export function ContextRow(figures: ContextFigures) {

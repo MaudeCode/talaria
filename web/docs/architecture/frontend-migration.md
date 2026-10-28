@@ -151,7 +151,12 @@ only renders what the server allows.
 | Extension channels | `extensions/host.ts` | one `MessageChannel` per iframe, nonce and version handshake, capability table from the sanitized manifest |
 | Service worker state | `sw.ts` | precache list injected by the build; runtime caches for hashed assets only |
 
-Composer draft keystrokes stay in `Composer`. Its memoized `ComposerControls` groups,
+React Compiler owns memoization in compiled components and hooks. ESLint forbids manual
+`useMemo` and `useCallback` outside `VirtualHistory`, the sole compiler bailout, and test support.
+Keep `memo` on rows rendered in loops, where the parent cannot cache each item independently.
+The compiler coverage test checks every shipped source file and the chat hot path.
+
+Composer draft keystrokes stay in `Composer`. Its compiler-cached `ComposerControls` groups,
 attachment tray, context ring and notices retain their props while typing. Clarification
 answer text is also composer-local, keyed by session, prompt, step and choice revision;
 `useClarify` owns step progression and selected choices. A refused final answer restores
@@ -252,7 +257,7 @@ The opt-in virtualizer retains its existing measurement ownership.
 The live user bubble keeps one row object per text and attachments, so token
 frames render only the live turn. Row actions read the session through a ref, so a
 turn start or end, a `notices` or `session_goal` cache write, or a refetch leaves
-settled rows unrendered. The memoized side panel takes stable handlers and skips
+settled rows unrendered. The compiler-cached side panel takes stable handlers and skips
 the chat's turn-state renders; its inactive pages sit in a hidden `Activity`, and
 its Agents queries run only while the panel is open.
 

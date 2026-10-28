@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { CodeBlockContainer, CodeBlockCopyButton, CodeBlockDownloadButton, CodeBlockHeader, type CustomRendererProps } from 'streamdown'
 import { m } from '../../../paraglide/messages.js'
 import { ACTION_BAR, ACTIONS, BODY, CodeBlock } from './CodeBlock'
@@ -36,7 +36,7 @@ function JsonNode({ name, value, depth, last }: { name?: string | undefined; val
 
 /** A ```json fence with a Raw/Tree toggle when it parses; the choice is per block and device-local. */
 export function JsonCodeBlock({ code, language, isIncomplete }: CustomRendererProps) {
-  const tree = useMemo(() => parseTree(code, isIncomplete), [code, isIncomplete])
+  const tree = parseTree(code, isIncomplete)
   const [showTree, setShowTree] = useState(false)
   const actions = (
     <>

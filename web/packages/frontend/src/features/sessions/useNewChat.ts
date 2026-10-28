@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import * as api from '../../api/endpoints'
@@ -16,12 +16,12 @@ import { randomHex } from '../../lib/randomHex'
 export function useNewChat() {
   const navigate = useNavigate()
   const qc = useQueryClient()
-  return useCallback(async () => {
+  return async () => {
     removePersisted('hermes-webui-session')
     closeMobileSidebar()
     await navigate({ to: '/', search: {} })
     await qc.invalidateQueries({ queryKey: keys.sessions.all })
-  }, [navigate, qc])
+  }
 }
 
 export async function createSessionNow(opts: { source_references?: SourceReference[]; workspace?: string; model?: string; model_provider?: string | null; profile?: string; enabled_toolsets?: string[] | null; worktree?: boolean; execution_mode?: ExecutionMode; request_id?: string } = {}) {
@@ -37,5 +37,5 @@ export async function createSessionNow(opts: { source_references?: SourceReferen
 export function useCreationId(choices: object) {
   const id = useRef<string | null>(null)
   useEffect(() => { id.current = null }, [choices])
-  return useMemo(() => ({ next: () => { const next = id.current ?? randomHex(); id.current = next; return next }, settle: () => { id.current = null } }), [])
+  return ({ next: () => { const next = id.current ?? randomHex(); id.current = next; return next }, settle: () => { id.current = null } })
 }

@@ -1,6 +1,6 @@
 import type { OwnerActionRequest, MessageReactionView, ReactionState } from '@maudecode/talaria-web-contracts'
 import { useResourceEffects, useResourceMutation, withEffect, withEffects } from '../sessions/useResourceMutation'
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { m } from '../../paraglide/messages.js'
@@ -76,14 +76,14 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   // Edit, /clear and /undo show their cut at once; the reread of the session confirms it.
   const cutFrom = useResourceEffects<number>()[transcriptCut(sessionId ?? '')]?.value
   const reactionEffects = useResourceEffects<ReactionState>()
-  const reactionRows = useMemo(() => rows.map((row) => {
+  const reactionRows = rows.map((row) => {
     const view = row.message.reaction_view
     if (!view) return row
     const state = reactionEffects[reactionResource(sessionId ?? '', view.row_id)]?.value
     return state ? { ...row, message: { ...row.message, reaction_view: { ...view, state } } } : row
-  }), [rows, reactionEffects, sessionId])
-  const shownRows = useMemo(() => typeof cutFrom === 'number' ? reactionRows.filter((row) => row.index < cutFrom) : reactionRows, [reactionRows, cutFrom])
-  const lastExchange = useMemo(() => [...rows].reverse().find((row) => row.message.role === 'user')?.index, [rows])
+  })
+  const shownRows = typeof cutFrom === 'number' ? reactionRows.filter((row) => row.index < cutFrom) : reactionRows
+  const lastExchange = [...rows].reverse().find((row) => row.message.role === 'user')?.index
   const intent = useTurnIntent(sessionId)
   const { onEdit, dialog: editDialog, operation, runHistory } = useEditMessage(sessionId, refresh)
   const clarify = useClarify(sessionId, live)
@@ -95,10 +95,10 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     return () => setWatchingRun(false)
   }, [sessionId, watchingRun])
   const [terminalOpen, setTerminalOpen] = useState(false)
-  const onToggleTerminal = useCallback(() => setTerminalOpen((t) => !t), [])
+  const onToggleTerminal = () => setTerminalOpen((t) => !t)
   const { sidePanelOpen } = useShellState()
   const [queued, setQueued] = useQueuedTurns(composerStateId(session))
-  const onQueue = useCallback((entry: QueuedTurn) => setQueued((q) => [...q, entry]), [setQueued])
+  const onQueue = (entry: QueuedTurn) => setQueued((q) => [...q, entry])
   const draining = useRef(false)
   const [failedQueued, setFailedQueued] = useState<string | null>(null)
   // Choices made on the unsaved chat (no session yet) apply when the session is created.
@@ -138,7 +138,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
       .catch((e: unknown) => { if (scope !== getStreamContext()) return; setFailedQueued(next.id); showErrorToast(e) })
   }, [sessionId, session, queued, live, setQueued, intent, operation, failedQueued])
 
-  const ensureSession = useCallback(async (onCreated?: (sessionId: string) => void): Promise<Session> => {
+  const ensureSession = async (onCreated?: (sessionId: string) => void): Promise<Session> => {
     if (session) return session
     const scope = getStreamContext()
     const created = await createSessionNow({ ...(settings.data?.default_workspace ? { workspace: settings.data.default_workspace } : {}), ...pending, profile: bootstrap.profile?.name ?? 'default', request_id: creation.next() })
@@ -149,12 +149,12 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     bindFirstSend(created.session_id)
     await navigate({ to: '/session/$sessionId', params: { sessionId: created.session_id }, replace: true })
     return created
-  }, [session, settings.data, bootstrap.profile, qc, navigate, pending, creation])
+  }
 
   const [removingWorktree, setRemovingWorktree] = useState(false)
-  const onRemoveWorktree = useCallback(() => setRemovingWorktree(true), [])
+  const onRemoveWorktree = () => setRemovingWorktree(true)
   // TAL-605: a new conversation in its own git worktree of the chosen workspace; the server creates the worktree.
-  const newWorktreeChat = useCallback(async (workspace: string | undefined) => {
+  const newWorktreeChat = async (workspace: string | undefined) => {
     try {
       const created = await createSessionNow({ ...pending, ...(workspace ? { workspace } : {}), profile: bootstrap.profile?.name ?? 'default', worktree: true, request_id: creation.next() })
       qc.setQueryData(keys.sessions.detail(created.session_id), { session: created })
@@ -164,11 +164,11 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     } catch (e) {
       showToast(m.workspace_worktree_failed() + (e instanceof Error ? e.message : String(e)), 4000, 'error')
     }
-  }, [pending, bootstrap.profile, qc, navigate, creation])
-  const onNewWorktreeChat = useCallback((workspace: string | undefined) => { void newWorktreeChat(workspace) }, [newWorktreeChat])
+  }
+  const onNewWorktreeChat = (workspace: string | undefined) => { void newWorktreeChat(workspace) }
 
   // Reasoning effort is server state shared with the CLI (config.yaml), keyed on the session's model.
-  const reasoningKey = useMemo(() => ['reasoning', session?.model ?? null, session?.model_provider ?? null] as const, [session?.model, session?.model_provider])
+  const reasoningKey = keys.reasoning(session?.model, session?.model_provider)
   const reasoningStatus = useQuery({ queryKey: reasoningKey, queryFn: () => api.fetchReasoning(session?.model, session?.model_provider), enabled: !!sessionId, staleTime: 30_000 })
   const reasoningEffect = useResourceEffects<string | null>()[JSON.stringify(reasoningKey)]
   // The chosen effort shows at once; the server's answer replaces it.
@@ -184,7 +184,8 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     onError: (e) => showErrorToast(e),
   })
   const sendReasoning = reasoningWrite.mutate
-  const setReasoning = useCallback((level: string | null) => { sendReasoning({ key: reasoningKey, level, sid: sessionId ?? undefined }) }, [sendReasoning, reasoningKey, sessionId])
+  // Capture the model fields, not the query's escaping key array, so the compiler keeps this handler stable.
+  const setReasoning = (level: string | null) => { sendReasoning({ key: keys.reasoning(session?.model, session?.model_provider), level, sid: sessionId ?? undefined }) }
   // The CLI's reasoning display (config.yaml): nothing here shows it, so only a refusal reports; an unknown outcome rereads
   // the reasoning status, which carries `show_reasoning`.
   const { mutate: setReasoningDisplay } = useResourceMutation({
@@ -212,7 +213,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     mutationFn: (request) => api.ownerAction(request),
   })
   const sendAdmission = admissionWrite.mutateAsync
-  const onOwnerAction = useCallback(async (request: OwnerActionRequest) => {
+  const onOwnerAction = async (request: OwnerActionRequest) => {
     if (!sessionId || request.session_id !== sessionId) return
     const scope = getStreamContext()
     try {
@@ -224,15 +225,15 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
       if (scope === getStreamContext()) showErrorToast(error)
       throw error
     }
-  }, [sessionId, refresh, sendAdmission])
+  }
 
-  const onModelChange = useCallback((model: string, provider: string | null) => { if (!sessionId) { setPending((p) => ({ ...p, model, model_provider: provider })); return } updateSession({ model, model_provider: provider }) }, [sessionId, updateSession])
-  const onWorkspaceChange = useCallback((path: string) => { if (!sessionId) { setPending((p) => ({ ...p, workspace: path })); return } updateSession({ workspace: path }) }, [sessionId, updateSession])
-  const onExecutionModeChange = useCallback((mode: ExecutionMode) => {
+  const onModelChange = (model: string, provider: string | null) => { if (!sessionId) { setPending((p) => ({ ...p, model, model_provider: provider })); return } updateSession({ model, model_provider: provider }) }
+  const onWorkspaceChange = (path: string) => { if (!sessionId) { setPending((p) => ({ ...p, workspace: path })); return } updateSession({ workspace: path }) }
+  const onExecutionModeChange = (mode: ExecutionMode) => {
     const canReference = executionModes.data?.modes.find((option) => option.mode === mode)?.can_reference === true
     setPending((p) => ({ ...p, execution_mode: mode, ...(canReference ? {} : { source_references: [] }) }))
-  }, [executionModes.data])
-  const onToolsetsChange = useCallback((toolsets: string[] | null) => { if (!sessionId) { setPending((p) => ({ ...p, enabled_toolsets: toolsets })); return } sendSessionWrite({ sid: sessionId, fields: { enabled_toolsets: toolsets }, run: () => api.setSessionToolsets(sessionId, toolsets) }) }, [sessionId, sendSessionWrite])
+  }
+  const onToolsetsChange = (toolsets: string[] | null) => { if (!sessionId) { setPending((p) => ({ ...p, enabled_toolsets: toolsets })); return } sendSessionWrite({ sid: sessionId, fields: { enabled_toolsets: toolsets }, run: () => api.setSessionToolsets(sessionId, toolsets) }) }
   const yoloWrite = useResourceMutation({
     resource: ({ sid }: { sid: string; on: boolean }) => `yolo:${sid}`, queryKey: ['yolo'], readKeys: ({ sid }) => [{ queryKey: keys.yolo(sid), exact: true }], effect: ({ on }) => ({ value: on }),
     mutationFn: ({ sid, on }) => api.setSessionYolo(sid, on),
@@ -240,7 +241,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     onError: (e) => showErrorToast(e),
   })
   const sendYolo = yoloWrite.mutate
-  const onToggleYolo = useCallback(() => { if (!sessionId) return; sendYolo({ sid: sessionId, on: !yoloShown }) }, [sessionId, yoloShown, sendYolo])
+  const onToggleYolo = () => { if (!sessionId) return; sendYolo({ sid: sessionId, on: !yoloShown }) }
 
   // Regenerate, `/retry`, and the error notice's Retry: the server drops the last exchange, then its prompt and files are resent.
   // One at a time: a second retry while the first is pending would drop the exchange before it too.
@@ -248,7 +249,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   // built on this callback must not, or every settled row renders again (TAL-1388).
   const sessionRef = useRef(session)
   useLayoutEffect(() => { sessionRef.current = session }, [session])
-  const onRegenerate = useCallback(async () => {
+  const onRegenerate = async () => {
     const session = sessionRef.current
     if (!sessionId || !session) return false
     return runHistory(m.history_retrying(), async (current) => {
@@ -262,7 +263,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
       const attachments = r.last_user_attachments ?? []
       await startTurn({ sessionId, message: r.last_user_prompt, recover: true, request: { ...turnRequest(session, bootstrap.profile?.name ?? 'default'), ...(attachments.length ? { attachments } : {}) } })
     })
-  }, [sessionId, refresh, bootstrap.profile, runHistory])
+  }
 
   // Manual compression: start, poll the job to done/error, then load the compacted session (a new id when the server forks).
   // Leaving the session unmounts this view and stops the poll, so it never navigates from the session shown next.
@@ -273,7 +274,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   // The running job this view follows, by its server start, so a session still reporting it is not followed twice.
   const followed = useRef<number | null>(null)
   /** `start` starts or names the job and gives its server start (epoch seconds); the job is then polled to its end. */
-  const followCompression = useCallback(async (sid: string, start: () => Promise<number | null | undefined>) => {
+  const followCompression = async (sid: string, start: () => Promise<number | null | undefined>) => {
     const { signal } = (compression.current = new AbortController())
     setCompressingSince(Date.now())
     // A rejected follow rather than try/finally: React Compiler cannot lower `finally` or a `throw` inside `try`.
@@ -301,8 +302,8 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     }
     await follow().catch((e: unknown) => { if (!signal.aborted) showToast(e instanceof Error ? e.message : String(e), 5000, 'error') })
     setCompressingSince(null)
-  }, [qc, navigate, refresh])
-  const runCompression = useCallback((sid: string) => followCompression(sid, async () => (await api.compressSession(sid)).started_at), [followCompression])
+  }
+  const runCompression = (sid: string) => followCompression(sid, async () => (await api.compressSession(sid)).started_at)
   // TAL-1006: a manual job the session reports running (started in another tab, or before this view opened) shows and
   // is followed here as well.
   const runningJob = session && !session.active_stream_id ? (session.compression_started_at ?? null) : null
@@ -311,7 +312,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     void followCompression(sessionId, () => Promise.resolve(runningJob))
   }, [sessionId, runningJob, compressingSince, followCompression])
 
-  const onLocalCommand = useCallback(async (name: string, args: string): Promise<boolean | 'refused'> => {
+  const onLocalCommand = async (name: string, args: string): Promise<boolean | 'refused'> => {
     switch (name) {
       case 'stop': if (sessionId) await cancelTurn(sessionId); return true
       case 'new': removePersisted('hermes-webui-session'); await navigate({ to: '/', search: { action: 'new-chat' } }); return true
@@ -351,7 +352,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
       case 'voice': showToast(m.voice_error(), 3000); return true
       default: return false
     }
-  }, [renameSession, sessionId, navigate, refresh, qc, onToggleYolo, onModelChange, onWorkspaceChange, onRegenerate, reasoning, setReasoning, runCompression, runHistory, lastExchange, sendSessionWrite, setReasoningDisplay])
+  }
 
   const reactionWrite = useResourceMutation({
     resource: (request: { rowId: number; action: MessageReactionView['actions'][number] }) => reactionResource(sessionId ?? '', request.rowId),
@@ -365,38 +366,38 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     onError: (error) => showErrorToast(error),
   })
   const sendReaction = reactionWrite.mutate
-  const onReact = useCallback((row: VisibleMessage, action: MessageReactionView['actions'][number]) => {
+  const onReact = (row: VisibleMessage, action: MessageReactionView['actions'][number]) => {
     if (sessionId && row.message.reaction_view) sendReaction({ rowId: row.message.reaction_view.row_id, action })
-  }, [sessionId, sendReaction])
+  }
 
-  const onBranch = useCallback(async (row: VisibleMessage) => {
+  const onBranch = async (row: VisibleMessage) => {
     if (!sessionId) return
     const r = await api.branchSession(sessionId, row.index + 1)
     void invalidateSessionQueries(qc, r.session_id)
     await navigate({ to: '/session/$sessionId', params: { sessionId: r.session_id } })
-  }, [sessionId, navigate, qc])
+  }
 
   const canQuote = !clarify && !!session && (!session.read_only || session.owner_attachment?.can_submit === true)
-  const actions = useMemo(() => ({
+  const actions = ({
     ...(sessionId && canQuote ? { onQuoteSelection: (text: string) => returnToComposer(sessionId, text, 'quote') } : {}),
     onReact,
     ...(session?.read_only ? {} : { onEdit: (row: VisibleMessage, text: string) => { void onEdit(row, text) }, onRegenerate: () => { void onRegenerate() } }),
     ...(session?.can_branch ? { onBranch: (row: VisibleMessage) => { void onBranch(row) } } : {}),
-  }), [sessionId, canQuote, session?.read_only, session?.can_branch, onEdit, onRegenerate, onBranch, onReact])
+  })
 
   const mode = (settings.data?.chat_activity_display_mode as ActivityMode | undefined) ?? 'compact_worklog'
   const assistantName = session?.assistant_name ?? bootstrap.assistant_name
   const resourceEffects = useResourceEffects()
   const sessionEffect = resourceEffects[`session:${sessionId}`]
-  const shownSession = useMemo(() => session && withEffect(session, sessionEffect), [session, sessionEffect])
+  const shownSession = session && withEffect(session, sessionEffect)
   // The composer shows a pick awaiting confirmation and the owner inputs as the user's pending actions leave them.
-  const composerSession = useMemo(() => {
+  const composerSession = (() => {
     if (!shownSession) return null
     const owner = shownSession.owner_attachment
     const admissions = owner && withEffects(owner.admissions, (admission) => admissionResource(shownSession.session_id, admission.admission_id), resourceEffects)
     if (!confirming && (!owner || admissions?.length === owner.admissions.length && admissions.every((a, i) => a === owner.admissions[i]))) return shownSession
     return { ...shownSession, ...(confirming ? chosenFields(confirming) : {}), ...(owner && admissions ? { owner_attachment: { ...owner, admissions } } : {}) }
-  }, [shownSession, confirming, resourceEffects])
+  })()
   // Until the transcript arrives the header shows the title the sidebar already has for this session.
   const listedTitle = sessionId ? qc.getQueryData<SessionsList>(keys.sessions.list({}))?.sessions.find((r) => r.session_id === sessionId)?.title : undefined
   const title = shownSession?.title ?? listedTitle ?? ''
@@ -406,7 +407,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   const workspaces = useWorkspacesQuery()
   // TAL-303: the server names the workspace: the session's own label, else the default workspace's registry entry.
   const wsLabel = session ? session.workspace_name : workspaces.data?.workspaces.find((w) => w.path === workspace)?.name
-  const meta = useMemo(() => [session?.model, session?.message_count !== undefined ? m.session_meta_messages({ n: session.message_count }) : null, session?.updated_at ? formatDate(session.updated_at) : null].filter(Boolean).join(' · '), [session])
+  const meta = [session?.model, session?.message_count !== undefined ? m.session_meta_messages({ n: session.message_count }) : null, session?.updated_at ? formatDate(session.updated_at) : null].filter(Boolean).join(' · ')
 
   // Composer placement. A session is assumed to have content until the transcript says otherwise;
   // only a session remembered as empty (legacy `hermes-webui-session-empty`) opens in the hero layout
@@ -422,7 +423,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     else if (readPersisted('hermes-webui-session-empty') === sessionId) removePersisted('hermes-webui-session-empty')
   }, [sessionId, query.isSuccess, rows.length])
 
-  const onRetry = useCallback(() => { void onRegenerate() }, [onRegenerate])
+  const onRetry = () => { void onRegenerate() }
   const runtime = useRuntimeNotices({ live, onRetry, compressingSince, agentNotices: session?.notices, goal: session?.goal })
   const notices = [
     ...runtime.notices,

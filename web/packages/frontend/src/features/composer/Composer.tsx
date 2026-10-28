@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react'
 import { Mic, Paperclip, Square, ArrowUp, ListPlus, Layers } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
@@ -136,7 +136,7 @@ function takeHandoff(sessionId: string) {
   return h
 }
 
-export const Composer = memo(function Composer(props: ComposerProps) {
+export function Composer(props: ComposerProps) {
   const { sessionId, session, busy, streamId, settings, onEnsureSession, onLocalCommand, terminalOpen, onToggleTerminal, onModelChange, onWorkspaceChange, onNewWorktreeChat, onRemoveWorktree, onToolsetsChange, onExecutionModeChange, onReasoningChange, reasoning, reasoningLevels, reasoningSupported = true, pendingChoices, locked = false, yolo, onToggleYolo, queued, onQueue, onQueueChange, clarify, notices = EMPTY_NOTICES } = props
   const bootstrap = useBootstrap()
   const launchBackground = useStartBackground()
@@ -154,7 +154,7 @@ export const Composer = memo(function Composer(props: ComposerProps) {
   const [stage, setStage] = useState<'full' | 'icons' | 'burger'>('full')
   const footer = useRef<HTMLDivElement>(null)
   // Fit pass (legacy _fitComposerFooter): try full labels, then icon-only chips, then move the chips into the panel.
-  const fitFooter = useCallback(() => {
+  const fitFooter = () => {
     const f = footer.current
     const left = f?.querySelector<HTMLElement>('.composer-left')
     if (!f || !left?.clientWidth) return
@@ -173,7 +173,7 @@ export const Composer = memo(function Composer(props: ComposerProps) {
     f.classList.toggle('cf-icons', next !== 'full')
     f.classList.toggle('cf-burger', next === 'burger')
     setStage(next)
-  }, [])
+  }
   // Refit only when the footer's geometry or content changes (viewport, chips, buttons, labels). Typing and stream
   // renders change neither, so they never force the measuring layout pass (TAL-278). Class changes are not observed:
   // the fit pass sets them itself.
@@ -211,14 +211,14 @@ export const Composer = memo(function Composer(props: ComposerProps) {
   const liveDictation = useRef<LiveDictationHandle | null>(null)
   const liveOffered = !!useTranscribeCapabilityQuery().data?.streaming && liveDictationSupported()
   const dictationOwner = useRef<object | null>(null)
-  const dropDictation = useCallback(() => {
+  const dropDictation = () => {
     dictationOwner.current = null
     liveDictation.current?.cancel()
     liveDictation.current = null
     const r = recognition.current
     recognition.current = null
     if (r) { r.onresult = null; r.onerror = null; r.onend = null; r.stop() }
-  }, [])
+  }
   // Clarification answers and inserted quotes retire the previous draft's microphone callbacks.
   const answering = !!clarify
   if (answering && dictating) setDictating(false)
@@ -293,7 +293,7 @@ export const Composer = memo(function Composer(props: ComposerProps) {
   useLayoutEffect(() => { draft.current = text })
   const maxBytes = bootstrap.max_upload_bytes
   useEffect(() => { const attempts = inflight.current; return () => { attempts.clear() } }, [])
-  const upload = useCallback((key: string, file: File) => {
+  const upload = (key: string, file: File) => {
     if (!sessionId) return
     const scope = getStreamContext()
     const attempt = {}
@@ -316,8 +316,8 @@ export const Composer = memo(function Composer(props: ComposerProps) {
         showToast(m.composer_upload_failed({ name: file.name }), 4000, 'error')
       },
     )
-  }, [sessionId])
-  const addFiles = useCallback((incoming: FileList | File[]) => {
+  }
+  const addFiles = (incoming: FileList | File[]) => {
     if (!attachmentsSupported) { if (incoming.length) showToast(m.owner_no_attachments(), 4000, 'error'); return }
     // One chip and one upload per file, however often it is picked, pasted or handed off.
     const list = Array.from(incoming).filter((file, i, all) => all.findIndex((f) => fileKey(f) === fileKey(file)) === i)
@@ -350,7 +350,7 @@ export const Composer = memo(function Composer(props: ComposerProps) {
     })
     add(fresh)
     for (const p of fresh) upload(p.key, p.file)
-  }, [attachmentsSupported, maxBytes, sessionId, onEnsureSession, files, upload])
+  }
 
   // Adopt a hand-off from the empty chat's composer (see addFiles). Runs after the session-change reset above.
   useEffect(() => {
@@ -385,26 +385,26 @@ export const Composer = memo(function Composer(props: ComposerProps) {
     setFiles((current) => [...current, ...restored.filter((file) => !current.some((f) => f.key === file.key))])
   }, [intent.send, sessionId, files])
 
-  const removeFile = useCallback((key: string) => {
+  const removeFile = (key: string) => {
     const f = files.find((p) => p.key === key)
     setFiles((prev) => prev.filter((p) => p.key !== key))
     inflight.current.delete(key)
     // Removed before the new chat exists: the file must not ride the hand-off into it.
     if (handoff) handoff.files = handoff.files.filter((file) => fileKey(file) !== key)
     if (f?.upload?.rollback_token && sessionId) void api.rollbackUpload(sessionId, [f.upload.rollback_token]).catch(() => undefined)
-  }, [files, sessionId])
+  }
   // A failed upload runs again; without a session yet, the file goes back through the hand-off.
-  const retryFile = useCallback((key: string) => {
+  const retryFile = (key: string) => {
     const f = files.find((p) => p.key === key)
     if (!f) return
     if (!sessionId) { setFiles((prev) => prev.filter((p) => p.key !== key)); addFiles([f.file]); return }
     setFiles((prev) => prev.map((p) => (p.key === key ? { ...p, status: 'uploading', error: undefined } : p)))
     upload(key, f.file)
-  }, [files, sessionId, addFiles, upload])
+  }
 
   // Steer: deliver mid-run, shown in the turn as a pending user message. The box empties at once like any send (TAL-743);
   // a steer the server did not accept returns after whatever was typed meanwhile.
-  const trySteer = useCallback(async (text: string): Promise<void> => {
+  const trySteer = async (text: string): Promise<void> => {
     if (!sessionId) return
     const scope = getStreamContext()
     const steerId = `steer-${randomHex()}`
@@ -426,10 +426,10 @@ export const Composer = memo(function Composer(props: ComposerProps) {
     dispatch({ type: 'steer_refused', sessionId, steerId })
     // A Stop that withdrew it while the request was in flight already gave the text back.
     if (forgetOwnSteer(steerId)) returnToComposer(sessionId, text)
-  }, [sessionId])
+  }
 
   // Snapshot of what a send would post right now, for the queue.
-  const queueEntry = useCallback((text: string): QueuedTurn => ({ id: randomHex(), text, attachments: files.flatMap((f) => (f.status === 'done' && f.upload ? [f.upload] : [])), request: session ? turnRequest(session, bootstrap.profile?.name ?? 'default') : { profile: bootstrap.profile?.name ?? 'default' } }), [files, session, bootstrap.profile])
+  const queueEntry = (text: string): QueuedTurn => ({ id: randomHex(), text, attachments: files.flatMap((f) => (f.status === 'done' && f.upload ? [f.upload] : [])), request: session ? turnRequest(session, bootstrap.profile?.name ?? 'default') : { profile: bootstrap.profile?.name ?? 'default' } })
 
   const quoteCursor = useRef<{ start: number; end: number; direction: 'forward' | 'backward' | 'none' } | null>(null)
   const lastCursor = useRef<{ sessionId: string | null; cursor: NonNullable<typeof quoteCursor.current> } | null>(null)
@@ -463,7 +463,7 @@ export const Composer = memo(function Composer(props: ComposerProps) {
   const { ask: askBtw, notice: btwNotice } = useBtw(sessionId)
   const { run: runCommand, notice: commandNotice } = useCommandOutput(sessionId)
 
-  const send = useCallback(async () => {
+  const send = async () => {
     if (locked) return
     const value = text.trim()
     if (submitting.current || sending || (sessionId && getTurnIntent(sessionId).send)) return
@@ -569,7 +569,7 @@ export const Composer = memo(function Composer(props: ComposerProps) {
       textarea.current?.focus()
     }
     await submit().finally(() => { submitting.current = false })
-  }, [nativeOwner, localStateId, text, files, sending, session, onEnsureSession, busy, busyMode, sessionId, trySteer, locked, queueEntry, onQueue, onLocalCommand, bootstrap.profile, askBtw, runCommand, catalog, launchBackground])
+  }
 
   const applySuggestion = (s: CommandSuggestion) => { setText(`/${s.name} `); textarea.current?.focus() }
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -638,14 +638,14 @@ export const Composer = memo(function Composer(props: ComposerProps) {
   // While a clarification owns the box, the message-only controls leave the footer (docs/ui-ux clarify-card).
   const hide = (key: string) => hideComposerControl(settings, answering, key)
   const placeholder = clarify ? (clarify.step.choices.length ? m.clarify_composer_placeholder_choices() : m.clarify_composer_placeholder()) : busy && !nativeOwner ? (busyMode === 'queue' ? m.composer_placeholder_busy_queue() : busyMode === 'interrupt' ? m.composer_placeholder_busy_interrupt() : m.composer_placeholder_busy_steer()) : m.composer_placeholder()
-  const onCompress = useCallback(() => { void onLocalCommand('compress', '') }, [onLocalCommand])
-  const context = useMemo<ContextFigures>(() => ({
+  const onCompress = () => { void onLocalCommand('compress', '') }
+  const context: ContextFigures = ({
     sessionId: sessionId ?? undefined, detailKey: session?.context_detail_key,
     percent: session?.context_usage_percent, used: session?.context_used_tokens, window: session?.context_window_tokens, thresholdPercent: session?.context_threshold_percent,
     input: session?.input_tokens, output: session?.output_tokens, cacheRead: session?.cache_read_tokens, cacheWrite: session?.cache_write_tokens, cacheHitPercent: session?.cache_hit_percent, cost: session?.estimated_cost,
     // The same manual compression `/compress` runs, offered only when the server says it would start.
     onCompress: sessionId && session?.can_compress ? onCompress : undefined, compressing: locked,
-  }), [sessionId, session, onCompress, locked])
+  })
   const canSend = (text.trim() !== '' || files.some((f) => f.status === 'done')) && !sending && !locked
   // Phone composer at rest: one prompt row (UIUX guide), and the strip under it folds away too.
   const collapsed = phone && !text && files.length === 0 && !busy && !focusWithin && !configOpen && !dragOver
@@ -692,7 +692,7 @@ export const Composer = memo(function Composer(props: ComposerProps) {
   const outcomeUnknown = admissions.some((a) => a.status === 'unknown')
   const pinnedCount = backgroundTasks.filter((t) => t.pinned).length
   // The chips over the card: the running turn first, then runtime notices and this message's state.
-  const chipNotices = useMemo<ComposerNotice[]>(() => [
+  const chipNotices: ComposerNotice[] = [
     ...(busy ? [{ id: 'live', content: <LiveStatusPill sessionId={sessionId} background={session?.active_turn_origin === 'background' && session.active_stream_id === streamId} /> }] : []),
     ...notices,
     ...(intent.send ? [{ id: 'send', tone: intent.send.error ? 'error' as const : 'neutral' as const, content: <span role="status">{intent.send.uncertain ? m.composer_send_uncertain() : intent.send.error ?? m.composer_sending()}</span>, ...(intent.send.error && !intent.send.uncertain && !intent.send.files && sessionId ? { action: { label: m.retry(), run: () => { void retryPendingTurn(sessionId)?.catch(() => undefined) } } } : {}) }] : []),
@@ -703,7 +703,7 @@ export const Composer = memo(function Composer(props: ComposerProps) {
     ...(showYolo ? [{ id: 'yolo', tone: 'warning' as const, content: <><span aria-hidden="true">⚡</span><span className="truncate">{m.yolo_tab_active()}</span></>, action: { label: m.yolo_turn_off(), run: onToggleYolo } }] : []),
     ...(sessionId && pinnedCount ? [{ id: 'background', content: <><Layers size={13} className="shrink-0" aria-hidden="true" /><span className="truncate">{m.bg_card_count({ n: pinnedCount })}</span></>, detail: { title: m.bg_card_title(), content: <BackgroundWorkCard sessionId={sessionId} tasks={backgroundTasks} /> } }] : []),
     ...(sessionId && (queued.length > 0 || admissions.length) ? [{ id: 'queue', tone: outcomeUnknown ? 'warning' as const : undefined, content: <><ListPlus size={13} className="shrink-0" aria-hidden="true" /><span className="truncate">{outcomeUnknown ? m.owner_outcome_unknown() : m.queued_count({ n: queued.length + admissions.length })}</span></>, detail: { title: admissions.length ? m.owner_inputs() : m.queued_count({ n: queued.length }), content: <QueueCard sessionId={sessionId} queued={queued} onChange={onQueueChange} pendingId={intent.send?.queueId} admissions={admissions} onAdmissionAction={props.onOwnerAction} /> } }] : []),
-  ], [busy, sessionId, session, streamId, notices, intent.send, intent.stop, btwNotice, commandNotice, dictating, showYolo, onToggleYolo, pinnedCount, backgroundTasks, queued, admissions, outcomeUnknown, onQueueChange, props.onOwnerAction])
+  ]
   // A `/btw` draft asks beside the turn instead of steering, queueing or interrupting it (TAL-518).
   const busyLabel = nativeOwner ? m.composer_send() : intent.stop ? m.composer_queue() : parseCommand(text)?.name === 'btw' ? m.composer_send() : busyMode === 'queue' ? m.composer_queue() : busyMode === 'interrupt' ? m.composer_interrupt() : m.composer_steer()
 
@@ -792,4 +792,4 @@ export const Composer = memo(function Composer(props: ComposerProps) {
       <ComposerControls {...controls} placement="strip" />
     </div>
   )
-})
+}

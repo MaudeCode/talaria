@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Loader2, MessageCircleQuestionMark } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
@@ -17,15 +17,15 @@ export function useBtw(sessionId: string | null): { ask: (question: string) => P
   const stream = useRef<SseHandle | null>(null)
   // Each ask (and each dismissal or chat switch) starts a new generation; a late frame from an older one is dropped.
   const generation = useRef(0)
-  const stop = useCallback(() => {
+  const stop = () => {
     generation.current += 1
     stream.current?.close()
     stream.current = null
-  }, [])
+  }
   // Leaving the chat drops its side question; the panel only shows for the chat that asked it.
   useEffect(() => () => { stop(); setSide(null) }, [sessionId, stop])
 
-  const ask = useCallback(async (question: string) => {
+  const ask = async (question: string) => {
     if (!sessionId) return
     stop()
     const gen = generation.current
@@ -53,9 +53,9 @@ export function useBtw(sessionId: string | null): { ask: (question: string) => P
       },
       onError: (readyState) => { if (readyState === SSE_CLOSED) fail() },
     })
-  }, [sessionId, stop])
+  }
 
-  const notice = useMemo<ComposerNotice | null>(() => side?.sessionId === sessionId ? {
+  const notice: ComposerNotice | null = side?.sessionId === sessionId ? {
     id: 'btw',
     tone: side.state === 'failed' ? 'error' : undefined,
     content: (
@@ -80,6 +80,6 @@ export function useBtw(sessionId: string | null): { ask: (question: string) => P
     // The answer once it settles, not every streamed token.
     announcement: side.state === 'asking' ? m.btw_asking() : side.text,
     onDismiss: () => { stop(); setSide(null) },
-  } : null, [side, sessionId, stop])
+  } : null
   return { ask, notice }
 }

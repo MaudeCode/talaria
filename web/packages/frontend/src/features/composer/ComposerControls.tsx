@@ -1,4 +1,4 @@
-import { memo, type Dispatch, type SetStateAction } from 'react'
+import { type Dispatch, type SetStateAction } from 'react'
 import { SlidersHorizontal, TerminalSquare } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import { cn } from '../../ui/cn'
@@ -24,7 +24,7 @@ export function hideComposerControl(settings: ComposerProps['settings'], answeri
 }
 
 /** Stable control groups at the existing DOM positions around the input and send actions. */
-export const ComposerControls = memo(function ComposerControls({ placement, sessionId, session, settings, pendingChoices, onExecutionModeChange, onModelChange, onReasoningChange, reasoning, reasoningLevels, reasoningSupported = true, onWorkspaceChange, onNewWorktreeChat, onRemoveWorktree, onToolsetsChange, terminalOpen, onToggleTerminal, answering, stage, phone, collapsed, configOpen, setConfigOpen, context }: ControlsProps) {
+export function ComposerControls({ placement, sessionId, session, settings, pendingChoices, onExecutionModeChange, onModelChange, onReasoningChange, reasoning, reasoningLevels, reasoningSupported = true, onWorkspaceChange, onNewWorktreeChat, onRemoveWorktree, onToolsetsChange, terminalOpen, onToggleTerminal, answering, stage, phone, collapsed, configOpen, setConfigOpen, context }: ControlsProps) {
   const hide = (key: string) => hideComposerControl(settings, answering, key)
   const modelChoice = session?.model ? { model: session.model, optionId: session.model_option_id ?? null } : { model: pendingChoices?.model ?? null, optionId: pendingChoices?.model ?? null }
   const modeChip = !sessionId && onExecutionModeChange ? <ExecutionModeChip value={pendingChoices?.execution_mode ?? 'normal'} onChange={onExecutionModeChange} />
@@ -57,4 +57,4 @@ export const ComposerControls = memo(function ComposerControls({ placement, sess
         </div>
     )}
   </>)
-})
+}

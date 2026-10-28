@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { m } from '../../paraglide/messages.js'
 import { cn } from '../../ui/cn'
 import { Dialog } from '../../ui/Dialog'
@@ -62,7 +62,7 @@ function fitChips(el: HTMLDivElement) {
  * The chips over the composer card: each one fades in and out on its own. Mount one per chat (keyed by session) so a
  * switch closes the old chat's disclosure and shows none of its chips leaving.
  */
-export const ComposerNotices = memo(function ComposerNotices({ notices, fallbackFocus }: { notices: ComposerNotice[]; fallbackFocus: RefObject<HTMLElement | null> }) {
+export function ComposerNotices({ notices, fallbackFocus }: { notices: ComposerNotice[]; fallbackFocus: RefObject<HTMLElement | null> }) {
   // An entry that leaves stays for its exit fade at its old place.
   const [leaving, setLeaving] = useState<{ notice: ComposerNotice; index: number }[]>([])
   // The entries are rebuilt on every composer render; only a change in which ids are present can start an exit.
@@ -128,4 +128,4 @@ export const ComposerNotices = memo(function ComposerNotices({ notices, fallback
       </Dialog>
     </>
   )
-})
+}

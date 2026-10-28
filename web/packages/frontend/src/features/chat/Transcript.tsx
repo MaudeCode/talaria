@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ArrowDown, ArrowUp } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
 import type { Attachment } from '../../contracts'
@@ -74,9 +74,9 @@ export function Transcript(props: TranscriptProps) {
   const [atTop, setAtTop] = useState(true)
   // The live turn gives way to the server's scene as soon as a terminal frame brings the settled session.
   const showLive = !!live && (!isTerminal(live.status) || live.doneSession === null)
-  const grouped = useMemo(() => groupAssistantTurns(rawRows), [rawRows])
+  const grouped = groupAssistantTurns(rawRows)
   const streamId = live?.streamId, turnId = live?.turnId, claimsPersistedRows = live?.claimsPersistedRows, userMessageId = live?.userMessageId
-  const { rows, hasLiveUser, hasPersistedPending } = useMemo(() => {
+  const { rows, hasLiveUser, hasPersistedPending } = (() => {
     // A live turn attached without replay cannot restore the rows the server already persisted, so it leaves them visible.
     // The live turn owns rows the server already stamped with its turn id.
     const rows = showLive && claimsPersistedRows ? grouped.filter((row) => row.message.role !== 'assistant' || (row.turnKey !== streamId && row.turnKey !== turnId)) : grouped
@@ -85,10 +85,10 @@ export function Transcript(props: TranscriptProps) {
       hasLiveUser: rows.some((row) => row.message.role === 'user' && messageKey(row.message) === userMessageId),
       hasPersistedPending: streamId !== undefined && rows.some((row) => row.message.role === 'user' && ((userMessageId !== null && messageKey(row.message) === userMessageId) || row.message._turn_id === streamId || (turnId !== null && row.message._turn_id === turnId))),
     }
-  }, [grouped, showLive, claimsPersistedRows, streamId, turnId, userMessageId])
+  })()
   // A live turn attached without replay continues the running scene the server shipped for its persisted rows (TAL-374).
-  const continued = useMemo(() => (showLive && streamId !== undefined && !claimsPersistedRows ? rows.find((row) => isReplyRow(row.message) && (row.turnKey === streamId || row.turnKey === turnId)) : undefined), [rows, streamId, turnId, claimsPersistedRows, showLive])
-  const continuedTools = useMemo(() => (continued ? toolIdsOf(persistedActivity(continued)) : undefined), [continued])
+  const continued = (showLive && streamId !== undefined && !claimsPersistedRows ? rows.find((row) => isReplyRow(row.message) && (row.turnKey === streamId || row.turnKey === turnId)) : undefined)
+  const continuedTools = (continued ? toolIdsOf(persistedActivity(continued)) : undefined)
   const lastRowIsUser = rows.length > 0 && rows[rows.length - 1]?.message.role === 'user' && !rows[rows.length - 1]?.message._marker_kind && !rows[rows.length - 1]?.message._delivery
   const showLiveUser = !!live && !isTerminal(live.status) && (live.userText.trim() !== '' || live.userAttachments.length > 0) && (live.userMessageId !== null || !lastRowIsUser) && !hasLiveUser
   // The submitted occurrence uses one slot until the server's identified row takes over.
@@ -98,14 +98,14 @@ export function Transcript(props: TranscriptProps) {
   const liveUserText = pending ? pendingUserText : showLiveUser ? (live?.userText ?? '') : ''
   // Built once per text and attachments, so a streamed token frame leaves the user's bubble unrendered.
   const liveUserAttachments = pending ? props.pendingAttachments ?? NO_ATTACHMENTS : live?.userAttachments ?? NO_ATTACHMENTS
-  const liveUserRow = useMemo<VisibleMessage>(() => ({ index: -1, key: 'pending-user', message: { role: 'user', content: liveUserText, attachments: liveUserAttachments } }), [liveUserText, liveUserAttachments])
+  const liveUserRow: VisibleMessage = ({ index: -1, key: 'pending-user', message: { role: 'user', content: liveUserText, attachments: liveUserAttachments } })
   useAutoRead(props.autoRead === true, rows, live, !showLive)
-  const lastAssistantIndex = useMemo(() => rows.findLastIndex((row) => isReplyRow(row.message)), [rows])
+  const lastAssistantIndex = rows.findLastIndex((row) => isReplyRow(row.message))
   const virtualize = virtualizeLongTranscripts && rows.length > VIRTUALIZE_AT
 
   // `pin` is the only writer of `pinned`, so the ref never trails it.
   const pinnedRef = useRef(pinned)
-  const pin = useCallback((next: boolean) => { pinnedRef.current = next; setPinned(next) }, [])
+  const pin = (next: boolean) => { pinnedRef.current = next; setPinned(next) }
   // Entering a session settles at its bottom as its rows and layout arrive, even with auto-follow off,
   // until the reader scrolls up or a turn streams (auto-follow alone governs streamed content).
   const settlingRef = useRef(false)
@@ -117,7 +117,7 @@ export function Transcript(props: TranscriptProps) {
 
   const readerAnchor = useRef<{ key: string; top: number } | null>(null)
   const anchorFrame = useRef<number | null>(null)
-  const rememberReaderAnchor = useCallback(() => {
+  const rememberReaderAnchor = () => {
     // Following owns the scroll position; a reader anchor is only used away from the bottom.
     if (followsRef.current()) { readerAnchor.current = null; return }
     if (anchorFrame.current !== null) return
@@ -139,7 +139,7 @@ export function Transcript(props: TranscriptProps) {
         if (rect.top >= bounds.top) break
       }
     })
-  }, [])
+  }
 
   useLayoutEffect(() => () => {
     if (anchorFrame.current !== null) cancelAnimationFrame(anchorFrame.current)
@@ -149,10 +149,10 @@ export function Transcript(props: TranscriptProps) {
   // A hand scroll (wheel or touch) that moves the transcript asks the composer to rest; a gesture against an edge
   // moves nothing, and programmatic follow and entry jumps record their own position, so neither does.
   const handAtRef = useRef(-Infinity)
-  const onReaderInput = useCallback(() => { prependRef.current = null; readerAnchor.current = null }, [])
-  const onReaderScroll = useCallback(() => { onReaderInput(); handAtRef.current = performance.now() }, [onReaderInput])
+  const onReaderInput = () => { prependRef.current = null; readerAnchor.current = null }
+  const onReaderScroll = () => { onReaderInput(); handAtRef.current = performance.now() }
 
-  const onScroll = useCallback(() => {
+  const onScroll = () => {
     const el = scrollRef.current
     if (!el) return
     const max = el.scrollHeight - el.clientHeight
@@ -168,9 +168,9 @@ export function Transcript(props: TranscriptProps) {
     lastTopRef.current = el.scrollTop
     rememberReaderAnchor()
     setAtTop(el.scrollTop < 40)
-  }, [pin, rememberReaderAnchor])
+  }
 
-  const scrollToBottom = useCallback((smooth = false) => {
+  const scrollToBottom = (smooth = false) => {
     const el = scrollRef.current
     if (!el) return
     el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
@@ -178,7 +178,7 @@ export function Transcript(props: TranscriptProps) {
     if (!smooth) lastTopRef.current = el.scrollTop
     readerAnchor.current = null
     pin(true)
-  }, [pin])
+  }
 
   // Follow while pinned: track every size change of the content (each streamed line, each
   // folding disclosure) and of the pane itself before paint, instead of catching up in jumps.
@@ -234,7 +234,7 @@ export function Transcript(props: TranscriptProps) {
 
   // Entry is keyed by the session scope (and a `?msg=` link), never by row keys: sessions can share them, and older rows change the first.
   const entryRef = useRef<{ focus: string | undefined; pagedAt?: number } | null>(null)
-  const requestOlder = useCallback((retry = false) => {
+  const requestOlder = (retry = false) => {
     const pane = scrollRef.current
     if (!pane || loadingOlder || (olderError && !retry)) return
     if (!entryRef.current) { pin(false); settlingRef.current = false }
@@ -254,7 +254,7 @@ export function Transcript(props: TranscriptProps) {
       })
       if (anchors.length) prependRef.current = { from: loadedFrom, anchors, height: pane.scrollHeight, offset: pane.scrollTop }
     })
-  }, [loadedFrom, loadingOlder, olderError, onLoadOlder, pin])
+  }
   useLayoutEffect(() => {
     const saved = prependRef.current
     const pane = scrollRef.current
@@ -342,7 +342,7 @@ export function Transcript(props: TranscriptProps) {
   }, [scope, truncated, loadingOlder, olderError, requestOlder])
 
   const continuedTurn = continued ? live ?? undefined : undefined
-  const renderRow = useCallback((row: VisibleMessage, i: number) => (
+  const renderRow = (row: VisibleMessage, i: number) => (
     row.message._background_update
       ? <BackgroundUpdateRow key={row.key} row={row} />
       : row.message._marker_kind
@@ -354,9 +354,9 @@ export function Transcript(props: TranscriptProps) {
       : row.message.role === 'user'
       ? <UserMessageRow key={row.key} row={row} renderMarkdown={renderUserMarkdown} sessionId={sessionId} actions={actions} />
       : <AssistantMessageRow sessionId={sessionId} scope={props.disclosureScope} key={row.key} row={row} name={assistantName} mode={mode} actions={actions} tts={tts} isLast={i === lastAssistantIndex && !showLive} retainHeight={i === lastAssistantIndex} continuation={row === continued ? continuedTurn : undefined} />
-  ), [renderUserMarkdown, sessionId, actions, props.disclosureScope, assistantName, mode, tts, lastAssistantIndex, showLive, continued, continuedTurn])
+  )
   // Reuse mounted history; the opt-in virtualizer still creates only its visible window.
-  const renderedRows = useMemo(() => virtualize ? null : rows.map(renderRow), [virtualize, rows, renderRow])
+  const renderedRows = virtualize ? null : rows.map(renderRow)
 
   return (
     <WorklogDisclosureProvider key={scope} scope={scope ?? ""}>

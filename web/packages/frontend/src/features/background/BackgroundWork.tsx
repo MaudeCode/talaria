@@ -2,7 +2,7 @@
  * TAL-372: the session's background work, as the server records it. The composer's chip opens what the server pins:
  * running work, and a finished `/background` result until someone dismisses it. Every client reads the same records.
  */
-import { useCallback, useState } from 'react'
+import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Check, CircleHelp, Clock, LoaderCircle, X } from 'lucide-react'
 import type { BackgroundLink, BackgroundTask, BackgroundReviewState } from '@maudecode/talaria-web-contracts'
@@ -34,7 +34,7 @@ export function useStartBackground() {
     mutationFn: ({ sessionId, prompt }) => api.startBackground(sessionId, prompt),
     onError: (e) => showErrorToast(e),
   })
-  return useCallback((sessionId: string, prompt: string, notStarted: () => void) => {
+  return (sessionId: string, prompt: string, notStarted: () => void) => {
     const key = keys.background(sessionId)
     type Tasks = Awaited<ReturnType<typeof api.fetchBackgroundTasks>>
     const known = new Set(qc.getQueryData<Tasks>(key)?.tasks.map((task) => task.task_id))
@@ -46,7 +46,7 @@ export function useStartBackground() {
         if (read?.data && read.dataUpdatedAt >= sent && !read.data.tasks.some((task) => !known.has(task.task_id))) notStarted()
       },
     })
-  }, [qc, mutate])
+  }
 }
 
 /** The session's background work as the user sees it: a dismissed result leaves at once. */
