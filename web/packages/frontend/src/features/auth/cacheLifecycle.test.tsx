@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, renderHook, screen } from '@testing-library/react'
-import type { QueryClient } from '@tanstack/react-query'
+import { QueryClientProvider, useQuery, type QueryClient } from '@tanstack/react-query'
+import type { ReactNode } from 'react'
 import { createQueryClient } from '../../api/queryClient'
 import { configureClient, get, resetClientForTests } from '../../api/client'
 import { createMemoryAdapter, DEFAULT_BOOTSTRAP, makeSession } from '../../contracts/adapters/memory'
@@ -17,6 +18,7 @@ const projects = (name: string) => ProjectsSchema.parse({ projects: [{ project_i
 const clients: QueryClient[] = []
 let listeners: [string, EventListenerOrEventListenerObject][]
 let assign: ReturnType<typeof vi.fn>
+let reload: ReturnType<typeof vi.fn>
 
 function client(factory = createQueryClient) {
   const qc = factory()
@@ -47,7 +49,8 @@ beforeEach(() => {
     add(type, listener, options)
   })
   assign = vi.fn()
-  vi.stubGlobal('location', { href: window.location.href, origin: window.location.origin, pathname: '/', search: '', assign })
+  reload = vi.fn()
+  vi.stubGlobal('location', { href: window.location.href, origin: window.location.origin, pathname: '/', search: '', assign, reload })
   resetClientForTests()
   configureClient({ transport: createMemoryAdapter({ routes: { 'POST /api/auth/logout': () => [200, { ok: true }], 'POST /api/auth/login': () => [200, { ok: true }] } }) })
 })
@@ -69,6 +72,7 @@ describe('identity-owned boot snapshots', () => {
     seed(qc)
     await logout()
     expect(assign).toHaveBeenCalledTimes(1)
+    expect(reload).not.toHaveBeenCalled()
     expect(readPersisted(snapshotKey)).toBeNull()
     window.dispatchEvent(new Event('pagehide'))
     expect(readPersisted(snapshotKey)).toBeNull()
@@ -124,16 +128,23 @@ describe('identity-owned boot snapshots', () => {
     expect(client().getQueryData(['sessions', 'detail', 'previous-session'])).toMatchObject({ session: { session_id: 'previous-session' } })
   })
 
-  it('retires old caches on a cross-tab storage event', () => {
+  it('reloads a mounted client when a cross-tab storage event retires its queries', () => {
     const qc = client()
     seed(qc)
+    const view = renderHook(() => useQuery({ queryKey: projectKey, queryFn: () => Promise.resolve(projects('Fetched identity')), enabled: false }), {
+      wrapper: ({ children }: { children: ReactNode }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>,
+    })
+    expect(view.result.current.data).toEqual(projects('Previous identity'))
     writePersisted('hermes-boot-generation', 'another-tab-generation')
-    window.dispatchEvent(new StorageEvent('storage', { key: 'hermes-boot-generation' }))
+    act(() => { window.dispatchEvent(new StorageEvent('storage', { key: 'hermes-boot-generation' })) })
+    expect(reload).toHaveBeenCalledTimes(1)
     expect(qc.getQueryCache().getAll()).toHaveLength(0)
     const saved = readPersisted(snapshotKey)
     qc.setQueryData(projectKey, projects('Retired tab'))
     window.dispatchEvent(new Event('pagehide'))
     expect(readPersisted(snapshotKey)).toBe(saved)
+    expect(reload).toHaveBeenCalledTimes(1)
+    view.unmount()
   })
 
   it('preserves legacy offline hydration before a reset and rejects it after one', async () => {

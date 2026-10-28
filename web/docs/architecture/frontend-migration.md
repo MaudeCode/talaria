@@ -381,7 +381,9 @@ through the server-owned consented proxy. Legacy injection and globals are gone.
   cancels their timers and queries, clears their caches, and removes the
   `hermes-boot:` and last-session keys. A separate browser-storage generation
   fences still-open clients from writing after a reset, even before their
-  storage event arrives. Snapshots carry that generation and only hydrate into
+  storage event arrives. A client that detects a foreign reset retires its cache
+  and reloads the tab so mounted observers reconnect through a fresh client.
+  Snapshots carry that generation and only hydrate into
   matching clients. Legacy snapshots remain readable before the first reset.
   The chat view
   assumes a session has content until its transcript says otherwise; only a

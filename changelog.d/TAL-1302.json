@@ -2,7 +2,7 @@
   "entries": [
     {
       "category": "Security",
-      "summary": "Clear cached projects and chats when signing out, signing in, or losing authentication.",
+      "summary": "Clear cached projects and chats across open tabs when signing out, signing in, or losing authentication.",
       "highlight": false,
       "components": ["web"]
     }

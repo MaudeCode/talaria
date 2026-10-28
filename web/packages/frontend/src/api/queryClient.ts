@@ -97,7 +97,11 @@ export function createQueryClient(): QueryClient {
       qc.clear()
     }
     const isCurrent = () => {
-      if (!retired && readPersisted(GENERATION_KEY) !== generation) retire()
+      if (!retired && readPersisted(GENERATION_KEY) !== generation) {
+        retire()
+        // Mounted observers need a fresh client after another tab changes identity.
+        window.location.reload()
+      }
       return !retired
     }
     const persist = () => { if (isCurrent()) persistSnapshot(qc, generation) }
