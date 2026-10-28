@@ -1,0 +1,36 @@
+{
+  "submit": {
+    "requestId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+    "kind": "bug",
+    "title": "Composer loses the draft after reconnecting",
+    "body": "The composer was empty after reconnecting.",
+    "includeDiagnostics": true,
+    "client": {
+      "platform": "ios",
+      "appVersion": "1.4.0"
+    }
+  },
+  "diagnostics": {
+    "text": "Web: 1.4.0\nRelay registered: no",
+    "bytes": 31
+  },
+  "sent": {
+    "status": "sent",
+    "reportId": "synthetic-report-1"
+  },
+  "errors": [
+    {
+      "error": "rate_limited",
+      "retryAfterSeconds": 42
+    },
+    {
+      "error": "feedback_unavailable"
+    },
+    {
+      "error": "relay_unreachable"
+    },
+    {
+      "error": "invalid"
+    }
+  ]
+}

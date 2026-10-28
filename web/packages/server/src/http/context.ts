@@ -99,6 +99,7 @@ export interface AppDeps {
   /** Seconds since the epoch when the server started. */
   startedAt: number
   log: (line: string) => void
+  recentErrors: () => readonly string[]
   /** Accept-loop counters for `/health`. */
   stats: { requestsTotal: number; lastRequestAt: number }
   /** Later checkpoints replace these seams with the real domains. */

@@ -2,6 +2,7 @@
  * Assemble the application dependencies for one state directory. Used by the
  * launcher and by tests, which pass a temp directory and a fixed environment.
  */
+import { redactSensitive } from './redact.js'
 import { SIDECAR_METHODS, type PendingSteer, type RuntimeDescribe, type SessionGoal, type SessionNotice, type SidecarResult } from '@maudecode/talaria-web-contracts'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { pinnedFetch, systemDnsLookup } from './http/pinned.js'
@@ -99,7 +100,15 @@ export function packageVersion(): string | undefined {
 }
 
 export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
-  const log = opts.log ?? ((line) => { console.log(line) })
+  const recentErrors: string[] = []
+  const output = opts.log ?? ((line: string) => { console.log(line) })
+  const log = (line: string): void => {
+    if (/\b(?:error|failed|failure)\b/i.test(line) && !line.startsWith('[feedback]')) {
+      recentErrors.push(redactSensitive(line).slice(0, 8192))
+      if (recentErrors.length > 10) recentErrors.shift()
+    }
+    output(line)
+  }
   const config = loadConfig(opts)
   const env: Env = config.env
   mkdirSync(config.stateDir, { recursive: true })
@@ -671,6 +680,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     staticFiles: new AssetCache(config.staticRoot),
     release,
     version,
+    recentErrors: () => recentErrors,
     startedAt: now(),
     log,
     stats: { requestsTotal: 0, lastRequestAt: 0 },

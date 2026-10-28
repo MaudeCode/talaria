@@ -12,11 +12,29 @@ const tags = ['settings']
 
 export const ErrorSchema = z.object({ error: z.string() })
 
+const feedbackText = (max: number) => z.string().max(max).regex(/\S/, 'Must not be blank')
+export const FeedbackSubmitSchema = z.strictObject({
+  requestId: z.uuid(), kind: z.enum(['bug', 'feature', 'other']),
+  title: feedbackText(120), body: feedbackText(8000),
+  includeDiagnostics: z.boolean(),
+  client: z.strictObject({ platform: z.enum(['web', 'ios']), appVersion: feedbackText(64).optional(), osVersion: feedbackText(64).optional(), deviceModel: feedbackText(64).optional() }),
+})
+export const FeedbackDiagnosticsSchema = z.object({ text: z.string().max(16384), bytes: z.number().int().min(0).max(16384) })
+export const FeedbackResultSchema = z.object({ status: z.literal('sent'), reportId: z.string().min(1) })
+export const FeedbackErrorSchema = z.discriminatedUnion('error', [
+  ErrorSchema.extend({ error: z.literal('rate_limited'), retryAfterSeconds: z.number().int().nonnegative() }),
+  ErrorSchema.extend({ error: z.enum(['feedback_unavailable', 'relay_unreachable', 'invalid']) }),
+])
+
 export const ReasoningUnsupportedSchema = ErrorSchema.extend({ code: z.literal('reasoning_unsupported') })
 
 const AdvancedBody = z.object({ advanced: Loose.nullable().optional() })
 
 export const settingsContract = {
+  feedback: {
+    diagnostics: oc.route({ method: 'GET', path: '/api/feedback/diagnostics', tags, summary: 'Preview the redacted diagnostics attached to feedback.' }).output(FeedbackDiagnosticsSchema),
+    submit: oc.route({ method: 'POST', path: '/api/feedback/submit', tags, summary: 'Forward feedback to Relay. Reuse requestId after an unknown outcome. Errors: rate_limited with retryAfterSeconds (429), feedback_unavailable (503), relay_unreachable (502), invalid (400).' }).input(FeedbackSubmitSchema).output(FeedbackResultSchema),
+  },
   settings: {
     get: oc.route({ method: 'GET', path: '/api/settings', tags, summary: 'Server settings plus auth-state, max_tokens, and version badges.' }).output(SettingsSchema),
     save: oc.route({ method: 'POST', path: '/api/settings', tags, summary: 'Save settings; `_set_password`, `_clear_password`, `_passwordless`, `_current_password`, and `max_tokens` are handled specially.' }).input(Loose).output(SettingsSchema),

@@ -36,7 +36,7 @@ const STARTED_WINDOW_MS = 24 * 60 * 60 * 1000
 const b64u = (data: Buffer): string => data.toString('base64url')
 
 export class RelayPairingError extends Error {
-  constructor(message: string, readonly status: number) { super(message) }
+  constructor(message: string, readonly status: number, readonly extra: Record<string, unknown> = {}) { super(message) }
 }
 
 class RelayHttpError extends Error {
@@ -749,17 +749,46 @@ export class RelayService {
     return run
   }
 
-  private async relayPost(url: string, body: string, headers: Record<string, string>, reject: string): Promise<Record<string, unknown>> {
+  private async relayPost(url: string, body: string, headers: Record<string, string>, reject: string, failure?: (response: Response | null) => RelayPairingError, acceptedStatus?: number): Promise<Record<string, unknown>> {
     let res: Response
     try {
-      res = await this.deps.fetch()(url, { method: 'POST', body, headers, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
+      res = await this.deps.fetch()(url, { method: 'POST', body, headers, redirect: 'error', signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
     } catch {
-      throw new RelayPairingError('Could not reach Talaria Relay', 502)
+      throw failure?.(null) ?? new RelayPairingError('Could not reach Talaria Relay', 502)
     }
-    if (!res.ok) throw new RelayPairingError(`${reject} (HTTP ${String(res.status)})`, res.status >= 400 && res.status < 500 ? 409 : 502)
+    if (!res.ok || (acceptedStatus !== undefined && res.status !== acceptedStatus)) { void res.body?.cancel(); throw failure?.(res) ?? new RelayPairingError(`${reject} (HTTP ${String(res.status)})`, res.status >= 400 && res.status < 500 ? 409 : 502) }
     let payload: unknown
-    try { const raw = await readCapped(res, 256 * 1024); if (!raw) throw new Error('too large'); payload = JSON.parse(raw.toString('utf8')) } catch { throw new RelayPairingError('Talaria Relay returned an invalid response', 502) }
+    try { const raw = await readCapped(res, 256 * 1024); if (!raw) throw new Error('too large'); payload = JSON.parse(raw.toString('utf8')) } catch { throw failure?.(null) ?? new RelayPairingError('Talaria Relay returned an invalid response', 502) }
     return payload && typeof payload === 'object' && !Array.isArray(payload) ? (payload as Record<string, unknown>) : {}
+  }
+
+  /** Feedback shares publisher identity, signing, response bounds and transport with enrollment. */
+  async submitFeedback(body: string): Promise<string> {
+    const config = await loadRelayConfig(this.deps.documents)
+    const url = config?.url ?? (this.deps.env.HERMES_WEBUI_TALARIA_RELAY_URL ?? DEFAULT_RELAY_URL).trim().replace(/\/+$/, '')
+    const key = config ? await loadKey(this.deps.documents, config) : null
+    const failure = (response: Response | null): RelayPairingError => {
+      if (response?.status === 429) {
+        const raw = response.headers.get('Retry-After') ?? ''
+        const seconds = /^\d+$/.test(raw) ? Number(raw) : Math.ceil((Date.parse(raw) - this.deps.now() * 1000) / 1000)
+        return new RelayPairingError('rate_limited', 429, { retryAfterSeconds: Number.isSafeInteger(seconds) ? Math.max(0, seconds) : 60 })
+      }
+      if (response?.status === 404) return new RelayPairingError('feedback_unavailable', 503)
+      if (response && response.status >= 400 && response.status < 500) return new RelayPairingError('invalid', 400)
+      return new RelayPairingError('relay_unreachable', 502)
+    }
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const path = '/v1/feedback'
+        const headers = config && key ? signedHeaders(key, config.key_id, 'POST', path, body, this.deps.now) : { 'Content-Type': 'application/json' }
+        const payload = await this.relayPost(url + path, body, headers, '', failure, 202)
+        if (typeof payload.reportId !== 'string' || !payload.reportId || payload.reportId.length > 256) throw failure(null)
+        return payload.reportId
+      } catch (error) {
+        if (attempt === 0 && error instanceof RelayPairingError && error.message === 'relay_unreachable') continue
+        throw error
+      }
+    }
   }
 
   private async pairUnlocked(body: unknown, rawProfile: string, operator: boolean): Promise<{ ok: true; publisher_id: string }> {
