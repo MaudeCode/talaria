@@ -31,7 +31,10 @@ interface Queue { items: (GatewaySessionsEvent | null)[]; wake: (() => void) | n
 
 export function snapshotHash(sessions: Dict[]): string {
   // The public row shaper fixes field order and defaults before comparison.
-  const key = JSON.stringify([...sessions].sort((a, b) => str(a.session_id).localeCompare(str(b.session_id))))
+  const key = JSON.stringify([...sessions].sort((a, b) => {
+    const aId = str(a.session_id), bId = str(b.session_id)
+    return aId < bId ? -1 : aId > bId ? 1 : 0
+  }))
   return createHash('md5').update(key).digest('hex')
 }
 

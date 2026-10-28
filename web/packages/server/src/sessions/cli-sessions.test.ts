@@ -147,7 +147,8 @@ describe('batched sidebar reads and targeted lookup cache', () => {
       const changed = await sub.next(AbortSignal.abort())
       expect(changed?.sessions.find((row) => row.session_id === 'cli')).toEqual({ ...initial, title: 'Renamed without activity' })
       expect(await sub.next(AbortSignal.abort())).toBeNull()
-      expect(await watcher.pollOnce()).toBe(false)
+      await watcher.pollOnce()
+      expect(await sub.next(AbortSignal.abort())).toBeNull()
       now += 300
       expect(await watcher.pollOnce()).toBe(true)
       expect(await sub.next(AbortSignal.abort())).toBeNull()

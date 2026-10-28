@@ -487,6 +487,9 @@ describe('state.db projection', () => {
   it('compares every public gateway row field in a bounded large list, ignoring order and private metadata', async () => {
     let now = 100
     const read: CliSessionRead = { rows: Array.from({ length: 620 }, (_, i) => ({ session_id: `shared-${String(i)}`, title: 'Shared', model: 'model-a', source_tag: 'cli', raw_source: 'cli', session_source: 'cli', source_label: 'CLI', message_count: 1, created_at: 1, updated_at: 2 })), truncated: new Set(), buildSucceeded: true, storage: { state: 'ok', reason: null } }
+    // Distinct IDs can collate equally; their input order must not affect comparison.
+    read.rows[0]!.session_id = 'shared-\u00e9'
+    read.rows[1]!.session_id = 'shared-e\u0301'
     const watcher = new GatewayWatcher('default', s.state, { rows: () => Promise.resolve(read), now: () => now, log: () => undefined })
     const sub = watcher.subscribe()
     try {
