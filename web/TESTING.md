@@ -33,6 +33,11 @@ before the longer real-Agent suite.
 
 `packages/server/src/**/*.test.ts`, Vitest 5, Node 24.
 
+The `state-db-latency` project runs `state-db-worker.test.ts` before the `server` project,
+so its event-loop and health-response budgets are measured without competing test files.
+The remaining files keep the configured worker limit. All server test commands use this
+ordering; no tests, fixture delays, latency limits, or timeouts are reduced.
+
 - `bootTestServer({ sidecar, env, deps, ... })` (`src/test/harness.ts`) starts a real HTTP server on an
   ephemeral port with an isolated `HERMES_HOME` / `HERMES_WEBUI_STATE_DIR`. `s.get`, `s.sse(path, until)`,
   and `s.rawStatus` drive it; `s.deps` exposes the runtime for stubs (`s.deps.fetch = ...`).
