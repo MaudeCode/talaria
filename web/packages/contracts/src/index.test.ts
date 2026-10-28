@@ -14,6 +14,18 @@ import { CronBlueprintsSchema, CronBlueprintFillSchema, AgentHealthSchema, Error
 const shared = (path: string): unknown => JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../contracts', path), 'utf8'))
 
 describe('contracts package', () => {
+  it('pins server reasoning visibility and the older-server fallback', () => {
+    const fixture = shared('fixtures/reasoning-display.json') as Record<string, unknown>
+    const hidden = SessionSchema.parse(fixture.hidden)
+    const shown = SessionSchema.parse(fixture.shown)
+    const legacy = SessionSchema.parse(fixture.legacy)
+    expect(hidden.show_reasoning).toBe(false)
+    expect(hidden.messages?.[0]?.reasoning).toBe('')
+    expect(shown.show_reasoning).toBe(true)
+    expect(shown.messages?.[0]?.reasoning).toBe('Synthetic thought')
+    expect(legacy.show_reasoning).toBeUndefined()
+    expect(legacy.messages?.[0]?.reasoning).toBe('Synthetic thought')
+  })
   it('shares bounded source pointers and accepted labels without requiring them from older clients', () => {
     const fixture = shared('fixtures/session-references.json') as { request: unknown; accepted: unknown }
     expect(SessionNewRequestSchema.parse(fixture.request)).toEqual(fixture.request)

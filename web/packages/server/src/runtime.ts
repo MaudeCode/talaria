@@ -309,6 +309,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   try { await recoveryStampingSince(storage.documents) } catch (error) { log(`[webui] WARNING: could not record recovery_stamping_since: ${(error as Error).message}`) }
   const sessions: SessionService = new SessionService({
     recoveryStampingSince: async () => await recoveryStampingSince(storage.documents),
+    showReasoning: async (profile) => { try { return showReasoning(await agentConfig.read(profileHome(profile ?? activeProfile()))) } catch { return false } },
     sidecar: () => sidecar,
     media: { access: mediaAccess, localIo: (profile) => workspaces.profileSupportsLocalIo(profile) },
     profileActivity,

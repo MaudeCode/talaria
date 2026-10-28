@@ -1,3 +1,4 @@
+import { reasoningProjection } from './reasoning-display.js'
 import { CHECKPOINT_DIFF_MAX_BYTES, ReactionEmojiSchema, unavailableContextDetail, type ReactionState, type MessageReactionView, type CheckpointDiff, type SessionActivityPhase, type ContextDetail } from '@maudecode/talaria-web-contracts'
 import { checkpointDiffFiles } from '../workspace/rollback.js'
 /** One native-owner seam. Talaria observes its history and never settles it into a local Session. */
@@ -9,7 +10,7 @@ import type { SidecarLike, StreamFrame } from '../sidecar/client.js'
 import { redactNestedMessageContainers, publicToolFrame, redactString } from '../redact.js'
 import { str } from '../util.js'
 import { PendingPrompts } from './pending.js'
-import { wrapExportHtml } from './export.js'
+import { wrapExportHtml, renderSessionHtml, renderSessionMarkdown } from './export.js'
 import { clarifyReply } from './pending.js'
 import type { SessionService } from './service.js'
 import { HttpFailure } from './service.js'
@@ -326,24 +327,29 @@ export class GatewaySessions {
     const target = await this.target(sid)
     if (!target) return null
     const redact = this.deps.redactEnabled()
-    const result = await this.call(target, { action: 'export', format, redact })
+    const show = await this.deps.showReasoning(target.home).catch(() => false)
+    const requestedFormat = show ? format : 'json'
+    const result = await this.call(target, { action: 'export', format: requestedFormat, redact })
     const value = result.export
     if (result.reason === 'export_too_large') throw new HttpFailure(413, 'The owner transcript exceeds the export limit')
-    if (result.state !== 'attached' || value?.format !== format) {
+    if (result.state !== 'attached' || value?.format !== requestedFormat) {
       throw new HttpFailure(409, 'The Agent owner cannot export this chat. Check that its gateway is running and supports transcript export.', { code: 'owner_export_unavailable' })
     }
     if (Buffer.byteLength(value.content, 'utf8') > OWNER_EXPORT_MAX_BYTES) throw new HttpFailure(413, 'The owner transcript exceeds the export limit')
     let content: string
     try {
       // The owner redacts HTML's structured transcript before rendering. A shell/text redactor corrupts its markup.
-      content = format === 'html' ? wrapExportHtml(value.content) : format === 'json'
+      if (!show) {
+        const document = reasoningProjection(redactNestedMessageContainers(JSON.parse(value.content) as unknown, redact), false) as Row
+        content = format === 'html' ? renderSessionHtml(document) : format === 'markdown' ? renderSessionMarkdown(document) : JSON.stringify(document, null, 2)
+      } else content = format === 'html' ? wrapExportHtml(value.content) : format === 'json'
         ? JSON.stringify(redactNestedMessageContainers(JSON.parse(value.content) as unknown, redact), null, 2)
         : redactString(value.content, redact)
     } catch {
       throw new HttpFailure(409, 'The Agent owner returned an invalid transcript export', { code: 'owner_export_invalid' })
     }
     if (Buffer.byteLength(content, 'utf8') > OWNER_EXPORT_MAX_BYTES) throw new HttpFailure(413, 'The owner transcript exceeds the export limit')
-    return { ...value, content }
+    return { ...value, format, content }
   }
 
   private async createCall(params: GatewayCreateParams): Promise<GatewaySessionResult> {
@@ -452,7 +458,8 @@ export class GatewaySessions {
 
   private async view(base: Row, result: GatewaySessionResult, stream: string | null, target: Target, limit: number | null = 120, before: number | null = null, withMessages = true): Promise<Row> {
     const snapshot = result.snapshot
-    const fields: Row = { ...base, owner_attachment: this.attachment({ ...result, model_change: this.currentModelChange(target, snapshot) }), composer_state_key: ownerStateId(target.key), context_detail_key: this.contextDetailKey(target, snapshot), active_stream_id: stream, is_streaming: Boolean(stream) }
+    const showReasoning = await this.deps.service.deps.showReasoning?.(target.profile) ?? true
+    const fields: Row = { ...base, show_reasoning: showReasoning, owner_attachment: this.attachment({ ...result, model_change: this.currentModelChange(target, snapshot) }), composer_state_key: ownerStateId(target.key), context_detail_key: this.contextDetailKey(target, snapshot), active_stream_id: stream, is_streaming: Boolean(stream) }
     if (snapshot) {
       fields.notices = this.nativeNotices(target, snapshot)
       const observed = this.watches.get(target.key)?.snapshot
@@ -467,7 +474,7 @@ export class GatewaySessions {
         nativeRows.push({ ...pendingUserRow(active.text ?? '', [], null, str(snapshot.info.source) || 'gateway', stream), message_id: active.admission_id })
       }
       const messages = start < 0 ? nativeRows : nativeRows.map((row, index) => index >= start ? { ...row, _turn_id: stream } : row)
-      const projected = withMessages ? this.deps.service.foreignMessages(messages, base) : []
+      const projected = withMessages ? this.deps.service.foreignMessages(messages, base, showReasoning) : []
       const [rows, offset] = messageWindowForDisplay(projected, limit, before)
       const model = str(snapshot.info.model) || str(base.model) || null
       const provider = Object.hasOwn(snapshot.info, 'provider')

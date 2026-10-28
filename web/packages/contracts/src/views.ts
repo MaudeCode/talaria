@@ -358,6 +358,7 @@ export const SessionActivityPhaseSchema = z.enum(['starting', 'running', 'waitin
 export type SessionActivityPhase = z.infer<typeof SessionActivityPhaseSchema>
 
 export const SessionSchema = z.looseObject({
+  show_reasoning: z.boolean().optional().describe('Server-resolved display preference. Hidden reasoning is omitted from live events, history and activity scenes; older servers omit this field.'),
   activity_phase: SessionActivityPhaseSchema.optional(),
   source_references: z.array(AcceptedSourceReferenceSchema).optional(),
   context_detail_key: z.string().nullable().optional().describe('Opaque identity for open-only context details; changes with owner epoch, model and context.'),

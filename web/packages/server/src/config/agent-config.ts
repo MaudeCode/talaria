@@ -356,8 +356,15 @@ export function coerceReasoningEffort(effort: string, supported: string[], provi
 export function showReasoning(config: Config): boolean {
   const display = dict(config.display)
   const webui = dict(dict(display.platforms).webui).show_reasoning
-  const raw = typeof webui === 'boolean' ? webui : display.show_reasoning
-  return typeof raw === 'boolean' ? raw : true
+  const boolean = (value: unknown): boolean | undefined => {
+    if (typeof value === 'boolean') return value
+    if (typeof value !== 'string') return undefined
+    const normalized = value.trim().toLowerCase()
+    if (['true', 'on', 'yes', '1'].includes(normalized)) return true
+    if (['false', 'off', 'no', '0'].includes(normalized)) return false
+    return undefined
+  }
+  return boolean(webui) ?? boolean(display.show_reasoning) ?? true
 }
 
 export async function reasoningStatus(config: Config, resolve: EffortsResolver, opts: { model?: string | null; provider?: string | null; baseUrl?: string | null } = {}): Promise<ReasoningStatus> {

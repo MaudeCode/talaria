@@ -1,3 +1,5 @@
+import { showReasoning } from '../config/agent-config.js'
+import { reasoningProjection } from '../sessions/reasoning-display.js'
 /**
  * Server-sent event endpoints: the chat relay with journal replay, the
  * persistent per-session channel, the global session-list feed, the
@@ -77,7 +79,10 @@ export class SseWriter {
   }
 
   event(event: string, data: unknown, eventId?: string | null): void {
-    const body = JSON.stringify(data ?? {})
+    const config = this.ctx.deps.agentConfig.peek(this.ctx.deps.profileHome(this.ctx.deps.activeProfile()))
+    const show = config !== null && showReasoning(config)
+    if (event === 'reasoning' && !show) return
+    const body = JSON.stringify(reasoningProjection(data ?? {}, show))
     this.write(`${eventId ? `id: ${eventId}\n` : ''}event: ${event}\ndata: ${body}\n\n`)
   }
 
@@ -121,7 +126,9 @@ export async function claimOrReject(ctx: RequestContext, connectionClose: boolea
     await ctx.json({ error: 'Client SSE stream limit reached', condition: 'client_stream_limit' }, { status: 503, headers: { Connection: 'close' } })
     return null
   }
-  return new SseWriter(ctx, release, connectionClose)
+  const writer = new SseWriter(ctx, release, connectionClose)
+  await ctx.deps.agentConfig.read(ctx.deps.profileHome(ctx.deps.activeProfile())).catch(() => undefined)
+  return writer
 }
 
 function sameRunSeq(eventId: string | null | undefined, streamId: string): number | null {

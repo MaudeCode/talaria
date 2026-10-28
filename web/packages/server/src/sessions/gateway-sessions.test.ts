@@ -519,6 +519,22 @@ describe('canonical owner attachment', () => {
     expect(sidecar.calls.filter((c) => c.method.startsWith('checkpoints.'))).toEqual([])
   })
 
+  it.each(['json', 'markdown', 'html'] as const)('hides owner reasoning before rendering %s exports (TAL-996)', async (format) => {
+    writeFileSync(join(s.state, 'config.yaml'), '# synthetic preference\n')
+    sidecar.respond('config.get', () => ({ path: join(s.state, 'config.yaml'), exists: true, config: { display: { platforms: { webui: { show_reasoning: false } } } } }))
+    sidecar.respond('gateway.session', (params) => {
+      expect(params).toMatchObject({ action: 'export', format: 'json' })
+      return { state: 'attached', reason: null, snapshot: null, receipt: null, export: { format: 'json', filename: 'owner.json', content: JSON.stringify({ messages: [
+        { role: 'assistant', content: '<thinking>PRIVATE_NATIVE_THOUGHT</thinking>Public answer', reasoning: 'PRIVATE_NATIVE_THOUGHT', _display: 'row' },
+      ] }) } }
+    })
+    const res = await s.get(`/api/session/export?session_id=${sid}&format=${format}`)
+    expect(res.status).toBe(200)
+    const content = await res.text()
+    expect(content).toContain('Public answer')
+    expect(content).not.toContain('PRIVATE_NATIVE_THOUGHT')
+  })
+
   it.each(['json', 'markdown', 'html'] as const)('exports a canonical owner without a local session as %s', async (format) => {
     const content = format === 'json' ? JSON.stringify({ messages: [{ role: 'user', content: 'Current owner transcript' }] })
       : format === 'html' ? '<h1>Current owner transcript</h1>' : '# Current owner transcript'

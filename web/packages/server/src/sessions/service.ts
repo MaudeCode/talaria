@@ -1,3 +1,4 @@
+import { reasoningProjection } from './reasoning-display.js'
 import { MAX_SOURCE_REFERENCES, SourceReferenceSchema, type SourceReference, type AcceptedSourceReference, unavailableContextDetail, type SessionActivityPhase, type ContextDetail } from '@maudecode/talaria-web-contracts'
 import { filterAsync } from '../util.js'
 import { statSignature } from '../fs/stat.js'
@@ -134,6 +135,7 @@ export interface SessionServiceDeps {
   /** The agent's display name for a session's profile (`assistant_name`). */
   assistantName: (profile: string | null) => string
   redactEnabled: () => boolean
+  showReasoning?: (profile: string | null) => Promise<boolean>
   pinnedSessionsLimit: () => number
   runtime: RuntimeOverlay & {
     /** A live worker stream that must block deletion / duplicate turns for this session. */
@@ -846,10 +848,10 @@ export class SessionService {
     const payload = (await this.wireRow(s))
     // Mutation replies replace a client's transcript, so they carry the same server-built scenes as the detail.
     if (withMessages) {
-      payload.messages = (await this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes((await this.backgroundUpdates(s, withMarkerKinds(withTurnIds(messages), s))), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, runningScene: !(await this.journaledActiveTurn(s)) })))
+      payload.messages = (await this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes((await this.backgroundUpdates(s, withMarkerKinds(withTurnIds(messages), s))), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, showReasoning: await this.deps.showReasoning?.(s.profile) ?? true, runningScene: !(await this.journaledActiveTurn(s)) })))
       payload.compression_reference = compressionReference(s, payload.messages as unknown[])
     }
-    return redactSessionData(payload, this.deps.redactEnabled())
+    return this.publicProjection(redactSessionData(payload, this.deps.redactEnabled()), s.profile)
   }
 
   /** Opaque read identity, including context changes that do not alter display message counts. */
@@ -886,8 +888,14 @@ export class SessionService {
   }
 
   /** Python `public_session_projection(s.__dict__)`: every persisted field, redacted (session export). */
-  publicSessionDocument(s: Session): Record<string, unknown> {
-    return redactSessionData(s.toDocument(), this.deps.redactEnabled())
+  async publicSessionDocument(s: Session): Promise<Record<string, unknown>> {
+    return this.publicProjection(redactSessionData(s.toDocument(), this.deps.redactEnabled()), s.profile)
+  }
+
+  /** One server decision for history, mutation replies, done frames and export documents. */
+  async publicProjection(payload: Record<string, unknown>, profile: string | null): Promise<Record<string, unknown>> {
+    const show = await this.deps.showReasoning?.(profile) ?? true
+    return { ...reasoningProjection(payload, show), show_reasoning: show }
   }
 
   // ── detail ──────────────────────────────────────────────────────────────
@@ -914,7 +922,7 @@ export class SessionService {
 
   /** Existing projections, once per complete turn range, in absolute transcript coordinates. */
   private async deriveRange(s: Session, rows: Message[], baseIndex: number, initialTurn: string, journaled: boolean, refs: Pick<Map<string, number>, 'get'>, calls: unknown[], reviewRows: (turnId: string) => Message[]): Promise<Message[]> {
-    return (await this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes((await this.backgroundUpdates(s, withMarkerKinds(withTurnIds(withAttachmentObjects(rows), baseIndex, initialTurn), s), reviewRows)), calls, s.active_stream_id, baseIndex), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, runningScene: !journaled, clipToolResults: true, baseIndex, refCounts: refs }))) as Message[]
+    return (await this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes((await this.backgroundUpdates(s, withMarkerKinds(withTurnIds(withAttachmentObjects(rows), baseIndex, initialTurn), s), reviewRows)), calls, s.active_stream_id, baseIndex), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, showReasoning: await this.deps.showReasoning?.(s.profile) ?? true, runningScene: !journaled, clipToolResults: true, baseIndex, refCounts: refs }))) as Message[]
   }
 
   private async limitedDetail(s: Session, index: SessionPrefixIndex, limit: number, before: number | null, pending: ReturnType<SessionService['pendingTurn']>, journaled: Awaited<ReturnType<SessionService['journaledActiveTurn']>>, retried = false) {
@@ -1097,7 +1105,7 @@ export class SessionService {
     if (pending && !limited) transcript = withPendingUserTurn(transcript, pending)
     if (journaled && !limited)transcript = withoutRunningTurnOutput(transcript, { ...journaled, localCount: s.messages.length })
     // Turn ids, tool outcomes and scenes are computed over the full transcript, so every window reports the same values.
-    const all: unknown[] = loadMessages && !limited ? (await this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes((await this.backgroundUpdates(s, withMarkerKinds(withTurnIds(withAttachmentObjects(transcript)), s))), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, runningScene: !journaled, clipToolResults: msgLimit !== null }))) : []
+    const all: unknown[] = loadMessages && !limited ? (await this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes((await this.backgroundUpdates(s, withMarkerKinds(withTurnIds(withAttachmentObjects(transcript)), s))), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, showReasoning: await this.deps.showReasoning?.(s.profile) ?? true, runningScene: !journaled, clipToolResults: msgLimit !== null }))) : []
     let truncated: unknown[] = limited?.messages ?? []
     let offset = limited?.offset ?? 0
     let summaryCount: number | null = limited?.total ?? null
@@ -1175,7 +1183,7 @@ export class SessionService {
     raw.notices = this.deps.runtime.sessionNotices?.(s.session_id) ?? []
     raw.goal = this.deps.runtime.sessionGoal?.(s.session_id) ?? null
     const publicRow = redactSessionData(raw, this.deps.redactEnabled())
-    return this.owner ? await this.owner.project(publicRow, msgLimit, msgBefore, loadMessages) : publicRow
+    return this.publicProjection(this.owner ? await this.owner.project(publicRow, msgLimit, msgBefore, loadMessages) : publicRow, s.profile)
   }
 
   /**
@@ -1241,14 +1249,14 @@ export class SessionService {
   }
 
   /** Python `_handle_session_get` without a sidecar: the state.db transcript as a (read-only or claimable) foreign stub. */
-  foreignMessages(messages: Message[], session: object): Message[] {
-    return hydrateAnchorActivityScenes(withToolCallOutcomes(withMarkerKinds(withTurnIds(messages), session), [], null), {}) as Message[]
+  foreignMessages(messages: Message[], session: object, showReasoning = true): Message[] {
+    return hydrateAnchorActivityScenes(withToolCallOutcomes(withMarkerKinds(withTurnIds(messages), session), [], null), {}, { showReasoning }) as Message[]
   }
 
   private async foreignSessionDetail(sid: string, loadMessages: boolean, msgLimit: number | null, msgBefore: number | null): Promise<Record<string, unknown>> {
     const { synth, meta } = (await this.foreignSession(sid))
     // The same turn projection as a WebUI session: turn ids, tool outcomes, then each completed turn's scene.
-    const msgs = this.foreignMessages(synth.messages, synth)
+    const msgs = this.foreignMessages(synth.messages, synth, await this.deps.showReasoning?.(synth.profile) ?? true)
     const lastTs = Number(msgs[msgs.length - 1]?.timestamp ?? 0) || 0
     const sess: Record<string, unknown> = {
       session_id: synth.session_id, title: synth.title, workspace: synth.workspace, model: synth.model, message_count: msgs.length,
@@ -1261,7 +1269,7 @@ export class SessionService {
     attachTodoState(sess, msgs)
     const merged = withSessionWireFlags((await this.ownerLocked([meta ? mergeCliSidebarMetadata(sess, meta) : sess]))[0]!, this.deps.runtime.activeStreamIds)
     const publicRow = redactSessionData(merged, this.deps.redactEnabled())
-    return this.owner ? await this.owner.project(publicRow, msgLimit, msgBefore, loadMessages) : publicRow
+    return this.publicProjection(this.owner ? await this.owner.project(publicRow, msgLimit, msgBefore, loadMessages) : publicRow, synth.profile)
   }
 
   /** Clear persisted streaming flags when no live stream backs them (Python `_clear_stale_stream_state`). */
@@ -2862,7 +2870,8 @@ export class SessionService {
     const messageIndex = anchorSceneIntOrNull(query.message_index)
     if (!sid || (!messageRef && messageIndex === null)) throw new HttpFailure(400, 'session_id and message_ref or message_index are required')
     const { session, transcript, stored } = (await this.fullTranscript(sid))
-    const result = readAnchorSceneRows(session, { messageRef, messageIndex, before: anchorSceneIntOrNull(query.before), limit: anchorSceneIntOrNull(query.limit) }, withToolCallOutcomes(withTurnIds(transcript), session.tool_calls, session.active_stream_id))
+    const show = await this.deps.showReasoning?.(session.profile) ?? true
+    const result = readAnchorSceneRows(session, { messageRef, messageIndex, before: anchorSceneIntOrNull(query.before), limit: anchorSceneIntOrNull(query.limit) }, withToolCallOutcomes(withTurnIds(transcript), session.tool_calls, session.active_stream_id), show)
     if (!result) throw new HttpFailure(404, 'Anchor activity scene not found')
     // Paged rows come from the raw transcript, so they take the same credential redaction as the detail's preview.
     const enabled = this.deps.redactEnabled()

@@ -1,0 +1,71 @@
+{
+  "shown": {
+    "session_id": "reasoning-fixture",
+    "title": "Reasoning display",
+    "show_reasoning": true,
+    "messages": [
+      {
+        "role": "assistant",
+        "content": "Public answer",
+        "reasoning": "Synthetic thought"
+      }
+    ],
+    "active_stream_id": null,
+    "is_streaming": false,
+    "source_kind": "webui",
+    "is_messaging_session": false,
+    "sort_ts": 1,
+    "read_only": false,
+    "can_branch": true,
+    "can_pin": true,
+    "can_archive": true,
+    "can_delete": true,
+    "can_duplicate": true
+  },
+  "hidden": {
+    "session_id": "reasoning-fixture",
+    "title": "Reasoning display",
+    "show_reasoning": false,
+    "messages": [
+      {
+        "role": "assistant",
+        "content": "Public answer",
+        "reasoning": "",
+        "reasoning_titles": []
+      }
+    ],
+    "active_stream_id": null,
+    "is_streaming": false,
+    "source_kind": "webui",
+    "is_messaging_session": false,
+    "sort_ts": 1,
+    "read_only": false,
+    "can_branch": true,
+    "can_pin": true,
+    "can_archive": true,
+    "can_delete": true,
+    "can_duplicate": true
+  },
+  "legacy": {
+    "session_id": "reasoning-fixture",
+    "title": "Reasoning display",
+    "messages": [
+      {
+        "role": "assistant",
+        "content": "Public answer",
+        "reasoning": "Synthetic thought"
+      }
+    ],
+    "active_stream_id": null,
+    "is_streaming": false,
+    "source_kind": "webui",
+    "is_messaging_session": false,
+    "sort_ts": 1,
+    "read_only": false,
+    "can_branch": true,
+    "can_pin": true,
+    "can_archive": true,
+    "can_delete": true,
+    "can_duplicate": true
+  }
+}

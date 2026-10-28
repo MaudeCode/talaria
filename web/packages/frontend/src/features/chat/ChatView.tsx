@@ -76,6 +76,8 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   // Edit, /clear and /undo show their cut at once; the reread of the session confirms it.
   const cutFrom = useResourceEffects<number>()[transcriptCut(sessionId ?? '')]?.value
   const reactionEffects = useResourceEffects<ReactionState>()
+  const reasoningDisplay = useResourceEffects<'show' | 'hide'>()['reasoning-display']?.value
+  const showReasoning = reasoningDisplay ? reasoningDisplay === 'show' : session?.show_reasoning !== false
   const reactionRows = rows.map((row) => {
     const view = row.message.reaction_view
     if (!view) return row
@@ -186,10 +188,9 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   const sendReasoning = reasoningWrite.mutate
   // Capture the model fields, not the query's escaping key array, so the compiler keeps this handler stable.
   const setReasoning = (level: string | null) => { sendReasoning({ key: keys.reasoning(session?.model, session?.model_provider), level, sid: sessionId ?? undefined }) }
-  // The CLI's reasoning display (config.yaml): nothing here shows it, so only a refusal reports; an unknown outcome rereads
-  // the reasoning status, which carries `show_reasoning`.
+  // History is projected by the server under the same preference as the live stream.
   const { mutate: setReasoningDisplay } = useResourceMutation({
-    resource: () => 'reasoning-display', queryKey: ['reasoning'], effect: (display: 'show' | 'hide') => ({ value: display }),
+    resource: () => 'reasoning-display', queryKey: [], readKeys: () => [['reasoning'], keys.sessions.all, ['worklog-history'], keys.settings], effect: (display: 'show' | 'hide') => ({ value: display }),
     mutationFn: (display) => api.setReasoningDisplay(display),
     onSuccess: () => { void qc.invalidateQueries({ queryKey: keys.settings }) },
     onError: showErrorToast,
@@ -475,7 +476,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
 
   return (
     <>
-      <div id="mainChat" className={cn(MAIN_VIEW, 'active')}>
+      <div id="mainChat" data-show-reasoning={showReasoning} className={cn(MAIN_VIEW, 'active', !showReasoning && '[&_.thinking-card]:hidden')}>
         <div className="chat-header flex items-center gap-3 min-h-[52px] px-5 py-1.5 border-b border-border shrink-0 max-[641px]:hidden">
           <div className="chat-header-text min-w-0 flex-1 flex flex-col gap-px">
             <h1 className="chat-header-title m-0 text-[13.5px] font-[550] text-text whitespace-nowrap overflow-hidden text-ellipsis tracking-[-.01em]" id="topbarTitle">{session || listedTitle ? (title || m.untitled()) : bootstrap.bot_name}</h1>
