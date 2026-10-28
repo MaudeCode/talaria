@@ -381,6 +381,8 @@ final class ContractReadinessTests: APIClientTestCase {
             .init(name: "cron recent", endpoint: .cronRecent, path: "/api/crons/recent"),
             .init(name: "memory", endpoint: .memory, path: "/api/memory"),
             .init(name: "memory write", endpoint: .memoryWrite, path: "/api/memory/write"),
+            .init(name: "feedback diagnostics", endpoint: .feedbackDiagnostics, path: "/api/feedback/diagnostics"),
+            .init(name: "feedback submit", endpoint: .feedbackSubmit, path: "/api/feedback/submit"),
             .init(name: "skills", endpoint: .skills, path: "/api/skills"),
             .init(
                 name: "skill content",

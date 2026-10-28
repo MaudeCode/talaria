@@ -60,6 +60,9 @@
 		D857083559F0B34BD088CA04 /* TasksHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856083559F0B34BD088CA04 /* TasksHostedTests.swift */; };
 		D857297464F3055587B2ACEF /* TranscriptHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856297464F3055587B2ACEF /* TranscriptHostedTests.swift */; };
 		D857E7989860057E41C369DF /* HostedViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856E7989860057E41C369DF /* HostedViewTests.swift */; };
+		157503000000000000000001 /* APIClientFeedbackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 157503000000000000000002 /* APIClientFeedbackTests.swift */; };
+		157502000000000000000001 /* FeedbackComposerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 157502000000000000000002 /* FeedbackComposerTests.swift */; };
+		157501000000000000000001 /* FeedbackHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 157501000000000000000002 /* FeedbackHostedTests.swift */; };
 		C1A887000000000000000003 /* VaultPromptSheetHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A887000000000000000004 /* VaultPromptSheetHostedTests.swift */; };
 		D857DB3766E41DE9EB67A261 /* FixtureApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856DB3766E41DE9EB67A261 /* FixtureApp.swift */; };
 		D8574E4D45F8F4C581740A3A /* HostedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8564E4D45F8F4C581740A3A /* HostedView.swift */; };
@@ -207,6 +210,7 @@
 		C108A0000000000000000002 /* PersonalizationSettingsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C108A0000000000000000102 /* PersonalizationSettingsViews.swift */; };
 		C108A0000000000000000003 /* ConversationSettingsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C108A0000000000000000103 /* ConversationSettingsViews.swift */; };
 		C108A0000000000000000004 /* SystemSettingsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C108A0000000000000000104 /* SystemSettingsViews.swift */; };
+		157500000000000000000001 /* FeedbackSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 157500000000000000000002 /* FeedbackSheet.swift */; };
 		C108A0000000000000000005 /* ServersProvidersSettingsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C108A0000000000000000105 /* ServersProvidersSettingsViews.swift */; };
 		C108A0000000000000000006 /* ServerUpdateSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = C108A0000000000000000106 /* ServerUpdateSettingsSection.swift */; };
 		759A00000000000000000001 /* UpdateSummarySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 759A00000000000000000002 /* UpdateSummarySheet.swift */; };
@@ -501,6 +505,9 @@
 		D856083559F0B34BD088CA04 /* TasksHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksHostedTests.swift; sourceTree = "<group>"; };
 		D856297464F3055587B2ACEF /* TranscriptHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptHostedTests.swift; sourceTree = "<group>"; };
 		D856E7989860057E41C369DF /* HostedViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostedViewTests.swift; sourceTree = "<group>"; };
+		157503000000000000000002 /* APIClientFeedbackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../TalariaKit/Tests/TalariaKitTests/APIClientFeedbackTests.swift; sourceTree = "<group>"; };
+		157502000000000000000002 /* FeedbackComposerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../TalariaKit/Tests/TalariaKitTests/FeedbackComposerTests.swift; sourceTree = "<group>"; };
+		157501000000000000000002 /* FeedbackHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackHostedTests.swift; sourceTree = "<group>"; };
 		C1A887000000000000000004 /* VaultPromptSheetHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultPromptSheetHostedTests.swift; sourceTree = "<group>"; };
 		D856DB3766E41DE9EB67A261 /* FixtureApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixtureApp.swift; sourceTree = "<group>"; };
 		D8564E4D45F8F4C581740A3A /* HostedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostedView.swift; sourceTree = "<group>"; };
@@ -634,6 +641,7 @@
 		C108A0000000000000000102 /* PersonalizationSettingsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonalizationSettingsViews.swift; sourceTree = "<group>"; };
 		C108A0000000000000000103 /* ConversationSettingsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationSettingsViews.swift; sourceTree = "<group>"; };
 		C108A0000000000000000104 /* SystemSettingsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemSettingsViews.swift; sourceTree = "<group>"; };
+		157500000000000000000002 /* FeedbackSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackSheet.swift; sourceTree = "<group>"; };
 		C108A0000000000000000105 /* ServersProvidersSettingsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServersProvidersSettingsViews.swift; sourceTree = "<group>"; };
 		C108A0000000000000000106 /* ServerUpdateSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerUpdateSettingsSection.swift; sourceTree = "<group>"; };
 		759A00000000000000000002 /* UpdateSummarySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateSummarySheet.swift; sourceTree = "<group>"; };
@@ -965,6 +973,9 @@
 				D856083559F0B34BD088CA04 /* TasksHostedTests.swift */,
 				D856297464F3055587B2ACEF /* TranscriptHostedTests.swift */,
 				D856E7989860057E41C369DF /* HostedViewTests.swift */,
+				157503000000000000000002 /* APIClientFeedbackTests.swift */,
+				157502000000000000000002 /* FeedbackComposerTests.swift */,
+				157501000000000000000002 /* FeedbackHostedTests.swift */,
 				C1A887000000000000000004 /* VaultPromptSheetHostedTests.swift */,
 				D856DB3766E41DE9EB67A261 /* FixtureApp.swift */,
 				D8564E4D45F8F4C581740A3A /* HostedView.swift */,
@@ -1271,6 +1282,7 @@
 				C108A0000000000000000102 /* PersonalizationSettingsViews.swift */,
 				C108A0000000000000000103 /* ConversationSettingsViews.swift */,
 				C108A0000000000000000104 /* SystemSettingsViews.swift */,
+				157500000000000000000002 /* FeedbackSheet.swift */,
 				C108A0000000000000000105 /* ServersProvidersSettingsViews.swift */,
 				C108A0000000000000000106 /* ServerUpdateSettingsSection.swift */,
 				759A00000000000000000002 /* UpdateSummarySheet.swift */,
@@ -1724,6 +1736,7 @@
 				C108A0000000000000000002 /* PersonalizationSettingsViews.swift in Sources */,
 				C108A0000000000000000003 /* ConversationSettingsViews.swift in Sources */,
 				C108A0000000000000000004 /* SystemSettingsViews.swift in Sources */,
+				157500000000000000000001 /* FeedbackSheet.swift in Sources */,
 				C108A0000000000000000005 /* ServersProvidersSettingsViews.swift in Sources */,
 				C108A0000000000000000006 /* ServerUpdateSettingsSection.swift in Sources */,
 				759A00000000000000000001 /* UpdateSummarySheet.swift in Sources */,
@@ -2012,6 +2025,9 @@
 				D857083559F0B34BD088CA04 /* TasksHostedTests.swift in Sources */,
 				D857297464F3055587B2ACEF /* TranscriptHostedTests.swift in Sources */,
 				D857E7989860057E41C369DF /* HostedViewTests.swift in Sources */,
+				157503000000000000000001 /* APIClientFeedbackTests.swift in Sources */,
+				157502000000000000000001 /* FeedbackComposerTests.swift in Sources */,
+				157501000000000000000001 /* FeedbackHostedTests.swift in Sources */,
 				C1A887000000000000000003 /* VaultPromptSheetHostedTests.swift in Sources */,
 				D857DB3766E41DE9EB67A261 /* FixtureApp.swift in Sources */,
 				D8574E4D45F8F4C581740A3A /* HostedView.swift in Sources */,

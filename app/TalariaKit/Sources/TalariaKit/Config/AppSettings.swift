@@ -160,8 +160,8 @@ public enum ChatTranscriptDisplaySettings {
 
 /// Visibility of the optional navigation entries, so a user can hide the parts of
 /// the app they never use (issue #189): the session-list utility rows and the
-/// chat's Files and Git controls. These buttons are the only way into those
-/// screens, so hiding one takes it out of reach until the toggle goes back on.
+/// chat's Files and Git controls, plus the optional feedback shortcut.
+/// Feedback remains available in About when its shortcut is hidden.
 /// Purely a display preference — nothing stops loading or syncing.
 public enum SectionVisibilitySettings {
     public static let tasksKey = "sectionVisibility.tasks"
@@ -171,11 +171,12 @@ public enum SectionVisibilitySettings {
     public static let insightsKey = "sectionVisibility.insights"
     public static let chatFilesKey = "sectionVisibility.chatFiles"
     public static let chatGitKey = "sectionVisibility.chatGit"
+    public static let sidebarFeedbackKey = "sectionVisibility.sidebarFeedback"
+    public static let defaultShowsSidebarFeedbackButton = false
 
-    /// Every entry defaults to visible, so an install that predates these toggles
-    /// looks exactly as it did before.
+    /// Existing entries remain visible by default; the feedback shortcut is opt-in.
     public static func isVisible(_ key: String, in defaults: UserDefaults = .standard) -> Bool {
-        defaults.object(forKey: key) as? Bool ?? true
+        defaults.object(forKey: key) as? Bool ?? (key == sidebarFeedbackKey ? defaultShowsSidebarFeedbackButton : true)
     }
 }
 

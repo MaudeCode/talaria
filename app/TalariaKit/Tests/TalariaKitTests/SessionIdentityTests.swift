@@ -399,6 +399,15 @@ final class SectionVisibilitySettingsTests: XCTestCase {
         }
     }
 
+    func testFeedbackShortcutIsOptInAndPersistsItsVisibility() {
+        let key = "sectionVisibility.sidebarFeedback"
+        XCTAssertFalse(SectionVisibilitySettings.isVisible(key, in: defaults), "The feedback shortcut must default to off")
+        defaults.set(true, forKey: key)
+        XCTAssertTrue(SectionVisibilitySettings.isVisible(key, in: defaults))
+        defaults.set(false, forKey: key)
+        XCTAssertFalse(SectionVisibilitySettings.isVisible(key, in: defaults))
+    }
+
     func testEachSectionRoundTripsThroughUserDefaults() {
         for key in allKeys {
             defaults.set(false, forKey: key)

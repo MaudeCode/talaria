@@ -411,6 +411,7 @@ final class ConfigurationSyncTests: XCTestCase {
         await deviceA.authManager.configure(serverURLString: serverA, password: "pw-a")
         deviceA.standardDefaults.set(AppTheme.dark.rawValue, forKey: AppTheme.storageKey)
         deviceA.standardDefaults.set(false, forKey: SectionVisibilitySettings.kanbanKey)
+        deviceA.standardDefaults.set(true, forKey: "sectionVisibility.sidebarFeedback")
         deviceA.standardDefaults.set(true, forKey: ResponseCompletionNotifications.hasRequestedPermissionKey)
         deviceA.standardDefaults.set("apns-token", forKey: TalariaRelayNotifications.pushTokenKey)
         deviceA.appGroupDefaults.set(ProviderQuotaWidgetArcWeight.allCases.last?.rawValue, forKey: ProviderQuotaWidgetArcWeight.storageKey)
@@ -421,6 +422,7 @@ final class ConfigurationSyncTests: XCTestCase {
         let preferences = try ConfigurationSyncCodec.decoder().decode(SyncedPreferences.self, from: record.payload)
         XCTAssertEqual(preferences.values[AppTheme.storageKey], .string(AppTheme.dark.rawValue))
         XCTAssertEqual(preferences.values[SectionVisibilitySettings.kanbanKey], .bool(false))
+        XCTAssertEqual(preferences.values["sectionVisibility.sidebarFeedback"], .bool(true))
         XCTAssertNil(preferences.values[ResponseCompletionNotifications.hasRequestedPermissionKey])
         XCTAssertNil(preferences.values[TalariaRelayNotifications.pushTokenKey])
 
@@ -430,6 +432,7 @@ final class ConfigurationSyncTests: XCTestCase {
 
         XCTAssertEqual(deviceB.standardDefaults.string(forKey: AppTheme.storageKey), AppTheme.dark.rawValue)
         XCTAssertEqual(deviceB.standardDefaults.object(forKey: SectionVisibilitySettings.kanbanKey) as? Bool, false)
+        XCTAssertEqual(deviceB.standardDefaults.object(forKey: "sectionVisibility.sidebarFeedback") as? Bool, true)
         XCTAssertEqual(
             deviceB.appGroupDefaults.string(forKey: ProviderQuotaWidgetArcWeight.storageKey),
             ProviderQuotaWidgetArcWeight.allCases.last?.rawValue

@@ -46,7 +46,8 @@ struct SessionListView: View {
     @State private var isSessionEventStreamLive = false
     @State private var settingsPath: [SettingsPane] = []
     @State private var pendingSettingsPath: [SettingsPane]?
-    @State private var reopensSidebarAfterSettings = false
+    @State private var reopensSidebarAfterModal = false
+    @State private var sidebarFeedback: FeedbackComposer?
     /// The regular-width split view's own width, which sizes its columns (TAL-1453).
     @State private var observedSidebarLayout = SidebarLayoutInputs()
     @State private var appliedSidebarLayout: SidebarLayoutInputs?
@@ -142,6 +143,8 @@ struct SessionListView: View {
     @AppStorage(SectionVisibilitySettings.skillsKey) private var showsSkillsSection = true
     @AppStorage(SectionVisibilitySettings.memoryKey) private var showsMemorySection = true
     @AppStorage(SectionVisibilitySettings.insightsKey) private var showsInsightsSection = true
+    @AppStorage(SectionVisibilitySettings.sidebarFeedbackKey)
+    private var showsSidebarFeedbackButton = SectionVisibilitySettings.defaultShowsSidebarFeedbackButton
     @AppStorage(ProviderQuotaRefreshInterval.storageKey)
     private var quotaRefreshIntervalSeconds = ProviderQuotaRefreshInterval.defaultValue.rawValue
     // Per-server key (#19): the CLI toggle mirrors the active server's
@@ -249,6 +252,8 @@ struct SessionListView: View {
                         ? min(650, max(0, regularSplitWidth - 48)) : nil)
                     .presentationCompactAdaptation(.fullScreenCover)
             }
+            .feedbackPresentation(sidebarFeedback, isEnabled: !isPresentingSettings && !isPresentingUpdateNotifications,
+                                  onDismiss: sidebarModalDidDismiss)
             .sheet(isPresented: $isPresentingUpdateNotifications, onDismiss: {
                 guard let path = pendingSettingsPath else { return }
                 pendingSettingsPath = nil
@@ -617,11 +622,6 @@ struct SessionListView: View {
                         .sharedBackgroundVisibility(.hidden)
                         .axisBehavior(.horizontalOnly)
                 }
-                if !detailHostsSidebarActions {
-                    ToolbarItem(placement: horizontalSizeClass == .compact ? .bottomBar : .topBarTrailing) { settingsButton }
-                        .axisBehavior(horizontalSizeClass == .compact ? .verticalPreferred : .horizontalOnly)
-                        .visibilityPriority(.high)
-                }
             } else {
                 if !isSearching {
                     if #available(iOS 26.0, *) {
@@ -631,7 +631,10 @@ struct SessionListView: View {
                         ToolbarItem(placement: .principal) { sidebarWordmark }
                     }
                 }
-                ToolbarItem(placement: horizontalSizeClass == .compact ? .bottomBar : .topBarTrailing) { settingsButton }
+            }
+            if !detailHostsSidebarActions {
+                sidebarSettingsActions(placement: horizontalSizeClass == .compact ? .bottomBar : .topBarTrailing,
+                                       prefersVertical: horizontalSizeClass == .compact)
             }
             if sidebarDrawerIsEnabled {
                 ToolbarItem(placement: .topBarLeading) { sidebarButton(isPresented: isPresented) }
@@ -815,9 +818,7 @@ struct SessionListView: View {
                     }
                     updateNotificationsToolbar
                     if #available(iOS 27.1, *), detailHostsSidebarActions {
-                        ToolbarItem(placement: .bottomBar) { settingsButton }
-                            .axisBehavior(.verticalPreferred)
-                            .visibilityPriority(.high)
+                        sidebarSettingsActions(placement: .bottomBar, prefersVertical: true)
                     }
                 }
                 .navigationDestination(for: CompactPage.self) { page in sectionStackPage(page) }
@@ -1520,6 +1521,47 @@ struct SessionListView: View {
         openSection(.settings(nil))
     }
 
+    private func openSidebarFeedback() {
+        guard sidebarFeedback?.isSending != true else { return }
+        let model = FeedbackComposer(server: server, clientMetadata: .current)
+        presentSidebarModal {
+            sidebarFeedback = model
+            model.isPresented = true
+        }
+    }
+
+    @ToolbarContentBuilder
+    private func sidebarSettingsActions(placement: ToolbarItemPlacement, prefersVertical: Bool) -> some ToolbarContent {
+        if #available(iOS 27.1, *) {
+            if showsSidebarFeedbackAction {
+                ToolbarItem(placement: placement) { sidebarFeedbackButton }
+                    .axisBehavior(prefersVertical ? .verticalPreferred : .horizontalOnly)
+                    .visibilityPriority(.high)
+            }
+            ToolbarItem(placement: placement) { settingsButton }
+                .axisBehavior(prefersVertical ? .verticalPreferred : .horizontalOnly)
+                .visibilityPriority(.high)
+        } else {
+            ToolbarItemGroup(placement: placement) {
+                if showsSidebarFeedbackAction { sidebarFeedbackButton }
+                settingsButton
+            }
+        }
+    }
+
+    private var showsSidebarFeedbackAction: Bool {
+        showsSidebarFeedbackButton && (appSidebar.isPresented || sidebarPresentation.showsColumn)
+    }
+
+    private var sidebarFeedbackButton: some View {
+        HapticButton(feedbackStyle: .medium, action: openSidebarFeedback) {
+            Image(systemName: FeedbackSheet.systemImage)
+        }
+        .accessibilityLabel(FeedbackSheet.title)
+        .accessibilityIdentifier("sidebar-send-feedback")
+        .disabled(sidebarFeedback?.isSending == true)
+    }
+
     private var settingsButton: some View {
         HapticButton(feedbackStyle: .medium, action: openSidebarSettings) {
             Image(systemName: "gearshape")
@@ -1614,7 +1656,8 @@ struct SessionListView: View {
     /// A tiled column keeps the navigation stack's normal push animation.
     private func closeAppSidebar(then navigate: () -> Void) {
         isPresentingSettings = false
-        reopensSidebarAfterSettings = false
+        sidebarFeedback?.isPresented = false
+        reopensSidebarAfterModal = false
         pendingSettingsPath = nil
         guard sidebarDrawerIsEnabled, appSidebar.isPresented else {
             navigate()
@@ -2145,21 +2188,31 @@ struct SessionListView: View {
             settingsPath = path
             return
         }
-        let reopensSidebar = appSidebar.isPresented
-        closeAppSidebar {
-            reopensSidebarAfterSettings = reopensSidebar
+        presentSidebarModal {
             settingsPath = path
             isPresentingSettings = true
+        }
+    }
+
+    private func presentSidebarModal(_ present: @escaping () -> Void) {
+        let reopensSidebar = appSidebar.isPresented
+        closeAppSidebar {
+            reopensSidebarAfterModal = reopensSidebar
+            present()
         }
     }
 
     private func settingsDidDismiss() {
         guard !isPresentingSettings else { return }
         settingsPath = []
-        if reopensSidebarAfterSettings, sidebarDrawerIsEnabled {
+        sidebarModalDidDismiss()
+    }
+
+    private func sidebarModalDidDismiss() {
+        if reopensSidebarAfterModal, sidebarDrawerIsEnabled {
             DispatchQueue.main.async { appSidebar.isPresented = true }
         }
-        reopensSidebarAfterSettings = false
+        reopensSidebarAfterModal = false
     }
 
     private var settingsNavigationStack: some View {

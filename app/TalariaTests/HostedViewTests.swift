@@ -8,6 +8,13 @@ import TalariaKit
 /// tree, activating one runs its action, and the in-process fixture answers the App's requests.
 @MainActor
 final class HostedViewTests: XCTestCase {
+    func testAboutOffersSendFeedback() async throws {
+        let window = try hostWindow(NavigationStack { AboutSettingsView() })
+        let row = await awaitElement(in: window) { $0.accessibilityLabel == "Send Feedback" }
+        XCTAssertNotNil(row, "About must offer the native Send Feedback action")
+        attachHostedScreenshot(window, name: "about-feedback-after")
+    }
+
     func testControlActivationUsesItsRegisteredEventOnceAndHonorsDisabledState() {
         let eventSets: [UIControl.Event] = [.touchUpInside, .primaryActionTriggered, [.touchUpInside, .primaryActionTriggered]]
         for events in eventSets {

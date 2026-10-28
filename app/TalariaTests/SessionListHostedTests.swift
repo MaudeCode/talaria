@@ -265,6 +265,8 @@ final class SessionListHostedTests: XCTestCase {
             let restored = await self.awaitCondition { scene.interfaceOrientation == .portrait }
             XCTAssertTrue(restored, "Portrait must be restored before the next hosted test starts")
         }
+        UserDefaults.standard.set(true, forKey: SectionVisibilitySettings.sidebarFeedbackKey)
+        defer { UserDefaults.standard.removeObject(forKey: SectionVisibilitySettings.sidebarFeedbackKey) }
         for orientation: UIInterfaceOrientationMask in [.portrait, .landscapeRight] {
             scene.requestGeometryUpdate(.iOS(interfaceOrientations: orientation))
             let rotated = await awaitCondition {
@@ -283,10 +285,14 @@ final class SessionListHostedTests: XCTestCase {
             }
             let settings = try XCTUnwrap(HostedAccessibility.elements(in: window).first(where: isSettingsAvatar))
             let notifications = try XCTUnwrap(HostedAccessibility.element(in: window, label: "Close navigation"))
+            let feedback = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "sidebar-send-feedback" }
             attachHostedScreenshot(window, name: orientation == .portrait ? "duo-settings-portrait" : "duo-settings-landscape")
             XCTAssertEqual(settings.accessibilityFrame.midX, notifications.accessibilityFrame.midX, accuracy: 1,
                 "Settings must share the vertical bar with the drawer toggle instead of keeping a horizontal bar")
             XCTAssertGreaterThan(abs(settings.accessibilityFrame.midY - notifications.accessibilityFrame.midY), 20)
+            XCTAssertEqual(feedback.accessibilityFrame.midX, settings.accessibilityFrame.midX, accuracy: 1)
+            XCTAssertLessThan(feedback.accessibilityFrame.maxY, settings.accessibilityFrame.minY,
+                              "Send Feedback must sit above the Settings cog on the Duo vertical bar")
             XCTAssertEqual(settings.accessibilityHint, "Long press to switch servers.")
             window.isHidden = true
             window.rootViewController = nil
@@ -324,6 +330,61 @@ final class SessionListHostedTests: XCTestCase {
         _ = try await requireElement(in: window) {
             HostedAccessibility.identifier(of: $0) == "settings-user-profile"
         }
+    }
+
+    func testSidebarFeedbackOpensTheSharedFormAndRestoresTheSidebar() async throws {
+        defer { UserDefaults.standard.removeObject(forKey: SectionVisibilitySettings.sidebarFeedbackKey) }
+        for (name, size) in [("phone", HostedSize.phone), ("duo-inner", HostedSize.duoInner)] {
+            let fixture = try FixtureApp(for: self)
+            UserDefaults.standard.set(true, forKey: SectionVisibilitySettings.sidebarFeedbackKey)
+            let window = try hostWindow(fixture.sessionList(), size: size)
+            try await openSidebar(in: window)
+            let feedback = await awaitElement(in: window) { HostedAccessibility.identifier(of: $0) == "sidebar-send-feedback" }
+            let button = try XCTUnwrap(feedback, "An open sidebar must offer Send Feedback beside Settings")
+            attachHostedScreenshot(window, name: "sidebar-feedback-\(name)")
+            HostedAccessibility.activate(button)
+            _ = try await requireElement(in: window, label: "Include Diagnostics")
+            XCTAssertNotNil(HostedAccessibility.toolbarItem("Send", in: window))
+            XCTAssertNil(HostedAccessibility.element(in: window, identifier: "settings-user-profile"))
+            HostedAccessibility.activate(try XCTUnwrap(HostedAccessibility.toolbarItem("Cancel", in: window)))
+            _ = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "sidebar-send-feedback" }
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+    }
+
+    func testSidebarFeedbackIsOptInAndControlledByTheAppearanceToggle() async throws {
+        let fixture = try FixtureApp(for: self)
+        let key = "sectionVisibility.sidebarFeedback"
+        UserDefaults.standard.removeObject(forKey: key)
+        defer { UserDefaults.standard.removeObject(forKey: key) }
+        let window = try hostWindow(fixture.sessionList())
+        try await openSidebar(in: window)
+        let initiallyHidden = await awaitNoElement(in: window) { HostedAccessibility.identifier(of: $0) == "sidebar-send-feedback" }
+        XCTAssertTrue(initiallyHidden, "The feedback shortcut must stay hidden until its setting is enabled")
+
+        func setPreference(_ enabled: Bool) async throws {
+            HostedAccessibility.activate(try await requireElement(in: window, where: isSettingsAvatar))
+            HostedAccessibility.activate(try await requireElement(in: window) {
+                HostedAccessibility.identifier(of: $0) == "settings-category-appearance"
+            })
+            let toggle = try await requireElement(in: window) {
+                HostedAccessibility.identifier(of: $0) == "settings-sidebar-feedback-toggle"
+            }
+            if UserDefaults.standard.bool(forKey: key) != enabled {
+                XCTAssertTrue(HostedAccessibility.activate(toggle))
+            }
+            let saved = await awaitCondition { UserDefaults.standard.bool(forKey: key) == enabled }
+            XCTAssertTrue(saved, "The native Settings switch must persist the chosen visibility")
+            attachHostedScreenshot(window, name: enabled ? "feedback-setting-enabled" : "feedback-setting-disabled")
+            HostedAccessibility.activate(try await requireElement(in: window, label: "Close"))
+        }
+
+        try await setPreference(true)
+        _ = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "sidebar-send-feedback" }
+        try await setPreference(false)
+        let hiddenAgain = await awaitNoElement(in: window) { HostedAccessibility.identifier(of: $0) == "sidebar-send-feedback" }
+        XCTAssertTrue(hiddenAgain, "Turning the preference off must remove the shortcut")
     }
 
     func testResizingAnOpenOverlayIntoTilingConsumesDrawerIntentAndRotationCollapsesTheColumn() async throws {

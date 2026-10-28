@@ -9,6 +9,8 @@ struct AppearanceSettingsView: View {
     @AppStorage(AppTheme.storageKey) private var appThemeRawValue = AppTheme.system.rawValue
     @AppStorage(HeaderLogoColor.storageKey) private var headerLogoColorHex = HeaderLogoColor.defaultHex
     @AppStorage(PrimaryActionTintSettings.isEnabledKey) private var tintsPrimaryActions = false
+    @AppStorage(SectionVisibilitySettings.sidebarFeedbackKey)
+    private var showsSidebarFeedbackButton = SectionVisibilitySettings.defaultShowsSidebarFeedbackButton
     @AppStorage(SessionIdentitySettings.displayNameKey) private var identityDisplayName = ""
     @AppStorage(SessionIdentitySettings.initialsKey) private var identityInitials = ""
 
@@ -47,6 +49,12 @@ struct AppearanceSettingsView: View {
                 AppIconSettingsSection()
 
                 IdentitySaveErrorNotice(authManager: authManager)
+            }
+
+            SettingsCard(title: String(localized: "Sidebar")) {
+                SettingsToggleRow(title: String(localized: "Feedback Button"), systemImage: FeedbackSheet.systemImage,
+                                  isOn: $showsSidebarFeedbackButton)
+                    .accessibilityIdentifier("settings-sidebar-feedback-toggle")
             }
         }
         .onChange(of: headerLogoColorHex) {

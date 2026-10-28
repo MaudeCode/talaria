@@ -161,6 +161,8 @@ public enum Endpoint {
     case kanbanRemoveDependency(KanbanDependencyMutationRequest)
     case memory
     case memoryWrite
+    case feedbackDiagnostics
+    case feedbackSubmit
     case skills
     case skillContent(name: String, file: String?)
     case toggleSkill
@@ -474,6 +476,10 @@ public enum Endpoint {
             return "/api/memory"
         case .memoryWrite:
             return "/api/memory/write"
+        case .feedbackDiagnostics:
+            return "/api/feedback/diagnostics"
+        case .feedbackSubmit:
+            return "/api/feedback/submit"
         case .skills:
             return "/api/skills"
         case .skillContent:
