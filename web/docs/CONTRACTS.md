@@ -428,3 +428,37 @@ the choice immediately, roll back refusals, reconcile unknown outcomes without
 replaying, and fence stale responses after a profile switch. Reset All restores
 the native Default backend as well as fixed model overrides. Session overrides
 and delegation execution are separate. This extends sidecar RPC version 63.
+
+## Coding-agent profile import
+
+Owner-only `/api/profile/import` discovers the OS user's default `.claude`,
+`.codex` and `.cursor` source directories. `/preview` accepts only an agent ID;
+`/apply` accepts only an opaque receipt. `/result?receipt=…` reconciles without
+running the importer. Web renders the server's dispositions and secret names.
+App adoption is tracked separately in TAL-1494.
+
+The adapter requires an installed, enabled catalog `agent-importers` plugin at
+the immutable revision in `sidecar/agent_importer.json`, with matching native
+API hashes. It never installs or enables a plugin. Unavailable imports link to
+the existing Plugins catalog. No OpenClaw, credential migration, overwrite mode,
+provider sign-in or automatic sync scheduling is included.
+
+Preview writes no source or profile files. The native path-based API receives
+private temporary copies of bounded, descriptor-read source and target inputs.
+Symlinks, hard links, special files, overlapping trees and oversized inputs are
+refused. Five-minute consent binds the profile, plugin and complete input
+snapshots. Apply verifies those identities again before publishing staged native
+results with descriptor-relative atomic writes. Existing item conflicts remain
+intact. Native memory backups and sync registration are preserved.
+
+A private additive `.talaria-agent-imports/` record is synced before execution.
+Retries return the recorded result; a crash cannot replay native work. Before
+publication the record also saves expected output digests, allowing a lost final
+acknowledgment to reconcile exact output bytes. Partial publication remains
+unknown. Native exception text, contents and paths never cross the response
+boundary. Only native kind/status and stripped secret names are exposed.
+
+After publication the existing Skills/MCP reload owners refresh runtime views;
+a failed reload leaves imported files saved and reports the remaining reload.
+Server config/catalog caches and Web profile, memory, skill and MCP query
+families invalidate. No service restarts. Stable ignores the additive record.

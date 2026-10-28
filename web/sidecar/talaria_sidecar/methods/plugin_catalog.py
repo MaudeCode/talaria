@@ -27,9 +27,14 @@ def _agent():
         return None
 
 
-def _refusal(entry, pc, native):
+def _refusal(entry, pc, native, *, removed_entries=None):
     try:
-        native.raise_if_removed(entry.name, entry.repo)
+        if removed_entries is None:
+            native.raise_if_removed(entry.name, entry.repo)
+        else:
+            from hermes_cli.plugin_catalog import match_removed
+            if any(match_removed(value, removed_entries) for value in (entry.name, entry.repo)):
+                return 'This plugin was removed from the catalog.'
         native._refuse_unsupported_catalog_platform(entry)
         from hermes_cli.plugins_manifest import requires_hermes_error
         reason = requires_hermes_error({'requires_hermes': entry.requires_hermes})
@@ -196,3 +201,62 @@ def install(name, consent_token=None):
             del _receipts[next(iter(_receipts))]
         _receipts[token] = {'identity': identity, 'preview': preview, 'expires': time.monotonic() + 300}
     return {'name': name, 'status': 'needs_consent', 'findings': findings, 'consent_token': token}
+
+
+def reviewed_importer(home):
+    """Load only attested native structured APIs, sharing catalog identity and enablement policy."""
+    import sys
+    import types
+    from . import dashboard_plugins
+    reviewed = json.loads((Path(__file__).parents[2] / 'agent_importer.json').read_text())
+    pin, hashes = reviewed['revision'], reviewed['files']
+    agent = _agent()
+    if agent is None or not dashboard_plugins._supported():
+        return None
+    source, pc, native = agent
+    try:
+        from pm.workspace import enabled_plugin_dirs
+        from hermes_cli.web_server_dashboard import _plugin_enable_sets_here
+        enabled, disabled = _plugin_enable_sets_here()
+        if not (Path(home) / 'plugins').is_dir():
+            return None
+        metadata = pc._read_install_metadata()
+        matches = [(key, record) for key, record in metadata.items() if isinstance(record, dict)
+                   and isinstance(record.get('catalog'), dict) and record['catalog'].get('name') == 'agent-importers']
+        if len(matches) != 1:
+            return None
+        key, record = matches[0]
+        root = pc._sanitize_plugin_name(key, Path(home) / 'plugins')
+        # Admission must not fetch or populate the profile's live catalog cache on a preview.
+        entry = next((e for e in source.load_catalog() if e.name == 'agent-importers'), None)
+        cached = dashboard_plugins._read(Path(home), 'cache/plugin-catalog.json', 4 * 1024 * 1024, anchor=Path(home))
+        if cached is None and ((Path(home) / 'cache/plugin-catalog.json').exists() or (Path(home) / 'cache/plugin-catalog.json').is_symlink()):
+            return None
+        cached = json.loads(cached) if cached is not None else {}
+        if not isinstance(cached, dict) or not isinstance(cached.get('entries', []), list):
+            return None
+        if any(e.get('name') == 'agent-importers' and e.get('sha') != pin for e in cached.get('entries', []) if isinstance(e, dict)):
+            return None
+        removed = source.load_removed_list() + source._removed_from_list(cached.get('removed'))
+        if (entry is None or entry.sha != pin or _refusal(entry, pc, native, removed_entries=removed)
+                or record.get('revision') != pin or record['catalog'].get('sha') != pin
+                or record['catalog'].get('repo') != entry.repo
+                or key not in enabled or key in disabled or root.resolve() not in {p.resolve() for p in enabled_plugin_dirs()}):
+            return None
+        bodies = {name: dashboard_plugins._read(root, name, anchor=Path(home)) for name in hashes}
+        if any(body is None or hashlib.sha256(body).hexdigest() != hashes[name] for name, body in bodies.items()):
+            return None
+        # Compile verified bytes, never re-open a mutable plugin path or execute its entry point.
+        package = '_talaria_reviewed_agent_importers'
+        if package not in sys.modules:
+            module = types.ModuleType(package)
+            module.__path__ = []
+            sys.modules[package] = module
+            for name in ('importer', 'sync'):
+                module = types.ModuleType(f'{package}.{name}')
+                module.__package__ = package
+                sys.modules[module.__name__] = module
+                exec(compile(bodies[name + '.py'], f'<reviewed-agent-importers/{name}.py>', 'exec'), module.__dict__)
+        return sys.modules[package + '.importer'].AgentImporter, sys.modules[package + '.sync'], [pin, str(root), _tree_digest(root)]
+    except (ImportError, AttributeError, OSError, ValueError, TypeError, RpcError):
+        return None

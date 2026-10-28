@@ -1,3 +1,5 @@
+import { useBootstrap } from '../../app/bootstrap'
+import { AgentImportDialog } from './AgentImportDialog'
 import { useState } from 'react'
 import type { GatewayMode } from '@maudecode/talaria-web-contracts'
 import { Plus, Trash2 } from 'lucide-react'
@@ -27,7 +29,9 @@ type NewProfile = Record<string, unknown> & { name: string; default_model?: stri
 
 export function ProfilesPage() {
   const profiles = useProfilesQuery()
+  const canImport = useBootstrap().auth.can_manage_server
   const switchProfile = useSwitchProfile()
+  const [importing, setImporting] = useState(false)
   const [creating, setCreating] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
   const onError = (e: unknown) => showErrorToast(e)
@@ -55,6 +59,8 @@ export function ProfilesPage() {
   }
   return (
     <HubPage title={m.tab_profiles()} help={<ProfileConceptHelp />} actions={!profiles.data?.single_profile_mode && <PanelHeadButton label={m.profile_create()} className="primary" onClick={() => setCreating(true)}><Plus size={16} aria-hidden="true" /></PanelHeadButton>}>
+      {canImport && <div className="flex justify-end"><Button className="min-h-11" onClick={() => setImporting(true)}>{m.profile_import()}</Button></div>}
+      {importing && <AgentImportDialog key={active} onClose={() => setImporting(false)} />}
       {profiles.isPending && <LoadingState />}
       {profiles.isError && <ErrorState error={profiles.error} onRetry={() => { void profiles.refetch() }} />}
       {profiles.isSuccess && list.length === 0 && <EmptyState>{m.profile_no_configuration()}</EmptyState>}

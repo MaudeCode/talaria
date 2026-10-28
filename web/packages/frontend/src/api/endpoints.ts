@@ -9,7 +9,7 @@ import { m } from '../paraglide/messages.js'
 import { orpc, timeout } from './orpc'
 import type { GroupOperation } from '@maudecode/talaria-web-contracts'
 
-import type { OwnerActionRequest } from '@maudecode/talaria-web-contracts'
+import type { OwnerActionRequest, AgentImportSource } from '@maudecode/talaria-web-contracts'
 import type { OutboundDraftAction, OutboundDraftRef } from '@maudecode/talaria-web-contracts'
 import { postForm } from './client'
 import { loadedBuild, tabId } from '../app/tabBuild'
@@ -355,3 +355,9 @@ export const editPromptQueue = (input: Parameters<ReturnType<typeof orpc>['promp
 export const promptQueueAction = (input: Parameters<ReturnType<typeof orpc>['promptQueues']['action']>[0]) => orpc().promptQueues.action(input)
 
 export const setDelegation = (write: DelegationWrite) => orpc().models.delegation(write)
+
+// Profile import is a native operation. Unknown writes reconcile through a read-only result route.
+export const discoverAgentImports = () => orpc().profileImport.discover()
+export const previewAgentImport = (agent: AgentImportSource) => orpc().profileImport.preview({ agent }, { signal: timeout(120_000) })
+export const applyAgentImport = (receipt: string) => orpc().profileImport.apply({ receipt }, { signal: timeout(120_000) })
+export const agentImportResult = (receipt: string) => orpc().profileImport.result({ receipt })

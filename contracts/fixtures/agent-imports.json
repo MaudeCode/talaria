@@ -1,0 +1,39 @@
+{
+  "preview_input": {
+    "agent": "cursor"
+  },
+  "apply_input": {
+    "receipt": "synthetic-preview"
+  },
+  "preview": {
+    "status": "preview",
+    "sources": [],
+    "items": [
+      {
+        "kind": "rules",
+        "status": "imported",
+        "label": "Cursor rules"
+      },
+      {
+        "kind": "skill",
+        "status": "conflict",
+        "label": "Skill"
+      }
+    ],
+    "stripped_secrets": [
+      "mcp_servers.fixture.env.API_TOKEN"
+    ],
+    "receipt": "synthetic-preview",
+    "can_apply": true,
+    "message": null
+  },
+  "unavailable": {
+    "status": "unavailable",
+    "sources": [],
+    "items": [],
+    "stripped_secrets": [],
+    "receipt": null,
+    "can_apply": false,
+    "message": "Install and enable Agent Importers from the plugin catalog."
+  }
+}

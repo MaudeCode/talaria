@@ -1,3 +1,5 @@
+import { BootstrapContext } from '../../app/bootstrap'
+import { DEFAULT_BOOTSTRAP } from '../../contracts/adapters/memory'
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -21,7 +23,7 @@ import { ProfilesPage } from './ProfilesPage'
 
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  render(<QueryClientProvider client={qc}><ProfilesPage /></QueryClientProvider>)
+  render(<BootstrapContext.Provider value={DEFAULT_BOOTSTRAP}><QueryClientProvider client={qc}><ProfilesPage /></QueryClientProvider></BootstrapContext.Provider>)
 }
 
 describe('ProfilesPage', () => {

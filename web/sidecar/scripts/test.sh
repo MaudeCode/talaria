@@ -21,6 +21,7 @@ trap 'rm -rf -- "$state"' EXIT
 cd "$here"
 # GitHub's relocated Linux Python needs LD_LIBRARY_PATH; nothing else from the caller's environment leaks in.
 env -i PATH="$PATH" HOME="$state" TMPDIR="$state" ${LD_LIBRARY_PATH:+LD_LIBRARY_PATH="$LD_LIBRARY_PATH"} \
+  HERMES_WEBUI_IMPORTER_DIR="${HERMES_WEBUI_IMPORTER_DIR:-}" \
   HERMES_WEBUI_AGENT_DIR="${HERMES_WEBUI_AGENT_DIR:-}" \
   HERMES_WEBUI_PYTHON="${HERMES_WEBUI_PYTHON:-}" \
   ${TALARIA_SIDECAR_WORKERS+TALARIA_SIDECAR_WORKERS="$TALARIA_SIDECAR_WORKERS"} \

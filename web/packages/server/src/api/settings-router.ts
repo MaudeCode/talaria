@@ -245,11 +245,34 @@ function oauthFlowId(raw: unknown): string {
   return flowId
 }
 
+async function importProfile(ctx: RequestContext, input: Omit<SidecarParams<'profiles.import'>, 'profile_home'>) {
+  if (!await canManageServer(ctx)) throw new HttpError(403, 'Only the server owner can import agent setup.')
+  const sidecar = ctx.deps.sidecar()
+  if (!sidecar) return { status: input.action === 'result' ? 'unknown' as const : 'unavailable' as const, sources: [], items: [], stripped_secrets: [], receipt: null, can_apply: false, message: 'Install and enable Agent Importers from the plugin catalog.' }
+  try {
+    const result = await sidecar.call('profiles.import', { ...input, profile_home: home(ctx) }, { timeoutMs: 0 })
+    if (['applied', 'partial', 'unknown'].includes(result.status)) {
+      ctx.deps.agentConfig.invalidate(home(ctx))
+      ctx.deps.catalog.invalidate()
+    }
+    return result
+  } catch {
+    // Native exception text can include source credentials or file content. Never forward or log it.
+    return { status: input.action !== 'preview' && input.action !== 'discover' ? 'unknown' as const : 'unavailable' as const, sources: [], items: [], stripped_secrets: [], receipt: null, can_apply: false, message: input.action !== 'preview' && input.action !== 'discover' ? 'Import outcome is unknown. Check the profile before starting a new preview.' : 'The reviewed importer is unavailable.' }
+  }
+}
+
 export const settingsRouter = os.router({
   settings: {
     get: os.settings.get.handler(({ context: { ctx } }) => run(async () => (await settingsPayload(ctx)))),
     save: os.settings.save.handler(({ input, context: { ctx } }) => run(() => saveSettings(ctx, input))),
     linkCheck: os.settings.linkCheck.handler(async ({ input, context: { ctx } }) => checkExternalLink(input.url, linkPreferences((await ctx.deps.settings.load())))),
+  },
+  profileImport: {
+    discover: os.profileImport.discover.handler(({ context: { ctx } }) => run(() => importProfile(ctx, { action: 'discover' }))),
+    preview: os.profileImport.preview.handler(({ input, context: { ctx } }) => run(() => importProfile(ctx, { action: 'preview', ...input }))),
+    result: os.profileImport.result.handler(({ input, context: { ctx } }) => run(() => importProfile(ctx, { action: 'result', ...input }))),
+    apply: os.profileImport.apply.handler(({ input, context: { ctx } }) => run(() => importProfile(ctx, { action: 'apply', ...input }))),
   },
   profiles: {
     list: os.profiles.list.handler(({ context: { ctx } }) => run(async () => ({ profiles: await ctx.deps.profiles.list(activeProfileName(ctx)) as never[], active: activeProfileName(ctx), single_profile_mode: ctx.deps.isolatedProfileMode() }))),

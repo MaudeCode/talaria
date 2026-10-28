@@ -295,6 +295,15 @@ def agent_checkout(args, kind, identity, env):
         yield agent
 
 
+def provision_importer(target):
+    # Provision immutable API bytes before tests. Runtime trials and tests stay offline.
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('agent_importer_contract', ROOT / 'web/sidecar/scripts/agent_importer_contract.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.provision(target)
+
+
 def check(args, kind, identity, receipt, junit):
     with tempfile.TemporaryDirectory(prefix="talaria-agent-compatibility-") as directory:
         state = Path(directory)
@@ -312,6 +321,8 @@ def check(args, kind, identity, receipt, junit):
             receipt["python"] = subprocess.check_output([str(agent_python), "-c", "import platform; print(platform.python_version())"],
                                                         env=env, text=True).strip()
             env.update(HERMES_WEBUI_AGENT_DIR=str(agent), HERMES_WEBUI_PYTHON=str(agent_python), HERMES_WEBUI_TEST_PYTHON=sys.executable)
+            if not args.skip_sidecar_tests or args.command:
+                env['HERMES_WEBUI_IMPORTER_DIR'] = str(provision_importer(state / 'agent-importers'))
             # The retained formats first shipped in 0.22.1; promotion must not bypass their probe.
             retained_cron = kind in ("candidate", "canary") or tuple(map(int, identity["version"].split("."))) >= (0, 22, 1)
             observations = probe_agent(agent, identity, {**env, "TALARIA_AGENT_UPGRADE_PROBE": "1" if retained_cron else "0"}, receipt)

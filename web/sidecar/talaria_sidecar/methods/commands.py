@@ -239,7 +239,7 @@ def forget_profile_mcp_tools(home) -> None:
         _MCP_DISCOVERED_HOMES.discard(os.path.realpath(home))
 
 
-def _reload_mcp() -> str:
+def _reload_mcp(*, log_errors=True) -> str:
     with _RELOAD_MCP_LOCK:
         try:
             from agent.secret_scope import is_multiplex_active
@@ -274,7 +274,8 @@ def _reload_mcp() -> str:
                 with _lock:
                     tools = [name for name in tools if _mcp_tool_server_names.get(name) in connected]
         except Exception as exc:  # noqa: BLE001
-            log.warning("Failed to reload MCP servers", exc_info=True)
+            if log_errors:
+                log.warning("Failed to reload MCP servers", exc_info=True)
             raise RpcError("Failed to reload MCP servers", condition="mcp_reload_failed") from exc
     added, removed, reconnected = connected - old, old - connected, connected & old
     lines = ["Reloaded MCP servers from configuration."]

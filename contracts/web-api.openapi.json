@@ -67088,6 +67088,597 @@
         }
       }
     },
+    "/api/profile/import": {
+      "get": {
+        "operationId": "profileImport.discover",
+        "summary": "Owner only: permitted local coding-agent sources and reviewed importer availability.",
+        "tags": [
+          "settings"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "enum": [
+                        "available",
+                        "unavailable",
+                        "preview",
+                        "applied",
+                        "partial",
+                        "changed",
+                        "unknown"
+                      ],
+                      "type": "string"
+                    },
+                    "sources": {
+                      "type": "array",
+                      "maxItems": 3,
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "agent": {
+                            "enum": [
+                              "claude-code",
+                              "codex",
+                              "cursor"
+                            ],
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string",
+                            "maxLength": 64
+                          }
+                        },
+                        "required": [
+                          "agent",
+                          "label"
+                        ]
+                      }
+                    },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 2048,
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "maxLength": 64
+                          },
+                          "status": {
+                            "enum": [
+                              "imported",
+                              "skipped",
+                              "conflict",
+                              "error"
+                            ],
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string",
+                            "maxLength": 256
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "status",
+                          "label"
+                        ]
+                      }
+                    },
+                    "stripped_secrets": {
+                      "type": "array",
+                      "maxItems": 2048,
+                      "items": {
+                        "type": "string",
+                        "maxLength": 200
+                      }
+                    },
+                    "receipt": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 128
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "can_apply": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 512
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "sources",
+                    "items",
+                    "stripped_secrets",
+                    "receipt",
+                    "can_apply",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/profile/import/preview": {
+      "post": {
+        "operationId": "profileImport.preview",
+        "summary": "Owner only: preview with no source or profile writes. Consent binds the active profile, reviewed plugin and source/target snapshots.",
+        "tags": [
+          "settings"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "agent": {
+                    "enum": [
+                      "claude-code",
+                      "codex",
+                      "cursor"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "agent"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "enum": [
+                        "available",
+                        "unavailable",
+                        "preview",
+                        "applied",
+                        "partial",
+                        "changed",
+                        "unknown"
+                      ],
+                      "type": "string"
+                    },
+                    "sources": {
+                      "type": "array",
+                      "maxItems": 3,
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "agent": {
+                            "enum": [
+                              "claude-code",
+                              "codex",
+                              "cursor"
+                            ],
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string",
+                            "maxLength": 64
+                          }
+                        },
+                        "required": [
+                          "agent",
+                          "label"
+                        ]
+                      }
+                    },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 2048,
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "maxLength": 64
+                          },
+                          "status": {
+                            "enum": [
+                              "imported",
+                              "skipped",
+                              "conflict",
+                              "error"
+                            ],
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string",
+                            "maxLength": 256
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "status",
+                          "label"
+                        ]
+                      }
+                    },
+                    "stripped_secrets": {
+                      "type": "array",
+                      "maxItems": 2048,
+                      "items": {
+                        "type": "string",
+                        "maxLength": 200
+                      }
+                    },
+                    "receipt": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 128
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "can_apply": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 512
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "sources",
+                    "items",
+                    "stripped_secrets",
+                    "receipt",
+                    "can_apply",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/profile/import/result": {
+      "get": {
+        "operationId": "profileImport.result",
+        "summary": "Owner only: read back a consumed import. Never runs the importer.",
+        "tags": [
+          "settings"
+        ],
+        "parameters": [
+          {
+            "name": "receipt",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "enum": [
+                        "available",
+                        "unavailable",
+                        "preview",
+                        "applied",
+                        "partial",
+                        "changed",
+                        "unknown"
+                      ],
+                      "type": "string"
+                    },
+                    "sources": {
+                      "type": "array",
+                      "maxItems": 3,
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "agent": {
+                            "enum": [
+                              "claude-code",
+                              "codex",
+                              "cursor"
+                            ],
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string",
+                            "maxLength": 64
+                          }
+                        },
+                        "required": [
+                          "agent",
+                          "label"
+                        ]
+                      }
+                    },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 2048,
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "maxLength": 64
+                          },
+                          "status": {
+                            "enum": [
+                              "imported",
+                              "skipped",
+                              "conflict",
+                              "error"
+                            ],
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string",
+                            "maxLength": 256
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "status",
+                          "label"
+                        ]
+                      }
+                    },
+                    "stripped_secrets": {
+                      "type": "array",
+                      "maxItems": 2048,
+                      "items": {
+                        "type": "string",
+                        "maxLength": 200
+                      }
+                    },
+                    "receipt": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 128
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "can_apply": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 512
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "sources",
+                    "items",
+                    "stripped_secrets",
+                    "receipt",
+                    "can_apply",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/profile/import/apply": {
+      "post": {
+        "operationId": "profileImport.apply",
+        "summary": "Owner only: consume preview consent once, or reconcile its recorded outcome. Never replays an unknown import.",
+        "tags": [
+          "settings"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "receipt": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  }
+                },
+                "required": [
+                  "receipt"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "enum": [
+                        "available",
+                        "unavailable",
+                        "preview",
+                        "applied",
+                        "partial",
+                        "changed",
+                        "unknown"
+                      ],
+                      "type": "string"
+                    },
+                    "sources": {
+                      "type": "array",
+                      "maxItems": 3,
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "agent": {
+                            "enum": [
+                              "claude-code",
+                              "codex",
+                              "cursor"
+                            ],
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string",
+                            "maxLength": 64
+                          }
+                        },
+                        "required": [
+                          "agent",
+                          "label"
+                        ]
+                      }
+                    },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 2048,
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "maxLength": 64
+                          },
+                          "status": {
+                            "enum": [
+                              "imported",
+                              "skipped",
+                              "conflict",
+                              "error"
+                            ],
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string",
+                            "maxLength": 256
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "status",
+                          "label"
+                        ]
+                      }
+                    },
+                    "stripped_secrets": {
+                      "type": "array",
+                      "maxItems": 2048,
+                      "items": {
+                        "type": "string",
+                        "maxLength": 200
+                      }
+                    },
+                    "receipt": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 128
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "can_apply": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 512
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "sources",
+                    "items",
+                    "stripped_secrets",
+                    "receipt",
+                    "can_apply",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/profiles": {
       "get": {
         "operationId": "profiles.list",
