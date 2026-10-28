@@ -801,6 +801,9 @@ function redactCredentialParams(text: string): string {
   for (let m = CRED_PARAM_RE.exec(text); m; m = CRED_PARAM_RE.exec(text)) {
     const [head, dash = '', key = '', sep = ''] = m
     const keyEnd = m.index + head.length
+    // A masked word may swallow a later flag's name but leave its value outside the mask. Keep scanning heads,
+    // skipping those wholly masked before parsing their values, so overlapping heads still cost one scan.
+    if (keyEnd <= last) continue
     // A computed piece may supply the separator itself (`--password${SEP}hunter2` with `SEP='='`) or the name
     // (`--${KEY}${SEP}hunter2`): from the key's first computed piece, the rest of the key is masked (and the value after a
     // real `=`/`:`) when the static part before it names a credential, or when a flag's name goes on after it.
@@ -813,9 +816,9 @@ function redactCredentialParams(text: string): string {
       // A flag whose name ends in the computed piece (`--password${X} hunter2`) takes its value from the next word.
       const nextWord = dash && !staticTail && /^\s+$/.test(sep)
       const end = /[=:]/.test(sep) || nextWord ? shellWordEnd(text, keyEnd, quoteAt(keyEnd), closeOf) : m.index + dash.length + key.length
+      if (end <= last) continue
       out += `${text.slice(last, m.index + dash.length + computedAt)}***${nextWord ? `${sep}***` : ''}`
       last = end
-      CRED_PARAM_RE.lastIndex = Math.max(last, CRED_PARAM_RE.lastIndex)
       continue
     }
     // A key the shell computes from its first piece (`--$(printf password)=`, `--${KEY}=`, a header `${HEADER}: x`) is one
@@ -867,7 +870,6 @@ function redactCredentialParams(text: string): string {
     // Fully masked: a partial mask would leak part of a password or passphrase.
     out += text.slice(last, valueStart) + (/^[[{(]/.test(value) ? '***' : maskShellWord(value))
     last = valueEnd
-    CRED_PARAM_RE.lastIndex = Math.max(valueEnd, CRED_PARAM_RE.lastIndex)
   }
   return out + text.slice(last)
 }
@@ -1305,7 +1307,9 @@ function redactComposedWords(text: string): string {
     const wanted = redactRules(plain)
     if (wanted === plain) continue
     const asWritten = shellDequote(redactRules(span)).replaceAll(WORD_SPACE, ' ')
-    if (!revealsMore(plain, asWritten, wanted)) continue
+    // Apply a composed flag's mask with its following value even when this span is safe in isolation: an outer header
+    // rule may swallow the flag name before the full-text pass reaches that value.
+    if (!flag && !revealsMore(plain, asWritten, wanted)) continue
     out += text.slice(last, start) + redactRules(unit).replaceAll(WORD_SPACE, ' ')
     last = spanEnd
     if (flag) k += 1
