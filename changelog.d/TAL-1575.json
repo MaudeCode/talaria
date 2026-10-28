@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Send feedback from Settings with an optional preview of redacted server diagnostics.",
+      "highlight": false
+    }
+  ]
+}

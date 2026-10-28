@@ -77,7 +77,8 @@ struct SettingsPaneView: View {
         case .dataAndStorage:
             DataStorageSettingsView(server: server)
         case .about:
-            AboutSettingsView()
+            AboutSettingsView(server: connectedServer)
+                .id(connectedServer)
         case .developer:
             #if DEBUG
             DeveloperSettingsView()
@@ -85,6 +86,11 @@ struct SettingsPaneView: View {
             EmptyView()
             #endif
         }
+    }
+
+    private var connectedServer: URL? {
+        guard case .loggedIn(let connected) = authManager.state, connected == server else { return nil }
+        return connected
     }
 }
 

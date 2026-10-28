@@ -103,11 +103,26 @@ struct DataStorageSettingsView: View {
 }
 
 struct AboutSettingsView: View {
+    @State private var feedback: FeedbackComposer
+
+    init(server: URL? = nil, feedback: FeedbackComposer? = nil) {
+        _feedback = State(initialValue: feedback ?? FeedbackComposer(server: server, clientMetadata: .current))
+    }
+
     var body: some View {
         SettingsCategoryPage(category: .about) {
             SettingsCard(title: String(localized: "App")) {
                 SettingsInfoRow(title: String(localized: "Version"), value: appVersion)
                 SettingsInfoRow(title: String(localized: "Build"), value: appBuild)
+
+                SettingsDivider()
+
+                Button { feedback.isPresented = true } label: {
+                    SettingsAccessoryRow(title: String(localized: "Send Feedback"), systemImage: "bubble.and.pencil")
+                }
+                .buttonStyle(.plain)
+                .disabled(feedback.server == nil || feedback.isSending)
+                .accessibilityIdentifier("settings-send-feedback")
 
                 SettingsDivider()
 
@@ -143,6 +158,12 @@ struct AboutSettingsView: View {
                 .buttonStyle(.plain)
                 .accessibilityHint("Opens the copyright and license notices for the open-source software in Talaria.")
             }
+        }
+        .sheet(isPresented: $feedback.isPresented) {
+            FeedbackSheet(model: feedback)
+        }
+        .overlay(alignment: .top) {
+            GitActionToastOverlay(state: feedback.confirmation)
         }
     }
 
