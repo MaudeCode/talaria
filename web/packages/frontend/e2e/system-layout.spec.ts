@@ -25,7 +25,7 @@ for (const width of [1280, 760, 390]) {
   test(`System page keeps Web and Agent update paths separate at ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 1500 })
     await page.route('**/api/settings', (route) => route.fulfill({ json: {
-      update_channel: 'stable', agent_update_channel: 'experimental', check_for_updates: true, auto_apply_updates: false,
+      update_channel: 'stable', update_channels: ['stable', 'nightly', 'experimental'], agent_update_channel: 'experimental', check_for_updates: true, auto_apply_updates: false,
       webui_version: 'web-v1.2.3', agent_version: 'v2026.9.21',
     } }))
     await page.route('**/api/updates/check', (route) => route.fulfill({ json: updatesCheckView({

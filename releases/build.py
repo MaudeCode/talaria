@@ -17,21 +17,27 @@ from smoke_npm import smoke
 CONTRACTS = "@maudecode/talaria-web-contracts"
 
 
+def next_patch(root, prefix):
+    """`X.Y.(Z+1)` after the newest Stable `<prefix>X.Y.Z` tag: after the shipped version, before the next Stable one."""
+    stable = [tag.removeprefix(prefix) for tag in git(root, "tag", "--list", prefix + "*").split()
+              if re.fullmatch(re.escape(prefix) + VERSION, tag)]
+    if not stable:
+        raise ValueError(f"no published Stable {prefix}X.Y.Z tag")
+    major, minor, patch = max(tuple(map(int, version.split("."))) for version in stable)
+    return f"{major}.{minor}.{patch + 1}"
+
+
 def experimental_component(root):
     """Experimental Web identity for HEAD: `<latest Stable version, patch bumped>-exp.<12-hex SHA>` (TAL-343).
 
     A SemVer prerelease sorts before its release, so `1.4.0-exp.*` would read as older than the shipped 1.4.0;
     `1.4.1-exp.*` sorts after it and before whatever Stable version ships next."""
     source = git(root, "rev-parse", "HEAD")
-    stable = [tag.removeprefix("web-v") for tag in git(root, "tag", "--list", "web-v*").split()
-              if re.fullmatch("web-v" + VERSION, tag)]
-    if not stable:
-        raise ValueError("Experimental versions need a published Stable web-vX.Y.Z tag")
-    major, minor, patch = max(tuple(map(int, version.split("."))) for version in stable)
+    base = next_patch(root, "web-v")
     if re.fullmatch(r"0[0-9]{11}", source[:12]):
         # A numeric SemVer identifier cannot start with 0 and npm would rewrite it; web-experimental.yml skips these (~0.04%).
         raise ValueError(f"{source[:12]} is not a valid SemVer prerelease identifier; this commit has no Experimental version")
-    version = f"{major}.{minor}.{patch + 1}-exp.{source[:12]}"
+    version = f"{base}-exp.{source[:12]}"
     return {"version": version, "sourceRevision": source, "tag": "web-exp-v" + version}
 
 

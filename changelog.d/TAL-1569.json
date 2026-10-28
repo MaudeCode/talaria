@@ -1,0 +1,20 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "A Nightly update channel sits between Stable and Experimental and installs one build of the latest main each day.",
+      "highlight": true,
+      "components": [
+        "web"
+      ]
+    },
+    {
+      "category": "Added",
+      "summary": "Nightly App builds now reach TestFlight automatically each day the App changes.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}

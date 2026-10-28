@@ -1843,7 +1843,7 @@ describe('isolated profile mode', () => {
 })
 
 describe('settings save response keeps the derived fields a load returns', () => {
-  const DERIVED = ['password_env_var', 'webui_version', 'agent_version', 'update_channel', 'update_channel_version'] as const
+  const DERIVED = ['password_env_var', 'webui_version', 'agent_version', 'update_channel', 'update_channels', 'update_channel_version'] as const
   it.each([{ password: '' }, { password: 'correct horse battery' }])('a single toggle save matches the next GET (env password: %j)', async ({ password }) => {
     const s = await bootTestServer({ env: password ? { HERMES_WEBUI_PASSWORD: password } : {} })
     try {
@@ -1857,6 +1857,14 @@ describe('settings save response keeps the derived fields a load returns', () =>
       const loaded = await json(await s.get('/api/settings', { headers }))
       expect(saved.password_env_var).toBe(Boolean(password))
       for (const key of DERIVED) expect(saved[key], key).toEqual(loaded[key])
+    } finally { await s.close() }
+  })
+
+  it('offers the Nightly Web channel and persists choosing it (TAL-1569)', async () => {
+    const s = await bootTestServer()
+    try {
+      expect(await json(await post(s, '/api/settings', { update_channel: 'nightly' }))).toMatchObject({ update_channel: 'nightly', update_channels: ['stable', 'nightly', 'experimental'] })
+      expect(await json(await s.get('/api/settings'))).toMatchObject({ update_channel: 'nightly' })
     } finally { await s.close() }
   })
 })

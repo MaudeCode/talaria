@@ -32,7 +32,7 @@ import { EnvWriteError, loadEnvFile } from '../providers/env-file.js'
 import { loadGatewaySessionIdentityMap } from '../sessions/list.js'
 import { gitBadge } from '../workspace/git.js'
 import { sanitizeError } from '../workspace/media.js'
-import { normalizeChannel, updatesCheckView } from '../tools/updates.js'
+import { isWebChannel, normalizeWebChannel, updatesCheckView, type WebChannel } from '../tools/updates.js'
 import { pyBool } from '../settings.js'
 import { str } from '../util.js'
 import { redactString } from '../redact.js'
@@ -812,7 +812,7 @@ export const toolsRouter = os.router({
       const force = pyBool(input.force)
       if (settings.check_for_updates === false && !force) return updatesCheckView({ disabled: true }) as never
       // An explicit body channel wins over a debounced, not-yet-saved setting.
-      const channel = input.channel === 'stable' || input.channel === 'experimental' ? input.channel : normalizeChannel(settings.update_channel)
+      const channel = isWebChannel(input.channel) ? input.channel : normalizeWebChannel(settings.update_channel)
       ctx.deps.log(`[updates] checking for updates (force=${String(force)}, channel=${channel})`)
       return updatesCheckView(await ctx.deps.updates.check(force, !pyBool(settings.ignore_agent_updates), channel, input.agent_channel)) as never
     })),
@@ -904,4 +904,4 @@ function updateTarget(raw: unknown): 'webui' | 'agent' {
   return raw
 }
 
-const bodyChannel = (raw: unknown): 'stable' | 'experimental' | null => (raw === 'stable' || raw === 'experimental' ? raw : null)
+const bodyChannel = (raw: unknown): WebChannel | null => (isWebChannel(raw) ? raw : null)

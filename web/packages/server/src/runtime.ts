@@ -27,7 +27,7 @@ import { McpHealthProber } from './tools/mcp-health.js'
 import { loadConfig, truthy, type Env, type LoadConfigOptions } from './config.js'
 import type { AppDeps } from './http/context.js'
 import { checkoutRevision, detectWebuiVersion, loadReleaseInfo } from './release.js'
-import { gatewayDrainDetail, ghcrExperimental, githubJson, normalizeChannel, purgePycache, sanitizeGitDiagnostic, UpdateService, waitUntilRestartSafe, type RestartBlockers } from './tools/updates.js'
+import { gatewayDrainDetail, ghcrExperimental, githubJson, normalizeChannel, normalizeWebChannel, purgePycache, sanitizeGitDiagnostic, UpdateService, waitUntilRestartSafe, type RestartBlockers } from './tools/updates.js'
 import { UpdateNotificationStore } from './tools/update-notifications.js'
 import { RESTART_EXIT_CODE } from './cli/supervise.js'
 import { displayBotName, pyBool, SettingsStore } from './settings.js'
@@ -900,7 +900,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       if (!sidecar) throw new Error('Hermes Agent sidecar is unavailable')
       return sidecar.call('runtime.sync_dependencies', { agent_dir: agentDir }, { timeoutMs: 330_000 })
     },
-    channel: () => normalizeChannel(settings.peek().update_channel),
+    channel: () => normalizeWebChannel(settings.peek().update_channel),
     agentChannel: () => normalizeChannel(settings.peek().agent_update_channel),
     includeAgent: () => !pyBool(settings.peek().ignore_agent_updates),
     summarizeAutomatically: () => settings.peek().check_for_updates !== false && settings.peek().summarize_updates_automatically !== false,

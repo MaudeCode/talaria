@@ -962,6 +962,7 @@
 	"settings_label_update_channel": "Канал обновлений",
 	"settings_update_channel_stable": "Стабильный (рекомендуется)",
 	"settings_update_channel_experimental": "Экспериментальный",
+	"settings_update_channel_nightly": "Ночная",
 	"settings_desc_update_channel": "Стабильный канал получает проверенные, обкатанные релизы. Экспериментальный получает каждый релиз сразу — быстрее, но возможны шероховатости. При возврате на Стабильный ваша версия сохраняется, пока Стабильный не догонит её. Применяется только к обновлениям WebUI.",
 	"settings_label_ignore_agent_updates": "Игнорировать обновления Agent",
 	"settings_label_bot_name": "Имя помощника по умолчанию",

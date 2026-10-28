@@ -874,6 +874,7 @@
 	"settings_label_update_channel": "Update-Kanal",
 	"settings_update_channel_stable": "Stabil (empfohlen)",
 	"settings_update_channel_experimental": "Experimentell",
+	"settings_update_channel_nightly": "Nightly",
 	"settings_desc_update_channel": "Stabil erhält ausgereifte, bewährte Releases. Experimentell erhält jedes Release sofort — schneller, aber mit möglichen Ecken und Kanten. Beim Zurückwechseln zu Stabil behältst du deine aktuelle Version, bis Stabil aufholt. Gilt nur für WebUI-Updates.",
 	"settings_label_ignore_agent_updates": "Ignore Agent updates",
 	"settings_label_bot_name": "Standard-Assistentenname",

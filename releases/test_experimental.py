@@ -13,7 +13,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from build import CONTRACTS, bundled_peers, experimental_component, require_bundled_contracts
-from experimental import MOVING, moves_forward, newest_published, pruned
+from experimental import MOVING, NIGHTLY, moves_forward, newest_published, pruned
 from plan import git
 
 REPOSITORY = Path(__file__).resolve().parents[1]
@@ -154,15 +154,18 @@ class ExperimentalTests(unittest.TestCase):
         self.assertEqual(newest_published(self.root, side, [first, second], third), side)
 
     def test_retention_keeps_the_newest_fifty_and_the_experimental_target(self):
-        def versions(moving):
+        def versions(moving, nightly=None):
             return [{"id": index, "created_at": f"2026-09-{1 + index // 24:02d}T{index % 24:02d}:00:00Z",
-                     "metadata": {"container": {"tags": [f"sha-{index:040x}"] + ([MOVING] if index == moving else [])}}}
+                     "metadata": {"container": {"tags": [f"sha-{index:040x}"] + ([MOVING] if index == moving else [])
+                                                + ([NIGHTLY] if index == nightly else [])}}}
                     for index in range(60)]
         # Index 0 is the oldest; the newest fifty are 10..59.
         self.assertEqual(pruned(versions(moving=59)), list(range(9, -1, -1)))
         self.assertEqual(pruned(versions(moving=3)), [9, 8, 7, 6, 5, 4, 2, 1, 0])
         self.assertEqual(pruned(versions(moving=3)[:50]), [])
         self.assertEqual(pruned(versions(moving=59), protected=(MOVING, f"sha-{5:040x}")), [9, 8, 7, 6, 4, 3, 2, 1, 0])
+        # TAL-1569: the build Nightly names survives too, even when it is older than the newest fifty.
+        self.assertEqual(pruned(versions(moving=59, nightly=2)), [9, 8, 7, 6, 5, 4, 3, 1, 0])
 
 
 if __name__ == "__main__":

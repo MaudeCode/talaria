@@ -930,6 +930,7 @@
 	"settings_label_update_channel": "Kênh cập nhật",
 	"settings_update_channel_stable": "Ổn định (khuyến nghị)",
 	"settings_update_channel_experimental": "Thử nghiệm",
+	"settings_update_channel_nightly": "Hằng đêm",
 	"settings_desc_update_channel": "Kênh Ổn định nhận các bản phát hành đã được kiểm chứng kỹ. Kênh Thử nghiệm nhận mọi bản phát hành ngay khi có — nhanh hơn nhưng có thể còn lỗi. Khi chuyển về Ổn định, bạn giữ phiên bản hiện tại cho đến khi Ổn định bắt kịp. Chỉ áp dụng cho các bản cập nhật WebUI.",
 	"settings_label_ignore_agent_updates": "Bỏ qua cập nhật Agent",
 	"settings_label_bot_name": "Tên assistant mặc định",

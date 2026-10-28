@@ -46,7 +46,10 @@ def authorize(plan):
         raise ValueError("production checkout differs from the approved source")
 
 
-def verify_ipa(path, component):
+RELEASE_KEYS = ("version", "buildNumber", "sourceRevision", "releaseSet", "contracts")
+
+
+def verify_ipa(path, component, keys=RELEASE_KEYS):
     with zipfile.ZipFile(path) as archive:
         bundles = (("", "dev.kil.talaria", True),
                    ("PlugIns/TalariaShareExtension.appex/", "dev.kil.talaria.shareextension", False),
@@ -57,7 +60,7 @@ def verify_ipa(path, component):
                     or info.get("CFBundleShortVersionString") != component["version"]
                     or info.get("CFBundleVersion") != str(component["buildNumber"])
                     or (sends_requests and any(info.get("TalariaRelease", {}).get(key) != component[key]
-                        for key in ("version", "buildNumber", "sourceRevision", "releaseSet", "contracts")))):
+                        for key in keys))):
                 raise ValueError("IPA identity differs from the release plan")
     return file_digest(path)
 
@@ -65,6 +68,21 @@ def verify_ipa(path, component):
 def file_digest(path):
     with path.open("rb") as stream:
         return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def upload_testflight(ipa, component, digest):
+    """Upload a verified IPA; App Store Connect must read it back VALID with the same identity."""
+    with timed("TestFlight upload and processing to VALID"):
+        uploaded = subprocess.check_output([
+            "ruby", str(ROOT / "app/ci/upload_testflight.rb"), str(ipa), component["version"], str(component["buildNumber"]), digest,
+        ], text=True)
+    result = json.loads(uploaded)
+    if (any(result.get(key) != component[key] for key in ("version", "buildNumber"))
+            or result.get("ipaSha256") != digest or result.get("processingState") != "VALID"
+            or not result.get("buildId") or not result.get("uploadId")):
+        raise ValueError("App Store Connect readback differs from the verified build")
+    print(json.dumps(result, sort_keys=True))
+    return result
 
 
 def relay(plan, output):
@@ -383,17 +401,7 @@ def main():
         if len(files) != 1 or verify_ipa(files[0], component) != build["ipaSha256"]:
             raise ValueError("App upload artifact differs from the verified build")
         if args.operation == "app":
-            with timed("TestFlight upload and processing to VALID"):
-                uploaded = subprocess.check_output([
-                    "ruby", str(Path(__file__).resolve().parents[1] / "app/ci/upload_testflight.rb"), str(files[0]), component["version"],
-                    str(component["buildNumber"]), build["ipaSha256"],
-                ], text=True)
-            result = json.loads(uploaded)
-            if (any(result.get(key) != component[key] for key in ("version", "buildNumber"))
-                    or result.get("ipaSha256") != build["ipaSha256"] or result.get("processingState") != "VALID"
-                    or not result.get("buildId") or not result.get("uploadId")):
-                raise ValueError("App Store Connect readback differs from the verified build")
-            print(json.dumps(result, sort_keys=True))
+            result = upload_testflight(files[0], component, build["ipaSha256"])
             write(args.output.with_name("apple-build.json"), result)
             write(args.output, receipt("uploadApp", plan["releaseSet"], tag=component["tag"], buildNumber=component["buildNumber"], ipaSha256=build["ipaSha256"]))
     else:

@@ -930,6 +930,7 @@
 	"settings_label_update_channel": "アップデートチャンネル",
 	"settings_update_channel_stable": "安定版（推奨）",
 	"settings_update_channel_experimental": "実験版",
+	"settings_update_channel_nightly": "ナイトリー",
 	"settings_desc_update_channel": "安定版は熟成済みの実績あるリリースを受け取ります。実験版はリリースを出た直後に受け取ります。速いですが不具合が出ることがあります。安定版に戻しても、安定版が追いつくまで現在のバージョンを維持します。 WebUI の更新にのみ適用されます。",
 	"settings_label_ignore_agent_updates": "Agentのアップデートを無視",
 	"settings_label_bot_name": "デフォルトのアシスタント名",

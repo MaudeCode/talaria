@@ -1,6 +1,7 @@
 import { useRef, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, ChevronUp } from 'lucide-react'
+import type { WebUpdateChannel } from '@maudecode/talaria-web-contracts'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
@@ -25,10 +26,12 @@ import { McpSection } from './McpSection'
 import { useResourceEffects, useResourceMutation, withEffects } from '../sessions/useResourceMutation'
 import { markServerStopped } from '../notices/useRuntimeNotices'
 
+const CHANNEL_LABELS: Record<WebUpdateChannel, () => string> = { stable: m.settings_update_channel_stable, nightly: m.settings_update_channel_nightly, experimental: m.settings_update_channel_experimental }
+
 export function SystemSection() {
   const bootstrap = useBootstrap()
   const qc = useQueryClient()
-  const { settings, save, str, bool, set } = useSettingField(['update_channel', 'agent_update_channel', 'password_env_var', 'ignore_agent_updates', 'webui_version', 'check_for_updates', 'auto_apply_updates', 'agent_version', 'summarize_updates_automatically', 'password_auth_enabled', 'auth_enabled', 'auth_disabled_acknowledged'])
+  const { settings, save, str, bool, set } = useSettingField(['update_channel', 'update_channels', 'agent_update_channel', 'password_env_var', 'ignore_agent_updates', 'webui_version', 'check_for_updates', 'auto_apply_updates', 'agent_version', 'summarize_updates_automatically', 'password_auth_enabled', 'auth_enabled', 'auth_disabled_acknowledged'])
   const health = useQuery({ queryKey: keys.health.system, queryFn: api.fetchSystemHealth, staleTime: 30_000 })
   const agent = useQuery({ queryKey: keys.health.agent, queryFn: api.fetchAgentHealth, staleTime: 15_000 })
   const updates = useQuery({ queryKey: keys.updates.check, queryFn: () => api.fetchUpdatesCheck(), staleTime: 30_000, refetchInterval: 30_000 })
@@ -42,6 +45,7 @@ export function SystemSection() {
   // and a later save (e.g. ignore-agent) must not make the Select snap back meanwhile.
   const [channelDraft, setChannelDraft] = useState<string>()
   const channel = channelDraft ?? str('update_channel', 'stable')
+  const webChannels = (settings.data as { update_channels?: WebUpdateChannel[] } | undefined)?.update_channels ?? []
   const setChannel = (v: string) => { setChannelDraft(v); save.mutate({ update_channel: v }, { onError: fail, onSettled: () => { setChannelDraft(undefined); void qc.invalidateQueries({ queryKey: keys.updates.check }) } }) }
   const [agentChannelDraft, setAgentChannelDraft] = useState<string>()
   const agentChannel = agentChannelDraft ?? str('agent_update_channel', 'stable')
@@ -123,8 +127,7 @@ export function SystemSection() {
         <div className="grid gap-x-10 gap-y-8 [grid-template-columns:repeat(auto-fit,minmax(min(100%,19rem),1fr))]">
           <UpdatePath id="systemWebPath" title={WEB} installed={webUpdate?.current_version ?? str('webui_version', bootstrap.webui_version)} status={webStatus}
             channel={<Select id="settingsUpdateChannel" aria-label={m.settings_label_web_update_channel()} disabled={!canManage} value={channel} onValueChange={setChannel}>
-              <option value="stable">{m.settings_update_channel_stable()}</option>
-              <option value="experimental">{m.settings_update_channel_experimental()}</option>
+              {webChannels.map((c) => <option key={c} value={c}>{CHANNEL_LABELS[c]()}</option>)}
             </Select>}
             action={canManage && webUpdate?.can_apply ? <Button variant="primary" onClick={() => applyWeb.mutate({})} disabled={applyWeb.isPending}>{applyWeb.isPending && !applyWeb.variables.version ? m.update_updating() : webUpdate.state === 'finish' ? m.system_finish_update() : m.system_apply_web_update()}</Button> : null}
             folded={canManage ? webUpdate?.versions.filter((v) => v.folded) : undefined} install={install(applyWeb)}

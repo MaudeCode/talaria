@@ -1,0 +1,109 @@
+# The Nightly channel (TAL-1569). Once a day the newest main commit with green CI becomes Nightly: Web's forward-only
+# `nightly` GHCR tag moves to the newest Experimental build on its history, and an App that changed since the last
+# Nightly uploads to TestFlight as the next patch after Stable. The `nightly` git tag records the last completed
+# source; a failed run leaves it, so the next run retries.
+
+name: Nightly
+
+on:
+  schedule:
+    - cron: "0 9 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: talaria-nightly
+  cancel-in-progress: false
+
+jobs:
+  select:
+    name: Select the Nightly source
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read # list main's CI runs
+    outputs:
+      changed: ${{ steps.select.outputs.changed }}
+      source: ${{ steps.select.outputs.source }}
+      app: ${{ steps.select.outputs.app }}
+      app_version: ${{ steps.select.outputs.app_version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Release tags set the App version; history orders green commits after the nightly tag.
+          fetch-depth: 0
+
+      - uses: ./.github/actions/release-python
+
+      - name: Select the newest green main commit
+        id: select
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: '"$RELEASE_PYTHON" releases/nightly.py select >> "$GITHUB_OUTPUT"'
+
+  web:
+    name: Move Web's nightly tag
+    needs: select
+    if: needs.select.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/release-python
+
+      - uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
+
+      - name: Move nightly to the newest Experimental build on the source's history
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REGISTRY_TOKEN: ${{ github.token }}
+          SOURCE: ${{ needs.select.outputs.source }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$REGISTRY_TOKEN" | oras login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          "$RELEASE_PYTHON" releases/experimental.py advance "$SOURCE" --tag nightly
+
+  app:
+    name: Upload the Nightly App
+    needs: select
+    if: needs.select.outputs.app == 'true'
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/ios-release-build.yml
+    secrets: inherit
+    with:
+      ref: ${{ needs.select.outputs.source }}
+      version: ${{ needs.select.outputs.app_version }}
+      artifacts: ""
+      channel: nightly
+
+  record:
+    name: Record the Nightly source
+    needs: [select, web, app]
+    if: ${{ !cancelled() && needs.select.outputs.changed == 'true' && needs.web.result == 'success' && contains(fromJSON('["success", "skipped"]'), needs.app.result) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write # move the nightly tag
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/release-python
+
+      - name: Move the nightly tag forward
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE: ${{ needs.select.outputs.source }}
+        run: '"$RELEASE_PYTHON" releases/nightly.py record "$SOURCE"'

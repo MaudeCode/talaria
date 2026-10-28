@@ -874,6 +874,7 @@
 	"settings_label_update_channel": "更新通道",
 	"settings_update_channel_stable": "稳定版（推荐）",
 	"settings_update_channel_experimental": "实验版",
+	"settings_update_channel_nightly": "每夜版",
 	"settings_desc_update_channel": "稳定版提供经过充分验证的成熟版本。实验版会在每个版本发布时立即提供——更快，但可能有粗糙之处。切回稳定版会保留当前版本，直到稳定版赶上。 仅适用于 WebUI 更新。",
 	"settings_label_ignore_agent_updates": "忽略智能体更新",
 	"settings_label_bot_name": "默认助手名称",
