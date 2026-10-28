@@ -1,13 +1,14 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactElement } from 'react'
-import { act, render as renderView, screen, waitFor } from '@testing-library/react'
-import { queryWrapper } from '../../test/fixtures'
+import { act, fireEvent, render as renderView, screen, waitFor } from '@testing-library/react'
+import { deferred, queryWrapper } from '../../test/fixtures'
 import userEvent from '@testing-library/user-event'
 
 vi.mock('../../api/endpoints', () => ({ respondApproval: vi.fn(() => Promise.resolve({ ok: true })), fetchApprovalPending: vi.fn() }))
 vi.mock('../toast/toast', () => ({ showToast: vi.fn() }))
 import * as api from '../../api/endpoints'
 import { ApprovalCard } from './ApprovalCard'
+import { Menu, MenuItem } from '../../ui/Menu'
 import { showToast } from '../toast/toast'
 import { ApiError } from '../../contracts/common'
 
@@ -101,6 +102,108 @@ describe('ApprovalCard', () => {
     await userEvent.click(screen.getByRole('button', { name: /dismiss approval/i }))
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
     await userEvent.keyboard('{Enter}')
+    expect(api.respondApproval).not.toHaveBeenCalled()
+  })
+})
+
+
+describe('ApprovalCard keyboard ownership', () => {
+  beforeEach(() => { vi.clearAllMocks() })
+  const card = (sessionId = 'keyboard', approvalId = 'keyboard-approval') => <ApprovalCard sessionId={sessionId} pending={{ approval_id: approvalId, command: 'echo fixture' }} onResolved={() => undefined} />
+
+  it('sends only always when Enter activates the actual shared menu item', async () => {
+    render(card())
+    await userEvent.click(screen.getByRole('button', { name: 'More options' }))
+    const always = await screen.findByRole('menuitem', { name: 'Always allow' })
+    always.focus()
+    await userEvent.keyboard('{Enter}')
+    await waitFor(() => expect(api.respondApproval).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(api.respondApproval).mock.calls.map(([request]) => request.choice)).toEqual(['always'])
+  })
+
+  it('lets an unrelated shared menu handle Enter without answering the approval', async () => {
+    const rename = vi.fn()
+    render(<>{card()}<Menu trigger={<button>Chat actions</button>}><MenuItem onClick={rename}>Rename chat</MenuItem></Menu></>)
+    await userEvent.click(screen.getByRole('button', { name: 'Chat actions' }))
+    const item = await screen.findByRole('menuitem', { name: 'Rename chat' })
+    item.focus()
+    await userEvent.keyboard('{Enter}')
+    expect(rename).toHaveBeenCalledTimes(1)
+    expect(api.respondApproval).not.toHaveBeenCalled()
+  })
+
+  it('leaves an already consumed Enter alone', async () => {
+    render(<>{card()}<div onKeyDown={(event) => event.preventDefault()}>Other shortcut</div></>)
+    await act(async () => { fireEvent.keyDown(screen.getByText('Other shortcut'), { key: 'Enter' }); await Promise.resolve() })
+    expect(api.respondApproval).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['button descendant', <button><span>Target</span></button>],
+    ['link descendant', <a href="#fixture"><span>Target</span></a>],
+    ['textarea', <textarea aria-label="Target" />],
+    ['input', <input aria-label="Target" />],
+    ['select', <select aria-label="Target"><option>Fixture</option></select>],
+    ['summary descendant', <details><summary><span>Target</span></summary></details>],
+    ['editable descendant', <div contentEditable suppressContentEditableWarning><span>Target</span></div>],
+    ['plaintext editable', <div contentEditable="plaintext-only" suppressContentEditableWarning><span>Target</span></div>],
+    ['focusable descendant', <div tabIndex={0}><span>Target</span></div>],
+    ...['button', 'link', 'checkbox', 'combobox', 'grid', 'gridcell', 'listbox', 'menu', 'menubar', 'menuitem', 'menuitemcheckbox', 'menuitemradio', 'option', 'radio', 'radiogroup', 'scrollbar', 'searchbox', 'slider', 'spinbutton', 'switch', 'tab', 'tablist', 'textbox', 'tree', 'treegrid', 'treeitem'].map((role) => [role, <div role={role}><span>Target</span></div>] as const),
+  ] as const)('preserves Enter ownership for %s', async (_, control) => {
+    render(<>{card()}{control}</>)
+    const target = screen.queryByText('Target') ?? screen.getByLabelText('Target')
+    await act(async () => { fireEvent.keyDown(target, { key: 'Enter' }); await Promise.resolve() })
+    expect(api.respondApproval).not.toHaveBeenCalled()
+  })
+
+  it.each(['altKey', 'ctrlKey', 'metaKey', 'shiftKey', 'isComposing', 'repeat'])('ignores Enter with %s', async (flag) => {
+    render(card())
+    await act(async () => { fireEvent.keyDown(document.body, { key: 'Enter', [flag]: true }); await Promise.resolve() })
+    expect(api.respondApproval).not.toHaveBeenCalled()
+  })
+
+  it('keeps native Deny and More single-action keyboard behavior', async () => {
+    render(card())
+    screen.getByRole('button', { name: 'More options' }).focus()
+    await userEvent.keyboard('{Enter}')
+    expect(await screen.findByRole('menu')).toBeInTheDocument()
+    expect(api.respondApproval).not.toHaveBeenCalled()
+    await userEvent.keyboard('{Escape}')
+    screen.getByRole('button', { name: 'Deny' }).focus()
+    await userEvent.keyboard('{Enter}')
+    await waitFor(() => expect(api.respondApproval).toHaveBeenCalledTimes(1))
+    expect(api.respondApproval).toHaveBeenCalledWith(expect.objectContaining({ choice: 'deny' }))
+  })
+
+  it('allows unhandled Enter on ordinary content and sends once through repeated pending presses', async () => {
+    const response = deferred<{ ok: boolean }>()
+    vi.mocked(api.respondApproval).mockReturnValueOnce(response.promise)
+    render(<>{card()}<p>Ordinary content</p></>)
+    act(() => {
+      const content = screen.getByText('Ordinary content')
+      fireEvent.keyDown(content, { key: 'Enter' })
+      fireEvent.keyDown(content, { key: 'Enter' })
+      fireEvent.keyDown(content, { key: 'Enter', repeat: true })
+    })
+    await waitFor(() => expect(api.respondApproval).toHaveBeenCalledTimes(1))
+    fireEvent.keyDown(document.body, { key: 'Enter' })
+    expect(api.respondApproval).toHaveBeenCalledTimes(1)
+    await act(async () => { response.resolve({ ok: true }); await Promise.resolve() })
+    expect(api.respondApproval).toHaveBeenCalledWith(expect.objectContaining({ choice: 'once' }))
+  })
+
+  it('replaces approval and session listeners, and removes the listener on unmount', async () => {
+    const view = render(card('old-session', 'old-approval'))
+    view.rerender(card('old-session', 'new-approval'))
+    view.rerender(card('new-session', 'new-approval'))
+    fireEvent.keyDown(document.body, { key: 'Enter' })
+    await waitFor(() => expect(api.respondApproval).toHaveBeenCalledTimes(1))
+    expect(api.respondApproval).toHaveBeenCalledWith(expect.objectContaining({ session_id: 'new-session', approval_id: 'new-approval' }))
+    view.rerender(card('unmount-session', 'active-approval'))
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument()
+    view.unmount()
+    vi.mocked(api.respondApproval).mockClear()
+    fireEvent.keyDown(document.body, { key: 'Enter' })
     expect(api.respondApproval).not.toHaveBeenCalled()
   })
 })
