@@ -364,7 +364,7 @@ separately. The shared synthetic fixture is
 `contracts/fixtures/skill-revisions.json` at the repository root. Existing skill
 content/edit/delete/toggle/linked-file endpoints retain their contracts.
 
-### Persistent delegation settings
+## Persistent delegation settings
 
 `GET /api/model/auxiliary` includes optional `delegation` settings. The native
 Agent registry supplies configured/effective mode, availability, recovery reason,
@@ -388,4 +388,4 @@ All auxiliary writes use the existing exclusive optimistic resource owner: show
 the choice immediately, roll back refusals, reconcile unknown outcomes without
 replaying, and fence stale responses after a profile switch. Reset All restores
 the native Default backend as well as fixed model overrides. Session overrides
-and delegation execution are separate. This extends sidecar RPC version 62.
+and delegation execution are separate. This extends sidecar RPC version 63.
