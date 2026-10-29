@@ -250,9 +250,15 @@ struct ChatView: View {
     @State private var restoredDraftSettings: ChatDraftSettings?
     @State private var didApplyRestoredDraftSettings = false
     @Environment(\.sessionActions) private var sessionActions
-    @State private var hasVerticalToolbar = false
+    @Environment(\.navigationHasVerticalToolbar) private var navigationHasVerticalToolbar
+    @State private var observedVerticalToolbar = false
+    private var hasVerticalToolbar: Bool { navigationHasVerticalToolbar == true || observedVerticalToolbar }
 
-    @State private var didCompleteInitialAppearance = false
+    @Environment(\.appearedNavigationRoot) private var appearedNavigationRoot
+    @State private var observedInitialAppearance = false
+    private var didCompleteInitialAppearance: Bool {
+        observedInitialAppearance || (retained != nil && appearedNavigationRoot === retained)
+    }
     @State private var isInitialComposerFocusContentReady = false
     @State private var didApplyInitialComposerFocusPolicy = false
     @State private var shouldRestoreComposerFocusAfterPreview = false
@@ -849,7 +855,16 @@ struct ChatView: View {
         splitFilesInspector?.reportShown(showsFilesInspector)
     }
 
+    private var showsEmptyTranscript: Bool {
+        // An unhydrated chat must not remove the stack's compose action while its messages load.
+        (!loadsInitialMessages || isInitialComposerFocusContentReady)
+            && !viewModel.hasMessages && viewModel.clarificationPrompt == nil && viewModel.activeStreamID == nil
+    }
+
     private var chatWithToolbar: some View {
+        #if DEBUG
+        recordBodyEvaluation?(hasVerticalToolbar ? "toolbar.vertical" : "toolbar.horizontal")
+        #endif
         let sessionMenu: SessionRowContextMenu? = if viewModel.hasSession, let sessionActions {
             SessionRowContextMenu(
                 viewModel: sessionActions.viewModel,
@@ -858,7 +873,7 @@ struct ChatView: View {
             )
         } else { nil }
         return chatLayout
-            .onChange(of: !viewModel.hasMessages && viewModel.clarificationPrompt == nil && viewModel.activeStreamID == nil,
+            .onChange(of: showsEmptyTranscript,
                       initial: true) { _, isEmpty in splitFilesInspector?.reportEmptyTranscript(isEmpty) }
             .onChange(of: showsFilesInspector, initial: true) { splitFilesInspector?.reportShown(showsFilesInspector) }
             .onChange(of: showsCompanionPage && !viewModel.companionFocus.isHidden, initial: true) { _, needsRoom in
@@ -876,7 +891,7 @@ struct ChatView: View {
             }
             .navigationTitle(displayTitle)
             .navigationBarTitleDisplayMode(.inline)
-            .onToolbarVerticalEdgeChange { hasVerticalToolbar = $0 }
+            .onToolbarVerticalEdgeChange { observedVerticalToolbar = $0 }
             .toolbarTitleMenu { sessionMenu }
             .toolbar {
                 ToolbarItem(placement: .principal) {
@@ -3555,7 +3570,7 @@ struct ChatView: View {
     }
 
     private func handleInitialAppearanceCompletion() {
-        didCompleteInitialAppearance = true
+        observedInitialAppearance = true
         applyInitialComposerFocusPolicyIfNeeded()
     }
 

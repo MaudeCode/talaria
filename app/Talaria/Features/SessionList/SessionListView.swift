@@ -42,6 +42,7 @@ struct SessionListView: View {
     }
     @State private var removedSessionNavigation: [String: RemovedSessionNavigation] = [:]
     @State private var navigationState: SessionNavigationState
+    @State private var conversationRootHasAppeared = false
     @State private var isPresentingSettings = false
     @State private var isSessionEventStreamLive = false
     @State private var settingsPath: [SettingsPane] = []
@@ -812,8 +813,20 @@ struct SessionListView: View {
 
     /// Both widths show the selected root and push only its inner pages.
     private var conversationStack: some View {
-        NavigationStack(path: sectionPath) {
-            withDrawerButton(navigationDestination(navigationState.destination ?? .newChat(emptyChatRoute)))
+        let sizeClass = horizontalSizeClass
+        return NavigationStack(path: sectionPath) {
+            withDrawerButton(ZStack {
+                navigationDestination(navigationState.destination ?? .newChat(emptyChatRoute),
+                                      rootHasAppeared: conversationRootHasAppeared)
+                    .id(navigationState.chatRootRevision)
+            })
+                .background {
+                    NavigationAppearanceCompletionObserver(action: {
+                        if sizeClass == horizontalSizeClass { conversationRootHasAppeared = true }
+                    }, rootReplacementRevision: navigationState.chatRootRevision,
+                       rootPathIsEmpty: sectionPath.wrappedValue.isEmpty)
+                }
+                .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     if showsDetailNewChatButton {
                         ToolbarItem(placement: .topBarTrailing) { regularNewChatButton }
@@ -826,7 +839,7 @@ struct SessionListView: View {
                 }
                 .navigationDestination(for: CompactPage.self) { page in sectionStackPage(page) }
         }
-        .id(regularDetailIdentity)
+        .environment(\.navigationHasVerticalToolbar, detailHasVerticalBar)
         .onToolbarVerticalEdgeChange { hasVerticalBar in
             observeSidebarLayout { $0.hasVerticalBar = hasVerticalBar }
         }
@@ -858,8 +871,6 @@ struct SessionListView: View {
             }
         }
     }
-
-    private var regularDetailIdentity: Int { navigationState.chatRootRevision }
 
     /// Admit geometry and toolbar traits together; app-switch snapshots cannot choose a layout or save a preference.
     private func observeSidebarLayout(_ update: (inout SidebarLayoutInputs) -> Void = { _ in }) {
@@ -894,6 +905,9 @@ struct SessionListView: View {
         isApplyingSidebarLayout = true
         defer { isApplyingSidebarLayout = false }
         withTransaction(.unanimated) {
+            if let appliedSidebarLayout, appliedSidebarLayout.sizeClass != layout.sizeClass {
+                conversationRootHasAppeared = false
+            }
             appliedSidebarLayout = layout
             isCompactWidth = layout.sizeClass == .compact
             if isCompactWidth {
@@ -1201,9 +1215,12 @@ struct SessionListView: View {
     }
 
     @ViewBuilder
-    private func navigationDestination(_ destination: SessionNavigationDestination) -> some View {
+    private func navigationDestination(_ destination: SessionNavigationDestination, rootHasAppeared: Bool = false) -> some View {
         switch destination {
         case .session(let session):
+            let retained = chats.chat(for: session, server: server) {
+                ChatView.makeViewModel(session: session, server: server, sessionListOwner: viewModel)
+            }
             SessionChatDestination(
                 session: session, server: server, authManager: authManager,
                 draftStore: draftStore, viewModel: viewModel, context: sessionActionContext,
@@ -1211,12 +1228,14 @@ struct SessionListView: View {
                 offersCompanionPage: horizontalSizeClass == .regular,
                 widensForCompanionPage: widensForCompanionPage,
                 companionPageHideRequest: navigationState.companionPageHideRequest,
-                retained: chats.chat(for: session, server: server) {
-                    ChatView.makeViewModel(session: session, server: server, sessionListOwner: viewModel)
-                }
+                retained: retained
             )
             .id(session.id)
+            .environment(\.appearedNavigationRoot, rootHasAppeared ? retained : nil)
         case .newChat(let route):
+            let retained = chats.pendingChat(for: route, server: server) { provisional in
+                ChatView.makeViewModel(session: provisional, server: server, sessionListOwner: viewModel)
+            }
             PendingNewChatView(
                 initialDraft: route.initialDraft,
                 initialAttachments: route.initialAttachments,
@@ -1232,12 +1251,11 @@ struct SessionListView: View {
                 onSessionCreated: rememberCreatedSession,
                 draftStore: draftStore,
                 splitFilesInspector: splitFilesInspector,
-                retained: chats.pendingChat(for: route, server: server) { provisional in
-                    ChatView.makeViewModel(session: provisional, server: server, sessionListOwner: viewModel)
-                },
+                retained: retained,
                 routeID: route.id
             )
             .id(route.id)
+            .environment(\.appearedNavigationRoot, rootHasAppeared ? retained : nil)
         case .utility(let destination):
             if let section = AppSection(destination) { sectionRoot(section) }
         }

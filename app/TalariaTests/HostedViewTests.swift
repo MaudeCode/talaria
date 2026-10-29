@@ -8,6 +8,34 @@ import TalariaKit
 /// tree, activating one runs its action, and the in-process fixture answers the App's requests.
 @MainActor
 final class HostedViewTests: XCTestCase {
+    func testDeferredRootReplacementDoesNotPopANewerPage() async throws {
+        let root = NavigationAppearanceObserverViewController(action: {})
+        let navigation = UINavigationController(rootViewController: root)
+        let window = try hostWindow(Color.clear)
+        window.rootViewController = navigation
+        let outgoing = UIViewController()
+        navigation.pushViewController(outgoing, animated: false)
+        window.layoutIfNeeded()
+        settle()
+        root.replaceRootIfNeeded(revision: 0)
+        root.replaceRootIfNeeded(revision: 1)
+        navigation.popToRootViewController(animated: false)
+        let newer = UIViewController()
+        navigation.pushViewController(newer, animated: false)
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { continuation.resume() }
+        }
+        XCTAssertTrue(navigation.topViewController === newer,
+                      "A delayed root reset must not pop a page pushed after UIKit already removed the old path")
+        root.replaceRootIfNeeded(revision: 2)
+        root.replaceRootIfNeeded(revision: 2, pathIsEmpty: false)
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { continuation.resume() }
+        }
+        XCTAssertTrue(navigation.topViewController === newer,
+                      "A queued reset must yield when the model restores a pushed page")
+    }
+
     func testAboutOffersSendFeedback() async throws {
         let window = try hostWindow(NavigationStack { AboutSettingsView() })
         let row = await awaitElement(in: window) { $0.accessibilityLabel == "Send Feedback" }

@@ -175,6 +175,18 @@ extension HostedAccessibility {
 }
 
 extension XCTestCase {
+    /// Samples after UIKit's transaction observers, so assertions see each committed layout rather than settling only.
+    @MainActor
+    func sampleCommittedLayouts(_ sample: @escaping @MainActor () -> Void,
+                                during transition: () async throws -> Void) async rethrows {
+        let observer = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue, true, CFIndex.max) { _, _ in
+            MainActor.assumeIsolated { sample() }
+        }
+        CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
+        defer { CFRunLoopRemoveObserver(CFRunLoopGetMain(), observer, .commonModes) }
+        try await transition()
+    }
+
     @MainActor
     func attachHostedScreenshot(_ window: UIWindow, name: String, lifetime: XCTAttachment.Lifetime = .keepAlways) {
         let attachment = XCTAttachment(image: UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
