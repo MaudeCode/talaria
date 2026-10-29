@@ -438,6 +438,11 @@ pending reports, oldest first:
 accepted file is stored or its upload window closes; a file never uploaded is
 listed as `missing`. `attachments` is empty for a text-only report.
 
+Acknowledging a report deletes its files, so the bridge must copy them first. A
+bridge that predates attachments acknowledges without copying; deploy one that
+copies them before any client sends attachments, or set
+`FEEDBACK_ATTACHMENTS_DISABLED=1` until then.
+
 `GET /v1/feedback/{reportId}/attachments/{index}` returns a stored file as
 `application/octet-stream` with `X-Content-Type-Options: nosniff`, or 404 when
 it is not stored.

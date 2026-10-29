@@ -995,7 +995,13 @@ http.route({
       return json(400, { error: "invalid_attachment" });
     }
     const storageId = await ctx.storage.store(new Blob([body], { type: "application/octet-stream" }));
-    const recorded = await ctx.runMutation(internal.feedback.recordUpload, { ...target, tokenHash, storageId, now: Date.now() });
+    const recorded = await ctx.runMutation(internal.feedback.recordUpload, { ...target, tokenHash, storageId, now: Date.now() })
+      .catch(async (error: unknown) => {
+        // The commit may have landed before the failure; keep the blob only when the row references it.
+        const committed = await ctx.runQuery(internal.feedback.storedAttachment, target).catch(() => storageId);
+        if (committed !== storageId) await ctx.storage.delete(storageId);
+        throw error;
+      });
     if (recorded.status !== "stored") {
       await ctx.storage.delete(storageId);
       return uploadRefusal(recorded.status);
