@@ -2,6 +2,16 @@
 
 set -euo pipefail
 
+open_simulator=true
+if [[ "${1:-}" == --no-open ]]; then
+    open_simulator=false
+    shift
+fi
+if (( $# != 0 )); then
+    print -u2 "Usage: scripts/run-ios [--no-open]"
+    exit 64
+fi
+
 repo_root=${0:A:h:h}
 runtime_dir="$repo_root/.codex-tmp/run-ios"
 lock_file="$runtime_dir/runner.lock"
@@ -18,11 +28,6 @@ cleanup() {
     ios_pool_release
     unlink "$lock_file" 2>/dev/null || true
 }
-
-if (( $# != 0 )); then
-    print -u2 "Usage: scripts/run-ios"
-    exit 64
-fi
 
 if ! /usr/bin/shlock -f "$lock_file" -p $$; then
     print -u2 "Talaria is already running from this worktree (PID $(<"$lock_file"))."
@@ -60,10 +65,12 @@ fi
 /usr/bin/codesign --verify --deep --strict "$app_path"
 xcrun simctl bootstatus "$simulator_id" -b >/dev/null
 xcrun simctl install "$simulator_id" "$app_path"
-developer_dir=$(xcode-select -p)
-simulator_app="$developer_dir/Applications/Simulator.app"
-[[ -d "$simulator_app" ]] || simulator_app="$developer_dir/../Applications/DeviceHub.app"
-open "$simulator_app" --args -CurrentDeviceUDID "$simulator_id"
+if [[ "$open_simulator" == true ]]; then
+    developer_dir=$(xcode-select -p)
+    simulator_app="$developer_dir/Applications/Simulator.app"
+    [[ -d "$simulator_app" ]] || simulator_app="$developer_dir/../Applications/DeviceHub.app"
+    open "$simulator_app" --args -CurrentDeviceUDID "$simulator_id"
+fi
 xcrun simctl launch "$simulator_id" "$bundle_identifier" --ui-test-fixture
 
 print "Talaria's deterministic fixture is running on $simulator_id. Press Control-C to end the session and release it."

@@ -147,6 +147,9 @@ Agent/MCP flow:
   builds the isolated `.xctest` app, launches the deterministic fixture, and opens
   Simulator. Keep the command running for the manual session, then press Control-C
   to shut down the simulator and release its lease.
+- In T3 Code, follow the [Device panel workflow](../.agents/skills/talaria-ios-testing/SKILL.md#t3-code-device-panel).
+  `scripts/run-ios --no-open` keeps the same build and lease without opening the
+  desktop simulator window.
 - Use `screenshot`, UI inspection, and log capture only when they help validate the slice.
 
 Human/CLI equivalents:

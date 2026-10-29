@@ -40,6 +40,7 @@ case "$component" in
     python3 app/ci/load_env_test.py
     python3 app/scripts/test-ios-device-selection
     python3 app/scripts/test-run-ios-device
+    python3 app/scripts/test-run-ios
     python3 app/scripts/test-validate-upstream-contract
     bash -n app/scripts/duo-pose app/scripts/test-duo-pose
     node --test app/scripts/duo-pose.test.mjs

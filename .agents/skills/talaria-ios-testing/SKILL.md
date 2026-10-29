@@ -9,7 +9,8 @@ to `app/`. GitHub workflows and shared contract documentation remain at the root
 # Talaria iOS testing
 
 Use terminal validation. Prefer XcodeBuildMCP when it is available; otherwise use
-`xcodebuild` and `xcrun simctl`.
+`xcodebuild` and `xcrun simctl`. For interactive simulator checks in T3 Code, use
+the Device panel workflow below.
 
 ## Validation scope
 
@@ -49,6 +50,36 @@ worktrees. Let the current run finish instead of starting an overlapping run.
   simulator test plan.
 - Install only normally signed builds for manual simulator testing. Builds made
   with `CODE_SIGNING_ALLOWED=NO` break Keychain entitlements when installed.
+
+### T3 Code Device panel
+
+When T3's `device_*` tools are available:
+
+1. Start `scripts/run-ios --no-open` in a persistent terminal session. Keep the
+   runner alive throughout inspection; it owns the shared simulator lease, the
+   isolated app build, and the deterministic fixture. Wait for its fixture-ready
+   message and read the printed simulator UDID.
+2. Call `device_list`, then `device_open` with that exact `deviceId` and its local
+   `hostId`. Opening a default device can bypass the lease and select another
+   worktree's simulator.
+3. Run every interaction through the exact `agent-device` command path that
+   `device_open` returns; it is already bound to that device and session.
+   Establish the app session with `open dev.kil.talaria.xctest` (without
+   `--relaunch`, so the fixture launch stays), then use `snapshot -i` and its
+   element references for interactions. Capture visual evidence with
+   `device_screenshot`; keep evidence outside git. Pool simulators are shared
+   across threads: if `open` reports `DEVICE_IN_USE` by another session, stop
+   and ask the user. Never reuse or close another session.
+4. End the app session with `close` through that command, without `--shutdown`.
+   Detach with `device_close` for the same host/device and `shutdown=false`.
+   Then interrupt the runner and wait for it to exit. Verify the simulator is
+   shut down and its lease file is gone, using the paths in
+   [the shared pool guide](../../../app/docs/ios-simulator-pool.md). The runner
+   owns shutdown, disposable-device erasure, and lease release.
+
+Outside T3, or when its device tools report unavailable, use `scripts/run-ios`
+to open Apple's simulator app. Device panel checks supplement the XCTest and
+physical-phone requirements above.
 
 If simulator setup, selection, or raw `xcodebuild` fallback is needed, read the
 relevant sections of [DEVELOPMENT.md](../../../app/DEVELOPMENT.md#local-validation-with-xcodebuildmcp).
