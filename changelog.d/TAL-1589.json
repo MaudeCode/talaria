@@ -1,0 +1,3 @@
+{
+  "entries": [{"category": "Fixed", "summary": "Experimental Web no longer offers an update for builds with no Web changes, and an update summary that cannot be generated now says so plainly.", "highlight": false, "components": ["web"]}]
+}

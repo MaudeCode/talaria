@@ -259,7 +259,8 @@ BUILD_DIRECTORY` pushes that tarball to `ghcr.io/maudecode/talaria-web-experimen
 as `sha-<source>`. `experimental.py advance SOURCE` moves `experimental` forward to the newest
 published `sha-` commit on `main`, never behind its current revision, then keeps the newest 50 package versions plus
 the `experimental` and `nightly` targets. The `web-experimental.yml` workflow runs them after each
-passing `main` push that changes Web or contracts; only `advance` is serialized.
+passing `main` push that selects a Web suite (`web_server`, `web_frontend`, or `web_sidecar`), which shared contract
+changes also select; only `advance` is serialized.
 
 The Nightly channel sits between Experimental and Stable. `nightly.yml` runs daily (and on dispatch):
 `nightly.py select` picks the newest `main` commit whose push CI passed after the `nightly` git tag, and does

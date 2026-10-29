@@ -211,6 +211,9 @@ last complete list for retry.
 The list, summary sections, and summarized position survive restarts in `update-summaries.json` in the
 Web state directory. Its additive target entries are ignored by older Stable versions. A fully
 summarized range opens from cache; model failures leave the deterministic on-demand fallback available.
+That fallback is titled **About this update**: it says the build has no changes for that target when the
+resolved range is empty, lists up to three commit subjects or the release tags when the model fails, and
+asks to try again later when the range cannot be read.
 
 ## Durable update notifications
 

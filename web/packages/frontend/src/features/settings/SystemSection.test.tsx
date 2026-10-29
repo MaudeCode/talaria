@@ -479,7 +479,7 @@ describe('SystemSection update paths', () => {
 
   it('offers Retry after a failed summary and shows no button when the server offers none', async () => {
     vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui: behind(2), agent: target('commits_behind', { behind: 3, can_apply: true }) })
-    vi.mocked(api.fetchUpdatesSummary).mockRejectedValueOnce(new Error('model unavailable')).mockResolvedValueOnce({ ok: true, target: 'webui', current_version: null, target_version: null, summary: '', generated_by: 'fallback', source: 'commits', cached: false, summary_sections: [{ title: "What you'll notice", items: ['Talaria Web has 2 update(s) available.'] }] })
+    vi.mocked(api.fetchUpdatesSummary).mockRejectedValueOnce(new Error('model unavailable')).mockResolvedValueOnce({ ok: true, target: 'webui', current_version: null, target_version: null, summary: '', generated_by: 'fallback', source: 'commits', cached: false, summary_sections: [{ title: 'About this update', items: ['Talaria Web has 2 updates available. The summary could not be generated; try again later.'] }] })
     renderSystem()
     const web = await screen.findByRole('region', { name: 'Talaria Web' })
     expect(within(screen.getByRole('region', { name: 'Hermes Agent' })).queryByRole('button', { name: 'Summarize with AI' })).not.toBeInTheDocument()
@@ -487,7 +487,7 @@ describe('SystemSection update paths', () => {
     const dialog = await screen.findByRole('dialog', { name: "What's new in Talaria Web" })
     expect(await within(dialog).findByText("Couldn't summarize what's new.")).toBeInTheDocument()
     await userEvent.click(within(dialog).getByRole('button', { name: 'Retry' }))
-    expect(await within(dialog).findByText('Talaria Web has 2 update(s) available.')).toBeInTheDocument()
+    expect(await within(dialog).findByText('Talaria Web has 2 updates available. The summary could not be generated; try again later.')).toBeInTheDocument()
     expect(api.fetchUpdatesSummary).toHaveBeenCalledTimes(2)
     expect(api.fetchUpdatesSummary).toHaveBeenLastCalledWith('webui')
   })
