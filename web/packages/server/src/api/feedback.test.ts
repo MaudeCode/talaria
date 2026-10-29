@@ -22,9 +22,15 @@ beforeEach(async () => {
   status = 202
   calls = []
   relay = createServer((req, res) => {
+    // The server under test only sends POST /v1/feedback. Other local processes probe newly opened
+    // loopback ports with a bodiless `GET /`; answer those 404 without recording them.
+    if (req.method !== 'POST' || req.url !== '/v1/feedback') { req.resume(); res.writeHead(404).end(); return }
     let raw = ''
     req.setEncoding('utf8').on('data', (chunk: string) => { raw += chunk }).on('end', () => {
-      calls.push({ raw, headers: req.headers, payload: JSON.parse(raw) as Payload })
+      let payload: Payload | undefined
+      try { payload = JSON.parse(raw) as Payload } catch { /* recorded and refused, so call assertions catch it */ }
+      calls.push({ raw, headers: req.headers, payload: payload ?? {} })
+      if (!payload) { res.writeHead(400).end(); return }
       res.writeHead(status, { 'Content-Type': 'application/json', 'Retry-After': '42' })
       res.end(JSON.stringify(status === 202 ? { reportId: 'report-1' } : { error: 'private Relay detail' }))
     })
@@ -242,5 +248,14 @@ it('serializes concurrent submissions of one request ID before compacting its sn
   const request = input()
   const results = await Promise.all([submit(request), submit(request)])
   expect(results.map((response) => response.status)).toEqual([200, 200])
+  expect(calls).toHaveLength(1)
+})
+
+it('ignores a bodiless loopback probe of the fake Relay port', async () => {
+  // Local dev tools probe newly opened loopback ports with `GET /`; the server under test never sends one.
+  const probe = await fetch(`${url}/`, { signal: AbortSignal.timeout(2000) })
+  expect(probe.status).toBe(404)
+  expect(calls).toHaveLength(0)
+  expect((await submit()).status).toBe(200)
   expect(calls).toHaveLength(1)
 })
