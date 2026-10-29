@@ -5,6 +5,7 @@ import type { Doc } from "./_generated/dataModel";
 import { internalMutation, type MutationCtx } from "./_generated/server";
 import { longestBudgetWindowMs, revokeDevicesForSession } from "./auth";
 import { grantMatches } from "./completions";
+import { deleteAttachments, deleteBlob } from "./feedback";
 import { activityPhase, isTerminalPhase } from "./lib/model";
 
 const batchSize = 100;
@@ -36,7 +37,7 @@ async function prunePass(ctx: MutationCtx) {
   const now = Date.now();
   const oldJobCutoff = now - 7 * 24 * 60 * 60 * 1_000;
   const retiredCutoff = now - 30 * 24 * 60 * 60 * 1_000;
-  const [nonces, userSessions, appleTokens, invitations, sessions, expiredActivities, doneJobs, keys, pendingKeys, devices, activities, deadJobs, staleJobs, acknowledgedCompletions, deliveredFeedback, pendingFeedback, rateLimits] = await Promise.all([
+  const [nonces, userSessions, appleTokens, invitations, sessions, expiredActivities, doneJobs, keys, pendingKeys, devices, activities, deadJobs, staleJobs, acknowledgedCompletions, deliveredFeedback, pendingFeedback, staleAttachments, rateLimits] = await Promise.all([
     ctx.db
       .query("publisherNonces")
       .withIndex("by_expires_at", (query) => query.lt("expiresAt", now))
@@ -122,17 +123,29 @@ async function prunePass(ctx: MutationCtx) {
       )
       .take(batchSize),
     ctx.db
+      .query("feedbackAttachments")
+      .withIndex("by_status_and_created_at", (query) =>
+        query.eq("status", "stored").lt("createdAt", oldJobCutoff),
+      )
+      .take(batchSize),
+    ctx.db
       .query("authRateLimits")
       .withIndex("by_window_started_at", (query) => query.lt("windowStartedAt", now - longestBudgetWindowMs))
       .take(batchSize),
   ]);
-  const full = [nonces, userSessions, appleTokens, invitations, sessions, expiredActivities, doneJobs, keys, pendingKeys, devices, activities, deadJobs, staleJobs, acknowledgedCompletions, deliveredFeedback, pendingFeedback, rateLimits]
+  const full = [nonces, userSessions, appleTokens, invitations, sessions, expiredActivities, doneJobs, keys, pendingKeys, devices, activities, deadJobs, staleJobs, acknowledgedCompletions, deliveredFeedback, pendingFeedback, staleAttachments, rateLimits]
     .some((rows) => rows.length === batchSize);
   let revokedDevices = 0;
   for (const state of expiredActivities) {
     await ctx.db.patch(state._id, { activityExpiresAt: undefined,
       ...(!state.deleted && !isTerminalPhase(activityPhase(state, now)) ? { activityPhase: "stale" as const } : {}) });
   }
+  // An undelivered report keeps its text for 30 days but its files for seven.
+  for (const attachment of staleAttachments) {
+    await deleteBlob(ctx, attachment);
+    await ctx.db.patch(attachment._id, { status: "missing", storageId: undefined });
+  }
+  for (const report of [...deliveredFeedback, ...pendingFeedback]) await deleteAttachments(ctx, report._id);
   for (const session of userSessions) {
     revokedDevices += await revokeDevicesForSession(ctx, session.userId, session.sessionId, now);
   }

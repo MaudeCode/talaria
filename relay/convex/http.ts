@@ -17,7 +17,7 @@ import {
   timingSafeEqual,
   verifyPublisherSignature,
 } from "./lib/crypto";
-import { maximumFeedbackBytes, parseFeedbackReport } from "./lib/feedback";
+import { attachmentLimits, matchesAttachmentType, maximumFeedbackBytes, parseFeedbackReport } from "./lib/feedback";
 import {
   defaultNotificationPreferences,
   isSessionPhase,
@@ -906,16 +906,28 @@ http.route({
     const publisher = signed ? await authenticatePublisher(ctx, request, rawBody, null) : undefined;
     if (publisher === null) return json(401, { error: "unauthorized" });
     const now = Date.now();
+    const uploadTokens = (payload.attachments ?? []).map(() => randomToken());
     const result = await ctx.runMutation(internal.feedback.submit, {
       payload,
       payloadHash: await sha256(JSON.stringify(payload)),
       installHash: await sha256(payload.installId),
+      uploadTokenHashes: await Promise.all(uploadTokens.map((token) => sha256Hex(token))),
+      attachmentsDisabled: attachmentsDisabled(),
       now,
       publisher,
     });
     switch (result.status) {
       case "accepted":
-        return json(202, { reportId: result.reportId });
+        return json(202, {
+          reportId: result.reportId,
+          ...(result.attachments
+            ? {
+                attachments: result.attachments.map((admission) => admission.status === "accepted"
+                  ? { index: admission.index, status: admission.status, uploadToken: uploadTokens[admission.index], expiresAt: admission.expiresAt }
+                  : admission),
+              }
+            : {}),
+        });
       case "idempotency_conflict":
         return json(409, { error: "idempotency_conflict" });
       case "rate_limited":
@@ -923,6 +935,89 @@ http.route({
       case "unauthorized":
         return json(401, { error: "unauthorized" });
     }
+  }),
+});
+
+/** Operator kill switch: refuses every new attachment and upload without a deploy. */
+function attachmentsDisabled(): boolean {
+  return process.env.FEEDBACK_ATTACHMENTS_DISABLED?.trim() === "1";
+}
+
+/** `/v1/feedback/{reportId}/attachments/{index}`, or null for any other path. */
+function attachmentPath(request: Request): { reportId: string; index: number } | null {
+  const parts = pathParts(request);
+  const [, , reportId, segment, index] = parts;
+  if (parts.length !== 5 || !reportId || segment !== "attachments" || !/^\d$/u.test(index ?? "")) return null;
+  return Number(index) < attachmentLimits.maxAttachments ? { reportId, index: Number(index) } : null;
+}
+
+/** The whole body when it is exactly `bytes` long; reading stops as soon as it runs past. */
+async function readExactly(request: Request, bytes: number): Promise<Uint8Array<ArrayBuffer> | null> {
+  const reader = request.body?.getReader();
+  if (!reader) return null;
+  const body = new Uint8Array(bytes);
+  let length = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (length + value.byteLength > bytes) {
+      await reader.cancel();
+      return null;
+    }
+    body.set(value, length);
+    length += value.byteLength;
+  }
+  return length === bytes ? body : null;
+}
+
+function uploadRefusal(status: "unauthorized" | "expired"): Response {
+  return status === "expired" ? json(410, { error: "upload_expired" }) : json(401, { error: "unauthorized" });
+}
+
+http.route({
+  pathPrefix: "/v1/feedback/",
+  method: "PUT",
+  handler: httpAction(async (ctx, request) => {
+    const closed = await feedbackGate(request, false);
+    if (closed) return closed;
+    const target = attachmentPath(request);
+    if (!target) return json(404, { error: "not_found" });
+    if (attachmentsDisabled()) return json(503, { error: "attachments_disabled" });
+    const token = bearer(request);
+    if (!token) return json(401, { error: "unauthorized" });
+    const tokenHash = await sha256Hex(token);
+    const slot = await ctx.runQuery(internal.feedback.uploadSlot, { ...target, tokenHash, now: Date.now() });
+    if (slot.status !== "ok") return uploadRefusal(slot.status);
+    // Checked before reading, so an oversize or unframed body is refused without buffering it.
+    if (request.headers.get("content-length")?.trim() !== String(slot.bytes)) return json(400, { error: "invalid_attachment" });
+    const body = await readExactly(request, slot.bytes);
+    if (!body || await sha256Hex(body) !== slot.sha256 || !matchesAttachmentType(body, slot.contentType)) {
+      return json(400, { error: "invalid_attachment" });
+    }
+    const storageId = await ctx.storage.store(new Blob([body], { type: "application/octet-stream" }));
+    const recorded = await ctx.runMutation(internal.feedback.recordUpload, { ...target, tokenHash, storageId, now: Date.now() });
+    if (recorded.status !== "stored") {
+      await ctx.storage.delete(storageId);
+      return uploadRefusal(recorded.status);
+    }
+    return json(200, { ...target, status: "stored" });
+  }),
+});
+
+http.route({
+  pathPrefix: "/v1/feedback/",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const closed = await feedbackGate(request, true);
+    if (closed) return closed;
+    const target = attachmentPath(request);
+    const storageId = target && await ctx.runQuery(internal.feedback.storedAttachment, target);
+    const blob = storageId && await ctx.storage.get(storageId);
+    if (!blob) return json(404, { error: "not_found" });
+    return new Response(blob, {
+      status: 200,
+      headers: { "content-type": "application/octet-stream", "x-content-type-options": "nosniff" },
+    });
   }),
 });
 
