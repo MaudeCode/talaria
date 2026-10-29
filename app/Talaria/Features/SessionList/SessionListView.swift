@@ -234,7 +234,10 @@ struct SessionListView: View {
     private var sessionListWithPresentations: some View {
         sidebarLayout
             .environment(\.sessionActions, sessionActionContext)
-            .onChange(of: viewModel.removingSessionIDs) { _, ids in reconcileRemovedSessionNavigation(ids) }
+            .onReceive(NotificationCenter.default.publisher(for: .talariaSessionRemovalsChanged, object: viewModel)) { notification in
+                guard let ids = notification.userInfo?[SessionListViewModel.removalSessionIDsKey] as? Set<String> else { return }
+                reconcileRemovedSessionNavigation(ids)
+            }
             .onChange(of: retainedChatSessionIDs) { _, sessionIDs in
                 chats.keepOnly(sessionIDs: sessionIDs)
             }

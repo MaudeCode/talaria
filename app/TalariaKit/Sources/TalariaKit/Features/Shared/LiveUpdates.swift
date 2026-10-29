@@ -7,6 +7,9 @@ extension Notification.Name {
     /// Posted for each change the server announces on `/api/sessions/events` (TAL-434). The object
     /// is the server URL; `userInfo[SessionsChange.userInfoKey]` holds the `SessionsChange`.
     public static let talariaSessionsChanged = Notification.Name("talariaSessionsChanged")
+    /// Local optimistic removals and rollbacks. The object is the owning SessionListViewModel;
+    /// userInfo[SessionListViewModel.removalSessionIDsKey] contains the currently removed IDs.
+    public static let talariaSessionRemovalsChanged = Notification.Name("talariaSessionRemovalsChanged")
 }
 
 /// A change the server announced, or a resync after the subscription reconnected and may have

@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Archiving a forked chat reliably returns to its parent, even when the server responds immediately.",
+      "highlight": false
+    }
+  ]
+}
