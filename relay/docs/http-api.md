@@ -298,7 +298,10 @@ a tracker credential. Every feedback route answers 404 until the deployment sets
   "body": "Plain-text description",
   "client": { "platform": "web", "appVersion": "1.4.0", "osVersion": "macOS 26.1", "deviceModel": "Mac" },
   "server": { "webVersion": "1.4.0", "agentVersion": "0.9.2" },
-  "diagnostics": "optional plain text"
+  "diagnostics": "optional plain text",
+  "attachments": [
+    { "contentType": "image/png", "bytes": 48213, "sha256": "<64 lowercase hex>" }
+  ]
 }
 ```
 
@@ -313,6 +316,14 @@ a tracker credential. Every feedback route answers 404 until the deployment sets
 | `server.webVersion` | 1–64 characters |
 | `server.agentVersion` | optional, 1–64 characters |
 | `diagnostics` | optional, 1–16384 characters |
+| `attachments` | optional, 1–5 entries of exactly `{contentType, bytes, sha256}` |
+| `attachments[].contentType` | `image/png`, `image/jpeg`, `image/heic`, `image/webp`, `video/mp4`, `video/quicktime`, or `video/webm` |
+| `attachments[].bytes` | integer, 1 to 10,000,000 for images or 20,000,000 for video; at most one video per report |
+| `attachments[].sha256` | SHA-256 of the file, 64 lowercase hex characters |
+
+`contracts/fixtures/feedback-attachment-limits.json` is the single table of
+attachment types, sizes, counts, the 120-second video limit (enforced by the
+operator bridge, which can parse media), and which tier may attach which kind.
 
 Strings must not be blank. Optional fields are omitted, not `null`. Relay stores
 the text as given and never renders or interprets it. An unknown field at any
@@ -340,7 +351,60 @@ report charges no budget.
 
 Success answers 202 `{reportId}`. Resending the same `requestId` with the same
 payload returns the original `reportId` without charging a budget; the same
-`requestId` with a different payload answers 409 `{error:"idempotency_conflict"}`.
+`requestId` with a different payload, including a different attachment
+manifest, answers 409 `{error:"idempotency_conflict"}`.
+
+### Attachments
+
+A report with `attachments` answers 202 with one admission per manifest entry:
+
+```json
+{
+  "reportId": "opaque-report-id",
+  "attachments": [
+    { "index": 0, "status": "accepted", "uploadToken": "base64url", "expiresAt": 1787847400000 },
+    { "index": 1, "status": "refused", "reason": "tier" }
+  ]
+}
+```
+
+An attachment is refused, and the report still accepted, for one of these
+reasons. A refused attachment charges no budget.
+
+| Reason | When |
+|---|---|
+| `tier` | an unverified report declares a video; verified reports may attach images and one video |
+| `quota` | its declared bytes would exceed a byte budget below, or take stored attachment bytes past 2 GB |
+| `disabled` | the deployment sets `FEEDBACK_ATTACHMENTS_DISABLED=1` |
+
+| Byte budget (declared bytes of accepted attachments) | Limit |
+|---|---|
+| Unverified, per `installId` | 40 MB an hour |
+| Unverified, all installs | 300 MB a day |
+| Verified, per publisher registration | 200 MB a day |
+| Every tier | 600 MB a day and 6 GB per 30 days |
+
+Upload each accepted file with
+`PUT /v1/feedback/{reportId}/attachments/{index}`, `Authorization: Bearer
+<uploadToken>`, and a `Content-Length` equal to the declared `bytes`. The token
+is valid until `expiresAt`, 30 minutes after admission, and is consumed when the
+file is stored. Success answers 200 `{reportId, index, status:"stored"}`.
+
+| Answer | When |
+|---|---|
+| 400 `{error:"invalid_attachment"}` | `Content-Length` is missing or differs from `bytes`, or the body's length, SHA-256, or leading bytes do not match the declared type; nothing is stored and the token stays valid for a retry |
+| 401 `{error:"unauthorized"}` | the token is missing, wrong, belongs to another attachment, or was already used |
+| 410 `{error:"upload_expired"}` | the upload window closed |
+| 503 `{error:"attachments_disabled"}` | the kill switch is set |
+
+The leading bytes must be the PNG signature, JPEG `FF D8 FF`, WebP
+`RIFF....WEBP`, the WebM EBML header `1A 45 DF A3`, or for HEIC, MP4, and
+QuickTime an `ftyp` box whose major brand belongs to that type.
+
+Resending the same submission reissues a token, with the original `expiresAt`,
+for each attachment still awaiting upload and invalidates the previous one;
+stored attachments answer `{index, status:"stored"}` and closed windows
+`{index, status:"missing"}`.
 
 ### Operator queue
 
@@ -359,14 +423,29 @@ pending reports, oldest first:
       "tier": "verified",
       "publisherId": "https://hermes.example.com",
       "createdAt": 1787845600000,
-      "payload": { "requestId": "…", "kind": "bug", "title": "…" }
+      "payload": { "requestId": "…", "kind": "bug", "title": "…" },
+      "attachments": [
+        { "index": 0, "contentType": "image/png", "bytes": 48213, "sha256": "…", "status": "stored" },
+        { "index": 1, "contentType": "video/mp4", "bytes": 9000000, "sha256": "…", "status": "refused", "reason": "tier" }
+      ]
     }
   ]
 }
 ```
 
 `publisherId` is present only for verified reports. Another `limit` answers 400
-`{error:"invalid_limit"}`.
+`{error:"invalid_limit"}`. A report with attachments joins the queue once each
+accepted file is stored or its upload window closes; a file never uploaded is
+listed as `missing`. `attachments` is empty for a text-only report.
+
+Acknowledging a report deletes its files, so the bridge must copy them first. A
+bridge that predates attachments acknowledges without copying; deploy one that
+copies them before any client sends attachments, or set
+`FEEDBACK_ATTACHMENTS_DISABLED=1` until then.
+
+`GET /v1/feedback/{reportId}/attachments/{index}` returns a stored file as
+`application/octet-stream` with `X-Content-Type-Options: nosniff`, or 404 when
+it is not stored.
 
 `POST /v1/feedback/{reportId}/ack` with exactly `{ "ticketKey": "TAL-123" }`
 marks the report delivered and removes it from the pending list. It returns
@@ -375,5 +454,7 @@ the same. A different key for a delivered report answers 409
 `{error:"ticket_key_conflict"}`, an unknown report 404, and a malformed key 400
 `{error:"invalid_ticket_key"}`.
 
-Cleanup deletes delivered reports seven days after delivery and pending reports
-30 days after submission.
+Acknowledging a report deletes its stored files at once. Cleanup deletes
+delivered reports seven days after delivery and pending reports 30 days after
+submission; it deletes the files of a pending report seven days after
+submission and lists them as `missing`.

@@ -113,6 +113,16 @@ export const apnsDeliveryResultValidator = v.object({
   apnsId: v.optional(v.string()),
 });
 
+export const feedbackAttachmentTypeValidator = v.union(
+  v.literal("image/png"),
+  v.literal("image/jpeg"),
+  v.literal("image/heic"),
+  v.literal("image/webp"),
+  v.literal("video/mp4"),
+  v.literal("video/quicktime"),
+  v.literal("video/webm"),
+);
+
 export const feedbackPayloadValidator = v.object({
   requestId: v.string(),
   installId: v.string(),
@@ -130,6 +140,13 @@ export const feedbackPayloadValidator = v.object({
     agentVersion: v.optional(v.string()),
   }),
   diagnostics: v.optional(v.string()),
+  attachments: v.optional(v.array(v.object({
+    contentType: feedbackAttachmentTypeValidator,
+    bytes: v.number(),
+    sha256: v.string(),
+  }))),
 });
+
+export const feedbackAttachmentRefusalValidator = v.union(v.literal("tier"), v.literal("quota"), v.literal("disabled"));
 
 export const feedbackTierValidator = v.union(v.literal("verified"), v.literal("unverified"));

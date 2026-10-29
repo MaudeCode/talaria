@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Relay accepts screenshots and short screen recordings with feedback reports, within per-sender and overall storage limits that never block the report's text.",
+      "highlight": false,
+      "components": ["relay"]
+    }
+  ]
+}

@@ -8,6 +8,8 @@ import {
   preferencesValidator,
   sessionPhaseValidator,
   aggregateRowValidator,
+  feedbackAttachmentRefusalValidator,
+  feedbackAttachmentTypeValidator,
   feedbackPayloadValidator,
   feedbackTierValidator,
 } from "./lib/validators";
@@ -283,7 +285,8 @@ export default defineSchema({
     publisherId: v.optional(v.string()),
     installHash: v.string(),
     payload: feedbackPayloadValidator,
-    status: v.union(v.literal("pending"), v.literal("delivered")),
+    // `uploading` while an accepted attachment awaits its upload; it becomes `pending` when the window closes.
+    status: v.union(v.literal("uploading"), v.literal("pending"), v.literal("delivered")),
     ticketKey: v.optional(v.string()),
     createdAt: v.number(),
     deliveredAt: v.optional(v.number()),
@@ -291,4 +294,24 @@ export default defineSchema({
     .index("by_request_id", ["requestId"])
     .index("by_status_and_created_at", ["status", "createdAt"])
     .index("by_status_and_delivered_at", ["status", "deliveredAt"]),
+
+  // One row per manifest entry. `tokenHash` is the SHA-256 hex of the upload bearer, cleared once stored.
+  feedbackAttachments: defineTable({
+    reportId: v.id("feedbackReports"),
+    index: v.number(),
+    contentType: feedbackAttachmentTypeValidator,
+    bytes: v.number(),
+    sha256: v.string(),
+    status: v.union(v.literal("awaiting"), v.literal("stored"), v.literal("missing"), v.literal("refused")),
+    reason: v.optional(feedbackAttachmentRefusalValidator),
+    tokenHash: v.optional(v.string()),
+    uploadExpiresAt: v.optional(v.number()),
+    storageId: v.optional(v.id("_storage")),
+    createdAt: v.number(),
+  })
+    .index("by_report_id_and_index", ["reportId", "index"])
+    .index("by_status_and_created_at", ["status", "createdAt"]),
+
+  // A single row: bytes of every stored attachment blob, for the live-storage ceiling.
+  feedbackAttachmentUsage: defineTable({ storedBytes: v.number() }),
 });

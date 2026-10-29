@@ -6,11 +6,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { internal } from "../convex/_generated/api";
 import { bytesToBase64Url, sha256 } from "../convex/lib/crypto";
+import { attachmentLimits, matchesAttachmentType } from "../convex/lib/feedback";
 import schema from "../convex/schema";
 
 const modules = import.meta.glob("../convex/**/*.ts");
 const fixtureText = readFileSync(new URL("../../contracts/fixtures/feedback-report.json", import.meta.url), "utf8");
-const fixture = JSON.parse(fixtureText) as Record<string, unknown> & { client: Record<string, unknown> };
+// The shared example carries an attachment manifest; text-only tests drop it.
+const { attachments: _fixtureAttachments, ...fixture } = JSON.parse(fixtureText) as Record<string, unknown> & { client: Record<string, unknown> };
 const operatorToken = "synthetic-operator-token";
 const hour = 60 * 60 * 1_000;
 const day = 24 * hour;
@@ -90,7 +92,8 @@ describe("feedback intake", () => {
     const { reportId } = await response.json() as { reportId: string };
     const [row] = await rows();
     expect(row).toMatchObject({
-      _id: reportId, requestId: fixture.requestId, tier: "unverified", status: "pending",
+      // The shared example declares a screenshot, so it waits for that upload before joining the queue.
+      _id: reportId, requestId: fixture.requestId, tier: "unverified", status: "uploading",
       installHash: await sha256(fixture.installId as string), createdAt: start, payload: fixture,
     });
     expect(row?.publisherId).toBeUndefined();
@@ -296,11 +299,313 @@ it("prunes delivered reports after seven days, pending reports after thirty, and
     await insert("new-delivered", { status: "delivered", createdAt: start - 40 * day, deliveredAt: start - 7 * day + 1_000 });
     await insert("old-pending", { status: "pending", createdAt: start - 30 * day - 1 });
     await insert("new-pending", { status: "pending", createdAt: start - 30 * day + 1_000 });
-    await ctx.db.insert("authRateLimits", { key: "ended", windowStartedAt: start - day - 1, attempts: 5 });
-    await ctx.db.insert("authRateLimits", { key: "open", windowStartedAt: start - day + 1_000, attempts: 5 });
+    await ctx.db.insert("authRateLimits", { key: "ended", windowStartedAt: start - 30 * day - 1, attempts: 5 });
+    await ctx.db.insert("authRateLimits", { key: "open", windowStartedAt: start - 30 * day + 1_000, attempts: 5 });
   });
   await backend.mutation(internal.cleanup.prune, {});
   expect((await rows()).map((row) => row.requestId).sort()).toEqual(["new-delivered", "new-pending"]);
   const budgets = await backend.run(async (ctx) => await ctx.db.query("authRateLimits").collect());
   expect(budgets.map((row) => row.key)).toEqual(["open"]);
+});
+
+describe("feedback attachments", () => {
+  const MB = 1_000_000;
+  const limitsText = readFileSync(new URL("../../contracts/fixtures/feedback-attachment-limits.json", import.meta.url), "utf8");
+  const signatures: Record<string, number[]> = {
+    "image/png": [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a],
+    "image/jpeg": [0xff, 0xd8, 0xff, 0xe0],
+    "image/webp": [...Buffer.from("RIFF"), 0, 0, 0, 0, ...Buffer.from("WEBP")],
+    "image/heic": [0, 0, 0, 24, ...Buffer.from("ftypheic"), 0, 0, 0, 0, ...Buffer.from("mif1heic")],
+    "video/mp4": [0, 0, 0, 24, ...Buffer.from("ftypisom"), 0, 0, 2, 0, ...Buffer.from("isomiso2")],
+    "video/quicktime": [0, 0, 0, 20, ...Buffer.from("ftypqt  "), 0, 0, 2, 0, ...Buffer.from("qt  ")],
+    "video/webm": [0x1a, 0x45, 0xdf, 0xa3, 0x9f, 0x42, 0x86, 0x81],
+  };
+  const file = (contentType: string, size = 64) => {
+    const bytes = new Uint8Array(size).fill(0x2a);
+    bytes.set(signatures[contentType]!);
+    return bytes;
+  };
+  const digest = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
+  const entry = (bytes: Uint8Array, contentType = "image/png") => ({ contentType, bytes: bytes.byteLength, sha256: digest(bytes) });
+  const declared = (bytes: number, contentType = "image/png") => ({ contentType, bytes, sha256: "a".repeat(64) });
+  type Admission = { index: number; status: string; uploadToken?: string; expiresAt?: number; reason?: string };
+
+  async function attachmentRelay() {
+    const base = await relay();
+    const accepted = async (response: Response | Promise<Response>) => {
+      const resolved = await response;
+      expect(resolved.status).toBe(202);
+      return await resolved.json() as { reportId: string; attachments: Admission[] };
+    };
+    const put = (reportId: string, index: number, token: string | null, body: Uint8Array<ArrayBuffer>, headers: Record<string, string> = {}) =>
+      base.backend.fetch(`/v1/feedback/${reportId}/attachments/${String(index)}`, {
+        method: "PUT",
+        body,
+        headers: {
+          "content-length": String(body.byteLength),
+          ...(token === null ? {} : { authorization: `Bearer ${token}` }),
+          ...headers,
+        },
+      });
+    const blobs = () => base.backend.run(async (ctx) => await ctx.db.system.query("_storage").collect());
+    const storedBytes = () => base.backend.run(async (ctx) =>
+      (await ctx.db.query("feedbackAttachmentUsage").first())?.storedBytes ?? 0);
+    const budgets = () => base.backend.run(async (ctx) =>
+      Object.fromEntries((await ctx.db.query("authRateLimits").collect()).map((row) => [row.key, row.attempts])));
+    const pending = async () => {
+      const response = await base.operator("/v1/feedback/pending");
+      expect(response.status).toBe(200);
+      return ((await response.json()) as { reports: { reportId: string; attachments: unknown[] }[] }).reports;
+    };
+    return { ...base, accepted, put, blobs, storedBytes, budgets, pending };
+  }
+
+  it("pins Relay's limits to the shared table", () => {
+    expect(attachmentLimits).toEqual(JSON.parse(limitsText));
+  });
+
+  it("recognizes each declared type by its leading bytes and nothing else", () => {
+    for (const [contentType, bytes] of Object.entries(signatures)) {
+      for (const declaredType of Object.keys(signatures)) {
+        expect(matchesAttachmentType(file(contentType), declaredType as never)).toBe(contentType === declaredType);
+      }
+      expect(matchesAttachmentType(new Uint8Array(bytes.slice(0, 3)), contentType as never)).toBe(contentType === "image/jpeg");
+    }
+  });
+
+  it("stores an uploaded blob, lists it, serves its exact bytes, and deletes it on ack", async () => {
+    const { submit, accepted, put, operator, pending, blobs, storedBytes } = await attachmentRelay();
+    const image = file("image/png", 4_096);
+    const admission = await accepted(submit(report({ attachments: [entry(image)] })));
+    const [slot] = admission.attachments;
+    expect(slot).toEqual({ index: 0, status: "accepted", uploadToken: expect.any(String), expiresAt: start + 30 * 60 * 1_000 });
+    expect(Buffer.from(slot!.uploadToken!, "base64url")).toHaveLength(32);
+    expect(await pending()).toEqual([]);
+
+    const stored = await put(admission.reportId, 0, slot!.uploadToken!, image);
+    expect(stored.status).toBe(200);
+    expect(await stored.json()).toEqual({ reportId: admission.reportId, index: 0, status: "stored" });
+    expect(await storedBytes()).toBe(4_096);
+    const [listed] = await pending();
+    expect(listed?.attachments).toEqual([{ index: 0, ...entry(image), status: "stored" }]);
+
+    const download = await operator(`/v1/feedback/${admission.reportId}/attachments/0`);
+    expect(download.status).toBe(200);
+    expect(download.headers.get("content-type")).toBe("application/octet-stream");
+    expect(download.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(new Uint8Array(await download.arrayBuffer())).toEqual(image);
+    expect((await operator(`/v1/feedback/${admission.reportId}/attachments/0`, {}, "wrong-token")).status).toBe(401);
+
+    const ack = await operator(`/v1/feedback/${admission.reportId}/ack`, { method: "POST", body: JSON.stringify({ ticketKey: "TAL-1" }) });
+    expect(ack.status).toBe(200);
+    expect(await blobs()).toEqual([]);
+    expect(await storedBytes()).toBe(0);
+    expect((await operator(`/v1/feedback/${admission.reportId}/attachments/0`)).status).toBe(404);
+  });
+
+  it("refuses mismatched uploads and bad tokens without storing anything", async () => {
+    const { submit, accepted, put, blobs, backend } = await attachmentRelay();
+    const image = file("image/png", 512);
+    const html = new TextEncoder().encode("<html><script>alert(1)</script></html>");
+    const svg = new TextEncoder().encode("<svg xmlns=\"http://www.w3.org/2000/svg\"/>");
+    const first = await accepted(submit(report({ attachments: [entry(image), entry(html), entry(svg)] })));
+    const other = await accepted(submit(report({ attachments: [entry(image)] })));
+    const token = first.attachments[0]!.uploadToken!;
+    const invalid = async (response: Promise<Response>) => {
+      const resolved = await response;
+      expect(resolved.status).toBe(400);
+      expect(await resolved.json()).toEqual({ error: "invalid_attachment" });
+    };
+    const unauthorized = async (response: Promise<Response>) => {
+      const resolved = await response;
+      expect(resolved.status).toBe(401);
+      expect(await resolved.json()).toEqual({ error: "unauthorized" });
+    };
+
+    await invalid(backend.fetch(`/v1/feedback/${first.reportId}/attachments/0`, {
+      method: "PUT", body: new ReadableStream({ start(controller) { controller.enqueue(image); controller.close(); } }),
+      headers: { authorization: `Bearer ${token}` }, duplex: "half",
+    } as RequestInit));
+    await invalid(put(first.reportId, 0, token, image, { "content-length": "511" }));
+    await invalid(put(first.reportId, 0, token, image.slice(0, 511), { "content-length": "512" }));
+    const corrupted = image.slice();
+    corrupted[100] = 0;
+    await invalid(put(first.reportId, 0, token, corrupted));
+    await invalid(put(first.reportId, 1, first.attachments[1]!.uploadToken!, html));
+    await invalid(put(first.reportId, 2, first.attachments[2]!.uploadToken!, svg));
+    await unauthorized(put(first.reportId, 0, null, image));
+    await unauthorized(put(first.reportId, 0, "not-the-token", image));
+    await unauthorized(put(first.reportId, 0, other.attachments[0]!.uploadToken!, image));
+    await unauthorized(put(other.reportId, 0, token, image));
+    expect(await blobs()).toEqual([]);
+
+    expect((await put(first.reportId, 0, token, image)).status).toBe(200);
+    await unauthorized(put(first.reportId, 0, token, image));
+    expect(await blobs()).toHaveLength(1);
+
+    clock += 30 * 60 * 1_000;
+    const expired = await put(other.reportId, 0, other.attachments[0]!.uploadToken!, image);
+    expect(expired.status).toBe(410);
+    expect(await expired.json()).toEqual({ error: "upload_expired" });
+    expect(await blobs()).toHaveLength(1);
+    expect((await backend.fetch("/v1/feedback/x/attachments/9", { method: "PUT", body: image })).status).toBe(404);
+  });
+
+  it("refuses video from unverified reports while accepting the report and verified video", async () => {
+    const { submit, signedSubmit, accepted } = await attachmentRelay();
+    const manifest = [entry(file("image/jpeg")), entry(file("video/mp4"), "video/mp4")];
+    expect((await accepted(submit(report({ attachments: manifest })))).attachments.map(({ status, reason }) => ({ status, reason })))
+      .toEqual([{ status: "accepted", reason: undefined }, { status: "refused", reason: "tier" }]);
+    expect((await accepted(signedSubmit(report({ attachments: manifest })))).attachments.map(({ status }) => status))
+      .toEqual(["accepted", "accepted"]);
+  });
+
+  it("rejects a malformed manifest as invalid feedback", async () => {
+    const { submit, rows } = await attachmentRelay();
+    const image = declared(1);
+    for (const attachments of [
+      [],
+      Array(6).fill(image),
+      [declared(1, "image/svg+xml")],
+      [declared(1, "text/html")],
+      [declared(10 * MB + 1)],
+      [declared(20 * MB + 1, "video/mp4")],
+      [declared(0)],
+      [declared(1.5)],
+      [{ ...image, sha256: "A".repeat(64) }],
+      [{ ...image, sha256: "a".repeat(63) }],
+      [{ ...image, name: "shot.png" }],
+      [{ contentType: "image/png", bytes: 1 }],
+      [declared(1, "video/mp4"), declared(1, "video/webm")],
+      null,
+    ]) {
+      const response = await submit(report({ attachments }));
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: "invalid_feedback" });
+    }
+    expect(await rows()).toEqual([]);
+  });
+
+  it("degrades to text when a byte budget or the storage ceiling is spent and charges refused files nothing", async () => {
+    const { backend, submit, signedSubmit, accepted, budgets } = await attachmentRelay();
+    const statuses = (admission: { attachments: Admission[] }) => admission.attachments.map(({ status, reason }) => reason ?? status);
+    const installId = uuid();
+    expect(statuses(await accepted(submit(report({ installId, attachments: Array(4).fill(declared(10 * MB)) })))))
+      .toEqual(["accepted", "accepted", "accepted", "accepted"]);
+    const byteBudgets = async () => Object.entries(await budgets()).filter(([key]) => key.startsWith("feedback-bytes:"));
+    const charged = await byteBudgets();
+    expect(statuses(await accepted(submit(report({ installId, attachments: [declared(1)] }))))).toEqual(["quota"]);
+    expect(await byteBudgets()).toEqual(charged);
+    clock += 60 * 60 * 1_000;
+    expect(statuses(await accepted(submit(report({ installId, attachments: [declared(1)] }))))).toEqual(["accepted"]);
+
+    // Fresh installs cannot spend past the 300 MB a day every unverified install shares.
+    let acceptedBytes = 40 * MB + 1;
+    for (let install = 0; install < 10; install += 1) {
+      const admission = await accepted(submit(report({ installId: uuid(), attachments: Array(4).fill(declared(10 * MB)) })));
+      acceptedBytes += admission.attachments.filter((slot) => slot.status === "accepted").length * 10 * MB;
+    }
+    expect(acceptedBytes).toBeLessThanOrEqual(300 * MB);
+    expect(acceptedBytes).toBeGreaterThan(290 * MB);
+    expect((await budgets())["feedback-bytes:unverified"]).toBe(acceptedBytes);
+    expect(statuses(await accepted(signedSubmit(report({ attachments: [declared(10 * MB)] }))))).toEqual(["accepted"]);
+
+    const preset = async (key: string, attempts: number) => backend.run(async (ctx) => {
+      const row = await ctx.db.query("authRateLimits").withIndex("by_key", (query) => query.eq("key", key)).unique();
+      if (row) await ctx.db.patch(row._id, { attempts, windowStartedAt: clock });
+      else await ctx.db.insert("authRateLimits", { key, windowStartedAt: clock, attempts });
+    });
+    await preset("feedback-bytes:pub:feedback-owner:https://feedback.example", 200 * MB - 5);
+    expect(statuses(await accepted(signedSubmit(report({ attachments: [declared(6), declared(5)] }))))).toEqual(["quota", "accepted"]);
+    await preset("feedback-bytes:global", 600 * MB - 5);
+    expect(statuses(await accepted(signedSubmit(report({ attachments: [declared(6)] }), { keyId: "rival-owner-key" })))).toEqual(["quota"]);
+    await preset("feedback-bytes:global", 0);
+    await preset("feedback-bytes:global:30d", 6_000 * MB - 5);
+    expect(statuses(await accepted(signedSubmit(report({ attachments: [declared(6), declared(5)] }), { keyId: "rival-owner-key" }))))
+      .toEqual(["quota", "accepted"]);
+    await preset("feedback-bytes:global:30d", 0);
+    await backend.run(async (ctx) => { await ctx.db.insert("feedbackAttachmentUsage", { storedBytes: 2_000 * MB - 5 }); });
+    const before = await budgets();
+    expect(statuses(await accepted(signedSubmit(report({ attachments: [declared(6), declared(5), declared(1)] }), { keyId: "rival-owner-key" }))))
+      .toEqual(["quota", "accepted", "quota"]);
+    expect((await budgets())["feedback-bytes:global"]).toBe(before["feedback-bytes:global"]! + 5);
+  });
+
+  it("refuses every attachment while the kill switch is set and still accepts the report", async () => {
+    const { submit, signedSubmit, accepted, put, rows } = await attachmentRelay();
+    process.env.FEEDBACK_ATTACHMENTS_DISABLED = "1";
+    try {
+      const image = file("image/png");
+      for (const send of [submit, signedSubmit]) {
+        const admission = await accepted(send(report({ attachments: [entry(image), entry(file("video/webm"), "video/webm")] })));
+        expect(admission.attachments).toEqual([
+          { index: 0, status: "refused", reason: "disabled" },
+          { index: 1, status: "refused", reason: "disabled" },
+        ]);
+      }
+      expect((await rows()).map((row) => row.status)).toEqual(["pending", "pending"]);
+      const uploading = (await rows())[0]!;
+      const refused = await put(uploading._id, 0, "any-token", image);
+      expect(refused.status).toBe(503);
+      expect(await refused.json()).toEqual({ error: "attachments_disabled" });
+    } finally {
+      delete process.env.FEEDBACK_ATTACHMENTS_DISABLED;
+    }
+  });
+
+  it("replays a submission by rotating only unstored tokens and charging nothing", async () => {
+    const { submit, accepted, put, budgets } = await attachmentRelay();
+    const [first, second] = [file("image/png", 100), file("image/webp", 200)];
+    const payload = report({ attachments: [entry(first), entry(second, "image/webp")] });
+    const original = await accepted(submit(payload));
+    expect((await put(original.reportId, 0, original.attachments[0]!.uploadToken!, first)).status).toBe(200);
+    const charged = await budgets();
+    clock += 60_000;
+    const replay = await accepted(submit(payload));
+    expect(replay.reportId).toBe(original.reportId);
+    expect(replay.attachments).toEqual([
+      { index: 0, status: "stored" },
+      { index: 1, status: "accepted", uploadToken: expect.any(String), expiresAt: original.attachments[1]!.expiresAt },
+    ]);
+    expect(replay.attachments[1]!.uploadToken).not.toBe(original.attachments[1]!.uploadToken);
+    expect(await budgets()).toEqual(charged);
+    expect((await put(original.reportId, 1, original.attachments[1]!.uploadToken!, second)).status).toBe(401);
+    expect((await put(original.reportId, 1, replay.attachments[1]!.uploadToken!, second)).status).toBe(200);
+    const conflict = await submit({ ...payload, attachments: [entry(first)] });
+    expect(conflict.status).toBe(409);
+    expect(await conflict.json()).toEqual({ error: "idempotency_conflict" });
+  });
+
+  it("queues a report whose upload window closed with the file marked missing, then prunes stale blobs", async () => {
+    const { backend, submit, accepted, put, pending, blobs, storedBytes, rows } = await attachmentRelay();
+    const [kept, never] = [file("image/png", 300), file("image/jpeg", 400)];
+    const admission = await accepted(submit(report({ attachments: [entry(kept), entry(never, "image/jpeg")] })));
+    expect((await put(admission.reportId, 0, admission.attachments[0]!.uploadToken!, kept)).status).toBe(200);
+    expect(await pending()).toEqual([]);
+    const scheduled = await backend.run(async (ctx) => await ctx.db.system.query("_scheduled_functions").collect());
+    expect(scheduled).toEqual([expect.objectContaining({ name: "feedback:closeUploads", scheduledTime: start + 30 * 60 * 1_000 })]);
+    clock += 30 * 60 * 1_000;
+    await backend.mutation(internal.feedback.closeUploads, { reportId: admission.reportId as never });
+    const [listed] = await pending();
+    expect(listed?.attachments).toEqual([
+      { index: 0, ...entry(kept), status: "stored" },
+      { index: 1, ...entry(never, "image/jpeg"), status: "missing" },
+    ]);
+
+    clock = start + 7 * day - 1;
+    await backend.mutation(internal.cleanup.prune, {});
+    expect(await blobs()).toHaveLength(1);
+    clock = start + 7 * day + 1;
+    await backend.mutation(internal.cleanup.prune, {});
+    expect(await blobs()).toEqual([]);
+    expect(await storedBytes()).toBe(0);
+    expect((await pending())[0]?.attachments).toEqual([
+      { index: 0, ...entry(kept), status: "missing" },
+      { index: 1, ...entry(never, "image/jpeg"), status: "missing" },
+    ]);
+    clock = start + 30 * day + 1;
+    await backend.mutation(internal.cleanup.prune, {});
+    expect(await rows()).toEqual([]);
+    expect(await backend.run(async (ctx) => await ctx.db.query("feedbackAttachments").collect())).toEqual([]);
+  });
 });

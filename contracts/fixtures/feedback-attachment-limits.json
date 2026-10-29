@@ -1,0 +1,18 @@
+{
+  "maxAttachments": 5,
+  "maxVideosPerReport": 1,
+  "maxVideoSeconds": 120,
+  "types": {
+    "image/png": { "kind": "image", "maxBytes": 10000000 },
+    "image/jpeg": { "kind": "image", "maxBytes": 10000000 },
+    "image/heic": { "kind": "image", "maxBytes": 10000000 },
+    "image/webp": { "kind": "image", "maxBytes": 10000000 },
+    "video/mp4": { "kind": "video", "maxBytes": 20000000 },
+    "video/quicktime": { "kind": "video", "maxBytes": 20000000 },
+    "video/webm": { "kind": "video", "maxBytes": 20000000 }
+  },
+  "tierKinds": {
+    "verified": ["image", "video"],
+    "unverified": ["image"]
+  }
+}

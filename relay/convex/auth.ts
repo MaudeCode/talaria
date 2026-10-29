@@ -99,13 +99,14 @@ export const acceptAppleSignIn = internalMutation({
   },
 });
 
-export type Budget = { key: string; windowMs: number; limit: number };
+/** `cost` (default 1) is what one admission charges: a report, or an attachment's declared bytes. */
+export type Budget = { key: string; windowMs: number; limit: number; cost?: number };
 
 /** No budget window is longer, so cleanup may delete a row whose window started earlier. */
-export const longestBudgetWindowMs = 24 * 60 * 60 * 1_000;
+export const longestBudgetWindowMs = 30 * 24 * 60 * 60 * 1_000;
 
 /**
- * Charges fixed-window budgets together: when any is exhausted none is charged, and
+ * Charges fixed-window budgets together: when any would exceed its limit none is charged, and
  * `retryAfterMs` is when the last exhausted window resets.
  */
 export async function consumeBudget(
@@ -115,18 +116,23 @@ export async function consumeBudget(
 ): Promise<{ ok: true } | { ok: false; retryAfterMs: number }> {
   const rows = await Promise.all(budgets.map((budget) =>
     ctx.db.query("authRateLimits").withIndex("by_key", (query) => query.eq("key", budget.key)).unique()));
-  const retryAfterMs = Math.max(0, ...budgets.map((budget, index) => {
+  const open = budgets.map((budget, index) => {
     const row = rows[index];
-    return row && now - row.windowStartedAt < budget.windowMs && row.attempts >= budget.limit
-      ? row.windowStartedAt + budget.windowMs - now
-      : 0;
-  }));
-  if (retryAfterMs > 0) return { ok: false, retryAfterMs };
+    return row && now - row.windowStartedAt < budget.windowMs ? row : null;
+  });
+  const exhausted = budgets.flatMap((budget, index) => {
+    const row = open[index];
+    return (row?.attempts ?? 0) + (budget.cost ?? 1) > budget.limit
+      ? [row ? row.windowStartedAt + budget.windowMs - now : budget.windowMs]
+      : [];
+  });
+  if (exhausted.length > 0) return { ok: false, retryAfterMs: Math.max(...exhausted) };
   for (const [index, budget] of budgets.entries()) {
     const row = rows[index];
-    if (!row) await ctx.db.insert("authRateLimits", { key: budget.key, windowStartedAt: now, attempts: 1 });
-    else if (now - row.windowStartedAt >= budget.windowMs) await ctx.db.patch(row._id, { windowStartedAt: now, attempts: 1 });
-    else await ctx.db.patch(row._id, { attempts: row.attempts + 1 });
+    const cost = budget.cost ?? 1;
+    if (!row) await ctx.db.insert("authRateLimits", { key: budget.key, windowStartedAt: now, attempts: cost });
+    else if (!open[index]) await ctx.db.patch(row._id, { windowStartedAt: now, attempts: cost });
+    else await ctx.db.patch(row._id, { attempts: row.attempts + cost });
   }
   return { ok: true };
 }
