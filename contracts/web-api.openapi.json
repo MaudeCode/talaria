@@ -67132,6 +67132,10 @@
                     "show_cron_sessions": {
                       "type": "boolean"
                     },
+                    "show_sidebar_feedback": {
+                      "type": "boolean",
+                      "description": "TAL-1588: show Send feedback in the Web rail above Notifications."
+                    },
                     "show_webhook_sessions": {
                       "type": "boolean"
                     },
@@ -67400,6 +67404,10 @@
                     },
                     "show_cron_sessions": {
                       "type": "boolean"
+                    },
+                    "show_sidebar_feedback": {
+                      "type": "boolean",
+                      "description": "TAL-1588: show Send feedback in the Web rail above Notifications."
                     },
                     "show_webhook_sessions": {
                       "type": "boolean"

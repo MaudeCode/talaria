@@ -1,6 +1,6 @@
 import { m } from '../../paraglide/messages.js'
 import { Button } from '../../ui/Button'
-import { FeedbackDialog, openFeedback } from './FeedbackDialog'
+import { openFeedback } from './FeedbackDialog'
 
 export function HelpSection() {
   const mod = /Mac|iPhone|iPad/.test(navigator.userAgent) ? '⌘' : 'Ctrl'
@@ -8,7 +8,6 @@ export function HelpSection() {
     <div className="flex flex-col gap-4 text-sm" data-section="help">
       <section>
         <Button onClick={openFeedback}>{m.feedback_send_open()}</Button>
-        <FeedbackDialog />
       </section>
       <section>
         <h2 className="mb-1 font-semibold text-text">{m.help_docs()}</h2>

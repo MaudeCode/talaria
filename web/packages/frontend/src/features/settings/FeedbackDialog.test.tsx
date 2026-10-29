@@ -14,9 +14,11 @@ async function setup() {
   const api = await import('../../api/endpoints')
   const toasts = await import('../toast/toast')
   const { HelpSection } = await import('./HelpSection')
+  // The shell owns the single dialog mount (TAL-1588); Help only opens it.
+  const { FeedbackDialog } = await import('./FeedbackDialog')
   ;({ ApiError } = await import('../../contracts/common'))
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  const view = render(<QueryClientProvider client={qc}><HelpSection /></QueryClientProvider>)
+  const view = render(<QueryClientProvider client={qc}><HelpSection /><FeedbackDialog /></QueryClientProvider>)
   return { submit: vi.mocked(api.submitFeedback), diagnostics: vi.mocked(api.fetchFeedbackDiagnostics), toast: vi.mocked(toasts.showToast), sentToast: vi.mocked(toasts.showRichToast), dismiss: vi.mocked(toasts.dismissToast), ...view }
 }
 const open = () => fireEvent.click(screen.getByRole('button', { name: 'Send feedback' }))

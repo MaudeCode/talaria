@@ -205,6 +205,12 @@ describe('save', () => {
     expect((await s.save({ auto_apply_updates: true })).auto_apply_updates).toBe(true)
     expect((await store().load()).auto_apply_updates).toBe(true)
   })
+  it('keeps the rail feedback button off until opted in (TAL-1588)', async () => {
+    const s = store()
+    expect((await s.load()).show_sidebar_feedback).toBe(false)
+    expect((await s.save({ show_sidebar_feedback: true })).show_sidebar_feedback).toBe(true)
+    expect((await store().load()).show_sidebar_feedback).toBe(true)
+  })
   it('a dashboard_plugins patch replaces a malformed stored value instead of being dropped (TAL-685)', async () => {
     for (const bad of [null, 'x', ['a'], 3]) {
       write({ dashboard_plugins: bad })

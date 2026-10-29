@@ -41,6 +41,7 @@ export function settingsDefaults(opts: { defaultWorkspace: string; botName: stri
     send_key: 'enter',
     show_token_usage: false,
     show_quota_chip: false,
+    show_sidebar_feedback: false,
     show_conversation_outline: false,
     show_busy_placeholder_hint: false,
     new_chat_on_workspace_switch: false,

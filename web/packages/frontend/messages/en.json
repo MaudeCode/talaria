@@ -2385,6 +2385,8 @@
 	"help_shortcut_composer": "Focus composer",
 	"help_shortcut_settings": "Open settings",
 	"feedback_send_open": "Send feedback",
+	"feedback_rail_label": "Feedback",
+	"settings_label_sidebar_feedback": "Sidebar feedback button",
 	"feedback_kind": "Type",
 	"feedback_kind_bug": "Bug",
 	"feedback_kind_feature": "Feature request",
