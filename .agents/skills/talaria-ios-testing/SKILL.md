@@ -66,7 +66,9 @@ When T3's `device_*` tools are available:
    every host, target, config, and session argument on every command. Establish
    the app session with `open dev.kil.talaria.xctest`, then use `snapshot -i`
    and its element references for interactions. Capture visual
-   evidence with `device_screenshot`; keep evidence outside git.
+   evidence with `device_screenshot`; keep evidence outside git. Pool simulators
+   are shared across threads: if `open` reports `DEVICE_IN_USE` by another
+   session, stop and ask the user. Never reuse or close another session.
 4. End the app session with `agent-device close` using the returned arguments and
    without `--shutdown`. Detach with `device_close` for the same host/device and
    `shutdown=false`. Then interrupt the runner and wait for it to exit. Verify
