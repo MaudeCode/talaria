@@ -1101,8 +1101,10 @@ struct ChatView: View {
             .onChange(of: forkedSession) { _, fork in
                 if fork == nil { splitFilesInspector?.reportSession(session) }
             }
-            .onChange(of: sessionActions?.viewModel.removingSessionIDs) { _, ids in
-                reconcileRemovedFork(ids ?? [])
+            .onReceive(NotificationCenter.default.publisher(for: .talariaSessionRemovalsChanged)) { notification in
+                guard let owner = sessionActions?.viewModel, notification.object as? SessionListViewModel === owner,
+                      let ids = notification.userInfo?[SessionListViewModel.removalSessionIDsKey] as? Set<String> else { return }
+                reconcileRemovedFork(ids)
             }
             .fullScreenCover(item: $selectableResponseText) { selectableText in
                 SelectableTextPresentationView(selection: selectableText)

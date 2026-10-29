@@ -143,8 +143,14 @@ public final class SessionListViewModel {
     /// that request was still pending is treated as older.
     private var claimCount = 0
     public private(set) var pendingChanges: [String: PendingResourceChange] = [:] {
-        didSet { invalidateSessionPresentation() }
+        didSet {
+            invalidateSessionPresentation()
+            // A fast response can begin and finish between SwiftUI frames; navigation must receive both changes.
+            NotificationCenter.default.post(name: .talariaSessionRemovalsChanged, object: self,
+                                            userInfo: [Self.removalSessionIDsKey: removingSessionIDs])
+        }
     }
+    public static let removalSessionIDsKey = "sessionIDs"
     public var removingSessionIDs: Set<String> {
         Set(pendingChanges.compactMap { key, change in
             guard change.removing, key.hasPrefix("session:") else { return nil }

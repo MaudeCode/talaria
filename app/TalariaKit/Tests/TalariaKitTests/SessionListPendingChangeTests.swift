@@ -1,3 +1,4 @@
+import Combine
 import XCTest
 import Observation
 import SwiftData
@@ -62,8 +63,17 @@ final class SessionListPendingChangeTests: XCTestCase {
                 _ = await viewModel.load()
                 let fork = SessionSummary(sessionId: "fresh-fork")
                 XCTAssertFalse(viewModel.sessions.contains { $0.sessionId == fork.sessionId })
+                var removalChanges: [Set<String>] = []
+                let subscription = NotificationCenter.default.publisher(for: .talariaSessionRemovalsChanged, object: viewModel).sink { notification in
+                    if let ids = notification.userInfo?[SessionListViewModel.removalSessionIDsKey] as? Set<String> {
+                        removalChanges.append(ids)
+                    }
+                }
+                defer { subscription.cancel() }
                 let accepted = deleting ? await viewModel.delete(fork) : await viewModel.archive(fork)
                 XCTAssertEqual(accepted, !refused)
+                XCTAssertEqual(removalChanges.first, ["fresh-fork"], "Navigation must receive removal before a fast response clears it")
+                XCTAssertEqual(removalChanges.last, [], "Navigation must also receive settlement or rollback")
                 XCTAssertEqual(viewModel.shouldRestoreSessionAfterRemoval("fresh-fork"), refused)
                 XCTAssertTrue(viewModel.removingSessionIDs.isEmpty)
             }

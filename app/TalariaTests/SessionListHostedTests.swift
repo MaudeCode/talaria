@@ -2414,14 +2414,29 @@ extension SessionListHostedTests {
             XCTAssertTrue(ready)
             let menu = try XCTUnwrap(titleMenu(in: window))
             let copyLink = try XCTUnwrap(actions(in: menu).first { $0.title == "Copy Deeplink" })
-            HostedAccessibility.activate(copyLink)
+            UIPasteboard.general.string = nil
+            XCTAssertTrue(HostedAccessibility.activate(copyLink))
             XCTAssertTrue(UIPasteboard.general.string?.contains(UITestFixtureURLProtocol.forkSessionID) == true,
                           "The fork's title menu still targets the parent")
 
-            HostedAccessibility.activate(try XCTUnwrap(actions(in: menu).first { $0.title == "Archive" }))
+            // A busy main run loop lets an immediate response settle between SwiftUI frames.
+            let load = Timer.scheduledTimer(withTimeInterval: 0.005, repeats: true) { _ in
+                Thread.sleep(forTimeInterval: 0.01)
+            }
+            defer { load.invalidate() }
+            let archive = try XCTUnwrap(actions(in: menu).first { $0.title == "Archive" })
+            XCTAssertTrue(HostedAccessibility.activate(archive))
             let popped = await awaitNoElement(in: window) { $0.accessibilityLabel == "Fork fixture reply" }
             XCTAssertTrue(popped, "Removing a local fork must pop it before the response")
             _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
+            if !holdsRemoval { attachHostedScreenshot(window, name: "fork-archive-after") }
+            if holdsRemoval {
+                let held = await awaitCondition {
+                    UITestFixtureHold.shared.pendingRequests.contains { $0.url?.path == "/api/session/archive" }
+                }
+                XCTAssertTrue(held, "Release only after the removal request has reached the held response")
+                XCTAssertFalse(UITestFixtureURLProtocol.answeredPaths.withLock { $0.contains("/api/session/archive") })
+            }
             fixture.releaseHeldLoads()
             if refusesRemoval {
                 _ = try await requireElement(in: window, label: "Fork fixture reply")
