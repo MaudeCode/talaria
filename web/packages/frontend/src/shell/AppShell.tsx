@@ -14,6 +14,7 @@ import { reapplyExtensionSkin } from '../app/appearance'
 import { useIsDesktop, useShellState } from './useShellState'
 import { cn } from '../ui/cn'
 import { UpdateNotificationProvider } from '../features/notifications/UpdateNotificationCenter'
+import { FeedbackDialog } from '../features/settings/FeedbackDialog'
 
 /** Titlebar + `.layout` (rail, sidebar, main) on the legacy island shell. Routes supply `sidebar` (null for pages without one; the phone drawer then only carries the nav) and render into `children`. */
 export function AppShell({ sidebar, children, title, subtitle, hub, showing }: { sidebar: ReactNode | null; children: ReactNode; title?: string; subtitle?: string; hub?: boolean; showing?: string }) {
@@ -45,6 +46,7 @@ export function AppShell({ sidebar, children, title, subtitle, hub, showing }: {
         </div>
         <Tabbar />
       </UpdateNotificationProvider>
+      <FeedbackDialog />
       <Toaster />
     </TooltipProvider>
   )

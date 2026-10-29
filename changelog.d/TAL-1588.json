@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Show an optional Feedback button in the Web sidebar rail, above Notifications, from Settings → Preferences.",
+      "highlight": false
+    }
+  ]
+}

@@ -84,6 +84,7 @@ export function PreferencesSection() {
       <Toggle label={m.settings_label_token_usage()} settingKey="show_token_usage" fallback />
       <Toggle label={m.settings_label_token_speed()} settingKey="show_tps" />
       <Toggle label={m.settings_label_quota_chip()} settingKey="show_quota_chip" fallback />
+      <Toggle label={m.settings_label_sidebar_feedback()} settingKey="show_sidebar_feedback" />
       <Toggle label={m.settings_label_conversation_outline()} settingKey="show_conversation_outline" />
       <Toggle label={m.settings_label_terminal_auto_expand()} settingKey="terminal_auto_expand_on_output" />
       <Toggle label={m.settings_label_new_chat_on_workspace_switch()} settingKey="new_chat_on_workspace_switch" />

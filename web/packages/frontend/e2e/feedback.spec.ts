@@ -54,3 +54,37 @@ test('Send feedback stays reachable on a short viewport with diagnostics open', 
   const box = await sendButton.boundingBox()
   expect(box && box.y >= 0 && box.y + box.height <= 390).toBe(true)
 })
+
+/** TAL-1588: an opt-in rail button above Notifications opens the same Send feedback dialog. */
+test('Sidebar feedback button is opt-in and sits above Notifications in the rail', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name === 'mobile', 'The rail is hidden on phone widths; Settings → Help remains the entry point.')
+  const railButton = page.locator('.rail').getByRole('button', { name: 'Send feedback' })
+  const notifications = page.locator('.rail').getByRole('button', { name: 'Notifications', exact: true })
+  try {
+    await page.goto('/settings/preferences')
+    await settle(page)
+    await expect(notifications).toBeVisible()
+    await expect(railButton).toHaveCount(0)
+    await page.screenshot({ path: testInfo.outputPath('rail-feedback-off.png') })
+    const toggle = page.getByRole('switch', { name: 'Sidebar feedback button' })
+    await expect(toggle).not.toBeChecked()
+    await toggle.click()
+    await expect(railButton).toBeVisible()
+    const [feedbackBox, notificationsBox] = [(await railButton.boundingBox())!, (await notifications.boundingBox())!]
+    expect(feedbackBox.y + feedbackBox.height).toBeLessThanOrEqual(notificationsBox.y + 1)
+    await page.screenshot({ path: testInfo.outputPath('rail-feedback-on.png') })
+
+    await page.reload()
+    await settle(page)
+    await expect(railButton).toBeVisible()
+    await railButton.click()
+    await expect(page.getByRole('dialog', { name: 'Send feedback' })).toHaveCount(1)
+    await page.screenshot({ path: testInfo.outputPath('rail-feedback-dialog.png') })
+    await page.keyboard.press('Escape')
+
+    await toggle.click()
+    await expect(railButton).toHaveCount(0)
+  } finally {
+    await page.request.post('/api/settings', { data: { show_sidebar_feedback: false } })
+  }
+})

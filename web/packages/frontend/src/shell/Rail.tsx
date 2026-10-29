@@ -8,9 +8,10 @@ import { readHiddenTabs, readTabOrder, toggleSidebarCollapsed, useIsDesktop } fr
 import { useNewChat } from '../features/sessions/useNewChat'
 import { useLocale } from '../i18n/useLocale'
 import { useExtensionManifests } from '../extensions/registry'
-import { Puzzle } from 'lucide-react'
+import { MessageSquareWarning, Puzzle } from 'lucide-react'
 import { Brandmark } from './Brandmark'
 import { UpdateNotificationCenterButton } from '../features/notifications/UpdateNotificationCenter'
+import { openFeedback } from '../features/settings/FeedbackDialog'
 
 /**
  * Desktop primary navigation. Markup and class names follow the legacy shell
@@ -26,6 +27,7 @@ export function Rail() {
   const current = useLocation({ select: (location) => panelForPath(location.pathname) })
   const extensionPath = useLocation({ select: (location) => location.pathname.startsWith('/ext/') ? location.pathname : null })
   const hiddenTabs = useSetting('hidden_tabs')
+  const showsFeedback = useSetting('show_sidebar_feedback') === true
   const bootstrap = useBootstrap()
   const dashboard = useDashboardStatusQuery(bootstrap.features.dashboard)
   const newChat = useNewChat()
@@ -68,6 +70,11 @@ export function Rail() {
         </a>
       )}
       <div className="rail-spacer flex-1 min-h-2" />
+      {showsFeedback && (
+        <button type="button" className={RAIL_BTN} data-panel="feedback" data-tooltip={m.feedback_rail_label()} aria-label={m.feedback_send_open()} onClick={openFeedback}>
+          <MessageSquareWarning size={20} strokeWidth={1.5} aria-hidden="true" />
+        </button>
+      )}
       <UpdateNotificationCenterButton placement="rail" />
       <span className="seam seam-tr rail-seam" aria-hidden="true" />
       <span className="seam seam-br rail-seam" aria-hidden="true" />
