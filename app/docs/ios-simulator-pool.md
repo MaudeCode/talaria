@@ -53,9 +53,9 @@ The command reads the running hub's port from
 set `DUO_POSE_HUB_URL=http://127.0.0.1:<port>`. Remote origins, credentials,
 query strings, and redirects are refused. The command never starts or restarts T3.
 
-Agents with T3 device tools first call `device_list`, acquire the shared simulator
-lease, then call `device_open` for that exact leased UDID so the user can watch.
-Keep the lease through posture changes, app checks, and screenshots. Use the
+Agents with T3 device tools acquire the shared simulator lease, then attach to
+that exact leased UDID as the [Device panel workflow](../../.agents/skills/talaria-ios-testing/SKILL.md#t3-code-device-panel)
+describes, so the user can watch. Keep the lease through posture changes, app checks, and screenshots. Use the
 shared command for posture control and the returned device CLI's config/session
 flags for other interaction. A nonzero posture exit means the requested state
 is unverified; resolve that failure before collecting layout evidence.
