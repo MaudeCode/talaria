@@ -305,7 +305,9 @@ Only organization admins can create `v*` tags, and release tags are immutable,
 so the signed root tag is the release authorization. `release.yml` then:
 
 1. verifies the tag's GitHub signature and that its commit is on `main`;
-2. waits for that commit's `main` CI;
+2. waits for that commit's `main` CI, failing as soon as that run fails; rerun
+   its failed jobs (`gh run rerun <id> --failed`), then rerun the release run,
+   which revalidates the same tag;
 3. reads the latest published release set and selects the components whose
    `app/`, `web/` or `relay/` sources changed since their released source;
 4. creates `<component>-vX.Y.Z` tags at the same commit for the changed
