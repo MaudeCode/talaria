@@ -7,6 +7,8 @@ import UIKit
 @Observable
 final class AppSidebarPresentation {
     var searchRequested = false
+    /// Keep the sidebar's chrome intact until its closing slide has left the screen.
+    var isVisible = false
     var isPresented = false {
         didSet {
             guard isPresented != oldValue else { return }
@@ -144,6 +146,7 @@ final class AppSidebarController: UIViewController, UIGestureRecognizerDelegate 
                 stopSlide()
                 reflect(isPresented: false)
                 apply(progress: 0)
+                presentation.isVisible = false
             } else {
                 presentationChanged(presentation.isPresented)
             }
@@ -234,6 +237,7 @@ final class AppSidebarController: UIViewController, UIGestureRecognizerDelegate 
 
         reflect(isPresented: presentation.isPresented)
         progress = presentation.isPresented ? 1 : 0
+        presentation.isVisible = isEnabled && presentation.isPresented
     }
 
     override func viewSafeAreaInsetsDidChange() {
@@ -395,6 +399,7 @@ final class AppSidebarController: UIViewController, UIGestureRecognizerDelegate 
             // Layout admission owns intent; a restore can arrive before this host is re-enabled.
             reflect(isPresented: false)
             apply(progress: 0)
+            presentation.isVisible = false
             return
         }
         if isPresented { contentHost.view.endEditing(true) }
@@ -408,7 +413,12 @@ final class AppSidebarController: UIViewController, UIGestureRecognizerDelegate 
     }
 
     private func animate(to progress: CGFloat) {
+        if progress > 0 { presentation.isVisible = true }
         let changes = { self.apply(progress: progress) }
+        let completion: (Bool) -> Void = { [weak self] finished in
+            guard let self, finished, progress == 0, !self.presentation.isPresented else { return }
+            self.presentation.isVisible = false
+        }
         // The shadow's opacity and offset are layer-only, so UIView's animation leaves them out;
         // they get the same curve by hand.
         let shadow: (String) -> CABasicAnimation
@@ -417,7 +427,8 @@ final class AppSidebarController: UIViewController, UIGestureRecognizerDelegate 
                 withDuration: Motion.reducedDuration,
                 delay: 0,
                 options: [.curveEaseOut, .beginFromCurrentState, .allowUserInteraction],
-                animations: changes
+                animations: changes,
+                completion: completion
             )
             shadow = { keyPath in
                 let animation = CABasicAnimation(keyPath: keyPath)
@@ -431,7 +442,8 @@ final class AppSidebarController: UIViewController, UIGestureRecognizerDelegate 
                 bounce: Motion.bounce,
                 delay: 0,
                 options: [.beginFromCurrentState, .allowUserInteraction],
-                animations: changes
+                animations: changes,
+                completion: completion
             )
             shadow = { keyPath in
                 let animation = CASpringAnimation(perceptualDuration: Motion.duration, bounce: Motion.bounce)

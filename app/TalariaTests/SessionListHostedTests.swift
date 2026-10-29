@@ -387,6 +387,35 @@ final class SessionListHostedTests: XCTestCase {
         XCTAssertTrue(hiddenAgain, "Turning the preference off must remove the shortcut")
     }
 
+    func testSidebarFeedbackKeepsItsToolbarLayoutUntilTheDrawerFinishesClosing() async throws {
+        let fixture = try FixtureApp(for: self)
+        UserDefaults.standard.set(true, forKey: SectionVisibilitySettings.sidebarFeedbackKey)
+        defer { UserDefaults.standard.removeObject(forKey: SectionVisibilitySettings.sidebarFeedbackKey) }
+        let window = try hostWindow(fixture.sessionList(), animationsEnabled: true)
+        try await openSidebar(in: window)
+        settle(0.6)
+        let feedback = try XCTUnwrap(HostedAccessibility.toolbarItem("Send Feedback", in: window))
+        let drawer = try XCTUnwrap(window.rootViewController?.firstDescendant(ofType: AppSidebarController.self))
+        let navigation = try XCTUnwrap(drawer.children.first?.firstDescendant(ofType: UINavigationController.self))
+        let toolbar = try XCTUnwrap(navigation.toolbar)
+        XCTAssertTrue(HostedAccessibility.toolbarItems(under: navigation).contains { $0 === feedback })
+        let height = toolbar.bounds.height
+        attachHostedScreenshot(window, name: "feedback-before-close")
+
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Close navigation"))
+        settle(0.08)
+        XCTAssertTrue(HostedAccessibility.toolbarItems(under: navigation).contains { $0 === feedback },
+                      "Closing must retain the feedback item while the drawer is still animating")
+        XCTAssertEqual(toolbar.bounds.height, height, accuracy: 1,
+                       "Closing must not resize the sidebar toolbar during its slide")
+        attachHostedScreenshot(window, name: "feedback-during-close")
+        settle(0.6)
+        XCTAssertNil(HostedAccessibility.element(in: window, identifier: "sidebar-send-feedback"),
+                     "A fully closed sidebar must not expose its feedback action")
+        try await openSidebar(in: window)
+        _ = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "sidebar-send-feedback" }
+    }
+
     func testResizingAnOpenOverlayIntoTilingConsumesDrawerIntentAndRotationCollapsesTheColumn() async throws {
         let fixture = try FixtureApp(for: self)
         UserDefaults.standard.set("all", forKey: SessionSidebarDisclosureSettings.regularLandscapeVisibilityKey)
