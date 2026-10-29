@@ -1,4 +1,4 @@
-# Publishes every main commit that changes Web or contracts and passes CI as the
+# Publishes every main commit that changes the Web artifact and passes CI as the
 # Experimental Web OCI artifact (TAL-343): ghcr.io/maudecode/talaria-web-experimental
 # gets an immutable sha-<commit> tag, and the forward-only `experimental` tag moves
 # to it only when it descends from the commit `experimental` names.
@@ -32,7 +32,7 @@ jobs:
           # Stable web-v* tags set the version; history orders the forward-only tag.
           fetch-depth: 0
 
-      - name: Select Web or contracts changes
+      - name: Select Web changes
         id: changes
         env:
           GH_TOKEN: ${{ github.token }}
@@ -45,7 +45,8 @@ jobs:
             --jq "[.[] | select(.after == \"${HEAD_SHA}\") | .before][0] // \"\"") || base=""
           python3 scripts/changed-components.py --base="$base" --head="$HEAD_SHA" > "$RUNNER_TEMP/changes"
           cat "$RUNNER_TEMP/changes"
-          if ! grep -qxE '(web_server|web_frontend|contracts)=true' "$RUNNER_TEMP/changes"; then
+          # Shared contract paths also select the web_* suites; `contracts` alone (App networking) leaves the artifact unchanged.
+          if ! grep -qxE '(web_server|web_frontend|web_sidecar)=true' "$RUNNER_TEMP/changes"; then
             exit 0
           fi
           # <next patch>-exp.<12-hex> is invalid SemVer when those 12 characters are digits with a leading zero.

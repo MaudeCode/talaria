@@ -2150,11 +2150,21 @@ describe('Agent checkout updates', () => {
     // A check cached before update checks were turned off is never summarized.
     expect(await svc.summarize('agent', true)).toMatchObject({ generated_by: 'none', source: 'none' })
     expect(calls).toBe(0)
-    expect(await svc.summarize('agent')).toMatchObject({ generated_by: 'fallback', source: 'release_notes', summary_sections: [{ title: "What you'll notice", items: ['Hermes Agent v2.0.0, v2.1.0 are available.'] }] })
+    expect(await svc.summarize('agent')).toMatchObject({ generated_by: 'fallback', source: 'release_notes', summary_sections: [{ title: 'About this update', items: ['Hermes Agent v2.0.0, v2.1.0 are available.'] }] })
     expect(calls).toBe(1)
     // A fallback is not cached, so the next request asks the model again.
     await svc.summarize('agent')
     expect(calls).toBe(2)
+  })
+
+  it('says the Agent build has no changes when its resolved commit range is empty (TAL-1589)', async () => {
+    const a = agentInstall()
+    // The range resolves (the log succeeds) but lists no commits.
+    const run: GitRun = (args, cwd, t) => (args[0] === 'remote' && args[1] === 'get-url' ? Promise.resolve({ ok: true, out: 'https://github.com/Synthetic/agent.git' }) : args[0] === 'log' ? Promise.resolve({ ok: true, out: '' }) : runGit(args, cwd, t))
+    const { svc, prompts } = summaryService(a, { channel: 'experimental', git: run })
+    await svc.check(true)
+    expect(await svc.summarize('agent')).toMatchObject({ generated_by: 'fallback', source: 'commits', summary_sections: [{ title: 'About this update', items: ['This build has no Hermes Agent changes.'] }] })
+    expect(prompts).toEqual([])
   })
 
   function agentService(agent: string, git: GitRun, events: string[], agentSync?: UpdateServiceDeps['agentSync'], stateDir = join(agent, '../web-state'), agentHomes?: UpdateServiceDeps['agentHomes']): UpdateService {
@@ -2728,6 +2738,45 @@ describe('Agent checkout updates', () => {
     expect(agentView(svc)).toMatchObject(installedV2(a))
     await inFlight()
     expect(counters.fetches).toBe(1)
+  })
+})
+
+describe('Web update summary fallback (TAL-1589)', () => {
+  const current = 'a'.repeat(40)
+  const latest = 'b'.repeat(40)
+  const commit = (n: number) => ({ sha: String(n).repeat(40), commit: { message: `web change ${String(n)}\nbody`, committer: { date: '2026-10-29T00:00:00Z' } } })
+  function webSummary(behind: number, getJson: GetJson, llm: () => Promise<string>): { svc: UpdateService; calls: () => number } {
+    let calls = 0
+    const svc = new UpdateService({
+      stateDir: tmp(), webRoot: join(tmp(), 'web'), git: runGit, getJson, identity: { release: () => DEV, stamped: () => DEV, runningSourceRevision: () => null }, webuiVersion: 'x',
+      agentDir: () => null, channel: () => 'experimental', includeAgent: () => false,
+      blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
+      scheduleRestart: () => undefined, llm: () => { calls += 1; return llm() }, log: () => undefined, summarizeAutomatically: () => false,
+    })
+    // Seed a checked Experimental status; the commit range is read from `getJson` on demand.
+    Object.assign((svc as unknown as { cache: Dict }).cache, { ...svc.cachedStatus(), webui: { name: 'webui', behind, release_based: false, current_sha: current, latest_sha: latest, current_version: 'web-exp-v1.0.0', latest_version: 'web-exp-v1.0.1' } })
+    return { svc, calls: () => calls }
+  }
+  const range = (commits: Dict[], touched: Dict[]): GetJson => (path) => Promise.resolve(path.startsWith('/compare/') ? { status: 'ahead', total_commits: commits.length, commits } : touched)
+
+  it('says the build has no Web changes when the resolved range touches no Web files, without calling the model', async () => {
+    const { svc, calls } = webSummary(1, range([commit(1)], []), () => Promise.resolve('- Notice: unused'))
+    expect(await svc.summarize('webui')).toMatchObject({ generated_by: 'fallback', source: 'commits', summary_sections: [{ title: 'About this update', items: ['This build has no Talaria Web changes.'] }] })
+    expect(calls()).toBe(0)
+  })
+
+  it('says the summary could not be generated when the range lookup fails', async () => {
+    const { svc } = webSummary(1, () => Promise.reject(new Error('GitHub answered 502')), () => Promise.resolve('- Notice: unused'))
+    expect(await svc.summarize('webui')).toMatchObject({ generated_by: 'fallback', summary_sections: [{ title: 'About this update', items: ['Talaria Web has 1 update available. The summary could not be generated; try again later.'] }] })
+  })
+
+  it('lists the commit subjects when the model fails', async () => {
+    const commits = [commit(1), commit(2), commit(3)]
+    const { svc, calls } = webSummary(3, range(commits, commits), () => Promise.reject(new Error('model unavailable')))
+    const result = await svc.summarize('webui')
+    expect(calls()).toBe(1)
+    expect(result).toMatchObject({ generated_by: 'fallback', source: 'commits', summary_sections: [{ title: 'About this update', items: ['Talaria Web has 3 updates, including: web change 1; web change 2; web change 3.'] }] })
+    expect(result.summary).not.toContain('update(s)')
   })
 })
 

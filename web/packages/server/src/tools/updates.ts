@@ -1219,19 +1219,22 @@ function splitCategory(line: string): [string | null, string] {
   return [['worth knowing', 'worth', 'note'].includes(label) ? 'worth' : 'notice', m[2] ?? '']
 }
 const tagList = (notes: ReleaseNote[]): string => notes.map((n) => n.tag).join(', ')
-function fallbackBullets(details: Dict[]): string[] {
+const updateCount = (n: unknown): string => `${String(n)} update${n === 1 ? '' : 's'}`
+/** `resolved` is false when the update range could not be read, so empty notes and commits mean unknown, not none. */
+function fallbackBullets(details: Dict[], resolved = true): string[] {
   const out = details.map((item) => {
     const label = str(item.label || item.name) || 'Hermes'
+    if (!resolved) return `${label} has ${updateCount(item.behind)} available. The summary could not be generated; try again later.`
     const notes = item.notes as ReleaseNote[]
     if (notes.length) return `${label} ${tagList(notes)} ${notes.length === 1 ? 'is' : 'are'} available.`
     const commits = item.commits as string[]
-    if (commits.length) return `${label} has ${String(item.behind)} update(s), including updates: ${commits.slice(0, 3).join('; ')}.`
-    return `${label} has ${String(item.behind)} update(s) available.`
+    if (commits.length) return `${label} has ${updateCount(item.behind)}, including: ${commits.slice(0, 3).join('; ')}.`
+    return `This build has no ${label} changes.`
   })
   return out.length ? out : ['Updates are available.']
 }
 function worthKnowingBullets(details: Dict[]): string[] {
-  const targets = details.filter((d) => d.behind).map((d) => `${str(d.label || d.name) || 'Hermes'} (${String(d.behind)} update${d.behind === 1 ? '' : 's'})`)
+  const targets = details.filter((d) => d.behind).map((d) => `${str(d.label || d.name) || 'Hermes'} (${updateCount(d.behind)})`)
   return targets.length > 1 ? [`This summary combines updates from ${targets.join(' and ')}.`] : []
 }
 type SummarySections = z.infer<typeof UpdatesSummarySchema>['summary_sections']
@@ -1259,6 +1262,11 @@ function formatSections(text: string, details: Dict[]): [SummarySections, string
   for (const item of worthKnowingBullets(details)) if (!keys.has(item.toLowerCase()) && !worth.some((w) => w.toLowerCase() === item.toLowerCase())) worth.push(item)
   const sections: SummarySections = [{ title: "What you'll notice", items: notice }]
   if (worth.length) sections.push({ title: 'Worth knowing', items: worth })
+  return [sections, sectionsText(sections)]
+}
+/** Deterministic copy when the model has nothing to summarize or cannot answer; never titled as model output. */
+function fallbackSections(details: Dict[], resolved: boolean): [SummarySections, string] {
+  const sections: SummarySections = [{ title: 'About this update', items: uniqueBullets(fallbackBullets(details, resolved)) }]
   return [sections, sectionsText(sections)]
 }
 const SUMMARY_SYSTEM = 'You write human-readable release summaries for Hermes users. Focus on what the user will notice in the product. Keep it simple, specific, and short. avoid technical jargon, implementation details, SHA names, branch names, and file paths unless necessary. Return only bullets. Do not include headings, markdown tables, intro paragraphs, or closing notes.'
@@ -2146,7 +2154,7 @@ export class UpdateService {
         }
       } catch { this.logSummaryFailure(key, target) }
     }
-    const fallback = formatSections('', [detail])
+    const fallback = fallbackSections([detail], Boolean(entry))
     const summary = sections ? sectionsText(sections) : fallback[1]
     return { ok: true, target, ...range, summary, summary_sections: sections ?? fallback[0], generated_by: sections ? 'llm' : 'fallback', source, cached }
   }
