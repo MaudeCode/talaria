@@ -62,17 +62,18 @@ When T3's `device_*` tools are available:
 2. Call `device_list`, then `device_open` with that exact `deviceId` and its local
    `hostId`. Opening a default device can bypass the lease and select another
    worktree's simulator.
-3. Use the exact `agent-device` launcher returned by `device_open`, preserving
-   every host, target, config, and session argument on every command. Establish
-   the app session with `open dev.kil.talaria.xctest`, then use `snapshot -i`
-   and its element references for interactions. Capture visual
-   evidence with `device_screenshot`; keep evidence outside git. Pool simulators
-   are shared across threads: if `open` reports `DEVICE_IN_USE` by another
-   session, stop and ask the user. Never reuse or close another session.
-4. End the app session with `agent-device close` using the returned arguments and
-   without `--shutdown`. Detach with `device_close` for the same host/device and
-   `shutdown=false`. Then interrupt the runner and wait for it to exit. Verify
-   the simulator is shut down and its lease file is gone, using the paths in
+3. Run every interaction through the exact `agent-device` command path that
+   `device_open` returns; it is already bound to that device and session.
+   Establish the app session with `open dev.kil.talaria.xctest` (without
+   `--relaunch`, so the fixture launch stays), then use `snapshot -i` and its
+   element references for interactions. Capture visual evidence with
+   `device_screenshot`; keep evidence outside git. Pool simulators are shared
+   across threads: if `open` reports `DEVICE_IN_USE` by another session, stop
+   and ask the user. Never reuse or close another session.
+4. End the app session with `close` through that command, without `--shutdown`.
+   Detach with `device_close` for the same host/device and `shutdown=false`.
+   Then interrupt the runner and wait for it to exit. Verify the simulator is
+   shut down and its lease file is gone, using the paths in
    [the shared pool guide](../../../app/docs/ios-simulator-pool.md). The runner
    owns shutdown, disposable-device erasure, and lease release.
 
