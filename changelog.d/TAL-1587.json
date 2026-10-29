@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The sidebar toolbar stays steady while closing with the feedback shortcut enabled.",
+      "highlight": false
+    }
+  ]
+}

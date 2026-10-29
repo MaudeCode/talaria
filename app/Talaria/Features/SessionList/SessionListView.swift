@@ -610,7 +610,7 @@ struct SessionListView: View {
             presentation: appSidebar,
             searchPull: sidebarSearch,
             searchUsesBottomBar: horizontalSizeClass == .compact,
-            isActive: isDrawer ? sidebarPresentation.drawerEnabled && isPresented : sidebarPresentation.showsColumn,
+            isActive: isDrawer ? sidebarPresentation.drawerEnabled && appSidebar.isVisible : sidebarPresentation.showsColumn,
             quotaSources: appSidebarQuotaSources,
             selectedQuotaSourceID: insightsQuotaSourceID,
             selection: navigationState.section,
@@ -1553,7 +1553,7 @@ struct SessionListView: View {
     }
 
     private var showsSidebarFeedbackAction: Bool {
-        showsSidebarFeedbackButton && (appSidebar.isPresented || sidebarPresentation.showsColumn)
+        showsSidebarFeedbackButton && (appSidebar.isVisible || sidebarPresentation.showsColumn)
     }
 
     private var sidebarFeedbackButton: some View {

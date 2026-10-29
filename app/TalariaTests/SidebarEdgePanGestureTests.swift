@@ -113,6 +113,15 @@ final class AppSidebarSafeAreaTests: XCTestCase {
 /// and stays put, so there the sidebar slides in over a screen that does not move (TAL-481).
 @MainActor
 final class AppSidebarPresentationTests: XCTestCase {
+    func testReenablingAClosedDrawerDoesNotExposeItsToolbar() throws {
+        let presentation = AppSidebarPresentation()
+        let (window, controller) = try makeSidebarController(presentation)
+        defer { window.isHidden = true }
+        controller.isEnabled = false
+        controller.isEnabled = true
+        XCTAssertFalse(presentation.isVisible, "Layout admission must not reveal an already closed drawer's toolbar")
+    }
+
     func testPushModeSlidesTheScreen() throws {
         let presentation = AppSidebarPresentation()
         let (window, controller) = try makeSidebarController(presentation)
