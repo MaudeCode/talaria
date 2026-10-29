@@ -1,0 +1,45 @@
+name: Configure Relay feedback operator
+
+on:
+  workflow_dispatch:
+    inputs:
+      token_sha256:
+        description: SHA-256 hex digest of the feedback operator token, never the token itself
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  configure:
+    if: github.ref == 'refs/heads/main' && github.repository == 'MaudeCode/talaria'
+    runs-on: ubuntu-latest
+    environment: relay-production
+    concurrency:
+      group: talaria-relay-production
+      cancel-in-progress: false
+    timeout-minutes: 10
+    steps:
+      - name: Validate hash-only input
+        env:
+          TOKEN_SHA256: ${{ inputs.token_sha256 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$TOKEN_SHA256" =~ ^[0-9a-fA-F]{64}$ ]] || { echo 'Expected exactly 64 hexadecimal characters'; exit 1; }
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/release-node
+      - name: Install locked Relay CLI
+        working-directory: relay
+        run: pnpm install --frozen-lockfile
+      - name: Set production feedback operator hash
+        working-directory: relay
+        env:
+          TOKEN_SHA256: ${{ inputs.token_sha256 }}
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          CONVEX_DISABLE_TELEMETRY: '1'
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm exec convex env set FEEDBACK_OPERATOR_TOKEN_SHA256 "${TOKEN_SHA256,,}" --prod
