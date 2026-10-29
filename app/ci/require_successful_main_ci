@@ -7,33 +7,44 @@ require_successful_main_ci() {
   local wait_seconds="${WAIT_FOR_MAIN_CI_SECONDS:-0}"
   local poll_seconds="${MAIN_CI_POLL_SECONDS:-15}"
   local deadline=$((SECONDS + wait_seconds))
-  local run_id
+  local run run_id attempt status conclusion
 
   while true; do
-    run_id="$(
+    # The newest main-push run on the exact commit, whatever its state; a rerun keeps its ID and resets its status.
+    run="$(
       gh run list \
         --repo "$repository" \
         --workflow ci.yml \
         --branch main \
         --commit "$sha" \
         --event push \
-        --status success \
         --limit 1 \
-        --json databaseId \
-        --jq '.[0].databaseId // empty'
+        --json databaseId,attempt,status,conclusion \
+        --jq '.[0] // empty | "\(.databaseId) \(.attempt) \(.status) \(.conclusion)"'
     )"
+    # Only the last field (an unfinished run's conclusion) can be empty.
+    read -r run_id attempt status conclusion <<< "$run" || true
 
-    if [[ -n "$run_id" ]]; then
+    if [[ "$status" == completed && "$conclusion" == success ]]; then
       echo "Verified successful CI run $run_id for exact commit $sha."
       return 0
     fi
 
-    if (( SECONDS >= deadline )); then
-      echo "No successful main-push CI run found for exact commit $sha. Wait for CI or inspect the failed run." >&2
+    if [[ "$status" == completed ]]; then
+      echo "::error::Main CI run ${GITHUB_SERVER_URL:-https://github.com}/$repository/actions/runs/$run_id (attempt $attempt) on exact commit $sha concluded ${conclusion:-without a conclusion}. Rerun its failed jobs (gh run rerun $run_id --failed --repo $repository), then rerun this release run; the tag stays valid."
       return 1
     fi
 
-    echo "Waiting for successful main CI on exact commit $sha."
+    if (( SECONDS >= deadline )); then
+      echo "No successful main-push CI run found for exact commit $sha before the deadline. Inspect main CI on that commit, then rerun this release run." >&2
+      return 1
+    fi
+
+    if [[ -n "$run_id" ]]; then
+      echo "Waiting for main CI run $run_id (attempt $attempt, $status) on exact commit $sha."
+    else
+      echo "Waiting for main CI to start on exact commit $sha."
+    fi
     sleep "$poll_seconds"
   done
 }
