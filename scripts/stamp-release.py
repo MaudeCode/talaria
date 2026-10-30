@@ -3,9 +3,11 @@
 
 import argparse
 import json
+import os
 import plistlib
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -48,6 +50,19 @@ def validate_release_info(metadata):
     return metadata
 
 
+def announcement(parser, component, version, source):
+    """The installed release's What's New payload (TAL-1616), ranged from the highest lower component tag; None without
+    opted-in rows. Generation reads committed fragments, so it is the same for every build of this source and version."""
+    sys.path.insert(0, str(ROOT / "app/ci"))
+    sys.dont_write_bytecode = True  # The stamped checkout stays clean apart from its artifacts.
+    import release_notes
+    os.chdir(ROOT)
+    try:
+        return release_notes.announcement("auto", source, version, component)
+    except (ValueError, OSError, KeyError) as error:
+        parser.error(f"What's New announcement: {error}")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("component", choices=("app", "web", "relay"))
@@ -65,11 +80,15 @@ def main():
     if not (re.fullmatch(_VERSION, args.version) or args.component == "web" and web_version_ok(args.version, args.tag or "", head)):
         parser.error("release version must be X.Y.Z")
     metadata = {"version": args.version, "sourceRevision": head, "releaseSet": head}
+    payload = None
     if args.component == "web":
         metadata["tag"] = args.tag or f"web-v{args.version}"
         compatible_agent, supported_contracts = web_identity()
         metadata.update(contracts=supported_contracts, compatibleAgent=compatible_agent)
         validate_release_info(metadata)
+        payload = announcement(parser, "web", args.version, head)
+        if (ROOT / "web/_whats_new.json").exists():
+            parser.error("refusing to replace an already stamped Web announcement")
         destination, mode = ROOT / "web/_release.json", "x"
     elif args.component == "relay":
         if not args.deployment_id or not re.fullmatch(r"[a-z][a-z0-9-]+", args.deployment_id):
@@ -92,6 +111,7 @@ def main():
             "appRelay": [versions["appRelay"]["aggregateSchemaVersion"]],
             "activityScene": [versions["activityScene"]["version"]],
         })
+        payload = announcement(parser, "app", args.version, head)
         bundles = []
         for name in ("Talaria", "TalariaLiveActivityWidget"):
             destination = ROOT / "app" / name / "Resources/Info.plist"
@@ -100,12 +120,19 @@ def main():
                 parser.error("refusing to replace an already stamped App artifact")
             info.update(TalariaRelease=metadata, CFBundleShortVersionString=args.version,
                         CFBundleVersion=str(args.build_number))
+            if payload and name == "Talaria":
+                # The exact generated JSON, so the App reads it offline and without a server.
+                info["TalariaWhatsNew"] = payload
             bundles.append((destination, info))
         for destination, info in bundles:
             destination.write_bytes(plistlib.dumps(info, sort_keys=False))
     if args.component != "app":
         with destination.open(mode) as stream:
             stream.write(json.dumps(metadata, indent=2) + "\n")
+    if args.component == "web" and payload:
+        # Packaged beside `_release.json`; the server serves it only while both name the same release.
+        with (ROOT / "web/_whats_new.json").open("x") as stream:
+            stream.write(payload)
     # The Web container uses this same JSON as its provenance label. Relay
     # bundles it into its functions; neither record claims publication success.
     print(json.dumps(metadata, separators=(",", ":")))

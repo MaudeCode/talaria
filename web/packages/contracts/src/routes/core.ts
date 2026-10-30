@@ -1,6 +1,6 @@
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
-import { AgentRuntimeMetadataSchema, LoginResponseSchema } from '../views.js'
+import { AgentRuntimeMetadataSchema, FrontendBuildIdSchema, LoginResponseSchema } from '../views.js'
 
 /**
  * Core routes: liveness, the public bootstrap document, and password
@@ -70,6 +70,53 @@ export const ReleaseInfoSchema = z.object({
 })
 export type ReleaseInfo = z.infer<typeof ReleaseInfoSchema>
 
+/**
+ * TAL-1616: the What's New announcement packaged with one installed App or Web release (`app/ci/release_notes.py`
+ * generates it from opted-in release fragments; `scripts/stamp-release.py` packages it). Its rows are display-ready
+ * and ordered; each client maps the semantic `icon` key to its own symbol and draws it in its accent color.
+ * `contracts/whats-new.schema.json` is generated from this schema and holds the authoring limits the generator enforces.
+ */
+export const WhatsNewIconSchema = z.enum([
+  'sparkles', 'chat', 'voice', 'attachment', 'search', 'notifications', 'automation', 'model',
+  'appearance', 'speed', 'reliability', 'security', 'sync', 'share', 'settings', 'accessibility',
+])
+// Single-line plain text without surrounding whitespace, as the release-note generator authors it.
+const SingleLine = (max: number) => z.string().min(1).max(max).regex(/^\S(?:[^\u0000-\u001f]*\S)?$/)
+export const WhatsNewRowSchema = z.object({
+  /** The fragment entry this row comes from (`TAL-<n>-<entry>`): stable across rebuilds, never shown. */
+  id: z.string().regex(/^TAL-[1-9][0-9]*-[1-9][0-9]*$/),
+  icon: WhatsNewIconSchema,
+  title: SingleLine(40),
+  description: SingleLine(120),
+})
+export const WhatsNewAnnouncementSchema = z.object({
+  schemaVersion: z.literal(1),
+  /** `<component>-<version>`: one announcement per installed component release. */
+  id: z.string().regex(/^(app|web)-[0-9A-Za-z.-]+$/),
+  component: z.enum(['app', 'web']),
+  /** The installed release version and source the rows were generated for. */
+  version: z.string().min(1),
+  sourceCommit: Sha1,
+  rows: z.array(WhatsNewRowSchema).min(1).max(4),
+})
+export type WhatsNewAnnouncement = z.infer<typeof WhatsNewAnnouncementSchema>
+
+/** A browser's stored observation token: opaque to clients, read by the server only to compare release versions. */
+export const WhatsNewObservedSchema = z.string().max(256)
+/**
+ * Whether this tab presents the installed Web release's announcement now. The client keeps one opaque token in local
+ * storage: it stores `observation` at once when it is non-null, and `acknowledgement` only after the user dismisses an
+ * `eligible` announcement, so a failed read or an unseen announcement is never recorded as seen.
+ */
+export const WhatsNewStateSchema = z.object({
+  /** The installed release's announcement, also for replay from Settings; null when it has none. */
+  announcement: WhatsNewAnnouncementSchema.nullable(),
+  eligible: z.boolean(),
+  observation: z.string().nullable(),
+  acknowledgement: z.string().nullable(),
+})
+export type WhatsNewState = z.infer<typeof WhatsNewStateSchema>
+
 export const HealthSchema = z.object({
   release: ReleaseInfoSchema,
   status: z.enum(['ok', 'degraded', 'starting']),
@@ -119,6 +166,10 @@ export const coreContract = {
   bootstrap: oc
     .route({ method: 'GET', path: '/api/bootstrap', tags: ['core'], summary: 'Public runtime configuration and initial state for the shell.' })
     .output(BootstrapSchema),
+  whatsNew: oc
+    .route({ method: 'GET', path: '/api/whats-new', tags: ['core'], summary: 'The installed Web release\'s What\'s New announcement and whether this tab presents it now. A tab passes its loaded_build and stored observation token; a stale tab neither presents nor records a newer release.' })
+    .input(z.object({ loaded_build: FrontendBuildIdSchema.optional(), observed: WhatsNewObservedSchema.optional() }))
+    .output(WhatsNewStateSchema),
   auth: {
     status: oc.route({ method: 'GET', path: '/api/auth/status', tags: ['auth'] }).output(AuthStatusSchema),
     login: oc.route({ method: 'POST', path: '/api/auth/login', tags: ['auth'] }).input(LoginRequestSchema).output(LoginResponseSchema),

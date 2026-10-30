@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { z } from 'zod'
-import { CronBlueprintsSchema, CronBlueprintFillSchema, AgentHealthSchema, ErrorBodySchema, ChatEventSchema, ClarifyPendingEnvelopeSchema, MemoryWriteRefusalSchema, ModelsSchema, ProviderQuotasSchema, SIDECAR_RPC_VERSION, SkillsSchema, SpeechPrepareSchema, TranscribeResponseSchema, TranscribeStreamEndSchema, TranscribeStreamEventSchema, TranscribeStreamStartSchema, UpdatesCheckSchema, UpdateNotificationsSchema, UpdateApplySchema, SteerSendNowResponseSchema } from './index.js'
+import { CronBlueprintsSchema, CronBlueprintFillSchema, AgentHealthSchema, ErrorBodySchema, ChatEventSchema, ClarifyPendingEnvelopeSchema, MemoryWriteRefusalSchema, ModelsSchema, ProviderQuotasSchema, SIDECAR_RPC_VERSION, SkillsSchema, SpeechPrepareSchema, TranscribeResponseSchema, TranscribeStreamEndSchema, TranscribeStreamEventSchema, TranscribeStreamStartSchema, UpdatesCheckSchema, UpdateNotificationsSchema, UpdateApplySchema, SteerSendNowResponseSchema, WhatsNewAnnouncementSchema, WhatsNewStateSchema } from './index.js'
 
 const shared = (path: string): unknown => JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../contracts', path), 'utf8'))
 
@@ -276,6 +276,15 @@ describe('contracts package', () => {
     expect(parsed.notifications[3]).toMatchObject({ target: 'agent', phase: 'waiting_for_idle', can_dismiss: false, actions: [{ id: 'restart_gateway_now', style: 'destructive', acknowledges: false }], dialog_close: 'restart_later' })
     expect(UpdateNotificationsSchema.safeParse({ ...parsed, tab_update: { ...parsed.tab_update, steps: [{ id: 'install', label: 'Installing', state: 'running' }] } }).success).toBe(false)
   })
+})
+
+it('parses the shared What\'s New payloads and state, rejects malformed ones, and publishes the generated schema (TAL-1616)', () => {
+  const fixture = shared('fixtures/whats-new.json') as { app: unknown; web: unknown; state: unknown; invalid: unknown[] }
+  expect(WhatsNewAnnouncementSchema.parse(fixture.app)).toEqual(fixture.app)
+  expect(WhatsNewAnnouncementSchema.parse(fixture.web)).toEqual(fixture.web)
+  expect(WhatsNewStateSchema.parse(fixture.state)).toEqual(fixture.state)
+  for (const invalid of fixture.invalid) expect(WhatsNewAnnouncementSchema.safeParse(invalid).success).toBe(false)
+  expect(shared('whats-new.schema.json')).toEqual(z.toJSONSchema(WhatsNewAnnouncementSchema, { target: 'draft-2020-12', io: 'output' }))
 })
 
 it('parses both shared automation blueprint route fixtures', () => {

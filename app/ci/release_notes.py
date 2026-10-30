@@ -4,6 +4,7 @@
 import argparse
 import difflib
 from datetime import datetime, timezone
+import functools
 import html
 import io
 import json
@@ -19,6 +20,18 @@ CATEGORIES = ("Added", "Changed", "Fixed", "Security")
 COMPONENTS = ("app", "web", "relay")
 VERSION = r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
 FILENAME = re.compile(r"TAL-([1-9][0-9]*)\.json")
+# The What's New announcement contract, generated from web/packages/contracts (TAL-1616).
+ANNOUNCEMENT_SCHEMA = Path(__file__).resolve().parents[2] / "contracts/whats-new.schema.json"
+ANNOUNCED = ("app", "web")
+
+
+@functools.cache
+def announcement_rules():
+    """Icons, text limits and row limit from the shared announcement schema."""
+    rows = json.loads(ANNOUNCEMENT_SCHEMA.read_text(encoding="utf-8"))["properties"]["rows"]
+    row = rows["items"]["properties"]
+    return {"icons": row["icon"]["enum"], "title": row["title"]["maxLength"],
+            "description": row["description"]["maxLength"], "rows": rows["maxItems"]}
 
 
 def git(*args, strip=True):
@@ -49,6 +62,21 @@ def plain_text(value, field):
         raise ValueError(f"{field} must be a single line of plain text")
 
 
+def announcement_fields(announcement, components):
+    if not isinstance(announcement, dict) or set(announcement) != {"title", "description", "icon"}:
+        raise ValueError("announcement requires exactly title, description, and icon")
+    if not set(components) & set(ANNOUNCED):
+        raise ValueError("an announcement needs an app or web component")
+    rules = announcement_rules()
+    for field in ("title", "description"):
+        plain_text(announcement[field], f"announcement {field}")
+        # The contract measures UTF-16 code units, as the Web server's validator does.
+        if len(announcement[field].encode("utf-16-le")) // 2 > rules[field]:
+            raise ValueError(f"announcement {field} must be at most {rules[field]} characters")
+    if announcement["icon"] not in rules["icons"]:
+        raise ValueError(f"announcement icon must be one of {', '.join(rules['icons'])}")
+
+
 def fragment(path, source):
     try:
         if not FILENAME.fullmatch(Path(path).name) or Path(path).parent != Path(DIRECTORY):
@@ -62,8 +90,8 @@ def fragment(path, source):
             for entry in data["entries"]:
                 required = {"category", "summary", "highlight"}
                 if (not isinstance(entry, dict) or not required <= set(entry)
-                        or not set(entry) <= required | {"components"}):
-                    raise ValueError("each entry requires only category, summary, highlight, and optional components")
+                        or not set(entry) <= required | {"components", "announcement"}):
+                    raise ValueError("each entry requires only category, summary, highlight, and optional components and announcement")
                 components = entry.get("components", ["app"])
                 if (not isinstance(components, list) or not components
                         or any(component not in COMPONENTS for component in components)
@@ -74,6 +102,8 @@ def fragment(path, source):
                 plain_text(entry["summary"], "summary")
                 if type(entry["highlight"]) is not bool:
                     raise ValueError("highlight must be true or false")
+                if "announcement" in entry:
+                    announcement_fields(entry["announcement"], components)
         else:
             raise ValueError('provide a non-empty "entries" array OR a "skip" reason')
         return data
@@ -457,7 +487,8 @@ def markdown_text(value):
     return re.sub(r"([\\`*_{}\[\]()#+.!|>~-])", r"\\\1", value)
 
 
-def generate(previous, target, version, output, component="app"):
+def release_range(previous, target, version, component):
+    """The fragments a component release at `target` introduces after `previous` (`auto`: the highest lower tag)."""
     if component not in COMPONENTS:
         raise ValueError("component must be app, web, or relay")
     if not re.fullmatch(VERSION, version):
@@ -468,21 +499,52 @@ def generate(previous, target, version, output, component="app"):
     base = commit(previous)
     if git("merge-base", base, target) != base:
         raise ValueError("previous release must be an ancestor of target")
-    current = snapshot(target)
-    selected = introduced(base, target, current)
+    selected = introduced(base, target, snapshot(target))
     if not selected and changes(base, target):
         raise ValueError("missing release fragments in the requested range; add entries or an explicit skip")
-    sections = {category: [] for category in CATEGORIES}
-    highlights = []
+    return previous, target, selected
+
+
+def component_entries(selected, component):
+    """`(id, ticket, entry)` for the component's entries, by numeric ticket and then authored order."""
     for path in sorted(selected, key=lambda path: int(FILENAME.fullmatch(Path(path).name)[1])):
         for index, entry in enumerate(selected[path].get("entries", [])):
-            if component not in entry.get("components", ["app"]):
-                continue
-            item = {"id": f"{Path(path).stem}-{index + 1}", "ticket": Path(path).stem,
-                    **{key: value for key, value in entry.items() if key != "components"}}
-            sections[entry["category"]].append(item)
-            if entry["highlight"]:
-                highlights.append(item)
+            if component in entry.get("components", ["app"]):
+                yield f"{Path(path).stem}-{index + 1}", Path(path).stem, entry
+
+
+def announcement(previous, target, version, component):
+    """The installed release's What's New payload as exact JSON text, or None when no entry opted in.
+
+    An Experimental Web version (`X.Y.Z-exp.<source>`) is ranged like its `X.Y.Z` core."""
+    if component not in ANNOUNCED:
+        raise ValueError("announcements are generated for app or web")
+    match = re.fullmatch(VERSION + r"(-exp\.[a-f0-9]{12})?", version)
+    if not match or match[4] and component != "web":
+        raise ValueError("version must use X.Y.Z numeric semantic versioning")
+    core = version.split("-", 1)[0]
+    _, target, selected = release_range(previous, target, core, component)
+    if match[4] and match[4] != "-exp." + target[:12]:
+        raise ValueError("an Experimental version must name its source")
+    rows = [{"id": identifier, **{key: entry["announcement"][key] for key in ("icon", "title", "description")}}
+            for identifier, _, entry in component_entries(selected, component) if "announcement" in entry]
+    if not rows:
+        return None
+    payload = {"schemaVersion": 1, "id": f"{component}-{version}", "component": component, "version": version,
+               "sourceCommit": target, "rows": rows[:announcement_rules()["rows"]]}
+    return json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+
+
+def generate(previous, target, version, output, component="app"):
+    previous, target, selected = release_range(previous, target, version, component)
+    sections = {category: [] for category in CATEGORIES}
+    highlights = []
+    for identifier, ticket, entry in component_entries(selected, component):
+        item = {"id": identifier, "ticket": ticket,
+                **{key: value for key, value in entry.items() if key not in ("components", "announcement")}}
+        sections[entry["category"]].append(item)
+        if entry["highlight"]:
+            highlights.append(item)
     date = datetime.fromtimestamp(int(git("show", "-s", "--format=%ct", target)), timezone.utc).date().isoformat()
     release = {"version": version, "date": date, "highlights": highlights,
                "sections": [{"category": category, "entries": entries} for category, entries in sections.items() if entries]}
@@ -516,13 +578,19 @@ def main():
     render.add_argument("--target", required=True)
     render.add_argument("--version", required=True)
     render.add_argument("--output", type=Path, required=True)
+    announce = commands.add_parser("announcement", help="write the installed release's What's New payload, if any entry opted in")
+    announce.add_argument("--previous", default="auto", help="previous release tag; default: highest lower reachable component tag")
+    announce.add_argument("--component", choices=ANNOUNCED, required=True)
+    announce.add_argument("--target", required=True)
+    announce.add_argument("--version", required=True, help="X.Y.Z, or a Web X.Y.Z-exp.<source> Experimental version")
+    announce.add_argument("--output", type=Path, required=True)
     published = commands.add_parser("previous-published", help="resolve the last successful upload using GitHub Actions history")
     published.add_argument("--target", required=True)
     published.add_argument("--version", required=True)
     published.add_argument("--repo", required=True)
     published.add_argument("--require-latest", action="store_true", help="bootstrap must advance the latest successful TestFlight publication")
     args = parser.parse_args()
-    if args.command == "generate":
+    if args.command in ("generate", "announcement"):
         args.output = args.output.resolve()
     try:
         os.chdir(git("rev-parse", "--show-toplevel"))
@@ -530,6 +598,14 @@ def main():
             validate(args.base, args.target)
         elif args.command == "previous-published":
             print(previous_published(args.target, args.version, args.repo, args.require_latest))
+        elif args.command == "announcement":
+            payload = announcement(args.previous, args.target, args.version, args.component)
+            if payload is None:
+                print(f"No {args.component} announcement: no entry in this release opted in.")
+            else:
+                args.output.parent.mkdir(parents=True, exist_ok=True)
+                args.output.write_text(payload, encoding="utf-8")
+                print(f"Wrote the {args.component} {args.version} announcement to {args.output}.")
         else:
             generate(args.previous, args.target, args.version, args.output, args.component)
     except (ValueError, OSError, KeyError, IndexError, TypeError, zipfile.BadZipFile) as error:

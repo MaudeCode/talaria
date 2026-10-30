@@ -559,6 +559,99 @@ class ReleaseNotesTests(unittest.TestCase):
         release = json.loads((self.root / "out/release-notes.json").read_text())["releases"][0]
         self.assertEqual(release["sections"][0]["entries"][0]["summary"], summary)
 
+    def announce(self, component, version="1.1.0", *args, **kwargs):
+        output = self.root / f"out/{component}.json"
+        output.unlink(missing_ok=True)
+        self.cli("announcement", "--component", component, "--target", "HEAD", "--version", version,
+                 "--output", str(output), *args, **kwargs)
+        return output
+
+    def write_shared_fragments(self):
+        self.git("tag", "web-v1.0.0", "v1.0.0")
+        for key, data in WHATS_NEW["fragments"].items():
+            self.write(f"changelog.d/{key}.json", json.dumps(data))
+        self.commit(f"{', '.join(WHATS_NEW['fragments'])}: shared fixture")
+
+    def test_announcements_are_opt_in_component_scoped_ordered_capped_and_reproducible(self):
+        self.write_shared_fragments()
+        self.cli("validate", "--base", "v1.0.0")
+        source = self.git("rev-parse", "HEAD")
+        for component in ("app", "web"):
+            with self.subTest(component=component):
+                output = self.announce(component)
+                expected = {**WHATS_NEW[component], "sourceCommit": source}
+                self.assertEqual(json.loads(output.read_text()), expected)
+                first = output.read_bytes()
+                self.assertEqual(self.announce(component).read_bytes(), first)
+        # Release notes keep their historical shape: authored announcements never reach them.
+        self.generate("--component", "web")
+        self.assertNotIn("announcement", (self.root / "out/release-notes.json").read_text())
+
+    def test_releases_without_opted_in_rows_have_no_announcement(self):
+        self.git("tag", "web-v1.0.0", "v1.0.0")
+        self.add_fragment(2, "Highlighted but not announced", highlight=True)
+        self.write("changelog.d/TAL-3.json", json.dumps({"entries": [
+            {"category": "Added", "summary": "Relay only", "highlight": False, "components": ["relay"]}]}))
+        self.write("changelog.d/TAL-4.json", '{"skip": "Repository tooling only"}')
+        self.commit("TAL-2, TAL-3, TAL-4: unannounced")
+        for component in ("app", "web"):
+            with self.subTest(component=component):
+                self.assertFalse(self.announce(component).exists())
+        self.git("tag", "v1.1.0")
+        self.write("changelog.d/TAL-5.json", '{"skip": "Repository tooling only"}')
+        self.commit("TAL-5: skip only")
+        self.assertFalse(self.announce("app", "1.2.0").exists())
+
+    def test_announcement_covers_only_the_installed_release_after_skipped_versions(self):
+        announced = {"title": "Older change", "description": "Shipped in a release this install skipped.", "icon": "sparkles"}
+        self.write("changelog.d/TAL-2.json", json.dumps({"entries": [
+            {"category": "Added", "summary": "Older", "highlight": False, "announcement": announced}]}))
+        self.commit("TAL-2: older")
+        self.git("tag", "v1.1.0")
+        self.write("changelog.d/TAL-3.json", json.dumps({"entries": [
+            {"category": "Added", "summary": "Current", "highlight": False,
+             "announcement": {**announced, "title": "Current change"}}]}))
+        self.commit("TAL-3: current")
+        rows = json.loads(self.announce("app", "1.2.0").read_text())["rows"]
+        self.assertEqual([row["id"] for row in rows], ["TAL-3-1"])
+        # An Experimental Web build carries its release version and is ranged from the Stable tag below its core.
+        self.git("tag", "web-v1.1.0", "v1.1.0")
+        self.write("changelog.d/TAL-3.json", json.dumps({"entries": [
+            {"category": "Added", "summary": "Current", "highlight": False, "components": ["web"],
+             "announcement": {**announced, "title": "Current change"}}]}))
+        self.commit("TAL-3: retarget before release")
+        version = f"1.2.0-exp.{self.git('rev-parse', 'HEAD')[:12]}"
+        experimental = json.loads(self.announce("web", version).read_text())
+        self.assertEqual((experimental["id"], experimental["version"], experimental["rows"][0]["id"]),
+                         (f"web-{version}", version, "TAL-3-1"))
+        self.announce("web", "1.2.0-exp." + "f" * 12, error="its source")
+        self.announce("app", version, error="X.Y.Z")
+        self.announce("relay", error="invalid choice")
+
+    def test_authored_announcements_are_validated(self):
+        valid = {"title": "Pinned chats", "description": "Keep favorites on top.", "icon": "chat"}
+        cases = [
+            ({**valid, "title": "x" * 41}, "at most 40"),
+            ({**valid, "title": "\U0001F389" + "x" * 39}, "at most 40"),
+            ({**valid, "description": "Line\nbreak"}, "single line"),
+            ({**valid, "description": " padded"}, "surrounding whitespace"),
+            ({**valid, "icon": "rocket"}, "icon must be one of"),
+            ({**valid, "extra": True}, "title, description, and icon"),
+            ({"title": "Pinned chats", "icon": "chat"}, "title, description, and icon"),
+            ("Pinned chats", "title, description, and icon"),
+        ]
+        for announcement, error in cases:
+            with self.subTest(announcement=announcement):
+                self.write("changelog.d/TAL-2.json", json.dumps({"entries": [
+                    {"category": "Added", "summary": "Text", "highlight": False, "announcement": announcement}]}))
+                self.cli("validate", error=error)
+        self.write("changelog.d/TAL-2.json", json.dumps({"entries": [
+            {"category": "Added", "summary": "Text", "highlight": False, "components": ["relay"], "announcement": valid}]}))
+        self.cli("validate", error="announcement needs an app or web component")
+
+
+WHATS_NEW = json.loads((SCRIPT.parents[2] / "contracts/fixtures/whats-new.json").read_text())
+
 
 if __name__ == "__main__":
     unittest.main()

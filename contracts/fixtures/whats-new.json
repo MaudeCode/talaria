@@ -1,0 +1,289 @@
+{
+  "fragments": {
+    "TAL-9": {
+      "entries": [
+        {
+          "category": "Added",
+          "summary": "Pin chats to the top of the sidebar.",
+          "highlight": true,
+          "components": [
+            "app",
+            "web"
+          ],
+          "announcement": {
+            "title": "Pinned chats",
+            "description": "Keep the conversations you use most at the top of the list.",
+            "icon": "chat"
+          }
+        },
+        {
+          "category": "Fixed",
+          "summary": "Chats reconnect after an interrupted response.",
+          "highlight": true,
+          "components": [
+            "app",
+            "web"
+          ]
+        },
+        {
+          "category": "Changed",
+          "summary": "Relay delivers Live Activity updates sooner.",
+          "highlight": false,
+          "components": [
+            "relay"
+          ]
+        }
+      ]
+    },
+    "TAL-10": {
+      "entries": [
+        {
+          "category": "Added",
+          "summary": "Dictate messages with on-device speech recognition.",
+          "highlight": false,
+          "announcement": {
+            "title": "Dictation",
+            "description": "Speak your message and Talaria types it for you.",
+            "icon": "voice"
+          }
+        },
+        {
+          "category": "Added",
+          "summary": "Search every chat from one field.",
+          "highlight": false,
+          "components": [
+            "web"
+          ],
+          "announcement": {
+            "title": "Search everywhere",
+            "description": "Find any message across your chats from a single field.",
+            "icon": "search"
+          }
+        }
+      ]
+    },
+    "TAL-11": {
+      "entries": [
+        {
+          "category": "Added",
+          "summary": "Attach files from the Files app.",
+          "highlight": false,
+          "announcement": {
+            "title": "Attach any file",
+            "description": "Add documents from Files to a message.",
+            "icon": "attachment"
+          }
+        },
+        {
+          "category": "Changed",
+          "summary": "Notifications group by chat.",
+          "highlight": false,
+          "announcement": {
+            "title": "Calmer notifications",
+            "description": "Alerts from the same chat now arrive together.",
+            "icon": "notifications"
+          }
+        },
+        {
+          "category": "Changed",
+          "summary": "Refreshed chat colors.",
+          "highlight": false,
+          "announcement": {
+            "title": "Fresh colors",
+            "description": "Chats use clearer colors in light and dark mode.",
+            "icon": "appearance"
+          }
+        }
+      ]
+    },
+    "TAL-12": {
+      "skip": "Repository tooling only; no app behavior changes."
+    }
+  },
+  "app": {
+    "schemaVersion": 1,
+    "id": "app-1.1.0",
+    "component": "app",
+    "version": "1.1.0",
+    "sourceCommit": "0123456789abcdef0123456789abcdef01234567",
+    "rows": [
+      {
+        "id": "TAL-9-1",
+        "icon": "chat",
+        "title": "Pinned chats",
+        "description": "Keep the conversations you use most at the top of the list."
+      },
+      {
+        "id": "TAL-10-1",
+        "icon": "voice",
+        "title": "Dictation",
+        "description": "Speak your message and Talaria types it for you."
+      },
+      {
+        "id": "TAL-11-1",
+        "icon": "attachment",
+        "title": "Attach any file",
+        "description": "Add documents from Files to a message."
+      },
+      {
+        "id": "TAL-11-2",
+        "icon": "notifications",
+        "title": "Calmer notifications",
+        "description": "Alerts from the same chat now arrive together."
+      }
+    ]
+  },
+  "web": {
+    "schemaVersion": 1,
+    "id": "web-1.1.0",
+    "component": "web",
+    "version": "1.1.0",
+    "sourceCommit": "0123456789abcdef0123456789abcdef01234567",
+    "rows": [
+      {
+        "id": "TAL-9-1",
+        "icon": "chat",
+        "title": "Pinned chats",
+        "description": "Keep the conversations you use most at the top of the list."
+      },
+      {
+        "id": "TAL-10-2",
+        "icon": "search",
+        "title": "Search everywhere",
+        "description": "Find any message across your chats from a single field."
+      }
+    ]
+  },
+  "state": {
+    "announcement": {
+      "schemaVersion": 1,
+      "id": "web-1.1.0",
+      "component": "web",
+      "version": "1.1.0",
+      "sourceCommit": "0123456789abcdef0123456789abcdef01234567",
+      "rows": [
+        {
+          "id": "TAL-9-1",
+          "icon": "chat",
+          "title": "Pinned chats",
+          "description": "Keep the conversations you use most at the top of the list."
+        },
+        {
+          "id": "TAL-10-2",
+          "icon": "search",
+          "title": "Search everywhere",
+          "description": "Find any message across your chats from a single field."
+        }
+      ]
+    },
+    "eligible": true,
+    "observation": null,
+    "acknowledgement": "web:1.1.0"
+  },
+  "invalid": [
+    {
+      "schemaVersion": 1,
+      "id": "web-1.1.0",
+      "component": "web",
+      "version": "1.1.0",
+      "sourceCommit": "0123456789abcdef0123456789abcdef01234567",
+      "rows": []
+    },
+    {
+      "schemaVersion": 1,
+      "id": "web-1.1.0",
+      "component": "web",
+      "version": "1.1.0",
+      "sourceCommit": "0123456789abcdef0123456789abcdef01234567",
+      "rows": [
+        {
+          "id": "TAL-9-1",
+          "icon": "chat",
+          "title": "Pinned chats",
+          "description": "Keep the conversations you use most at the top of the list."
+        },
+        {
+          "id": "TAL-9-2",
+          "icon": "chat",
+          "title": "Pinned chats",
+          "description": "Keep the conversations you use most at the top of the list."
+        },
+        {
+          "id": "TAL-9-3",
+          "icon": "chat",
+          "title": "Pinned chats",
+          "description": "Keep the conversations you use most at the top of the list."
+        },
+        {
+          "id": "TAL-9-4",
+          "icon": "chat",
+          "title": "Pinned chats",
+          "description": "Keep the conversations you use most at the top of the list."
+        },
+        {
+          "id": "TAL-9-5",
+          "icon": "chat",
+          "title": "Pinned chats",
+          "description": "Keep the conversations you use most at the top of the list."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 2,
+      "id": "web-1.1.0",
+      "component": "web",
+      "version": "1.1.0",
+      "sourceCommit": "0123456789abcdef0123456789abcdef01234567",
+      "rows": [
+        {
+          "id": "TAL-9-1",
+          "icon": "chat",
+          "title": "Pinned chats",
+          "description": "Keep the conversations you use most at the top of the list."
+        },
+        {
+          "id": "TAL-10-2",
+          "icon": "search",
+          "title": "Search everywhere",
+          "description": "Find any message across your chats from a single field."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "id": "web-1.1.0",
+      "component": "web",
+      "version": "1.1.0",
+      "sourceCommit": "0123456789abcdef0123456789abcdef01234567",
+      "rows": [
+        {
+          "id": "TAL-9-1",
+          "icon": "chat",
+          "title": "Pinned chats"
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "id": "web-1.1.0",
+      "component": "web",
+      "version": "1.1.0",
+      "sourceCommit": "not-a-commit",
+      "rows": [
+        {
+          "id": "TAL-9-1",
+          "icon": "chat",
+          "title": "Pinned chats",
+          "description": "Keep the conversations you use most at the top of the list."
+        },
+        {
+          "id": "TAL-10-2",
+          "icon": "search",
+          "title": "Search everywhere",
+          "description": "Find any message across your chats from a single field."
+        }
+      ]
+    },
+    "not an announcement"
+  ]
+}

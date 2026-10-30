@@ -248,6 +248,12 @@ Local execution writes `build-result.json`; Actions execution additionally write
 a receipt tied to the actual run. An unsigned App archive is not an installable
 device-validation build.
 
+Every App and Web build, including the signed production and Nightly App builds,
+stamps through `scripts/stamp-release.py`, which also packages the release's
+What's New announcement generated from its fragments: the App's Info.plist
+`TalariaWhatsNew` string and Web's `_whats_new.json`. A release whose fragments
+announce nothing packages none. See `app/docs/release-notes.md`.
+
 `build.py web --experimental --output NEW_DIRECTORY` packs only the Web npm
 package for the Experimental channel from `HEAD`, without a plan or Docker image:
 version `<latest web-v tag, patch + 1>-exp.<12-hex source>`, tag `web-exp-v<version>`, and

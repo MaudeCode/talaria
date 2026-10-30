@@ -25,11 +25,12 @@ class ExperimentalTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
         self.git("init", "-b", "main")
-        for name in ("scripts/stamp-release.py", "web/sidecar/agent_dependency.json", "web/contract_versions.json"):
+        for name in ("scripts/stamp-release.py", "web/sidecar/agent_dependency.json", "web/contract_versions.json",
+                     "app/ci/release_notes.py", "contracts/whats-new.schema.json"):
             target = self.root / name
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(REPOSITORY / name, target)
-        (self.root / "web/.gitignore").write_text("_release.json\n")
+        (self.root / "web/.gitignore").write_text("_release.json\n_whats_new.json\n")
         self.commit("synthetic Web source")
 
     def git(self, *args):
@@ -76,6 +77,37 @@ class ExperimentalTests(unittest.TestCase):
             "contracts": {"appWeb": [versions["appWeb"]["fixtureVersion"]], "webRelay": [versions["webRelay"]["protocolVersion"]]},
             "compatibleAgent": {**pin["x-talaria"], "image": pin["services"]["hermes-agent"]["image"]},
         })
+
+    def test_stable_and_experimental_stamps_package_the_generated_web_announcement(self):
+        self.git("tag", "web-v1.4.0")
+        self.assertEqual(self.stamp(experimental_component(self.root)).returncode, 0)
+        self.assertFalse((self.root / "web/_whats_new.json").exists(), "a release that announces nothing stays quiet")
+        (self.root / "web/_release.json").unlink()
+        fragment = self.root / "changelog.d/TAL-2.json"
+        fragment.parent.mkdir()
+        fragment.write_text(json.dumps({"entries": [
+            {"category": "Added", "summary": "App only", "highlight": False,
+             "announcement": {"title": "App row", "description": "Only the App shows this.", "icon": "chat"}},
+            {"category": "Added", "summary": "Search", "highlight": False, "components": ["web"],
+             "announcement": {"title": "Search everywhere", "description": "Find any message.", "icon": "search"}}]}))
+        source = self.commit("TAL-2: announce a Web change")
+        for component in (experimental_component(self.root), {"version": "1.5.0", "sourceRevision": source, "tag": "web-v1.5.0"}):
+            with self.subTest(tag=component["tag"]):
+                output = self.root.parent / f"{self.root.name}-whats-new.json"
+                self.addCleanup(output.unlink, missing_ok=True)
+                subprocess.run([sys.executable, "app/ci/release_notes.py", "announcement", "--component", "web",
+                                "--target", "HEAD", "--version", component["version"], "--output", str(output)],
+                               cwd=self.root, check=True, capture_output=True)
+                stamped = self.stamp(component)
+                self.assertEqual(stamped.returncode, 0, stamped.stderr)
+                packaged = (self.root / "web/_whats_new.json").read_text()
+                self.assertEqual(packaged, output.read_text())
+                self.assertEqual([row["id"] for row in json.loads(packaged)["rows"]], ["TAL-2-2"])
+                self.assertEqual(json.loads(packaged)["version"], component["version"])
+                refused = self.stamp(component)
+                self.assertNotEqual(refused.returncode, 0)
+                for name in ("_release.json", "_whats_new.json"):
+                    (self.root / "web" / name).unlink()
 
     def test_stamp_rejects_an_experimental_version_for_another_source_or_channel(self):
         source = self.git("rev-parse", "HEAD")

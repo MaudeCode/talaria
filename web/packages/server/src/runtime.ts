@@ -27,7 +27,7 @@ import { PruneAdvice } from './tools/prune-advice.js'
 import { McpHealthProber } from './tools/mcp-health.js'
 import { loadConfig, truthy, type Env, type LoadConfigOptions } from './config.js'
 import type { AppDeps } from './http/context.js'
-import { checkoutRevision, detectWebuiVersion, loadReleaseInfo } from './release.js'
+import { checkoutRevision, detectWebuiVersion, loadReleaseInfo, loadWhatsNew } from './release.js'
 import { gatewayDrainDetail, ghcrExperimental, githubJson, normalizeChannel, normalizeWebChannel, purgePycache, sanitizeGitDiagnostic, UpdateService, waitUntilRestartSafe, type RestartBlockers } from './tools/updates.js'
 import { UpdateNotificationStore } from './tools/update-notifications.js'
 import { RESTART_EXIT_CODE } from './cli/supervise.js'
@@ -679,6 +679,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     spa: new SpaShell(config.distRoot),
     staticFiles: new AssetCache(config.staticRoot),
     release,
+    whatsNew: loadWhatsNew(config.webRoot, release),
     version,
     recentErrors: () => recentErrors,
     startedAt: now(),

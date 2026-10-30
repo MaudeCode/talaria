@@ -8,7 +8,7 @@ provider, or the network. Run commands from `web/` unless noted.
 | Gate | Command | Notes |
 |---|---|---|
 | Contracts | `npm run typecheck -w packages/contracts && npm run lint -w packages/contracts && npm test -w packages/contracts` | schema tests, sidecar fixtures, OpenAPI snapshot, monorepo `contracts/fixtures` (publisher snapshot signing, activity scenes) |
-| OpenAPI | `npm run openapi && git diff --exit-code -- ../contracts/web-api.openapi.json` | the committed document is the app↔web artifact |
+| OpenAPI | `npm run openapi && git diff --exit-code -- ../contracts/web-api.openapi.json ../contracts/whats-new.schema.json` | the committed documents are the app↔web artifacts; the What's New schema also feeds the release-note generator |
 | Server | `npm run typecheck -w packages/server && npm run lint -w packages/server && npm test -w packages/server` | Vitest with the fake sidecar; ~330 tests |
 | Sidecar | `sidecar/scripts/test.sh` | pytest against `HERMES_WEBUI_AGENT_DIR`, else the active pinned Agent release, cached and reused as described below; never `~/.hermes` |
 | Frontend | `cd packages/frontend && npm run i18n:gate && npm run typecheck && npm run lint && npm test && npm run build:fast` | Vitest + in-memory contract server; the build must reproduce `static/dist` |

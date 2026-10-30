@@ -80,10 +80,12 @@ static/dist/
 
 # Immutable release provenance is stamped into artifacts, never source commits.
 _release.json
+_whats_new.json
 packages/server/static/
 packages/server/sidecar/
 packages/server/contract_versions.json
 packages/server/_release.json
+packages/server/_whats_new.json
 
 # Pack-time copies of web/LICENSE (TAL-389).
 packages/*/LICENSE

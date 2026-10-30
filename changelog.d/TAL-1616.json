@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "App and Web updates now carry a short list of their most important changes for the upcoming What's New screen.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}

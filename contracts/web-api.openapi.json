@@ -444,6 +444,175 @@
         }
       }
     },
+    "/api/whats-new": {
+      "get": {
+        "operationId": "whatsNew",
+        "summary": "The installed Web release's What's New announcement and whether this tab presents it now. A tab passes its loaded_build and stored observation token; a stale tab neither presents nor records a newer release.",
+        "tags": [
+          "core"
+        ],
+        "parameters": [
+          {
+            "name": "loaded_build",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "observed",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "announcement": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "schemaVersion": {
+                              "const": 1
+                            },
+                            "id": {
+                              "type": "string",
+                              "pattern": "^(app|web)-[0-9A-Za-z.-]+$"
+                            },
+                            "component": {
+                              "enum": [
+                                "app",
+                                "web"
+                              ],
+                              "type": "string"
+                            },
+                            "version": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "sourceCommit": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{40}$"
+                            },
+                            "rows": {
+                              "type": "array",
+                              "minItems": 1,
+                              "maxItems": 4,
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "pattern": "^TAL-[1-9][0-9]*-[1-9][0-9]*$"
+                                  },
+                                  "icon": {
+                                    "enum": [
+                                      "sparkles",
+                                      "chat",
+                                      "voice",
+                                      "attachment",
+                                      "search",
+                                      "notifications",
+                                      "automation",
+                                      "model",
+                                      "appearance",
+                                      "speed",
+                                      "reliability",
+                                      "security",
+                                      "sync",
+                                      "share",
+                                      "settings",
+                                      "accessibility"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "title": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 40,
+                                    "pattern": "^\\S(?:[^\\u0000-\\u001f]*\\S)?$"
+                                  },
+                                  "description": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 120,
+                                    "pattern": "^\\S(?:[^\\u0000-\\u001f]*\\S)?$"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "icon",
+                                  "title",
+                                  "description"
+                                ]
+                              }
+                            }
+                          },
+                          "required": [
+                            "schemaVersion",
+                            "id",
+                            "component",
+                            "version",
+                            "sourceCommit",
+                            "rows"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "eligible": {
+                      "type": "boolean"
+                    },
+                    "observation": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "acknowledgement": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "announcement",
+                    "eligible",
+                    "observation",
+                    "acknowledgement"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/auth/status": {
       "get": {
         "operationId": "auth.status",

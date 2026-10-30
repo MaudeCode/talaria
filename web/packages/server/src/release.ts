@@ -1,13 +1,14 @@
 /**
  * Release identity: the stamped `<webRoot>/_release.json` (written by
  * `scripts/stamp-release.py`), the sidecar Agent pin, supported contract versions
- * (`<webRoot>/contract_versions.json`), and the process-lifetime version string.
+ * (`<webRoot>/contract_versions.json`), the process-lifetime version string, and the
+ * installed release's What's New announcement (`<webRoot>/_whats_new.json`, TAL-1616).
  */
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
-import { ReleaseInfoSchema, type ReleaseInfo } from '@maudecode/talaria-web-contracts'
+import { ReleaseInfoSchema, WhatsNewAnnouncementSchema, type ReleaseInfo, type WhatsNewAnnouncement, type WhatsNewState } from '@maudecode/talaria-web-contracts'
 
 const SHA_RE = /^[a-f0-9]{40}$/
 
@@ -132,4 +133,39 @@ export function detectWebuiVersion(release: ReleaseInfo, webRoot: string, packag
   }
   if (packageVersion && packageVersion !== '0.0.0') return packageVersion.startsWith('web-') ? packageVersion : `web-v${packageVersion}`
   return 'unknown'
+}
+
+/**
+ * The installed release's What's New announcement, or null: absent, malformed, or generated for another component,
+ * version or source than the release this server runs. A bad payload stays quiet rather than failing startup.
+ */
+export function loadWhatsNew(webRoot: string, release: ReleaseInfo): WhatsNewAnnouncement | null {
+  try {
+    const parsed = WhatsNewAnnouncementSchema.safeParse(readJson(resolve(webRoot, '_whats_new.json')))
+    const announcement = parsed.success ? parsed.data : null
+    return announcement?.component === 'web' && release.sourceRevision !== null && announcement.version === release.version
+      && announcement.sourceCommit === release.sourceRevision ? announcement : null
+  } catch {
+    return null
+  }
+}
+
+const OBSERVATION_RE = /^web:(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/
+const CORE_RE = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-|$)/
+
+/**
+ * Whether one tab presents `announcement` now (TAL-1616). A browser's observation token names the X.Y.Z release it
+ * last recorded: the first observation is quiet, and an announcement is eligible once for a later X.Y.Z. Builds of
+ * one X.Y.Z (Experimental commits) and older releases are quiet. A tab whose loaded bundle is not the build this
+ * server serves (a stale UI, or no verifiable build) neither presents nor records a release; an unreadable token
+ * counts as no observation. `observed` is compared, never trusted as release identity.
+ */
+export function whatsNewState(announcement: WhatsNewAnnouncement | null, release: ReleaseInfo, observed: string | undefined, loadedBuild: string | undefined, currentBuild: string | null): WhatsNewState {
+  const quiet = { announcement, eligible: false, observation: null, acknowledgement: null }
+  const installed = release.sourceRevision === null ? null : CORE_RE.exec(release.version)
+  if (!installed || !currentBuild || loadedBuild !== currentBuild) return quiet
+  const token = `web:${installed[1]}.${installed[2]}.${installed[3]}`
+  const prior = OBSERVATION_RE.exec(observed ?? '')
+  const later = prior !== null && ([1, 2, 3].map((i) => Number(installed[i]) - Number(prior[i])).find((d) => d !== 0) ?? 0) > 0
+  return announcement && later ? { ...quiet, eligible: true, acknowledgement: token } : { ...quiet, observation: token }
 }

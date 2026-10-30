@@ -40,7 +40,7 @@ import type { BackgroundActivity } from '../sessions/background-tasks.js'
 import type { PromptQueues } from '../sessions/prompt-queues.js'
 import type { ConnectorOffers } from '../tools/connectors.js'
 import type { StreamSlots } from '../api/sse-routes.js'
-import type { BootstrapFeatures, ReleaseInfo } from '@maudecode/talaria-web-contracts'
+import type { BootstrapFeatures, ReleaseInfo, WhatsNewAnnouncement } from '@maudecode/talaria-web-contracts'
 import { buildCspEnforcedPolicy, buildCspReportOnlyPolicy, cspExtras, CSP_REPORT_TO, type CspExtras } from './csp.js'
 import { forwardedClientIp, rawPeerIsTrustedProxy, type CsrfFailure } from './origin.js'
 import type { AgentConfig } from '../config/agent-config.js'
@@ -95,6 +95,8 @@ export interface AppDeps {
   /** Files under `static/` outside `dist/` (brand icons, extension SDK). */
   staticFiles: AssetCache
   release: ReleaseInfo
+  /** The installed release's What's New announcement (`_whats_new.json`), null when it has none. */
+  whatsNew: WhatsNewAnnouncement | null
   version: string
   /** Seconds since the epoch when the server started. */
   startedAt: number

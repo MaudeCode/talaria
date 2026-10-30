@@ -60,6 +60,51 @@ Use only the affected components, without duplicates; omitted `components`
 means `app` so historical notes retain their meaning. `generate --component web`
 or `--component relay` filters the same source. The app catalog format is unchanged.
 
+### What's New announcements
+
+An App or Web update shows a short What's New screen only for entries that opt in
+with an `announcement`: a short title, a one-line benefit description, and a
+semantic icon key. Neither a release note alone nor `highlight` announces anything.
+
+```json
+{
+  "category": "Added",
+  "summary": "Pin chats to the top of the sidebar.",
+  "highlight": true,
+  "components": ["app", "web"],
+  "announcement": {
+    "title": "Pinned chats",
+    "description": "Keep the conversations you use most at the top of the list.",
+    "icon": "chat"
+  }
+}
+```
+
+Titles and descriptions are single-line plain text, at most 40 and 120
+characters. Icons are the keys in `../contracts/whats-new.schema.json`
+(`sparkles`, `chat`, `voice`, `attachment`, `search`, `notifications`,
+`automation`, `model`, `appearance`, `speed`, `reliability`, `security`, `sync`,
+`share`, `settings`, `accessibility`); each client maps a key to its own symbol
+in its accent color. An announced entry must include `app` or `web`, and each
+component shows only the rows its `components` select. Announce only the few
+changes a user benefits from noticing. The schema is generated from
+`web/packages/contracts`; the generator reads its icons and limits from it.
+
+A release shows at most four rows, in the same ticket and entry order as its
+notes. Rows past the fourth stay in the release notes only. A release with no
+opted-in rows has no announcement and stays quiet. The announcement covers only
+the installed release's range, so an install that skips versions sees the
+current release's rows, never a history. To preview one:
+
+```sh
+python3 ci/release_notes.py announcement --component web \
+  --target HEAD --version 1.8.0 --output build/whats-new.json
+```
+
+`--previous` defaults to the highest lower component tag, as for `generate`; an
+Experimental Web version `X.Y.Z-exp.<12-hex source>` is ranged like `X.Y.Z`.
+The output is byte-identical for the same component, version, and source.
+
 For repository, documentation, or test maintenance with no app behavior change:
 
 ```json
@@ -170,9 +215,29 @@ order. Entries sort by numeric ticket number and then their authored array order
 
 Each artifact contains one release. `highlights` contains the same entry objects
 as the categories, ordered by ticket and authored entry order. Entry IDs are the
-ticket key followed by the one-based entry index. Skip reasons are excluded from
-both user-facing outputs. Bundling and presenting this catalog belong to the
-separate What's New app task.
+ticket key followed by the one-based entry index. Skip reasons and authored
+announcements are excluded from both outputs.
+
+## Packaged What's New
+
+`../scripts/stamp-release.py` generates the announcement while it stamps an App
+or Web artifact, from the highest lower component tag reachable from the source.
+Every path that builds an installable artifact passes through it: the release-set
+Web build (Stable npm package and image) and App dry run in `releases/build.py`,
+the Experimental Web package (`build.py web --experimental`), and the signed
+production and Nightly App builds in `.github/workflows/ios-release-build.yml`.
+A malformed fragment or a missing baseline tag stops the stamp before it writes.
+
+- **App:** the exact payload JSON is stored as the `TalariaWhatsNew` string in the
+  App's Info.plist (not the widget's). `WhatsNewAnnouncement.installed()` in
+  TalariaKit decodes it offline, without a server, and returns nil for a missing,
+  malformed, or mismatched payload. A Nightly build is ranged from the last Stable
+  App tag, so each build of one marketing version carries every row announced
+  since then, up to four. Presentation and Settings replay belong to the App UI.
+- **Web:** the payload is written to `web/_whats_new.json` beside `_release.json`
+  and ships in the npm package and image. The server serves it from
+  `GET /api/whats-new` only while it names the running Web release; see
+  `web/docs/talaria-updates.md` for presentation eligibility.
 
 `sourceCommit` records the exact validated Git SHA and lets a later release find
 the correct baseline even when this release was built through manual dispatch.
