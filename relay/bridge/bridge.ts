@@ -10,7 +10,9 @@ import sharp from "sharp";
 // Kanvil's per-attachment upload limit.
 export const maxOutputBytes = 10_000_000;
 const maxVideoSeconds = 120.5;
+const maxInputPixels = 40_000_000;
 const run = promisify(execFile);
+const probe = (args: string[]) => run("ffprobe", ["-v", "error", ...args], { timeout: 30_000, killSignal: "SIGKILL", maxBuffer: 1_000_000 });
 
 type QueuedAttachment = {
   index: number;
@@ -51,7 +53,7 @@ const demuxers: Record<string, string> = { "video/mp4": "mov", "video/quicktime"
 // Re-encodes an untrusted image: applies orientation, bounds its size, and drops EXIF, GPS, XMP,
 // ICC and comments, which sharp never copies unless asked.
 export async function sanitizeImage(input: Buffer, contentType: string, index: number): Promise<Sanitized> {
-  const options = { limitInputPixels: 40_000_000, failOn: "error" } as const;
+  const options = { limitInputPixels: maxInputPixels, failOn: "error" } as const;
   let pixels: number;
   try {
     // Reads the header only; the pixel check below names the reason, which a decode error would not.
@@ -61,7 +63,7 @@ export async function sanitizeImage(input: Buffer, contentType: string, index: n
     throw new Dropped("failed validation");
   }
   if (!(pixels > 0)) throw new Dropped("failed validation");
-  if (pixels > options.limitInputPixels) throw new Dropped("too large");
+  if (pixels > maxInputPixels) throw new Dropped("too large");
   const png = contentType === "image/png";
   let data: Buffer;
   try {
@@ -76,16 +78,40 @@ export async function sanitizeImage(input: Buffer, contentType: string, index: n
     : { name: `attachment-${index}.jpg`, contentType: "image/jpeg", data };
 }
 
+// sharp's bundled libvips cannot decode HEVC, so ffmpeg turns a HEIC (an iPhone tile grid, with its
+// irot rotation applied) into a PNG for sanitizeImage. The probe refuses an oversized grid before decoding.
+export async function decodeHeic(input: string, output: string): Promise<Buffer> {
+  const source = ["-protocol_whitelist", "file", "-f", "mov", "-i", input];
+  type Size = { width?: number; height?: number };
+  let pixels: number;
+  try {
+    const { stdout } = await probe(["-show_stream_groups", "-show_streams", "-of", "json", ...source]);
+    const parsed = JSON.parse(stdout) as { streams?: Size[]; stream_groups?: Array<{ components?: Size[] }> };
+    const sizes = [...parsed.streams ?? [], ...(parsed.stream_groups ?? []).flatMap((group) => group.components ?? [])];
+    pixels = Math.max(0, ...sizes.map(({ width = 0, height = 0 }) => width * height));
+  } catch {
+    throw new Dropped("failed validation");
+  }
+  if (!(pixels > 0)) throw new Dropped("failed validation");
+  if (pixels > maxInputPixels) throw new Dropped("too large");
+  try {
+    await run("ffmpeg", ["-nostdin", "-v", "error", ...source, "-frames:v", "1", "-map_metadata", "-1", "-pix_fmt", "rgb24", output],
+      { timeout: 60_000, killSignal: "SIGKILL", maxBuffer: 1_000_000 });
+    return await readFile(output);
+  } catch {
+    throw new Dropped("failed validation");
+  }
+}
+
 // Transcodes an untrusted clip to a silent H.264 MP4 without metadata that fits Kanvil's limit.
 export async function sanitizeVideo(input: string, output: string, contentType: string, index: number): Promise<Sanitized> {
   const source = ["-protocol_whitelist", "file", "-f", demuxers[contentType]!, "-i", input];
   let duration: number;
   try {
-    const { stdout } = await run("ffprobe", ["-v", "error", "-show_entries", "stream=codec_type:format=duration", "-of", "json", ...source],
-      { timeout: 30_000, killSignal: "SIGKILL", maxBuffer: 1_000_000 });
-    const probe = JSON.parse(stdout) as { streams?: Array<{ codec_type?: string }>; format?: { duration?: string } };
-    if (probe.streams?.filter((stream) => stream.codec_type === "video").length !== 1) throw new Error();
-    duration = Number(probe.format?.duration);
+    const { stdout } = await probe(["-show_entries", "stream=codec_type:format=duration", "-of", "json", ...source]);
+    const parsed = JSON.parse(stdout) as { streams?: Array<{ codec_type?: string }>; format?: { duration?: string } };
+    if (parsed.streams?.filter((stream) => stream.codec_type === "video").length !== 1) throw new Error();
+    duration = Number(parsed.format?.duration);
   } catch {
     throw new Dropped("failed validation");
   }
@@ -192,12 +218,19 @@ async function collect(relay: string, token: string, report: FeedbackReport, dir
       if (!input || input.length !== attachment.bytes || createHash("sha256").update(input).digest("hex") !== attachment.sha256) {
         throw new Dropped("failed validation");
       }
-      if (images.has(contentType)) {
-        outcomes.push({ index, kept: await sanitizeImage(input, contentType, index) });
-      } else if (Object.hasOwn(demuxers, contentType)) {
+      // ffmpeg reads files, never the downloaded buffer.
+      const staged = async () => {
         const source = join(directory, `input-${index}`);
         await writeFile(source, input);
-        outcomes.push({ index, kept: await sanitizeVideo(source, join(directory, `output-${index}.mp4`), contentType, index) });
+        return source;
+      };
+      if (contentType === "image/heic") {
+        const decoded = await decodeHeic(await staged(), join(directory, `decoded-${index}.png`));
+        outcomes.push({ index, kept: await sanitizeImage(decoded, contentType, index) });
+      } else if (images.has(contentType)) {
+        outcomes.push({ index, kept: await sanitizeImage(input, contentType, index) });
+      } else if (Object.hasOwn(demuxers, contentType)) {
+        outcomes.push({ index, kept: await sanitizeVideo(await staged(), join(directory, `output-${index}.mp4`), contentType, index) });
       } else {
         throw new Dropped("failed validation");
       }

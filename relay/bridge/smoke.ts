@@ -2,12 +2,12 @@
 // Unit tests stub ffmpeg; this runs the image's own sharp and ffmpeg on synthetic media.
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import sharp from "sharp";
-import { maxOutputBytes, sanitizeImage, sanitizeVideo } from "./bridge.ts";
+import { decodeHeic, maxOutputBytes, sanitizeImage, sanitizeVideo } from "./bridge.ts";
 
 const run = promisify(execFile);
 const marker = "synthetic-smoke-location";
@@ -24,6 +24,17 @@ try {
   assert.equal(cleaned.xmp, undefined);
   assert.equal(image.data.includes(marker), false);
   assert.deepEqual([cleaned.format, cleaned.width, cleaned.height], ["jpeg", 2560, 1920]);
+
+  // A synthetic iPhone-style HEIC: a 1600×1200 tile grid with an irot rotation of 90° and EXIF GPS.
+  const heicMarker = "synthetic-heic-marker";
+  const heicPath = join(import.meta.dirname, "fixtures", "rotated-gps.heic");
+  assert.ok((await readFile(heicPath)).includes(heicMarker));
+  const heic = await sanitizeImage(await decodeHeic(heicPath, join(directory, "heic.png")), "image/heic", 1);
+  const heicCleaned = await sharp(heic.data).metadata();
+  assert.deepEqual([heic.name, heicCleaned.format, heicCleaned.width, heicCleaned.height], ["attachment-1.jpg", "jpeg", 1200, 1600]);
+  assert.equal(heicCleaned.exif, undefined);
+  assert.equal(heicCleaned.xmp, undefined);
+  assert.equal(heic.data.includes(heicMarker), false);
 
   const clip = async (name: string, seconds: number, codecs: string[]) => {
     const path = join(directory, name);

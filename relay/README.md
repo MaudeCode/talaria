@@ -66,8 +66,9 @@ length and SHA-256 against the queue entry, and re-encodes it in a per-report
 temporary directory before any ticket exists. Images go through
 [sharp](https://sharp.pixelplumbing.com/) (40 megapixel input limit, fit inside
 2560×2560, PNG stays PNG and other types become JPEG), which drops EXIF, GPS,
-XMP and ICC data. sharp's bundled libvips cannot decode HEVC-coded HEIC, so such
-a file is dropped; the Talaria clients already send JPEG or PNG. Video goes through ffmpeg: one video stream, at most 120.5
+XMP and ICC data. sharp's bundled libvips cannot decode HEVC, so ffmpeg first
+turns a HEIC (an iPhone tile grid, with its rotation applied) into a PNG; its
+probe refuses a grid over 40 megapixels before decoding. Video goes through ffmpeg: one video stream, at most 120.5
 seconds, re-encoded to a silent H.264 MP4 without metadata, at most 1280 pixels
 wide and 10,000,000 bytes. A file that fails these checks is dropped, and the
 ticket's Attachments table names the reason: `failed validation`, `too long`,
@@ -100,7 +101,8 @@ and `main`. Pull requests build and smoke-test it; bridge changes on main also
 publish it. The image runs as the non-root `node` user and adds Alpine's `ffmpeg`
 package, the pinned sharp install from `bridge/package-lock.json`, and the entry
 file. The image workflow also runs `bridge/smoke.ts` inside the built image,
-without network access, to prove real sharp and ffmpeg sanitization.
+without network access, to prove real sharp and ffmpeg sanitization, including
+the synthetic rotated, GPS-tagged HEIC in `bridge/fixtures/`.
 
 Deployment is separate. The intended in-cluster Kubernetes CronJob schedule is
 `*/2 * * * *` with `concurrencyPolicy: Forbid`, the five variables above supplied

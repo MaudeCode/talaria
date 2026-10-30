@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "iPhone photos (HEIC) sent with feedback now reach the Inbox ticket as cleaned JPEG images instead of being dropped.",
+      "highlight": false,
+      "components": ["relay"]
+    }
+  ]
+}
