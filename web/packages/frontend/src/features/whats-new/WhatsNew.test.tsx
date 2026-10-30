@@ -126,13 +126,38 @@ describe("What's New (TAL-1617)", () => {
 
   it('closes when another tab of this browser acknowledges it', async () => {
     window.localStorage.setItem(SCOPE, 'web:1.0.0')
-    fetchMock.mockResolvedValue(eligible)
+    fetchMock.mockResolvedValueOnce(eligible).mockResolvedValue(quiet)
     renderShell()
     await screen.findByRole('dialog')
     act(() => {
       window.localStorage.setItem(SCOPE, 'web:1.1.0')
       window.dispatchEvent(new StorageEvent('storage', { key: SCOPE, newValue: 'web:1.1.0' }))
     })
+    await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
+    expect(fetchMock).toHaveBeenLastCalledWith('web:1.1.0')
+  })
+
+  it('does not reopen an acknowledged prompt when another tab later stores a newer token', async () => {
+    window.localStorage.setItem(SCOPE, 'web:1.0.0')
+    fetchMock.mockResolvedValueOnce(eligible).mockResolvedValue({ announcement, eligible: false, observation: null, acknowledgement: null })
+    renderShell()
+    await userEvent.click(await screen.findByRole('button', { name: 'Continue' }))
+    act(() => {
+      window.localStorage.setItem(SCOPE, 'web:1.2.0')
+      window.dispatchEvent(new StorageEvent('storage', { key: SCOPE, newValue: 'web:1.2.0' }))
+    })
+    // This tab never re-presents its own cached answer; the server decides again for the new token.
+    expect(await screen.findByRole('dialog', {}, { timeout: 300 }).catch(() => null)).toBeNull()
+    await waitFor(() => { expect(fetchMock).toHaveBeenLastCalledWith('web:1.2.0') })
+    expect(window.localStorage.getItem(SCOPE)).toBe('web:1.2.0')
+  })
+
+  it('closes on dismissal even when the acknowledgement cannot be saved', async () => {
+    window.localStorage.setItem(SCOPE, 'web:1.0.0')
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new DOMException('full', 'QuotaExceededError') })
+    fetchMock.mockResolvedValue(eligible)
+    renderShell()
+    await userEvent.click(await screen.findByRole('button', { name: 'Continue' }))
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 

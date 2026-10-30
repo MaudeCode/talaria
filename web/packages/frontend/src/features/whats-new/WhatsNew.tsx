@@ -1,5 +1,5 @@
-import { useSyncExternalStore } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useEffect, useSyncExternalStore } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useRouterState } from '@tanstack/react-router'
 import { Accessibility, Bell, Cpu, Gauge, Lock, MessageSquare, Mic, Palette, Paperclip, RefreshCw, Search, Settings, Share2, ShieldCheck, Sparkles, Workflow, type LucideIcon } from 'lucide-react'
 import type { WhatsNewAnnouncement } from '@maudecode/talaria-web-contracts'
@@ -31,9 +31,7 @@ let manual = false
 const notify = () => { for (const listener of listeners) listener() }
 const subscribe = (listener: () => void) => {
   listeners.add(listener)
-  // Another tab of this browser storing the acknowledgement closes this tab's copy of the prompt.
-  window.addEventListener('storage', listener)
-  return () => { listeners.delete(listener); window.removeEventListener('storage', listener) }
+  return () => { listeners.delete(listener) }
 }
 
 /** Settings > System: replay the installed release's announcement; this never re-enables the automatic prompt. */
@@ -69,30 +67,41 @@ export function useWhatsNewState() {
     queryFn: async () => {
       const stored = readPersisted(scope)
       const state = await api.fetchWhatsNew(stored !== null && stored.length <= 256 ? stored : null)
-      if (state.observation !== null) { writePersisted(scope, state.observation); notify() }
+      if (state.observation !== null) writePersisted(scope, state.observation)
       return state
     },
     // One read per launch: a failure stays quiet and retries on the next launch or Settings visit, never by polling.
     staleTime: Infinity, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false,
   })
-  return { scope, state: query.data }
+  return { scope, state: query.data, fetching: query.isFetching }
 }
 
 /** The What's New prompt for the installed Web release, shown once automatically and replayed from Settings. */
 export function WhatsNew() {
-  const { scope, state } = useWhatsNewState()
-  const stored = useSyncExternalStore(subscribe, () => readPersisted(scope), () => null)
+  const { scope, state, fetching } = useWhatsNewState()
+  const qc = useQueryClient()
+  // Another tab of this browser changed the token (it dismissed the prompt, or recorded a release): ask the server
+  // again rather than judging the new token here. The prompt stays closed until that answer arrives.
+  useEffect(() => {
+    const changed = (e: StorageEvent) => { if (e.key === scope || e.key === null) void qc.invalidateQueries({ queryKey: keys.whatsNew(scope) }) }
+    window.addEventListener('storage', changed)
+    return () => { window.removeEventListener('storage', changed) }
+  }, [qc, scope])
   const open = useSyncExternalStore(subscribe, () => manual, () => false)
   const announcement = state?.announcement ?? null
   const acknowledgement = state?.eligible ? state.acknowledgement : null
-  const unseen = announcement !== null && acknowledgement !== null && stored !== acknowledgement
+  const unseen = announcement !== null && acknowledgement !== null && !fetching
   const navigating = useRouterState({ select: (s) => s.status === 'pending' })
   const interrupting = useSyncExternalStore(unseen && !open ? subscribeBusy : subscribeNever, busy, () => true)
   const presented = announcement !== null && (open || (unseen && !navigating && !interrupting))
-  // Every dismissal (Continue, Escape, backdrop) closes at once; only a dismissed eligible prompt records the token.
+  // Every dismissal (Continue, Escape, backdrop) closes this page's prompt at once, whether or not the token could be
+  // saved; only a dismissed eligible prompt records it.
   const dismiss = () => {
     manual = false
-    if (unseen) writePersisted(scope, acknowledgement)
+    if (unseen) {
+      writePersisted(scope, acknowledgement)
+      qc.setQueryData(keys.whatsNew(scope), { ...state, eligible: false, acknowledgement: null })
+    }
     notify()
   }
   if (!announcement) return null
