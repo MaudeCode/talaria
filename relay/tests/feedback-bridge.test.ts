@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { chmod, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -34,16 +34,24 @@ async function body(request: IncomingMessage) {
   return JSON.parse(text);
 }
 
-// Stand-ins for ffprobe and ffmpeg, found through PATH. Real transcoding is proven by bridge/smoke.ts
-// inside the built image. A clip whose bytes start with LONG probes as 300 seconds; the "transcoded"
-// file is the JSON argument list, so tests can inspect exactly what the bridge asked ffmpeg to do.
+// Stand-ins for ffprobe and ffmpeg, found through PATH. Real decoding is proven by bridge/smoke.ts
+// inside the built image. A file whose bytes start with LONG probes as 300 seconds and one starting
+// with HUGE as 10000×10000 pixels. A PNG "decode" strips a FAKEHEIC prefix, which sharp cannot read,
+// from a real PNG; any other output is the JSON argument list. Every ffmpeg call is logged to calls.log.
 let work = "";
+const ffmpegCalls = async () => (await readFile(join(work, "calls.log"), "utf8").catch(() => "")).split("\n").filter(Boolean)
+  .map((line) => JSON.parse(line) as string[]);
 beforeAll(async () => {
   work = await mkdtemp(join(tmpdir(), "feedback-bridge-test-"));
   const stub = (source: string) => `#!${process.execPath}\nconst fs = require("node:fs");\nconst args = process.argv.slice(2);\n${source}\n`;
   await writeFile(join(work, "ffprobe"), stub(`const input = fs.readFileSync(args.at(-1), "utf8");
-process.stdout.write(JSON.stringify({ streams: [{ codec_type: "video" }], format: { duration: input.startsWith("LONG") ? "300" : "3.2" } }));`));
-  await writeFile(join(work, "ffmpeg"), stub("fs.writeFileSync(args.at(-1), JSON.stringify(args));"));
+const side = input.startsWith("HUGE") ? 10000 : 64;
+process.stdout.write(JSON.stringify({ streams: [{ codec_type: "video", width: side, height: side }], stream_groups: [],
+  format: { duration: input.startsWith("LONG") ? "300" : "3.2" } }));`));
+  await writeFile(join(work, "ffmpeg"), stub(`fs.appendFileSync(require("node:path").join(__dirname, "calls.log"), JSON.stringify(args) + "\\n");
+const output = args.at(-1);
+if (output.endsWith(".png")) fs.writeFileSync(output, fs.readFileSync(args[args.indexOf("-i") + 1]).subarray(8));
+else fs.writeFileSync(output, JSON.stringify(args));`));
   await Promise.all(["ffprobe", "ffmpeg"].map((name) => chmod(join(work, name), 0o755)));
 });
 afterAll(async () => { await rm(work, { recursive: true, force: true }); });
@@ -398,5 +406,26 @@ it("leaves a report pending when Relay cannot serve a stored attachment", async 
   expect((await f.run()).code).toBe(1);
   expect(f.creates).toEqual([]);
   expect(f.acks).toEqual([]);
+  expect(await readdir(f.temp)).toEqual([]);
+});
+
+it("decodes HEIC photos with ffmpeg and attaches them as sanitized JPEG", async () => {
+  await rm(join(work, "calls.log"), { force: true });
+  const f = await attachedFixture([
+    { contentType: "image/heic", data: Buffer.concat([Buffer.from("FAKEHEIC"), await image(40, 30).png().toBuffer()]) },
+    { contentType: "image/heic", data: Buffer.from("HUGE synthetic heic") },
+  ]);
+  expect((await f.run()).code).toBe(0);
+  expect(f.uploads.map(({ name, contentType }) => ({ name, contentType }))).toEqual([{ name: "attachment-0.jpg", contentType: "image/jpeg" }]);
+  expect(await sharp(f.uploads[0]!.data).metadata()).toMatchObject({ format: "jpeg", width: 40, height: 30 });
+  const description = f.creates[0]!.description as string;
+  expect(description).toContain("| 0 | attachment-0.jpg, image/jpeg, ");
+  expect(description).toContain("| 1 | dropped: too large |");
+  // The oversized grid is refused from its probe alone, before any decode.
+  const calls = await ffmpegCalls();
+  expect(calls).toHaveLength(1);
+  expect(calls[0]!.slice(0, 9)).toEqual(["-nostdin", "-v", "error", "-protocol_whitelist", "file", "-f", "mov", "-i", expect.stringMatching(/input-0$/)]);
+  expect(calls[0]!.join("\n")).toContain(["-frames:v", "1", "-map_metadata", "-1"].join("\n"));
+  expect(f.acks).toHaveLength(1);
   expect(await readdir(f.temp)).toEqual([]);
 });

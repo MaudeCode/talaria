@@ -21,6 +21,7 @@ class AllowedTests(unittest.TestCase):
             "app/TalariaTests/VisualReferences/session-row-light.png",
             "app/docs/assets/readme/screenshot-chat.png",
             "web/static/brand/favicon.ico",
+            "relay/bridge/fixtures/rotated-gps.heic",
         ]:
             self.assertTrue(cci.allowed(path), path)
 

@@ -3,7 +3,7 @@
 
 Screenshots and other validation evidence belong in the PR description, never in git.
 A tracked image is allowed only as a shipped or tested asset: an asset catalog, the
-Web brand files, the App README images, or a snapshot-test reference.
+Web brand files, the App README images, a snapshot-test reference, or a media fixture a test decodes.
 
 Run: python3 scripts/check-committed-images.py   (checks `git ls-files` from the repo root)
 """
@@ -16,6 +16,7 @@ ALLOWED_PREFIXES = (
     "app/TalariaTests/VisualReferences/",  # snapshot-test references
     "app/docs/assets/readme/",  # App README images
     "web/static/brand/",  # shipped Web brand assets
+    "relay/bridge/fixtures/",  # synthetic media the feedback bridge smoke test sanitizes
 )
 ALLOWED_BUNDLES = (".xcassets", ".icon")  # Xcode asset catalogs and icon bundles
 

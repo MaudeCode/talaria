@@ -39,7 +39,8 @@ jobs:
           test "$status" = 2
           grep -q 'missing RELAY_URL' "$RUNNER_TEMP/bridge-output"
           # Real sharp and ffmpeg sanitization, as the non-root user, without shipping the check in the image.
-          docker run --rm --network none --volume "$PWD/relay/bridge/smoke.ts:/bridge/smoke.ts:ro" "$image:main" node smoke.ts
+          docker run --rm --network none --volume "$PWD/relay/bridge/smoke.ts:/bridge/smoke.ts:ro" \
+            --volume "$PWD/relay/bridge/fixtures:/bridge/fixtures:ro" "$image:main" node smoke.ts
       - name: Publish immutable and main tags
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
