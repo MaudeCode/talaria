@@ -47,6 +47,50 @@ final class DuoFoldHostedTests: XCTestCase {
         foldDuo(folding.window, display: folding.display, inner: folding.inner, closed: closed)
     }
 
+    func testDeepLinkedReplacementStartsWithTheOuterDisplaysVerticalToolbar() async throws {
+        guard #available(iOS 27.1, *) else { throw XCTSkip("Requires the Duo vertical toolbar") }
+        let scene = try HostedScene.current()
+        try XCTSkipUnless(scene.traitCollection.verticalBarEdge != .unspecified, "Requires the Duo outer display")
+        let fixture = try FixtureApp([UITestFixtureEnvironment.forkSessionArgument], for: self)
+        let recorder = ChatBodyEvaluationRecorder()
+        fixture.pendingSessionID = UITestFixtureURLProtocol.sessionID
+        let window = try hostWindow(fixture.sessionList().environment(\.chatBodyEvaluation, recorder),
+                                    size: scene.coordinateSpace.bounds.size)
+        _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
+        let moreID = "chat-session-actions-more"
+        let ready = await awaitCondition {
+            HostedAccessibility.toolbarItems(in: window).contains { $0.accessibilityIdentifier == moreID }
+                && ["Open navigation", "New Chat", "Notifications"].allSatisfy {
+                    HostedAccessibility.toolbarItem($0, in: window) != nil
+                }
+        }
+        XCTAssertTrue(ready)
+        let navigation = try XCTUnwrap(HostedAccessibility.titleMenuController(in: window)?.navigationController)
+        let anchoredActions = ["Open navigation", "New Chat", "Notifications", "Settings"].filter {
+            HostedAccessibility.toolbarItem($0, in: window) != nil
+        }
+        recorder.reset()
+        var gaps = Set<String>()
+        try await sampleCommittedLayouts {
+            for title in anchoredActions {
+                if HostedAccessibility.toolbarItem(title, in: window) == nil { gaps.insert(title) }
+            }
+            if !HostedAccessibility.toolbarItems(in: window).contains(where: { $0.accessibilityIdentifier == moreID }) {
+                gaps.insert("More")
+            }
+        } during: {
+            fixture.pendingSessionID = UITestFixtureURLProtocol.forkSessionID
+            _ = try await requireElement(in: window, label: "Fork fixture reply")
+            settle(0.2)
+        }
+        XCTAssertGreaterThan(recorder.counts["toolbar.vertical", default: 0], 0)
+        XCTAssertEqual(recorder.counts["toolbar.horizontal", default: 0], 0,
+                       "The replacement chat's very first body must inherit the vertical axis")
+        XCTAssertTrue(gaps.isEmpty, "The cover toolbar lost: \(gaps.sorted())")
+        XCTAssertTrue(HostedAccessibility.titleMenuController(in: window)?.navigationController === navigation)
+        attachHostedScreenshot(window, name: "duo-outer-deep-link-after")
+    }
+
     func testArchivingAfterFoldingUsesTheCompactNewChatRoot() async throws {
         let folding = try await openChatOnInnerDisplay([UITestFixtureEnvironment.holdSessionRemovalArgument])
         let window = folding.window

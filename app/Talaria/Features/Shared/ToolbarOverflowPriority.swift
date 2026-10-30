@@ -1,6 +1,11 @@
 import SwiftUI
 import TalariaKit
 
+extension EnvironmentValues {
+    /// The navigation container's admitted axis is available before a replacement chat's first layout.
+    @Entry var navigationHasVerticalToolbar: Bool? = nil
+}
+
 extension ToolbarContent {
     /// One gate and mapping for all toolbar sites. The sidebar also opts in on horizontal bars.
     @MainActor

@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Opening another chat keeps the navigation bar and composer in place, including the iPhone Duo's vertical toolbar.",
+      "highlight": false
+    }
+  ]
+}
