@@ -36,7 +36,7 @@
     "seek-bzip": "2.0.0",
     "ws": "8.22.0",
     "xz-decompress": "0.2.3",
-    "zod": "4.6.5"
+    "zod": "4.6.6"
   },
   "devDependencies": {
     "@types/mdast": "4.0.4",
