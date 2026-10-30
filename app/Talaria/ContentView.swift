@@ -16,17 +16,36 @@ struct ContentView: View {
     @State private var pendingNewChatRequest: NewChatRequest?
     @State private var didCheckInitialPendingShare = false
     @State private var intentRouter = AppIntentRouter.shared
+    @Bindable private var whatsNew: WhatsNewPresenter
 
     init(
         authManager: AuthManager,
-        draftStore: ChatDraftStore? = nil
+        draftStore: ChatDraftStore? = nil,
+        whatsNew: WhatsNewPresenter? = nil
     ) {
         self.authManager = authManager
         self.draftStore = draftStore ?? .shared
+        self.whatsNew = whatsNew ?? WhatsNewPresenter(pending: nil)
+    }
+
+    /// No sign-in, import, deep link or App Intent is waiting to take the screen, so What's New can be offered
+    /// without hiding or replacing it (TAL-182).
+    private var leavesRoomForWhatsNew: Bool {
+        scenePhase == .active
+            && authManager.pendingReauthentication == nil
+            && sharedImports.pendingImport == nil && !sharedImports.hasWaitingImport
+            && pendingDeepLinkedSessionID == nil && pendingQuotaSourceID == nil
+            && !opensProviderQuotaWidgetSettings && pendingNewChatRequest == nil
+            && intentRouter.pendingDeepLink == nil
     }
 
     var body: some View {
         content
+            .whatsNewPresentation($whatsNew.presented, defaults: whatsNew.defaults)
+            .task(id: leavesRoomForWhatsNew) {
+                guard leavesRoomForWhatsNew else { return }
+                await whatsNew.offerWhenNothingIsPresented()
+            }
             .onOpenURL(perform: handleOpenURL)
             .task {
                 guard !didCheckInitialPendingShare else { return }

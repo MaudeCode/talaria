@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "After an App update, a short What's New sheet introduces the release's main changes once; Settings > About can show it again.",
+      "highlight": true,
+      "components": ["app"]
+    }
+  ]
+}
