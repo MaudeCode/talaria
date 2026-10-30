@@ -262,8 +262,12 @@ the `experimental` and `nightly` targets. The `web-experimental.yml` workflow ru
 passing `main` push that selects a Web suite (`web_server`, `web_frontend`, or `web_sidecar`), which shared contract
 changes also select; only `advance` is serialized.
 
-The Nightly channel sits between Experimental and Stable. `nightly.yml` runs daily (and on dispatch):
-`nightly.py select` picks the newest `main` commit whose push CI passed after the `nightly` git tag, and does
+The Nightly channel sits between Experimental and Stable. `nightly.yml` targets 03:07 `America/New_York` daily
+(and also accepts dispatch), preserving local time across daylight saving changes. An external T3 task checks at 03:37 Eastern and dispatches the workflow on `main` only
+when that day's Nightly run is missing and no earlier Nightly is still active. Queued runs count as present; API
+lookup failures never trigger a dispatch. Both schedules require their scheduler to be available.
+
+For each run, `nightly.py select` picks the newest `main` commit whose push CI passed after the `nightly` git tag, and does
 nothing new when there is none, or while a production cutover is queued or running. `experimental.py advance SOURCE
 --tag nightly` then moves the forward-only `nightly` GHCR tag to the newest Experimental build on that commit's history,
 so Nightly reuses the Experimental artifact; it runs even when no new commit was selected, so a build published after
