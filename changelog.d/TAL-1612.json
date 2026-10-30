@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Feedback attachments are accepted only from Talaria Web servers registered with Relay; unregistered servers still send text feedback.",
+      "highlight": false,
+      "components": ["relay"]
+    }
+  ]
+}

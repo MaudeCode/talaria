@@ -373,16 +373,14 @@ reasons. A refused attachment charges no budget.
 
 | Reason | When |
 |---|---|
-| `tier` | an unverified report declares a video; verified reports may attach images and one video |
+| `tier` | the report is unverified; only verified reports may attach files, up to five images or four images and one video |
 | `quota` | its declared bytes would exceed a byte budget below, or take stored attachment bytes past 2 GB |
 | `disabled` | the deployment sets `FEEDBACK_ATTACHMENTS_DISABLED=1` |
 
 | Byte budget (declared bytes of accepted attachments) | Limit |
 |---|---|
-| Unverified, per `installId` | 40 MB an hour |
-| Unverified, all installs | 300 MB a day |
 | Verified, per publisher registration | 200 MB a day |
-| Every tier | 600 MB a day and 6 GB per 30 days |
+| All publishers | 600 MB a day and 6 GB per 30 days |
 
 Upload each accepted file with
 `PUT /v1/feedback/{reportId}/attachments/{index}`, `Authorization: Bearer

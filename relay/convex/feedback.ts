@@ -152,13 +152,9 @@ export const submit = internalMutation({
     if (!budget.ok) return { status: "rate_limited" as const, retryAfterMs: budget.retryAfterMs };
 
     // Attachment bytes have their own budgets; a refused attachment is charged nothing and never refuses the text.
+    // Only verified reports may attach files, so only a publisher registration has a byte budget of its own.
     const byteBudgets: Budget[] = [
-      ...(publisherKey
-        ? [{ key: `feedback-bytes:pub:${publisherKey}`, windowMs: day, limit: 200 * megabyte }]
-        : [
-            { key: `feedback-bytes:install:${args.installHash}`, windowMs: hour, limit: 40 * megabyte },
-            { key: "feedback-bytes:unverified", windowMs: day, limit: 300 * megabyte },
-          ]),
+      ...(publisherKey ? [{ key: `feedback-bytes:pub:${publisherKey}`, windowMs: day, limit: 200 * megabyte }] : []),
       { key: "feedback-bytes:global", windowMs: day, limit: 600 * megabyte },
       { key: "feedback-bytes:global:30d", windowMs: longestBudgetWindowMs, limit: 6_000 * megabyte },
     ];

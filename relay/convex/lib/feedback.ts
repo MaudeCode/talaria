@@ -20,7 +20,7 @@ export const attachmentLimits = {
     "video/quicktime": { kind: "video", maxBytes: 20_000_000 },
     "video/webm": { kind: "video", maxBytes: 20_000_000 },
   },
-  tierKinds: { verified: ["image", "video"], unverified: ["image"] },
+  tierKinds: { verified: ["image", "video"], unverified: [] },
 } as const satisfies {
   types: Record<FeedbackAttachmentType, { kind: "image" | "video"; maxBytes: number }>;
   [key: string]: unknown;

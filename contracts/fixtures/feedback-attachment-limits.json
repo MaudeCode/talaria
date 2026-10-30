@@ -13,6 +13,6 @@
   },
   "tierKinds": {
     "verified": ["image", "video"],
-    "unverified": ["image"]
+    "unverified": []
   }
 }
