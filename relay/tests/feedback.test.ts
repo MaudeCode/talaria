@@ -92,8 +92,8 @@ describe("feedback intake", () => {
     const { reportId } = await response.json() as { reportId: string };
     const [row] = await rows();
     expect(row).toMatchObject({
-      // The shared example declares a screenshot, so it waits for that upload before joining the queue.
-      _id: reportId, requestId: fixture.requestId, tier: "unverified", status: "uploading",
+      // Unverified reports cannot attach files, so the example's screenshot is refused and the report queues at once.
+      _id: reportId, requestId: fixture.requestId, tier: "unverified", status: "pending",
       installHash: await sha256(fixture.installId as string), createdAt: start, payload: fixture,
     });
     expect(row?.publisherId).toBeUndefined();
@@ -374,9 +374,9 @@ describe("feedback attachments", () => {
   });
 
   it("stores an uploaded blob, lists it, serves its exact bytes, and deletes it on ack", async () => {
-    const { submit, accepted, put, operator, pending, blobs, storedBytes } = await attachmentRelay();
+    const { signedSubmit, accepted, put, operator, pending, blobs, storedBytes } = await attachmentRelay();
     const image = file("image/png", 4_096);
-    const admission = await accepted(submit(report({ attachments: [entry(image)] })));
+    const admission = await accepted(signedSubmit(report({ attachments: [entry(image)] })));
     const [slot] = admission.attachments;
     expect(slot).toEqual({ index: 0, status: "accepted", uploadToken: expect.any(String), expiresAt: start + 30 * 60 * 1_000 });
     expect(Buffer.from(slot!.uploadToken!, "base64url")).toHaveLength(32);
@@ -404,12 +404,12 @@ describe("feedback attachments", () => {
   });
 
   it("refuses mismatched uploads and bad tokens without storing anything", async () => {
-    const { submit, accepted, put, blobs, backend } = await attachmentRelay();
+    const { signedSubmit, accepted, put, blobs, backend } = await attachmentRelay();
     const image = file("image/png", 512);
     const html = new TextEncoder().encode("<html><script>alert(1)</script></html>");
     const svg = new TextEncoder().encode("<svg xmlns=\"http://www.w3.org/2000/svg\"/>");
-    const first = await accepted(submit(report({ attachments: [entry(image), entry(html), entry(svg)] })));
-    const other = await accepted(submit(report({ attachments: [entry(image)] })));
+    const first = await accepted(signedSubmit(report({ attachments: [entry(image), entry(html), entry(svg)] })));
+    const other = await accepted(signedSubmit(report({ attachments: [entry(image)] })));
     const token = first.attachments[0]!.uploadToken!;
     const invalid = async (response: Promise<Response>) => {
       const resolved = await response;
@@ -451,11 +451,15 @@ describe("feedback attachments", () => {
     expect((await backend.fetch("/v1/feedback/x/attachments/9", { method: "PUT", body: image })).status).toBe(404);
   });
 
-  it("refuses video from unverified reports while accepting the report and verified video", async () => {
-    const { submit, signedSubmit, accepted } = await attachmentRelay();
+  it("refuses every attachment on an unverified report, charging nothing, while verified reports keep images and video", async () => {
+    const { submit, signedSubmit, accepted, budgets, rows } = await attachmentRelay();
     const manifest = [entry(file("image/jpeg")), entry(file("video/mp4"), "video/mp4")];
-    expect((await accepted(submit(report({ attachments: manifest })))).attachments.map(({ status, reason }) => ({ status, reason })))
-      .toEqual([{ status: "accepted", reason: undefined }, { status: "refused", reason: "tier" }]);
+    expect((await accepted(submit(report({ attachments: manifest })))).attachments).toEqual([
+      { index: 0, status: "refused", reason: "tier" },
+      { index: 1, status: "refused", reason: "tier" },
+    ]);
+    expect(Object.keys(await budgets()).filter((key) => key.startsWith("feedback-bytes:"))).toEqual([]);
+    expect((await rows()).map((row) => row.status)).toEqual(["pending"]);
     expect((await accepted(signedSubmit(report({ attachments: manifest })))).attachments.map(({ status }) => status))
       .toEqual(["accepted", "accepted"]);
   });
@@ -487,29 +491,9 @@ describe("feedback attachments", () => {
   });
 
   it("degrades to text when a byte budget or the storage ceiling is spent and charges refused files nothing", async () => {
-    const { backend, submit, signedSubmit, accepted, budgets } = await attachmentRelay();
+    const { backend, signedSubmit, accepted, budgets } = await attachmentRelay();
     const statuses = (admission: { attachments: Admission[] }) => admission.attachments.map(({ status, reason }) => reason ?? status);
-    const installId = uuid();
-    expect(statuses(await accepted(submit(report({ installId, attachments: Array(4).fill(declared(10 * MB)) })))))
-      .toEqual(["accepted", "accepted", "accepted", "accepted"]);
     const byteBudgets = async () => Object.entries(await budgets()).filter(([key]) => key.startsWith("feedback-bytes:"));
-    const charged = await byteBudgets();
-    expect(statuses(await accepted(submit(report({ installId, attachments: [declared(1)] }))))).toEqual(["quota"]);
-    expect(await byteBudgets()).toEqual(charged);
-    clock += 60 * 60 * 1_000;
-    expect(statuses(await accepted(submit(report({ installId, attachments: [declared(1)] }))))).toEqual(["accepted"]);
-
-    // Fresh installs cannot spend past the 300 MB a day every unverified install shares.
-    let acceptedBytes = 40 * MB + 1;
-    for (let install = 0; install < 10; install += 1) {
-      const admission = await accepted(submit(report({ installId: uuid(), attachments: Array(4).fill(declared(10 * MB)) })));
-      acceptedBytes += admission.attachments.filter((slot) => slot.status === "accepted").length * 10 * MB;
-    }
-    expect(acceptedBytes).toBeLessThanOrEqual(300 * MB);
-    expect(acceptedBytes).toBeGreaterThan(290 * MB);
-    expect((await budgets())["feedback-bytes:unverified"]).toBe(acceptedBytes);
-    expect(statuses(await accepted(signedSubmit(report({ attachments: [declared(10 * MB)] }))))).toEqual(["accepted"]);
-
     const preset = async (key: string, attempts: number) => backend.run(async (ctx) => {
       const row = await ctx.db.query("authRateLimits").withIndex("by_key", (query) => query.eq("key", key)).unique();
       if (row) await ctx.db.patch(row._id, { attempts, windowStartedAt: clock });
@@ -517,6 +501,9 @@ describe("feedback attachments", () => {
     });
     await preset("feedback-bytes:pub:feedback-owner:https://feedback.example", 200 * MB - 5);
     expect(statuses(await accepted(signedSubmit(report({ attachments: [declared(6), declared(5)] }))))).toEqual(["quota", "accepted"]);
+    const charged = await byteBudgets();
+    expect(statuses(await accepted(signedSubmit(report({ attachments: [declared(1)] }))))).toEqual(["quota"]);
+    expect(await byteBudgets()).toEqual(charged);
     await preset("feedback-bytes:global", 600 * MB - 5);
     expect(statuses(await accepted(signedSubmit(report({ attachments: [declared(6)] }), { keyId: "rival-owner-key" })))).toEqual(["quota"]);
     await preset("feedback-bytes:global", 0);
@@ -554,14 +541,14 @@ describe("feedback attachments", () => {
   });
 
   it("replays a submission by rotating only unstored tokens and charging nothing", async () => {
-    const { submit, accepted, put, budgets } = await attachmentRelay();
+    const { signedSubmit, accepted, put, budgets } = await attachmentRelay();
     const [first, second] = [file("image/png", 100), file("image/webp", 200)];
     const payload = report({ attachments: [entry(first), entry(second, "image/webp")] });
-    const original = await accepted(submit(payload));
+    const original = await accepted(signedSubmit(payload));
     expect((await put(original.reportId, 0, original.attachments[0]!.uploadToken!, first)).status).toBe(200);
     const charged = await budgets();
     clock += 60_000;
-    const replay = await accepted(submit(payload));
+    const replay = await accepted(signedSubmit(payload));
     expect(replay.reportId).toBe(original.reportId);
     expect(replay.attachments).toEqual([
       { index: 0, status: "stored" },
@@ -571,15 +558,15 @@ describe("feedback attachments", () => {
     expect(await budgets()).toEqual(charged);
     expect((await put(original.reportId, 1, original.attachments[1]!.uploadToken!, second)).status).toBe(401);
     expect((await put(original.reportId, 1, replay.attachments[1]!.uploadToken!, second)).status).toBe(200);
-    const conflict = await submit({ ...payload, attachments: [entry(first)] });
+    const conflict = await signedSubmit({ ...payload, attachments: [entry(first)] });
     expect(conflict.status).toBe(409);
     expect(await conflict.json()).toEqual({ error: "idempotency_conflict" });
   });
 
   it("queues a report whose upload window closed with the file marked missing, then prunes stale blobs", async () => {
-    const { backend, submit, accepted, put, pending, blobs, storedBytes, rows } = await attachmentRelay();
+    const { backend, signedSubmit, accepted, put, pending, blobs, storedBytes, rows } = await attachmentRelay();
     const [kept, never] = [file("image/png", 300), file("image/jpeg", 400)];
-    const admission = await accepted(submit(report({ attachments: [entry(kept), entry(never, "image/jpeg")] })));
+    const admission = await accepted(signedSubmit(report({ attachments: [entry(kept), entry(never, "image/jpeg")] })));
     expect((await put(admission.reportId, 0, admission.attachments[0]!.uploadToken!, kept)).status).toBe(200);
     expect(await pending()).toEqual([]);
     const scheduled = await backend.run(async (ctx) => await ctx.db.system.query("_scheduled_functions").collect());
