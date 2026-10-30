@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Full-resolution 48 and 50 megapixel phone photos sent with feedback now reach the Inbox ticket instead of being dropped as too large.",
+      "highlight": false,
+      "components": ["relay"]
+    }
+  ]
+}

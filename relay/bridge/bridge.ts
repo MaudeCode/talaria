@@ -10,7 +10,8 @@ import sharp from "sharp";
 // Kanvil's per-attachment upload limit.
 export const maxOutputBytes = 10_000_000;
 const maxVideoSeconds = 120.5;
-const maxInputPixels = 40_000_000;
+// Covers 48–50 MP phone sensors with headroom.
+const maxInputPixels = 100_000_000;
 const run = promisify(execFile);
 const probe = (args: string[]) => run("ffprobe", ["-v", "error", ...args], { timeout: 30_000, killSignal: "SIGKILL", maxBuffer: 1_000_000 });
 
@@ -79,24 +80,35 @@ export async function sanitizeImage(input: Buffer, contentType: string, index: n
 }
 
 // sharp's bundled libvips cannot decode HEVC, so ffmpeg turns a HEIC (an iPhone tile grid, with its
-// irot rotation applied) into a PNG for sanitizeImage. The probe refuses an oversized grid before decoding.
+// irot rotation applied) into a PNG for sanitizeImage, scaled to fit 2560×2560 while decoding so a 48 MP
+// frame never reaches memory at full size. The probe refuses an oversized grid before decoding.
 export async function decodeHeic(input: string, output: string): Promise<Buffer> {
   const source = ["-protocol_whitelist", "file", "-f", "mov", "-i", input];
   type Size = { width?: number; height?: number };
+  type Group = { index?: number; type?: string; disposition?: { default?: number }; components?: Size[] };
   let pixels: number;
+  let primary: string;
   try {
     const { stdout } = await probe(["-show_stream_groups", "-show_streams", "-of", "json", ...source]);
-    const parsed = JSON.parse(stdout) as { streams?: Size[]; stream_groups?: Array<{ components?: Size[] }> };
+    const parsed = JSON.parse(stdout) as { streams?: Size[]; stream_groups?: Group[] };
     const sizes = [...parsed.streams ?? [], ...(parsed.stream_groups ?? []).flatMap((group) => group.components ?? [])];
     pixels = Math.max(0, ...sizes.map(({ width = 0, height = 0 }) => width * height));
+    // The primary grid carries the default disposition; an HDR gain map is a second, non-default grid.
+    const grids = (parsed.stream_groups ?? []).filter((group) => group.type === "Tile Grid");
+    const grid = grids.find((group) => group.disposition?.default) ?? grids[0];
+    if (grid && !Number.isSafeInteger(grid.index)) throw new Error();
+    primary = grid ? `[0:g:${grid.index}]` : "[0:v:0]";
   } catch {
     throw new Dropped("failed validation");
   }
   if (!(pixels > 0)) throw new Dropped("failed validation");
   if (pixels > maxInputPixels) throw new Dropped("too large");
   try {
-    await run("ffmpeg", ["-nostdin", "-v", "error", ...source, "-frames:v", "1", "-map_metadata", "-1", "-pix_fmt", "rgb24", output],
-      { timeout: 60_000, killSignal: "SIGKILL", maxBuffer: 1_000_000 });
+    // -vf and -s lose the rotation or the grid's size, so the scale runs in a complex filtergraph.
+    await run("ffmpeg", [
+      "-nostdin", "-v", "error", ...source, "-filter_complex", `${primary}scale=2560:2560:force_original_aspect_ratio=decrease[out]`,
+      "-map", "[out]", "-frames:v", "1", "-update", "1", "-map_metadata", "-1", "-pix_fmt", "rgb24", output,
+    ], { timeout: 60_000, killSignal: "SIGKILL", maxBuffer: 1_000_000 });
     return await readFile(output);
   } catch {
     throw new Dropped("failed validation");
