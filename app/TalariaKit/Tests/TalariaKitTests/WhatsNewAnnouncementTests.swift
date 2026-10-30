@@ -60,3 +60,81 @@ final class WhatsNewAnnouncementTests: XCTestCase {
         XCTAssertNil(WhatsNewAnnouncement.installed(info: wrongType))
     }
 }
+
+/// The launch check that decides whether an installed App update offers its What's New (TAL-182).
+final class WhatsNewLaunchTests: XCTestCase {
+    private var defaults: UserDefaults!
+
+    override func setUp() {
+        let name = "WhatsNewLaunchTests.\(UUID())"
+        defaults = UserDefaults(suiteName: name)
+        addTeardownBlock { UserDefaults().removePersistentDomain(forName: name) }
+    }
+
+    /// A stamped build of `version`: its own announcement unless `payload` overrides it, or none when `nil`.
+    private func build(_ version: String, payload: String?? = .none, rows: Int = 2) -> [String: Any] {
+        let source = String(repeating: "a", count: 40)
+        var info: [String: Any] = ["CFBundleShortVersionString": version, "TalariaRelease": ["sourceRevision": source]]
+        let announcement: [String: Any] = [
+            "schemaVersion": 1, "id": "app-\(version)", "component": "app", "version": version, "sourceCommit": source,
+            "rows": (1...rows).map { ["id": "TAL-\($0)-1", "icon": "chat", "title": "Row \($0) of \(version)", "description": "Synthetic."] },
+        ]
+        switch payload {
+        case .none: info["TalariaWhatsNew"] = String(decoding: try! JSONSerialization.data(withJSONObject: announcement), as: UTF8.self)
+        case let .some(text): info["TalariaWhatsNew"] = text
+        }
+        return info
+    }
+
+    private func launch(_ info: [String: Any]) -> WhatsNewAnnouncement? {
+        WhatsNewAnnouncement.pending(info: info, defaults: defaults)
+    }
+
+    func testFirstInstallRecordsItsBaselineQuietly() {
+        XCTAssertNil(launch(build("1.1.0")), "A fresh install introduces nothing")
+        XCTAssertNil(launch(build("1.1.0")), "Relaunching the same version stays quiet")
+        XCTAssertNil(launch(build("1.0.0", payload: .some(nil))))
+        XCTAssertNil(launch(build("1.1.0")), "The first-install release counts as seen")
+    }
+
+    func testMarketingUpgradeOffersOnceItIsAcknowledged() throws {
+        XCTAssertNil(launch(build("1.0.0", payload: .some(nil))))
+        let offered = try XCTUnwrap(launch(build("1.1.0")))
+        XCTAssertEqual(offered.id, "app-1.1.0")
+        XCTAssertEqual(offered.rows.map(\.title), ["Row 1 of 1.1.0", "Row 2 of 1.1.0"])
+        // Presented but never closed (the process ended): still offered on the next launch.
+        XCTAssertEqual(launch(build("1.1.0"))?.id, "app-1.1.0")
+        offered.acknowledge(defaults: defaults)
+        XCTAssertNil(launch(build("1.1.0")), "An acknowledged release stays quiet on relaunch")
+    }
+
+    func testBuildOnlyChangeStaysQuiet() {
+        XCTAssertNil(launch(build("1.0.0", payload: .some(nil))))
+        XCTAssertNil(launch(build("1.0.0")), "A new build of the same marketing version announces nothing")
+    }
+
+    func testMissingEmptyAndMalformedContentRecordsTheVersionQuietly() {
+        XCTAssertNil(launch(build("1.0.0", payload: .some(nil))))
+        for (version, payload) in [("1.1.0", nil), ("1.2.0", "{"), ("1.3.0", "{\"rows\":[]}")] as [(String, String?)] {
+            XCTAssertNil(launch(build(version, payload: .some(payload))), version)
+            XCTAssertNil(launch(build(version)), "\(version) was recorded, so a later build of it stays quiet")
+        }
+    }
+
+    func testAcknowledgedReleaseStaysQuietAfterADowngrade() throws {
+        XCTAssertNil(launch(build("1.0.0", payload: .some(nil))))
+        try XCTUnwrap(launch(build("1.1.0"))).acknowledge(defaults: defaults)
+        XCTAssertNil(launch(build("1.0.0", payload: .some(nil))))
+        XCTAssertNil(launch(build("1.1.0")), "Returning to an acknowledged release does not repeat it")
+    }
+
+    func testSkippedReleasesOfferOnlyTheInstalledOneThenTheNextUpdateOffersAgain() throws {
+        XCTAssertNil(launch(build("1.0.0", payload: .some(nil))))
+        let skipped = try XCTUnwrap(launch(build("1.4.0", rows: 4)))
+        XCTAssertEqual(skipped.id, "app-1.4.0")
+        XCTAssertEqual(skipped.rows.count, 4)
+        XCTAssertTrue(skipped.rows.allSatisfy { $0.title.hasSuffix("1.4.0") })
+        skipped.acknowledge(defaults: defaults)
+        XCTAssertEqual(launch(build("1.5.0"))?.id, "app-1.5.0", "A second update offers its own release")
+    }
+}

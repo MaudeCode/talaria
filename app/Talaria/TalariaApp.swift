@@ -107,6 +107,8 @@ struct TalariaCommands: Commands {
 struct TalariaApp: App {
     @UIApplicationDelegateAdaptor(TalariaAppDelegate.self) private var appDelegate
     @State private var authManager: AuthManager
+    /// Read once per launch: an update's What's New waits here until the screen is free (TAL-182).
+    @State private var whatsNew: WhatsNewPresenter
     @AppStorage(AppTheme.storageKey) private var appThemeRawValue = AppTheme.system.rawValue
     private let usesUITestFixture: Bool
     /// Offline session/message cache. Held explicitly (not just via the
@@ -156,6 +158,8 @@ struct TalariaApp: App {
         #else
         _authManager = State(initialValue: liveAuthManager())
         #endif
+        // A fixture launch starts from synthetic state, so it never offers this device's update.
+        _whatsNew = State(initialValue: WhatsNewPresenter(pending: usesUITestFixture ? nil : WhatsNewAnnouncement.pending()))
 
         // Registering only installs the launch handler, so the fixture needs it too: backgrounding
         // the app submits a refresh request from `ContentView`, and submitting one whose
@@ -204,12 +208,13 @@ struct TalariaApp: App {
             } else {
                 ContentView(
                     authManager: authManager,
-                    draftStore: uiTestFixture?.draftStore
+                    draftStore: uiTestFixture?.draftStore,
+                    whatsNew: whatsNew
                 )
                     .preferredColorScheme(AppTheme.storedValue(appThemeRawValue).colorScheme)
             }
             #else
-            ContentView(authManager: authManager)
+            ContentView(authManager: authManager, whatsNew: whatsNew)
                 .preferredColorScheme(AppTheme.storedValue(appThemeRawValue).colorScheme)
             #endif
         }

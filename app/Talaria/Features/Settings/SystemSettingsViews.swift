@@ -104,9 +104,16 @@ struct DataStorageSettingsView: View {
 
 struct AboutSettingsView: View {
     @State private var feedback: FeedbackComposer
+    @State private var replayedWhatsNew: WhatsNewAnnouncement?
+    /// This build's What's New, replayable here whether or not launch already offered it (TAL-182).
+    private let whatsNew: WhatsNewAnnouncement?
+    private let defaults: UserDefaults
 
-    init(server: URL? = nil, feedback: FeedbackComposer? = nil) {
+    init(server: URL? = nil, feedback: FeedbackComposer? = nil,
+         whatsNew: WhatsNewAnnouncement? = .installed(), defaults: UserDefaults = .standard) {
         _feedback = State(initialValue: feedback ?? FeedbackComposer(server: server, clientMetadata: .current))
+        self.whatsNew = whatsNew
+        self.defaults = defaults
     }
 
     var body: some View {
@@ -114,6 +121,16 @@ struct AboutSettingsView: View {
             SettingsCard(title: String(localized: "App")) {
                 SettingsInfoRow(title: String(localized: "Version"), value: appVersion)
                 SettingsInfoRow(title: String(localized: "Build"), value: appBuild)
+
+                if let whatsNew {
+                    SettingsDivider()
+
+                    Button { replayedWhatsNew = whatsNew } label: {
+                        SettingsAccessoryRow(title: String(localized: "What's New"), systemImage: "sparkles")
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("settings-whats-new")
+                }
 
                 SettingsDivider()
 
@@ -160,6 +177,7 @@ struct AboutSettingsView: View {
             }
         }
         .feedbackPresentation(feedback)
+        .whatsNewPresentation($replayedWhatsNew, defaults: defaults)
     }
 
     private var appVersion: String {
