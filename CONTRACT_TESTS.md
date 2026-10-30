@@ -17,6 +17,9 @@ Release builds use root `scripts/stamp-release.py app --version X.Y.Z
 --build-number N --source-revision SHA` before archiving. The helper stamps the
 App and widget Info.plists from a clean exact checkout; the archive-version gate
 still checks the App and both extensions against the selected version/build.
+It also packages the release's What's New announcement in the App's Info.plist
+and beside Web's `_release.json` (`contracts/whats-new.schema.json`,
+`contracts/fixtures/whats-new.json`; see `docs/release-notes.md`).
 
 ## One command
 

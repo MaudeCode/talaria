@@ -84,6 +84,8 @@ class RoutingTests(unittest.TestCase):
             (["relay/convex/new-response.ts"], {"relay", "app", "web_server", "contracts"}),
             (["relay/package.json", "relay/pnpm-lock.yaml"], {"relay"}),
             (["contracts/versions.json"], CONSUMERS),
+            (["contracts/whats-new.schema.json"], CONSUMERS | {"tooling"}),
+            (["contracts/fixtures/whats-new.json"], CONSUMERS | {"tooling"}),
             (["web/contract_versions.json"], CONSUMERS),
             (["web/packages/frontend/src/main.tsx", "relay/tests/crypto.test.ts"], {"web_frontend", "relay"}),
             (["scripts/check-web-server"], {"web_server", "tooling"}),

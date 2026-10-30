@@ -103,6 +103,9 @@ def path_suites(path):
             or (docs_directory and path.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".avif")))
             or path in ("LICENSE", "web/NOTICE")):
         return set()
+    # The release-note generator and stamp read the What's New schema; their tests share its fixture (TAL-1616).
+    if path in ("contracts/whats-new.schema.json", "contracts/fixtures/whats-new.json"):
+        return CONSUMERS | {"tooling"}
     if path.startswith("contracts/") or path in ("web/contract_versions.json", "relay/convex/releaseInfo.json"):
         return CONSUMERS
     if path == "releases/agent_probe.py":

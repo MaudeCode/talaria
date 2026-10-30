@@ -302,6 +302,29 @@ never creates a notice; iOS and other tabs never see it. Records of tabs that st
 after an hour. The service worker answers navigations network-first, so a reload reaches the current
 shell once the server is reachable; offline it falls back to the cached shell and the notice stays.
 
+## What's New after a Web update
+
+A stamped Web release can carry an authored announcement (`_whats_new.json`,
+generated from release fragments; see `app/docs/release-notes.md`). The server
+loads it at startup and discards a payload that is malformed or names another
+component, version, or source. `GET /api/whats-new` returns that announcement
+with the decision for one tab. The tab sends its `loaded_build` and the opaque
+`observed` token it keeps in local storage; it never compares versions itself.
+
+- The server answers with `observation` (store it now) or `acknowledgement` (store
+  it only after the user dismisses an `eligible` announcement). A failed read and
+  an unseen announcement therefore leave the stored token unchanged.
+- The first observation in a browser is quiet. A later `X.Y.Z` with an
+  announcement is eligible once. Experimental builds of one `X.Y.Z`, older
+  releases, and releases without an announcement are quiet and record the
+  installed version.
+- A tab whose loaded build is not the build the server now serves (or cannot be
+  verified) neither presents nor records anything, so a stale UI never announces
+  the newer UI before it refreshes.
+- An unreadable token counts as no observation. Tokens are only compared, never
+  used as release identity. App releases have their own announcement and never
+  make a Web one eligible.
+
 Packaged installations compare version numbers only within the selected channel.
 Switching between stable and experimental reports a manual update with unknown
 distance, even when both tags refer to the same source.

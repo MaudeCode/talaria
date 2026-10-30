@@ -55,10 +55,10 @@ jobs:
       - name: Contracts and server Vitest
         run: npm test -w packages/contracts -- --maxWorkers=2 && npm test -w packages/server -- --maxWorkers=2
 
-      - name: Generated OpenAPI document is committed
+      - name: Generated OpenAPI document and What's New schema are committed
         run: |
           npm run openapi
-          git diff --exit-code -- ../contracts/web-api.openapi.json
+          git diff --exit-code -- ../contracts/web-api.openapi.json ../contracts/whats-new.schema.json
 
       - name: Generated sidecar result schemas are committed
         run: |

@@ -3,8 +3,9 @@ import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { compatibleAgent, detectWebuiVersion, developmentInfo, loadReleaseInfo, supportedAgents, validateReleaseInfo } from './release.js'
-import { WEB_ROOT } from './test/harness.js'
+import type { ReleaseInfo, WhatsNewAnnouncement } from '@maudecode/talaria-web-contracts'
+import { compatibleAgent, detectWebuiVersion, developmentInfo, loadReleaseInfo, loadWhatsNew, supportedAgents, validateReleaseInfo, whatsNewState } from './release.js'
+import { bootTestServer, WEB_ROOT } from './test/harness.js'
 import { readFileSync } from 'node:fs'
 
 const dirs: string[] = []
@@ -102,6 +103,78 @@ describe('release info', () => {
       expect(loadReleaseInfo({ webRoot: WEB_ROOT, releaseFile: stamp }).version).toBe('development')
     } finally {
       rmSync(join(dir, '.git'), { force: true })
+    }
+  })
+})
+
+describe("What's New (TAL-1616)", () => {
+  const fixture = JSON.parse(readFileSync(join(WEB_ROOT, '../contracts/fixtures/whats-new.json'), 'utf8')) as { web: WhatsNewAnnouncement; app: WhatsNewAnnouncement; state: unknown; invalid: unknown[] }
+  const stamped = (version: string): ReleaseInfo => ({ ...developmentInfo(WEB_ROOT), tag: `web-v${version}`, version, sourceRevision: fixture.web.sourceCommit, releaseSet: fixture.web.sourceCommit })
+  const build = 'b'.repeat(64)
+  const announcement = fixture.web
+  const state = (release: ReleaseInfo, observed: string | undefined, loaded: string | undefined = build, current: string | null = build, payload: WhatsNewAnnouncement | null = announcement) => whatsNewState(payload, release, observed, loaded, current)
+
+  it('is quiet on first observation, presents a later release once, and stays quiet once acknowledged', () => {
+    const release = stamped('1.1.0')
+    const quiet = { announcement, eligible: false, observation: 'web:1.1.0', acknowledgement: null }
+    expect(state(release, undefined)).toEqual(quiet)
+    const eligible = state(release, 'web:1.0.9')
+    expect(eligible).toEqual(fixture.state)
+    // Until the user dismisses it, nothing is recorded: a failed or unseen read leaves the stored token unchanged.
+    expect(state(release, 'web:1.0.9')).toEqual(eligible)
+    expect(state(release, eligible.acknowledgement!)).toEqual(quiet)
+    expect(state(release, 'web:0.12.0').eligible).toBe(true)
+  })
+
+  it('keeps build-only, older, unannounced and App observations quiet', () => {
+    expect(state(stamped(`1.1.0-exp.${'c'.repeat(12)}`), 'web:1.1.0')).toEqual({ announcement, eligible: false, observation: 'web:1.1.0', acknowledgement: null })
+    expect(state(stamped('1.1.0'), 'web:1.2.0')).toMatchObject({ eligible: false, observation: 'web:1.1.0' })
+    expect(state(stamped('1.1.0'), 'web:1.0.0', build, build, null)).toEqual({ announcement: null, eligible: false, observation: 'web:1.1.0', acknowledgement: null })
+    for (const observed of ['app:1.0.0', 'web:1.0', 'web:01.0.0', 'web:1.0.0 ', '{"version":"1.0.0"}', 'x'.repeat(256)]) {
+      expect(state(stamped('1.1.0'), observed), observed).toEqual({ announcement, eligible: false, observation: 'web:1.1.0', acknowledgement: null })
+    }
+  })
+
+  it('never presents or records a release for a stale, unverifiable or development UI', () => {
+    const silent = { announcement, eligible: false, observation: null, acknowledgement: null }
+    for (const [loaded, current] of [['a'.repeat(64), build], [undefined, build], [build, null]] as const) {
+      expect(whatsNewState(announcement, stamped('1.1.0'), 'web:1.0.0', loaded, current)).toEqual(silent)
+      expect(whatsNewState(announcement, stamped('1.1.0'), undefined, loaded, current)).toEqual(silent)
+    }
+    expect(state(developmentInfo(WEB_ROOT), 'web:1.0.0')).toEqual(silent)
+  })
+
+  it('serves only a valid payload generated for the installed Web release', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'talaria-whats-new-'))
+    dirs.push(dir)
+    const write = (value: unknown) => { writeFileSync(join(dir, '_whats_new.json'), typeof value === 'string' ? value : JSON.stringify(value)) }
+    expect(loadWhatsNew(dir, stamped('1.1.0'))).toBeNull()
+    write(announcement)
+    expect(loadWhatsNew(dir, stamped('1.1.0'))).toEqual(announcement)
+    expect(loadWhatsNew(dir, stamped('1.2.0'))).toBeNull()
+    expect(loadWhatsNew(dir, { ...stamped('1.1.0'), sourceRevision: 'd'.repeat(40), releaseSet: 'd'.repeat(40) })).toBeNull()
+    expect(loadWhatsNew(dir, { ...developmentInfo(WEB_ROOT), version: '1.1.0' })).toBeNull()
+    write({ ...fixture.app, version: '1.1.0' })
+    expect(loadWhatsNew(dir, stamped('1.1.0'))).toBeNull()
+    for (const invalid of [...fixture.invalid, '{', '']) {
+      write(invalid)
+      expect(loadWhatsNew(dir, stamped('1.1.0'))).toBeNull()
+    }
+  })
+
+  it('answers the shared fixture over HTTP from the loaded build and stored token, without changing release identity', async () => {
+    const s = await bootTestServer({ deps: (deps) => { deps.release = stamped('1.1.0'); deps.whatsNew = announcement; deps.spa.buildId = () => build } })
+    try {
+      const read = async (query: string) => s.get(`/api/whats-new${query}`)
+      const res = await read(`?loaded_build=${build}&observed=web:1.0.0`)
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual(fixture.state)
+      expect(await (await read(`?loaded_build=${'a'.repeat(64)}&observed=web:1.0.0`)).json()).toMatchObject({ eligible: false, observation: null })
+      expect((await read(`?loaded_build=not-a-build`)).status).toBe(400)
+      expect((await read(`?loaded_build=${build}&observed=${'x'.repeat(257)}`)).status).toBe(400)
+      expect(s.deps.release).toEqual(stamped('1.1.0'))
+    } finally {
+      await s.close()
     }
   })
 })

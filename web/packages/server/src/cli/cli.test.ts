@@ -373,9 +373,18 @@ describe('npm package contents', () => {
   it('ships every tree the installed server resolves through the Web root, including the brand assets', () => {
     // `npm pack --dry-run` runs prepack/postpack, so this checks both the copy set and the `files` allowlist.
     const pkg = join(import.meta.dirname, '..', '..')
-    const out = execFileSync('npm', ['pack', '--dry-run', '--json'], { cwd: pkg, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+    // A stamped release's What's New payload (TAL-1616) ships beside its release stamp; this checkout has neither.
+    const announcement = join(pkg, '..', '..', '_whats_new.json')
+    const created = !existsSync(announcement)
+    if (created) writeFileSync(announcement, readFileSync(join(pkg, '..', '..', '..', 'contracts', 'fixtures', 'whats-new.json')))
+    let out: string
+    try {
+      out = execFileSync('npm', ['pack', '--dry-run', '--json'], { cwd: pkg, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+    } finally {
+      if (created) rmSync(announcement)
+    }
     const files = new Set((JSON.parse(out) as { files: { path: string }[] }[])[0]!.files.map((f) => f.path))
-    for (const required of ['LICENSE', 'static/dist/THIRD_PARTY_LICENSES.md', 'static/dist/index.html', 'static/brand/favicon.ico', 'static/brand/brandmark.svg', 'static/brand/favicon-192.png', 'sidecar/agent_dependency.json', 'sidecar/agent_support.json', 'sidecar/agent_importer.json', 'sidecar/talaria_sidecar/__main__.py', 'contract_versions.json']) {
+    for (const required of ['LICENSE', 'static/dist/THIRD_PARTY_LICENSES.md', 'static/dist/index.html', 'static/brand/favicon.ico', 'static/brand/brandmark.svg', 'static/brand/favicon-192.png', 'sidecar/agent_dependency.json', 'sidecar/agent_support.json', 'sidecar/agent_importer.json', 'sidecar/talaria_sidecar/__main__.py', 'contract_versions.json', '_whats_new.json']) {
       expect(files.has(required), required).toBe(true)
     }
   })

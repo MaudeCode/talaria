@@ -15,6 +15,7 @@ import { forwardedClientIp, rawPeerIsTrustedProxy } from '../http/origin.js'
 import { truthy } from '../config.js'
 import { STARTUP_RECOVERY_CONDITION } from '../startup.js'
 import { displayBotName } from '../settings.js'
+import { whatsNewState } from '../release.js'
 
 export interface ApiContext { ctx: RequestContext }
 
@@ -155,6 +156,7 @@ export const coreRouter = os.router({
     return result.body
   }),
   bootstrap: os.bootstrap.handler(async ({ context }) => (await bootstrapPayload(context.ctx))),
+  whatsNew: os.whatsNew.handler(({ input, context: { ctx: { deps } } }) => whatsNewState(deps.whatsNew, deps.release, input.observed, input.loaded_build, deps.spa.buildId())),
   auth: {
     status: os.auth.status.handler(async ({ context }): Promise<AuthStatus> => (await authStatusPayload(context.ctx))),
     login: os.auth.login.handler(async ({ input, context }) => {

@@ -14,6 +14,9 @@ import unittest
 REPOSITORY = Path(__file__).resolve().parent.parent
 PLISTS = ("app/Talaria/Resources/Info.plist", "app/TalariaLiveActivityWidget/Resources/Info.plist")
 RELAY = "relay/convex/releaseInfo.json"
+GENERATOR = ("app/ci/release_notes.py", "contracts/whats-new.schema.json")
+ANNOUNCED = {"entries": [{"category": "Added", "summary": "Pin chats.", "highlight": False,
+                          "announcement": {"title": "Pinned chats", "description": "Keep favorites on top.", "icon": "chat"}}]}
 
 
 class StampReleaseTests(unittest.TestCase):
@@ -21,12 +24,20 @@ class StampReleaseTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory(prefix="talaria-stamp-")
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
-        for name in ("scripts/stamp-release.py", "contracts/versions.json", RELAY, *PLISTS):
+        for name in ("scripts/stamp-release.py", "contracts/versions.json", RELAY, *PLISTS, *GENERATOR):
             target = self.root / name
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(REPOSITORY / name, target)
         self.git("init", "-b", "main")
-        self.source = self.commit("synthetic release source")
+        self.commit("synthetic previous release")
+        self.git("tag", "app-v1.0.0")
+        self.write_fragment(2, ANNOUNCED)
+        self.source = self.commit("TAL-2: synthetic release source")
+
+    def write_fragment(self, number, data):
+        path = self.root / f"changelog.d/TAL-{number}.json"
+        path.parent.mkdir(exist_ok=True)
+        path.write_text(json.dumps(data))
 
     def git(self, *args):
         return subprocess.check_output([
@@ -44,6 +55,14 @@ class StampReleaseTests(unittest.TestCase):
         return subprocess.run([sys.executable, "scripts/stamp-release.py", component, "--version", version,
                                "--source-revision", source or self.source, *options],
                               cwd=self.root, capture_output=True, text=True, check=False)
+
+    def announcement(self, version="1.2.3"):
+        """What the release-note generator writes for this checkout, as the stamp must package it byte for byte."""
+        output = self.root.parent / f"{self.root.name}-announcement.json"
+        self.addCleanup(output.unlink, missing_ok=True)
+        subprocess.run([sys.executable, "app/ci/release_notes.py", "announcement", "--component", "app", "--target", "HEAD",
+                        "--version", version, "--output", str(output)], cwd=self.root, check=True, capture_output=True)
+        return output.read_text() if output.exists() else None
 
     def snapshot(self):
         return {name: (self.root / name).read_bytes() for name in (RELAY, *PLISTS)}
@@ -68,6 +87,30 @@ class StampReleaseTests(unittest.TestCase):
         # A second stamp would silently relabel a shipped build.
         before = self.snapshot()
         self.assert_refused(self.stamp("app", "--build-number", "43", source=source), "already stamped App", before)
+
+    def test_app_packages_the_generated_announcement_in_the_app_bundle_only(self):
+        expected = self.announcement()
+        self.assertEqual(json.loads(expected)["rows"][0]["id"], "TAL-2-1")
+        stamped = self.stamp("app", "--build-number", "7")
+        self.assertEqual(stamped.returncode, 0, stamped.stderr)
+        app, widget = (plistlib.loads((self.root / name).read_bytes()) for name in PLISTS)
+        self.assertEqual(app["TalariaWhatsNew"], expected)
+        self.assertNotIn("TalariaWhatsNew", widget)
+
+    def test_app_without_announced_rows_or_a_baseline_packages_nothing_or_refuses(self):
+        self.git("tag", "app-v1.2.3")
+        self.write_fragment(3, {"skip": "Repository tooling only."})
+        source = self.commit("TAL-3: skip only")
+        self.assertIsNone(self.announcement("1.2.4"))
+        stamped = self.stamp("app", "--build-number", "8", version="1.2.4", source=source)
+        self.assertEqual(stamped.returncode, 0, stamped.stderr)
+        self.assertNotIn("TalariaWhatsNew", plistlib.loads((self.root / PLISTS[0]).read_bytes()))
+        self.git("checkout", "--", ".")
+        for tag in ("app-v1.0.0", "app-v1.2.3"):
+            self.git("tag", "-d", tag)
+        before = self.snapshot()
+        self.assert_refused(self.stamp("app", "--build-number", "9", version="1.2.4", source=source),
+                            "What's New announcement: no preceding semantic release tag", before)
 
     def test_app_refuses_a_partially_stamped_artifact_without_writing_either_bundle(self):
         widget = self.root / PLISTS[1]

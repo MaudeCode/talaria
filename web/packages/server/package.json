@@ -13,7 +13,8 @@
     "static/brand",
     "sidecar",
     "contract_versions.json",
-    "_release.json"
+    "_release.json",
+    "_whats_new.json"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
