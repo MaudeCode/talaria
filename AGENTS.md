@@ -69,3 +69,9 @@ For validation, route the actual diff with `scripts/changed-components.py`
 select tests. Changelog-only changes require release-note validation; docs and
 CI/tooling-only edits do not by themselves require XCTest. Unknown paths or an
 unreadable diff select the full suite. Shared contracts select their consumers.
+
+Before publishing, inspect the router's selected suites for the actual diff.
+Once CI starts, compare its running jobs with that selection and the affected
+components. Agents must catch unrelated suites themselves and fix the shared
+router in the same PR, with regression coverage, then verify the corrected CI
+run before merge.

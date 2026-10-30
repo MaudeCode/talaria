@@ -98,6 +98,11 @@ class RoutingTests(unittest.TestCase):
             (["web/sidecar/agent_support.json"], {"web_server", "web_frontend", "web_sidecar", "contracts"}),
             (["releases/publish.py"], {"tooling"}),
             ([".github/workflows/release-set.yml"], {"tooling"}),
+            ([".github/workflows/nightly.yml", "releases/README.md", "changelog.d/TAL-1615.json"], {"tooling"}),
+            ([".github/workflows/unknown.yml"], ALL),
+            ([".github/workflows/web-experimental.yml"], {"tooling"}),
+            ([".agy/config.json", ".codex/environments/environment.toml",
+              ".xcodebuildmcp/config.yaml", ".gitleaksignore"], {"tooling"}),
             ([".github/workflows/web-verify.yml"], {"web_server", "web_frontend", "web_sidecar", "tooling"}),
             ([".github/workflows/relay-verify.yml"], {"relay", "tooling"}),
             ([".github/workflows/ci.yml"], {"app", "web_sidecar", "contracts", "tooling"}),
@@ -120,6 +125,18 @@ class RoutingTests(unittest.TestCase):
         for paths, expected in cases:
             with self.subTest(paths=paths):
                 self.assertEqual(routing.affected(paths), expected)
+
+    def test_tracked_paths_have_explicit_routes(self):
+        root = SCRIPT.resolve().parent.parent
+        paths = subprocess.check_output(["git", "ls-files", "-z"], cwd=root).decode().split("\0")
+        full_suite = set()
+        for path in filter(None, paths):
+            selected = routing.path_suites(path)
+            self.assertLessEqual(selected, ALL, path)
+            if selected == ALL:
+                full_suite.add(path)
+        # These checkout controls affect every component. New unknown paths must be reviewed and classified.
+        self.assertEqual(full_suite, {".gitattributes", ".gitignore"})
 
     def test_documentation_image_selects_no_suites(self):
         self.assertEqual(routing.affected(["web/docs/pr-media/tal-346/after-desktop.png"]), set())
@@ -201,7 +218,8 @@ class RoutingTests(unittest.TestCase):
         job_suites = {"app": {"app", "contracts"}, "app-tooling": {"app_tooling"},
                       "web": {"web_server", "web_frontend", "web_sidecar"}, "web-docker": {"docker"},
                       "relay": {"relay"}, "contracts": {"contracts"}}
-        for selected in (set(), {"web_frontend"}, {"web_server"}, {"web_sidecar"}, {"app"}, {"tooling"}, ALL):
+        for mask in range(1 << len(ALL)):
+            selected = {suite for index, suite in enumerate(sorted(ALL)) if mask & (1 << index)}
             needs = {"changes": {"result": "success", "outputs": {key: str(key in selected).lower() for key in ALL}},
                      "tooling": {"result": "success"}}
             needs.update({job: {"result": "success" if suites & selected else "skipped"} for job, suites in job_suites.items()})
