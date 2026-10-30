@@ -1,1 +1,1 @@
-{"skip": "Nightly scheduling and external fallback only; no app behavior changes."}
+{"skip": "CI suite routing, agent validation policy, and Nightly scheduling only; no app behavior changes."}
