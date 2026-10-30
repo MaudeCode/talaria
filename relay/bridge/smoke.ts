@@ -25,13 +25,14 @@ try {
   assert.equal(image.data.includes(marker), false);
   assert.deepEqual([cleaned.format, cleaned.width, cleaned.height], ["jpeg", 2560, 1920]);
 
-  // A synthetic iPhone-style HEIC: a 1600×1200 tile grid with an irot rotation of 90° and EXIF GPS.
+  // A synthetic 48 MP iPhone-style HEIC: an 8064×6048 tile grid with an irot rotation of −90° and EXIF GPS,
+  // made with ImageIO from ffmpeg testsrc2 pixels. It decodes straight to the 2560 px bound.
   const heicMarker = "synthetic-heic-marker";
   const heicPath = join(import.meta.dirname, "fixtures", "rotated-gps.heic");
   assert.ok((await readFile(heicPath)).includes(heicMarker));
   const heic = await sanitizeImage(await decodeHeic(heicPath, join(directory, "heic.png")), "image/heic", 1);
   const heicCleaned = await sharp(heic.data).metadata();
-  assert.deepEqual([heic.name, heicCleaned.format, heicCleaned.width, heicCleaned.height], ["attachment-1.jpg", "jpeg", 1200, 1600]);
+  assert.deepEqual([heic.name, heicCleaned.format, heicCleaned.width, heicCleaned.height], ["attachment-1.jpg", "jpeg", 1920, 2560]);
   assert.equal(heicCleaned.exif, undefined);
   assert.equal(heicCleaned.xmp, undefined);
   assert.equal(heic.data.includes(heicMarker), false);

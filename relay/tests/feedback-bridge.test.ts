@@ -35,9 +35,11 @@ async function body(request: IncomingMessage) {
 }
 
 // Stand-ins for ffprobe and ffmpeg, found through PATH. Real decoding is proven by bridge/smoke.ts
-// inside the built image. A file whose bytes start with LONG probes as 300 seconds and one starting
-// with HUGE as 10000×10000 pixels. A PNG "decode" strips a FAKEHEIC prefix, which sharp cannot read,
-// from a real PNG; any other output is the JSON argument list. Every ffmpeg call is logged to calls.log.
+// inside the built image. A file whose bytes start with LONG probes as 300 seconds, one starting
+// with HUGE as 10001×10000 pixels, and one starting with GRIDHEIC or GAINHEIC as a tile grid (GAINHEIC
+// lists a gain-map grid before the primary one). A PNG "decode" strips the 8-byte HEIC prefix, which
+// sharp cannot read, from a real PNG; any other output is the JSON argument list. Every ffmpeg call is
+// logged to calls.log.
 let work = "";
 const ffmpegCalls = async () => (await readFile(join(work, "calls.log"), "utf8").catch(() => "")).split("\n").filter(Boolean)
   .map((line) => JSON.parse(line) as string[]);
@@ -45,8 +47,10 @@ beforeAll(async () => {
   work = await mkdtemp(join(tmpdir(), "feedback-bridge-test-"));
   const stub = (source: string) => `#!${process.execPath}\nconst fs = require("node:fs");\nconst args = process.argv.slice(2);\n${source}\n`;
   await writeFile(join(work, "ffprobe"), stub(`const input = fs.readFileSync(args.at(-1), "utf8");
-const side = input.startsWith("HUGE") ? 10000 : 64;
-process.stdout.write(JSON.stringify({ streams: [{ codec_type: "video", width: side, height: side }], stream_groups: [],
+const [width, height] = input.startsWith("HUGE") ? [10001, 10000] : [64, 64];
+const grid = (index, primary) => ({ index, type: "Tile Grid", disposition: { default: primary ? 1 : 0 }, components: [{ width, height }] });
+const groups = input.startsWith("GRIDHEIC") ? [grid(0, true)] : input.startsWith("GAINHEIC") ? [grid(0, false), grid(1, true)] : [];
+process.stdout.write(JSON.stringify({ streams: [{ codec_type: "video", width, height }], stream_groups: groups,
   format: { duration: input.startsWith("LONG") ? "300" : "3.2" } }));`));
   await writeFile(join(work, "ffmpeg"), stub(`fs.appendFileSync(require("node:path").join(__dirname, "calls.log"), JSON.stringify(args) + "\\n");
 const output = args.at(-1);
@@ -344,10 +348,18 @@ it("sanitizes two images and a video, attaches them to the ticket, then acknowle
   expect(await readdir(f.temp)).toEqual([]);
 });
 
+it("keeps a 48 MP phone photo and downscales it to fit 2560×2560", async () => {
+  const f = await attachedFixture([{ contentType: "image/jpeg", data: await image(8064, 6048).jpeg().toBuffer() }]);
+  expect((await f.run()).code).toBe(0);
+  expect(f.creates[0]!.description as string).toContain("| 0 | attachment-0.jpg, image/jpeg, ");
+  expect(f.uploads.map(({ name, contentType }) => ({ name, contentType }))).toEqual([{ name: "attachment-0.jpg", contentType: "image/jpeg" }]);
+  expect(await sharp(f.uploads[0]!.data).metadata()).toMatchObject({ format: "jpeg", width: 2560, height: 1920 });
+});
+
 it("drops unsafe or unusable attachments with a reason and still delivers the report", async () => {
   const valid = Buffer.from("not an image at all");
   const f = await attachedFixture([
-    { contentType: "image/png", data: await image(8000, 5001).png().toBuffer() },
+    { contentType: "image/png", data: await image(10001, 10000).png().toBuffer() },
     { contentType: "image/png", data: Buffer.concat([Buffer.from("89504e470d0a1a0a", "hex"), Buffer.from("<html>")]) },
     { contentType: "image/jpeg", data: valid, sha256: createHash("sha256").update("other").digest("hex") },
     { contentType: "video/mp4", data: Buffer.from("LONG synthetic clip") },
@@ -409,23 +421,32 @@ it("leaves a report pending when Relay cannot serve a stored attachment", async 
   expect(await readdir(f.temp)).toEqual([]);
 });
 
-it("decodes HEIC photos with ffmpeg and attaches them as sanitized JPEG", async () => {
+it("decodes HEIC photos with ffmpeg, scaling the primary tile grid while decoding, and attaches them as sanitized JPEG", async () => {
   await rm(join(work, "calls.log"), { force: true });
+  const heic = async (prefix: string) => Buffer.concat([Buffer.from(prefix), await image(40, 30).png().toBuffer()]);
   const f = await attachedFixture([
-    { contentType: "image/heic", data: Buffer.concat([Buffer.from("FAKEHEIC"), await image(40, 30).png().toBuffer()]) },
+    { contentType: "image/heic", data: await heic("FAKEHEIC") },
     { contentType: "image/heic", data: Buffer.from("HUGE synthetic heic") },
+    { contentType: "image/heic", data: await heic("GRIDHEIC") },
+    { contentType: "image/heic", data: await heic("GAINHEIC") },
   ]);
   expect((await f.run()).code).toBe(0);
-  expect(f.uploads.map(({ name, contentType }) => ({ name, contentType }))).toEqual([{ name: "attachment-0.jpg", contentType: "image/jpeg" }]);
-  expect(await sharp(f.uploads[0]!.data).metadata()).toMatchObject({ format: "jpeg", width: 40, height: 30 });
+  expect(f.uploads.map(({ name, contentType }) => ({ name, contentType }))).toEqual(
+    [0, 2, 3].map((index) => ({ name: `attachment-${index}.jpg`, contentType: "image/jpeg" })),
+  );
+  for (const upload of f.uploads) expect(await sharp(upload.data).metadata()).toMatchObject({ format: "jpeg", width: 40, height: 30 });
   const description = f.creates[0]!.description as string;
   expect(description).toContain("| 0 | attachment-0.jpg, image/jpeg, ");
   expect(description).toContain("| 1 | dropped: too large |");
   // The oversized grid is refused from its probe alone, before any decode.
   const calls = await ffmpegCalls();
-  expect(calls).toHaveLength(1);
-  expect(calls[0]!.slice(0, 9)).toEqual(["-nostdin", "-v", "error", "-protocol_whitelist", "file", "-f", "mov", "-i", expect.stringMatching(/input-0$/)]);
-  expect(calls[0]!.join("\n")).toContain(["-frames:v", "1", "-map_metadata", "-1"].join("\n"));
+  expect(calls).toHaveLength(3);
+  const decode = (index: number, input: string) => [
+    "-nostdin", "-v", "error", "-protocol_whitelist", "file", "-f", "mov", "-i", expect.stringMatching(new RegExp(`input-${index}$`)),
+    "-filter_complex", `${input}scale=2560:2560:force_original_aspect_ratio=decrease[out]`, "-map", "[out]",
+    "-frames:v", "1", "-update", "1", "-map_metadata", "-1", "-pix_fmt", "rgb24", expect.stringMatching(new RegExp(`decoded-${index}\\.png$`)),
+  ];
+  expect(calls).toEqual([decode(0, "[0:v:0]"), decode(2, "[0:g:0]"), decode(3, "[0:g:1]")]);
   expect(f.acks).toHaveLength(1);
   expect(await readdir(f.temp)).toEqual([]);
 });
