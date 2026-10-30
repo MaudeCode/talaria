@@ -28,8 +28,9 @@ export function resetIdentityCache(): void {
   removePersistedByPrefix('hermes-boot:')
   removePersistedByPrefix('hermes-webui-session')
   removePersisted(FEEDBACK_DRAFT_KEY)
-  // Removing the old snapshot can free the quota that blocked the fence write.
-  if (readPersisted(GENERATION_KEY) !== generation) writePersisted(GENERATION_KEY, generation)
+  // Removing the old snapshot can free the quota that blocked the fence write. Reads prefer a refused write's
+  // in-memory copy, so retry unconditionally: rewriting an unchanged value notifies no other tab.
+  writePersisted(GENERATION_KEY, generation)
 }
 
 function snapshotSchema(key: readonly unknown[]): ZodType | null {

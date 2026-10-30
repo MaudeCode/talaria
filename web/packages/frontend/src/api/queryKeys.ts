@@ -5,6 +5,7 @@ export const keys = {
   toolsets: (sessionId: string | undefined, value: string[] | null) => ['toolsets', sessionId, value] as const,
   executionModes: ['execution-modes'] as const,
   bootstrap: ['bootstrap'] as const,
+  whatsNew: (scope: string) => ['whats-new', scope] as const,
   auth: ['auth'] as const,
   settings: ['settings'] as const,
   profiles: ['profiles'] as const,

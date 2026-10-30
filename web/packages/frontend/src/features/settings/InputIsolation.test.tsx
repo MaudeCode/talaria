@@ -46,6 +46,7 @@ vi.mock('../../api/endpoints', async (original) => ({
   fetchSystemHealth: vi.fn(() => Promise.resolve({ status: 'ok' })),
   fetchAgentHealth: vi.fn(() => Promise.resolve({ alive: true })),
   fetchUpdatesCheck: vi.fn(() => Promise.resolve({})),
+  fetchWhatsNew: vi.fn(() => Promise.resolve({ announcement: null, eligible: false, observation: null, acknowledgement: null })),
   passkeysList: vi.fn(() => Promise.resolve({ credentials: [{ id: 'one', label: 'Laptop' }, { id: 'two', label: 'Phone' }] })),
   fetchSkills: vi.fn(() => Promise.resolve({ skills })),
   fetchSkillsUsage: vi.fn(() => Promise.resolve({ usage: Object.fromEntries(skills.map((s, i) => [s.name, { use_count: i + 1 }])) })),

@@ -6,6 +6,8 @@
 import type { ZodType } from 'zod'
 
 const memory = new Map<string, string>()
+/** Keys whose last write did not reach storage: their in-memory copy is newer than what storage holds. */
+const unsaved = new Set<string>()
 
 function storage(): Storage | null {
   try {
@@ -17,7 +19,7 @@ function storage(): Storage | null {
 
 export function readPersisted(key: string): string | null {
   const s = storage()
-  if (!s) return memory.get(key) ?? null
+  if (!s || unsaved.has(key)) return memory.get(key) ?? null
   try {
     return s.getItem(key)
   } catch {
@@ -31,13 +33,16 @@ export function writePersisted(key: string, value: string): void {
   if (!s) return
   try {
     s.setItem(key, value)
+    unsaved.delete(key)
   } catch {
-    /* quota or disabled storage: keep the in-memory copy */
+    /* quota or disabled storage: keep the in-memory copy, which reads now prefer */
+    unsaved.add(key)
   }
 }
 
 export function removePersisted(key: string): void {
   memory.delete(key)
+  unsaved.delete(key)
   const s = storage()
   if (!s) return
   try {
@@ -72,7 +77,7 @@ export function writePersistedJson(key: string, value: unknown): void {
 
 /** Remove every key with the given prefix (used on logout to drop per-identity state). */
 export function removePersistedByPrefix(prefix: string): void {
-  for (const k of [...memory.keys()]) if (k.startsWith(prefix)) memory.delete(k)
+  for (const k of [...memory.keys()]) if (k.startsWith(prefix)) { memory.delete(k); unsaved.delete(k) }
   const s = storage()
   if (!s) return
   try {

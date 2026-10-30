@@ -315,12 +315,20 @@ with the decision for one tab. The tab sends its `loaded_build` and the opaque
   it only after the user dismisses an `eligible` announcement). A failed read and
   an unseen announcement therefore leave the stored token unchanged.
 - The first observation in a browser is quiet. A later `X.Y.Z` with an
-  announcement is eligible once. Experimental builds of one `X.Y.Z`, older
-  releases, and releases without an announcement are quiet and record the
-  installed version.
+  announcement is eligible once. Experimental builds of one `X.Y.Z` and releases
+  without an announcement are quiet and record the installed version. An older
+  release is quiet and keeps the newer token, so returning to a release after a
+  rollback does not present it again.
 - A tab whose loaded build is not the build the server now serves (or cannot be
   verified) neither presents nor records anything, so a stale UI never announces
   the newer UI before it refreshes.
+- The tab keeps the token per Web origin and signed-in user (anonymous use has
+  its own scope) and shows the dialog only after sign-in and onboarding, once no
+  other dialog or menu is open, no navigation is pending, and no focused field
+  holds a draft. Continue, Escape and the backdrop close it at once and store
+  the acknowledgement; other tabs of the browser close their copy. Settings >
+  System > What's New replays it; a replay never re-enables the automatic prompt.
+  A failed read stays quiet and is retried at the next launch or Settings visit.
 - An unreadable token counts as no observation. Tokens are only compared, never
   used as release identity. App releases have their own announcement and never
   make a Web one eligible.
