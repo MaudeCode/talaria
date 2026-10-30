@@ -54,6 +54,14 @@ class HostedTestShardTests(unittest.TestCase):
         ])
         self.assertEqual(shard.classes(log), ["ChatHostedTests", "DuoFoldHostedTests"])
 
+    def test_classes_reads_suite_start_interleaved_with_app_logging(self):
+        log = "\n".join([
+            "Test Suite 'ChatHostedTests' started at 2026-10-30 02:35:53.411.",
+            "2026-10-30 02:40:44.304170+0000 Talaria[123:456] [UIKBFeedbackGenerator] "
+            "Error creating CHHapticPattern: Test Suite 'DuoFoldHostedTests' started at 2026-10-30 02:40:44.307.",
+        ])
+        self.assertEqual(shard.classes(log), ["ChatHostedTests", "DuoFoldHostedTests"])
+
     def test_check_requires_every_class_to_run_exactly_once(self):
         seen = shard.check(self.ran())
         self.assertEqual(seen["TranscriptHostedTests"], 1)

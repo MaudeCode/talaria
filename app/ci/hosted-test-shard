@@ -26,7 +26,7 @@ SHARDS = (
 )
 COUNT = len(SHARDS) + 1
 LISTED = [name for shard in SHARDS for name in shard]
-SUITE = re.compile(r"^Test Suite '([^']+)' started at ")
+SUITE = re.compile(r"Test Suite '([^']+)' started at ")
 AGGREGATES = {"All tests", "Selected tests"}
 
 
@@ -40,9 +40,8 @@ def selection(shard):
 
 def classes(log):
     names = []
-    for line in log.splitlines():
-        match = SUITE.match(line.strip())
-        if match and match[1] not in AGGREGATES and not match[1].endswith(".xctest"):
+    for match in SUITE.finditer(log):
+        if match[1] not in AGGREGATES and not match[1].endswith(".xctest"):
             names.append(match[1])
     return names
 
