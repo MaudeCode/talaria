@@ -46,13 +46,17 @@ public struct WhatsNewAnnouncement: Decodable, Equatable, Sendable, Identifiable
         let lastVersion = defaults.string(forKey: lastVersionKey)
         guard lastVersion != version else { return nil }
         let announcement = installed(info: info)
-        if let announcement, lastVersion != nil,
-           !(defaults.stringArray(forKey: acknowledgedKey) ?? []).contains(announcement.id) {
+        if let announcement, lastVersion != nil, !announcement.isAcknowledged(defaults: defaults) {
             return announcement
         }
         announcement?.acknowledge(defaults: defaults)
         defaults.set(version, forKey: lastVersionKey)
         return nil
+    }
+
+    /// Whether this announcement was already seen, at launch or from a Settings replay.
+    public func isAcknowledged(defaults: UserDefaults = .standard) -> Bool {
+        (defaults.stringArray(forKey: Self.acknowledgedKey) ?? []).contains(id)
     }
 
     /// Records this announcement as seen, so no later launch of its release offers it again.

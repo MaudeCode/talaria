@@ -156,6 +156,25 @@ final class WhatsNewHostedTests: XCTestCase {
         XCTAssertNil(presenter.presented, "It is offered once per launch")
     }
 
+    func testAReplayWhileTheOfferWaitsCancelsIt() async throws {
+        let queued = announcement()
+        let presenter = WhatsNewPresenter(pending: queued, defaults: defaults)
+        let host = WhatsNewHost(presenter: presenter)
+        let window = try hostWindow(host)
+        host.state.showsOther = true
+        _ = try await requireElement(in: window, label: "Synthetic dialog")
+        let offer = Task { await presenter.offerWhenNothingIsPresented(interval: .milliseconds(50)) }
+        addTeardownBlock { offer.cancel() }
+        settle(0.2)
+
+        // Settings is open over the launch, and its About replay closes with the release acknowledged.
+        queued.acknowledge(defaults: defaults)
+        host.state.showsOther = false
+        let offered = await awaitCondition(timeout: 2) { presenter.presented != nil }
+        XCTAssertFalse(offered, "An announcement acknowledged by a replay is not offered again")
+        XCTAssertNil(HostedAccessibility.element(in: window, label: WhatsNewSheet.title))
+    }
+
     func testUnconfiguredLaunchOffersItOverOnboarding() async throws {
         let keychain = EmptyKeychain()
         let registryDefaults = try XCTUnwrap(UserDefaults(suiteName: "WhatsNewHostedTests.registry.\(UUID())"))

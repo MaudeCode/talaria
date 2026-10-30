@@ -115,7 +115,10 @@ final class WhatsNewPresenter {
         while pending != nil {
             try? await Task.sleep(for: interval)
             guard !Task.isCancelled else { return }
-            if Self.nothingIsPresented() {
+            // A Settings replay can acknowledge it while it waits behind Settings.
+            if pending?.isAcknowledged(defaults: defaults) == true {
+                pending = nil
+            } else if Self.nothingIsPresented() {
                 presented = pending
                 pending = nil
             }
