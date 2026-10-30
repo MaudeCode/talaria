@@ -482,8 +482,12 @@ final class ChatViewModelCacheTests: XCTestCase {
         await Task.yield()
         XCTAssertEqual(released, 0)
 
-        chat.viewDidDisappear { released += 1 }
-        for _ in 0..<3 { await Task.yield() }
+        let releaseCompleted = expectation(description: "The chat is released")
+        chat.viewDidDisappear {
+            released += 1
+            releaseCompleted.fulfill()
+        }
+        await fulfillment(of: [releaseCompleted], timeout: 1)
         XCTAssertEqual(released, 1, "A chat no view takes over is released")
         XCTAssertFalse(chat.viewDidAppear(), "A view opening a released chat starts it again")
     }
