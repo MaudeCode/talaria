@@ -126,9 +126,24 @@ describe("What's New (TAL-1616)", () => {
     expect(state(release, 'web:0.12.0').eligible).toBe(true)
   })
 
+  it('keeps an acknowledged release quiet after a rollback and a return to it (TAL-1617)', () => {
+    // The tab stores `observation` when it is non-null, and `acknowledgement` after the user dismisses an eligible prompt.
+    let stored: string | undefined = 'web:1.0.0'
+    const visit = (version: string, dismiss = true) => {
+      const next = state(stamped(version), stored)
+      if (next.observation !== null) stored = next.observation
+      else if (next.eligible && dismiss) stored = next.acknowledgement!
+      return next.eligible
+    }
+    expect(visit('1.1.0')).toBe(true)
+    expect(visit('1.0.0')).toBe(false)
+    expect(visit('1.1.0')).toBe(false)
+    expect(visit('1.2.0')).toBe(true)
+  })
+
   it('keeps build-only, older, unannounced and App observations quiet', () => {
     expect(state(stamped(`1.1.0-exp.${'c'.repeat(12)}`), 'web:1.1.0')).toEqual({ announcement, eligible: false, observation: 'web:1.1.0', acknowledgement: null })
-    expect(state(stamped('1.1.0'), 'web:1.2.0')).toMatchObject({ eligible: false, observation: 'web:1.1.0' })
+    expect(state(stamped('1.1.0'), 'web:1.2.0')).toEqual({ announcement, eligible: false, observation: null, acknowledgement: null })
     expect(state(stamped('1.1.0'), 'web:1.0.0', build, build, null)).toEqual({ announcement: null, eligible: false, observation: 'web:1.1.0', acknowledgement: null })
     for (const observed of ['app:1.0.0', 'web:1.0', 'web:01.0.0', 'web:1.0.0 ', '{"version":"1.0.0"}', 'x'.repeat(256)]) {
       expect(state(stamped('1.1.0'), observed), observed).toEqual({ announcement, eligible: false, observation: 'web:1.1.0', acknowledgement: null })

@@ -1,0 +1,15 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Talaria Web shows a short What's New screen the first time you open it after an update, and Settings > System can show it again.",
+      "highlight": true,
+      "components": ["web"],
+      "announcement": {
+        "title": "What's New",
+        "description": "See the highlights of each Talaria Web update the first time you open it.",
+        "icon": "sparkles"
+      }
+    }
+  ]
+}

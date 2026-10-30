@@ -2595,6 +2595,9 @@
 		}
 	],
 	"system_summary_title": "What's new in {name}",
+	"whats_new_title": "What's New in Talaria Web",
+	"whats_new_continue": "Continue",
+	"whats_new_open": "What's New",
 	"system_whats_new_loading": "Summarizing what's new…",
 	"system_whats_new_failed": "Couldn't summarize what's new.",
 	"system_commits_behind": [

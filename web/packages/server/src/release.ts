@@ -156,7 +156,7 @@ const CORE_RE = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-|$)/
 /**
  * Whether one tab presents `announcement` now (TAL-1616). A browser's observation token names the X.Y.Z release it
  * last recorded: the first observation is quiet, and an announcement is eligible once for a later X.Y.Z. Builds of
- * one X.Y.Z (Experimental commits) and older releases are quiet. A tab whose loaded bundle is not the build this
+ * one X.Y.Z (Experimental commits) and older releases are quiet, and an older release keeps the newer token. A tab whose loaded bundle is not the build this
  * server serves (a stale UI, or no verifiable build) neither presents nor records a release; an unreadable token
  * counts as no observation. `observed` is compared, never trusted as release identity.
  */
@@ -166,6 +166,8 @@ export function whatsNewState(announcement: WhatsNewAnnouncement | null, release
   if (!installed || !currentBuild || loadedBuild !== currentBuild) return quiet
   const token = `web:${installed[1]}.${installed[2]}.${installed[3]}`
   const prior = OBSERVATION_RE.exec(observed ?? '')
-  const later = prior !== null && ([1, 2, 3].map((i) => Number(installed[i]) - Number(prior[i])).find((d) => d !== 0) ?? 0) > 0
-  return announcement && later ? { ...quiet, eligible: true, acknowledgement: token } : { ...quiet, observation: token }
+  const order = prior === null ? 1 : Math.sign([1, 2, 3].map((i) => Number(installed[i]) - Number(prior[i])).find((d) => d !== 0) ?? 0)
+  if (announcement && prior !== null && order > 0) return { ...quiet, eligible: true, acknowledgement: token }
+  // An older release keeps the newer token, so a rollback never re-presents a release the browser already recorded.
+  return order < 0 ? quiet : { ...quiet, observation: token }
 }

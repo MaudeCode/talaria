@@ -23,6 +23,7 @@ import type { z } from 'zod'
 import type { UpdateApplySchema, UpdateTargetSchema, UpdateVersionSchema } from '../../contracts'
 import { useUpdateProgress } from '../notifications/UpdateNotificationCenter'
 import { McpSection } from './McpSection'
+import { WhatsNewReplay } from '../whats-new/WhatsNew'
 import { useResourceEffects, useResourceMutation, withEffects } from '../sessions/useResourceMutation'
 import { markServerStopped } from '../notices/useRuntimeNotices'
 
@@ -125,7 +126,7 @@ export function SystemSection() {
           <Button onClick={() => checkNow.mutate()} disabled={checkNow.isPending}>{checkNow.isPending ? m.settings_checking() : bool('ignore_agent_updates') ? m.system_check_web() : m.system_check_both()}</Button>
         </div>
         <div className="grid gap-x-10 gap-y-8 [grid-template-columns:repeat(auto-fit,minmax(min(100%,19rem),1fr))]">
-          <UpdatePath id="systemWebPath" title={WEB} installed={webUpdate?.current_version ?? str('webui_version', bootstrap.webui_version)} status={webStatus}
+          <UpdatePath id="systemWebPath" title={WEB} installed={webUpdate?.current_version ?? str('webui_version', bootstrap.webui_version)} installedAction={<WhatsNewReplay />} status={webStatus}
             channel={<Select id="settingsUpdateChannel" aria-label={m.settings_label_web_update_channel()} disabled={!canManage} value={channel} onValueChange={setChannel}>
               {webChannels.map((c) => <option key={c} value={c}>{CHANNEL_LABELS[c]()}</option>)}
             </Select>}
@@ -316,8 +317,8 @@ function SupportLine({ support }: { support: Support | null }) {
  * A component's update path: installed version, then where its channel leads, with its own controls underneath.
  * Older installable releases (TAL-946) fold into one node between them; opening it is this device's choice.
  */
-function UpdatePath({ id, title, installed, installedNote, status, channel, action, folded = [], install, support, manualLink, summary, children }: {
-  id: string; title: string; installed: string; installedNote?: string | null; status: PathStatus; channel: ReactNode; action: ReactNode
+function UpdatePath({ id, title, installed, installedNote, installedAction, status, channel, action, folded = [], install, support, manualLink, summary, children }: {
+  id: string; title: string; installed: string; installedNote?: string | null; installedAction?: ReactNode; status: PathStatus; channel: ReactNode; action: ReactNode
   folded?: UpdateVersion[] | undefined; install: (version: UpdateVersion) => ReactNode; support?: Support | null; manualLink?: unknown; summary?: ReactNode; children: ReactNode
 }) {
   const [open, setOpen] = useState(false)
@@ -333,6 +334,7 @@ function UpdatePath({ id, title, installed, installedNote, status, channel, acti
           <div className="text-[11px] text-muted">{m.system_path_installed()}</div>
           <div className="font-mono text-sm text-text break-all">{installed}</div>
           {installedNote ? <p className="mt-1 text-xs text-warning">{installedNote}</p> : null}
+          {installedAction}
           {!next ? <p role="status" className="mt-1 text-xs text-muted">{status.text}</p> : null}
         </PathNode>
         {next && folded.length ? (

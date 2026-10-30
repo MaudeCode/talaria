@@ -315,6 +315,8 @@ export const applyUpdates = (action: 'apply' | 'force' | 'clear_lock', channel?:
   const opts = { signal: timeout(300_000) }
   return action === 'apply' ? u.apply(body, opts) : action === 'force' ? u.force(body, opts) : u.clearLock(body, opts)
 }
+/** The installed Web release's What's New and the server's decision for this tab's loaded build and stored token (TAL-1616). */
+export const fetchWhatsNew = (observed: string | null) => orpc().whatsNew({ ...(loadedBuild ? { loaded_build: loadedBuild } : {}), ...(observed ? { observed } : {}) })
 /** Every call names this tab so the server can show and resolve its tab-scoped refresh notice. */
 export const fetchUpdateNotifications = () => orpc().updateNotifications.list({ tab_id: tabId, loaded_build: loadedBuild })
 export const readUpdateNotification = (id: string) => orpc().updateNotifications.read({ id, read: true, tab_id: tabId })
