@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Screenshots and screen recordings sent with feedback now reach the Inbox ticket, re-encoded to remove location data, other metadata and audio.",
+      "highlight": false,
+      "components": ["relay"]
+    }
+  ]
+}

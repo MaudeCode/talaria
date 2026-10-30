@@ -1,0 +1,9 @@
+{
+  "name": "talaria-feedback-bridge",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "dependencies": {
+    "sharp": "0.35.5"
+  }
+}

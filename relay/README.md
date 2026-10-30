@@ -53,11 +53,27 @@ The production HTTP origin is `https://relay.talaria.kil.dev`.
 
 ## Feedback bridge
 
-`node bridge/bridge.ts` runs once on Node 24 using only built-in modules. It
-pulls up to 50 pending reports from Relay, creates quarantined Inbox tickets
-through Kanvil's create-only intake scope, acknowledges successful deliveries,
-and exits. Reports and diagnostics remain fenced untrusted text; install IDs
-are hashed before inclusion in ticket metadata.
+`node bridge/bridge.ts` runs once on Node 24. It pulls up to 50 pending reports
+from Relay, creates quarantined Inbox tickets through Kanvil's intake scope,
+attaches sanitized copies of the report's files, acknowledges successful
+deliveries, and exits. Reports and diagnostics remain fenced untrusted text;
+install IDs are hashed before inclusion in ticket metadata. Run
+`npm ci --prefix bridge` once before `pnpm check`; the bridge keeps its own
+lockfile because its image installs from it.
+
+Every attachment is untrusted. The bridge downloads each stored file, checks its
+length and SHA-256 against the queue entry, and re-encodes it in a per-report
+temporary directory before any ticket exists. Images go through
+[sharp](https://sharp.pixelplumbing.com/) (40 megapixel input limit, fit inside
+2560×2560, PNG stays PNG and other types become JPEG), which drops EXIF, GPS,
+XMP and ICC data. sharp's bundled libvips cannot decode HEVC-coded HEIC, so such
+a file is dropped; the Talaria clients already send JPEG or PNG. Video goes through ffmpeg: one video stream, at most 120.5
+seconds, re-encoded to a silent H.264 MP4 without metadata, at most 1280 pixels
+wide and 10,000,000 bytes. A file that fails these checks is dropped, and the
+ticket's Attachments table names the reason: `failed validation`, `too long`,
+`too large`, `missing`, or `refused (tier|quota|disabled)`. Files are named
+`attachment-<index>.<ext>`; a retry uploads only the names the ticket lacks, and
+the report is acknowledged only after every kept file is attached.
 
 | Environment variable | Purpose |
 | --- | --- |
@@ -68,7 +84,8 @@ are hashed before inclusion in ticket metadata.
 | `KANVIL_PROJECT_ID` | Talaria Inbox project ID |
 
 Use the `intake` scope provided by KAN-67. It forces human triage and disables
-automation on created tickets. The bridge sends exactly the `user-report`,
+automation on created tickets; KAN-77 lets the same key attach files to the
+quarantined tickets it created and nothing else. The bridge sends exactly the `user-report`,
 trust-tier, and client-platform labels; Kanvil adds its own `intake` label.
 Credentials stay in the cluster and are never logged. Missing variables or an
 invalid base URL exit 2 and name only the variable. Queue failures exit 1.
@@ -80,8 +97,10 @@ reports in the fetched batch were delivered, or the queue was empty.
 
 The image is `ghcr.io/maudecode/talaria-feedback-bridge`, tagged `sha-<12-hex>`
 and `main`. Pull requests build and smoke-test it; bridge changes on main also
-publish it. The image runs as the non-root `node` user and contains only the
-standalone entry file beyond the base image. No package installation is needed.
+publish it. The image runs as the non-root `node` user and adds Alpine's `ffmpeg`
+package, the pinned sharp install from `bridge/package-lock.json`, and the entry
+file. The image workflow also runs `bridge/smoke.ts` inside the built image,
+without network access, to prove real sharp and ffmpeg sanitization.
 
 Deployment is separate. The intended in-cluster Kubernetes CronJob schedule is
 `*/2 * * * *` with `concurrencyPolicy: Forbid`, the five variables above supplied
