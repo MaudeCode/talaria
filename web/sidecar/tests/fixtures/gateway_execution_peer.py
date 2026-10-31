@@ -96,7 +96,9 @@ def write_profile(home: Path, workspace: Path, url: str, witness: Path, tag: str
         "model": {"provider": "custom", "default": "owner-fixture", "base_url": url},
         "agent": {"system_prompt": f"{tag}CONFIG_SENTINEL prompt"},
         "plugins": {"enabled": ["sentinel"]},
-        "mcp_servers": {"sentinel": {"command": sys.executable, "args": [str(mcp)]}},
+        # The sentinel only witnesses a spawn and never answers, so each owner start would wait out the Agent's 60 s
+        # default connect timeout (TAL-1599).
+        "mcp_servers": {"sentinel": {"command": sys.executable, "args": [str(mcp)], "connect_timeout": 5}},
         "auxiliary": {"title_generation": {"enabled": False}}, "platform_toolsets": {"cli": []},
     }))
     (workspace / "AGENTS.md").write_text("RULES_SENTINEL project rule.\n")

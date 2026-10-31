@@ -410,22 +410,34 @@ class PublicationTests(unittest.TestCase):
         for name in (*gates, *builds):
             with self.subTest(job=name):
                 self.assertEqual(jobs[name]["needs"], joins.get(name, "prepare"))
-        # One job per supported Agent release, listed by prepare from the selected source; each writes its own receipt
-        # through cli.py gate, and agent writes the manifest's receipt once the jobs covered exactly those releases.
+        # One job per supported Agent release and shard, listed by prepare from the selected source (TAL-1599); each
+        # writes its own receipts through cli.py gate and uploads them, and agent downloads them all and writes the
+        # manifest's receipt once every shard passed and each release's shards ran its suite exactly once.
         release = jobs["agent-release"]
         self.assertEqual(release["strategy"], {"fail-fast": False,
-                                               "matrix": {"release": "${{ fromJSON(needs.prepare.outputs.agent_releases) }}"}})
-        self.assertEqual(jobs["prepare"]["outputs"]["agent_releases"], "${{ steps.agents.outputs.releases }}")
+                                               "matrix": {"include": "${{ fromJSON(needs.prepare.outputs.agent_jobs) }}"}})
+        self.assertEqual(jobs["prepare"]["outputs"]["agent_jobs"], "${{ steps.agents.outputs.jobs }}")
         listing = next(step["run"] for step in jobs["prepare"]["steps"] if step.get("id") == "agents")
         self.assertIn('scripts/check-release-agent.py --plan "$RUNNER_TEMP/release-plan/plan.json" --list', listing)
         leg = next(step for step in agent_steps if "check-release-agent.py" in step.get("run", ""))
-        self.assertIn('releases/cli.py gate --plan "$RUNNER_TEMP/release-plan/plan.json" --name agentCompatibility', leg["run"])
-        self.assertIn('--release "$RELEASE"', leg["run"])
-        self.assertEqual(leg["env"]["RELEASE"], "${{ matrix.release }}")
-        join = next(step for step in jobs["agent"]["steps"] if "check-release-agent.py" in step.get("run", ""))
-        self.assertIn('--output "$RUNNER_TEMP/agent-receipts/agentCompatibility.json"', join["run"])
-        self.assertIn('--expect "$RELEASES"', join["run"])
-        self.assertEqual(join["env"]["RELEASES"], "${{ needs.prepare.outputs.agent_releases }}")
+        self.assertIn('releases/cli.py gate --plan "$RUNNER_TEMP/release-plan/plan.json" --name agentCompatibility '
+                      '--output "$RUNNER_TEMP/agent-compatibility/${RELEASE}.shard-${SHARD}.gate.json"', leg["run"])
+        self.assertIn('--release "$RELEASE" --shard "${SHARD}/${SHARDS}" --receipts "$RUNNER_TEMP/agent-compatibility"', leg["run"])
+        self.assertEqual({key: leg["env"][key] for key in ("RELEASE", "SHARD", "SHARDS")},
+                         {"RELEASE": "${{ matrix.release }}", "SHARD": "${{ matrix.shard }}", "SHARDS": "${{ matrix.shards }}"})
+        upload = next(step for step in agent_steps if step.get("name") == "Retain Agent compatibility receipts")
+        self.assertEqual((upload["if"], upload["with"]["path"], upload["with"]["name"]),
+                         ("always()", "${{ runner.temp }}/agent-compatibility",
+                          "agent-compatibility-${{ matrix.release }}-shard-${{ matrix.shard }}-${{ github.run_attempt }}"))
+        join_steps = jobs["agent"]["steps"]
+        download = next(index for index, step in enumerate(join_steps) if "artifacts.py gather" in step.get("run", ""))
+        self.assertEqual(join_steps[download]["run"], '"$RELEASE_PYTHON" releases/artifacts.py gather agent-compatibility "$RUNNER_TEMP/agent-shards"')
+        self.assertEqual(join_steps[download]["env"], {"GH_TOKEN": "${{ github.token }}"})
+        join = next(index for index, step in enumerate(join_steps) if "check-release-agent.py" in step.get("run", ""))
+        self.assertLess(download, join)
+        self.assertIn('--output "$RUNNER_TEMP/agent-receipts/agentCompatibility.json"', join_steps[join]["run"])
+        self.assertIn('--expect "$JOBS" --receipts "$RUNNER_TEMP/agent-shards"', join_steps[join]["run"])
+        self.assertEqual(join_steps[join]["env"]["JOBS"], "${{ needs.prepare.outputs.agent_jobs }}")
         self.assertNotIn("if", jobs["agent"])
         # The lookup runs the workflow's own read-only script; its answer selects the suite, and a failed lookup skips it.
         lookup = jobs["app-hosted-tests-lookup"]

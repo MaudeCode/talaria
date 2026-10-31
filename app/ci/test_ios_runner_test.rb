@@ -187,12 +187,14 @@ class TestIOSRunnerTest < Minitest::Test
     assert_equal(["inputs.mode != 'contracts'", "ubuntu-latest"], started.values_at("if", "runs-on"))
     assert_equal(['ci/wait-for-job "${BUILD_JOB}" 20700 "Set up job"'], started["steps"].filter_map { |step| step["run"] })
     # The boot finishes before the build wait and download, so it competes with neither (TAL-380), and the simulator
-    # is prepared while the build still runs (scripts/prepare-ui-simulator: the keyboard introduction, TAL-668;
-    # notifications, TAL-651; a photo, TAL-633).
+    # is prepared in the background while the build runs and downloads (scripts/prepare-ui-simulator: the keyboard
+    # introduction, TAL-668; notifications, TAL-651; a photo, TAL-633), collected right before the tests (TAL-1599).
     boot = shard["steps"].index { |step| step["name"] == "Boot the simulator" }
-    assert_equal('scripts/prepare-ui-simulator "${{ steps.sim.outputs.udid }}"', shard["steps"][boot + 1]["run"])
-    assert_equal(["Prepare the simulator", "Wait for the build", "Download the test build", "Test without building"],
-                 shard["steps"][boot + 1, 4].map { |step| step["name"] })
+    assert_equal('ci/background start simulator-prepare scripts/prepare-ui-simulator "${{ steps.sim.outputs.udid }}"',
+                 shard["steps"][boot + 1]["run"])
+    assert_equal(["Prepare the simulator", "Wait for the build", "Download the test build", "Wait for the simulator", "Test without building"],
+                 shard["steps"][boot + 1, 5].map { |step| step["name"] })
+    assert_equal("ci/background wait simulator-prepare", shard["steps"][boot + 4]["run"])
     assert_equal("true", shard["steps"][boot]["with"]["wait_for_boot"].to_s)
     refute(shard["steps"].any? { |step| step["name"] == "Build for testing" }, "test jobs never build")
     steps = shard["steps"].map { |step| [step["name"] || step["uses"], step] }.to_h
@@ -201,9 +203,9 @@ class TestIOSRunnerTest < Minitest::Test
     # and the step after the boot collects its result (TAL-405).
     start = shard["steps"].index { |step| step["name"] == "Start waiting for the build" }
     assert_equal(["actions/checkout@v7", "./.github/actions/setup-xcode"], [start - 1, start + 1].map { |index| shard["steps"][index]["uses"] })
-    assert_includes(steps.fetch("Start waiting for the build")["run"],
-                    %(nohup bash -c 'ci/wait-for-job "${BUILD_JOB}" 2700 "Upload the test build"; echo $? >))
-    assert_includes(steps.fetch("Wait for the build")["run"], 'exit "$(cat "${status}")"')
+    assert_equal('ci/background start build-wait ci/wait-for-job "${BUILD_JOB}" 2700 "Upload the test build"',
+                 steps.fetch("Start waiting for the build")["run"])
+    assert_equal("ci/background wait build-wait", steps.fetch("Wait for the build")["run"])
     # Every native contract class and the live test run in the package job; hosted tests never read the probe's
     # fixture (TAL-399).
     refute_match(/contract-fixture|LIVE_CONTRACT|CONTRACT_TEST_CLASSES|CONTRACTS_SELECTED/, shard.to_yaml)

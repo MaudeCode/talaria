@@ -48,6 +48,9 @@ _collected, _started, _layers = [], [], {}
 _inventory, _active_case, _harness_launch = {}, None, False
 _launches, _violations = [], []
 _active_phase = 'collection'
+# A shard's worker runs its modules' listed cases only (TAL-1599).
+SELECTION = 'TALARIA_PYTEST_SELECTION'
+_selection = None
 
 
 def pytest_addoption(parser):
@@ -116,6 +119,9 @@ def case_layer(nodeid):
 
 
 def pytest_collection_modifyitems(items, config):
+    global _selection
+    if path := os.environ.get(SELECTION):
+        _selection = set(json.loads(Path(path).read_text()))
     selected, deselected = [], []
     layer = config.getoption('--talaria-layer')
     for item in items:
@@ -128,7 +134,8 @@ def pytest_collection_modifyitems(items, config):
             raise ValueError(f'unclassified Agent case: {item.nodeid}')
         if entry and ('[' + case if bracket else '') not in entry['cases']:
             raise ValueError(f'unreviewed process case: {item.nodeid}')
-        target = selected if layer == 'all' or layer == case_layer(item.nodeid) else deselected
+        target = selected if (layer == 'all' or layer == case_layer(item.nodeid)) and (
+            _selection is None or item.nodeid in _selection) else deselected
         target.append(item)
     config.hook.pytest_deselected(items=deselected)
     items[:] = selected
@@ -181,6 +188,32 @@ def layer_arguments(args):
         if release != active:
             layers = ['compatibility']
     return remaining, layers
+
+
+def shard_argument(args):
+    """``--shard=N/M`` runs the full suite's Nth of M case sets (TAL-1599); every other argument passes through."""
+    remaining, shard = [], None
+    for arg in args:
+        if arg.startswith('--shard='):
+            index, _, count = arg.split('=', 1)[1].partition('/')
+            if not (index.isdecimal() and count.isdecimal() and 1 <= int(index) <= int(count)):
+                raise ValueError('shard must be N/M with 1 <= N <= M')
+            shard = (int(index), int(count))
+        else:
+            remaining.append(arg)
+    return remaining, shard
+
+
+def shard_cases(nodeids, layers, index, count):
+    """Each layer's cases in collection order, dealt round-robin: a module's cases, slow ones included, spread over
+    every shard, and every shard computes the same split from the same collection."""
+    dealt = Counter()
+    chosen = []
+    for node in nodeids:
+        if dealt[layers[node]] % count == index - 1:
+            chosen.append(node)
+        dealt[layers[node]] += 1
+    return chosen
 
 
 def report_argument(args):
@@ -285,7 +318,7 @@ def cleanup(processes, state):
     reap_orphans(processes, terminate=True)
 
 
-def merge_reports(jobs, destination):
+def merge_reports(jobs, destination, extra=None):
     merged = ET.Element("testsuites")
     durations, modules, manifests = [], defaultdict(float), []
     for job, expected in jobs:
@@ -330,7 +363,7 @@ def merge_reports(jobs, destination):
     coverage = {'collected': [node for manifest in manifests for node in manifest['collected']],
                 'started': [node for manifest in manifests for node in manifest['started']],
                 'layers': {node: layer for manifest in manifests for node, layer in manifest.get('layers', {}).items()},
-                'launches': [launch for manifest in manifests for launch in manifest.get('launches', [])]}
+                'launches': [launch for manifest in manifests for launch in manifest.get('launches', [])], **(extra or {})}
     coverage_path = Path(str(destination) + '.coverage.json')
     coverage_temporary = coverage_path.with_suffix('.tmp')
     coverage_temporary.write_text(json.dumps(coverage))
@@ -349,7 +382,10 @@ def run(args):
     if report:
         report.unlink(missing_ok=True)  # A stale report must never prove this run passed.
         Path(str(report) + '.coverage.json').unlink(missing_ok=True)
+    remaining, shard = shard_argument(remaining)
     remaining, layers = layer_arguments(remaining)
+    if shard and remaining:
+        raise ValueError('--shard runs the full suite and takes no other selection')
     count = worker_count(os.environ.get(WORKERS))
     selected = 1 if remaining else count
     print(f"Sidecar pytest: workers={selected}, host budget={os.environ.get('TALARIA_SIDECAR_TOTAL_WORKERS', count)}", flush=True)
@@ -361,7 +397,7 @@ def run(args):
     with tempfile.TemporaryDirectory(prefix="talaria-pytest-state-") as directory:
         state = Path(directory)
 
-        def launch(name, arguments, layer=None, complete=False):
+        def launch(name, arguments, layer=None, complete=False, cases=None):
             job, home = output / name, state / name
             job.mkdir()
             for child in ("home", "tmp"):
@@ -374,6 +410,10 @@ def run(args):
                 env.pop('HERMES_WEBUI_PYTHON', None)
             env['TALARIA_TEST_LAYER'] = layer or 'collection'
             env['TALARIA_POLICY_CHECK_ALL'] = '1' if complete else '0'
+            env.pop(SELECTION, None)
+            if cases is not None:
+                (home / 'selection.json').write_text(json.dumps(cases))
+                env[SELECTION] = str(home / 'selection.json')
             log = (job / "output.log").open("w")
             streams.append(log)
             proc = subprocess.Popen([sys.executable, "-m", "pytest", "-p", "suite_runner", "-q",
@@ -396,7 +436,14 @@ def run(args):
             if any(arg in ('--collect-only', '--collectonly', '--co') for arg in remaining):
                 print('\n'.join(expected), flush=True)
                 return 0
-            print(f"Collected {len(nodeids)} cases; selected {len(expected)} in {layers}; diagnostics: {output}", flush=True)
+            suite = None
+            if shard:
+                suite = {'shard': f'{shard[0]}/{shard[1]}', 'suite': expected}
+                expected = shard_cases(expected, collected['layers'], *shard)
+                if not expected:
+                    raise ValueError(f'shard {shard[0]}/{shard[1]} selected no cases')
+            print(f"Collected {len(nodeids)} cases; selected {len(expected)} in {layers}"
+                  f"{f' for shard {shard[0]}/{shard[1]}' if shard else ''}; diagnostics: {output}", flush=True)
             jobs = []
             failed = False
             for layer in layers:
@@ -406,7 +453,7 @@ def run(args):
                     name = f'worker-{len(jobs) + 1}'
                     selection = remaining if remaining else list(dict.fromkeys(node.split('::', 1)[0] for node in group))
                     job, proc = launch(name, [f"--junitxml={output / name / 'junit.xml'}",
-                                              f'--talaria-layer={layer}', *selection], layer)
+                                              f'--talaria-layer={layer}', *selection], layer, cases=group if shard else None)
                     jobs.append((job, group, proc))
                     current.append((job, proc))
                 for job, proc in current:
@@ -415,7 +462,7 @@ def run(args):
                     failed |= code != 0
             if Counter(node for _, group, _ in jobs for node in group) != Counter(expected):
                 raise ValueError('missing or duplicate selected layer coverage')
-            report_failed = merge_reports([(job, group) for job, group, _ in jobs], report or output / "junit.xml")
+            report_failed = merge_reports([(job, group) for job, group, _ in jobs], report or output / "junit.xml", suite)
             return int(failed or report_failed)
         finally:
             for sig in (signal.SIGINT, signal.SIGTERM):
@@ -434,7 +481,7 @@ def run(args):
 
 def main():
     if sys.argv[1:2] == ['--requires-agent']:
-        print(str('compatibility' in layer_arguments(sys.argv[2:])[1]).lower())
+        print(str('compatibility' in layer_arguments(shard_argument(sys.argv[2:])[0])[1]).lower())
         return 0
     if sys.platform == "linux":
         import ctypes

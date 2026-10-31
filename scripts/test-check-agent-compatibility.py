@@ -3,6 +3,7 @@
 
 import copy
 import fcntl
+import hashlib
 import importlib.util
 import io
 import json
@@ -58,6 +59,7 @@ class FakeTools:
         self.head = {}  # fetched ref -> commit it resolves to
         self.requires_python = ">=3.11, <3.14"
         self.sidecar_failures = 0
+        self.coverage_shard = None  # a shard the suite runner reports running, when not the requested one
         self.approval_reports = {}
         self.compression_reports = {}
         self.probe_findings = {}
@@ -114,9 +116,14 @@ class FakeTools:
             return subprocess.CompletedProcess(command, int(command[2]))
         if command[0].endswith("test.sh"):
             failures = self.sidecar_failures
+            shard = next((part.split("=", 1)[1] for part in command if part.startswith("--shard=")), None)
             for part in command:
                 if part.startswith("--junitxml="):
                     Path(part.split("=", 1)[1]).write_text(f'<testsuites><testsuite tests="40" failures="{failures}" errors="0" skipped="1"/></testsuites>')
+                    if shard:
+                        # The suite runner's coverage record: the whole suite and this shard's dealt cases.
+                        Path(part.split("=", 1)[1] + ".coverage.json").write_text(json.dumps(
+                            {"shard": self.coverage_shard or shard, "suite": ["t.py::b", "t.py::a", "u.py::c"], "started": ["u.py::c", "t.py::b"]}))
             if failures:
                 raise subprocess.CalledProcessError(1, command)
         if command[:2] == ["docker", "pull"] and command[2].rsplit(":", 1)[-1] in self.missing_tags:
@@ -441,7 +448,31 @@ class CheckerTests(unittest.TestCase):
             self.receipt("--identity", json.dumps(CANDIDATE))
         self.assertEqual(self.last["result"], "failure")
         self.assertEqual(self.last["tests"]["failed"], 1)
-        self.assertEqual(self.tools.ran("docker"), [])
+        # The image check runs beside the suite (TAL-1599), but a failed suite never counts as a verified release.
+        self.assertFalse(self.last["imageVerified"])
+
+    def test_a_shard_records_its_cases_and_the_suite_beside_the_image_check(self):
+        # A release checks each Agent in three shard jobs (TAL-1599); the join proves their cases cover the suite once.
+        tag = RELEASES[-1]["releaseTag"]
+        with patch("sys.stdout", new_callable=io.StringIO) as stdout:
+            receipt = self.receipt("--release", tag, "--shard", "2/3")
+        suite = ["t.py::a", "t.py::b", "u.py::c"]
+        self.assertEqual(receipt["shard"], {"shard": "2/3", "suiteCases": 3, "cases": ["t.py::b", "u.py::c"],
+                                            "suiteDigest": hashlib.sha256("\n".join(suite).encode()).hexdigest()})
+        self.assertEqual((receipt["result"], receipt["imageVerified"]), ("success", True))
+        self.assertIn("--shard=2/3", self.tools.ran("test.sh")[0])
+        for name in ("Agent checkout", "Agent probe", "sidecar suite shard 2/3", "image verification finished"):
+            self.assertRegex(stdout.getvalue(), rf"\[\d\d:\d\d:\d\dZ \+\d+s\] {name}")
+        # A suite runner that ran another shard never passes as this one.
+        self.tools.coverage_shard = "1/3"
+        with self.assertRaisesRegex(RuntimeError, "ran shard 1/3, not 2/3"):
+            self.receipt("--release", tag, "--shard", "2/3")
+        self.assertEqual(self.last["result"], "failure")
+
+    def test_a_shard_takes_no_selectors(self):
+        for argv in (["--shard", "0/3"], ["--shard", "4/3"], ["--shard", "1/3", "tests/test_x.py"], ["--shard", "1", "--skip-sidecar-tests"]):
+            with self.subTest(argv=argv), patch("sys.stderr", new_callable=io.StringIO), self.assertRaises(SystemExit):
+                self.main("--release", RELEASES[-1]["releaseTag"], *argv)
 
     def test_release_image_must_reproduce_upstream_observations(self):
         self.receipt("--release", RELEASES[-1]["releaseTag"])

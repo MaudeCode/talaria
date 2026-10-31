@@ -207,9 +207,9 @@ jobs:
 
   app-test:
     # Boots its simulator to completion while the build runs on another runner and a background poll watches for the
-    # build's upload, then downloads the build and runs its shard of the hosted unit tests (TalariaTests). Each shard
-    # is a fixed set of classes (ci/hosted-test-shard), balanced from measured class times, and the last runs every
-    # other class.
+    # build's upload, prepares the simulator in the background while it waits for and downloads the build, then runs
+    # its shard of the hosted unit tests (TalariaTests). Each shard is a fixed set of classes (ci/hosted-test-shard),
+    # balanced from measured class times, and the last runs every other class.
     name: App hosted tests ${{ matrix.shard }}
     needs: build-started
     if: inputs.mode != 'contracts'
@@ -246,11 +246,7 @@ jobs:
       - name: Start waiting for the build
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          # shellcheck disable=SC2016 # The background shell expands these.
-          nohup bash -c 'ci/wait-for-job "${BUILD_JOB}" 2700 "Upload the test build"; echo $? > "${RUNNER_TEMP}/build-wait.tmp"
-            mv "${RUNNER_TEMP}/build-wait.tmp" "${RUNNER_TEMP}/build-wait.status"' > "${RUNNER_TEMP}/build-wait.log" 2>&1 < /dev/null &
-          echo $! > "${RUNNER_TEMP}/build-wait.pid"
+        run: ci/background start build-wait ci/wait-for-job "${BUILD_JOB}" 2700 "Upload the test build"
 
       - uses: ./.github/actions/setup-xcode
 
@@ -271,23 +267,15 @@ jobs:
           shutdown_after_job: false
 
       # The keyboard's slide-to-type introduction marked as shown (TAL-668), the notification service answering
-      # (TAL-651) and a photo the tests own (TAL-633).
+      # (TAL-651) and a photo the tests own (TAL-633). It needs only the booted simulator, so it runs in the background
+      # while the job waits for and downloads the build, and "Wait for the simulator" collects it (TAL-1599).
       - name: Prepare the simulator
-        run: scripts/prepare-ui-simulator "${{ steps.sim.outputs.udid }}"
+        run: ci/background start simulator-prepare scripts/prepare-ui-simulator "${{ steps.sim.outputs.udid }}"
 
       # Returns once the background poll has seen the build's upload step succeed; fails once it sees the build fail
       # or get cancelled, or if the poll stopped without a result.
       - name: Wait for the build
-        run: |
-          set -euo pipefail
-          status="${RUNNER_TEMP}/build-wait.status"
-          while [[ ! -f "${status}" ]]; do
-            kill -0 "$(cat "${RUNNER_TEMP}/build-wait.pid")" 2>/dev/null || [[ -f "${status}" ]] ||
-              { cat "${RUNNER_TEMP}/build-wait.log"; echo "The build wait stopped without a result" >&2; exit 1; }
-            sleep 1
-          done
-          cat "${RUNNER_TEMP}/build-wait.log"
-          exit "$(cat "${status}")"
+        run: ci/background wait build-wait
 
       # curl, not actions/download-artifact, which fetched this 82 MB artifact at about 1 MB/s on hosted macOS.
       - name: Download the test build
@@ -323,6 +311,9 @@ jobs:
           echo "- Build upload → download start: ${handoff}" | tee -a "${GITHUB_STEP_SUMMARY}"
           mkdir -p Build
           tar -C Build -xf "${RUNNER_TEMP}/app-build.tar"
+
+      - name: Wait for the simulator
+        run: ci/background wait simulator-prepare
 
       # The memory sampler runs for the whole step; "Report memory" stops it, summarizes it and uploads its log.
       # The step's own limit ends a stuck run inside the job's, so the steps after it still upload the result bundle
