@@ -266,15 +266,22 @@ extension XCTestCase {
     /// realizing. Lazy layout can shift the mounted window once more after startup, especially on CI (TAL-1544).
     @MainActor
     func awaitQuietRowRealization(_ rows: ChatTranscriptRowCache) async -> Int? {
-        var count = rows.realizationCount
+        await awaitQuiet { rows.realizationCount }
+    }
+
+    /// Waits until `current()` has not changed for 500 ms and returns its settled value, or nil if it kept changing.
+    /// On a loaded runner, late layout passes land well after the work that queued them (TAL-1544, TAL-1570).
+    @MainActor
+    func awaitQuiet(_ current: @escaping () -> Int) async -> Int? {
+        var count = current()
         let clock = ContinuousClock()
-        var lastRealization = clock.now
+        var lastChange = clock.now
         let settled = await awaitCondition {
-            if rows.realizationCount != count {
-                count = rows.realizationCount
-                lastRealization = clock.now
+            if current() != count {
+                count = current()
+                lastChange = clock.now
             }
-            return clock.now - lastRealization >= .milliseconds(500)
+            return clock.now - lastChange >= .milliseconds(500)
         }
         return settled ? count : nil
     }
