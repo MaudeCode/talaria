@@ -23,7 +23,33 @@ enum TestImages {
         }
     }
 
-    private static func encode(width: Int, height: Int, type: UTType, quality: Double?, draw: (CGContext) -> Void) -> Data? {
+    /// An opaque HEIC split like `jpegData`, as the Photos library stores camera shots.
+    static func heicData(width: Int, height: Int, orientation: Int? = nil) -> Data? {
+        encode(width: width, height: height, type: .heic, quality: 0.9, alpha: .noneSkipLast, orientation: orientation) { context in
+            context.setFillColor(CGColor(red: 0, green: 0.48, blue: 1, alpha: 1))
+            context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+            context.setFillColor(CGColor(red: 0.19, green: 0.69, blue: 0.78, alpha: 1))
+            context.fill(CGRect(x: width / 2, y: 0, width: width - width / 2, height: height))
+        }
+    }
+
+    /// A half-transparent blue PNG of the given pixel size.
+    static func translucentPNGData(width: Int, height: Int) -> Data? {
+        encode(width: width, height: height, type: .png, quality: nil) { context in
+            context.setFillColor(CGColor(red: 0, green: 0.48, blue: 1, alpha: 0.5))
+            context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        }
+    }
+
+    private static func encode(
+        width: Int,
+        height: Int,
+        type: UTType,
+        quality: Double?,
+        alpha: CGImageAlphaInfo = .premultipliedLast,
+        orientation: Int? = nil,
+        draw: (CGContext) -> Void
+    ) -> Data? {
         guard let context = CGContext(
             data: nil,
             width: width,
@@ -31,14 +57,16 @@ enum TestImages {
             bitsPerComponent: 8,
             bytesPerRow: 0,
             space: CGColorSpace(name: CGColorSpace.sRGB)!,
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            bitmapInfo: alpha.rawValue
         ) else { return nil }
         draw(context)
         guard let image = context.makeImage() else { return nil }
         let data = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(data, type.identifier as CFString, 1, nil) else { return nil }
-        let options = quality.map { [kCGImageDestinationLossyCompressionQuality: $0] as CFDictionary }
-        CGImageDestinationAddImage(destination, image, options)
+        var options: [CFString: Any] = [:]
+        if let quality { options[kCGImageDestinationLossyCompressionQuality] = quality }
+        if let orientation { options[kCGImagePropertyOrientation] = orientation }
+        CGImageDestinationAddImage(destination, image, options as CFDictionary)
         guard CGImageDestinationFinalize(destination) else { return nil }
         return data as Data
     }
