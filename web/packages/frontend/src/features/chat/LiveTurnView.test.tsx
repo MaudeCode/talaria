@@ -160,6 +160,40 @@ describe('server-selected prompt reading (TAL-1058)', () => {
     expect(run.turn.runStatus).toBeNull()
   })
 
+  it('shows a live compression once, timed from the server\'s span start, and resumes Working when it closes (TAL-1282)', async () => {
+    vi.useFakeTimers({ now: 200_000, toFake: ['Date', 'setInterval'] })
+    try {
+      const run = liveRun()
+      const view = render(<LiveStatusPill sessionId={run.turn.sessionId} />)
+      for (let i = 0; i < 2; i++) {
+        // The turn started at 0 (3m ago); the server's span started 75s ago.
+        run.dispatch({ type: 'event', sessionId: 's', streamId: 'run', event: { event: 'compressing', data: { session_id: 's', started_at: 125 } }, lastEventId: `run:span${String(i)}`, now: 200_000 })
+        run.emit({ event: 'run_status', data: { session_id: 's', status: { phase: 'compressing' } } })
+        view.rerender(<LiveStatusPill sessionId={run.turn.sessionId} />)
+        await waitFor(() => expect(view.getByRole('status')).toHaveTextContent(/^Compressing context 1m$/))
+        expect(view.container.querySelectorAll('.live-run-elapsed')).toHaveLength(1)
+      }
+      run.emit({ event: 'compressed', data: { session_id: 's' } })
+      run.emit({ event: 'run_status', data: { session_id: 's', status: { phase: 'working' } } })
+      view.rerender(<LiveStatusPill sessionId={run.turn.sessionId} />)
+      await waitFor(() => expect(view.getByRole('status')).toHaveTextContent(/^Working/))
+      expect(view.getByRole('status')).not.toHaveTextContent('Compressing')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('shows an old server\'s open span without run_status, but not over a reconnect (TAL-1282)', async () => {
+    const run = liveRun()
+    run.emit({ event: 'compressing', data: { session_id: 's' } })
+    const view = render(<LiveStatusPill sessionId={run.turn.sessionId} />)
+    await waitFor(() => expect(view.getByRole('status')).toHaveTextContent(/^Compressing context/))
+    run.reconnect()
+    view.rerender(<LiveStatusPill sessionId={run.turn.sessionId} />)
+    await waitFor(() => expect(view.getByRole('status')).toHaveTextContent(/^Reconnecting/))
+    expect(view.getByRole('status')).not.toHaveTextContent('Compressing')
+  })
+
   it('keeps newer server progress when a retained stream resumes from a cached session snapshot', async () => {
     const run = liveRun()
     run.emit({ event: 'run_status', data: { session_id: 's', status: { phase: 'prompt_reading', progress_percent: 42 } } })

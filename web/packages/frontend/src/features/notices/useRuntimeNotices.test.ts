@@ -172,11 +172,10 @@ describe('useRuntimeNotices compression (TAL-1006)', () => {
     return text
   }
 
-  it('shows the live turn\'s open span and the manual job with the time since the server\'s start, and clears with the span', () => {
+  it('shows the manual job with the time since the server\'s start; a live turn\'s span is the live pill\'s (TAL-1282)', () => {
     const since = NOW / 1000 - 65
-    expect(row({ live: liveTurn([['compressing', { session_id: 's', started_at: since }]]) })).toBe('Compressing context1m')
-    expect(row({ live: liveTurn([['compressing', { session_id: 's', started_at: since }], ['compressed', { session_id: 's' }]]) })).toBeNull()
-    expect(row({ live: liveTurn([['compressing', { session_id: 's', started_at: since }], ['done', {}]]) })).toBeNull()
+    expect(row({ live: liveTurn([['compressing', { session_id: 's', started_at: since }], ['run_status', { session_id: 's', status: { phase: 'compressing' } }]]) })).toBeNull()
+    expect(row({ live: liveTurn([['compressing', { session_id: 's', started_at: since }]]) })).toBeNull()
     expect(row({ compressingSince: NOW - 12_000 })).toBe('Compressing context12s')
   })
 })
