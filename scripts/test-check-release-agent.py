@@ -100,7 +100,7 @@ class ReleaseBudgetTests(unittest.TestCase):
                     checker.main()
             self.assertFalse(any('--release' in command for command in commands))
 
-    def invoke(self, *options, receipts=None, attempt='1'):
+    def invoke(self, *options, receipts=None, attempt='1', sharded=True):
         pin = json.loads((ROOT / 'web/sidecar/agent_dependency.json').read_text())
         identity = {**pin['x-talaria'], 'image': pin['services']['hermes-agent']['image']}
         with tempfile.TemporaryDirectory() as directory:
@@ -120,6 +120,9 @@ class ReleaseBudgetTests(unittest.TestCase):
                 return subprocess.CompletedProcess(command, 0)
 
             def output(command, **kwargs):
+                if '--help' in command:
+                    # The selected source's checker: one from before TAL-1599 has no --shard.
+                    return 'usage: check-agent-compatibility.py [--release RELEASE]' + (' [--shard N/M]' if sharded else '')
                 return json.dumps(['v1', 'v2', 'v3'] if '--list' in command else pin).encode()
 
             argv = ['check-release-agent.py', '--plan', str(plan), *options, *(['--receipts', str(receipts)] if receipts else [])]
@@ -143,9 +146,42 @@ class ReleaseBudgetTests(unittest.TestCase):
         self.assertIn('===== Agent v2 shard 2/3: started =====', printed)
         with self.assertRaisesRegex(ValueError, 'v4 is not a supported release'):
             self.invoke('--release', 'v4')
+        with self.assertRaisesRegex(ValueError, 'not one of the selected source'):
+            self.invoke('--release', 'v2', '--shard', '1/1')
         for options in (('--shard', '1/3'), ('--expect', '[]')):
             with self.subTest(options=options), patch('sys.stderr', new_callable=io.StringIO), self.assertRaises(SystemExit):
                 self.invoke(*options)
+
+    def test_a_retained_web_source_from_before_sharding_runs_one_job_per_release(self):
+        # A release that keeps an older Web release checks the Agents against that source's own checker, which has no
+        # --shard: each release runs whole in one job, and the join requires its one passing receipt.
+        checked, _, printed = self.invoke('--list', sharded=False)
+        self.assertEqual(json.loads(printed), [{'release': tag, 'shard': 1, 'shards': 1} for tag in ('v1', 'v2', 'v3')])
+        with tempfile.TemporaryDirectory() as receipts:
+            checked, _, _ = self.invoke('--release', 'v2', '--shard', '1/1', receipts=receipts, sharded=False)
+            self.assertEqual(checked, [(['v2', '--receipt', str(Path(receipts).resolve() / 'v2.shard-1.json')], '4')])
+        with self.assertRaisesRegex(ValueError, 'not one of the selected source'):
+            self.invoke('--release', 'v2', '--shard', '2/3', sharded=False)
+        jobs = json.dumps([{'release': tag, 'shard': 1, 'shards': 1} for tag in ('v1', 'v2', 'v3')])
+
+        def expect(changes=None, listed=jobs):
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                for tag in ('v1', 'v2', 'v3'):
+                    self.write_shards(root, tag)
+                    for path in root.rglob(f'{tag}.shard-[23]*'):
+                        path.unlink()
+                    receipt = next(root.rglob(f'{tag}.shard-1.json'))
+                    record = json.loads(receipt.read_text())
+                    del record['shard']
+                    receipt.write_text(json.dumps({**record, **(changes or {}).get(tag, {})}))
+                return self.invoke('--expect', listed, receipts=root, sharded=False)
+
+        self.assertIn('Agent v2: the selected source\'s checker ran its whole sidecar suite in one job', expect()[2])
+        with self.assertRaisesRegex(ValueError, 'v3 shard 1/1 receipt is not a passing'):
+            expect({'v3': {'result': 'failure'}})
+        with self.assertRaisesRegex(ValueError, "not the supported releases' shards"):
+            expect(listed=json.dumps([{'release': tag, 'shard': shard, 'shards': 3} for tag in ('v1', 'v2', 'v3') for shard in (1, 2, 3)]))
 
     def write_shards(self, root, tag, attempt=1, run=77, cases=None, changes=None):
         suite = sorted(f'tests/test_{name}.py::test_case' for name in 'abcdefg')

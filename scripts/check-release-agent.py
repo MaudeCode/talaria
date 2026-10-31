@@ -2,7 +2,7 @@
 """Run Agent compatibility for every supported release against the Web ref selected by the release plan.
 
 ``--list`` prints the jobs a release runs: each supported release of the selected source in ``SHARDS`` shards
-(TAL-1550, TAL-1599). ``--release TAG --shard N/M`` checks one release's shard with the whole worker budget, and
+(TAL-1550, TAL-1599), or in one unsharded job when that source's checker predates sharding (a retained Web release). ``--release TAG --shard N/M`` checks one release's shard with the whole worker budget, and
 ``--expect JSON --receipts DIR`` requires the listed jobs to be exactly those and every one of them to have left a
 passing receipt in this run whose shards together ran every sidecar test case of its release exactly once."""
 
@@ -28,11 +28,17 @@ from suite_runner import worker_count
 SHARDS = 3
 
 
-def release_jobs(releases):
-    return [{"release": tag, "shard": shard, "shards": SHARDS} for tag in releases for shard in range(1, SHARDS + 1)]
+def shard_count(checkout):
+    """A retained Web release from before TAL-1599 cannot shard its sidecar suite, so it keeps one job per release."""
+    usage = subprocess.check_output(["python3", str(checkout / "scripts/check-agent-compatibility.py"), "--help"], cwd=checkout, text=True)
+    return SHARDS if "--shard" in usage else 1
 
 
-def latest_receipt(directory, tag, shard, run, attempt):
+def release_jobs(releases, shards):
+    return [{"release": tag, "shard": shard, "shards": shards} for tag in releases for shard in range(1, shards + 1)]
+
+
+def latest_receipt(directory, tag, shard, shards, run, attempt):
     """This run's newest passing gate receipt for one shard (a rerun keeps the shards that passed before) and the
     compatibility receipt beside it."""
     found = []
@@ -42,24 +48,31 @@ def latest_receipt(directory, tag, shard, run, attempt):
         if gate.get("gate") == "agentCompatibility" and gate.get("result") == "success" and match and int(match[1]) <= attempt:
             found.append((int(match[1]), path))
     if not found:
-        raise ValueError(f"Agent {tag} shard {shard}/{SHARDS} left no passing receipt in this run")
+        raise ValueError(f"Agent {tag} shard {shard}/{shards} left no passing receipt in this run")
     _, path = max(found)
     return json.loads(path.with_name(f"{tag}.shard-{shard}.json").read_text())
 
 
-def verify_receipts(directory, releases, source):
-    """Every release's shards passed on the selected source and together ran its whole sidecar suite exactly once."""
+def verify_receipts(directory, releases, source, shards):
+    """Every release's shards passed on the selected source and together ran its whole sidecar suite exactly once. An
+    unsharded source's one job ran its whole suite, which its own suite runner proved."""
     run, attempt = os.environ["GITHUB_RUN_ID"], int(os.environ["GITHUB_RUN_ATTEMPT"])
     for tag in releases:
         cases, suites = Counter(), set()
-        for shard in range(1, SHARDS + 1):
-            receipt = latest_receipt(directory, tag, shard, run, attempt)
+        for shard in range(1, shards + 1):
+            receipt = latest_receipt(directory, tag, shard, shards, run, attempt)
             coverage = receipt.get("shard") or {}
             if (receipt.get("result"), receipt.get("kind"), receipt.get("releaseTag"), receipt.get("webRevision"),
-                    receipt.get("imageVerified"), coverage.get("shard")) != ("success", "supported", tag, source, True, f"{shard}/{SHARDS}"):
-                raise ValueError(f"Agent {tag} shard {shard}/{SHARDS} receipt is not a passing, image-verified check of the selected source")
+                    receipt.get("imageVerified"), coverage.get("shard")) != ("success", "supported", tag, source, True,
+                                                                             f"{shard}/{shards}" if shards > 1 else None):
+                raise ValueError(f"Agent {tag} shard {shard}/{shards} receipt is not a passing, image-verified check of the selected source")
+            if shards == 1:
+                continue
             cases.update(coverage["cases"])
             suites.add((coverage["suiteCases"], coverage["suiteDigest"]))
+        if shards == 1:
+            print(f"Agent {tag}: the selected source's checker ran its whole sidecar suite in one job", flush=True)
+            continue
         repeated = sorted(case for case, count in cases.items() if count > 1)
         if repeated:
             raise ValueError(f"Agent {tag} shards ran {len(repeated)} cases more than once, first {repeated[0]}")
@@ -68,7 +81,7 @@ def verify_receipts(directory, releases, source):
         (total, digest), = suites
         if len(cases) != total or hashlib.sha256("\n".join(sorted(cases)).encode()).hexdigest() != digest:
             raise ValueError(f"Agent {tag} shards ran {len(cases)} of its {total} sidecar test cases")
-        print(f"Agent {tag}: {SHARDS} shards ran every one of {total} sidecar test cases exactly once", flush=True)
+        print(f"Agent {tag}: {shards} shards ran every one of {total} sidecar test cases exactly once", flush=True)
 
 
 def worker_allocations(releases, budget):
@@ -118,7 +131,8 @@ def main():
             # Each release gets its own checkout: the sidecar suite builds its pytest venv inside it.
             name = f"{tag}.shard-{args.shard.split('/')[0]}" if args.shard else tag
             receipt = ["--receipt", str(args.receipts.resolve() / f"{name}.json")] if args.receipts else []
-            shard = ["--shard", args.shard] if args.shard else []
+            # A shard of one is a retained source's whole suite, which its checker runs without --shard.
+            shard = ["--shard", args.shard] if args.shard and shards > 1 else []
             try:
                 path = checkout(tag)
                 print(f"===== Agent {tag}{f' shard {args.shard}' if args.shard else ''}: started =====", flush=True)
@@ -135,19 +149,23 @@ def main():
         # The selected source's own record names its supported releases and requires its active pin among them.
         releases = json.loads(subprocess.check_output(["python3", str(listing / "scripts/check-agent-compatibility.py"), "--list"],
                                                       cwd=listing))
+        shards = shard_count(listing) if args.list or args.expect is not None or args.shard else 1
         if args.list:
-            print(json.dumps(release_jobs(releases)))
+            print(json.dumps(release_jobs(releases, shards)))
             return
         if args.expect is not None:
             key = lambda job: json.dumps(job, sort_keys=True)
-            if sorted(map(key, json.loads(args.expect))) != sorted(map(key, release_jobs(releases))):
-                raise ValueError(f"checked Agent jobs {args.expect} are not the supported releases' shards {json.dumps(release_jobs(releases))}")
-            verify_receipts(args.receipts, releases, source)
+            expected = release_jobs(releases, shards)
+            if sorted(map(key, json.loads(args.expect))) != sorted(map(key, expected)):
+                raise ValueError(f"checked Agent jobs {args.expect} are not the supported releases' shards {json.dumps(expected)}")
+            verify_receipts(args.receipts, releases, source, shards)
             print(f"Every supported Agent release was checked: {', '.join(releases)}")
             return
         if args.release is not None:
             if args.release not in releases:
                 raise ValueError(f"Agent {args.release} is not a supported release of the selected source")
+            if args.shard and not re.fullmatch(rf"[1-9][0-9]*/{shards}", args.shard):
+                raise ValueError(f"shard {args.shard} is not one of the selected source's {shards} shards")
             releases = [args.release]
         # Native environment recovery includes a real server/sidecar boundary.
         # Build this exact selected source once; all release checkouts share only read-only artifacts.

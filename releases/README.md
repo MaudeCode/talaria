@@ -110,7 +110,10 @@ shards fill the five macOS slots.
 The pinned Agent gate runs one `agent-release` job per supported Agent release
 of the selected Web source and shard of its sidecar suite: three shards each,
 nine jobs (TAL-1550, TAL-1599). `prepare` lists them
-(`scripts/check-release-agent.py --list`). Each job provisions its release,
+(`scripts/check-release-agent.py --list`). A release that retains a Web release
+from before TAL-1599 checks the Agents against that source's own checker,
+which cannot shard, so each release then runs whole in one job and `agent`
+requires its one passing receipt. Each job provisions its release,
 runs the Agent probe, verifies the release image beside the tests, and runs
 its shard's cases with the runner's whole worker budget (`--release --shard`).
 The suite runner deals each layer's cases round-robin in collection order, so
