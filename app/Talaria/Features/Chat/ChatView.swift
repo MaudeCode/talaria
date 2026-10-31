@@ -1990,7 +1990,7 @@ struct ChatView: View {
         guard composerAvailableHeight > 0 else { return inset }
         // A short pane, as on an iPhone in landscape with the keyboard up, keeps the transcript's minimum in view
         // above the composer instead of scrolling it all out of the viewport (TAL-680).
-        return min(inset, max(composerHeight, composerAvailableHeight - MessageComposerView.minimumTranscriptHeight))
+        return min(inset, max(composerHeight, composerAvailableHeight - ComposerCardSizing.minimumTranscriptHeight))
     }
 
     private var isComposerBusyOrUnavailable: Bool {

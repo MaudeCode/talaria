@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A long message on a short screen, such as the iPhone Duo's cover with the keyboard up, keeps the composer multi-line and scrolls inside it instead of folding it to one row.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}
