@@ -1633,7 +1633,8 @@ export class TurnRunner {
         })
         raw = str(result.text)
       } catch (error) {
-        this.deps.log(`[webui] title generation failed for ${s.session_id}: ${(error as Error).message}`)
+        // TAL-1024: the condition only; the error text can carry the provider's response.
+        this.deps.log(`[webui] title generation failed for ${s.session_id}: ${error instanceof SidecarError ? error.condition : (error as Error).name}`)
         status = 'llm_error_aux'
         continue
       }

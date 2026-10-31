@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A title that cannot be regenerated now says why in plain words instead of an internal code.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

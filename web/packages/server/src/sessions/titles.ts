@@ -135,6 +135,19 @@ export function fallbackTitleFromExchange(userText: string, assistantText: strin
 
 export const isGenericFallbackTitle = (title: string): boolean => title.trim().toLowerCase() === 'conversation topic'
 
+const TITLE_FAILURE_REASONS = new Map(Object.entries({
+  empty_user_message: 'There is no message to title yet.',
+  empty_assistant_message: 'There is no reply to title yet.',
+  llm_error_aux: 'The title model could not be reached.',
+  llm_empty_aux: 'The title model returned no title.',
+  llm_invalid_aux: 'The title model did not return a usable title.',
+  llm_language_mismatch_aux: 'The generated title was not in the conversation’s language.',
+  read_only: 'This conversation is read-only.',
+}))
+
+/** TAL-1024: the readable reason a failed regenerate shows; the raw status stays in the server log. */
+export const titleFailureReason = (status: string): string => TITLE_FAILURE_REASONS.get(status) ?? 'No better title could be generated.'
+
 // ── language drift (Python `_title_language_mismatch`) ───────────────────────
 
 const GERMAN_MARKERS = new Set(['warum', 'werden', 'wird', 'wurde', 'hier', 'nicht', 'mehr', 'alte', 'alten', 'bilder', 'angezeigt', 'prüfe', 'ich', 'und', 'oder', 'mit', 'für', 'von', 'zu', 'ist', 'sind', 'bitte', 'kannst'])
