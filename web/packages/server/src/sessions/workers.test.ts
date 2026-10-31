@@ -1180,12 +1180,14 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     // never another provider's usable key.
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     expect((await s.deps.sessionStore.get(sid)).model_provider).toBeNull()
-    const deadline = Date.now() + 600
+    // The pool stays exhausted until the test opens it, however slow the runner; each answer names a deadline 200 ms out,
+    // so a recheck before the pool opens simply pauses again (TAL-975).
+    let poolOpen = false
     const asked: string[] = []
     sidecar.respond('usage.pool', (params) => {
       asked.push(params.provider)
-      const status = params.provider === 'openrouter' && Date.now() < deadline ? 'exhausted' as const : 'available' as const
-      return { entries: [{ credential_id: 'k1', label: 'k1', status, unavailable_reason: null, retry_after: new Date(deadline).toISOString(), matches_api_key: false }] }
+      const status = params.provider === 'openrouter' && !poolOpen ? 'exhausted' as const : 'available' as const
+      return { entries: [{ credential_id: 'k1', label: 'k1', status, unavailable_reason: null, retry_after: new Date(Date.now() + 200).toISOString(), matches_api_key: false }] }
     })
     starts = []
     sidecar.respond('chat.start', (params) => { starts.push(str(params.user_message)); return { ...completed(''), provider: 'openrouter', messages: [{ role: 'user', content: str(params.user_message) }], status: 'error' as const, failed: true, error: 'All 2 credential(s) exhausted for provider openrouter' } })
@@ -1193,6 +1195,7 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     await complete(sid, `${sid}_2`)
     expect(starts).toHaveLength(1)
     sidecar.respond('chat.start', (params) => { starts.push(str(params.user_message)); return completed('ok') })
+    poolOpen = true
     for (let i = 0; i < 100 && starts.length < 2; i += 1) await new Promise((r) => setTimeout(r, 20))
     expect(starts[1], 'the deadline alone resumes the held wakeup').toContain(`Background process ${sid}_2 completed`)
     expect(new Set(asked)).toEqual(new Set(['openrouter']))
