@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A file:// link that names another machine stays as written instead of opening a file at the same path on the Talaria server.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

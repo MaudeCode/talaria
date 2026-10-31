@@ -100,6 +100,20 @@ describe('projectMediaRefs (TAL-186)', () => {
     expect(display('Type `<!--` to start ![same](/tmp/same.png)')).toBe(`Type \`<!--\` to start ![same](${url('/tmp/same.png')})`)
   })
 
+  it('leaves a file URL naming another host as written and asks for no media (TAL-1174)', () => {
+    const r = resolver()
+    for (const text of ['see file://server/share/x.png', 'see file://server/tmp/x.png', 'see file://server:abc/x.png', '![i](file://server/x.png)', '![i](file://server/tmp/x.png)']) {
+      expect(display(text, r), text).toBeNull()
+    }
+    expect(r.asked).toEqual([])
+    for (const ref of ['file:///tmp/a.png', 'file://localhost/tmp/a.png', 'file://127.0.0.1/tmp/a.png']) {
+      expect(display(`see ${ref}`), ref).toBe(`see ![a.png](${A})`)
+      expect(display(`![i](${ref})`), ref).toBe(`![i](${A})`)
+    }
+    // A bare reference ends at `]`, so the bracketed IPv6 loopback resolves only as an image destination.
+    expect(display('![i](file://[::1]/tmp/a.png)')).toBe(`![i](${A})`)
+  })
+
   it('leaves a reference the allow-list refuses as written, with no media item', () => {
     expect(projectMediaRefs('MEDIA:/etc/passwd.png ![x](/etc/a.png) file:///etc/b.png', resolver())).toBeNull()
     const projected = projectMediaRefs('MEDIA:/etc/x.png and MEDIA:/tmp/a.png', resolver())
