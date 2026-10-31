@@ -1353,6 +1353,43 @@ describe('chat turns through the sidecar', () => {
     }
   })
 
+  it.each([
+    ['empty_user_message', [], null, 'There is no message to title yet.'],
+    ['empty_assistant_message', [{ role: 'user', content: 'ok' }], null, 'There is no reply to title yet.'],
+    ['llm_error_aux', [{ role: 'user', content: 'ok' }, { role: 'assistant', content: 'sure' }], 'throw', 'The title model could not be reached.'],
+    ['llm_empty_aux', [{ role: 'user', content: 'ok' }, { role: 'assistant', content: 'sure' }], '', 'The title model returned no title.'],
+    ['llm_invalid_aux', [{ role: 'user', content: 'ok' }, { role: 'assistant', content: 'sure' }], 'Let me think about it', 'The title model did not return a usable title.'],
+    ['llm_language_mismatch_aux', [{ role: 'user', content: 'Привет мир' }, { role: 'assistant', content: 'Здравствуйте' }], 'Greeting the world politely', 'The generated title was not in the conversation’s language.'],
+  ] as const)('explains a failed %s regenerate in readable words and keeps the title (TAL-1024)', async (status, messages, aux, reason) => {
+    const sid = await newSession(s)
+    const session = await s.deps.sessionStore.get(sid)
+    session.title = 'Kept title'
+    session.manual_title = true
+    session.messages = messages.map((m) => ({ ...m }))
+    await s.deps.sessionStore.save(session)
+    sidecar.respond('aux.complete', () => { if (aux === 'throw') throw new SidecarError('aux upstream body with secret-prompt', { condition: 'aux_unconfigured' }); return { model: 'aux', text: aux ?? '', usage: null } })
+    const logged = s.logs.length
+    const res = await post(s, '/api/session/title/regenerate', { session_id: sid })
+    expect(res.status).toBe(422)
+    expect((await json(res)).error).toBe(reason)
+    expect(s.logs.slice(logged).join('\n')).toContain(`status=${status}`)
+    expect(s.logs.slice(logged).join('\n')).not.toContain('secret-prompt')
+    const after = await s.deps.sessionStore.get(sid)
+    expect([after.title, after.manual_title, after.llm_title_generated]).toEqual(['Kept title', true, session.llm_title_generated])
+  })
+
+  it('answers an unknown title-generation status with a safe readable failure (TAL-1024)', async () => {
+    const sid = await newSession(s)
+    const generate = vi.spyOn(s.deps.turns, 'generateTitle').mockResolvedValue({ title: null, status: 'llm_some_new_code', rawPreview: 'raw model text' })
+    try {
+      const res = await post(s, '/api/session/title/regenerate', { session_id: sid })
+      expect(res.status).toBe(422)
+      const body = await json(res)
+      expect(body.error).toBe('No better title could be generated.')
+      expect(JSON.stringify(body)).not.toMatch(/llm_some_new_code|raw model text/)
+    } finally { generate.mockRestore() }
+  })
+
   it.each(['top-level', 'persisted', 'state.db'])('carries %s session privacy requirements into a derived title prompt', async (source) => {
     const sid = await newSession(s)
     const session = await s.deps.sessionStore.get(sid)

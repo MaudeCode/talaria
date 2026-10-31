@@ -14,6 +14,7 @@ import { GitWorkspaceError, WORKSPACE_BUSY_MESSAGE } from '../workspace/git.js'
 import { requestSessionIdGuard } from './session-visibility.js'
 import { HttpFailure, sanitizePaths } from '../sessions/service.js'
 import { compressionStatusPayload } from '../sessions/compress.js'
+import { titleFailureReason } from '../sessions/titles.js'
 import { SessionNotFound } from '../sessions/store.js'
 import { type Session } from '../sessions/session.js'
 import { isBlockedSystemPath, REMOTE_WORKSPACE_UNSUPPORTED_CODE, REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE, stripSurroundingQuotes } from '../workspace/workspaces.js'
@@ -323,7 +324,10 @@ export const sessionsRouter = os.router({
       try { session = (await ctx.deps.sessionStore.get(sid)) } catch { throw new HttpError(404, 'Session not found') }
       if ((await ctx.deps.sessions.isReadOnly(session)) || (await ctx.deps.sessions.isSubagentViewOnly(sid))) throw new HttpError(403, 'Read-only imported sessions cannot regenerate titles')
       const generated = await ctx.deps.turns.generateTitle(session, { preferLatest: Boolean(input.prefer_latest) })
-      if (!generated.title) throw new HttpError(422, `Could not generate a better title (${generated.status || 'empty'})`)
+      if (!generated.title) {
+        ctx.deps.log(`[webui] title regenerate failed for ${sid}: status=${generated.status || 'empty'}`)
+        throw new HttpError(422, titleFailureReason(generated.status))
+      }
       const current = await ctx.deps.sessions.persistGeneratedTitle(sid, generated.title, 'session_title_regenerate')
       return { session: (await ctx.deps.sessions.wireRow(current)), title: current.title, status: generated.status, raw_preview: generated.rawPreview.slice(0, 240) }
     })),
