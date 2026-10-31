@@ -687,8 +687,9 @@ export class TurnRunner {
     }
     const activeTurnToken = buildActiveTurnToken(streamId, s.pending_started_at)
     const sidecar = deps.sidecar()
-    const partialText = this.registry.partialText.get(streamId) ?? []
-    const reasoningText = this.registry.reasoningText.get(streamId) ?? []
+    const live = this.registry.liveText.get(streamId) ?? { text: '', reasoning: '' }
+    // Set by each reasoning delta: only then can a stable title snapshot differ from the last one.
+    let reasoningChanged = false
     const liveToolCalls = this.registry.liveToolCalls.get(streamId) ?? []
     // Each call's public `id`: the Agent's call id, else one minted here that its completion inherits through the pairing.
     const toolIds = new WeakMap<Record<string, unknown>, string>()
@@ -806,11 +807,12 @@ export class TurnRunner {
                 tokenSent = true
                 firstTokenAt ??= receivedAt
                 // Visible text closes the reasoning segment: a stable title snapshot (or a clear) goes out first.
-                const stable = titles.stableSnapshot(reasoningText.join(''))
+                const stable = reasoningChanged ? titles.stableSnapshot(live.reasoning) : null
+                reasoningChanged = false
                 if (stable !== null) (await emitFrame('reasoning', { text: '', titles: stable }))
                 finalStreamedText += str(data.text)
-                partialText.push(str(data.text))
-                if (holdSilence && mayBecomeSilentReply(partialText.join(''))) { heldText += str(data.text); (await meterDelta(receivedAt)); return }
+                live.text += str(data.text)
+                if (holdSilence && mayBecomeSilentReply(live.text)) { heldText += str(data.text); (await meterDelta(receivedAt)); return }
                 await emitFrame('token', { text: heldText + str(data.text) })
                 heldText = ''
                 await meterDelta(receivedAt)
@@ -818,10 +820,11 @@ export class TurnRunner {
               }
               case 'reasoning': {
                 finalStreamedText = ''
-                if (partialText.length && !reasoningText.length) titles.resetSegment()
-                reasoningText.push(str(data.text))
+                if (live.text && !live.reasoning) titles.resetSegment()
+                live.reasoning += str(data.text)
+                reasoningChanged = true
                 // Python `reasoning_event_payload`: bold or first-line titles ride on the delta they complete.
-                await emitFrame('reasoning', titles.prepare(reasoningEventPayload(str(data.text), reasoningText.join(''))))
+                await emitFrame('reasoning', titles.prepare(reasoningEventPayload(str(data.text), live.reasoning)))
                 await meterDelta(receivedAt)
                 return
               }
@@ -1133,7 +1136,7 @@ export class TurnRunner {
         }
       }
       const prevAssistants = previousMessages.filter((m) => m.role === 'assistant').length
-      const reasoning = reasoningText.join('')
+      const reasoning = live.reasoning
       let asstIdx = 0
       for (const m of s.messages) {
         if (m.role !== 'assistant') continue
@@ -1441,7 +1444,7 @@ export class TurnRunner {
     if (!stop) return null
     const after = stop.stateDbStartGeneration !== null && read.generation !== null && stop.stateDbStartGeneration !== read.generation ? -1 : stop.stateDbStartId
     const stateRows = after === null ? [] : read.rows.filter((m) => typeof m._state_db_row_id === 'number' && m._state_db_row_id > after)
-    return this.deps.service().unsettledTurnContext({ ...stop, streamedText: (this.registry.partialText.get(streamId) ?? []).join(''), agentRows, stateRows })
+    return this.deps.service().unsettledTurnContext({ ...stop, streamedText: this.registry.liveText.get(streamId)?.text ?? '', agentRows, stateRows })
   }
 
   private materializePendingUserTurn(s: Session, activeTurnToken: string | null, turnId: string): boolean {
@@ -1471,7 +1474,8 @@ export class TurnRunner {
   }
 
   private appendPartialSnapshot(s: Session, streamId: string): void {
-    const partial = buildPartialMessage((this.registry.partialText.get(streamId) ?? []).join(''), (this.registry.reasoningText.get(streamId) ?? []).join(''), this.registry.liveToolCalls.get(streamId) ?? [], this.deps.now())
+    const live = this.registry.liveText.get(streamId)
+    const partial = buildPartialMessage(live?.text ?? '', live?.reasoning ?? '', this.registry.liveToolCalls.get(streamId) ?? [], this.deps.now())
     if (!partial) return
     partial._turn_id = streamId
     const key = messageIdentity(partial)
