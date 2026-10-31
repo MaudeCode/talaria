@@ -51,17 +51,21 @@ test('off-screen rows stay searchable and reveal their measured content', async 
   await expect(page.locator('[data-message-key]')).toHaveCount(600)
 })
 
-test('off-screen history halves long tasks during a 200-token stream', async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== 'desktop', 'paired CPU measurements use one fixed viewport')
-  test.setTimeout(180_000)
+/** A 300-turn history whose session reports a running turn; its fake run stream starts the turn and holds open. */
+async function liveHistory(page: Page) {
   const sid = 'contained-history', streamId = 'contained-run'
   const messages = transcript(sid, 300).map((message) => message.role === 'assistant' ? {
     ...message,
     content: Array.from({ length: 8 }, (_, paragraph) => `Paragraph ${paragraph + 1}: ${message.content} **Verified** with a [reference](https://example.test/report).`).join('\n\n'),
   } : message)
-  let stream: ServerResponse | undefined
-  const server = createServer((_request, response) => {
-    stream = response
+  const run: { stream?: ServerResponse | undefined } = {}
+  const server = createServer((request, response) => {
+    // Only the routed run stream may take over; any other local client probing the port is turned away.
+    if (request.url !== '/stream') {
+      response.writeHead(404).end()
+      return
+    }
+    run.stream = response
     response.writeHead(200, { 'content-type': 'text/event-stream', 'access-control-allow-origin': process.env.HERMES_E2E_BASE_URL!, 'access-control-allow-credentials': 'true' })
     response.write(`event: server_turn_started\ndata: ${JSON.stringify({ session_id: sid, stream_id: streamId })}\n\n`)
   })
@@ -72,6 +76,36 @@ test('off-screen history halves long tasks during a 200-token stream', async ({ 
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: sid, title: 'Long history', messages, active_stream_id: streamId } } }))
   await page.route('**/api/chat/stream/status?**', (route) => route.fulfill({ json: { active: true, stream_id: streamId, replay_available: true } }))
   await page.route('**/api/chat/stream?**', (route) => route.continue({ url: `http://127.0.0.1:${address.port}/stream` }))
+  const close = async () => {
+    server.closeAllConnections()
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+  }
+  return { sid, run, close }
+}
+
+test('long history beside a live run renders on a slow CPU', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'CPU throttling is a Chromium desktop measurement')
+  const history = await liveHistory(page)
+  const cpu = await page.context().newCDPSession(page)
+  try {
+    // TAL-1592: rendering 300 rows takes longer than the live turn's one-second elapsed tick, which used to restart
+    // the history's Markdown on every tick so it never appeared.
+    await cpu.send('Emulation.setCPUThrottlingRate', { rate: 4 })
+    await page.goto(`/session/${history.sid}`)
+    await expect(page.locator('.live-turn')).toBeAttached()
+    await expect(page.locator('[data-message-key="600"] .msg-body')).toContainText('Paragraph 8:')
+  } finally {
+    await cpu.send('Emulation.setCPUThrottlingRate', { rate: 1 })
+    await cpu.detach()
+    await page.goto('about:blank')
+    await history.close()
+  }
+})
+
+test('off-screen history halves long tasks during a 200-token stream', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'paired CPU measurements use one fixed viewport')
+  test.setTimeout(180_000)
+  const history = await liveHistory(page), { sid } = history
   const cpu = await page.context().newCDPSession(page)
   await cpu.send('Performance.enable')
   const readTimings = async () => {
@@ -85,12 +119,12 @@ test('off-screen history halves long tasks during a 200-token stream', async ({ 
     // Fixed paired repetitions keep one scheduling outlier from deciding a threshold-count benchmark.
     for (let trial = 0; trial < 3; trial++) {
       for (const baseline of [true, false]) {
-        stream?.end()
-        stream = undefined
+        history.run.stream?.end()
+        history.run.stream = undefined
         await page.goto(`/session/${sid}`)
         await expect(page.locator('[data-message-key="600"] .msg-body')).toContainText('Paragraph 8:')
         await expect(page.locator('[data-message-key]')).toHaveCount(600)
-        await expect.poll(() => !!stream).toBe(true)
+        await expect.poll(() => !!history.run.stream).toBe(true)
         await expect.poll(() => distance(page)).toBeLessThan(2)
         // Only this test can disable containment; no benchmark switch ships in the app.
         await page.addStyleTag({ content: withoutContainment })
@@ -110,7 +144,7 @@ test('off-screen history halves long tasks during a 200-token stream', async ({ 
           w.observer.observe({ type: 'longtask' })
         })
         for (let token = 0; token < 200; token++) {
-          stream!.write(`event: token\ndata: ${JSON.stringify({ text: 'word ' })}\n\n`)
+          history.run.stream!.write(`event: token\ndata: ${JSON.stringify({ text: 'word ' })}\n\n`)
           await page.waitForTimeout(30)
         }
         await expect(page.locator('.live-turn .msg-body')).toContainText('word '.repeat(200).trim())
@@ -139,8 +173,7 @@ test('off-screen history halves long tasks during a 200-token stream', async ({ 
     await cpu.send('Emulation.setCPUThrottlingRate', { rate: 1 })
     await cpu.detach()
     await page.goto('about:blank')
-    server.closeAllConnections()
-    await new Promise<void>((resolve) => server.close(() => resolve()))
+    await history.close()
   }
 })
 
