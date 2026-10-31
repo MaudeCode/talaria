@@ -51,7 +51,7 @@ jobs:
       web_changed: ${{ steps.plan.outputs.web_changed }}
       relay_changed: ${{ steps.plan.outputs.relay_changed }}
       app_version: ${{ steps.plan.outputs.app_version }}
-      agent_releases: ${{ steps.agents.outputs.releases }}
+      agent_jobs: ${{ steps.agents.outputs.jobs }}
       artifacts: ${{ steps.store.outputs.artifacts }}
     steps:
     - name: Check publication authority
@@ -89,13 +89,13 @@ jobs:
         fi
         if [[ "$DRY_RUN" == true ]]; then options+=(--dry-run); fi
         "$RELEASE_PYTHON" releases/cli.py prepare --request "$RUNNER_TEMP/request.json" --output "$RUNNER_TEMP/release-plan" "${options[@]}"
-    - name: List the selected Web source's supported Agent releases
-      # One agent-release job each (TAL-1550); agent requires them to have covered exactly these releases.
+    - name: List the selected Web source's supported Agent releases and their shards
+      # One agent-release job per release and shard (TAL-1550, TAL-1599); agent requires exactly these jobs' receipts.
       id: agents
       run: |
         set -euo pipefail
-        releases=$("$RELEASE_PYTHON" scripts/check-release-agent.py --plan "$RUNNER_TEMP/release-plan/plan.json" --list)
-        echo "releases=${releases}" >> "$GITHUB_OUTPUT"
+        jobs=$("$RELEASE_PYTHON" scripts/check-release-agent.py --plan "$RUNNER_TEMP/release-plan/plan.json" --list)
+        echo "jobs=${jobs}" >> "$GITHUB_OUTPUT"
     - name: Stage release-plan for other jobs
       id: store
       run: '"$RELEASE_PYTHON" releases/artifacts.py put release-plan "$RUNNER_TEMP/release-plan"'
@@ -307,17 +307,18 @@ jobs:
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
   agent-release:
-    # One job per supported Agent release of the selected Web source (TAL-1550), so the gate takes about as long as its
-    # slowest release instead of every release sharing one runner's cores. Each checks its release with the runner's
-    # whole worker budget and writes its own receipt through `cli.py gate`; agent joins them.
-    name: agent ${{ matrix.release }}
+    # One job per supported Agent release of the selected Web source and shard of its sidecar suite (TAL-1550,
+    # TAL-1599), so the gate takes about as long as its slowest shard instead of a whole release. Each runs its release's
+    # probe and image check and its shard's cases with the runner's whole worker budget, and writes its own receipts
+    # through `cli.py gate`; agent joins them.
+    name: agent ${{ matrix.release }} ${{ matrix.shard }}/${{ matrix.shards }}
     needs: prepare
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        release: ${{ fromJSON(needs.prepare.outputs.agent_releases) }}
+        include: ${{ fromJSON(needs.prepare.outputs.agent_jobs) }}
     steps:
     - uses: actions/checkout@v7
       with:
@@ -334,27 +335,31 @@ jobs:
       env:
         GH_TOKEN: ${{ github.token }}
       run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan'
-    - name: Verify recorded Web and Agent identity and this supported Agent release
+    - name: Verify recorded Web and Agent identity and this supported Agent release's shard
       env:
         # Read-only, for the Agent release API's published-release check.
         GITHUB_TOKEN: ${{ github.token }}
         RELEASE: ${{ matrix.release }}
+        SHARD: ${{ matrix.shard }}
+        SHARDS: ${{ matrix.shards }}
       run: |
-        "$RELEASE_PYTHON" releases/cli.py gate --plan "$RUNNER_TEMP/release-plan/plan.json" --name agentCompatibility --output "$RUNNER_TEMP/agent-compatibility/${RELEASE}.gate.json" -- \
-          "$RELEASE_PYTHON" scripts/check-release-agent.py --plan "$RUNNER_TEMP/release-plan/plan.json" --release "$RELEASE" --receipts "$RUNNER_TEMP/agent-compatibility"
+        "$RELEASE_PYTHON" releases/cli.py gate --plan "$RUNNER_TEMP/release-plan/plan.json" --name agentCompatibility --output "$RUNNER_TEMP/agent-compatibility/${RELEASE}.shard-${SHARD}.gate.json" -- \
+          "$RELEASE_PYTHON" scripts/check-release-agent.py --plan "$RUNNER_TEMP/release-plan/plan.json" --release "$RELEASE" --shard "${SHARD}/${SHARDS}" --receipts "$RUNNER_TEMP/agent-compatibility"
+    # The join reads these: each shard's gate receipt and compatibility receipt with the cases it ran.
     - name: Retain Agent compatibility receipts
       if: always()
       uses: actions/upload-artifact@v7
       with:
-        name: agent-compatibility-${{ matrix.release }}-${{ github.run_attempt }}
+        name: agent-compatibility-${{ matrix.release }}-shard-${{ matrix.shard }}-${{ github.run_attempt }}
         path: ${{ runner.temp }}/agent-compatibility
         retention-days: 30
         if-no-files-found: ignore
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
   agent:
-    # Joins agent-release: a failed release job skips this one, which fails build-gate. It writes the release's one
-    # agentCompatibility receipt only once the jobs covered exactly the selected source's supported releases.
+    # Joins agent-release: a failed shard job skips this one, which fails build-gate. It writes the release's one
+    # agentCompatibility receipt only once every supported release's shards left passing receipts in this run (a rerun
+    # keeps the shards that passed before) and together ran each of that release's sidecar test cases exactly once.
     needs:
     - prepare
     - agent-release
@@ -370,12 +375,18 @@ jobs:
       env:
         GH_TOKEN: ${{ github.token }}
       run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan'
-    - name: Require a passing job for every supported Agent release
+    - name: Download every shard's Agent compatibility receipts
+      # The matrix legs share one set of job outputs, so they cannot forward a digest each: gather takes only this run's
+      # artifacts of this workflow source, and the next step checks every receipt's run, source and coverage.
       env:
-        RELEASES: ${{ needs.prepare.outputs.agent_releases }}
+        GH_TOKEN: ${{ github.token }}
+      run: '"$RELEASE_PYTHON" releases/artifacts.py gather agent-compatibility "$RUNNER_TEMP/agent-shards"'
+    - name: Require a passing receipt for every supported Agent release's shards
+      env:
+        JOBS: ${{ needs.prepare.outputs.agent_jobs }}
       run: |
         "$RELEASE_PYTHON" releases/cli.py gate --plan "$RUNNER_TEMP/release-plan/plan.json" --name agentCompatibility --output "$RUNNER_TEMP/agent-receipts/agentCompatibility.json" -- \
-          "$RELEASE_PYTHON" scripts/check-release-agent.py --plan "$RUNNER_TEMP/release-plan/plan.json" --expect "$RELEASES"
+          "$RELEASE_PYTHON" scripts/check-release-agent.py --plan "$RUNNER_TEMP/release-plan/plan.json" --expect "$JOBS" --receipts "$RUNNER_TEMP/agent-shards"
     - name: Stage agent-receipts for other jobs
       id: store
       run: '"$RELEASE_PYTHON" releases/artifacts.py put agent-receipts "$RUNNER_TEMP/agent-receipts"'

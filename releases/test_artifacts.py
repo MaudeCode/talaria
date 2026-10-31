@@ -152,6 +152,33 @@ class ArtifactTests(unittest.TestCase):
             self.get(reference, self.root / "rejected")
         self.assertFalse((self.root / "rejected").exists())
 
+    def test_gather_downloads_only_this_runs_matrix_artifacts(self):
+        # A matrix job's legs cannot each forward a digest (TAL-1599): gather takes this run's PREFIX-* artifacts of this
+        # workflow source, refusing all of them if any is foreign, and the consumer checks their contents.
+        legs = {f"agent-compatibility-v1-shard-{shard}-1": {"v1.json": b"{}"} for shard in (1, 2, 3)}
+        for name, files in legs.items():
+            self.service[("123", name)] = {"source": "a" * 40, "expired": False, "files": files}
+        self.service[("123", "agent-receipts")] = {"source": "a" * 40, "expired": False, "files": {"x": b""}}
+        self.service[("456", "agent-compatibility-v1-shard-1-1")] = {"source": "a" * 40, "expired": False, "files": {"y": b""}}
+        with patch("sys.argv", ["artifacts.py", "gather", "agent-compatibility", str(self.root / "shards")]):
+            artifacts.main()
+        self.assertEqual(sorted(path.name for path in (self.root / "shards").iterdir()), sorted(legs))
+        self.assertEqual(sorted(self.downloads), [("123", name) for name in sorted(legs)])
+        with self.assertRaises(FileExistsError):
+            artifacts.gather("agent-compatibility", self.root / "shards")
+        self.downloads.clear()
+        for change, message in ((("source", "b" * 40), "different run or workflow source"), (("expired", True), "expired")):
+            with self.subTest(change=change):
+                self.service[("123", "agent-compatibility-v1-shard-2-1")][change[0]] = change[1]
+                with self.assertRaisesRegex(ValueError, message):
+                    artifacts.gather("agent-compatibility", self.root / "rejected")
+                self.service[("123", "agent-compatibility-v1-shard-2-1")].update(source="a" * 40, expired=False)
+        for prefix, message in (("missing", "has no missing artifacts"), ("../escape", "invalid artifact name")):
+            with self.subTest(prefix=prefix), self.assertRaisesRegex(ValueError, message):
+                artifacts.gather(prefix, self.root / "rejected")
+        self.assertEqual(self.downloads, [])
+        self.assertFalse((self.root / "rejected").exists())
+
     def test_unsafe_sources_are_not_staged(self):
         (self.source / "escape").symlink_to(self.root / "outputs")
         with self.assertRaisesRegex(ValueError, "link escapes"):

@@ -2351,6 +2351,23 @@
         "[abc]"
       ]
     },
+    "tests/test_suite_runner.py::test_shards_split_cases_so_each_runs_exactly_once": {
+      "layer": "process",
+      "reason": "Actual pytest subprocess startup, scheduling, isolation, journal/report validation and cleanup are the harness boundary under test.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_suite_runner.py::test_invalid_shards_fail": {
+      "layer": "process",
+      "reason": "Actual pytest subprocess startup, scheduling, isolation, journal/report validation and cleanup are the harness boundary under test.",
+      "cases": [
+        "[zero]",
+        "[over]",
+        "[selector]",
+        "[empty]"
+      ]
+    },
     "tests/test_suite_runner.py::test_selectors_stay_serial": {
       "layer": "process",
       "reason": "Actual pytest subprocess startup, scheduling, isolation, journal/report validation and cleanup are the harness boundary under test.",

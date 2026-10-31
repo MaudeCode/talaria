@@ -8,7 +8,10 @@ workflow's next step uploads that directory with ``actions/upload-artifact`` (a 
 artifact service). A job's later ``put`` outputs every reference the job staged, so large payloads can travel
 as separate artifacts that consumers download only when they need them. ``get`` accepts only forwarded producer outputs of its own run, source and a current or
 earlier attempt, finds the artifact of that run and attempt holding the name through the REST API, downloads it
-with ``gh run download`` and checks the archive against the recorded digest before extracting it.
+with ``gh run download`` and checks the archive against the recorded digest before extracting it. ``gather PREFIX
+DESTINATION`` downloads every artifact of this run named ``PREFIX-*`` for a matrix job's legs, which share one set of job
+outputs and so cannot forward a digest each: only this run's unexpired artifacts of its workflow source count, and the
+consumer verifies what they hold.
 """
 
 import argparse
@@ -184,6 +187,27 @@ def get(references, destination):
         extract(path, Path(destination) / name)
 
 
+def gather(prefix, destination):
+    """Download this run's PREFIX-* artifacts into DESTINATION/<artifact> once every one is this run's (TAL-1599)."""
+    current = context()
+    if not re.fullmatch(r"[a-z0-9-]+", prefix):
+        raise ValueError("invalid artifact name")
+    destination = Path(destination)
+    if destination.exists():
+        raise FileExistsError(destination)
+    items = [item for item in listing(current["run"]) if str(item.get("name", "")).startswith(prefix + "-")]
+    if not items:
+        raise ValueError(f"run {current['run']} has no {prefix} artifacts")
+    for item in items:
+        run = item.get("workflow_run") or {}
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+", item["name"]):
+            raise ValueError("invalid artifact name")
+        if item.get("expired") is not False or str(run.get("id")) != current["run"] or run.get("head_sha") != current["source"]:
+            raise ValueError("artifact is expired or belongs to a different run or workflow source")
+    for item in items:
+        download(current["run"], item["name"], destination / item["name"])
+
+
 def references():
     result = json.loads(os.environ.get("RELEASE_ARTIFACTS", "{}"))
     for job in json.loads(os.environ.get("RELEASE_NEEDS", "{}")).values():
@@ -196,7 +220,7 @@ def references():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("put", "get", "forward"))
+    parser.add_argument("operation", choices=("put", "get", "gather", "forward"))
     parser.add_argument("paths", nargs="*")
     parser.add_argument("--receipts", action="store_true",
                         help="get only the forwarded handoffs release assembly reads, never the image or iOS payloads")
@@ -211,6 +235,11 @@ def main():
         ledger = staged() / "references.json"
         result = {**(json.loads(ledger.read_text()) if ledger.exists() else {}), **result}
         ledger.write_text(json.dumps(result))
+    elif args.operation == "gather":
+        if len(args.paths) != 2:
+            parser.error("gather requires PREFIX and DESTINATION")
+        gather(*args.paths)
+        return
     elif args.operation == "get":
         if not args.paths:
             parser.error("get requires DESTINATION and optional artifact names")

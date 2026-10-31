@@ -207,6 +207,40 @@ def test_independent_modules_overlap(project, workers, modules):
         assert len({state[key] for state in states}) == concurrent
 
 
+def test_shards_split_cases_so_each_runs_exactly_once(project):
+    # A release checks each Agent in three jobs (TAL-1599): a module's cases spread over the shards, every case runs in
+    # exactly one, and each shard's coverage names the whole suite it was dealt from.
+    (project / 'tests/test_slow.py').write_text("import pytest\n@pytest.mark.parametrize('n', range(7))\ndef test_case(n): pass\n")
+    (project / 'tests/test_one.py').write_text("def test_alone(): pass\n")
+    ran, suites = [], []
+    for index in (1, 2, 3):
+        report = project / f'shard-{index}.xml'
+        result = run(project, 2, f'--shard={index}/3', f'--junitxml={report}')
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert f'for shard {index}/3' in result.stdout
+        coverage = json.loads(Path(str(report) + '.coverage.json').read_text())
+        assert coverage['shard'] == f'{index}/3'
+        assert sorted(coverage['started']) == sorted(coverage['collected'])
+        names = [case.find("properties/property[@name='talaria_nodeid']").get('value') for case in ET.parse(report).iter('testcase')]
+        assert sorted(names) == sorted(coverage['started'])
+        assert sum(name.startswith('tests/test_slow.py') for name in names) in (2, 3)
+        ran += names
+        suites.append(coverage['suite'])
+    assert suites[0] == suites[1] == suites[2]
+    assert sorted(ran) == sorted(suites[0]) and len(ran) == 8
+
+
+@pytest.mark.parametrize("arguments,message", [(('--shard=0/3',), 'shard must be N/M'), (('--shard=4/3',), 'shard must be N/M'),
+                                               (('--shard=1/3', '-k', 'one'), 'takes no other selection'),
+                                               (('--shard=3/3',), 'selected no cases')],
+                         ids=['zero', 'over', 'selector', 'empty'])
+def test_invalid_shards_fail(project, arguments, message):
+    (project / 'tests/test_cases.py').write_text("def test_one(): pass\ndef test_two(): pass\n")
+    result = run(project, 2, *arguments)
+    assert result.returncode != 0
+    assert message in result.stderr
+
+
 @pytest.mark.parametrize("value", ["", "0", "-1", "1.5", "abc"])
 def test_invalid_worker_count_fails(project, value):
     (project / "tests/test_ok.py").write_text("def test_ok(): pass\n")

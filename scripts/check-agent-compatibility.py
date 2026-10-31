@@ -13,12 +13,16 @@ reused; each run deletes cached releases that left the support record. Candidate
 temporary directory removed at exit. It runs the Agent probe, the sidecar pytest suite on that interpreter,
 an optional extra command with ``HERMES_WEBUI_AGENT_DIR``/``HERMES_WEBUI_PYTHON`` set (``--command``, whose
 exit status the run returns; ``web/sidecar/scripts/test.sh`` re-runs itself this way), and verifies the
-release image (unless ``--skip-docker``). ``--receipt PATH`` records the result, pass or fail, with the
-pytest JUnit report beside it.
+release image (unless ``--skip-docker``) beside the suite. ``--shard N/M`` runs only the suite's Nth of M case sets,
+and ``--receipt PATH`` records the result, pass or fail, with the pytest JUnit report beside it and, for a shard, the
+cases it ran and the digest of the whole suite they were dealt from. Each phase prints its start time.
 """
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import contextlib
+from datetime import datetime, timezone
+import hashlib
 import fcntl
 import json
 import os
@@ -27,6 +31,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import tomllib
 import urllib.request
 import uuid
@@ -49,6 +54,24 @@ SYNC = ["uv", "sync", "--frozen", "--no-dev", "--extra", "mcp"]
 CACHE_SUFFIXES = (".lock", ".ready", ".python", ".tmp")
 # ponytail: newest of these that the lockfile allows; extend the range when an Agent requires a newer Python.
 PYTHON_MINORS = range(11, 15)
+
+
+STARTED = time.monotonic()
+
+
+def phase(name):
+    """A release job's log shows where its minutes go (TAL-1599)."""
+    print(f"[{datetime.now(timezone.utc):%H:%M:%SZ} +{time.monotonic() - STARTED:.0f}s] {name}", flush=True)
+
+
+def shard_coverage(junit, shard):
+    """The cases this shard ran and the suite it was dealt from, from the suite runner's coverage record."""
+    coverage = json.loads(Path(str(junit) + ".coverage.json").read_text())
+    if coverage.get("shard") != shard:
+        raise RuntimeError(f"sidecar suite ran shard {coverage.get('shard')}, not {shard}")
+    suite = sorted(coverage["suite"])
+    return {"shard": shard, "suiteCases": len(suite), "suiteDigest": hashlib.sha256("\n".join(suite).encode()).hexdigest(),
+            "cases": sorted(coverage["started"])}
 
 
 def stable_identity(entry):
@@ -164,6 +187,7 @@ def remote_tag_commit(tag):
 
 
 def verify_image(identity, sha, observations, compression, *, retained_cron):
+    phase("image verification started")
     image, release_tag, version = identity["image"], identity["releaseTag"], identity["version"]
     # Docker needs the caller's daemon context, but the container receives only
     # these synthetic environment values, read-only code and temporary state.
@@ -204,6 +228,7 @@ def verify_image(identity, sha, observations, compression, *, retained_cron):
         ], check=True)
     finally:
         subprocess.run(["docker", "rm", "--force", name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    phase("image verification finished")
 
 
 def cache_root():
@@ -316,6 +341,7 @@ def check(args, kind, identity, receipt, junit):
         for key in ("LD_LIBRARY_PATH", "PLAYWRIGHT_BROWSERS_PATH", "TALARIA_SIDECAR_WORKERS", "TALARIA_SIDECAR_TOTAL_WORKERS"):
             if key in os.environ:
                 env[key] = os.environ[key]
+        phase("Agent checkout")
         with agent_checkout(args, kind, identity, env) as agent:
             agent_python = agent / ".venv/bin/python"
             receipt["python"] = subprocess.check_output([str(agent_python), "-c", "import platform; print(platform.python_version())"],
@@ -325,23 +351,34 @@ def check(args, kind, identity, receipt, junit):
                 env['HERMES_WEBUI_IMPORTER_DIR'] = str(provision_importer(state / 'agent-importers'))
             # The retained formats first shipped in 0.22.1; promotion must not bypass their probe.
             retained_cron = kind in ("candidate", "canary") or tuple(map(int, identity["version"].split("."))) >= (0, 22, 1)
+            phase("Agent probe")
             observations = probe_agent(agent, identity, {**env, "TALARIA_AGENT_UPGRADE_PROBE": "1" if retained_cron else "0"}, receipt)
-            if not args.skip_sidecar_tests:
-                # The sidecar suite spawns `python -m talaria_sidecar` on this venv with disposable homes.
-                try:
-                    subprocess.run([str(ROOT / "web/sidecar/scripts/test.sh"), f"--agent-release={identity.get('releaseTag', '')}", f"--junitxml={junit}", *args.tests],
-                                   cwd=ROOT / "web", env=env, check=True)
-                finally:
-                    if junit.exists():
-                        receipt["tests"] = test_counts(junit)
-            if args.command:
-                # The command runs while this run holds the release, and its exit status is the run's.
-                command = subprocess.run(args.command, cwd=ROOT, env={**os.environ, **env, "PATH": os.environ["PATH"]})
-                if command.returncode:
-                    raise SystemExit(command.returncode)
-    if not args.skip_docker and kind != "canary":
-        verify_image(identity, identity["sourceRevision"], observations, receipt["compressionBackoff"]["observations"], retained_cron=retained_cron)
-        receipt["imageVerified"] = True
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                # The image check needs only the probe's observations, so it runs beside the sidecar suite (TAL-1599).
+                image = None if args.skip_docker or kind == "canary" else pool.submit(
+                    verify_image, identity, identity["sourceRevision"], observations,
+                    receipt["compressionBackoff"]["observations"], retained_cron=retained_cron)
+                if not args.skip_sidecar_tests:
+                    phase("sidecar suite" + (f" shard {args.shard}" if args.shard else ""))
+                    # The sidecar suite spawns `python -m talaria_sidecar` on this venv with disposable homes.
+                    try:
+                        subprocess.run([str(ROOT / "web/sidecar/scripts/test.sh"), f"--agent-release={identity.get('releaseTag', '')}", f"--junitxml={junit}",
+                                        *([f"--shard={args.shard}"] if args.shard else []), *args.tests],
+                                       cwd=ROOT / "web", env=env, check=True)
+                    finally:
+                        if junit.exists():
+                            receipt["tests"] = test_counts(junit)
+                    if args.shard:
+                        receipt["shard"] = shard_coverage(junit, args.shard)
+                    phase("sidecar suite finished")
+                if args.command:
+                    # The command runs while this run holds the release, and its exit status is the run's.
+                    command = subprocess.run(args.command, cwd=ROOT, env={**os.environ, **env, "PATH": os.environ["PATH"]})
+                    if command.returncode:
+                        raise SystemExit(command.returncode)
+                if image:
+                    image.result()
+                    receipt["imageVerified"] = True
 
 
 def probe_agent(agent, identity, env, receipt):
@@ -380,7 +417,12 @@ def main():
     parser.add_argument("--command", nargs=argparse.REMAINDER, help="Extra command to run with the provisioned Agent in its environment.")
     parser.add_argument("--skip-docker", action="store_true", help="Skip the release image verification (no Docker daemon).")
     parser.add_argument("--skip-sidecar-tests", action="store_true")
+    parser.add_argument("--shard", metavar="N/M", help="Run only the sidecar suite's Nth of M case sets.")
     args = parser.parse_args()
+    if args.shard and (args.tests or args.skip_sidecar_tests or args.command
+                       or not re.fullmatch(r"[1-9][0-9]*/[1-9][0-9]*", args.shard)
+                       or int(args.shard.split("/")[0]) > int(args.shard.split("/")[1])):
+        parser.error("--shard N/M (1 <= N <= M) runs the whole sidecar suite's shard, without selectors or --command")
     if args.list:
         print(json.dumps([release["releaseTag"] for release in supported_releases(ROOT)]))
         return
