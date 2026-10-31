@@ -36,31 +36,33 @@ export const upsertDevice = internalMutation({
     if (device?.revokedAt !== undefined && device.sessionId === args.sessionId) {
       return { ok: false };
     }
-    if (args.pushToken) {
-      const owner = await ctx.db
+    const pushTokenOwner = args.pushToken
+      ? await ctx.db
         .query("devices")
         .withIndex("by_push_token", (query) => query.eq("pushToken", args.pushToken))
-        .unique();
-      if (owner && (!device || owner._id !== device._id)) {
-        if (owner.userId !== args.userId) return { ok: false };
-        await ctx.db.patch(owner._id, { pushToken: undefined, updatedAt: args.now });
-      }
-    }
-    if (args.pushToStartToken) {
-      const owner = await ctx.db
+        .unique()
+      : null;
+    const pushToStartTokenOwner = args.pushToStartToken
+      ? await ctx.db
         .query("devices")
         .withIndex("by_push_to_start_token", (query) =>
           query.eq("pushToStartToken", args.pushToStartToken),
         )
-        .unique();
-      if (owner && (!device || owner._id !== device._id)) {
-        if (owner.userId !== args.userId) return { ok: false };
-        await ctx.db.patch(owner._id, {
-          pushToStartToken: undefined,
-          pushToStartIssuedAt: undefined,
-          updatedAt: args.now,
-        });
-      }
+        .unique()
+      : null;
+    const transfers = [pushTokenOwner, pushToStartTokenOwner]
+      .map((owner) => (owner && owner._id !== device?._id ? owner : null));
+    if (transfers.some((owner) => owner && owner.userId !== args.userId)) return { ok: false };
+    const [pushTokenTransfer, pushToStartTokenTransfer] = transfers;
+    if (pushTokenTransfer) {
+      await ctx.db.patch(pushTokenTransfer._id, { pushToken: undefined, updatedAt: args.now });
+    }
+    if (pushToStartTokenTransfer) {
+      await ctx.db.patch(pushToStartTokenTransfer._id, {
+        pushToStartToken: undefined,
+        pushToStartIssuedAt: undefined,
+        updatedAt: args.now,
+      });
     }
     const pushToStartToken = args.pushToStartToken
       ?? (args.clearPushToStartToken ? undefined : device?.pushToStartToken);

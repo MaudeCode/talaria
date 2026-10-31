@@ -202,6 +202,90 @@ describe("Convex relay state", () => {
     ).resolves.toBe(200);
   });
 
+  it("leaves every device untouched when a device upsert is refused", async () => {
+    const now = 1_800_000_000_000;
+    const seed = (backend: ReturnType<typeof testBackend>, destination: "new" | "existing" | "revoked") =>
+      backend.run(async (ctx) => {
+        const device = (userId: string, deviceId: string, tokens: object) => ({
+          userId, sessionId: `${userId}-session`, sessionExpiresAt: now + 600_000, deviceId,
+          label: "iPhone", bundleId: "dev.kil.talaria", apsEnvironment: "production" as const,
+          preferences: defaultNotificationPreferences, createdAt: now, updatedAt: now, ...tokens,
+        });
+        await ctx.db.insert("devices", device("viewer", "old-device", {
+          pushToken: "ordinary-token", pushToStartToken: "own-start-token", pushToStartIssuedAt: now,
+        }));
+        await ctx.db.insert("devices", device("other-user", "foreign-device", {
+          pushToken: "foreign-token", pushToStartToken: "foreign-start-token", pushToStartIssuedAt: now,
+        }));
+        if (destination !== "new") {
+          await ctx.db.insert("devices", device("viewer", "new-device", {
+            pushToken: "destination-token",
+            ...(destination === "revoked" ? { revokedAt: now } : {}),
+          }));
+        }
+      });
+    const devices = (backend: ReturnType<typeof testBackend>) =>
+      backend.run(async (ctx) => JSON.stringify(await ctx.db.query("devices").collect()));
+    const upsert = (backend: ReturnType<typeof testBackend>, tokens: object) =>
+      backend.mutation(internal.devices.upsertDevice, {
+        userId: "viewer", sessionId: "viewer-session", sessionExpiresAt: now + 600_000,
+        deviceId: "new-device", label: "iPhone", bundleId: "dev.kil.talaria", apsEnvironment: "production",
+        clearPushToken: false, clearPushToStartToken: false,
+        preferences: defaultNotificationPreferences, now: now + 1, ...tokens,
+      });
+
+    const refusals: [("new" | "existing" | "revoked"), object][] = [
+      ["new", { pushToken: "ordinary-token", pushToStartToken: "foreign-start-token" }],
+      ["existing", { pushToken: "ordinary-token", pushToStartToken: "foreign-start-token" }],
+      ["new", { pushToken: "foreign-token", pushToStartToken: "own-start-token" }],
+      ["existing", { pushToken: "foreign-token" }],
+      ["new", { pushToStartToken: "foreign-start-token" }],
+      ["revoked", { pushToken: "ordinary-token", pushToStartToken: "own-start-token" }],
+    ];
+    for (const [destination, tokens] of refusals) {
+      const backend = testBackend();
+      await seed(backend, destination);
+      const before = await devices(backend);
+      await expect(upsert(backend, tokens)).resolves.toEqual({ ok: false });
+      expect(await devices(backend), JSON.stringify({ destination, tokens })).toBe(before);
+    }
+
+    const tokensOf = (backend: ReturnType<typeof testBackend>, deviceId: string) =>
+      backend.run(async (ctx) => {
+        const row = await ctx.db.query("devices").withIndex("by_user_id_and_device_id", (query) =>
+          query.eq("userId", "viewer").eq("deviceId", deviceId)).unique();
+        return {
+          pushToken: row?.pushToken,
+          pushToStartToken: row?.pushToStartToken,
+          pushToStartIssuedAt: row?.pushToStartIssuedAt,
+        };
+      });
+    const transfers: [object, object, object][] = [
+      [
+        { pushToken: "ordinary-token", pushToStartToken: "own-start-token" },
+        { pushToken: undefined, pushToStartToken: undefined, pushToStartIssuedAt: undefined },
+        { pushToken: "ordinary-token", pushToStartToken: "own-start-token", pushToStartIssuedAt: undefined },
+      ],
+      [
+        { pushToken: "ordinary-token" },
+        { pushToken: undefined, pushToStartToken: "own-start-token", pushToStartIssuedAt: now },
+        { pushToken: "ordinary-token", pushToStartToken: undefined, pushToStartIssuedAt: undefined },
+      ],
+      [
+        { pushToStartToken: "own-start-token", clearPushToken: true },
+        { pushToken: "ordinary-token", pushToStartToken: undefined, pushToStartIssuedAt: undefined },
+        { pushToken: undefined, pushToStartToken: "own-start-token", pushToStartIssuedAt: undefined },
+      ],
+    ];
+    for (const [tokens, oldDevice, newDevice] of transfers) {
+      const backend = testBackend();
+      await seed(backend, "existing");
+      await expect(upsert(backend, tokens)).resolves.toEqual({ ok: true });
+      await expect(tokensOf(backend, "old-device")).resolves.toEqual(oldDevice);
+      await expect(tokensOf(backend, "new-device")).resolves.toEqual(newDevice);
+    }
+  });
+
   it("creates one Apple user session and consumes publisher invitations exactly once", async () => {
     const backend = testBackend();
     const now = 1_800_000_000_000;
