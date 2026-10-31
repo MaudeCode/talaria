@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "An Agent update check that runs past its time limit now says it timed out instead of blaming your internet connection.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
