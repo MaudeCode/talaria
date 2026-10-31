@@ -10,6 +10,7 @@ import { FakeSidecar } from '../sidecar/fake.js'
 import type { SidecarResult } from '@maudecode/talaria-web-contracts'
 import { SessionSchema } from '@maudecode/talaria-web-contracts'
 import { str } from '../util.js'
+import { buildInsights } from '../tools/insights.js'
 import { Session } from './session.js'
 import { recordBackgroundUpdate } from './background-updates.js'
 import { agentSessionRowsExisting, cheapChangeFingerprint, insightsSessionRows, latestCronSessionInfo, isCliSessionRowVisible, normalizeAgentSessionSource, projectAgentSessionRows, readImportableAgentSessionRows, stateDbCompressionLineage, stateDbHasSession, stateDbLineageReport, stateDbSessionRead, stateDbSessionSources, type ReadRowsOptions } from './state-db.js'
@@ -1123,6 +1124,18 @@ describe('remaining indexed readers (TAL-1188)', () => {
       expect(plan.map((r) => r.detail).join('\n')).toMatch(/USING INDEX idx_sessions_source(_id)?/)
       expect(sql).toContain('LIMIT')
     } finally { db.close() }
+  })
+
+  it('counts the whole prompt as insights input so the cache hit rate divides reads by it (TAL-1173)', async () => {
+    const path = join(dir, 'insights-cache.db')
+    const db = openStateDb(path)
+    db.exec(agentSchema.schema.join('\n'))
+    insertSession(db, { id: 'cached', source: 'cli', started_at: 1_760_000_000, model: 'm' })
+    db.exec("UPDATE sessions SET input_tokens = 100, cache_read_tokens = 900, cache_write_tokens = 0 WHERE id = 'cached'")
+    db.close()
+    const insights = await buildInsights([], '1', 1_760_000_050, (cutoff) => insightsSessionRows(path, cutoff))
+    expect(insights).toMatchObject({ total_input_tokens: 1000, total_cache_read_tokens: 900, total_cache_hit_percent: 90 })
+    expect((insights.models as Record<string, unknown>[])[0]).toMatchObject({ model: 'm', cache_hit_percent: 90 })
   })
 
   it.each(['indexed', 'no-message-index', 'legacy'])('keeps activity beyond a stale heartbeat on %s schemas', (schema) => {

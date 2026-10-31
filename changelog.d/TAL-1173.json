@@ -1,0 +1,3 @@
+{
+  "entries": [{"category": "Fixed", "summary": "Insights now shows the real cache hit rate instead of stopping near 50%.", "highlight": false, "components": ["web"]}]
+}
