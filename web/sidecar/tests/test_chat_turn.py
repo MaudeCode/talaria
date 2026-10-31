@@ -12,7 +12,7 @@ import types
 
 import pytest
 
-from talaria_sidecar.methods import chat
+from talaria_sidecar.methods import chat, commands
 from talaria_sidecar.errors import RpcError
 from talaria_sidecar.rpc import CallContext, RpcServer
 
@@ -70,6 +70,13 @@ def _patch(monkeypatch):
     monkeypatch.setattr(chat, "_provider_routing_kwargs", lambda cfg=None: {})
     monkeypatch.setattr(chat, "checkpoint_kwargs", lambda cfg=None: {})
     monkeypatch.setattr(chat, "scoped_home", lambda home: contextlib.nullcontext(home))
+    # The stand-in Agent's MCP surface: each test's turn-start discovery connects nothing on a fresh baseline, so its
+    # worker never imports through a test's partial stand-in packages (Python 3.15 cannot format that failure).
+    monkeypatch.setattr(chat, "_MCP_DISCOVERIES", {})
+    monkeypatch.setattr(commands, "_MCP_DISCOVERED_HOMES", set())
+    monkeypatch.setattr(commands, "retire_unscoped_launch_mcp_servers", lambda: set())
+    monkeypatch.setitem(sys.modules, "tools.mcp_tool_discovery", types.SimpleNamespace(discover_mcp_tools=lambda: []))
+    monkeypatch.setitem(sys.modules, "tools.mcp_tool_agent", types.SimpleNamespace(refresh_agent_mcp_tools=lambda agent, **kwargs: None))
 
 
 @pytest.mark.parametrize("method", ["start", "compress", "refine"])

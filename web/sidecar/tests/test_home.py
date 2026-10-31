@@ -459,15 +459,17 @@ def test_scope_cache_drops_uncertain_stamps_and_evicts_old_homes(tmp_path, monke
     config.write_text('{"TERMINAL_ENV": "ssh"}')
     with home_module.scoped_home(home):
         pass
-    stat = Path.stat
-
-    def denied(path, *args, **kwargs):
-        if path == config:
-            raise PermissionError("transient denial")
-        return stat(path, *args, **kwargs)
+    def denied(original):
+        def call(path, *args, **kwargs):
+            if path == config:
+                raise PermissionError("transient denial")
+            return original(path, *args, **kwargs)
+        return call
 
     with monkeypatch.context() as patch:
-        patch.setattr(Path, "stat", denied)
+        # Python 3.14's Path.exists no longer calls Path.stat, so the policy read is denied as well.
+        patch.setattr(Path, "stat", denied(Path.stat))
+        patch.setattr(Path, "read_text", denied(Path.read_text))
         with home_module.scoped_home(home):
             assert isinstance(cached_scopes.active.get(), sys.modules["tools.terminal_scope"].TerminalPolicyRefusal)
     with home_module.scoped_home(home):
