@@ -7,16 +7,84 @@ import XCTest
 final class FeedbackHostedTests: XCTestCase {
     private func model(
         connected: Bool = true,
+        attachments: Bool = false,
         submit: ((FeedbackRequest) async throws -> FeedbackResult)? = nil
     ) -> FeedbackComposer {
         let name = "FeedbackHostedTests.\(UUID())"
         let defaults = UserDefaults(suiteName: name)!
-        addTeardownBlock { defaults.removePersistentDomain(forName: name) }
+        let staging = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+        addTeardownBlock {
+            defaults.removePersistentDomain(forName: name)
+            try? FileManager.default.removeItem(at: staging)
+        }
         return FeedbackComposer(
             server: connected ? URL(string: "https://feedback.example.test")! : nil,
-            defaults: defaults, clientMetadata: .current, submit: submit,
-            diagnostics: { FeedbackDiagnostics(text: "Web: synthetic\n  Exact diagnostics <redacted>", bytes: 45) }
+            defaults: defaults, clientMetadata: .current, stagingRoot: staging, submit: submit,
+            diagnostics: { FeedbackDiagnostics(text: "Web: synthetic\n  Exact diagnostics <redacted>", bytes: 45) },
+            options: {
+                FeedbackOptions(attachments: .init(enabled: attachments, videoAllowed: true, maxCount: 5, maxImageBytes: 10_000_000,
+                                                   maxVideoBytes: 20_000_000, maxVideoSeconds: 120,
+                                                   acceptedTypes: ["image/png", "image/jpeg", "video/mp4"]))
+            },
+            upload: { data, type, _ in FeedbackAttachmentStaged(attachmentId: UUID(), contentType: type, bytes: data.count) }
         )
+    }
+
+    private func syntheticPhoto() -> Data {
+        UIGraphicsImageRenderer(size: CGSize(width: 120, height: 80)).jpegData(withCompressionQuality: 0.9) { context in
+            UIColor.systemTeal.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 120, height: 80))
+        }
+    }
+
+    func testCurrentScreenIsOfferedButAttachedOnlyWhenTapped() async throws {
+        let model = model(attachments: true)
+        model.edit { $0.title = "Synthetic report"; $0.body = "Synthetic details" }
+        let window = try hostWindow(NavigationStack { AboutSettingsView(feedback: model) })
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Send Feedback"))
+        let add = try await requireElement(in: window, label: "Add Current screen")
+        XCTAssertNotNil(model.currentScreenOffer, "Opening the sheet captures the screen behind it")
+        XCTAssertTrue(model.attachments.isEmpty, "The capture can show chat content, so it is never attached by default")
+        _ = try await requireElement(in: window, label: "Add Photo or Video")
+        attachHostedScreenshot(window, name: "feedback-current-screen-offer")
+        HostedAccessibility.activate(add)
+        let attached = await awaitCondition { model.attachments.first?.attachmentId != nil }
+        XCTAssertTrue(attached)
+        XCTAssertEqual(model.attachments.map(\.contentType), ["image/png"])
+        XCTAssertNil(model.currentScreenOffer)
+        _ = try await requireElement(in: window, label: "Remove attachment Current screen")
+        attachHostedScreenshot(window, name: "feedback-current-screen-attached")
+    }
+
+    func testAttachingIsHiddenWhenTheServerDisablesIt() async throws {
+        let model = model(attachments: false)
+        let window = try hostWindow(NavigationStack { AboutSettingsView(feedback: model) })
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Send Feedback"))
+        _ = try await requireElement(in: window, label: "Include Diagnostics")
+        let loaded = await awaitCondition { model.attachmentOptions != nil }
+        XCTAssertTrue(loaded)
+        let attachControl = await awaitElement(in: window, timeout: 1) {
+            ($0.accessibilityLabel ?? "").hasPrefix("Add Photo") || $0.accessibilityLabel == "Add Current screen"
+        }
+        XCTAssertNil(attachControl)
+    }
+
+    func testRefusedAttachmentConfirmsSentWithoutAttachments() async throws {
+        let model = model(attachments: true, submit: { request in
+            FeedbackResult(status: "sent", reportId: "synthetic-report",
+                           attachments: (request.attachmentIds ?? []).map { .init(attachmentId: $0, status: "refused", reason: "tier") })
+        })
+        await model.loadAttachmentOptions()
+        await model.addImage(syntheticPhoto())?.value
+        model.edit { $0.title = "Synthetic report"; $0.body = "Synthetic details" }
+        let window = try hostWindow(NavigationStack { AboutSettingsView(feedback: model) })
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Send Feedback"))
+        _ = try await requireElement(in: window, label: "Remove attachment Photo")
+        attachHostedScreenshot(window, name: "feedback-photo-attached")
+        HostedAccessibility.activate(try XCTUnwrap(HostedAccessibility.toolbarItem("Send", in: window)))
+        let confirmation = await awaitElement(in: window) { $0.accessibilityLabel == "Sent without attachments" }
+        XCTAssertNotNil(confirmation)
+        attachHostedScreenshot(window, name: "feedback-sent-without-attachments")
     }
 
     func testDisconnectedAboutDisablesFeedback() async throws {

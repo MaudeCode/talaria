@@ -91,22 +91,78 @@ public enum ImagePreviewDownsampler {
         }
     }
 
+    public enum UploadFormat: Sendable {
+        /// PNG when the source has an alpha channel, JPEG otherwise.
+        case automatic
+        case jpeg
+        case png
+    }
+
     /// A picked photo re-encoded for upload (TAL-865): orientation applied, the long edge capped at
-    /// `uploadMaxPixelSize`, PNG when the image has an alpha channel and JPEG otherwise. The extension names the
-    /// encoded type. Nil when the data does not decode as an image. Runs off the caller's actor.
-    public static func uploadImage(from data: Data) async -> (data: Data, fileExtension: String)? {
+    /// `maxPixelSize`, in `format`. Only the pixels are written, so EXIF, GPS and other source metadata never
+    /// leave the device. The extension names the encoded type. Nil when the data does not decode as an image.
+    /// Runs off the caller's actor.
+    public static func uploadImage(
+        from data: Data,
+        maxPixelSize: Int = uploadMaxPixelSize,
+        format: UploadFormat = .automatic,
+        jpegQuality: Double = 0.85
+    ) async -> (data: Data, fileExtension: String)? {
         await Task.detached(priority: .userInitiated) {
             guard let source = imageSource(data),
-                  let image = thumbnail(of: source, maxPixelSize: uploadMaxPixelSize)
+                  let image = thumbnail(of: source, maxPixelSize: maxPixelSize)
             else { return nil }
-            // The source's flag, not the decoded bitmap's: HEIC decodes into an alpha-carrying bitmap even when opaque.
-            let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
-            let hasAlpha = (properties?[kCGImagePropertyHasAlpha] as? Bool) ?? false
-            let encoded = hasAlpha
+            let png: Bool
+            switch format {
+            case .png: png = true
+            case .jpeg: png = false
+            case .automatic:
+                // The source's flag, not the decoded bitmap's: HEIC decodes into an alpha-carrying bitmap even when opaque.
+                let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+                png = (properties?[kCGImagePropertyHasAlpha] as? Bool) ?? false
+            }
+            let encoded = png
                 ? encode(image, as: "public.png", quality: nil)
-                : encode(image, as: "public.jpeg", quality: 0.85)
-            return encoded.map { ($0, hasAlpha ? "png" : "jpg") }
+                : encode(image, as: "public.jpeg", quality: jpegQuality)
+            return encoded.map { (removingMetadata(from: $0), png ? "png" : "jpg") }
         }.value
+    }
+
+    /// Drops the metadata ImageIO writes on its own even for a bare bitmap (an EXIF block with the colour space and
+    /// pixel size): JPEG APP1 segments, and PNG `eXIf`, text and time chunks. Pixels and any ICC profile stay.
+    /// Returns the input unchanged when it is not a well-formed JPEG or PNG.
+    static func removingMetadata(from data: Data) -> Data {
+        let bytes = [UInt8](data)
+        func bigEndian(_ index: Int, _ count: Int) -> Int? {
+            guard index >= 0, index + count <= bytes.count else { return nil }
+            return bytes[index..<index + count].reduce(0) { $0 << 8 | Int($1) }
+        }
+        var output: [UInt8] = []
+        if bytes.starts(with: [0xFF, 0xD8]) {
+            output = [0xFF, 0xD8]
+            var index = 2
+            while true {
+                guard index + 1 < bytes.count, bytes[index] == 0xFF else { return data }
+                let marker = bytes[index + 1]
+                // Start of scan: the entropy-coded image data runs to the end.
+                if marker == 0xDA { output += bytes[index...]; break }
+                guard let length = bigEndian(index + 2, 2), length >= 2, index + 2 + length <= bytes.count else { return data }
+                if marker != 0xE1 { output += bytes[index..<index + 2 + length] }
+                index += 2 + length
+            }
+        } else if bytes.starts(with: [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]) {
+            output = Array(bytes[0..<8])
+            var index = 8
+            while index < bytes.count {
+                guard let length = bigEndian(index, 4), index + 12 + length <= bytes.count else { return data }
+                let type = String(decoding: bytes[index + 4..<index + 8], as: UTF8.self)
+                if !["eXIf", "tEXt", "zTXt", "iTXt", "tIME"].contains(type) { output += bytes[index..<index + 12 + length] }
+                index += 12 + length
+            }
+        } else {
+            return data
+        }
+        return Data(output)
     }
 
     private static func imageSource(_ data: Data) -> CGImageSource? {
@@ -124,7 +180,7 @@ public enum ImagePreviewDownsampler {
         return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
     }
 
-    private static func encode(_ image: CGImage, as type: String, quality: Double?) -> Data? {
+    static func encode(_ image: CGImage, as type: String, quality: Double?) -> Data? {
         let output = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(output, type as CFString, 1, nil) else { return nil }
         let options = quality.map { [kCGImageDestinationLossyCompressionQuality: $0] as CFDictionary }

@@ -163,6 +163,8 @@ public enum Endpoint {
     case memoryWrite
     case feedbackDiagnostics
     case feedbackSubmit
+    case feedbackOptions
+    case feedbackAttachments
     case skills
     case skillContent(name: String, file: String?)
     case toggleSkill
@@ -480,6 +482,10 @@ public enum Endpoint {
             return "/api/feedback/diagnostics"
         case .feedbackSubmit:
             return "/api/feedback/submit"
+        case .feedbackOptions:
+            return "/api/feedback/options"
+        case .feedbackAttachments:
+            return "/api/feedback/attachments"
         case .skills:
             return "/api/skills"
         case .skillContent:
