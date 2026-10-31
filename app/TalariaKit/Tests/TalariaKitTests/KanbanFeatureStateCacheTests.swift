@@ -78,6 +78,25 @@ extension KanbanFeatureStateTests {
         XCTAssertEqual(state.snapshot, KanbanFixtures.snapshot)
         XCTAssertTrue(state.canUseServerAuthoritativeActions, "The live board restores actions")
     }
+
+    // TAL-841: returning to a Board that only shows the cache still runs the live load.
+    func testAppearingOnACachedBoardRunsTheLiveLoad() async {
+        let client = ReconnectingKanbanClient()
+        let state = KanbanFeatureState(
+            server: URL(string: "https://example.test")!,
+            defaults: defaults,
+            client: client,
+            responseCache: makeSeededCache()
+        )
+        await state.loadIfNeeded()
+        XCTAssertTrue(state.isShowingCachedBoard)
+
+        await client.reconnect()
+        await state.loadIfNeeded()
+
+        XCTAssertFalse(state.isShowingCachedBoard)
+        XCTAssertEqual(state.snapshot, KanbanFixtures.snapshot)
+    }
 }
 
 /// Offline until `reconnect()`, then answers like `KanbanClientStub`.

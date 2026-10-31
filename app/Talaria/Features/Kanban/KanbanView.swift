@@ -17,7 +17,7 @@ struct KanbanView: View {
     var body: some View {
         KanbanStatusFocusView(model: model)
             .task {
-                await model.load()
+                await model.loadIfNeeded()
             }
     }
 }
