@@ -174,14 +174,24 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
   const [configOpen, setConfigOpen] = useState(false)
   const [focusWithin, setFocusWithin] = useState(false)
   // TAL-698: "within" is the composer's React tree: the card, the strip under it and the menus a strip chip portals out.
-  // A focus that lands outside it folds a phone's empty composer. A tap that starts inside keeps it, even where the
-  // browser moves focus nowhere (iOS does not focus a tapped button), until that tap's click or cancel.
+  // A focus that lands outside it folds a phone's empty composer. A tap that starts inside defers a blur to nowhere
+  // (iOS does not focus a tapped button) until the tap has run: it folds then unless focus came back or a chip's menu
+  // opened.
   const focusedHere = useRef(false)
   const pressedHere = useRef(false)
+  const blurDeferred = useRef(false)
+  const wrapper = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const arm = () => { focusedHere.current = false }
     const leave = () => { if (!focusedHere.current) setFocusWithin(false) }
-    const release = () => { pressedHere.current = false }
+    const release = () => {
+      pressedHere.current = false
+      setTimeout(() => {
+        if (!blurDeferred.current) return
+        blurDeferred.current = false
+        if (!wrapper.current?.querySelector('[aria-expanded="true"]')) setFocusWithin(false)
+      })
+    }
     document.addEventListener('focusin', arm, true)
     document.addEventListener('focusin', leave)
     window.addEventListener('click', release, true)
@@ -789,7 +799,7 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
 
   return (
     // Drops land anywhere on the composer, the image strip above the card included (TAL-1552).
-    <div className="composer-wrap" id="composerWrap" onFocus={() => { focusedHere.current = true; setFocusWithin(true) }} onBlur={(e) => { if (!e.relatedTarget && !pressedHere.current) setFocusWithin(false) }} onPointerDown={() => { pressedHere.current = true }} onDragOver={(e) => { e.preventDefault(); wake(); if (!clarify) setDragOver(true) }} onDragLeave={() => setDragOver(false)} onDrop={onDrop}>
+    <div ref={wrapper} className="composer-wrap" id="composerWrap" onFocus={() => { focusedHere.current = true; blurDeferred.current = false; setFocusWithin(true) }} onBlur={(e) => { if (e.relatedTarget) return; if (pressedHere.current) blurDeferred.current = true; else setFocusWithin(false) }} onPointerDown={() => { pressedHere.current = true }} onDragOver={(e) => { e.preventDefault(); wake(); if (!clarify) setDragOver(true) }} onDragLeave={() => setDragOver(false)} onDrop={onDrop}>
       <ComposerNotices key={sessionId ?? ''} notices={chipNotices} fallbackFocus={textarea} />
       {!clarify && <AttachmentTray files={files} placement="strip" onRemove={removeFile} onRetry={retryFile} />}
       <div
