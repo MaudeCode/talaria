@@ -100,28 +100,36 @@ export async function stageFeedbackAttachment(deps: AppDeps, declaredType: strin
   return { attachmentId: staged.attachmentId, contentType, bytes: data.length }
 }
 
-/** The member's own, unexpired, not otherwise claimed staged files, in request order; anything else is `invalid`. */
-async function resolveAttachments(deps: AppDeps, ids: readonly string[], owner: string, requestId: string): Promise<ManifestEntry[]> {
-  if (!ids.length) return []
-  const raw = (await documents(deps).get('feedback', 'attachments'))?.value
-  const now = Date.now() / 1000
-  const rows = raw === undefined ? [] : StagedState.parse(raw).entries
-  const manifest = ids.map((id) => rows.find((row) => row.attachmentId === id && row.owner === owner && row.expiresAt > now && (row.requestId ?? requestId) === requestId))
-  if (manifest.some((row) => !row)) throw new HttpFailure(400, 'invalid')
-  const entries = manifest.map((row) => ManifestEntry.parse(row))
-  if (entries.filter((row) => FEEDBACK_ATTACHMENT_LIMITS.types[row.contentType].kind === 'video').length > FEEDBACK_ATTACHMENT_LIMITS.maxVideosPerReport) throw new HttpFailure(400, 'invalid')
-  return entries
-}
-
-/** Bind admitted files to their report so they outlive the hour, until the receipt settles or expires. */
-async function bindAttachments(deps: AppDeps, manifest: ManifestEntry[], requestId: string, expiresAt: number): Promise<void> {
-  if (!manifest.length) return
-  await editStaged(deps, (state) => {
-    for (const row of state.entries) if (manifest.some((entry) => entry.attachmentId === row.attachmentId) && (row.requestId ?? requestId) === requestId) Object.assign(row, { requestId, expiresAt })
+/**
+ * Atomically check and claim the member's own, unexpired files for this request, in request order; a missing, expired,
+ * foreign or otherwise claimed file is `invalid`. `claimed` names the files this call took, so a failed admission can
+ * hand them back.
+ */
+async function claimAttachments(deps: AppDeps, ids: readonly string[], owner: string, requestId: string): Promise<{ manifest: ManifestEntry[]; claimed: string[] }> {
+  if (!ids.length) return { manifest: [], claimed: [] }
+  return editStaged(deps, (state) => {
+    const rows = ids.map((id) => state.entries.find((row) => row.attachmentId === id && row.owner === owner && (row.requestId ?? requestId) === requestId))
+    if (rows.some((row) => !row)) throw new HttpFailure(400, 'invalid')
+    const manifest = rows.map((row) => ManifestEntry.parse(row))
+    if (manifest.filter((row) => FEEDBACK_ATTACHMENT_LIMITS.types[row.contentType].kind === 'video').length > FEEDBACK_ATTACHMENT_LIMITS.maxVideosPerReport) throw new HttpFailure(400, 'invalid')
+    const claimed = rows.filter((row) => !row!.requestId).map((row) => row!.attachmentId)
+    for (const row of rows) row!.requestId = requestId
+    return { manifest, claimed }
   })
 }
 
-/** A settled report no longer needs its files; the sweep in `editStaged` deletes them with their index rows. */
+/** Return files this call claimed when admission refused the report before it existed. */
+async function unclaimAttachments(deps: AppDeps, claimed: string[], requestId: string): Promise<void> {
+  if (!claimed.length) return
+  await editStaged(deps, (state) => { for (const row of state.entries) if (claimed.includes(row.attachmentId) && row.requestId === requestId) delete row.requestId })
+}
+
+/** A request's files live exactly as long as its receipt, so any retry of that request can still upload them. */
+async function retainAttachments(deps: AppDeps, requestId: string, expiresAt: number): Promise<void> {
+  await editStaged(deps, (state) => { for (const row of state.entries) if (row.requestId === requestId) row.expiresAt = expiresAt })
+}
+
+/** A sent report no longer needs its files; the sweep in `editStaged` deletes them with their index rows. */
 async function releaseAttachments(deps: AppDeps, requestId: string): Promise<void> {
   await editStaged(deps, (state) => { state.entries = state.entries.filter((row) => row.requestId !== requestId) })
 }
@@ -188,17 +196,19 @@ export async function feedbackDiagnostics(deps: AppDeps, profileHome: string): P
 
 /** Drop diagnostic snapshots after a definitive result; retain a small retry receipt or quota entry. */
 async function settleFeedback(deps: AppDeps, requestId: string, owner: string, sent?: { reportId: string; attachments: AttachmentResult[] }): Promise<void> {
-  await updateDocument(documents(deps), 'feedback', 'state', (raw) => {
-    if (raw === undefined) return { value: raw, result: undefined, skip: true }
+  const expiresAt = await updateDocument(documents(deps), 'feedback', 'state', (raw) => {
+    if (raw === undefined) return { value: raw, result: null, skip: true }
     const state = FeedbackState.parse(raw)
     const entry = state.entries.find((row) => row.requestId === requestId && row.owner === owner)
-    if (!entry || entry.reportId) return { value: state, result: undefined, skip: true }
+    if (!entry || entry.reportId) return { value: state, result: null, skip: true }
     delete entry.snapshot
     if (sent) Object.assign(entry, { reportId: sent.reportId, results: sent.attachments })
     else entry.expiresAt = Date.now() / 1000 + QUOTA_WINDOW
-    return { value: state, result: undefined }
+    return { value: state, result: entry.expiresAt }
   })
-  await releaseAttachments(deps, requestId)
+  // A refused report (for example Relay's 429) keeps its files for the quota marker's lifetime, so a retry can send them.
+  if (sent) await releaseAttachments(deps, requestId)
+  else if (expiresAt !== null) await retainAttachments(deps, requestId, expiresAt)
 }
 
 /** Like RelayService.pair, serialize each identity through its complete send/settle lifecycle. */
@@ -216,8 +226,9 @@ async function submitFeedbackSerial(deps: AppDeps, profileHome: string, input: z
   let outcome = 'feedback_unavailable'
   const owner = ownerHash(deps)
   try {
-    // Only a new admission resolves staged files; a retry reuses its receipt even after those files are released.
-    const fresh = await resolveAttachments(deps, input.attachmentIds ?? [], owner, input.requestId).catch((error: unknown) => error as Error)
+    // Only a new admission needs the claim to succeed; a retry reuses its receipt even after those files are released.
+    const fresh = await claimAttachments(deps, input.attachmentIds ?? [], owner, input.requestId).catch((error: unknown) => error as Error)
+    const claimed = fresh instanceof Error ? [] : fresh.claimed
     // Admission, quota and snapshot writes share one bounded document transaction. Invalid envelopes write nothing.
     const admitted = await updateDocument<{ sent: z.infer<typeof FeedbackResultSchema> | null; body: string; manifest: ManifestEntry[]; expiresAt: number }>(documents(deps), 'feedback', 'state', async (raw) => {
       const now = Date.now() / 1000
@@ -226,7 +237,7 @@ async function submitFeedbackSerial(deps: AppDeps, profileHome: string, input: z
       let entry = state.entries.find((row) => row.requestId === input.requestId)
       // A retry resends the admitted manifest; the fingerprint covers each file's hash, not only its ID.
       if (!entry && fresh instanceof Error) throw fresh
-      const manifest = entry ? entry.attachments ?? [] : fresh as ManifestEntry[]
+      const manifest = entry ? entry.attachments ?? [] : (fresh as { manifest: ManifestEntry[] }).manifest
       const hash = createHash('sha256').update(JSON.stringify(input))
       for (const row of manifest) hash.update(row.sha256)
       const fingerprint = hash.digest('hex')
@@ -252,9 +263,9 @@ async function submitFeedbackSerial(deps: AppDeps, profileHome: string, input: z
       if (manifest.length) entry.attachments = manifest
       entry.expiresAt = entry.createdAt + RECEIPT_RETENTION
       return { value: state, result: { sent: null, body, manifest, expiresAt: entry.expiresAt } }
-    })
+    }).catch(async (error: unknown) => { await unclaimAttachments(deps, claimed, input.requestId); throw error })
     if (admitted.sent) { outcome = 'sent'; return admitted.sent }
-    await bindAttachments(deps, admitted.manifest, input.requestId, admitted.expiresAt)
+    if (admitted.manifest.length) await retainAttachments(deps, input.requestId, admitted.expiresAt)
     let sent: Awaited<ReturnType<typeof forwardFeedback>>
     try {
       sent = await forwardFeedback(deps, admitted.body, admitted.manifest)

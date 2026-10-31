@@ -467,3 +467,29 @@ it('authenticates attachment staging and options', async () => {
     expect((await protectedServer.get('/api/feedback/attachments', { method: 'POST', body: form })).status).toBe(401)
   } finally { await protectedServer.close() }
 })
+
+it('keeps staged files across a Relay refusal so the same request can still send them', async () => {
+  await register()
+  const file = png()
+  const request = { ...input(), attachmentIds: [await staged('image/png', file)] }
+  status = 429
+  expect((await submit(request)).status).toBe(429)
+  expect(stagingFiles()).toHaveLength(1)
+  status = 202
+  expect(await (await submit(request)).json()).toMatchObject({ status: 'sent', attachments: [{ status: 'sent' }] })
+  expect(puts.map((put) => put.body.equals(file))).toEqual([true])
+  expect(stagingFiles()).toEqual([])
+})
+
+it('lets one request claim a staged file and returns the claim when admission refuses the report', async () => {
+  await register()
+  const shared = await staged('image/png', png())
+  // Two different request IDs race for one file: exactly one report may carry it.
+  const raced = await Promise.all([submit({ ...input(), attachmentIds: [shared] }), submit({ ...input(), attachmentIds: [shared] })])
+  expect(raced.map((response) => response.status).sort()).toEqual([200, 400])
+  expect(calls).toHaveLength(1)
+  expect(puts).toHaveLength(1)
+  const spare = await staged('image/png', png())
+  expect((await submit({ ...input(), body: '\u0000'.repeat(8000), attachmentIds: [spare] })).status).toBe(400)
+  expect(await (await submit({ ...input(), attachmentIds: [spare] })).json()).toMatchObject({ status: 'sent', attachments: [{ attachmentId: spare, status: 'sent' }] })
+})

@@ -539,9 +539,12 @@ and an unreferenced file expires after one hour.
 
 `attachmentIds` on submit must name at most five of the member's own unexpired
 files, with at most one video; anything else is `invalid` before forwarding.
-Admission stores the manifest (type, bytes, SHA-256) in the receipt, the
-fingerprint covers the file hashes, and the files stay until the receipt settles
-or expires. The server sends the manifest with the report, then PUTs each accepted
+Claiming checks and binds every file to the request atomically, so one file
+belongs to at most one report; a claim is returned when admission refuses the
+report. Admission stores the manifest (type, bytes, SHA-256) in the receipt, the
+fingerprint covers the file hashes, and the files live as long as the receipt:
+they are deleted once the report is sent, and a refused report keeps them for its
+one-hour quota marker so a retry of the same request can still send them. The server sends the manifest with the report, then PUTs each accepted
 file with its token. An unknown PUT outcome resubmits the identical report once
 (Relay keeps the report and reissues tokens only for files not stored) and retries;
 a second unknown outcome is `relay_unreachable`, and the client's retry with the
