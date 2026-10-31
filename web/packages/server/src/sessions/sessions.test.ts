@@ -317,9 +317,15 @@ describe('session lifecycle over HTTP', () => {
     expect(((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages).toHaveLength(1)
     res = await post(s, '/api/session/truncate', { session_id: sid, keep_count: -1 })
     expect(res.status).toBe(400)
+    const beforeClear = ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).clear_generation
+    expect(beforeClear).toBeNull()
     res = await post(s, '/api/session/clear', { session_id: sid })
     expect(res.status).toBe(200)
-    expect(((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages).toEqual([])
+    const cleared = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
+    expect(cleared.messages).toEqual([])
+    // TAL-848: a client whose clear outcome is unknown tells from this marker that the clear committed.
+    expect(typeof cleared.clear_generation).toBe('string')
+    expect(cleared.clear_generation).not.toBe(beforeClear)
   })
 
   it('duplicates and branches sessions with parent lineage', async () => {

@@ -5032,6 +5032,17 @@
                           "type": "string",
                           "description": "Opaque profile-home and owner identity for device-local composer state; never an API session id."
                         },
+                        "clear_generation": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-848: opaque marker that changes each time /clear empties the session; a client whose clear outcome is unknown compares it with its last read. Null before any clear; older servers omit it."
+                        },
                         "session_id": {
                           "type": "string",
                           "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
@@ -9252,6 +9263,17 @@
                           "type": "string",
                           "description": "Opaque profile-home and owner identity for device-local composer state; never an API session id."
                         },
+                        "clear_generation": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-848: opaque marker that changes each time /clear empties the session; a client whose clear outcome is unknown compares it with its last read. Null before any clear; older servers omit it."
+                        },
                         "session_id": {
                           "type": "string",
                           "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
@@ -12614,6 +12636,17 @@
                         "composer_state_key": {
                           "type": "string",
                           "description": "Opaque profile-home and owner identity for device-local composer state; never an API session id."
+                        },
+                        "clear_generation": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-848: opaque marker that changes each time /clear empties the session; a client whose clear outcome is unknown compares it with its last read. Null before any clear; older servers omit it."
                         },
                         "session_id": {
                           "type": "string",
@@ -18025,6 +18058,17 @@
                           "type": "string",
                           "description": "Opaque profile-home and owner identity for device-local composer state; never an API session id."
                         },
+                        "clear_generation": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-848: opaque marker that changes each time /clear empties the session; a client whose clear outcome is unknown compares it with its last read. Null before any clear; older servers omit it."
+                        },
                         "session_id": {
                           "type": "string",
                           "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
@@ -23008,6 +23052,17 @@
                         "composer_state_key": {
                           "type": "string",
                           "description": "Opaque profile-home and owner identity for device-local composer state; never an API session id."
+                        },
+                        "clear_generation": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-848: opaque marker that changes each time /clear empties the session; a client whose clear outcome is unknown compares it with its last read. Null before any clear; older servers omit it."
                         },
                         "session_id": {
                           "type": "string",
@@ -28712,6 +28767,17 @@
                           "type": "string",
                           "description": "Opaque profile-home and owner identity for device-local composer state; never an API session id."
                         },
+                        "clear_generation": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-848: opaque marker that changes each time /clear empties the session; a client whose clear outcome is unknown compares it with its last read. Null before any clear; older servers omit it."
+                        },
                         "session_id": {
                           "type": "string",
                           "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
@@ -32023,6 +32089,17 @@
                         "composer_state_key": {
                           "type": "string",
                           "description": "Opaque profile-home and owner identity for device-local composer state; never an API session id."
+                        },
+                        "clear_generation": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-848: opaque marker that changes each time /clear empties the session; a client whose clear outcome is unknown compares it with its last read. Null before any clear; older servers omit it."
                         },
                         "session_id": {
                           "type": "string",
@@ -35398,6 +35475,17 @@
                           "type": "string",
                           "description": "Opaque profile-home and owner identity for device-local composer state; never an API session id."
                         },
+                        "clear_generation": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-848: opaque marker that changes each time /clear empties the session; a client whose clear outcome is unknown compares it with its last read. Null before any clear; older servers omit it."
+                        },
                         "session_id": {
                           "type": "string",
                           "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
@@ -38769,6 +38857,17 @@
                         "composer_state_key": {
                           "type": "string",
                           "description": "Opaque profile-home and owner identity for device-local composer state; never an API session id."
+                        },
+                        "clear_generation": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-848: opaque marker that changes each time /clear empties the session; a client whose clear outcome is unknown compares it with its last read. Null before any clear; older servers omit it."
                         },
                         "session_id": {
                           "type": "string",
@@ -51553,6 +51652,17 @@
                           "type": "string",
                           "description": "Opaque profile-home and owner identity for device-local composer state; never an API session id."
                         },
+                        "clear_generation": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-848: opaque marker that changes each time /clear empties the session; a client whose clear outcome is unknown compares it with its last read. Null before any clear; older servers omit it."
+                        },
                         "session_id": {
                           "type": "string",
                           "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
@@ -54912,6 +55022,17 @@
                         "composer_state_key": {
                           "type": "string",
                           "description": "Opaque profile-home and owner identity for device-local composer state; never an API session id."
+                        },
+                        "clear_generation": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-848: opaque marker that changes each time /clear empties the session; a client whose clear outcome is unknown compares it with its last read. Null before any clear; older servers omit it."
                         },
                         "session_id": {
                           "type": "string",
@@ -58665,6 +58786,17 @@
                           "type": "string",
                           "description": "Opaque profile-home and owner identity for device-local composer state; never an API session id."
                         },
+                        "clear_generation": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-848: opaque marker that changes each time /clear empties the session; a client whose clear outcome is unknown compares it with its last read. Null before any clear; older servers omit it."
+                        },
                         "session_id": {
                           "type": "string",
                           "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
@@ -62314,6 +62446,17 @@
                             "composer_state_key": {
                               "type": "string",
                               "description": "Opaque profile-home and owner identity for device-local composer state; never an API session id."
+                            },
+                            "clear_generation": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "TAL-848: opaque marker that changes each time /clear empties the session; a client whose clear outcome is unknown compares it with its last read. Null before any clear; older servers omit it."
                             },
                             "session_id": {
                               "type": "string",

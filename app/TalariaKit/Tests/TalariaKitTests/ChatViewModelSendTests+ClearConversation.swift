@@ -5,12 +5,12 @@ import XCTest
 // TAL-848: `/clear` clears the session on the server, applies at once, and rolls back or reconciles on failure.
 private let clearServerURL = URL(string: "https://example.test")!
 private let unclearedSessionJSON = """
-{"session":{"session_id":"session-abc","title":"Old title","messages":[\
+{"session":{"session_id":"session-abc","title":"Old title","clear_generation":"generation-before","messages":[\
 {"role":"user","content":"Old question","timestamp":1,"message_id":"old-user"},\
 {"role":"assistant","content":"Old answer","timestamp":2,"message_id":"old-answer"}]}}
 """
 private let clearedSessionJSON = """
-{"session":{"session_id":"session-abc","title":"Untitled","messages":[\
+{"session":{"session_id":"session-abc","title":"Untitled","clear_generation":"generation-after","messages":[\
 {"role":"assistant","content":"Session finalized.","timestamp":3,"message_id":"finalize-notice"}]}}
 """
 private let clearedRowJSON = #"{"ok":true,"session":{"session_id":"session-abc","title":"Untitled","message_count":1}}"#
@@ -21,13 +21,31 @@ private final class ClearServer: @unchecked Sendable {
     private(set) var clearBodies: [[String: Any]] = []
     var clearAnswer: (URLRequest) throws -> (HTTPURLResponse, Data) = { apiTestJSONResponse(clearedRowJSON, for: $0) }
     var clearsOnRequest = true
+    /// An older server sends no `clear_generation`.
+    var reportsClearGeneration = true
+    /// Holds the next `GET /api/session` until the test releases it, answering with the transcript it saw on arrival.
+    var heldRead: (arrived: XCTestExpectation, release: DispatchSemaphore)?
+    private var recordedPaths: [String] = []
+    var paths: [String] { lock.withLock { recordedPaths } }
 
     var clearCount: Int { lock.withLock { clearBodies.count } }
 
     func handle(_ request: URLRequest) throws -> (HTTPURLResponse, Data) {
+        lock.withLock { recordedPaths.append(request.url?.path ?? "") }
         switch request.url?.path {
         case "/api/session":
-            let json = lock.withLock { cleared } ? clearedSessionJSON : unclearedSessionJSON
+            var json = lock.withLock { cleared } ? clearedSessionJSON : unclearedSessionJSON
+            if !reportsClearGeneration {
+                json = json.replacingOccurrences(of: #""clear_generation":"generation-before","#, with: "")
+                    .replacingOccurrences(of: #""clear_generation":"generation-after","#, with: "")
+            }
+            if let held = lock.withLock({ () -> (arrived: XCTestExpectation, release: DispatchSemaphore)? in
+                defer { heldRead = nil }
+                return heldRead
+            }) {
+                held.arrived.fulfill()
+                XCTAssertEqual(held.release.wait(timeout: .now() + .seconds(10)), .success)
+            }
             return apiTestJSONResponse(json, for: request)
         case "/api/session/clear":
             let body = try apiTestJSONBody(from: request)
@@ -156,6 +174,7 @@ extension ChatViewModelSendTests {
                 XCTAssertEqual(server.clearCount, 1, "The clear must never be replayed: \(label)")
                 if serverCleared {
                     XCTAssertEqual(model.messages.compactMap(\.content), ["Session finalized."], label)
+                    XCTAssertEqual(model.displayTitle, "Untitled", label)
                     XCTAssertNil(model.sendErrorMessage, label)
                 } else {
                     XCTAssertEqual(model.messages.compactMap(\.content), ["Old question", "Old answer"], label)
@@ -163,6 +182,99 @@ extension ChatViewModelSendTests {
                 }
             }
         }
+    }
+
+    func testUnknownClearOutcomeOnAnOlderServerRestoresTheTranscript() async throws {
+        let server = ClearServer()
+        server.reportsClearGeneration = false
+        server.clearAnswer = { _ in throw URLError(.timedOut) }
+        let model = try await loadedClearFixture(server)
+
+        _ = await model.executeSlashCommand(try clearCommand())
+        await model.confirmClearConversation()
+
+        XCTAssertEqual(server.clearCount, 1)
+        XCTAssertEqual(model.messages.compactMap(\.content), ["Old question", "Old answer"],
+                       "Without the server's clear marker the outcome stays unconfirmed")
+        XCTAssertNotNil(model.sendErrorMessage)
+    }
+
+    func testAMessageSentDuringAClearIsShownAtOnceAndSentAfterIt() async throws {
+        // Deferred answers let the clear stay outstanding without blocking later requests from starting.
+        let host = "clear-send.test"
+        let server = ClearServer()
+        let started = DeferredRequests()
+        let heldClear = DeferredRequests()
+        func answer(_ request: DeferredMockURLProtocol) {
+            do {
+                let (response, data) = try server.handle(request.request)
+                request.complete(withJSON: String(decoding: data, as: UTF8.self), statusCode: response.statusCode)
+            } catch {
+                request.fail(with: error)
+            }
+        }
+        DeferredMockURLProtocol.setOnRequest({ request in
+            _ = started.append(request)
+            if request.request.url?.path == "/api/session/clear" { _ = heldClear.append(request) } else { answer(request) }
+        }, forHost: host)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+        let model = try makeViewModel(
+            server: try XCTUnwrap(URL(string: "https://\(host)")), protocolClasses: [DeferredMockURLProtocol.self],
+            handler: { _ in throw URLError(.badURL) }
+        )
+        await model.loadMessages(modelContext: try makeContext())
+        func startedPaths() -> [String] { (0..<started.count).map { started.request(at: $0).request.url?.path ?? "" } }
+
+        _ = await model.executeSlashCommand(try clearCommand())
+        let confirm = Task { await model.confirmClearConversation() }
+        try await waitUntil { heldClear.count == 1 }
+        let send = Task { await model.sendMessage("After the clear") }
+        try await waitUntil { model.messages.contains { $0.content == "After the clear" } }
+        // Give a send that ignored the clear time to start its request.
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertFalse(startedPaths().contains("/api/chat/start"), "The send must wait for the outstanding clear")
+        answer(heldClear.request(at: 0))
+        let didStart = await send.value
+        await confirm.value
+
+        XCTAssertTrue(didStart)
+        let paths = startedPaths()
+        XCTAssertLessThan(try XCTUnwrap(paths.firstIndex(of: "/api/session/clear")), try XCTUnwrap(paths.firstIndex(of: "/api/chat/start")))
+        XCTAssertTrue(model.messages.contains { $0.content == "After the clear" })
+        XCTAssertFalse(model.messages.contains { ["Old question", "Old answer"].contains($0.content) })
+    }
+
+    func testAReadInFlightWhenClearingCannotBringTheOldMessagesBack() async throws {
+        let server = ClearServer()
+        let context = try makeContext()
+        let model = try await loadedClearFixture(server, context: context)
+        let readArrived = expectation(description: "stale read held")
+        let releaseRead = DispatchSemaphore(value: 0)
+        server.heldRead = (readArrived, releaseRead)
+        let clearArrived = expectation(description: "clear request held")
+        let releaseClear = DispatchSemaphore(value: 0)
+        server.clearAnswer = { request in
+            clearArrived.fulfill()
+            XCTAssertEqual(releaseClear.wait(timeout: .now() + .seconds(10)), .success)
+            return apiTestJSONResponse(clearedRowJSON, for: request)
+        }
+        let staleRead = Task { await model.loadMessages(modelContext: context) }
+        defer { releaseRead.signal(); releaseClear.signal() }
+        await fulfillment(of: [readArrived], timeout: 5)
+
+        _ = await model.executeSlashCommand(try clearCommand())
+        let confirm = Task { await model.confirmClearConversation() }
+        try await waitUntil { model.messages.isEmpty }
+        releaseRead.signal()
+        await staleRead.value
+        XCTAssertTrue(model.messages.isEmpty, "A read issued before the clear must not repaint the cleared rows")
+        await fulfillment(of: [clearArrived], timeout: 5)
+        releaseClear.signal()
+        await confirm.value
+
+        XCTAssertEqual(model.messages.compactMap(\.content), ["Session finalized."])
+        XCTAssertFalse(try CacheStore.cachedMessages(serverURL: clearServerURL, sessionID: "session-abc", in: context)
+            .contains { ["Old question", "Old answer"].contains($0.content) })
     }
 
     func testClearIsRefusedDuringAReplyAndWhileOffline() async throws {
