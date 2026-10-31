@@ -1,5 +1,6 @@
 /** Usage analytics from the session index plus the Agent's state.db sessions (Python `_handle_insights`). */
 import type { Dict } from '../config/agent-config.js'
+import { promptCacheHitPercent } from '../sessions/session.js'
 import { str } from '../util.js'
 
 const num = (v: unknown): number => { const n = Number.parseFloat(str(v)); return Number.isFinite(n) && n > 0 ? Math.trunc(n) : 0 }
@@ -11,14 +12,12 @@ const cost = (v: unknown): number => {
   return Number.isFinite(n) && n > 0 ? n : 0
 }
 
-function cacheHitPercent(cacheRead: number, prompt: number): number | null {
-  if (cacheRead <= 0 || prompt <= 0) return null
-  return Math.min(100, Math.round((cacheRead / prompt) * 100))
-}
-
 const USAGE_FIELDS = ['message_count', 'input_tokens', 'output_tokens', 'cache_read_tokens'] as const
 
 /**
+ * `input_tokens` is the whole prompt (uncached, cache reads, and cache writes) for both sources, so a cache hit rate
+ * divides reads by it alone.
+ *
  * `stateRows` reads the state.db sessions active since the window's cutoff. An id already in the index counts once with
  * each counter's larger value: a claimed CLI session's index entry starts at zero while its state.db row keeps the
  * usage from before the claim and the Agent's later turns. The later activity time places it in the window, and the
@@ -88,7 +87,7 @@ export async function buildInsights(entries: Dict[], daysRaw: unknown, nowSecond
     const rowCost = Math.round(stats.cost * 1e6) / 1e6
     return {
       model, sessions: stats.sessions, input_tokens: stats.input_tokens, output_tokens: stats.output_tokens, cache_read_tokens: stats.cache_read_tokens,
-      cache_hit_percent: cacheHitPercent(stats.cache_read_tokens, stats.input_tokens + stats.cache_read_tokens), total_tokens: rowTotal, cost: rowCost,
+      cache_hit_percent: promptCacheHitPercent(stats.cache_read_tokens, stats.input_tokens), total_tokens: rowTotal, cost: rowCost,
       session_share: totalSessions ? Math.round((stats.sessions / totalSessions) * 100) : 0, token_share: totalTokens ? Math.round((rowTotal / totalTokens) * 100) : 0, cost_share: totalCost ? Math.round((rowCost / totalCost) * 100) : 0,
     }
   // Python: `(-cost, -sessions, model)`.
@@ -103,7 +102,7 @@ export async function buildInsights(entries: Dict[], daysRaw: unknown, nowSecond
   const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
   return {
     period_days: days, total_sessions: totalSessions, total_messages: totalMessages, total_input_tokens: totalInput, total_output_tokens: totalOutput, total_cache_read_tokens: totalCache,
-    total_cache_hit_percent: cacheHitPercent(totalCache, totalInput + totalCache), total_tokens: totalTokens, total_cost: Math.round(totalCost * 1e6) / 1e6, models: breakdown, daily_tokens: series,
+    total_cache_hit_percent: promptCacheHitPercent(totalCache, totalInput), total_tokens: totalTokens, total_cost: Math.round(totalCost * 1e6) / 1e6, models: breakdown, daily_tokens: series,
     activity_by_day: labels.map((day, i) => ({ day, sessions: dow[i] ?? 0 })), activity_by_hour: hod.map((sessions, hour) => ({ hour, sessions })),
   }
 }

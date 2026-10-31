@@ -1010,7 +1010,7 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
       for (const index of [false, true]) {
         if (index) { const indexDb = openStateDb(dbPath); indexDb.exec('CREATE INDEX idx_messages_session ON messages(session_id, timestamp)'); indexDb.close() }
         const body = await json(await s.get('/api/insights?days=7'))
-        expect(body).toMatchObject({ total_sessions: 6, total_messages: 22, total_input_tokens: 178, total_output_tokens: 87, total_cache_read_tokens: 30, total_cost: 2.5 })
+        expect(body).toMatchObject({ total_sessions: 6, total_messages: 22, total_input_tokens: 208, total_output_tokens: 87, total_cache_read_tokens: 30, total_cache_hit_percent: 14, total_cost: 2.5 })
         // The claimed session's later CLI turn on `m2` moves its usage to that model.
         expect((body.models as Json[]).map((m) => [m.model, m.sessions])).toEqual([['c', 3], ['m', 1], ['m2', 1], ['unknown', 1]])
         expect((body.daily_tokens as Json[]).reduce((n, d) => n + Number(d.sessions), 0)).toBe(6)
@@ -1592,7 +1592,14 @@ describe('tools helpers', () => {
     expect(readProjectContext(null)).toMatchObject({ content: '', path: '' })
     const now = 1_760_000_000
     const insights = await buildInsights([{ created_at: now - 100, updated_at: now - 50, input_tokens: 10, output_tokens: 5, cache_read_tokens: 5, estimated_cost: '$0.5', message_count: 3, model: 'm' }, { created_at: now - 10 * 86_400 * 4 }], '3', now)
-    expect(insights).toMatchObject({ period_days: 3, total_sessions: 1, total_messages: 3, total_tokens: 15, total_cost: 0.5, total_cache_hit_percent: 33 })
+    expect(insights).toMatchObject({ period_days: 3, total_sessions: 1, total_messages: 3, total_tokens: 15, total_cost: 0.5, total_cache_hit_percent: 50 })
     expect((insights.models as Json[])[0]).toMatchObject({ model: 'm', sessions: 1, session_share: 100, cost_share: 100 })
+  })
+
+  it('insights divide cache reads by the whole prompt a Talaria chat records as input (TAL-1173)', async () => {
+    const now = 1_760_000_000
+    const insights = await buildInsights([{ created_at: now - 100, updated_at: now - 50, input_tokens: 1000, cache_read_tokens: 900, model: 'm' }], '3', now)
+    expect(insights).toMatchObject({ total_input_tokens: 1000, total_cache_hit_percent: 90 })
+    expect((insights.models as Json[])[0]).toMatchObject({ model: 'm', cache_hit_percent: 90 })
   })
 })

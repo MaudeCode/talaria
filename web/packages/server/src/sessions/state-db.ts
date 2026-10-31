@@ -1691,11 +1691,12 @@ export function insightsSessionRows(dbPath: string, cutoff: number): Dict[] {
     const from = activityIndexed ? 'candidates c CROSS JOIN sessions s ON s.id = c.id' : 'sessions s'
     const ordering = activityIndexed ? ' ORDER BY COALESCE(s.last_activity_at, s.started_at) DESC' : ''
     const rows = db.prepare(`${withClause}SELECT * FROM (SELECT s.id AS id, ${col('model')} AS model, ${col('message_count')} AS message_count, ${col('input_tokens')} AS input_tokens,
-      ${col('output_tokens')} AS output_tokens, ${col('cache_read_tokens')} AS cache_read_tokens, ${col('estimated_cost_usd')} AS estimated_cost_usd, s.started_at AS started_at,
+      ${col('output_tokens')} AS output_tokens, ${col('cache_read_tokens')} AS cache_read_tokens, ${col('cache_write_tokens')} AS cache_write_tokens, ${col('estimated_cost_usd')} AS estimated_cost_usd, s.started_at AS started_at,
       ${activity} AS last_activity
       FROM ${from} ${join} WHERE ${source}${ordering}) WHERE last_activity >= ?`).all(...Array<number>(candidates.length + 1).fill(cutoff)) as Dict[]
+    // The Agent stores uncached input apart from cache reads and writes; Insights counts the whole prompt as a Talaria chat does.
     return rows.map((r) => ({
-      session_id: str(r.id), model: r.model, message_count: r.message_count, input_tokens: r.input_tokens, output_tokens: r.output_tokens,
+      session_id: str(r.id), model: r.model, message_count: r.message_count, input_tokens: [r.input_tokens, r.cache_read_tokens, r.cache_write_tokens].reduce<number>((n, v) => n + (Number(v) || 0), 0), output_tokens: r.output_tokens,
       cache_read_tokens: r.cache_read_tokens, estimated_cost: r.estimated_cost_usd, created_at: r.started_at, updated_at: r.last_activity,
     }))
   } catch {
