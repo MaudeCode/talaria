@@ -812,7 +812,14 @@ struct ChatView: View {
                 activeStreamStatusRefreshTask = nil
                 let chat = viewModel
                 let modelContext = modelContext
+                let draftStore = draftStore
+                let draftKey = draftKey
                 let release = {
+                    // Only a real leave: a view the navigation rebuilt keeps the queue live (TAL-850).
+                    Task {
+                        await chat.moveQueuedMessagesToDraft(in: draftStore, for: draftKey)
+                        try? await draftStore.flush()
+                    }
                     chat.stopListening()
                     chat.voiceInput.stopBeforeSubmittingDraft()
                     chat.persistTranscript(modelContext: modelContext)

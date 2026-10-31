@@ -156,6 +156,84 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(queueSummary(viewModel), ["later|0", "try again|0"], "A send that cannot start loses nothing")
     }
 
+    /// TAL-850: leaving the chat mid-run keeps what waited to send, as the session's draft; nothing sends it.
+    func testLeavingTheChatMidRunMovesTheQueueIntoTheDraft() async throws {
+        let streamClient = SpySSEStreamingClient()
+        var chatStartCount = 0
+        let viewModel = try makeQueueViewModel(streamClient: streamClient) { chatStartCount += 1; return chatStartCount }
+        let drafts = ChatDraftStore(persistence: RecordingChatDraftPersistence())
+        _ = await viewModel.sendMessage("first message")
+        try await queue("first queued", on: viewModel)
+        await viewModel.uploadAttachment(data: Data("notes".utf8), filename: "notes.txt")
+        try await queue("second queued", on: viewModel)
+
+        await viewModel.moveQueuedMessagesToDraft(in: drafts, for: Self.draftKey)
+
+        let draft = await drafts.draft(for: Self.draftKey)
+        XCTAssertEqual(draft?.text, "first queued\n\nsecond queued")
+        XCTAssertEqual(draft?.attachments.map(\.file), ["saved-1-notes.txt"])
+        XCTAssertTrue(viewModel.queuedMessagePreviews.isEmpty)
+        streamClient.emit(.streamEnd)
+        try await waitUntil { viewModel.activeStreamID == nil }
+        // A queue left behind would start its drain's send here.
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertEqual(chatStartCount, 1, "Nothing sends until the user taps Send")
+    }
+
+    func testLeavingPutsTheQueueBeforeTheDraftAndKeepsASharedFileOnce() async throws {
+        let viewModel = try makeQueueViewModel { 1 }
+        let drafts = ChatDraftStore(persistence: RecordingChatDraftPersistence())
+        _ = await viewModel.sendMessage("first message")
+        await viewModel.uploadAttachment(data: Data("notes".utf8), filename: "notes.txt")
+        let queuedFile = try XCTUnwrap(viewModel.pendingAttachments.first?.draftFileName)
+        try await queue("queued", on: viewModel)
+        drafts.setDraft("still typing", for: Self.draftKey)
+        drafts.setAttachments([
+            ChatDraftAttachment(id: UUID(), name: "plan.txt", mime: "text/plain", size: 4, isImage: false, file: "saved-9-plan.txt"),
+            ChatDraftAttachment(id: UUID(), name: "notes.txt", mime: "text/plain", size: 5, isImage: false, file: queuedFile),
+        ], for: Self.draftKey)
+
+        await viewModel.moveQueuedMessagesToDraft(in: drafts, for: Self.draftKey)
+
+        let draft = await drafts.draft(for: Self.draftKey)
+        XCTAssertEqual(draft?.text, "queued\n\nstill typing")
+        XCTAssertEqual(draft?.attachments.map(\.file), ["saved-9-plan.txt", queuedFile])
+    }
+
+    func testLeavingKeepsASteerTheServerMayHoldOutOfTheDraft() async throws {
+        let viewModel = try makeQueueViewModel(steerStatus: { 503 }) { 1 }
+        let drafts = ChatDraftStore(persistence: RecordingChatDraftPersistence())
+        _ = await viewModel.sendMessage("first message")
+        let steer = try XCTUnwrap(SlashCommandCatalog.command(named: "steer"))
+        _ = await viewModel.executeSlashCommand(steer, args: "maybe delivered")
+        try await queue("queued", on: viewModel)
+
+        await viewModel.moveQueuedMessagesToDraft(in: drafts, for: Self.draftKey)
+
+        let draft = await drafts.draft(for: Self.draftKey)
+        XCTAssertEqual(draft?.text, "queued")
+        XCTAssertEqual(queueSummary(viewModel), ["maybe delivered|0"])
+    }
+
+    func testLeavingAfterTheQueueDrainedLeavesTheDraftAlone() async throws {
+        let streamClient = SpySSEStreamingClient()
+        var chatStartCount = 0
+        let viewModel = try makeQueueViewModel(streamClient: streamClient) { chatStartCount += 1; return chatStartCount }
+        let drafts = ChatDraftStore(persistence: RecordingChatDraftPersistence())
+        _ = await viewModel.sendMessage("first message")
+        try await queue("sent by the drain", on: viewModel)
+        streamClient.emit(.streamEnd)
+        try await waitUntil { chatStartCount == 2 && viewModel.queuedMessagePreviews.isEmpty }
+        drafts.setDraft("kept", for: Self.draftKey)
+
+        await viewModel.moveQueuedMessagesToDraft(in: drafts, for: Self.draftKey)
+
+        let draft = await drafts.draft(for: Self.draftKey)
+        XCTAssertEqual(draft, ChatDraft(text: "kept"))
+    }
+
+    private static let draftKey = ChatDraftKey.session(server: URL(string: "https://example.test")!, sessionID: "session-abc")
+
     private func queue(_ text: String, on viewModel: ChatViewModel) async throws {
         let command = try XCTUnwrap(SlashCommandCatalog.command(named: "queue"))
         _ = await viewModel.executeSlashCommand(command, args: text)

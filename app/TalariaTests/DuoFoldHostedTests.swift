@@ -141,6 +141,47 @@ final class DuoFoldHostedTests: XCTestCase {
         _ = try await requireElement(in: window, label: "Stopped", "The run's end never reached the transcript")
     }
 
+    /// TAL-850: folding hands the chat to a new view without leaving it, so a queued message stays queued and the draft
+    /// stays as typed. Leaving the chat moves it into the draft, and returning sends nothing.
+    func testAQueuedMessageStaysQueuedAcrossFoldingAndBecomesTheDraftOnLeaving() async throws {
+        let folding = try await openChatOnInnerDisplay(["--ui-test-chat-controls"])
+        let window = folding.window
+        try await sendFromComposer("Run the deterministic fixture", in: window)
+        _ = try await requireElement(in: window, label: "Waiting for control input.")
+        try await sendFromComposer("/queue Queued across folding", in: window)
+        _ = try await requireElement(in: window, label: "1 queued")
+        settle(0.3)
+        attachHostedScreenshot(window, name: "queued-before-leaving")
+
+        for closed in [true, false] {
+            let moment = closed ? "Closing" : "Opening"
+            fold(folding, closed: closed)
+            _ = try await requireElement(in: window, label: "1 queued", "\(moment) the Duo lost the queue")
+            // Sleeping, not `settle()`, so a release the handover failed to cancel gets to run.
+            try await Task.sleep(for: .seconds(1))
+            XCTAssertNotNil(HostedAccessibility.element(in: window, label: "1 queued"), "\(moment) the Duo emptied the queue")
+            XCTAssertEqual(composerDraftText(in: window), "", "\(moment) the Duo moved the queue into the draft")
+        }
+
+        let starts = UITestFixtureURLProtocol.answeredPaths.withLock { $0.filter { $0 == "/api/chat/start" }.count }
+        try await openSidebar(in: window)
+        HostedAccessibility.activate(try await requireElement(in: window, label: "New Chat"))
+        let left = await awaitNoElement(in: window) { $0.accessibilityLabel == "1 queued" }
+        XCTAssertTrue(left, "New Chat never replaced the chat")
+        try await openSidebar(in: window)
+        HostedAccessibility.activate(try await requireElement(in: window, "The chat is no longer listed") {
+            $0.accessibilityLabel?.hasPrefix(UITestFixtureURLProtocol.sessionTitle) == true
+        })
+        let restored = await awaitCondition { self.composerDraftText(in: window) == "Queued across folding" }
+        XCTAssertTrue(restored, "Returning showed \(composerDraftText(in: window) ?? "no composer"), not the queued message")
+        settle(0.3)
+        attachHostedScreenshot(window, name: "queued-message-restored-as-draft")
+        XCTAssertNil(HostedAccessibility.element(in: window, label: "1 queued"))
+        try await Task.sleep(for: .seconds(1))
+        let startsAfter = UITestFixtureURLProtocol.answeredPaths.withLock { $0.filter { $0 == "/api/chat/start" }.count }
+        XCTAssertEqual(startsAfter, starts, "Returning sent the queued message")
+    }
+
     func testTheReadersRowStaysAtTheTopAcrossClosingAndOpening() async throws {
         let folding = try await openChatOnInnerDisplay()
         let window = folding.window
