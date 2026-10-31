@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "talaria-web ctl start, stop and status no longer freeze when a network mount is unreachable.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
