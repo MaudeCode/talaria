@@ -285,8 +285,10 @@ matches, it says the outcome could not be verified and offers **Check again**, w
 another update. The Agent confirmation dialog replaces it until **Update anyway** continues the same operation.
 When a Web update the tab started has finished while the tab still runs the old bundle, its record ends on
 "Talaria Web <version> is ready" with **Reload** (the `reload` action) as the only button, and the server does not
-add the separate refresh notice for that tab. Other open tabs get the **Refresh now** notice below, and so does the
-starting tab once a later Web update replaces the one it started.
+add the separate refresh notice for that tab. While a Web update is still installing or restarting, no tab that
+shows its Updating dialog gets the refresh notice either, even once the new bundle is served (TAL-1622). A tab
+that cannot see the update, any tab once the update fails, and other open tabs once it succeeds get the
+**Refresh now** notice below, and so does the starting tab once a later Web update replaces the one it started.
 
 ## Stale Web tab refresh notice
 

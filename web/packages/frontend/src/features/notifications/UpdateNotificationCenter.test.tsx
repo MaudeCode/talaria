@@ -16,6 +16,7 @@ vi.mock('@tanstack/react-router', () => ({ useNavigate: () => vi.fn() }))
 vi.mock('../toast/toast', () => ({ dismissToast: vi.fn(), removeToast: vi.fn(), showRichToast: vi.fn(), showToast: vi.fn() }))
 vi.mock('../notices/ServerStoppedOverlay', () => ({ ServerStoppedOverlay: () => null }))
 import * as api from '../../api/endpoints'
+import { showRichToast } from '../toast/toast'
 import { UpdateNotificationCenterButton, UpdateNotificationProvider, useUpdateProgress, type UpdateProgress } from './UpdateNotificationCenter'
 import { ApiError } from '../../contracts/common'
 import { keys } from '../../api/queryKeys'
@@ -100,6 +101,27 @@ describe('UpdateNotificationProvider Updating dialog (TAL-1138)', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: 'Reload' }))
     expect(api.performUpdateNotificationAction).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000302', 'reload')
     await waitFor(() => { expect(reload).toHaveBeenCalledOnce() })
+  })
+
+  /** TAL-1622: the server holds the refresh notice back while the dialog shows; the tab shows it once the server sends it. */
+  it('shows no refresh toast over a Web update whose build changed mid-update, and shows it once the update fails', async () => {
+    const WEB = ['Installing', 'Restarting Talaria Web', 'Ready']
+    const web = (overrides: Partial<UpdateNotification>) => record({ id: '00000000-0000-4000-8000-000000000303', target: 'webui', title: 'Talaria Web update', ...overrides })
+    const refresh = record({
+      id: '00000000-0000-4000-8000-000000000304', kind: 'web_refresh', target: 'webui', phase: 'refresh_required', severity: 'warning',
+      persistent: true, requires_acknowledgement: true, requires_interaction: true, can_dismiss: false, destination: null, steps: [], presents_dialog: false, dialog_close: 'close',
+      title: 'Talaria Web was updated', message: 'Refresh this tab to load the new version.', actions: [{ id: 'reload', label: 'Refresh now', style: 'primary', acknowledges: false }],
+    })
+    const refreshToasts = () => vi.mocked(showRichToast).mock.calls.filter(([toast]) => toast.id === `server-${refresh.id}`)
+    vi.mocked(showRichToast).mockClear()
+    await renderProvider()
+    await serve([web({ active: true, steps: steps(WEB, 0) })])
+    await serve([web({ phase: 'restarting', active: true, steps: steps(WEB, 1) })])
+    expect(stepTexts('Talaria Web')).toEqual(WEB)
+    expect(refreshToasts()).toEqual([])
+    const failed = web({ phase: 'failed', presents_dialog: false, dialog_close: 'close', message: 'The update could not be completed.', steps: steps(WEB, 1, 'failed') })
+    await serve([refresh, failed], failed)
+    expect(refreshToasts()).toMatchObject([[{ title: 'Talaria Web was updated', ttl: 0, dismissible: false, actions: [{ id: 'reload', label: 'Refresh now' }] }]])
   })
 
   it('opens for an Agent update the server presents and closes itself once the Agent responds', async () => {
