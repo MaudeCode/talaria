@@ -30,7 +30,6 @@ it("atomically caps cumulative publisher states while allowing updates and revoc
   expect(await backend.mutation(internal.publishers.acceptSnapshot, { ...request("update"), snapshotId: "update", states: [{ ...state("session-0", 2), title: "Updated" }] })).toEqual({ status: "accepted" });
   expect(await backend.mutation(internal.subscriptions.revokePublisher, { userId: "user", publisherId: "https://hermes.example", now })).toEqual({ ok: true });
   expect(await backend.run((ctx) => ctx.db.query("publisherGrants").first())).toBeNull();
-  await backend.finishAllScheduledFunctions(vi.runAllTimers);
 });
 
 it.each(["all_running", "per_session"] as const)("expires abandoned background state without promoting retained completion (%s)", async (mode) => {
@@ -57,7 +56,6 @@ it.each(["all_running", "per_session"] as const)("expires abandoned background s
   const end = jobs.find((job) => job.kind === "live_activity_end")!;
   expect(end).toBeDefined();
   expect(JSON.parse(end.request.payloadJson).aps).not.toHaveProperty("content-state");
-  await backend.finishAllScheduledFunctions(vi.runAllTimers);
 });
 
 it.each(["all_running", "per_session"] as const)("keeps unconfirmed background activity stale after its publisher lease expires (%s)", async (mode) => {
@@ -85,7 +83,6 @@ it.each(["all_running", "per_session"] as const)("keeps unconfirmed background a
   expect(makeAggregate(await current(), Date.now(), true)).toMatchObject({ activeCount: 1, isFinal: false, rows: [{ phase: "running" }] });
   await publish("completed", "run-1", "session", "completed");
   expect(await current()).toEqual([]);
-  await backend.finishAllScheduledFunctions(vi.runAllTimers);
 });
 
 it("tombstone ingestion clears stale activity after its completion has been acknowledged", async () => {
@@ -103,15 +100,28 @@ it("tombstone ingestion clears stale activity after its completion has been ackn
   })).toEqual({ status: "accepted" });
   expect(await current()).toEqual([]);
   expect((await list())?.completions).toEqual([]);
-  await backend.finishAllScheduledFunctions(vi.runAllTimers);
 });
 
 // Tests drive delivery explicitly; queued workpool callbacks must not outlive their test.
-beforeEach(() => { vi.useFakeTimers(); });
-afterEach(() => { vi.useRealTimers(); });
+// Each test's backends drain on the fake clock, with APNs credentials blanked so drained jobs never reach transport.
+const backends: ReturnType<typeof convexTest>[] = [];
+beforeEach(() => {
+  vi.useFakeTimers();
+  for (const key of ["APNS_TEAM_ID", "APNS_KEY_ID", "APNS_PRIVATE_KEY"]) vi.stubEnv(key, "");
+});
+afterEach(async () => {
+  try {
+    for (const backend of backends.splice(0)) await backend.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(vi.getTimerCount(), "scheduled work left on the test clock").toBe(0);
+  } finally {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+  }
+});
 
 async function fixture() {
   const backend = convexTest(schema, modules);
+  backends.push(backend);
   workpoolTest.register(backend, "apnsWorkpool");
   const now = Date.now();
   await backend.run(async (ctx) => {
@@ -466,5 +476,4 @@ it("keeps terminal history and acknowledgement while the session activity still 
   await publish("completed", "run-1", "session", "running");
   await publish("completed", "run-1", "session", "completed");
   expect((await list())?.completions).toEqual([]);
-  await backend.finishAllScheduledFunctions(vi.runAllTimers);
 });
