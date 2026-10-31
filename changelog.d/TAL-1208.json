@@ -1,0 +1,3 @@
+{
+  "entries": [{"category": "Fixed", "summary": "Talaria Web no longer rewrites its saved startup data every few seconds, which removes a recurring pause while you work and while replies stream.", "highlight": false, "components": ["web"]}]
+}

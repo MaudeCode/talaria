@@ -3,7 +3,7 @@ import { z, type ZodType } from 'zod'
 import { isApiError } from '../contracts/common'
 import { ProfilesSchema, ProjectsSchema, ReasoningStatusSchema, SessionEnvelopeSchema, SessionsListSchema, SettingsSchema, WorkspacesSchema } from '../contracts'
 import { FEEDBACK_DRAFT_KEY } from '../contracts/persisted'
-import { readPersisted, readPersistedJson, removePersisted, removePersistedByPrefix, writePersisted, writePersistedJson } from '../lib/persisted'
+import { readPersisted, readPersistedJson, removePersisted, removePersistedByPrefix, writePersisted } from '../lib/persisted'
 import { randomHex } from '../lib/randomHex'
 
 /**
@@ -62,10 +62,10 @@ function restoreSnapshot(qc: QueryClient, generation: string | null): void {
 
 function persistSnapshot(qc: QueryClient, generation: string | null): void {
   const keep = (q: Query) => q.state.status === 'success' && snapshotSchema(q.queryKey) !== null
-  let state = { ...dehydrate(qc, { shouldDehydrateQuery: keep }), generation }
+  let json = JSON.stringify({ ...dehydrate(qc, { shouldDehydrateQuery: keep }), generation })
   // Over budget: the transcript is the only entry that grows; drop it and keep the shell queries.
-  if (JSON.stringify(state).length > SNAPSHOT_LIMIT) state = { ...dehydrate(qc, { shouldDehydrateQuery: (q) => keep(q) && q.queryKey[1] !== 'detail' }), generation }
-  if (JSON.stringify(state).length <= SNAPSHOT_LIMIT && readPersisted(GENERATION_KEY) === generation) writePersistedJson(SNAPSHOT_KEY, state)
+  if (json.length > SNAPSHOT_LIMIT) json = JSON.stringify({ ...dehydrate(qc, { shouldDehydrateQuery: (q) => keep(q) && q.queryKey[1] !== 'detail' }), generation })
+  if (json.length <= SNAPSHOT_LIMIT && readPersisted(GENERATION_KEY) === generation) writePersisted(SNAPSHOT_KEY, json)
 }
 
 export function createQueryClient(): QueryClient {
@@ -114,6 +114,8 @@ export function createQueryClient(): QueryClient {
     const unsubscribe = qc.getQueryCache().subscribe((ev) => {
       if (ev.type !== 'updated' || ev.action.type !== 'success') return
       if (!isCurrent()) return
+      // Polled queries outside the snapshot succeed every few seconds; only a kept query can change what gets written.
+      if (snapshotSchema((ev.query as Query).queryKey) === null) return
       window.clearTimeout(timer)
       timer = window.setTimeout(persist, 500)
     })
