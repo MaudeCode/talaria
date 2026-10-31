@@ -88,3 +88,68 @@ test('Sidebar feedback button is opt-in and sits above Notifications in the rail
     await page.request.post('/api/settings', { data: { show_sidebar_feedback: false } })
   }
 })
+
+/** TAL-1596: attachments stage before the optimistic send; a refusal keeps them and a refused file says so. */
+const OPTIONS = { attachments: { enabled: true, videoAllowed: true, maxCount: 5, maxVideoCount: 1, maxImageBytes: 10_000_000, maxVideoBytes: 20_000_000, maxVideoSeconds: 120, acceptedTypes: ['image/png', 'image/jpeg', 'image/heic', 'image/webp', 'video/mp4', 'video/quicktime', 'video/webm'] } }
+const ATTACHMENT_ID = '3b241101-e2bb-4255-8caf-4136c566a962'
+
+test('Send feedback stages an attachment, closes at once, and keeps it across a refused send', async ({ page, errors }, testInfo) => {
+  await page.route('**/api/feedback/options', (route) => route.fulfill({ json: OPTIONS }))
+  let upload: Route | null = null
+  await page.route('**/api/feedback/attachments', (route) => { upload = route })
+  const submits: Route[] = []
+  await page.route('**/api/feedback/submit', (route) => { submits.push(route) })
+  await page.goto('/settings/help')
+  await settle(page)
+  await page.getByRole('button', { name: 'Send feedback' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Send feedback' })
+  await dialog.getByRole('textbox', { name: 'Title' }).fill('Thread list jumps after a reply')
+  await dialog.getByRole('textbox', { name: 'Details' }).fill('The list scrolls to the top when a reply arrives.')
+  const png = Buffer.from(await page.evaluate(async () => {
+    const canvas = document.createElement('canvas')
+    canvas.width = 640
+    canvas.height = 400
+    const ctx = canvas.getContext('2d')!
+    ctx.fillStyle = '#1f6feb'
+    ctx.fillRect(0, 0, 640, 400)
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(40, 40, 360, 48)
+    const blob = await new Promise<Blob>((resolve) => { canvas.toBlob((b) => { resolve(b!) }, 'image/png') })
+    return Array.from(new Uint8Array(await blob.arrayBuffer()))
+  }))
+  await page.locator('input[data-feedback-picker]').setInputFiles({ name: 'thread-list.png', mimeType: 'image/png', buffer: png })
+  await expect(dialog.getByRole('button', { name: 'Uploading… thread-list.png' })).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath('feedback-attachment-uploading.png') })
+
+  // Send while the upload is still running: the dialog closes now and the report waits for the file.
+  await dialog.getByRole('button', { name: 'Send', exact: true }).click()
+  await expect(dialog).toBeHidden()
+  await expect(page.getByText('Feedback sent')).toBeVisible()
+  await expect.poll(() => upload !== null).toBe(true)
+  expect(submits).toHaveLength(0)
+  await upload!.fulfill({ json: { attachmentId: ATTACHMENT_ID, contentType: 'image/png', bytes: png.length } })
+  await expect.poll(() => submits.length).toBe(1)
+  expect(submits[0]!.request().postDataJSON()).toMatchObject({ attachmentIds: [ATTACHMENT_ID], client: { platform: 'web' } })
+  await submits[0]!.fulfill({ status: 503, json: { error: 'feedback_unavailable' } })
+
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByRole('textbox', { name: 'Title' })).toHaveValue('Thread list jumps after a reply')
+  await expect(dialog.getByRole('button', { name: 'Enlarge thread-list.png' })).toBeVisible()
+  await expect(page.getByText("Feedback isn't available on this server.")).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('feedback-attachment-rolled-back.png') })
+
+  // Let the error toast leave so the result toast below is the one on screen.
+  await expect(page.getByText("Feedback isn't available on this server.")).toBeHidden()
+  await dialog.getByRole('button', { name: 'Send', exact: true }).click()
+  await expect(dialog).toBeHidden()
+  await expect.poll(() => submits.length).toBe(2)
+  expect(submits[1]!.request().postDataJSON()).toEqual(submits[0]!.request().postDataJSON())
+  await submits[1]!.fulfill({ json: { status: 'sent', reportId: 'synthetic-report-1', attachments: [{ attachmentId: ATTACHMENT_ID, status: 'refused', reason: 'quota' }] } })
+  const toast = page.getByText('Sent without attachments')
+  await expect(toast).toBeVisible()
+  expect((await toast.boundingBox())!.height).toBeLessThan(30)
+  await page.screenshot({ path: testInfo.outputPath('feedback-sent-without-attachments.png') })
+  // The refusal is the case under test.
+  errors.splice(0, errors.length, ...errors.filter((e) => !/api\/feedback\/submit|status of 503/.test(e)))
+})
