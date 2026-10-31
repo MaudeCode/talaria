@@ -25,7 +25,7 @@ test('shows the session\'s Agent notices and follows the server\'s live list', a
     await route.fulfill({ headers: { 'content-type': 'text/event-stream' }, body: `event: initial\ndata: ${JSON.stringify({ session_id: sid })}\n\n` })
   })
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: {
-    session_id: sid, title: 'Plan the week', active_stream_id: 'notice-run', is_streaming: true, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true,
+    session_id: sid, title: 'Plan the week', active_stream_id: 'notice-run', is_streaming: true, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, can_share: true,
     transcript_seq: null, messages: [{ role: 'user', id: 1, content: 'Plan the week', _turn_id: 'notice-run' }],
     notices,
   } } }))

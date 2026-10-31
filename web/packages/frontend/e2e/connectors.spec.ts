@@ -119,7 +119,7 @@ test('the Connectors entry follows the server flag (TAL-818)', async ({ page }, 
     const shot = testInfo.project.name
     const sid = 'connect-card'
     await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: {
-      session_id: sid, title: 'Connect Gmail', active_stream_id: 'connect-run', is_streaming: true, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true,
+      session_id: sid, title: 'Connect Gmail', active_stream_id: 'connect-run', is_streaming: true, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, can_share: true,
       transcript_seq: null, messages: [{ role: 'user', id: 1, content: 'Read my latest Gmail', _turn_id: 'connect-run' }],
     } } }))
     await page.route('**/api/chat/stream/status?**', (route) => route.fulfill({ json: { active: true, stream_id: 'connect-run', replay_available: false } }))

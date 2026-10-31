@@ -1,0 +1,3 @@
+{
+  "entries": [{"category": "Fixed", "summary": "Claude Code conversations no longer offer a Share action that always fails.", "highlight": false, "components": ["web"]}]
+}

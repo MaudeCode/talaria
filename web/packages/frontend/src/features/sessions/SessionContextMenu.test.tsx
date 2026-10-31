@@ -9,7 +9,7 @@ import { SessionContextMenu } from './SessionContextMenu'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 
-const writable: SessionRow = { session_id: 'mine', title: 'Mine', is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, source_kind: 'webui', is_messaging_session: false, sort_ts: 0 }
+const writable: SessionRow = { session_id: 'mine', title: 'Mine', is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, can_share: true, source_kind: 'webui', is_messaging_session: false, sort_ts: 0 }
 
 async function menuItems(row: SessionRow): Promise<string[]> {
   render(<QueryClientProvider client={new QueryClient()}><SessionContextMenu row={row} active={false} /></QueryClientProvider>)
@@ -28,6 +28,20 @@ describe('SessionContextMenu', () => {
     const items = await menuItems({ ...writable, session_id: 'import', read_only: true, can_branch: false })
     for (const offered of ['Pin', 'Duplicate', 'Archive']) expect(items.some((t) => t.startsWith(offered)), offered).toBe(true)
     for (const refused of ['Rename', 'Move', 'Delete']) expect(items.some((t) => t.startsWith(refused)), refused).toBe(false)
+  })
+
+  it('hides Share and Refresh snapshot where the server refuses sharing, keeping copy and revoke (TAL-732)', async () => {
+    const items = await menuItems({ ...writable, session_id: 'claude', source_kind: 'claude_code', can_share: false, share_url: '/share/old' })
+    for (const refused of ['Share publicly', 'Refresh snapshot']) expect(items, refused).not.toContain(refused)
+    for (const offered of ['Copy share link', 'Revoke public link']) expect(items, offered).toContain(offered)
+  })
+
+  it('offers Share where the server allows sharing (TAL-732)', async () => {
+    expect(await menuItems(writable)).toContain('Share publicly')
+  })
+
+  it('offers Refresh snapshot on a shared row the server allows sharing (TAL-732)', async () => {
+    expect(await menuItems({ ...writable, session_id: 'shared', share_url: '/share/old' })).toContain('Refresh snapshot')
   })
 })
 

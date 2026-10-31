@@ -14,7 +14,7 @@ test('Stop uses the shared action in Background work and Agents and waits for co
     result_available: false, child_sessions: [], exit_code: null, agents: null, pinned: !completed, dismissible: false, active: !completed,
   })
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: {
-    session_id: sid, title: 'Background work', workspace: '/repo', is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, transcript_seq: null,
+    session_id: sid, title: 'Background work', workspace: '/repo', is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, can_share: true, transcript_seq: null,
     messages: [{ role: 'user', id: 1, content: 'Check the tests and review the logs.' }],
   } } }))
   await page.route('**/api/background/tasks?**', (route) => {

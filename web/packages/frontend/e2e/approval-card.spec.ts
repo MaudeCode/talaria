@@ -7,13 +7,13 @@ const test = base.extend<{ approval: { send: (event: string, data: unknown) => v
   approval: async ({ page }, runFixture) => {
     const sid = 'approval-dismiss'
     await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: {
-      session_id: sid, title: 'Clean the build', active_stream_id: 'approval-run', is_streaming: true, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true,
+      session_id: sid, title: 'Clean the build', active_stream_id: 'approval-run', is_streaming: true, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, can_share: true,
       transcript_seq: null, messages: [{ role: 'user', id: 1, content: 'Clean the build', _turn_id: 'approval-run' }],
     } } }))
     const sessionList = await page.request.get('/api/sessions')
     expect(sessionList.ok()).toBe(true)
     const metadata = await sessionList.json()
-    await page.route(/\/api\/sessions(\?|$)/, (route) => route.fulfill({ json: { ...metadata, sessions: [{ session_id: sid, title: 'Clean the build', is_streaming: true, read_only: false, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, can_branch: true, source_kind: 'webui', is_messaging_session: false, sort_ts: 1, sidebar_group: 'recent' }], sidebar_groups: [{ kind: 'recent', title: 'Recent' }] } }))
+    await page.route(/\/api\/sessions(\?|$)/, (route) => route.fulfill({ json: { ...metadata, sessions: [{ session_id: sid, title: 'Clean the build', is_streaming: true, read_only: false, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, can_share: true, can_branch: true, source_kind: 'webui', is_messaging_session: false, sort_ts: 1, sidebar_group: 'recent' }], sidebar_groups: [{ kind: 'recent', title: 'Recent' }] } }))
     await page.route('**/api/chat/stream/status?**', (route) => route.fulfill({ json: { active: true, stream_id: 'approval-run', replay_available: false } }))
     const responses: { choice: string }[] = []
     await page.route('**/api/approval/respond', async (route) => {

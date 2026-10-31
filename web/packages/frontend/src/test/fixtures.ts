@@ -7,7 +7,7 @@ export function sessionFixture(value: Partial<Session> & Pick<Session, 'session_
   return {
     title: 'Navigation fixture', is_streaming: false, source_kind: 'webui', is_messaging_session: false,
     sort_ts: 0, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true,
-    can_duplicate: true, ...value,
+    can_duplicate: true, can_share: true, ...value,
   }
 }
 

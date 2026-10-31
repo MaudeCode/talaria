@@ -583,6 +583,8 @@ describe('session lifecycle over HTTP', () => {
       for (const [path, body] of [['/api/session/pin', { session_id: sid, pinned: false }], ['/api/session/archive', { session_id: sid, archived: false }], ['/api/session/duplicate', { session_id: sid }]] as const) {
         expect((await post(s, path, body)).status === 200, `${sid} ${path}`).toBe(allowed)
       }
+      // Share refuses only a Claude Code import (TAL-732), so both stay shareable.
+      for (const payload of [detail, hit]) expect(payload.can_share, sid).toBe(true)
     }
   })
 

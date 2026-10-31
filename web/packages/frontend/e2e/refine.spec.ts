@@ -15,7 +15,7 @@ async function noTurns(page: import('@playwright/test').Page): Promise<string[]>
 test('/refine in an open chat runs on the server and shows the review notice above the composer; no turn starts (TAL-902)', async ({ page }, testInfo) => {
   const sid = 'refine-chat'
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: {
-    session_id: sid, title: 'Deploy', active_stream_id: null, is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true,
+    session_id: sid, title: 'Deploy', active_stream_id: null, is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, can_share: true,
     transcript_seq: null, messages: [{ role: 'user', id: 1, content: 'Deploy with the blue script' }, { role: 'assistant', id: 2, content: 'Deployed.' }],
   } } }))
   const executed: unknown[] = []

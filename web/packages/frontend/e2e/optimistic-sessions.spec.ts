@@ -5,7 +5,7 @@ test.use({ serviceWorkers: 'block' })
 /** Writes stay held while the optimistic result is observed in the real build. */
 test('session rename and delete show their result at once, then adopt the canonical answer', async ({ page }, info) => {
   const now = Math.floor(Date.now() / 1000)
-  const base = { sort_ts: now, is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, source_kind: 'webui', is_messaging_session: false }
+  const base = { sort_ts: now, is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, can_share: true, source_kind: 'webui', is_messaging_session: false }
   const session = { ...base, session_id: 'intent-fixture', title: 'Original conversation' }
   const doomed = { ...base, session_id: 'doomed-fixture', title: 'Conversation to delete' }
   let title = session.title
