@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Virtualize long transcripts stays on after a reload.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

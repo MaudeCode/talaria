@@ -473,6 +473,8 @@ export class SettingsStore {
         current[k] = v
         if (SETTINGS_SPEECH_KEYS.has(k)) appliedSpeechKeys.add(k)
       }
+      // An explicit toggle records the opt-in marker so `fromRaw` keeps it on after a reload.
+      if ('virtualize_transcript' in settings) current.virtualize_transcript_optin = current.virtualize_transcript
       let skinValue = pendingSkin
       if (themeExplicit && !skinExplicit) {
         const rawTheme = typeof pendingTheme === 'string' ? pendingTheme.trim().toLowerCase() : ''
