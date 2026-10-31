@@ -101,6 +101,7 @@ export const apnsRequestValidator = v.object({
   pushType: v.union(v.literal("alert"), v.literal("liveactivity")),
   priority: v.union(v.literal("5"), v.literal("10")),
   payloadJson: v.string(),
+  collapseId: v.optional(v.string()),
 });
 
 export const apnsDeliveryResultValidator = v.object({

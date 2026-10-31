@@ -180,10 +180,13 @@ describe("ActivityKit payloads", () => {
       environment: "sandbox",
       alert: { title: "Done", body: "Build relay" },
       row: aggregate.rows[0]!,
+      threadId: "chat-1",
     });
 
     expect(request.pushType).toBe("alert");
+    expect(request.collapseId).toBe("chat-1");
     expect(request.payload).toMatchObject({
+      aps: { "thread-id": "chat-1" },
       publisherId: "publisher-1",
       sessionId: "session-1",
       deepLink: "/sessions/session-1",

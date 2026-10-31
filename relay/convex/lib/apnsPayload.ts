@@ -7,6 +7,8 @@ export interface ApnsRequest {
   pushType: "alert" | "liveactivity";
   priority: "5" | "10";
   payload: Record<string, unknown>;
+  // Replaces the delivered alert with the same ID; unset falls back to the per-job ID.
+  collapseId?: string;
 }
 
 const maximumContentStateBytes = 3_500;
@@ -144,6 +146,8 @@ export function makeNotification(input: {
   environment: ApsEnvironment;
   alert: ActivityAlert;
   row: AggregateRow;
+  // One ID per chat: groups its alerts and lets the newest replace the previous one.
+  threadId: string;
 }): ApnsRequest {
   return {
     token: input.token,
@@ -151,10 +155,12 @@ export function makeNotification(input: {
     environment: input.environment,
     pushType: "alert",
     priority: "10",
+    collapseId: input.threadId,
     payload: {
       aps: {
         alert: { title: input.alert.title, body: input.alert.body },
         sound: "default",
+        "thread-id": input.threadId,
       },
       publisherId: input.row.publisherId,
       sessionId: input.row.sessionId,

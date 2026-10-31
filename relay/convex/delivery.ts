@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 
 import { retainedStates } from "./completions";
+import { sha256 } from "./lib/crypto";
 import { activityPhase, isCurrentActivityState, isTerminalPhase } from "./lib/model";
 import { internal } from "./_generated/api";
 import type { DataModel, Doc } from "./_generated/dataModel";
@@ -226,6 +227,7 @@ async function enqueueJob(
       pushType: input.request.pushType,
       priority: input.request.priority,
       payloadJson: JSON.stringify(input.request.payload),
+      collapseId: input.request.collapseId,
     },
     aggregate: input.aggregate,
     status: "queued",
@@ -590,6 +592,8 @@ export const recompute = internalMutation({
               environment: device.apsEnvironment,
               alert,
               row: rowForState(notificationState),
+              // The relay keys a chat by publisher and session (one sessionStates row each); base64url SHA-256 fits APNs' 64-byte limit.
+              threadId: await sha256(JSON.stringify(["alert", notificationState.publisherId, notificationState.sessionId])),
             }),
             stateFingerprint: `notification:${notificationState.eventId}:${device.deviceId}`,
             now,

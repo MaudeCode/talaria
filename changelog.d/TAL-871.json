@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Relay alerts now group by chat in Notification Center, and each new alert for a chat replaces that chat's previous one instead of stacking.",
+      "highlight": false,
+      "components": ["relay"]
+    }
+  ]
+}
