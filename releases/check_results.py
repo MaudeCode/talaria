@@ -34,8 +34,9 @@ def check(needs, stage, dry_run):
         if needs.get(name, {}).get("result") != "success":
             raise ValueError(f"required job {name} did not succeed")
     flags = needs["prepare"]["outputs"]
-    for component in ("app", "web", "relay"):
-        flag = flags.get(component + "_changed")
+    # The feedback bridge image builds and publishes exactly when Relay does.
+    for component, selection in (("app", "app"), ("web", "web"), ("relay", "relay"), ("bridge", "relay")):
+        flag = flags.get(selection + "_changed")
         if flag not in ("true", "false"):
             raise ValueError("missing component selection")
         if stage == "publication":

@@ -29,7 +29,7 @@ def authenticate(run, attempt, metadata, jobs, log):
             or not re.fullmatch(r"[a-f0-9]{40}", metadata.get("head_sha", ""))):
         raise ValueError("recovery requires a failed main-branch production cutover")
     for name, conclusion in (("prepare", "success"), ("build-gate", "success"), ("relay-publish", "success"),
-                             ("web-publish", "success"), ("Publish iOS app", "failure"), ("publish-set", "failure")):
+                             ("bridge-publish", "success"), ("web-publish", "success"), ("Publish iOS app", "failure"), ("publish-set", "failure")):
         matching = [job for job in jobs if job["name"] == "release / " + name]
         if (len(matching) != 1 or matching[0].get("conclusion") != conclusion
                 or matching[0].get("run_attempt") != int(attempt) or matching[0].get("run_id") != int(run)):
@@ -41,7 +41,7 @@ def authenticate(run, attempt, metadata, jobs, log):
     if not records or any(value != records[0] for value in records):
         raise ValueError("missing or conflicting original publication inputs")
     needs = records[0]
-    if set(needs) != {"prepare", "build-gate", "relay-publish", "web-publish", "app-publish"}:
+    if set(needs) != {"prepare", "build-gate", "relay-publish", "bridge-publish", "web-publish", "app-publish"}:
         raise ValueError("unexpected original publication dependencies")
     references = {}
     for name, job in needs.items():
@@ -57,10 +57,11 @@ def authenticate(run, attempt, metadata, jobs, log):
                     or not re.fullmatch(r"[a-f0-9]{64}", reference.get("sha256", ""))):
                 raise ValueError("original artifact identity differs from its run")
             references[key] = reference
-    # Recovery republishes only the App; the Web OCI image is authenticated above but never restored.
+    # Recovery republishes only the App; the Web and bridge OCI images are authenticated above but never restored.
     references.pop("web-image", None)
-    required = {"release-plan", "contract-receipts", "previous-app-receipts", "agent-receipts", "relay-build", "web-build",
-                "app-build", "ios-ipa", "ios-dsyms", "relay-publish", "web-publish"}
+    references.pop("bridge-image", None)
+    required = {"release-plan", "contract-receipts", "previous-app-receipts", "agent-receipts", "relay-build", "bridge-build",
+                "web-build", "app-build", "ios-ipa", "ios-dsyms", "relay-publish", "bridge-publish", "web-publish"}
     outputs = needs["prepare"]["outputs"]
     if (set(references) != required or any(outputs.get(name + "_changed") != "true" for name in ("app", "web", "relay"))
             or not re.fullmatch(r"[a-f0-9]{40}", outputs.get("source", ""))):

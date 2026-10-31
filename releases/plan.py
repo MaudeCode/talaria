@@ -137,6 +137,14 @@ def assemble(plan, receipts, notes, previous=None, *, complete=False):
                 app_digest = receipt.get("ipaSha256")
             elif receipt.get("deploymentId") != plan["components"][name]["deploymentId"]:
                 raise ValueError("Relay build target differs from plan")
+        if gate in ("buildBridge", "publishBridge"):
+            relay = document["components"]["relay"]
+            if not plan["changed"]["relay"] or receipt.get("tag") != relay["tag"]:
+                raise ValueError("bridge receipt must identify the changed Relay tag")
+            if gate == "buildBridge":
+                relay["bridgeImage"] = receipt["bridgeImage"]
+            elif receipt.get("bridgeImage") != relay.get("bridgeImage"):
+                raise ValueError("published feedback bridge image differs from its build")
         if gate == "deployRelay":
             relay = document["components"]["relay"]
             if receipt.get("deploymentId") != relay["deploymentId"] or receipt.get("deployedRevision") != relay["sourceRevision"]:

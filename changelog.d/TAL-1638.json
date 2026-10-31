@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Each Relay release now publishes a matching, versioned feedback bridge image.",
+      "highlight": false,
+      "components": ["relay"]
+    }
+  ]
+}

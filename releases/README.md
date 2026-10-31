@@ -40,6 +40,12 @@ SHA or published image digest (or both). It is an external dependency, not a
 fourth component. The App marketing version and build number, Web image digest,
 and Relay source/deployment identity are the rollback inputs.
 
+A changed Relay also records `bridgeImage`: the feedback bridge image its
+release built and published, `ref` `ghcr.io/maudecode/talaria-feedback-bridge:X.Y.Z`
+at Relay's plain version and `digest` its registry manifest digest. Evidence
+then includes `buildBridge` and, in a `complete` document, `publishBridge`.
+Sets published before the bridge joined the release carry neither.
+
 Run `scripts/check-releases` for isolated synthetic validation. It installs the
 pinned release-tool dependencies in a disposable virtual environment and
 requires no accounts, credentials, tags or running services.
@@ -202,6 +208,17 @@ The Web image build caches its layers in the GitHub Actions cache
 (`type=gha`, scope `talaria-web-release`); `actions/github-script` hands the
 runtime token Buildx needs, masked, to that one build step.
 
+`bridge-build` builds the feedback bridge image in its own job beside
+`relay-build`, so it never lengthens it. `bridge-publish` copies those OCI bytes
+to `ghcr.io/maudecode/talaria-feedback-bridge:<Relay X.Y.Z>` after the Relay
+deployment, beside `web-publish` and `app-publish`, and only it holds
+`packages: write` for that image. Web and the bridge share `publish.py`'s
+`publish_image`: GHCR tags are immutable, so a tag that already serves the
+built digest is left alone on a retry and one serving another manifest fails
+the job; the tag is then read back at the built digest. The release is the only
+publisher of the bridge image; `relay-bridge-image.yml` builds and checks it on
+pull requests and main pushes without pushing.
+
 One `web-publish` job publishes Web: npm first, through the OIDC token npm
 trusted publishing accepts, then the GHCR image once npm's readback matches the
 built tarballs. It runs the workflow's own `publish.py`, as Relay does, so a
@@ -218,7 +235,7 @@ named `handoffs_<run>_<attempt>_<name>[.<name>...]`, and records the SHA-256
 with the run, attempt and workflow source (`GITHUB_SHA`) in the job outputs;
 the very next step uploads that directory with `actions/upload-artifact` under
 the name `put` reported. A job's last `put` reports every handoff the job
-staged, so the Web image, the IPA and the dSYMs each travel as their own
+staged, so the Web and bridge images, the IPA and the dSYMs each travel as their own
 artifact and receipt assembly never downloads them. `get` restores only
 forwarded producer outputs whose run and source match the current job and whose
 attempt is not in the future; it finds the one unexpired artifact of that run
@@ -233,7 +250,7 @@ Recovery addresses only the authenticated original `production-cutover` run.
 
 The repository is public, so any signed-in GitHub user can download its
 artifacts. Handoffs carry only public build outputs and receipts: the plan,
-notes, receipts, npm tarballs, the OCI image that GHCR publishes, and the
+notes, receipts, npm tarballs, the OCI images that GHCR publishes, and the
 App Store-signed IPA and dSYMs. Credentials never enter a handoff. Diagnostics,
 the candidate and completed manifests, fuzz results (30 days), UI performance
 metrics (30 days) and failed UI performance result bundles (14 days) are plain
@@ -262,7 +279,9 @@ tail unless `/health` answers 200 within 60 seconds.
 `build.py COMPONENT --plan PLAN --output NEW_DIRECTORY` builds without publishing:
 an unsigned App archive with verified bundle versions, the Web contracts and
 server npm tarballs plus a multi-platform OCI archive, or checked Relay functions validated against an
-anonymous local backend. Use an output directory outside the source checkout.
+anonymous local backend. `build.py bridge` builds Relay's feedback bridge as a linux/amd64 OCI archive through
+`relay/bridge/build-image.sh`, which loads those exact bytes and requires a non-root user, exit 2 naming `RELAY_URL`
+when unconfigured, and the `smoke.ts` sanitization check; the receipt records `bridgeImage` with its digest. Use an output directory outside the source checkout.
 Local execution writes `build-result.json`; Actions execution additionally writes
 a receipt tied to the actual run. An unsigned App archive is not an installable
 device-validation build.
@@ -368,8 +387,8 @@ or stale predecessor once a release set exists. Changed tags must point to
 The cutover repeats every gate (selected-source and previous-App contracts,
 the App's hosted unit tests on the release source when the App ships, reused
 from main CI when it already passed them there, pinned Agent compatibility, one
-job per supported release, component builds), then deploys Relay, publishes Web and
-uploads the App at once, and publishes the manifest last. Nothing publishes
+job per supported release, component builds), then deploys Relay, publishes Web,
+the feedback bridge image and uploads the App at once, and publishes the manifest last. Nothing publishes
 before `build-gate` has every gate and build. The ordering keeps only the
 constraints that hold (TAL-414):
 
@@ -377,6 +396,8 @@ constraints that hold (TAL-414):
   Relay serves the previous Web and App, and the contract gates test the new
   Web and App against the new Relay's fixtures, but nothing tests them against
   the previous Relay, which serves them until the deployment succeeds.
+- The feedback bridge image publishes after the Relay deployment it ships with,
+  beside Web and the App; neither waits for it.
 - Web and the App publish at once. The App was tested live against every
   supported Web, the latest completed Web releases included, and the Web
   against the previous App (`previousAppContracts`); neither needs the other
@@ -393,7 +414,7 @@ longer stop each other. Either can then be public without the manifest, and
 both work with the released peers. **Re-run failed jobs** on the same run
 retries the failed one, whose retry accepts the identical bytes already
 published, and then `publish-set`. The App-only recovery workflow still covers
-a failed App upload after Relay and Web succeeded.
+a failed App upload after Relay, the bridge image and Web succeeded.
 A `release-set.yml` dispatch with `dry_run=true` rehearses the same gates without
 publication credentials when a change to the release tooling needs it.
 Unchanged components skip their build/publication jobs. Required

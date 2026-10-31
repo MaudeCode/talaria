@@ -8,8 +8,9 @@ from cli import load, write
 
 
 RECEIPT_DIRECTORIES = ("contract-receipts", "previous-app-receipts", "agent-receipts")
-BUILD_RECEIPTS = ("app-build", "web-build", "relay-build", "app-publish", "web-publish", "relay-publish")
-# The handoffs assembly reads: the plan (with its receipts and notes), receipts, and web-build's npm tarballs.
+BUILD_RECEIPTS = ("app-build", "web-build", "relay-build", "bridge-build", "app-publish", "web-publish", "relay-publish", "bridge-publish")
+# The handoffs assembly reads: the plan (with its receipts and notes), receipts, and web-build's npm tarballs; never the
+# web-image or bridge-image OCI archives.
 HANDOFFS = ("release-plan", *RECEIPT_DIRECTORIES, *BUILD_RECEIPTS)
 
 
@@ -22,7 +23,7 @@ def collect(source, destination):
         if path.is_file():
             paths.append(path)
     gates = {"mainCI", "signedTags", "currentContracts", "previousAppContracts", "agentCompatibility",
-             "buildApp", "buildWeb", "buildRelay", "uploadApp", "publishWeb", "deployRelay"}
+             "buildApp", "buildWeb", "buildRelay", "buildBridge", "uploadApp", "publishWeb", "deployRelay", "publishBridge"}
     for path in paths:
         value = load(path)
         if value.get("gate") not in gates:

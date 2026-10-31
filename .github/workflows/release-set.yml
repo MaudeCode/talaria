@@ -40,7 +40,8 @@ concurrency:
 # them, and `artifacts.py get` (job token, actions: read) downloads only forwarded producer outputs whose run,
 # attempt, source and SHA-256 match. Every gate and build starts as soon as prepare has the plan (TAL-414);
 # build-gate joins them all before anything publishes. Relay
-# deploys first, then Web and the App publish at once, and the manifest publishes last (releases/README.md).
+# deploys first, then Web, the App and the feedback bridge image publish at once, and the manifest publishes last
+# (releases/README.md).
 jobs:
   prepare:
     runs-on: ubuntu-latest
@@ -432,6 +433,53 @@ jobs:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
     outputs:
       artifacts: ${{ steps.store.outputs.artifacts }}
+  bridge-build:
+    # The Relay release's feedback bridge image, in its own job beside relay-build so it never lengthens it. Builds
+    # consume only the release plan; build-gate joins every gate and build before anything publishes.
+    needs: prepare
+    if: needs.prepare.outputs.relay_changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: ${{ needs.prepare.outputs.source }}
+        fetch-depth: 0
+    - uses: ./.github/actions/release-python
+    - name: Restore release-plan
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan'
+    - name: Build, load and check the linux/amd64 OCI image
+      run: '"$RELEASE_PYTHON" releases/build.py bridge --plan "$RUNNER_TEMP/release-plan/plan.json" --output "$RUNNER_TEMP/bridge-build"'
+    - name: Separate the OCI archive from the receipt
+      run: |
+        set -euo pipefail
+        mkdir "$RUNNER_TEMP/bridge-image"
+        mv "$RUNNER_TEMP/bridge-build/bridge.oci.tar" "$RUNNER_TEMP/bridge-image/"
+    # Two artifacts: receipt assembly downloads bridge-build without the OCI archive.
+    - name: Stage bridge-build for other jobs
+      id: store-build
+      run: '"$RELEASE_PYTHON" releases/artifacts.py put bridge-build "$RUNNER_TEMP/bridge-build"'
+    - uses: actions/upload-artifact@v7
+      with:
+        name: ${{ steps.store-build.outputs.handoff_name }}
+        path: ${{ steps.store-build.outputs.handoff_path }}
+        retention-days: 30
+        if-no-files-found: error
+    - name: Stage bridge-image for other jobs
+      id: store
+      run: '"$RELEASE_PYTHON" releases/artifacts.py put bridge-image "$RUNNER_TEMP/bridge-image"'
+    - uses: actions/upload-artifact@v7
+      with:
+        name: ${{ steps.store.outputs.handoff_name }}
+        path: ${{ steps.store.outputs.handoff_path }}
+        retention-days: 30
+        if-no-files-found: error
+    env:
+      RELEASE_NEEDS: ${{ toJSON(needs) }}
+    outputs:
+      artifacts: ${{ steps.store.outputs.artifacts }}
   web-build:
     # Builds consume only the release plan, so they run alongside the gates and each other; build-gate
     # joins every gate and build before anything publishes (TAL-319).
@@ -677,15 +725,9 @@ jobs:
       with:
         node-version-file: web/.nvmrc
         registry-url: https://registry.npmjs.org
-    - name: Require an npm CLI with trusted-publishing support and skopeo
-      run: |
-        set -euo pipefail
-        npm install --global npm@latest
-        if ! command -v skopeo >/dev/null; then
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends skopeo
-        fi
-        skopeo --version
+    - name: Require an npm CLI with trusted-publishing support
+      run: npm install --global npm@latest
+    - uses: ./.github/actions/skopeo
     - name: Publish the built npm packages and verify the readback
       run: |
         set -euo pipefail
@@ -711,6 +753,59 @@ jobs:
     - name: Stage web-publish for other jobs
       id: store
       run: '"$RELEASE_PYTHON" releases/artifacts.py put web-publish "$RUNNER_TEMP/web-publish"'
+    - uses: actions/upload-artifact@v7
+      with:
+        name: ${{ steps.store.outputs.handoff_name }}
+        path: ${{ steps.store.outputs.handoff_path }}
+        retention-days: 30
+        if-no-files-found: error
+    env:
+      RELEASE_NEEDS: ${{ toJSON(needs) }}
+    outputs:
+      artifacts: ${{ steps.store.outputs.artifacts }}
+  bridge-publish:
+    # After the Relay deployment it ships with, beside web-publish and app-publish. The release is the only publisher
+    # of ghcr.io/maudecode/talaria-feedback-bridge: an existing X.Y.Z tag must already serve the built digest.
+    needs:
+    - prepare
+    - build-gate
+    - relay-publish
+    - bridge-build
+    if: ${{ !cancelled() && !inputs.dry_run && needs.prepare.outputs.relay_changed == 'true' && needs.build-gate.result == 'success' && needs.relay-publish.result
+      == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: ${{ needs.prepare.outputs.source }}
+        fetch-depth: 0
+    - uses: ./.github/actions/release-python
+    - uses: ./.github/actions/skopeo
+    - name: Restore release-plan, bridge-build and bridge-image
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        "$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan bridge-build bridge-image
+        mv "$RUNNER_TEMP/bridge-image/bridge.oci.tar" "$RUNNER_TEMP/bridge-build/"
+    - name: Publish the OCI bytes at the Relay version and verify their readback
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        # The reviewed workflow owns publication code; component tags stay immutable.
+        git show "${GITHUB_WORKFLOW_SHA}:releases/publish.py" > "$RUNNER_TEMP/publish.py"
+        PYTHONPATH="$PWD/releases" "$RELEASE_PYTHON" "$RUNNER_TEMP/publish.py" bridge --plan "$RUNNER_TEMP/release-plan/plan.json" \
+          --build "$RUNNER_TEMP/bridge-build/receipt.json" --directory "$RUNNER_TEMP/bridge-build" \
+          --output "$RUNNER_TEMP/bridge-publish/receipt.json"
+    - name: Stage bridge-publish for other jobs
+      id: store
+      run: '"$RELEASE_PYTHON" releases/artifacts.py put bridge-publish "$RUNNER_TEMP/bridge-publish"'
     - uses: actions/upload-artifact@v7
       with:
         name: ${{ steps.store.outputs.handoff_name }}
@@ -774,6 +869,7 @@ jobs:
     - prepare
     - build-gate
     - relay-publish
+    - bridge-publish
     - web-publish
     - app-publish
     if: ${{ !cancelled() && !inputs.dry_run && needs.build-gate.result == 'success' }}
@@ -842,6 +938,7 @@ jobs:
     - app-hosted-tests-lookup
     - app-hosted-tests
     - relay-build
+    - bridge-build
     - web-build
     - app-dry-build
     - app-signed-build
