@@ -769,10 +769,12 @@ struct MessageComposerView: View {
 
     private func recordTwoRowComposerHeight(_ height: CGFloat, inputHeight: CGFloat?) {
         // Resolve both bounds in the same layout pass; the input binding can already describe the next one.
-        if !usesSingleLineShell, !usesOneRowCard, let inputHeight, inputHeight > 0 {
-            twoRowComposerHeight = height
-            twoRowInputHeight = inputHeight
-        }
+        guard !usesSingleLineShell, !usesOneRowCard, let inputHeight, inputHeight > 0 else { return }
+        // The text's cap is computed from these, so a sub-point wobble in the measured anchor (22 against
+        // 21.99999999999997) must not be recorded: each write would resize the text and measure it again, forever.
+        guard abs(height - twoRowComposerHeight) >= 0.5 || abs(inputHeight - twoRowInputHeight) >= 0.5 else { return }
+        twoRowComposerHeight = height
+        twoRowInputHeight = inputHeight
     }
 
     private var voiceButton: some View {
