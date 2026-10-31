@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Full-screen tables and diagrams in chat replies now open on a solid background in the current theme, above the sidebar, with smaller tables centred and diagrams sized to the screen.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

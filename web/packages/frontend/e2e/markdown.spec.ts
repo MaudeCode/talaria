@@ -62,6 +62,87 @@ test('Markdown lists keep their numbers and bullets', async ({ page }, testInfo)
   await expect(page.locator('.msg-body ul').first()).toHaveCSS('list-style-type', 'disc')
 })
 
+test('table and diagram fullscreen views are opaque and centre the table (TAL-1641)', async ({ page }, testInfo) => {
+  const rows = Array.from({ length: 80 }, (_, i) => `| Row ${i + 1} | ${i + 1} |`).join('\n')
+  const messages = [
+    { role: 'user', id: 1, content: 'Show the tables' },
+    { role: 'assistant', id: 2, content: `Small:\n\n| Fruit | Count |\n| --- | --- |\n| Apples | 3 |\n| Pears | 5 |\n\nLong:\n\n| Item | Value |\n| --- | --- |\n${rows}\n\n\`\`\`mermaid\ngraph TD\n  A[Start] --> B[Finish]\n\`\`\`` },
+  ]
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: {
+    session_id: 'markdown-fullscreen', title: 'Show the tables', messages: redactSessionData({ messages: hydrateAnchorActivityScenes(withTurnIds(messages), {}) }, true).messages,
+  } } }))
+  await page.goto('/session/markdown-fullscreen')
+  const answer = page.locator('[data-final-answer="1"]')
+  const tables = answer.locator('[data-streamdown="table-wrapper"]')
+  await expect(tables).toHaveCount(2)
+  const overlay = page.locator('[data-streamdown="table-fullscreen"]')
+  // The current theme's --bg, resolved to the same rgb() form as the overlay's computed background.
+  const themeBg = () => page.evaluate(() => {
+    const probe = document.body.appendChild(document.createElement('div'))
+    probe.style.background = 'var(--bg)'
+    const color = getComputedStyle(probe).backgroundColor
+    probe.remove()
+    return color
+  })
+  const layout = () => overlay.evaluate((el) => {
+    const table = el.querySelector('table')!
+    const scroller = table.parentElement!
+    // Centre against the scroller's content box: Streamdown pads it on three sides only.
+    const [t, b, pad] = [table.getBoundingClientRect(), scroller.getBoundingClientRect(), getComputedStyle(scroller)]
+    const s = { left: b.left + parseFloat(pad.paddingLeft), right: b.right - parseFloat(pad.paddingRight), top: b.top + parseFloat(pad.paddingTop), bottom: b.bottom - parseFloat(pad.paddingBottom) }
+    return { dx: (t.left + t.right - s.left - s.right) / 2, dy: (t.top + t.bottom - s.top - s.bottom) / 2, top: t.top - s.top, width: t.width, scrollerWidth: s.right - s.left, overflow: scroller.scrollHeight - scroller.clientHeight }
+  })
+
+  await tables.nth(0).getByTitle('View fullscreen').click()
+  await expect(overlay).toBeVisible()
+  for (const [scheme, skin] of [['light', 'default'], ['dark', 'default'], ['dark', 'catppuccin']] as const) {
+    await page.evaluate(([dark, name]) => { document.documentElement.classList.toggle('dark', dark); document.documentElement.dataset.skin = name }, [scheme === 'dark', skin] as const)
+    await expect.soft(overlay, `${scheme} ${skin}`).toHaveCSS('background-color', await themeBg())
+    await page.screenshot({ path: testInfo.outputPath(`table-fullscreen-${scheme}-${skin}-${testInfo.project.name}.png`) })
+  }
+  // An extension skin sets its tokens inline on <html>; the overlay follows them.
+  await page.evaluate(() => { document.documentElement.style.setProperty('--bg', 'rgb(18, 52, 86)') })
+  await expect(overlay).toHaveCSS('background-color', 'rgb(18, 52, 86)')
+  await page.evaluate(() => { document.documentElement.style.removeProperty('--bg') })
+  // A table smaller than the viewport sits in the middle of it, both ways.
+  const small = await layout()
+  expect(small.width).toBeLessThan(small.scrollerWidth)
+  expect(Math.abs(small.dx)).toBeLessThan(2)
+  expect(Math.abs(small.dy)).toBeLessThan(2)
+  await page.keyboard.press('Escape')
+  await expect(overlay).toHaveCount(0)
+
+  // A taller table starts at the top of the scroller and scrolls to its last row.
+  await tables.nth(1).getByTitle('View fullscreen').click()
+  const long = await layout()
+  expect(long.overflow).toBeGreaterThan(0)
+  expect(long.top).toBeGreaterThanOrEqual(0)
+  await overlay.getByText('Row 80', { exact: true }).scrollIntoViewIfNeeded()
+  await expect(overlay.getByText('Row 80', { exact: true })).toBeInViewport()
+  await page.screenshot({ path: testInfo.outputPath(`table-fullscreen-long-${testInfo.project.name}.png`) })
+  await page.keyboard.press('Escape')
+  await expect(overlay).toHaveCount(0)
+
+  // The diagram's fullscreen view gets the same opaque background.
+  const diagram = answer.locator('[data-streamdown="mermaid-block"]')
+  // Streamdown renders the diagram once it scrolls into view.
+  await diagram.scrollIntoViewIfNeeded()
+  await expect(diagram.locator('svg').filter({ hasText: 'Finish' })).toBeVisible()
+  await diagram.getByRole('button', { name: 'View fullscreen' }).click()
+  const diagramOverlay = page.locator('[data-streamdown="mermaid-fullscreen"]')
+  await expect(diagramOverlay.locator('svg').filter({ hasText: 'Finish' })).toBeVisible()
+  await expect(diagramOverlay).toHaveCSS('background-color', await themeBg())
+  // The diagram grows past its inline size and still fits inside the view.
+  const box = (scope: typeof diagram) => scope.locator('svg').filter({ hasText: 'Finish' }).evaluate((svg) => svg.getBoundingClientRect().toJSON() as DOMRect)
+  const [full, inline] = [await box(diagramOverlay), await box(diagram)]
+  expect(full.width).toBeGreaterThan(inline.width)
+  expect(full.top).toBeGreaterThanOrEqual(0)
+  expect(full.bottom).toBeLessThanOrEqual(page.viewportSize()!.height)
+  await page.screenshot({ path: testInfo.outputPath(`mermaid-fullscreen-${testInfo.project.name}.png`) })
+  await page.keyboard.press('Escape')
+  await expect(diagramOverlay).toHaveCount(0)
+})
+
 /** A visible synthetic chart: a 240×140 RGB PNG with a diagonal gradient. */
 function chartPng(): Buffer {
   const [width, height] = [240, 140]

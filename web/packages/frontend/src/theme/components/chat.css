@@ -51,6 +51,14 @@
 /* Streamdown's list-decimal/list-disc utilities live in node_modules, which Tailwind does not scan (TAL-423). */
 .hermes-prose ol{list-style:decimal}
 .hermes-prose ul{list-style:disc}
+/* TAL-1641: the same gap leaves Streamdown's fullscreen overlays without bg-background, z-50 or size-full, so they get
+   the theme background, the dialog layer and a diagram that fits the view here. Auto margins centre a smaller table and
+   fall back to the start edge when it overflows, so a large table still scrolls from its first row. */
+:is([data-streamdown="table-fullscreen"],[data-streamdown="mermaid-fullscreen"]){z-index:1300;background:var(--bg);color:var(--text)}
+[data-streamdown="mermaid-fullscreen"] .size-full{width:100%;height:100%}
+[data-streamdown="mermaid-fullscreen"] [role="img"] > svg{max-height:100%}
+[data-streamdown="table-fullscreen"] [data-streamdown="table-wrapper"] > :last-child{display:flex;flex-direction:column}
+[data-streamdown="table-fullscreen"] [data-streamdown="table"]{width:auto;margin:auto}
 .msg-body li{margin-bottom:.15em}
 .msg-body li > ul,.msg-body li > ol{margin-block:0}
 .msg-body h1,.msg-body h2,.msg-body h3,.msg-body h4,.msg-body h5,.msg-body h6{font-weight:700;color:var(--strong,var(--text));line-height:1.3}
