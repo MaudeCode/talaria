@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The \"Talaria Web was updated\" refresh notice no longer appears on top of the Updating dialog while a Talaria Web update runs.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

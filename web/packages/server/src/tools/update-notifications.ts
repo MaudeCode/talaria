@@ -256,8 +256,8 @@ export class UpdateNotificationStore {
       return state
     }
     state.refresh_required = true
-    // TAL-1138: the Web update this tab started offers Reload in its own Updating dialog instead.
-    if (this.rows.some((row) => this.isVisible(row, scope) && this.reloadsInDialog(row, tab, true))) {
+    // TAL-1138/TAL-1622: while a Web update's Updating dialog shows in this tab, it is the tab's only reload prompt.
+    if (this.rows.some((row) => row.target === 'webui' && this.isVisible(row, scope) && this.presentsDialog(row, tab, true))) {
       if (existing) {
         this.rows = this.rows.filter((row) => row !== existing)
         this.tabSeen.delete(existing.id)
@@ -708,11 +708,16 @@ export class UpdateNotificationStore {
     return !this.rows.some((other) => other !== row && other.kind === 'update' && other.target === 'webui' && other.created_at > row.created_at)
   }
 
+  /** Whether `tab` shows this record's Updating dialog: while a user-started update runs, or to offer its Reload. */
+  private presentsDialog(row: StoredUpdateNotification, tab: string | null | undefined, stale: boolean): boolean {
+    return this.reloadsInDialog(row, tab, stale) || (row.kind === 'update' && row.watchers.length > 0 && (PRESENTING.has(row.phase) || (row.phase === 'waiting_for_idle' && this.webPending(row))))
+  }
+
   /** The record as clients see it; `tab` and `stale` (its loaded build is not the one served) decide the Reload in its dialog. */
   private publish(row: StoredUpdateNotification, tab: string | null = null, stale = false): PublicUpdateNotification {
     const webPending = this.webPending(row)
     const reload = this.reloadsInDialog(row, tab, stale)
-    const presents = reload || (row.kind === 'update' && row.watchers.length > 0 && (PRESENTING.has(row.phase) || (row.phase === 'waiting_for_idle' && webPending)))
+    const presents = this.presentsDialog(row, tab, stale)
     return {
       id: row.id, kind: row.kind, target: row.target, phase: row.phase, severity: row.severity,
       persistent: row.persistent, requires_acknowledgement: row.requires_acknowledgement,

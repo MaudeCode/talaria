@@ -580,6 +580,33 @@ describe('UpdateNotificationStore', () => {
       expect((await store.list(tabA, true)).tab_update).toMatchObject({ id: started.id, presents_dialog: false })
     })
 
+    /** TAL-1622: a build change mid-update must not stack the refresh notice on an open Updating dialog. */
+    it('keeps the refresh notice out of a tab while its Web Updating dialog shows, then restores it when the dialog stops', async () => {
+      const store = (await initializeStore(new UpdateNotificationStore(new JsonDocuments(temp()))))
+      const member = { owner: 'oidc:member', profile: 'work', serverOwner: false, tab: 'tab-mmmmmmmm' }
+      const refreshRows = async (scope: UpdateNotificationScope) => (await store.list(scope, true)).notifications.filter((entry) => entry.kind === 'web_refresh')
+      // The tab was already stale when the update began; its dialog takes over that notice too.
+      expect((await store.syncTabBuild(tabA, oldBuild, newBuild)).notification_id).not.toBeNull()
+      const row = (await store.begin(tabA, 'webui'))
+      for (const phase of ['applying', 'restarting'] as const) {
+        if (phase !== 'applying') await store.transition(row.id, phase, revision)
+        for (const tab of [tabA, tabB]) {
+          expect((await store.syncTabBuild(tab, oldBuild, newBuild))).toMatchObject({ refresh_required: true, notification_id: null })
+          expect((await store.list(tab, true)).notifications.find((entry) => entry.id === row.id)).toMatchObject({ phase, presents_dialog: true })
+          expect(await refreshRows(tab)).toEqual([])
+        }
+      }
+      // A tab that cannot see the update has no dialog and still gets its notice.
+      expect((await store.syncTabBuild(member, oldBuild, newBuild)).notification_id).not.toBeNull()
+
+      await store.transition(row.id, 'failed', null, undefined, 'Build failed.')
+      for (const tab of [tabA, tabB]) {
+        const synced = (await store.syncTabBuild(tab, oldBuild, newBuild))
+        expect(synced.notification_id).not.toBeNull()
+        expect(await refreshRows(tab)).toMatchObject([{ id: synced.notification_id, requires_interaction: true }])
+      }
+    })
+
     it('runs a native Agent update through the Web restart to Agent responding, then closes itself', async () => {
       const root = temp()
       const store = (await initializeStore(new UpdateNotificationStore(new JsonDocuments(root))))
