@@ -35,9 +35,7 @@ export function TerminalPanel({ sessionId, workspace, onClose, onReopen = () => 
   const [executing, setExecuting] = useState(false)
   const mode = useRef<'web_pty' | 'owner_command' | null>(null)
   const commandBusy = useRef(false)
-  // Unsent keys. A failure, Restart, Close or unmount drops them and bumps the generation so a late result is ignored.
-  const input = useRef({ pending: [] as string[], busy: false, generation: 0 })
-  const dropInput = () => { const q = input.current; q.pending = []; q.busy = false; q.generation++ }
+  const dropInput = useRef<() => void>(() => undefined)
 
   useEffect(() => {
     mode.current = null
@@ -91,8 +89,12 @@ export function TerminalPanel({ sessionId, workspace, onClose, onReopen = () => 
         t.writeln(e instanceof Error ? e.message : String(e))
       }
     })()
+    // Unsent keys. A failure, Restart, Close or unmount drops them and bumps the generation so a late failure is
+    // ignored; the request in flight keeps the guard until it settles, so input stays one request at a time.
+    const q = { pending: [] as string[], busy: false, generation: 0 }
+    const drop = () => { q.pending = []; q.generation++ }
+    dropInput.current = drop
     const flush = () => {
-      const q = input.current
       if (q.busy || !q.pending.length) return
       if (mode.current !== 'web_pty') { q.pending = []; return }
       // Join whole chunks up to the server limit; a single oversized chunk goes alone so the server refuses it.
@@ -102,23 +104,23 @@ export function TerminalPanel({ sessionId, workspace, onClose, onReopen = () => 
       q.busy = true
       const generation = q.generation
       post('api/terminal/input', { session_id: sessionId, data: batch }, OkSchema, { retries: 0, timeoutMs: 10_000 }).then(() => {
-        if (generation !== q.generation) return
         q.busy = false
         flush()
       }, (error: unknown) => {
-        if (generation !== q.generation) return
+        q.busy = false
+        if (generation !== q.generation) { flush(); return }
         // Keys behind a failed one would reach the shell out of context; drop them with the failure.
-        dropInput()
+        drop()
         showErrorToast(error, m.terminal_input_failed())
       })
     }
-    const data = t.onData((d) => { if (mode.current !== 'web_pty') return; input.current.pending.push(d); flush() })
+    const data = t.onData((d) => { if (mode.current !== 'web_pty') return; q.pending.push(d); flush() })
     const resize = t.onResize(({ cols, rows }) => { if (mode.current !== 'web_pty') return; void post('api/terminal/resize', { session_id: sessionId, cols, rows }, OkSchema, { retries: 0 }).catch(() => undefined) })
     const ro = new ResizeObserver(() => { try { f.fit() } catch { /* not attached */ } })
     ro.observe(el)
     return () => {
       cancelled = true
-      dropInput()
+      drop()
       applyStart.current = null
       stream.current?.close(); stream.current = null
       data.dispose(); resize.dispose(); ro.disconnect(); t.dispose()
@@ -129,7 +131,7 @@ export function TerminalPanel({ sessionId, workspace, onClose, onReopen = () => 
   // The panel closes at once while the server stops the shell. A refusal reopens it with the error; closing is
   // idempotent, so an unknown outcome is settled by asking once more.
   const close = () => {
-    dropInput()
+    dropInput.current()
     onClose()
     if (mode.current === 'owner_command') return
     const send = () => post('api/terminal/close', { session_id: sessionId }, OkSchema, { retries: 0 })
@@ -143,7 +145,7 @@ export function TerminalPanel({ sessionId, workspace, onClose, onReopen = () => 
     })()
   }
   const restart = async () => {
-    dropInput()
+    dropInput.current()
     const started = applyStart.current
     try {
       const res = await post('api/terminal/start', { session_id: sessionId, workspace, restart: true, cols: term.current?.cols, rows: term.current?.rows }, StartSchema, { retries: 0 })

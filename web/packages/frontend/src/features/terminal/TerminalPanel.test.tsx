@@ -206,6 +206,18 @@ describe('terminal input (TAL-1146)', () => {
     expect(showToast).not.toHaveBeenCalled()
   })
 
+  it('keeps one input request in flight across Restart', async () => {
+    const view = await open()
+    await type('a')
+    await act(async () => { view.getByRole('button', { name: 'Restart' }).click(); await Promise.resolve() })
+    await settle()
+    await type('b')
+    expect(sent()).toEqual(['a'])
+    await act(async () => { inputs[0]!.resolve(); await Promise.resolve() })
+    await settle()
+    expect(sent()).toEqual(['a', 'b'])
+  })
+
   it('posts nothing queued after the panel unmounts', async () => {
     const view = await open()
     await type('a', 'b')
