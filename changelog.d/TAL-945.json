@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Sessions from iMessage (imsg), Photon, Google Chat, SimpleX, Buzz, Raft, ntfy, A2A and Home Assistant now file under messaging with their platform names and stay read-only.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

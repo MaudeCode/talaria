@@ -30,6 +30,8 @@ const SOURCE_LABELS: Record<string, string> = {
   bluebubbles: 'BlueBubbles', dingtalk: 'DingTalk', feishu: 'Feishu', qqbot: 'QQBot', yuanbao: 'Yuanbao', whatsapp_cloud: 'WhatsApp Cloud',
   acp: 'ACP', api_server: 'API', cli: 'CLI', cron: 'Cron', discord: 'Discord', email: 'Email', kanban: 'Kanban', wecom: 'WeCom', wecom_callback: 'WeCom Callback',
   slack: 'Slack', telegram: 'Telegram', tool: 'Tool', tui: 'TUI', webhook: 'Webhook', webui: 'WebUI', weixin: 'Weixin', matrix: 'Matrix', signal: 'Signal',
+  imsg: 'iMessage (imsg)', photon: 'iMessage via Photon', google_chat: 'Google Chat', simplex: 'SimpleX Chat', buzz: 'Buzz', raft: 'Raft',
+  ntfy: 'ntfy', a2a: 'A2A', homeassistant: 'Home Assistant',
 }
 
 const lower = (v: unknown): string => str(v).trim().toLowerCase()

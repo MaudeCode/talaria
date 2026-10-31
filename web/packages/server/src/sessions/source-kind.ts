@@ -14,6 +14,8 @@ export const MESSAGING_SOURCES = new Set([
   'bluebubbles', 'dingtalk', 'feishu', 'qqbot', 'yuanbao', 'whatsapp_cloud',
   'discord', 'email', 'imessage', 'irc', 'line', 'matrix', 'mattermost', 'signal', 'slack', 'sms', 'teams',
   'telegram', 'twilio', 'webex', 'wecom', 'wecom_callback', 'weixin', 'whatsapp',
+  // TAL-945: plugin-registered gateway transports (chat, push and agent-to-agent alike all enter the session pipeline).
+  'imsg', 'photon', 'google_chat', 'simplex', 'buzz', 'raft', 'ntfy', 'a2a', 'homeassistant',
 ])
 
 export const SOURCE_KINDS = ['webui', 'cli', 'messaging', 'cron', 'webhook', 'subagent', 'claude_code', 'kanban', 'api', 'other'] as const
