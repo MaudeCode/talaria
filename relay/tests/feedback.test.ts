@@ -4,7 +4,7 @@ import { createHash, webcrypto } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { internal } from "../convex/_generated/api";
+import { api, internal } from "../convex/_generated/api";
 import { bytesToBase64Url, sha256 } from "../convex/lib/crypto";
 import { attachmentLimits, matchesAttachmentType } from "../convex/lib/feedback";
 import schema from "../convex/schema";
@@ -283,6 +283,28 @@ describe("feedback operator queue", () => {
       expect((await ack(ids[1]!, invalid)).status).toBe(400);
     }
     expect((await pending()).map((entry) => entry.reportId)).toEqual(ids.slice(1));
+  });
+
+  it("signals only pending report IDs, and only to the operator token", async () => {
+    const { backend } = await relay();
+    const payload = { ...fixture } as never;
+    const ids = await backend.run(async (ctx) => {
+      const insert = (requestId: string, status: "pending" | "uploading" | "delivered", createdAt: number) =>
+        ctx.db.insert("feedbackReports", {
+          requestId, payloadHash: requestId, tier: "unverified", installHash: "install", payload, status, createdAt,
+          ...(status === "delivered" ? { ticketKey: "TAL-1", deliveredAt: start } : {}),
+        });
+      await insert("delivered", "delivered", start);
+      await insert("uploading", "uploading", start);
+      const pending = [];
+      for (let index = 0; index < 51; index += 1) pending.push(await insert(`pending-${String(index)}`, "pending", start + index));
+      return pending;
+    });
+    const signal = (token: string) => backend.query(api.feedback.pendingSignal, { token });
+    expect(await signal(operatorToken)).toEqual(ids.slice(0, 50));
+    await expect(signal("wrong-token")).rejects.toThrow("unauthorized");
+    delete process.env.FEEDBACK_OPERATOR_TOKEN_SHA256;
+    await expect(signal(operatorToken)).rejects.toThrow("unauthorized");
   });
 });
 

@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Feedback reports reach the Talaria Inbox seconds after they are sent, instead of up to two minutes later.",
+      "highlight": false,
+      "components": ["relay"]
+    }
+  ]
+}

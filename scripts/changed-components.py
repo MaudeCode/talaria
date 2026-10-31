@@ -164,11 +164,8 @@ def path_suites(path):
             return {"web_server"}
         return WEB_BUILD
     if component == "relay":
-        # HTTP handlers forward results from many Convex modules. Default new
-        # modules to consumer coverage; only known maintenance code stays local.
-        internal = {"convex/cleanup.ts", "convex/crons.ts", "convex/workpool.ts", "convex/convex.config.ts"}
-        if local.startswith("convex/") and local not in internal:
-            return {"relay", "app", "web_server", "contracts"}
+        # No App, Web or contracts test runs Relay code. Consumers meet Relay only through contracts/ fixtures, which
+        # relay/tests/sharedContracts.test.ts holds Relay to and whose changes select every consumer above (TAL-1644).
         return {"relay"}
     return SUITES
 

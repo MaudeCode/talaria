@@ -1,10 +1,10 @@
-import { v, type Infer } from "convex/values";
+import { ConvexError, v, type Infer } from "convex/values";
 
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import { internalMutation, internalQuery, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { internalMutation, internalQuery, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { consumeBudget, longestBudgetWindowMs, type Budget } from "./auth";
-import { attachmentLimits } from "./lib/feedback";
+import { attachmentLimits, operatorAccess } from "./lib/feedback";
 import { timingSafeEqual } from "./lib/crypto";
 import { authorizePublisherMutation } from "./publishers";
 import {
@@ -298,6 +298,22 @@ export const listPending = internalQuery({
         index, contentType, bytes, sha256, status: status === "awaiting" ? "missing" as const : status, reason,
       })),
     })));
+  },
+});
+
+/**
+ * The feedback bridge subscribes to this over Convex's WebSocket, so it learns of a report the moment it becomes
+ * `pending` (after its uploads settle) without anything reaching into the cluster. Operator-only; IDs only.
+ */
+export const pendingSignal = query({
+  args: { token: v.string() },
+  returns: v.array(v.id("feedbackReports")),
+  handler: async (ctx, args) => {
+    if (await operatorAccess(args.token) !== "granted") throw new ConvexError("unauthorized");
+    const reports = await ctx.db.query("feedbackReports")
+      .withIndex("by_status_and_created_at", (query) => query.eq("status", "pending"))
+      .take(50);
+    return reports.map((report) => report._id);
   },
 });
 

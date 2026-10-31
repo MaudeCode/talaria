@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { ConvexClient } from "convex/browser";
+import { makeFunctionReference } from "convex/server";
 import sharp from "sharp";
 
 // Kanvil's per-attachment upload limit.
@@ -254,16 +256,21 @@ async function collect(relay: string, token: string, report: FeedbackReport, dir
   return outcomes;
 }
 
-async function main(): Promise<number> {
-  const names = ["RELAY_URL", "FEEDBACK_OPERATOR_TOKEN", "KANVIL_URL", "KANVIL_INTAKE_KEY", "KANVIL_PROJECT_ID"] as const;
-  for (const name of names) {
+const required = ["RELAY_URL", "FEEDBACK_OPERATOR_TOKEN", "KANVIL_URL", "KANVIL_INTAKE_KEY", "KANVIL_PROJECT_ID"] as const;
+type Config = Record<typeof required[number], string> & { RELAY_SYNC_URL?: string };
+
+// Exit code 2 for a missing or invalid variable, naming only the variable.
+function readConfig(): Config | number {
+  for (const name of required) {
     if (!process.env[name]?.trim()) {
       console.error(`Feedback bridge: missing ${name}`);
       return 2;
     }
   }
-  const config = Object.fromEntries(names.map((name) => [name, process.env[name]!])) as Record<typeof names[number], string>;
-  for (const name of ["RELAY_URL", "KANVIL_URL"] as const) {
+  const config: Config = Object.fromEntries(required.map((name) => [name, process.env[name]!])) as Config;
+  if (process.env.RELAY_SYNC_URL?.trim()) config.RELAY_SYNC_URL = process.env.RELAY_SYNC_URL;
+  for (const name of ["RELAY_URL", "KANVIL_URL", "RELAY_SYNC_URL"] as const) {
+    if (config[name] === undefined) continue;
     try {
       const url = new URL(config[name]);
       if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error();
@@ -273,6 +280,11 @@ async function main(): Promise<number> {
       return 2;
     }
   }
+  return config;
+}
+
+// Delivers one batch of up to 50 pending reports: 0 when all were delivered or none were pending, 1 otherwise.
+async function deliver(config: Config): Promise<number> {
   let reports: FeedbackReport[];
   try {
     const response = await request(`${config.RELAY_URL}/v1/feedback/pending?limit=50`, config.FEEDBACK_OPERATOR_TOKEN);
@@ -334,6 +346,77 @@ async function main(): Promise<number> {
     }
   }
   return failed ? 1 : 0;
+}
+
+type Subscribe = (onIds: (ids: string[]) => void, onError: () => void) => () => void;
+
+/**
+ * Runs `run` whenever the subscribed pending set changes and is non-empty, and every `retryMs` so a failed delivery
+ * is retried, never two at once: a change during a run queues exactly one more. Resolves with 0 once `stop` aborts
+ * (after the current run) or 1 when the subscription fails.
+ */
+export function watch(subscribe: Subscribe, run: () => Promise<unknown>, stop: AbortSignal, retryMs = 120_000): Promise<number> {
+  return new Promise((resolve) => {
+    let running = false;
+    let again = false;
+    let exit: number | undefined;
+    let unsubscribe: (() => void) | undefined;
+    let done = false;
+    const settle = () => {
+      if (exit === undefined || running || done || !unsubscribe) return;
+      done = true;
+      clearInterval(timer);
+      unsubscribe();
+      resolve(exit);
+    };
+    const finish = (code: number) => {
+      exit ??= code;
+      settle();
+    };
+    const kick = async () => {
+      if (exit !== undefined) return;
+      if (running) {
+        again = true;
+        return;
+      }
+      running = true;
+      do {
+        again = false;
+        await run().catch(() => undefined);
+      } while (again && exit === undefined);
+      running = false;
+      settle();
+    };
+    const timer = setInterval(() => void kick(), retryMs);
+    stop.addEventListener("abort", () => finish(0), { once: true });
+    unsubscribe = subscribe((ids) => {
+      if (ids.length) void kick();
+    }, () => {
+      // The error can name the deployment or echo arguments; log a fixed line only.
+      console.error("Feedback bridge: pending subscription failed");
+      finish(1);
+    });
+    settle();
+  });
+}
+
+const pendingSignal = makeFunctionReference<"query", { token: string }, string[]>("feedback:pendingSignal");
+
+async function main(): Promise<number> {
+  const config = readConfig();
+  if (typeof config === "number") return config;
+  if (!config.RELAY_SYNC_URL) return await deliver(config);
+  // Watch mode: an outbound WebSocket subscription replaces the schedule; nothing has to reach the bridge.
+  const client = new ConvexClient(config.RELAY_SYNC_URL, { logger: false, unsavedChangesWarning: false });
+  const stop = new AbortController();
+  process.once("SIGTERM", () => stop.abort());
+  const code = await watch(
+    (onIds, onError) => client.onUpdate(pendingSignal, { token: config.FEEDBACK_OPERATOR_TOKEN }, onIds, onError),
+    () => deliver(config),
+    stop.signal,
+  );
+  await client.close();
+  return code;
 }
 
 // smoke.ts imports the sanitizers without running a delivery.

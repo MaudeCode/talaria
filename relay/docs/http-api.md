@@ -436,6 +436,12 @@ pending reports, oldest first:
 accepted file is stored or its upload window closes; a file never uploaded is
 listed as `missing`. `attachments` is empty for a text-only report.
 
+Outside HTTP, the Convex query `feedback:pendingSignal({token})` returns the IDs
+of the same first 50 pending reports and nothing else. The bridge subscribes to
+it over the Convex client WebSocket to learn of new reports at once. The token
+rule is the same; a wrong token, or an unset hash, fails the query with
+`unauthorized`.
+
 Acknowledging a report deletes its files, so the bridge must copy them first. A
 bridge that predates attachments acknowledges without copying; deploy one that
 copies them before any client sends attachments, or set

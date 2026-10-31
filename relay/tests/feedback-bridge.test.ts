@@ -7,7 +7,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type Sharp from "sharp";
-import { afterAll, afterEach, beforeAll, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+
+import { watch } from "../bridge/bridge.ts";
 
 const bridge = fileURLToPath(new URL("../bridge/bridge.ts", import.meta.url));
 // The bridge owns its sharp install; tests use the same copy to make and inspect images.
@@ -287,7 +289,7 @@ it("delivers the maximum queue batch without dropping reports", async () => {
   expect(f.acks).toHaveLength(50);
 });
 
-it.each(["RELAY_URL", "KANVIL_URL"])("rejects invalid %s without reflecting the value", async (name) => {
+it.each(["RELAY_URL", "KANVIL_URL", "RELAY_SYNC_URL"])("rejects invalid %s without reflecting the value", async (name) => {
   const f = await fixture([]);
   const result = await run({ ...f.env, [name]: `https://${intakeKey}@example.invalid/?token=${operatorToken}` });
   expect(result.code).toBe(2);
@@ -449,4 +451,99 @@ it("decodes HEIC photos with ffmpeg, scaling the primary tile grid while decodin
   expect(calls).toEqual([decode(0, "[0:v:0]"), decode(2, "[0:g:0]"), decode(3, "[0:g:1]")]);
   expect(f.acks).toHaveLength(1);
   expect(await readdir(f.temp)).toEqual([]);
+});
+
+describe("watch mode", () => {
+  // A stand-in for the Convex subscription: the test pushes pending-ID sets or a failure.
+  function harness() {
+    let push: (ids: string[]) => void = () => {};
+    let fail: () => void = () => {};
+    const unsubscribe = vi.fn();
+    const subscribe = (onIds: (ids: string[]) => void, onError: () => void) => {
+      push = onIds;
+      fail = onError;
+      return unsubscribe;
+    };
+    let active = 0;
+    let peak = 0;
+    const finishes: Array<() => void> = [];
+    const deliver = vi.fn(() => {
+      active += 1;
+      peak = Math.max(peak, active);
+      return new Promise<number>((resolve) => finishes.push(() => { active -= 1; resolve(0); }));
+    });
+    const stop = new AbortController();
+    const exit = watch(subscribe, deliver, stop.signal, 120_000);
+    const settleRun = async () => { finishes.shift()?.(); await vi.advanceTimersByTimeAsync(0); };
+    return { push: (ids: string[]) => push(ids), fail: () => fail(), unsubscribe, deliver, stop, exit, settleRun, peak: () => peak };
+  }
+  afterEach(() => { vi.useRealTimers(); });
+
+  it("delivers once per non-empty pending set and ignores an empty one", async () => {
+    vi.useFakeTimers();
+    const h = harness();
+    h.push([]);
+    expect(h.deliver).not.toHaveBeenCalled();
+    h.push(["report-1"]);
+    expect(h.deliver).toHaveBeenCalledTimes(1);
+    await h.settleRun();
+    h.stop.abort();
+    expect(await h.exit).toBe(0);
+    expect(h.unsubscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it("queues exactly one follow-up run for changes during a run, never two at once", async () => {
+    vi.useFakeTimers();
+    const h = harness();
+    h.push(["report-1"]);
+    h.push(["report-1", "report-2"]);
+    h.push(["report-1", "report-2", "report-3"]);
+    expect(h.deliver).toHaveBeenCalledTimes(1);
+    await h.settleRun();
+    expect(h.deliver).toHaveBeenCalledTimes(2);
+    await h.settleRun();
+    expect(h.deliver).toHaveBeenCalledTimes(2);
+    expect(h.peak()).toBe(1);
+    h.stop.abort();
+    expect(await h.exit).toBe(0);
+  });
+
+  it("retries every 120 seconds without a subscription change", async () => {
+    vi.useFakeTimers();
+    const h = harness();
+    await vi.advanceTimersByTimeAsync(119_999);
+    expect(h.deliver).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(h.deliver).toHaveBeenCalledTimes(1);
+    await h.settleRun();
+    h.stop.abort();
+    expect(await h.exit).toBe(0);
+  });
+
+  it("finishes the current run before stopping", async () => {
+    vi.useFakeTimers();
+    const h = harness();
+    h.push(["report-1"]);
+    h.stop.abort();
+    let exited = false;
+    void h.exit.then(() => { exited = true; });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(exited).toBe(false);
+    await h.settleRun();
+    expect(await h.exit).toBe(0);
+    expect(h.deliver).toHaveBeenCalledTimes(1);
+  });
+
+  it("exits 1 with a fixed line when the subscription fails", async () => {
+    vi.useFakeTimers();
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const h = harness();
+    h.fail();
+    expect(await h.exit).toBe(1);
+    expect(error.mock.calls).toEqual([["Feedback bridge: pending subscription failed"]]);
+    expect(h.unsubscribe).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(240_000);
+    expect(h.deliver).not.toHaveBeenCalled();
+    error.mockRestore();
+  });
 });

@@ -56,7 +56,18 @@ The production HTTP origin is `https://relay.talaria.kil.dev`.
 `node bridge/bridge.ts` runs once on Node 24. It pulls up to 50 pending reports
 from Relay, creates quarantined Inbox tickets through Kanvil's intake scope,
 attaches sanitized copies of the report's files, acknowledges successful
-deliveries, and exits. Reports and diagnostics remain fenced untrusted text;
+deliveries, and exits.
+
+With `RELAY_SYNC_URL` set it runs in watch mode instead and does not exit. It
+holds an outbound Convex WebSocket subscription to `feedback:pendingSignal`,
+which returns only the IDs of up to 50 pending reports and only for the operator
+token. When that set changes and is not empty, the bridge runs a delivery at
+once. A report counts as pending only after its uploads finish or their window
+closes, so attachments are never delivered early. Deliveries run one at a time:
+a change during a run queues exactly one more. A delivery also runs every 120
+seconds so failed reports are retried. A subscription error (wrong token,
+feedback disabled) prints one fixed line and exits 1. SIGTERM exits 0 after the
+current delivery. Reports and diagnostics remain fenced untrusted text;
 install IDs are hashed before inclusion in ticket metadata. Run
 `npm ci --prefix bridge` once before `pnpm check`; the bridge keeps its own
 lockfile because its image installs from it.
@@ -84,6 +95,7 @@ the report is acknowledged only after every kept file is attached.
 | `KANVIL_URL` | Cluster-internal Kanvil base URL |
 | `KANVIL_INTAKE_KEY` | Create-only `intake` key bound to Talaria Inbox |
 | `KANVIL_PROJECT_ID` | Talaria Inbox project ID |
+| `RELAY_SYNC_URL` | Optional Convex client URL of the Relay deployment (`https://<deployment>.convex.cloud`); enables watch mode |
 
 Use the `intake` scope provided by KAN-67. It forces human triage and disables
 automation on created tickets; KAN-77 lets the same key attach files to the
@@ -110,9 +122,12 @@ sanitization, including the synthetic 48 megapixel rotated, GPS-tagged HEIC in
 `bridge/fixtures/`. The image adds Alpine's `ffmpeg` package, the pinned sharp
 install from `bridge/package-lock.json`, and the entry file.
 
-Deployment is separate. The intended in-cluster Kubernetes CronJob schedule is
-`*/2 * * * *` with `concurrencyPolicy: Forbid`, the five variables above supplied
-from cluster configuration/secrets, and a pinned versioned image. Kanvil remains
+Deployment is separate. The intended in-cluster shape is a Kubernetes Deployment
+with one replica, `strategy: Recreate`, the six variables above supplied from
+cluster configuration/secrets, and a pinned versioned image. Without
+`RELAY_SYNC_URL` the bridge still runs once per invocation, so a CronJob on
+`*/2 * * * *` with `concurrencyPolicy: Forbid` keeps working, with up to two
+minutes of delay. Kanvil remains
 internal; only the bridge connects outbound to Relay. These source changes do
 not configure a deployment or enable Relay's feedback routes.
 
