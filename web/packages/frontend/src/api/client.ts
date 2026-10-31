@@ -226,6 +226,8 @@ export function postForm<T>(path: string, form: FormData, schema: ZodType<T>, op
 export async function contractFetch(req: Request, dedupe: boolean): Promise<Response> {
   const url = new URL(req.url)
   const path = url.pathname.replace(/^.*?\/api\//, 'api/')
+  // A caller that already gave up never reaches the transport or joins another caller's read.
+  if (req.signal.aborted) throw new ApiError({ kind: 'aborted', path, message: 'Request aborted', retryable: false })
   const headers = new Headers(req.headers)
   if (UNSAFE.has(req.method) && url.origin === window.location.origin && !CSRF_EXEMPT.test(url.pathname) && state.csrfToken && !headers.has('X-Hermes-CSRF-Token')) {
     headers.set('X-Hermes-CSRF-Token', state.csrfToken)

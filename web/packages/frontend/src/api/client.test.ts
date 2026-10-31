@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import { configureClient, get, post, request, resetClientForTests, type TransportRequest } from './client'
 import { createMemoryAdapter, makeSession } from '../contracts/adapters/memory'
-import { checkUpdatesNow, fetchSessions, searchSessions, fetchSession, fetchUpdatesCheck, renameSession, setReasoningEffort, startChat, newSession, saveSettings, setAuxiliaryModel, switchKanbanBoard } from './endpoints'
+import { checkUpdatesNow, fetchAnchorScene, fetchToolResult, fetchSessions, searchSessions, fetchSession, fetchUpdatesCheck, renameSession, setReasoningEffort, startChat, newSession, saveSettings, setAuxiliaryModel, switchKanbanBoard } from './endpoints'
 import { isApiError } from '../contracts/common'
 import { resetAppRootForTests } from '../lib/appRoot'
 
@@ -208,31 +208,36 @@ describe('typed client against the in-memory adapter', () => {
 })
 
 
-for (const endpoint of ['detail', 'list', 'search'] as const) {
-  it(`forwards cancellation through the ${endpoint} session endpoint to the transport`, async () => {
-    const signals: AbortSignal[] = []
-    configureClient({ transport: (req) => {
-      if (req.signal) signals.push(req.signal)
-      return new Promise(() => undefined)
-    } })
-    const controller = new AbortController()
-    if (endpoint === 'detail') void fetchSession('cancelled', {}, controller.signal)
-    else if (endpoint === 'list') void fetchSessions({}, controller.signal)
-    else void searchSessions('query', { project_id: undefined, sidebar_source: undefined, include_archived: false }, 5, controller.signal)
-    await vi.waitFor(() => expect(signals).toHaveLength(1))
-    controller.abort()
-    expect(signals[0]!.aborted).toBe(true)
-  })
+interface HeldRead { signal: AbortSignal | undefined; resolve: (response: Response) => void; reject: (error: Error) => void }
+// Every caller-cancellable contract read: session reads plus the tool-result and worklog-page reads behind ToolCard and TurnActivityView.
+const signaledReads: Record<string, { read: (signal: AbortSignal) => Promise<unknown>; body: unknown; expected: Record<string, unknown> }> = {
+  detail: { read: (signal) => fetchSession('replacement', {}, signal), body: { session: makeSession({ session_id: 'replacement', title: 'Replacement' }) }, expected: { session: { title: 'Replacement' } } },
+  list: { read: (signal) => fetchSessions({}, signal), body: { sessions: [] }, expected: { sessions: [] } },
+  search: { read: (signal) => searchSessions('query', { project_id: undefined, sidebar_source: undefined, include_archived: false }, 5, signal), body: { sessions: [] }, expected: { sessions: [] } },
+  'tool-result': { read: (signal) => fetchToolResult('sess-1', 'call-1', signal), body: { tool_call_id: 'call-1', result: 'full output', result_view: { stdout: 'full output' } }, expected: { result: 'full output' } },
+  'worklog page': { read: (signal) => fetchAnchorScene('sess-1', 'msg-ref', 3, 40, signal), body: { scene_ref: 'scene-1', rows: [], start: 0, end: 0, total: 0, complete: true }, expected: { scene_ref: 'scene-1' } },
 }
 
+function holdTransport(): HeldRead[] {
+  const pending: HeldRead[] = []
+  configureClient({ transport: (req) => new Promise((resolve, reject) => { pending.push({ signal: req.signal, resolve, reject }) }) })
+  return pending
+}
 
-for (const endpoint of ['detail', 'list', 'search'] as const) {
+for (const [endpoint, { read, body, expected }] of Object.entries(signaledReads)) {
+  it(`forwards cancellation through the ${endpoint} endpoint to the transport`, async () => {
+    const pending = holdTransport()
+    const controller = new AbortController()
+    const call = read(controller.signal).catch((error: unknown) => error)
+    await vi.waitFor(() => expect(pending).toHaveLength(1))
+    controller.abort()
+    expect(pending[0]!.signal!.aborted).toBe(true)
+    pending[0]!.reject(new DOMException('aborted', 'AbortError'))
+    await expect(call).resolves.toMatchObject({ kind: 'aborted' })
+  })
+
   it(`starts an independent replacement ${endpoint} read before the old abort settles`, async () => {
-    const pending: { signal: AbortSignal | undefined; resolve: (response: Response) => void; reject: (error: Error) => void }[] = []
-    configureClient({ transport: (req) => new Promise((resolve, reject) => { pending.push({ signal: req.signal, resolve, reject }) }) })
-    const read = (signal: AbortSignal) => endpoint === 'detail' ? fetchSession('replacement', {}, signal)
-      : endpoint === 'list' ? fetchSessions({}, signal)
-        : searchSessions('query', { project_id: undefined, sidebar_source: undefined, include_archived: false }, 5, signal)
+    const pending = holdTransport()
     const oldController = new AbortController()
     const replacementController = new AbortController()
     const old = read(oldController.signal).catch((error: unknown) => error)
@@ -244,13 +249,43 @@ for (const endpoint of ['detail', 'list', 'search'] as const) {
       expect(pending[0]!.signal?.aborted).toBe(true)
       expect(pending[1]!.signal?.aborted).toBe(false)
       pending[0]!.reject(new DOMException('old read aborted', 'AbortError'))
-      pending[1]!.resolve(Response.json(endpoint === 'detail' ? { session: makeSession({ session_id: 'replacement', title: 'Replacement' }) } : { sessions: [] }))
+      pending[1]!.resolve(Response.json(body))
       await expect(old).resolves.toMatchObject({ kind: 'aborted' })
-      await expect(replacement).resolves.toMatchObject(endpoint === 'detail' ? { session: { title: 'Replacement' } } : { sessions: [] })
+      await expect(replacement).resolves.toMatchObject(expected)
     } finally {
       for (const request of pending) request.reject(new DOMException('test cleanup', 'AbortError'))
       await Promise.all([old, replacement])
     }
+  })
+
+  it(`lets concurrent ${endpoint} readers cancel only themselves`, async () => {
+    const pending = holdTransport()
+    const leader = new AbortController()
+    const follower = new AbortController()
+    const first = read(leader.signal).catch((error: unknown) => error)
+    const second = read(follower.signal).catch((error: unknown) => error)
+    try {
+      await vi.waitFor(() => expect(pending).toHaveLength(2))
+      // The aborted follower rejects on its own transport while the leader's read is still held.
+      follower.abort()
+      pending[1]!.reject(new DOMException('follower aborted', 'AbortError'))
+      await expect(second).resolves.toMatchObject({ kind: 'aborted' })
+      expect(pending[0]!.signal?.aborted).toBe(false)
+      pending[0]!.resolve(Response.json(body))
+      await expect(first).resolves.toMatchObject(expected)
+    } finally {
+      for (const request of pending) request.reject(new DOMException('test cleanup', 'AbortError'))
+      await Promise.all([first, second])
+    }
+  })
+
+  it(`rejects an already-aborted ${endpoint} read without a transport call`, async () => {
+    const transport = vi.fn(() => Promise.reject(new DOMException('aborted', 'AbortError')))
+    configureClient({ transport })
+    const controller = new AbortController()
+    controller.abort()
+    await expect(read(controller.signal)).rejects.toMatchObject({ kind: 'aborted' })
+    expect(transport).not.toHaveBeenCalled()
   })
 }
 
