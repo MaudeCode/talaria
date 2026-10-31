@@ -1890,6 +1890,10 @@
                             "type": "boolean",
                             "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                           },
+                          "can_share": {
+                            "type": "boolean",
+                            "description": "Web may create or refresh a public share of this session: never a Claude Code import (TAL-551)."
+                          },
                           "attention": {
                             "anyOf": [
                               {
@@ -2131,6 +2135,7 @@
                           "can_archive",
                           "can_delete",
                           "can_duplicate",
+                          "can_share",
                           "source_reference"
                         ],
                         "additionalProperties": {}
@@ -2689,6 +2694,10 @@
                             "type": "boolean",
                             "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                           },
+                          "can_share": {
+                            "type": "boolean",
+                            "description": "Web may create or refresh a public share of this session: never a Claude Code import (TAL-551)."
+                          },
                           "attention": {
                             "anyOf": [
                               {
@@ -2905,7 +2914,8 @@
                           "can_pin",
                           "can_archive",
                           "can_delete",
-                          "can_duplicate"
+                          "can_duplicate",
+                          "can_share"
                         ],
                         "additionalProperties": {}
                       },
@@ -3327,6 +3337,10 @@
                             "type": "boolean",
                             "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                           },
+                          "can_share": {
+                            "type": "boolean",
+                            "description": "Web may create or refresh a public share of this session: never a Claude Code import (TAL-551)."
+                          },
                           "attention": {
                             "anyOf": [
                               {
@@ -3543,7 +3557,8 @@
                           "can_pin",
                           "can_archive",
                           "can_delete",
-                          "can_duplicate"
+                          "can_duplicate",
+                          "can_share"
                         ],
                         "additionalProperties": {}
                       }
@@ -4264,6 +4279,10 @@
                             "type": "boolean",
                             "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                           },
+                          "can_share": {
+                            "type": "boolean",
+                            "description": "Web may create or refresh a public share of this session: never a Claude Code import (TAL-551)."
+                          },
                           "attention": {
                             "anyOf": [
                               {
@@ -4480,7 +4499,8 @@
                           "can_pin",
                           "can_archive",
                           "can_delete",
-                          "can_duplicate"
+                          "can_duplicate",
+                          "can_share"
                         ],
                         "additionalProperties": {}
                       }
@@ -7735,6 +7755,10 @@
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                         },
+                        "can_share": {
+                          "type": "boolean",
+                          "description": "Web may create or refresh a public share of this session: never a Claude Code import (TAL-551)."
+                        },
                         "source_tag": {
                           "anyOf": [
                             {
@@ -8005,7 +8029,8 @@
                         "can_pin",
                         "can_archive",
                         "can_delete",
-                        "can_duplicate"
+                        "can_duplicate",
+                        "can_share"
                       ],
                       "additionalProperties": {}
                     }
@@ -11950,6 +11975,10 @@
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                         },
+                        "can_share": {
+                          "type": "boolean",
+                          "description": "Web may create or refresh a public share of this session: never a Claude Code import (TAL-551)."
+                        },
                         "source_tag": {
                           "anyOf": [
                             {
@@ -12220,7 +12249,8 @@
                         "can_pin",
                         "can_archive",
                         "can_delete",
-                        "can_duplicate"
+                        "can_duplicate",
+                        "can_share"
                       ],
                       "additionalProperties": {}
                     },
@@ -15308,6 +15338,10 @@
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                         },
+                        "can_share": {
+                          "type": "boolean",
+                          "description": "Web may create or refresh a public share of this session: never a Claude Code import (TAL-551)."
+                        },
                         "source_tag": {
                           "anyOf": [
                             {
@@ -15578,7 +15612,8 @@
                         "can_pin",
                         "can_archive",
                         "can_delete",
-                        "can_duplicate"
+                        "can_duplicate",
+                        "can_share"
                       ],
                       "additionalProperties": {}
                     }
@@ -16098,6 +16133,10 @@
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                         },
+                        "can_share": {
+                          "type": "boolean",
+                          "description": "Web may create or refresh a public share of this session: never a Claude Code import (TAL-551)."
+                        },
                         "attention": {
                           "anyOf": [
                             {
@@ -16314,7 +16353,8 @@
                         "can_pin",
                         "can_archive",
                         "can_delete",
-                        "can_duplicate"
+                        "can_duplicate",
+                        "can_share"
                       ],
                       "additionalProperties": {}
                     }
@@ -16784,6 +16824,10 @@
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                         },
+                        "can_share": {
+                          "type": "boolean",
+                          "description": "Web may create or refresh a public share of this session: never a Claude Code import (TAL-551)."
+                        },
                         "attention": {
                           "anyOf": [
                             {
@@ -17000,7 +17044,8 @@
                         "can_pin",
                         "can_archive",
                         "can_delete",
-                        "can_duplicate"
+                        "can_duplicate",
+                        "can_share"
                       ],
                       "additionalProperties": {}
                     }
@@ -17477,6 +17522,10 @@
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                         },
+                        "can_share": {
+                          "type": "boolean",
+                          "description": "Web may create or refresh a public share of this session: never a Claude Code import (TAL-551)."
+                        },
                         "attention": {
                           "anyOf": [
                             {
@@ -17693,7 +17742,8 @@
                         "can_pin",
                         "can_archive",
                         "can_delete",
-                        "can_duplicate"
+                        "can_duplicate",
+                        "can_share"
                       ],
                       "additionalProperties": {}
                     }
@@ -20698,6 +20748,10 @@
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                         },
+                        "can_share": {
+                          "type": "boolean",
+                          "description": "Web may create or refresh a public share of this session: never a Claude Code import (TAL-551)."
+                        },
                         "source_tag": {
                           "anyOf": [
                             {
@@ -20968,7 +21022,8 @@
                         "can_pin",
                         "can_archive",
                         "can_delete",
-                        "can_duplicate"
+                        "can_duplicate",
+                        "can_share"
                       ],
                       "additionalProperties": {}
                     }
@@ -21521,6 +21576,10 @@
                               "type": "boolean",
                               "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                             },
+                            "can_share": {
+                              "type": "boolean",
+                              "description": "Web may create or refresh a public share of this session: never a Claude Code import (TAL-551)."
+                            },
                             "attention": {
                               "anyOf": [
                                 {
@@ -21737,7 +21796,8 @@
                             "can_pin",
                             "can_archive",
                             "can_delete",
-                            "can_duplicate"
+                            "can_duplicate",
+                            "can_share"
                           ],
                           "additionalProperties": {}
                         }
@@ -22237,6 +22297,10 @@
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                         },
+                        "can_share": {
+                          "type": "boolean",
+                          "description": "Web may create or refresh a public share of this session: never a Claude Code import (TAL-551)."
+                        },
                         "attention": {
                           "anyOf": [
                             {
@@ -22453,7 +22517,8 @@
                         "can_pin",
                         "can_archive",
                         "can_delete",
-                        "can_duplicate"
+                        "can_duplicate",
+                        "can_share"
                       ],
                       "additionalProperties": {}
                     }
@@ -25667,6 +25732,10 @@
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                         },
+                        "can_share": {
+                          "type": "boolean",
+                          "description": "Web may create or refresh a public share of this session: never a Claude Code import (TAL-551)."
+                        },
                         "source_tag": {
                           "anyOf": [
                             {
@@ -25937,7 +26006,8 @@
                         "can_pin",
                         "can_archive",
                         "can_delete",
-                        "can_duplicate"
+                        "can_duplicate",
+                        "can_share"
                       ],
                       "additionalProperties": {}
                     }
@@ -26668,6 +26738,10 @@
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                         },
+                        "can_share": {
+                          "type": "boolean",
+                          "description": "Web may create or refresh a public share of this session: never a Claude Code import (TAL-551)."
+                        },
                         "attention": {
                           "anyOf": [
                             {
@@ -26884,7 +26958,8 @@
                         "can_pin",
                         "can_archive",
                         "can_delete",
-                        "can_duplicate"
+                        "can_duplicate",
+                        "can_share"
                       ],
                       "additionalProperties": {}
                     }
@@ -27352,6 +27427,10 @@
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                         },
+                        "can_share": {
+                          "type": "boolean",
+                          "description": "Web may create or refresh a public share of this session: never a Claude Code import (TAL-551)."
+                        },
                         "attention": {
                           "anyOf": [
                             {
@@ -27568,7 +27647,8 @@
                         "can_pin",
                         "can_archive",
                         "can_delete",
-                        "can_duplicate"
+                        "can_duplicate",
+                        "can_share"
                       ],
                       "additionalProperties": {}
                     },
@@ -31355,6 +31435,10 @@
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                         },
+                        "can_share": {
+                          "type": "boolean",
+                          "description": "Web may create or refresh a public share of this session: never a Claude Code import (TAL-551)."
+                        },
                         "source_tag": {
                           "anyOf": [
                             {
@@ -31625,7 +31709,8 @@
                         "can_pin",
                         "can_archive",
                         "can_delete",
-                        "can_duplicate"
+                        "can_duplicate",
+                        "can_share"
                       ],
                       "additionalProperties": {}
                     },
@@ -34662,6 +34747,10 @@
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                         },
+                        "can_share": {
+                          "type": "boolean",
+                          "description": "Web may create or refresh a public share of this session: never a Claude Code import (TAL-551)."
+                        },
                         "source_tag": {
                           "anyOf": [
                             {
@@ -34932,7 +35021,8 @@
                         "can_pin",
                         "can_archive",
                         "can_delete",
-                        "can_duplicate"
+                        "can_duplicate",
+                        "can_share"
                       ],
                       "additionalProperties": {}
                     },
@@ -38031,6 +38121,10 @@
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                         },
+                        "can_share": {
+                          "type": "boolean",
+                          "description": "Web may create or refresh a public share of this session: never a Claude Code import (TAL-551)."
+                        },
                         "source_tag": {
                           "anyOf": [
                             {
@@ -38301,7 +38395,8 @@
                         "can_pin",
                         "can_archive",
                         "can_delete",
-                        "can_duplicate"
+                        "can_duplicate",
+                        "can_share"
                       ],
                       "additionalProperties": {}
                     },
@@ -41398,6 +41493,10 @@
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                         },
+                        "can_share": {
+                          "type": "boolean",
+                          "description": "Web may create or refresh a public share of this session: never a Claude Code import (TAL-551)."
+                        },
                         "source_tag": {
                           "anyOf": [
                             {
@@ -41668,7 +41767,8 @@
                         "can_pin",
                         "can_archive",
                         "can_delete",
-                        "can_duplicate"
+                        "can_duplicate",
+                        "can_share"
                       ],
                       "additionalProperties": {}
                     },
@@ -44117,6 +44217,10 @@
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                         },
+                        "can_share": {
+                          "type": "boolean",
+                          "description": "Web may create or refresh a public share of this session: never a Claude Code import (TAL-551)."
+                        },
                         "attention": {
                           "anyOf": [
                             {
@@ -44333,7 +44437,8 @@
                         "can_pin",
                         "can_archive",
                         "can_delete",
-                        "can_duplicate"
+                        "can_duplicate",
+                        "can_share"
                       ],
                       "additionalProperties": {}
                     }
@@ -44800,6 +44905,10 @@
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                         },
+                        "can_share": {
+                          "type": "boolean",
+                          "description": "Web may create or refresh a public share of this session: never a Claude Code import (TAL-551)."
+                        },
                         "attention": {
                           "anyOf": [
                             {
@@ -45016,7 +45125,8 @@
                         "can_pin",
                         "can_archive",
                         "can_delete",
-                        "can_duplicate"
+                        "can_duplicate",
+                        "can_share"
                       ],
                       "additionalProperties": {}
                     }
@@ -54166,6 +54276,10 @@
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                         },
+                        "can_share": {
+                          "type": "boolean",
+                          "description": "Web may create or refresh a public share of this session: never a Claude Code import (TAL-551)."
+                        },
                         "source_tag": {
                           "anyOf": [
                             {
@@ -54436,7 +54550,8 @@
                         "can_pin",
                         "can_archive",
                         "can_delete",
-                        "can_duplicate"
+                        "can_duplicate",
+                        "can_share"
                       ],
                       "additionalProperties": {}
                     },
@@ -57521,6 +57636,10 @@
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                         },
+                        "can_share": {
+                          "type": "boolean",
+                          "description": "Web may create or refresh a public share of this session: never a Claude Code import (TAL-551)."
+                        },
                         "source_tag": {
                           "anyOf": [
                             {
@@ -57791,7 +57910,8 @@
                         "can_pin",
                         "can_archive",
                         "can_delete",
-                        "can_duplicate"
+                        "can_duplicate",
+                        "can_share"
                       ],
                       "additionalProperties": {}
                     },
@@ -61268,6 +61388,10 @@
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                         },
+                        "can_share": {
+                          "type": "boolean",
+                          "description": "Web may create or refresh a public share of this session: never a Claude Code import (TAL-551)."
+                        },
                         "source_tag": {
                           "anyOf": [
                             {
@@ -61538,7 +61662,8 @@
                         "can_pin",
                         "can_archive",
                         "can_delete",
-                        "can_duplicate"
+                        "can_duplicate",
+                        "can_share"
                       ],
                       "additionalProperties": {}
                     }
@@ -64857,6 +64982,10 @@
                               "type": "boolean",
                               "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                             },
+                            "can_share": {
+                              "type": "boolean",
+                              "description": "Web may create or refresh a public share of this session: never a Claude Code import (TAL-551)."
+                            },
                             "source_tag": {
                               "anyOf": [
                                 {
@@ -65127,7 +65256,8 @@
                             "can_pin",
                             "can_archive",
                             "can_delete",
-                            "can_duplicate"
+                            "can_duplicate",
+                            "can_share"
                           ],
                           "additionalProperties": {}
                         }

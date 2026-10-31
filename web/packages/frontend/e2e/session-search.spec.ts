@@ -5,7 +5,7 @@ test.use({ serviceWorkers: 'block', video: 'on' })
 const now = Math.floor(Date.now() / 1000)
 const row = (session_id: string, title: string) => ({
   session_id, title, sort_ts: now, last_message_at: now, is_streaming: false, read_only: false,
-  can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true,
+  can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, can_share: true,
   source_kind: 'webui', is_messaging_session: false,
 })
 const alpha = row('search-alpha', 'Alpha zebra')

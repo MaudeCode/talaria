@@ -101,10 +101,10 @@ export function SessionContextMenu({ row, active }: { row: SessionRow; active: b
         {shareUrl
           ? <>
               <MenuItem onClick={() => { void copyShareLink(shareUrl) }}>{m.session_share_copy_link()}</MenuItem>
-              <MenuItem onClick={() => share.mutate()}>{m.share_session_refresh_snapshot()}</MenuItem>
+              {row.can_share && <MenuItem onClick={() => share.mutate()}>{m.share_session_refresh_snapshot()}</MenuItem>}
               <MenuItem className="text-error" onClick={() => setDialog({ kind: 'revoke' })}>{m.session_share_revoke()}</MenuItem>
             </>
-          : <MenuItem onClick={() => share.mutate()}>{m.session_share()}</MenuItem>}
+          : row.can_share && <MenuItem onClick={() => share.mutate()}>{m.session_share()}</MenuItem>}
         {row.can_duplicate && <MenuItem onClick={() => duplicate.mutate()}>{m.session_duplicate()}</MenuItem>}
         <MenuItem onClick={() => exportAs('json')}>{m.session_export_json()}</MenuItem>
         <MenuItem onClick={() => exportAs('markdown')}>{m.session_export_markdown()}</MenuItem>

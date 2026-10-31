@@ -7,7 +7,7 @@ test.use({ serviceWorkers: 'block' })
 test('background results keep one leading review icon and only their goal at desktop and narrow widths', async ({ page }, testInfo) => {
   const fixture = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../contracts/fixtures/background-review.json'), 'utf8')) as { session_id: string; messages: Record<string, unknown>[] }
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: {
-    ...fixture, title: 'Background review', is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, transcript_seq: null,
+    ...fixture, title: 'Background review', is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, can_share: true, transcript_seq: null,
     messages: [{ role: 'user', content: 'Check these results.' }, ...fixture.messages, { role: 'assistant', content: 'The test run needs attention.' }],
   } } }))
   await page.goto(`/session/${fixture.session_id}`)

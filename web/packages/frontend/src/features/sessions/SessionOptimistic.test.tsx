@@ -28,7 +28,7 @@ import { teardownAll } from '../../stream/connection'
 
 const now = Date.now() / 1000
 const row = (session_id: string, title: string, extra: Partial<SessionRow> = {}): SessionRow => ({
-  session_id, title, last_message_at: now, sort_ts: now, is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, source_kind: 'webui', is_messaging_session: false, ...extra,
+  session_id, title, last_message_at: now, sort_ts: now, is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, can_share: true, source_kind: 'webui', is_messaging_session: false, ...extra,
 })
 const alpha = row('alpha', 'Alpha', { project_id: 'p1', share_url: '/share/abc', worktree_branch: 'wt/alpha' })
 const beta = row('beta', 'Beta')

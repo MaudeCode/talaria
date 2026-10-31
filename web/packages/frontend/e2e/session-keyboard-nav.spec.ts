@@ -7,7 +7,7 @@ test.use({ serviceWorkers: 'block' })
 const now = Math.floor(Date.now() / 1000)
 const row = (session_id: string, age: number) => ({
   session_id, title: session_id, is_streaming: false, attention: null, last_message_at: now - age, updated_at: now - age, sort_ts: now - age, pinned: false, archived: false, project_id: null,
-  is_cli_session: false, source_kind: 'webui', is_messaging_session: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true,
+  is_cli_session: false, source_kind: 'webui', is_messaging_session: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, can_share: true,
 })
 const ROWS = [row('jk-first', 60), row('jk-second', 120), row('jk-third', 180), row('jk-hidden', 30 * 86_400)]
 

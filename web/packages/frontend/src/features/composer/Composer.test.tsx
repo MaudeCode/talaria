@@ -459,13 +459,13 @@ describe('Composer', () => {
   })
 
   it('offers no send, command or session controls for a session the server marks read-only (TAL-312)', () => {
-    renderComposer({ session_id: 'child', title: 'Delegated child', is_streaming: false, read_only: true, can_branch: false, can_pin: false, can_archive: false, can_delete: false, can_duplicate: false, source_tag: 'subagent', source_kind: 'subagent', is_messaging_session: false, sort_ts: 0 })
+    renderComposer({ session_id: 'child', title: 'Delegated child', is_streaming: false, read_only: true, can_branch: false, can_pin: false, can_archive: false, can_delete: false, can_duplicate: false, can_share: true, source_tag: 'subagent', source_kind: 'subagent', is_messaging_session: false, sort_ts: 0 })
     expect(screen.getByRole('note')).toHaveTextContent('read-only')
     expect(screen.queryByRole('textbox')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Send message' })).toBeNull()
   })
 
-  const writable: Session = { session_id: 's1', title: 'Mine', is_streaming: true, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, source_kind: 'webui', is_messaging_session: false, sort_ts: 0 }
+  const writable: Session = { session_id: 's1', title: 'Mine', is_streaming: true, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, can_share: true, source_kind: 'webui', is_messaging_session: false, sort_ts: 0 }
   const running = (): LiveTurn => {
     resetStreamStoreForTests()
     dispatch({ type: 'start', sessionId: 's1', streamId: 'run', turnId: 'turn', userMessageId: 'u', userText: 'Inspect', now: 0 })
@@ -829,7 +829,7 @@ describe('Composer', () => {
   })
 
   it('keeps the composer for a writable session', () => {
-    renderComposer({ session_id: 'mine', title: 'Mine', is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, source_kind: 'webui', is_messaging_session: false, sort_ts: 0 })
+    renderComposer({ session_id: 'mine', title: 'Mine', is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, can_share: true, source_kind: 'webui', is_messaging_session: false, sort_ts: 0 })
     expect(screen.getByRole('textbox')).toBeInTheDocument()
     expect(screen.queryByRole('note')).toBeNull()
   })

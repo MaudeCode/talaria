@@ -7,7 +7,7 @@ test('reviews exact outbound content, edits optimistically and reconciles a refu
   const ref = { draft_id: 'd_1234abcd', card: 1 }
   let draft = { ...ref, producer: 'draft-cards', producer_revision: '6e6ca659ece59b0ce1c28b3b188393491ee5a415', kind: 'email', platform: 'Mail', version: 2, revision: 'reviewed-v2', fields: { from: 'sender@example.invalid', to: ['reviewer@example.invalid'], cc: [], bcc: [], subject: 'Release review', body: 'The release is ready for your review. Please confirm the checklist.' }, state: 'draft', can_edit: true, can_approve: true, masked: false }
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: {
-    session_id: sid, title: 'Review the release message', read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true,
+    session_id: sid, title: 'Review the release message', read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, can_share: true,
     messages: [{ role: 'assistant', content: 'Please review this message.', _turn_id: 'draft-turn', _anchor_activity_scene: {
       version: 'activity_scene_v1', terminal_state: 'completed', expanded_by_default: true, final_answer: 'Please review this message.', activity_rows: [{ row_id: 'draft-row', role: 'tool', tool: { id: 'draft-tool', name: 'draft_card', kind: 'write', target: 'Release review', preview: 'Draft prepared', done: true, is_error: false, duration: null, cost_usd: null, result_view: { text: 'Draft prepared', outbound_draft: ref } } }],
     } }],

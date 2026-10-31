@@ -42,6 +42,7 @@
     "can_archive": false,
     "can_delete": false,
     "can_duplicate": false,
+    "can_share": true,
     "source_kind": "cli",
     "is_messaging_session": false,
     "sort_ts": 100,

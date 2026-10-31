@@ -11,7 +11,7 @@ test('shows the standing goal and follows the server\'s live goal', async ({ pag
   const sid = 'goal-chip'
   let currentGoal: SessionGoal | null = goal
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: {
-    session_id: sid, title: 'Release notes', active_stream_id: 'goal-run', is_streaming: true, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true,
+    session_id: sid, title: 'Release notes', active_stream_id: 'goal-run', is_streaming: true, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, can_share: true,
     transcript_seq: null, messages: [{ role: 'user', id: 1, content: 'Ship the release notes', _turn_id: 'goal-run' }],
     goal: currentGoal,
   } } }))

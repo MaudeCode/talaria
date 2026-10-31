@@ -4,7 +4,7 @@ test.use({ serviceWorkers: 'block' })
 
 test('native sidebar drag pins and unpins through the optimistic action', async ({ page }, info) => {
   const now = Math.floor(Date.now() / 1000)
-  const base = { sort_ts: now, is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, source_kind: 'webui', is_messaging_session: false }
+  const base = { sort_ts: now, is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, can_share: true, source_kind: 'webui', is_messaging_session: false }
   let pinned = false
   let lastReadPinned: boolean | null = null
   const gate = Promise.withResolvers<undefined>()

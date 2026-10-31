@@ -7,7 +7,7 @@ const output = 'Reloaded skills from disk.\nAdded: 1\nRemoved: 0\nUnchanged: 4\n
 test('/reload-skills runs on the server and shows its output above the composer; no chat turn starts (TAL-561)', async ({ page }, testInfo) => {
   const sid = 'cmd-exec'
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: {
-    session_id: sid, title: 'Skills', active_stream_id: null, is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true,
+    session_id: sid, title: 'Skills', active_stream_id: null, is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, can_share: true,
     transcript_seq: null, messages: [{ role: 'user', id: 1, content: 'List my skills' }, { role: 'assistant', id: 2, content: 'You have four.' }],
   } } }))
   await page.route('**/api/commands', (route) => route.fulfill({ json: { commands: [

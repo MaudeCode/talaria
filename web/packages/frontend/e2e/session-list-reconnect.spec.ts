@@ -34,7 +34,7 @@ test('a healthy sidebar skips polling and resyncs on reconnect', async ({ page }
       session_id: 'reconnect-sidebar', title, updated_at: now, sort_ts: now, last_message_at: now,
       pinned: false, archived: false, project_id: null, is_streaming: false, attention: null,
       is_cli_session: false, source_kind: 'webui', is_messaging_session: false, read_only: false,
-      can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true,
+      can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, can_share: true,
     }] } })
   })
   try {

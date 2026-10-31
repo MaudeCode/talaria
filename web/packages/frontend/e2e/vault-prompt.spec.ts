@@ -13,7 +13,7 @@ test(`${kind} takes a masked answer and sends it only to the respond route`, asy
   const sid = 'vault-prompt'
   let head: Record<string, unknown> | null = { ...fixture[kind].pending, timeout_seconds: 120, vault: { ...(fixture[kind].pending.vault as object), timeout_at: Date.now() / 1000 + 120 } }
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: {
-    session_id: sid, title: 'Log in', active_stream_id: 'vault-run', is_streaming: true, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true,
+    session_id: sid, title: 'Log in', active_stream_id: 'vault-run', is_streaming: true, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, can_share: true,
     transcript_seq: null, messages: [{ role: 'user', id: 1, content: 'Log in to example', _turn_id: 'vault-run' }],
   } } }))
   await page.route('**/api/chat/stream/status?**', (route) => route.fulfill({ json: { active: true, stream_id: 'vault-run', replay_available: false } }))

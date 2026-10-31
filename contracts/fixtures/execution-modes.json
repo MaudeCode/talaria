@@ -86,6 +86,7 @@
       "can_archive": false,
       "can_delete": false,
       "can_duplicate": false,
+      "can_share": true,
       "source_label": "CLI",
       "workspace_name": "Home"
     }
@@ -122,6 +123,7 @@
       "can_archive": false,
       "can_delete": false,
       "can_duplicate": false,
+      "can_share": true,
       "source_label": "CLI",
       "workspace_name": "Home"
     }

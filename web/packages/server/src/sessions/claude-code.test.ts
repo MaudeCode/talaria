@@ -50,11 +50,13 @@ describe('Claude Code sessions (TAL-551)', () => {
 
   it('opens a listed transcript read-only and refuses changes', async () => {
     await s.deps.settings.save({ show_cli_sessions: true, show_claude_code_sessions: true })
-    const sid = String((await listed()).find((r) => r.title === 'Fix the login bug')?.session_id)
+    const row = (await listed()).find((r) => r.title === 'Fix the login bug')
+    const sid = String(row?.session_id)
     const res = await s.get(`/api/session?session_id=${sid}`)
     expect(res.status).toBe(200)
     const session = (await json(res)).session as Json
-    expect(session).toMatchObject({ session_id: sid, read_only: true, source_kind: 'claude_code' })
+    expect(session).toMatchObject({ session_id: sid, read_only: true, source_kind: 'claude_code', can_share: false })
+    expect(row?.can_share).toBe(false)
     expect((session.messages as Json[]).map((m) => [m.role, m.content])).toEqual([['user', 'Why does login fail?'], ['assistant', 'The token expired.']])
     expect((await post(s, '/api/session/rename', { session_id: sid, title: 'x' })).status).toBe(403)
     // Web never stores a copy: it would stop following the transcript and fall out of other profiles.
