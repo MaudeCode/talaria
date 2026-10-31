@@ -126,8 +126,8 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, r
       if (src !== dest) { setNotice(null); remove.mutate({ path: src, to: dest, call: () => api.moveEntry(sessionId, src, dest) }) }
     },
   })
-  const listed = withCreated(withEffects(listing.data?.entries ?? [], (e) => entryResource(workspace, e.path ?? joinPath(dir, e.name)), effects), createKind(workspace, dir), effects)
-  const entries = managed ? listed : listed.slice().sort((a, b) => Number(!!b.is_dir) - Number(!!a.is_dir) || a.name.localeCompare(b.name))
+  // The server orders the listing (symlinks, folders, files); rows render in that order.
+  const entries = withCreated(withEffects(listing.data?.entries ?? [], (e) => entryResource(workspace, e.path ?? joinPath(dir, e.name)), effects), createKind(workspace, dir), effects)
   const g = git.data?.git
   const readOnly = managed && (content.data?.read_only !== false || content.isError)
   const fileName = content.data?.name ?? listing.data?.entries.find((entry) => entry.path === file)?.name ?? file

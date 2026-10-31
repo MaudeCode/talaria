@@ -1,0 +1,3 @@
+{
+  "entries": [{"category": "Fixed", "summary": "The Web file browser lists folders before files again, in the order the server sends.", "highlight": false, "components": ["web"]}]
+}
