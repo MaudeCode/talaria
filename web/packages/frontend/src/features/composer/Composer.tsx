@@ -173,6 +173,26 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
   const [dragOver, setDragOver] = useState(false)
   const [configOpen, setConfigOpen] = useState(false)
   const [focusWithin, setFocusWithin] = useState(false)
+  // TAL-698: "within" is the composer's React tree: the card, the strip under it and the menus a strip chip portals out.
+  // A focus that lands outside it folds a phone's empty composer. A tap that starts inside keeps it, even where the
+  // browser moves focus nowhere (iOS does not focus a tapped button), until that tap's click or cancel.
+  const focusedHere = useRef(false)
+  const pressedHere = useRef(false)
+  useEffect(() => {
+    const arm = () => { focusedHere.current = false }
+    const leave = () => { if (!focusedHere.current) setFocusWithin(false) }
+    const release = () => { pressedHere.current = false }
+    document.addEventListener('focusin', arm, true)
+    document.addEventListener('focusin', leave)
+    window.addEventListener('click', release, true)
+    window.addEventListener('pointercancel', release, true)
+    return () => {
+      document.removeEventListener('focusin', arm, true)
+      document.removeEventListener('focusin', leave)
+      window.removeEventListener('click', release, true)
+      window.removeEventListener('pointercancel', release, true)
+    }
+  }, [])
   const [stage, setStage] = useState<'full' | 'icons' | 'burger'>('full')
   const footer = useRef<HTMLDivElement>(null)
   // Fit pass (legacy _fitComposerFooter): try full labels, then icon-only chips, then move the chips into the panel.
@@ -769,16 +789,15 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
 
   return (
     // Drops land anywhere on the composer, the image strip above the card included (TAL-1552).
-    <div className="composer-wrap" id="composerWrap" onDragOver={(e) => { e.preventDefault(); wake(); if (!clarify) setDragOver(true) }} onDragLeave={() => setDragOver(false)} onDrop={onDrop}>
+    <div className="composer-wrap" id="composerWrap" onFocus={() => { focusedHere.current = true; setFocusWithin(true) }} onBlur={(e) => { if (!e.relatedTarget && !pressedHere.current) setFocusWithin(false) }} onPointerDown={() => { pressedHere.current = true }} onDragOver={(e) => { e.preventDefault(); wake(); if (!clarify) setDragOver(true) }} onDragLeave={() => setDragOver(false)} onDrop={onDrop}>
       <ComposerNotices key={sessionId ?? ''} notices={chipNotices} fallbackFocus={textarea} />
       {!clarify && <AttachmentTray files={files} placement="strip" onRemove={removeFile} onRetry={retryFile} />}
       <div
         className={cn('composer-box relative z-[2] flex flex-col mx-auto max-w-(--msg-max) border-(length:--composer-border-width) border-(--composer-border-color) rounded-(--composer-radius) shadow-(--composer-shadow) transition-[border-color,box-shadow] duration-(--dur) ease-(--ease) focus-within:border-(--composer-focus-border) focus-within:shadow-(--composer-focus-shadow) focus-within:outline-none max-[641px]:rounded-(--composer-radius-phone)', dragOver && 'drag-over', clarify && 'clarify-active', resting && 'is-resting')}
         id="composerBox"
         ref={box}
-        onFocus={() => { setFocusWithin(true); wake() }}
+        onFocus={wake}
         onPointerDown={wake}
-        onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setFocusWithin(false) }}
       >
         {palette.open && <CommandPaletteList items={palette.items} active={palette.active} listId={palette.listId} onPick={applySuggestion} onHover={palette.setActive} />}
         {dragOver && <div className="drop-hint active" id="dropHint" aria-hidden="true">{m.drop_files_to_attach()}</div>}

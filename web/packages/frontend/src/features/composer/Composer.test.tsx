@@ -893,4 +893,29 @@ describe('Composer', () => {
     expect(api.startChat).toHaveBeenCalledTimes(1)
     expect(getFirstSend()).toBeNull()
   })
+
+  it('keeps a phone composer\'s empty strip while its chips take focus or a tap, and folds it once focus leaves (TAL-698)', () => {
+    window.matchMedia = vi.fn(() => ({ matches: true, addEventListener: noop, removeEventListener: noop })) as unknown as typeof window.matchMedia
+    renderComposer({ ...writable, is_streaming: false })
+    const strip = () => document.querySelector('.composer-strip')
+    const outside = document.body.appendChild(document.createElement('button'))
+    expect(strip()).toBeNull()
+    act(() => screen.getByRole('textbox').focus())
+    const chip = document.querySelector<HTMLElement>('.composer-toolsets-chip')!
+    act(() => chip.focus())
+    expect(strip()).not.toBeNull()
+    // iOS focuses nothing on a tapped button: the blur lands on no element, but the tap began in the strip.
+    fireEvent.pointerDown(chip)
+    act(() => chip.blur())
+    expect(strip()).not.toBeNull()
+    fireEvent.click(chip)
+    act(() => outside.focus())
+    expect(strip()).toBeNull()
+    // Focus leaving for nowhere without a tap in the composer (a dismissed keyboard) folds it too.
+    act(() => screen.getByRole('textbox').focus())
+    expect(strip()).not.toBeNull()
+    act(() => screen.getByRole('textbox').blur())
+    expect(strip()).toBeNull()
+    outside.remove()
+  })
 })

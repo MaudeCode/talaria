@@ -784,3 +784,60 @@ test('status chips measure their resting width and refit when the chat width cha
   await cap(needed + 1)
   await expect(row).toHaveClass(/\bis-stacked\b/)
 })
+
+test('an empty phone composer keeps its strip while each chip opens and applies, and folds it on a tap outside (TAL-698)', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'mobile', 'Only phones fold the strip under an empty draft.')
+  const shot = (name: string) => page.screenshot({ path: process.env.TAL698_SHOTS ? `${process.env.TAL698_SHOTS}/${name}.png` : testInfo.outputPath(`${name}.png`) })
+  await page.route('**/api/workspaces', (route) => route.fulfill({ json: { workspaces: [{ name: 'alpha', path: '/tmp/tal698-alpha' }, { name: 'beta', path: '/tmp/tal698-beta' }] } }))
+  await page.route('**/api/toolsets', (route) => route.fulfill({ json: { selected_toolsets: ['web'], using_defaults: true, toolsets: [
+    { name: 'web', description: '', available: true, selected: true, unavailable_reason: null },
+    { name: 'terminal', description: '', available: true, selected: false, unavailable_reason: null },
+  ] } }))
+  await page.route('**/api/session/execution-modes', (route) => route.fulfill({ json: { modes: [
+    { mode: 'normal', available: true, reason: null, can_attach: true, can_reference: true },
+    { mode: 'safe', available: true, reason: null, can_attach: false, can_reference: false },
+  ] } }))
+  await page.route('**/api/profiles', (route) => route.fulfill({ json: { profiles: [{ name: 'default' }, { name: 'research' }], active: 'default' } }))
+  await page.route('**/api/profile/switch', (route) => route.fulfill({ json: { profiles: [{ name: 'default' }, { name: 'research' }], active: 'research', is_default: false, default_model: null, default_model_provider: null, default_workspace: null } }))
+  await page.goto('/')
+  const msg = page.locator('#msg')
+  const strip = page.locator('.composer-strip')
+  await expect(msg).toHaveValue('')
+  await expect(strip).toBeHidden()
+
+  // Each chip is reached the way a phone user reaches it: tap the empty prompt, then the chip.
+  await msg.tap()
+  await page.locator('#composerWorkspaceChip').tap()
+  await expect(page.getByRole('menu')).toBeVisible()
+  await shot('workspace-menu')
+  await page.getByRole('menuitemradio', { name: /beta/ }).tap()
+  await expect(page.locator('#composerWorkspaceChip')).toContainText('beta')
+  // A radio pick leaves the menu open; closing it hands focus back to the chip, so the strip stays.
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('menu')).toHaveCount(0)
+  await expect(strip).toBeVisible()
+
+  await msg.tap()
+  await strip.locator('.composer-toolsets-chip').tap()
+  await page.getByRole('checkbox', { name: 'terminal' }).tap()
+  await page.getByRole('button', { name: 'Save' }).tap()
+  await expect(strip.locator('.composer-toolsets-chip')).toContainText('web, terminal')
+
+  await msg.tap()
+  await strip.locator('.composer-execution-mode-chip').tap()
+  await page.getByRole('menuitemradio', { name: 'Safe mode', exact: true }).tap()
+  await expect(strip.locator('.composer-execution-mode-chip')).toContainText('Safe mode')
+  await shot('applied')
+
+  // A tap outside the composer returns it to the resting row.
+  await page.locator('#messages').tap({ position: { x: 20, y: 20 } })
+  await expect(strip).toBeHidden()
+  await shot('resting')
+
+  await msg.tap()
+  await strip.getByRole('button', { name: /default/ }).tap()
+  const switched = page.waitForRequest((req) => req.url().endsWith('/api/profile/switch'))
+  await page.getByRole('menuitemradio', { name: /research/ }).tap()
+  expect((await switched).postDataJSON()).toMatchObject({ name: 'research' })
+  await expect(msg).toHaveValue('')
+})
