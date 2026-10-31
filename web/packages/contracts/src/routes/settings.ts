@@ -12,15 +12,46 @@ const tags = ['settings']
 
 export const ErrorSchema = z.object({ error: z.string() })
 
+/** Mirror of `contracts/fixtures/feedback-attachment-limits.json`, which Relay enforces; a contract test keeps them equal. */
+export const FEEDBACK_ATTACHMENT_LIMITS = {
+  maxAttachments: 5,
+  maxVideosPerReport: 1,
+  maxVideoSeconds: 120,
+  types: {
+    'image/png': { kind: 'image', maxBytes: 10_000_000 },
+    'image/jpeg': { kind: 'image', maxBytes: 10_000_000 },
+    'image/heic': { kind: 'image', maxBytes: 10_000_000 },
+    'image/webp': { kind: 'image', maxBytes: 10_000_000 },
+    'video/mp4': { kind: 'video', maxBytes: 20_000_000 },
+    'video/quicktime': { kind: 'video', maxBytes: 20_000_000 },
+    'video/webm': { kind: 'video', maxBytes: 20_000_000 },
+  },
+  tierKinds: { verified: ['image', 'video'], unverified: [] },
+} as const satisfies { maxAttachments: number; maxVideosPerReport: number; maxVideoSeconds: number; types: Record<string, { kind: 'image' | 'video'; maxBytes: number }>; tierKinds: Record<'verified' | 'unverified', readonly ('image' | 'video')[]> }
+export type FeedbackAttachmentType = keyof typeof FEEDBACK_ATTACHMENT_LIMITS.types
+export const FeedbackAttachmentTypeSchema = z.enum(Object.keys(FEEDBACK_ATTACHMENT_LIMITS.types) as [FeedbackAttachmentType, ...FeedbackAttachmentType[]])
+
 const feedbackText = (max: number) => z.string().max(max).regex(/\S/, 'Must not be blank')
 export const FeedbackSubmitSchema = z.strictObject({
   requestId: z.uuid(), kind: z.enum(['bug', 'feature', 'other']),
   title: feedbackText(120), body: feedbackText(8000),
   includeDiagnostics: z.boolean(),
   client: z.strictObject({ platform: z.enum(['web', 'ios']), appVersion: feedbackText(64).optional(), osVersion: feedbackText(64).optional(), deviceModel: feedbackText(64).optional() }),
+  attachmentIds: z.array(z.uuid()).min(1).max(FEEDBACK_ATTACHMENT_LIMITS.maxAttachments).refine((ids) => new Set(ids).size === ids.length, 'Must not repeat').optional(),
 })
 export const FeedbackDiagnosticsSchema = z.object({ text: z.string().max(16384), bytes: z.number().int().min(0).max(16384) })
-export const FeedbackResultSchema = z.object({ status: z.literal('sent'), reportId: z.string().min(1) })
+/** What this server lets its clients attach; `enabled` is false unless this server is a registered (signed) Relay publisher. */
+export const FeedbackOptionsSchema = z.object({
+  attachments: z.object({
+    enabled: z.boolean(), videoAllowed: z.boolean(),
+    maxCount: z.number().int().nonnegative(), maxImageBytes: z.number().int().nonnegative(), maxVideoBytes: z.number().int().nonnegative(), maxVideoSeconds: z.number().int().nonnegative(),
+    acceptedTypes: z.array(FeedbackAttachmentTypeSchema),
+  }),
+})
+/** One staged file from `POST /api/feedback/attachments`, referenced by `attachmentIds` within an hour. */
+export const FeedbackAttachmentStagedSchema = z.object({ attachmentId: z.uuid(), contentType: FeedbackAttachmentTypeSchema, bytes: z.number().int().positive() })
+export const FeedbackAttachmentResultSchema = z.object({ attachmentId: z.uuid(), status: z.enum(['sent', 'refused']), reason: z.enum(['tier', 'quota', 'disabled', 'invalid', 'expired']).optional() })
+export const FeedbackResultSchema = z.object({ status: z.literal('sent'), reportId: z.string().min(1), attachments: z.array(FeedbackAttachmentResultSchema).max(FEEDBACK_ATTACHMENT_LIMITS.maxAttachments) })
 export const FeedbackErrorSchema = z.discriminatedUnion('error', [
   ErrorSchema.extend({ error: z.literal('rate_limited'), retryAfterSeconds: z.number().int().nonnegative() }),
   ErrorSchema.extend({ error: z.enum(['feedback_unavailable', 'relay_unreachable', 'invalid']) }),
@@ -33,7 +64,8 @@ const AdvancedBody = z.object({ advanced: Loose.nullable().optional() })
 export const settingsContract = {
   feedback: {
     diagnostics: oc.route({ method: 'GET', path: '/api/feedback/diagnostics', tags, summary: 'Preview the redacted diagnostics attached to feedback.' }).output(FeedbackDiagnosticsSchema),
-    submit: oc.route({ method: 'POST', path: '/api/feedback/submit', tags, summary: 'Forward feedback to Relay. Reuse requestId after an unknown outcome. Errors: rate_limited with retryAfterSeconds (429), feedback_unavailable (503), relay_unreachable (502), invalid (400).' }).input(FeedbackSubmitSchema).output(FeedbackResultSchema),
+    options: oc.route({ method: 'GET', path: '/api/feedback/options', tags, summary: 'Attachment limits for this server: attachments are enabled only for a registered Relay publisher.' }).output(FeedbackOptionsSchema),
+    submit: oc.route({ method: 'POST', path: '/api/feedback/submit', tags, summary: 'Forward feedback and its staged attachments to Relay; `attachments` reports each one as sent or refused with a reason. Reuse requestId after an unknown outcome. Errors: rate_limited with retryAfterSeconds (429), feedback_unavailable (503), relay_unreachable (502), invalid (400, including unknown, expired or another member\'s attachmentIds).' }).input(FeedbackSubmitSchema).output(FeedbackResultSchema),
   },
   settings: {
     get: oc.route({ method: 'GET', path: '/api/settings', tags, summary: 'Server settings plus auth-state, max_tokens, and version badges.' }).output(SettingsSchema),

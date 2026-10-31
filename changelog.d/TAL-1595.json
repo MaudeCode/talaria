@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Talaria Web servers registered with Relay can forward screenshots and screen recordings with feedback reports.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

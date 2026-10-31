@@ -139,6 +139,11 @@ export const RAW_ROUTES: readonly RawRoute[] = [
     responses: { 410: { description: '`{error, replaced_by}`.', contentType: 'application/json', headers: { 'X-Replaced-By': 'The replacement path, `/api/bg-task-complete-ack`.' } } },
   },
   {
+    method: 'POST', path: '/api/feedback/attachments', summary: 'Stage one feedback attachment for this member; reference its `attachmentId` from `/api/feedback/submit` within an hour. Bytes must match the declared type and its size limit in `FEEDBACK_ATTACHMENT_LIMITS`.', tags: ['settings'],
+    requestBody: { contentType: 'multipart/form-data', description: 'Field `contentType` (one of `acceptedTypes` from `/api/feedback/options`) and one `file` part.' },
+    responses: { 200: { description: '`FeedbackAttachmentStaged`: `{attachmentId, contentType, bytes}`.', contentType: 'application/json' }, 400: { description: '`{error: "invalid"}`: missing or extra file, unknown type, size over the type limit, or bytes that do not match the type.', contentType: 'application/json' }, 403: { description: '`{error: "attachments_unavailable"}`: this server may not attach this kind (not a registered Relay publisher).', contentType: 'application/json' }, 413: { description: 'Body exceeds the largest attachment limit.', contentType: 'application/json' }, 429: { description: '`{error: "rate_limited", retryAfterSeconds}`: 15 files or 100 MB already staged for this member, or the server-wide staging cap.', contentType: 'application/json' } },
+  },
+  {
     method: 'POST', path: '/api/upload', summary: 'Store one chat attachment in the session inbox and return a rollback receipt.', tags: ['files'],
     query: { session_id: { description: 'Target session (the multipart `session_id` field wins when present).' } },
     requestBody: { contentType: 'multipart/form-data', description: 'Fields `session_id` and `file`.' },

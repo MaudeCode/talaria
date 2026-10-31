@@ -31,6 +31,7 @@ import type { Session } from '../sessions/session.js'
 import { handleCspReport, handleTranscribe, handleTts } from './tools-raw.js'
 import { handleOidcCallback, handleOidcStart } from './auth-raw.js'
 import { handleTranscribeStream } from './transcribe-stream.js'
+import { FEEDBACK_UPLOAD_MAX_BYTES, stageFeedbackAttachment } from '../feedback.js'
 
 const SANDBOX_CSP = 'sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox'
 const DANGEROUS_TYPES = new Set(['text/html', 'application/xhtml+xml', 'image/svg+xml'])
@@ -52,6 +53,7 @@ export const RAW_GET_ROUTES: Record<string, RawHandler> = {
 }
 
 export const RAW_POST_ROUTES: Record<string, RawHandler> = {
+  '/api/feedback/attachments': handleFeedbackAttachment,
   '/api/upload': handleUpload,
   '/api/upload/extract': handleUploadExtract,
   '/api/workspace/upload': handleWorkspaceUpload,
@@ -391,8 +393,7 @@ async function handleSessionExport(ctx: RequestContext): Promise<void> {
 }
 
 /** The shared upload preamble: the declared-size gate, the bounded body read, and the multipart parse (answers on failure). */
-export async function readUploadForm(ctx: RequestContext): Promise<MultipartResult | null> {
-  const maxBytes = ctx.deps.config.maxUploadBytes
+export async function readUploadForm(ctx: RequestContext, maxBytes = ctx.deps.config.maxUploadBytes): Promise<MultipartResult | null> {
   const contentType = ctx.header('content-type') ?? ''
   const contentLength = Number.parseInt(ctx.header('content-length') ?? '0', 10) || 0
   if (contentLength > maxBytes) {
@@ -443,6 +444,14 @@ async function uploadSessionVisible(ctx: RequestContext, sessionId: string): Pro
     return false
   }
   return true
+}
+
+/** Stage one feedback attachment: exactly one `file` part plus its declared `contentType` field. */
+async function handleFeedbackAttachment(ctx: RequestContext): Promise<void> {
+  const form = await readUploadForm(ctx, FEEDBACK_UPLOAD_MAX_BYTES)
+  if (!form) return
+  if (form.parts.length !== 1 || !form.files.file) throw new HttpFailure(400, 'invalid')
+  await ctx.json(await stageFeedbackAttachment(ctx.deps, form.fields.contentType ?? '', form.files.file.body))
 }
 
 async function handleUpload(ctx: RequestContext): Promise<void> {

@@ -14,7 +14,7 @@ import { readFileSync, statSync } from 'node:fs'
 import { z } from 'zod'
 import type { DocumentBackend } from './storage/backend.js'
 import { updateDocument } from './storage/document.js'
-import type { SessionActivityPhase } from '@maudecode/talaria-web-contracts'
+import { FEEDBACK_ATTACHMENT_LIMITS, type SessionActivityPhase } from '@maudecode/talaria-web-contracts'
 import type { BackgroundActivity } from './background-tasks.js'
 import type { ActiveRun, StreamRegistry } from './streams.js'
 import type { PendingPrompts } from './pending.js'
@@ -46,6 +46,17 @@ class RelayHttpError extends Error {
     this.retryable = [408, 425, 429].includes(status) || status >= 500
   }
 }
+
+const UPLOAD_TIMEOUT_MS = 120_000
+const AdmissionIndex = z.number().int().nonnegative().max(FEEDBACK_ATTACHMENT_LIMITS.maxAttachments - 1)
+/** Relay's per-entry answer to a feedback manifest (relay/docs/http-api.md, Attachments). */
+const FeedbackAdmissionSchema = z.union([
+  z.object({ index: AdmissionIndex, status: z.literal('accepted'), uploadToken: z.string().min(1).max(256) }),
+  z.object({ index: AdmissionIndex, status: z.enum(['stored', 'missing']) }),
+  z.object({ index: AdmissionIndex, status: z.literal('refused'), reason: z.enum(['tier', 'quota', 'disabled']) }),
+])
+export type FeedbackAdmission = z.infer<typeof FeedbackAdmissionSchema>
+const FeedbackAcceptedSchema = z.object({ reportId: z.string().min(1).max(256), attachments: z.array(FeedbackAdmissionSchema).max(FEEDBACK_ATTACHMENT_LIMITS.maxAttachments).optional() })
 
 export interface RelayProfile { identity: string; profile_id: string }
 export interface RelayConfig { url: string; publisher_id: string; key_id: string; private_key_path: string; private_key_document?: string; profiles: Record<string, RelayProfile> }
@@ -762,10 +773,14 @@ export class RelayService {
     return payload && typeof payload === 'object' && !Array.isArray(payload) ? (payload as Record<string, unknown>) : {}
   }
 
+  private feedbackOrigin(config: RelayConfig | null): string {
+    return config?.url ?? (this.deps.env.HERMES_WEBUI_TALARIA_RELAY_URL ?? DEFAULT_RELAY_URL).trim().replace(/\/+$/, '')
+  }
+
   /** Feedback shares publisher identity, signing, response bounds and transport with enrollment. */
-  async submitFeedback(body: string): Promise<string> {
+  async submitFeedback(body: string): Promise<{ reportId: string; attachments: FeedbackAdmission[] }> {
     const config = await loadRelayConfig(this.deps.documents)
-    const url = config?.url ?? (this.deps.env.HERMES_WEBUI_TALARIA_RELAY_URL ?? DEFAULT_RELAY_URL).trim().replace(/\/+$/, '')
+    const url = this.feedbackOrigin(config)
     const key = config ? await loadKey(this.deps.documents, config) : null
     const failure = (response: Response | null): RelayPairingError => {
       if (response?.status === 429) {
@@ -782,13 +797,30 @@ export class RelayService {
         const path = '/v1/feedback'
         const headers = config && key ? signedHeaders(key, config.key_id, 'POST', path, body, this.deps.now) : { 'Content-Type': 'application/json' }
         const payload = await this.relayPost(url + path, body, headers, '', failure, 202)
-        if (typeof payload.reportId !== 'string' || !payload.reportId || payload.reportId.length > 256) throw failure(null)
-        return payload.reportId
+        const parsed = FeedbackAcceptedSchema.safeParse(payload)
+        if (!parsed.success) throw failure(null)
+        return { reportId: parsed.data.reportId, attachments: parsed.data.attachments ?? [] }
       } catch (error) {
         if (attempt === 0 && error instanceof RelayPairingError && error.message === 'relay_unreachable') continue
         throw error
       }
     }
+  }
+
+  /** One attachment PUT with its upload token; `unknown` means the outcome must be reconciled by resubmitting. */
+  async uploadFeedbackAttachment(reportId: string, index: number, uploadToken: string, data: Buffer): Promise<'stored' | 'invalid' | 'expired' | 'disabled' | 'unknown'> {
+    const url = `${this.feedbackOrigin(await loadRelayConfig(this.deps.documents))}/v1/feedback/${encodeURIComponent(reportId)}/attachments/${String(index)}`
+    let res: Response
+    try {
+      res = await this.deps.fetch()(url, { method: 'PUT', body: data, headers: { Authorization: `Bearer ${uploadToken}`, 'Content-Type': 'application/octet-stream' }, redirect: 'error', signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS) })
+    } catch { return 'unknown' }
+    let error: unknown
+    try { const raw = await readCapped(res, 4096); error = raw ? (JSON.parse(raw.toString('utf8')) as { error?: unknown }).error : undefined } catch { /* the status alone decides */ }
+    if (res.status === 200) return 'stored'
+    if (res.status === 400 && error === 'invalid_attachment') return 'invalid'
+    if (res.status === 410) return 'expired'
+    if (res.status === 503 && error === 'attachments_disabled') return 'disabled'
+    return 'unknown'
   }
 
   private async pairUnlocked(body: unknown, rawProfile: string, operator: boolean): Promise<{ ok: true; publisher_id: string }> {
