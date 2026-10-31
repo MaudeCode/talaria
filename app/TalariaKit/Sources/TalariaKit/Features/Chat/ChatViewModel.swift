@@ -105,6 +105,8 @@ public final class ChatViewModel {
     /// An edit or regenerate the server held for confirmation (TAL-929); `confirmDeepTruncate` resends it.
     public private(set) var deepTruncateConfirmation: DeepTruncateConfirmation?
     public private(set) var modelSwitchConfirmation: ModelSwitchConfirmation?
+    /// `/clear` waits on this confirmation before it clears the session on the server (TAL-848).
+    public private(set) var isConfirmingClear = false
     @ObservationIgnored private var offeredOwnerModelConfirmation: ModelSwitchConfirmation?
 
     public var ownerModelChangeMessage: String? {
@@ -3598,12 +3600,85 @@ public final class ChatViewModel {
         sendErrorMessage = nil
     }
 
+    private func clearConversationRefusal() -> String? {
+        if isViewingCachedData { return String(localized: "Reconnect to the server to clear this conversation.") }
+        if activeStreamID != nil { return String(localized: "Stop the reply before clearing.") }
+        if sessionID == nil { return String(localized: "The server did not provide a session ID.") }
+        return nil
+    }
+
+    public func cancelClearConversation() {
+        isConfirmingClear = false
+    }
+
+    /// Clears the session on the server (TAL-848): the transcript empties at once, a refusal restores it with the
+    /// server's error, and an unknown outcome rereads the session to keep or restore it. The clear is never resent.
+    /// Not gated on `isConfirmingClear`: the alert resets its binding before the Clear button's task runs.
+    public func confirmClearConversation() async {
+        isConfirmingClear = false
+        if let refusal = clearConversationRefusal() { sendErrorMessage = refusal; return }
+        guard let sessionID else { return }
+        let snapshot = (messages: messages, offset: messagesOffset, recentOffset: recentMessagesOffset,
+                        recentHasOlder: recentHasOlderMessages, hasOlder: hasOlderMessages,
+                        toolGroups: completedToolCallGroups, reasoningGroups: completedReasoningGroups,
+                        activity: archivedAssistantActivity)
+        clearTranscript()
+        lastError = nil
+        let failure: String
+        do {
+            let response = try await client.clearSession(id: sessionID)
+            guard self.sessionID == sessionID else { return }
+            if response.error == nil, let row = response.session {
+                await adoptClearedSession(title: row.title)
+                return
+            }
+            failure = response.error ?? String(localized: "The server did not return the cleared session.")
+        } catch {
+            guard self.sessionID == sessionID else { return }
+            // Network loss, a timeout or a 5xx may have cleared it: the server's transcript decides.
+            if !APIError.isDefinitiveWriteFailure(error),
+               let reread = try? await client.session(id: sessionID, includeMessages: true, messageLimit: Self.messagePageLimit).session,
+               self.sessionID == sessionID {
+                let oldIDs = Set(snapshot.messages.map(\.id))
+                if !(reread.messages ?? []).contains(where: { oldIDs.contains($0.id) }) {
+                    await adoptClearedSession(title: reread.title)
+                    return
+                }
+            }
+            lastError = error
+            failure = error.localizedDescription
+        }
+        guard messages.isEmpty, activeStreamID == nil else {
+            // A message sent meanwhile is newer than the snapshot: the server's transcript decides.
+            await loadMessages(modelContext: runStatusCacheContext, waitsForPendingMessageSend: false, isRoutineReconciliation: true)
+            sendErrorMessage = failure
+            return
+        }
+        messages = snapshot.messages
+        messagesOffset = snapshot.offset
+        recentMessagesOffset = snapshot.recentOffset
+        recentHasOlderMessages = snapshot.recentHasOlder
+        hasOlderMessages = snapshot.hasOlder
+        setCompletedToolCallGroups(snapshot.toolGroups)
+        completedReasoningGroups = snapshot.reasoningGroups
+        archivedAssistantActivity = snapshot.activity
+        sendErrorMessage = failure
+    }
+
+    /// Drops the cleared session's cached rows so the reload cannot repaint them, then shows the server's transcript.
+    private func adoptClearedSession(title: String?) async {
+        if let title { displayTitle = Self.displayTitle(from: title) }
+        if let sessionID { cacheCurrentMessages(sessionID: sessionID, modelContext: runStatusCacheContext) }
+        await loadMessages(modelContext: runStatusCacheContext, waitsForPendingMessageSend: false)
+    }
+
     func executeSlashCommand(_ command: SlashCommand, args: String = "") async -> SlashCommandExecutionResult {
         switch command.handler {
         case .clientSide(let action):
             switch action {
             case .clear:
-                clearTranscript()
+                if let refusal = clearConversationRefusal() { return .unsupported(friendlyMessage: refusal) }
+                isConfirmingClear = true
                 return .executed(message: nil)
             case .stop:
                 await cancelActiveStream()
