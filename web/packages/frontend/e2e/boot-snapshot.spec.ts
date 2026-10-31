@@ -36,6 +36,8 @@ test('a reload paints the sidebar and open session from the boot snapshot', asyn
     if (await hamburger.isVisible()) await hamburger.click()
     await expect(page.locator(`.session-item[data-sid="${sid}"] .session-title`)).toHaveText('Snapshot session')
   } finally {
+    // Drop the held handlers first: once released they would fetch from a page that is closing.
+    await page.unrouteAll({ behavior: 'ignoreErrors' })
     release.resolve(undefined)
   }
 })
