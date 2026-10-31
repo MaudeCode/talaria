@@ -403,15 +403,30 @@ export function displayName(pid: string): string {
   return PROVIDER_DISPLAY[pid] ?? pid.split('-').map((w) => (w ? w[0]!.toUpperCase() + w.slice(1) : w)).join(' ')
 }
 
-/** Python `_format_ollama_label`. */
+/** Python `_format_ollama_label`, plus dotted versions (`opus-5-5` → `Opus 5.5`) and ISO snapshot dates. */
 export function formatOllamaLabel(mid: string): string {
   const [name, variant] = mid.includes(':') ? [mid.slice(0, mid.indexOf(':')), mid.slice(mid.indexOf(':') + 1)] : [mid, '']
-  const fmt = (s: string): string => s.replaceAll('-', ' ').replaceAll('_', ' ').split(/\s+/).filter(Boolean).map((t) => {
-    const alpha = t.replaceAll('.', '')
-    if (/^[A-Za-z]+$/.test(alpha) && t.length <= 3) return t.toUpperCase()
-    if (/^[A-Za-z0-9]+$/.test(alpha) && /^\d/.test(alpha)) return t.toUpperCase()
-    return t[0]!.toUpperCase() + t.slice(1)
-  }).join(' ')
+  const fmt = (s: string): string => {
+    const tokens = s.replaceAll('-', ' ').replaceAll('_', ' ').split(/\s+/).filter(Boolean)
+    // A trailing YYYYMMDD snapshot reads as an ISO date; a run of 1–2 digit segments (`4-5`) is a dotted version.
+    const date = tokens.length > 1 && /^(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])$/.test(tokens.at(-1) ?? '') ? tokens.pop()! : ''
+    const words: string[] = []
+    for (let i = 0; i < tokens.length; ) {
+      let j = i
+      while (j < tokens.length && /^\d+$/.test(tokens[j]!)) j++
+      const run = tokens.slice(i, j)
+      if (run.length > 1 && run.every((t) => t.length <= 2)) words.push(run.join('.'))
+      else words.push(...(run.length ? run : [tokens[j++]!]))
+      i = j
+    }
+    const label = words.map((t) => {
+      const alpha = t.replaceAll('.', '')
+      if (/^[A-Za-z]+$/.test(alpha) && t.length <= 3) return t.toUpperCase()
+      if (/^[A-Za-z0-9]+$/.test(alpha) && /^\d/.test(alpha)) return t.toUpperCase()
+      return t[0]!.toUpperCase() + t.slice(1)
+    }).join(' ')
+    return date ? `${label} (${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6)})` : label
+  }
   const label = fmt(name)
   return variant ? `${label} (${fmt(variant)})` : label
 }

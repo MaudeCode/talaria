@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The model picker shows dashed model versions as dotted versions, such as Claude Opus 5.5 and Claude Sonnet 4.5 (2025-09-29).",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
