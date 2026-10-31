@@ -15,7 +15,8 @@ builder=$(docker buildx create --driver docker-container --bootstrap)
 trap 'docker buildx rm "$builder" >/dev/null' EXIT
 docker buildx build --builder "$builder" --platform linux/amd64 --tag "$ref" "$@" \
   --output "type=oci,dest=$output/bridge.oci.tar" --metadata-file "$output/image-metadata.json" "$here"
-docker load --input "$output/bridge.oci.tar"
+# skopeo, not `docker load`: a daemon on the classic image store cannot load an OCI archive.
+skopeo copy --quiet "oci-archive:$output/bridge.oci.tar" "docker-daemon:$ref"
 
 run() { docker run --rm --platform linux/amd64 "$@"; }
 if [[ "$(run --entrypoint id "$ref" -u)" == 0 ]]; then

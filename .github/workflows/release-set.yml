@@ -446,6 +446,7 @@ jobs:
         ref: ${{ needs.prepare.outputs.source }}
         fetch-depth: 0
     - uses: ./.github/actions/release-python
+    - uses: ./.github/actions/skopeo
     - name: Restore release-plan
       env:
         GH_TOKEN: ${{ github.token }}

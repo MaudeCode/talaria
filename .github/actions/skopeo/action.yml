@@ -1,5 +1,5 @@
 name: Skopeo
-description: Make skopeo available for copying built OCI archives to GHCR.
+description: Make skopeo available for loading built OCI archives into Docker and copying them to GHCR.
 runs:
   using: composite
   steps:
