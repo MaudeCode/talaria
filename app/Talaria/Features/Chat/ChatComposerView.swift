@@ -137,7 +137,7 @@ struct MessageComposerView: View {
     @State private var textFieldHeight: CGFloat = 0
     @State private var composerSurfaceHeight: CGFloat = 110
     @State private var twoRowComposerHeight: CGFloat = 0
-    @State private var twoRowComposerChromeHeight: CGFloat = 0
+    @State private var twoRowInputHeight: CGFloat = 0
     @GestureState private var clarificationResizeTranslation: CGFloat = 0
     @State private var textInputHeight: CGFloat = 22
     @State private var noticeMessage: String?
@@ -752,31 +752,26 @@ struct MessageComposerView: View {
         actionButton
     }
 
-    /// The transcript's share of the chat pane: room under the navigation bar for at least one row (TAL-680).
-    static let minimumTranscriptHeight: CGFloat = 96
+    private var maximumTextInputHeight: CGFloat { cardSizing.maximumInputHeight }
 
-    private var maximumTextInputHeight: CGFloat {
-        if usesOneRowCard { return 22 }
-        guard let tabletopHeight else { return 96 }
-        return max(22, tabletopHeight - twoRowComposerChromeHeight - 8)
-    }
+    /// The control strip folds away while the card is in one row (TAL-680).
+    private var usesOneRowCard: Bool { cardSizing.usesOneRowCard }
 
-    /// A pane too short for the two-row composer and the transcript's minimum, as on an iPhone in landscape with
-    /// the keyboard up, gets the card in one row: +, the text, then voice, context and send. The control strip folds
-    /// away meanwhile (TAL-680). It is judged against the two-row composer's height, so the shorter composer does not
-    /// switch it back.
-    private var usesOneRowCard: Bool {
-        guard tabletopHeight == nil, !usesSingleLineShell, !isAnsweringClarification, availableHeight > 0 else { return false }
-        return availableHeight - twoRowComposerHeight < Self.minimumTranscriptHeight
+    private var cardSizing: ComposerCardSizing {
+        ComposerCardSizing(
+            availableHeight: availableHeight,
+            tabletopHeight: tabletopHeight,
+            twoRowCardHeight: twoRowComposerHeight,
+            twoRowInputHeight: twoRowInputHeight,
+            allowsOneRowCard: !usesSingleLineShell && !isAnsweringClarification
+        )
     }
 
     private func recordTwoRowComposerHeight(_ height: CGFloat, inputHeight: CGFloat?) {
-        if !usesSingleLineShell, !usesOneRowCard {
+        // Resolve both bounds in the same layout pass; the input binding can already describe the next one.
+        if !usesSingleLineShell, !usesOneRowCard, let inputHeight, inputHeight > 0 {
             twoRowComposerHeight = height
-            // Resolve both bounds in the same layout pass; the input binding can already describe the next one.
-            if let inputHeight, inputHeight > 0 {
-                twoRowComposerChromeHeight = max(0, height - inputHeight)
-            }
+            twoRowInputHeight = inputHeight
         }
     }
 
