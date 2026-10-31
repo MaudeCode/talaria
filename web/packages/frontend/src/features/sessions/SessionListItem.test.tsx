@@ -46,8 +46,7 @@ describe('sidebar conversation rows (TAL-1120)', () => {
     expect(beta).toHaveAttribute('href', '/session/beta')
     expect(alpha).toHaveAttribute('aria-current', 'page')
     expect(beta).not.toHaveAttribute('aria-current')
-    // The link names the conversation, not the row's action buttons.
-    expect(alpha).toHaveAccessibleName(expect.not.stringMatching(/Archive|Conversation actions/))
+    // jsdom omits nested button labels from link names; e2e/sidebar-row-link.spec.ts checks that in a browser.
     const items = within(list).getAllByRole('listitem')
     expect(items).toHaveLength(2)
     expect(items[1]).toContainElement(beta)
