@@ -385,6 +385,26 @@ final class KanbanLiveUpdateTests: KanbanDefaultsTestCase {
         state.setVisible(false)
     }
 
+    func testReturningBeforeAQueuedReconciliationReplaysItsEvents() async throws {
+        let client = LiveKanbanClient(boardResults: [.success(.rich), .success(.newer)])
+        let stream = KanbanStreamSpy()
+        let state = makeState(client: client, stream: stream)
+
+        await state.loadIfNeeded()
+        state.setVisible(true)
+        stream.emit(Self.eventsFrame(cursor: 13, kind: "task.updated"))
+        // Opening a Card before the coalesced refresh runs cancels it.
+        state.setVisible(false)
+        await state.loadIfNeeded()
+        state.setVisible(true)
+
+        XCTAssertEqual(stream.startURLs.last?.queryValue("since"), "11")
+        stream.emit(Self.eventsFrame(cursor: 13, kind: "task.updated"))
+        try await waitUntil { await client.boardCallCount == 2 }
+        XCTAssertEqual(state.snapshot?.latestEventID, 13)
+        state.setVisible(false)
+    }
+
     func testAppearingWithoutLoadedBoardColdLoads() async throws {
         let client = LiveKanbanClient(boardResults: [.failure(URLError(.notConnectedToInternet)), .success(.rich)])
         let state = makeState(client: client, stream: KanbanStreamSpy())

@@ -2368,6 +2368,9 @@ public final class KanbanFeatureState {
         coalescingTask = nil
         pollingTask?.cancel()
         pollingTask = nil
+        // Resume from the last event the Board applied: the reconciliation cancelled above would otherwise
+        // leave an advanced cursor that skips its events when the stream reopens (TAL-841).
+        liveCursor = min(liveCursor, max(0, snapshot?.latestEventID ?? 0))
     }
 
     private func resetLiveUpdates(clearCursor: Bool) {
