@@ -24,10 +24,10 @@ import { compressImage, compressVideo, type Compressed, type FeedbackLimits } fr
 
 type Draft = z.infer<typeof FeedbackDraftSchema>
 /**
- * A report with its attachments, which live in memory only: a reload keeps the text and drops the files. `sentAs` is
- * the requestId of a refused send, which may still hold the staged files.
+ * A report with its attachments, which live in memory only: a reload keeps the text and the `attachmentIds` a send
+ * carried, and drops the files.
  */
-type Report = Draft & { files: PendingFile[]; sentAs?: string | undefined }
+type Report = Draft & { files: PendingFile[] }
 interface State { open: boolean; draft: Report; held: Report[]; notice: string | null }
 const SENT_TOAST = 'feedback-sent'
 const fresh = (): Report => ({ requestId: randomUuid(), kind: 'bug', title: '', body: '', includeDiagnostics: true, files: [] })
@@ -64,11 +64,11 @@ export function openFeedback(): void {
 }
 
 /** The server keys idempotency on the whole report, so changed content is a new request; an unchanged retry reuses its id. */
-function edit(change: Partial<Omit<Report, 'requestId' | 'sentAs'>>, notice: string | null = current().notice): void {
+function edit(change: Partial<Omit<Report, 'requestId' | 'attachmentIds'>>, notice: string | null = current().notice): void {
   const draft = { ...current().draft, ...change }
   // The server binds staged files to the request that sent them; a changed report stages its files again.
-  const rebind = draft.sentAs ? draft.files.filter((f) => f.status === 'done') : []
-  update({ draft: { ...draft, requestId: randomUuid(), sentAs: undefined, files: draft.files.map((f) => rebind.includes(f) ? { ...f, status: 'uploading', feedback: undefined } : f) }, notice })
+  const rebind = draft.attachmentIds?.length ? draft.files.filter((f) => f.status === 'done') : []
+  update({ draft: { ...draft, requestId: randomUuid(), attachmentIds: undefined, files: draft.files.map((f) => rebind.includes(f) ? { ...f, status: 'uploading', feedback: undefined } : f) }, notice })
   for (const f of rebind) stage(f.key, f.file, null, false)
 }
 
@@ -193,30 +193,67 @@ function errorText(error: unknown): string {
 
 const sentToast = (text: string) => { showRichToast({ id: SENT_TOAST, text, ttl: 2500, kind: 'info', dismissible: false, actions: [] }) }
 
+async function submit(report: Report, attachmentIds: string[]) {
+  const { requestId, kind, title, body, includeDiagnostics } = report
+  const input = { requestId, kind, title, body, includeDiagnostics, client: { platform: 'web' as const }, ...(attachmentIds.length ? { attachmentIds } : {}) }
+  try {
+    return await api.submitFeedback(input)
+  } catch (error) {
+    if (!unknownOutcome(error)) throw error
+    return api.submitFeedback(input)
+  }
+}
+
+/** Change a held report in place (it is found by the requestId it was sent as). */
+function patchHeld(requestId: string, change: Partial<Report>): void {
+  update({ held: current().held.map((d) => d.requestId === requestId ? { ...d, ...change } : d) })
+}
+
+/** Upload these chips' files again; resolves with their new staged ids, or the first error. */
+async function restage(files: PendingFile[]): Promise<Settled[]> {
+  for (const f of files) { patchFile(f.key, { status: 'uploading', feedback: undefined, error: undefined }); stage(f.key, f.file, null, false) }
+  return Promise.all(files.map((f) => jobs.get(f.key)?.done ?? Promise.resolve<Settled>({ error: m.composer_upload_failed({ name: f.file.name }) })))
+}
+const stagedIds = (settled: Settled[]) => settled.flatMap((s) => 'file' in s && s.file.feedback ? [s.file.feedback.attachmentId] : [])
+const firstError = (settled: Settled[]) => settled.find((s): s is { error: string } => 'error' in s)
+
 /**
  * Optimistic send: the form empties and confirms at once, then sends once its attachments are staged; a refusal, or an
  * attachment that could not be staged, reopens it with that report, its attachments and the error.
  */
 async function send(): Promise<void> {
   const sent = current().draft
-  const { requestId, kind, title, body, includeDiagnostics } = sent
+  let { requestId } = sent
   inFlight.add(requestId)
   update({ open: false, draft: fresh(), held: [...current().held, sent], notice: null })
   sentToast(m.feedback_sent())
   const staged = await Promise.all(sent.files.map((f) => jobs.get(f.key)?.done ?? Promise.resolve<Settled>({ file: f })))
-  const failed = staged.find((s): s is { error: string } => 'error' in s)
-  const attachmentIds = staged.flatMap((s) => 'file' in s && s.file.feedback ? [s.file.feedback.attachmentId] : [])
-  const input = { requestId, kind, title, body, includeDiagnostics, client: { platform: 'web' as const }, ...(attachmentIds.length ? { attachmentIds } : {}) }
+  let failed = firstError(staged)
   let refusal: { error: unknown } | null = null
   let refused = false
   if (!failed) {
+    // A report restored after a reload has the ids its earlier send carried, but not the files.
+    let attachmentIds = sent.files.length ? stagedIds(staged) : sent.attachmentIds ?? []
+    patchHeld(requestId, { attachmentIds })
     try {
       let result
       try {
-        result = await api.submitFeedback(input)
+        result = await submit(sent, attachmentIds)
       } catch (error) {
-        if (!unknownOutcome(error)) throw error
-        result = await api.submitFeedback(input)
+        // Staging lapses after an hour. `invalid` is refused before admission, so the same files staged again go out
+        // once more as a new request; a report without its files (restored after a reload) cannot do that.
+        const { files } = current().held.find((d) => d.requestId === requestId) ?? sent
+        if (errorCode(error) !== 'invalid' || !attachmentIds.length || files.length !== attachmentIds.length) throw error
+        const next = randomUuid()
+        patchHeld(requestId, { requestId: next, attachmentIds: undefined })
+        inFlight.delete(requestId)
+        inFlight.add((requestId = next))
+        const again = await restage(files)
+        failed = firstError(again)
+        if (failed) throw new Error(failed.error)
+        attachmentIds = stagedIds(again)
+        patchHeld(requestId, { attachmentIds })
+        result = await submit({ ...sent, requestId }, attachmentIds)
       }
       refused = result.attachments.some((a) => a.status === 'refused')
     } catch (error) {
@@ -236,7 +273,7 @@ async function send(): Promise<void> {
   // A report written meanwhile waits behind the refused one instead of being replaced.
   const { draft } = current()
   dismissToast(SENT_TOAST)
-  update({ open: true, draft: { ...latest, sentAs: requestId }, held: blank(draft) ? held : [draft, ...held] })
+  update({ open: true, draft: latest, held: blank(draft) ? held : [draft, ...held] })
   showErrorToast(new Error(failed ? failed.error : errorText(refusal?.error)))
 }
 
