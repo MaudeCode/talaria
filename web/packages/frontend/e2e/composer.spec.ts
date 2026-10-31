@@ -178,6 +178,27 @@ test('opening a session paints every frame at its end', async ({ page }) => {
   expect(Math.max(...frames)).toBeLessThan(2)
 })
 
+/** TAL-1129: with `interactive-widget=resizes-content` the keyboard shrinks the layout viewport; the focused composer and
+ *  the transcript above it both stay on screen at a keyboard-height portrait phone and a landscape phone. */
+test('the focused composer and the transcript stay reachable when the keyboard shrinks the viewport', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'mobile', 'the on-screen keyboard is a phone concern')
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'keys', title: 'Keys', messages: transcript('keys', 6) } } }))
+  await page.goto('/session/keys')
+  await expect(page.locator('#msg')).toBeVisible()
+  for (const size of [{ width: 390, height: 420 }, { width: 844, height: 340 }]) {
+    await page.setViewportSize(size)
+    await page.locator('#msg').focus()
+    await expect(page.locator('#msg')).toBeFocused()
+    await expect(page.locator('#msg')).toBeInViewport()
+    const composer = await box(page, '#composerBox')
+    const messages = await box(page, '#messages')
+    expect(composer.y + composer.height, `${size.width}x${size.height}`).toBeLessThanOrEqual(size.height)
+    expect(messages.height, `${size.width}x${size.height}`).toBeGreaterThan(0)
+    expect(messages.y, `${size.width}x${size.height}`).toBeLessThan(composer.y)
+    await expect(page.locator('#messages').getByText('keys answer 6.').first()).toBeInViewport()
+  }
+})
+
 test('a status chip reports a Talaria server it cannot reach, the stopped overlay takes over, and both clear when it answers again', async ({ page, errors }) => {
   let down = false
   await page.route('**/api/health/agent', (route) => (down ? route.abort('connectionrefused') : route.fulfill({ json: { alive: true, chat: { available: true, condition: null } } })))

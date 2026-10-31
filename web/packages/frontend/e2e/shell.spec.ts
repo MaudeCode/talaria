@@ -61,6 +61,15 @@ test.describe('shell', () => {
     await expect(page.locator('#app')).not.toBeEmpty()
   })
 
+  test('the served document asks the on-screen keyboard to resize content and keeps pinch zoom (TAL-1129)', async ({ request }) => {
+    const html = await (await request.get('/')).text()
+    const tags = html.match(/<meta[^>]*name="viewport"[^>]*>/g) ?? []
+    expect(tags).toHaveLength(1)
+    const content = (/content="([^"]*)"/.exec(tags[0] ?? '')?.[1] ?? '').split(',').map((part) => part.trim())
+    expect(content).toEqual(expect.arrayContaining(['width=device-width', 'initial-scale=1', 'viewport-fit=cover', 'interactive-widget=resizes-content']))
+    expect(content.filter((part) => /^(maximum-scale|user-scalable)=/.test(part))).toEqual([])
+  })
+
   test('unknown paths are not shadowed by the shell', async ({ request }) => {
     const res = await request.get('/definitely-not-a-route')
     expect(res.status()).toBe(404)
