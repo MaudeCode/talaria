@@ -8,7 +8,35 @@
     "client": {
       "platform": "ios",
       "appVersion": "1.4.0"
+    },
+    "attachmentIds": [
+      "3b241101-e2bb-4255-8caf-4136c566a962",
+      "1e5bd5b0-9a3d-4e0c-a1b6-1f3c1a3c7b10"
+    ]
+  },
+  "options": {
+    "attachments": {
+      "enabled": true,
+      "videoAllowed": true,
+      "maxCount": 5,
+      "maxImageBytes": 10000000,
+      "maxVideoBytes": 20000000,
+      "maxVideoSeconds": 120,
+      "acceptedTypes": [
+        "image/png",
+        "image/jpeg",
+        "image/heic",
+        "image/webp",
+        "video/mp4",
+        "video/quicktime",
+        "video/webm"
+      ]
     }
+  },
+  "staged": {
+    "attachmentId": "3b241101-e2bb-4255-8caf-4136c566a962",
+    "contentType": "image/png",
+    "bytes": 48213
   },
   "diagnostics": {
     "text": "Web: 1.4.0\nRelay registered: no",
@@ -16,7 +44,18 @@
   },
   "sent": {
     "status": "sent",
-    "reportId": "synthetic-report-1"
+    "reportId": "synthetic-report-1",
+    "attachments": [
+      {
+        "attachmentId": "3b241101-e2bb-4255-8caf-4136c566a962",
+        "status": "sent"
+      },
+      {
+        "attachmentId": "1e5bd5b0-9a3d-4e0c-a1b6-1f3c1a3c7b10",
+        "status": "refused",
+        "reason": "quota"
+      }
+    ]
   },
   "errors": [
     {

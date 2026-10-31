@@ -1,5 +1,5 @@
 /** Settings, profiles, models, providers, reasoning, personalities, onboarding (Python `api/routes.py` handlers of the same paths). */
-import { feedbackDiagnostics, submitFeedback } from '../feedback.js'
+import { feedbackDiagnostics, feedbackOptions, submitFeedback } from '../feedback.js'
 import { dashboardScope } from '../tools/dashboard-plugins.js'
 import { implement } from '@orpc/server'
 import { RuntimeCredentialError, writeRuntimeCredential } from '../providers/runtime-env.js'
@@ -272,6 +272,7 @@ async function importProfile(ctx: RequestContext, input: Omit<SidecarParams<'pro
 export const settingsRouter = os.router({
   feedback: {
     diagnostics: os.feedback.diagnostics.handler(({ context: { ctx } }) => run(() => feedbackDiagnostics(ctx.deps, home(ctx)))),
+    options: os.feedback.options.handler(({ context: { ctx } }) => run(() => feedbackOptions(ctx.deps))),
     submit: os.feedback.submit.handler(({ input, context: { ctx } }) => run(() => submitFeedback(ctx.deps, home(ctx), input))),
   },
   settings: {
