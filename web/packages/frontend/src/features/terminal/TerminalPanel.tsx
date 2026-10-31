@@ -15,10 +15,12 @@ import { isDefiniteRefusal } from '../../contracts/common'
 import { TerminalPanelFrame } from './TerminalPanelFrame'
 
 const OkSchema = z.looseObject({ ok: z.boolean().optional(), closed: z.boolean().optional(), error: z.string().optional() })
+/** The server's per-request input limit (UTF-16 length). */
+const INPUT_LIMIT = 8192
 
 /**
  * Workspace terminal on bundled xterm (no CDN). Protocol: POST start, POST input
- * (serialised so keystrokes keep their order), SSE output, POST resize, POST close.
+ * (one request in flight; keys typed meanwhile join the next one), SSE output, POST resize, POST close.
  */
 export function TerminalPanel({ sessionId, workspace, onClose, onReopen = () => undefined }: { sessionId: string; workspace: string | undefined; onClose: () => void; onReopen?: () => void }) {
   const host = useRef<HTMLDivElement>(null)
@@ -33,7 +35,9 @@ export function TerminalPanel({ sessionId, workspace, onClose, onReopen = () => 
   const [executing, setExecuting] = useState(false)
   const mode = useRef<'web_pty' | 'owner_command' | null>(null)
   const commandBusy = useRef(false)
-  const inputChain = useRef(Promise.resolve())
+  // Unsent keys. A failure, Restart, Close or unmount drops them and bumps the generation so a late result is ignored.
+  const input = useRef({ pending: [] as string[], busy: false, generation: 0 })
+  const dropInput = () => { const q = input.current; q.pending = []; q.busy = false; q.generation++ }
 
   useEffect(() => {
     mode.current = null
@@ -87,12 +91,34 @@ export function TerminalPanel({ sessionId, workspace, onClose, onReopen = () => 
         t.writeln(e instanceof Error ? e.message : String(e))
       }
     })()
-    const data = t.onData((d) => { if (mode.current !== 'web_pty') return; inputChain.current = inputChain.current.then(() => mode.current === 'web_pty' ? post('api/terminal/input', { session_id: sessionId, data: d }, OkSchema, { retries: 0, timeoutMs: 10_000 }) : undefined).then(() => undefined, () => undefined) })
+    const flush = () => {
+      const q = input.current
+      if (q.busy || !q.pending.length) return
+      if (mode.current !== 'web_pty') { q.pending = []; return }
+      // Join whole chunks up to the server limit; a single oversized chunk goes alone so the server refuses it.
+      let batch = '', taken = 0
+      for (const chunk of q.pending) { if (taken && batch.length + chunk.length > INPUT_LIMIT) break; batch += chunk; taken++ }
+      q.pending = q.pending.slice(taken)
+      q.busy = true
+      const generation = q.generation
+      post('api/terminal/input', { session_id: sessionId, data: batch }, OkSchema, { retries: 0, timeoutMs: 10_000 }).then(() => {
+        if (generation !== q.generation) return
+        q.busy = false
+        flush()
+      }, (error: unknown) => {
+        if (generation !== q.generation) return
+        // Keys behind a failed one would reach the shell out of context; drop them with the failure.
+        dropInput()
+        showErrorToast(error, m.terminal_input_failed())
+      })
+    }
+    const data = t.onData((d) => { if (mode.current !== 'web_pty') return; input.current.pending.push(d); flush() })
     const resize = t.onResize(({ cols, rows }) => { if (mode.current !== 'web_pty') return; void post('api/terminal/resize', { session_id: sessionId, cols, rows }, OkSchema, { retries: 0 }).catch(() => undefined) })
     const ro = new ResizeObserver(() => { try { f.fit() } catch { /* not attached */ } })
     ro.observe(el)
     return () => {
       cancelled = true
+      dropInput()
       applyStart.current = null
       stream.current?.close(); stream.current = null
       data.dispose(); resize.dispose(); ro.disconnect(); t.dispose()
@@ -103,6 +129,7 @@ export function TerminalPanel({ sessionId, workspace, onClose, onReopen = () => 
   // The panel closes at once while the server stops the shell. A refusal reopens it with the error; closing is
   // idempotent, so an unknown outcome is settled by asking once more.
   const close = () => {
+    dropInput()
     onClose()
     if (mode.current === 'owner_command') return
     const send = () => post('api/terminal/close', { session_id: sessionId }, OkSchema, { retries: 0 })
@@ -116,6 +143,7 @@ export function TerminalPanel({ sessionId, workspace, onClose, onReopen = () => 
     })()
   }
   const restart = async () => {
+    dropInput()
     const started = applyStart.current
     try {
       const res = await post('api/terminal/start', { session_id: sessionId, workspace, restart: true, cols: term.current?.cols, rows: term.current?.rows }, StartSchema, { retries: 0 })

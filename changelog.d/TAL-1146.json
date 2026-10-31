@@ -1,0 +1,3 @@
+{
+  "entries": [{"category": "Fixed", "summary": "The Web terminal no longer sends keys queued behind a failed one, shows an error when input is refused, and drops unsent keys on Restart or Close.", "highlight": false, "components": ["web"]}]
+}
