@@ -1,0 +1,3 @@
+{
+  "entries": [{"category": "Fixed", "summary": "On Android, the on-screen keyboard now shrinks the Web page so the message box and conversation stay visible while you type.", "highlight": false, "components": ["web"]}]
+}
