@@ -30,7 +30,15 @@ beforeAll(() => { for (const [k, v] of Object.entries(GIT_ENV)) { saved[k] = pro
 afterAll(() => { for (const k of Object.keys(GIT_ENV)) process.env[k] = saved[k] })
 
 const dirs: string[] = []
-afterEach(() => { for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true }) })
+const services: UpdateService[] = []
+/** Every service a test builds, so cleanup can wait for the background refresh checks it started (TAL-1632). */
+const updateService = (deps: UpdateServiceDeps): UpdateService => { const svc = new UpdateService(deps); services.push(svc); return svc }
+/** Removes this test's temp dirs once no refresh check it started still runs git in them. */
+const cleanup = async (): Promise<void> => {
+  await Promise.all(services.splice(0).map((svc) => svc.settled()))
+  for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true })
+}
+afterEach(cleanup)
 const tmp = (): string => { const d = mkdtempSync(join(tmpdir(), 'talaria-updates-')); dirs.push(d); return d }
 const git = (cwd: string, ...args: string[]): string => execFileSync('git', ['-c', 'commit.gpgsign=false', '-c', 'tag.gpgsign=false', '-C', cwd, ...args], { encoding: 'utf8', env: { ...process.env, ...GIT_ENV }, stdio: ['ignore', 'pipe', 'pipe'] }).trim()
 const write = (path: string, text: string): void => { mkdirSync(join(path, '..'), { recursive: true }); writeFileSync(path, text) }
@@ -90,7 +98,7 @@ const web = (client: string): string => join(client, 'web')
 describe('Web source updates (test_tal203_source_update.py)', () => {
   function service(s: Install, opts: { channel?: 'stable' | 'experimental'; getJson?: GetJson; agentDir?: string | null; blockers?: () => RestartBlockers; llm?: (system: string, user: string) => Promise<string>; autoApply?: () => boolean; checkEnabled?: () => boolean; npm?: BuildRun; autoNotification?: UpdateServiceDeps['autoNotification'] } = {}): { svc: UpdateService; restarts: number[] } {
     const restarts: number[] = []
-    const svc = new UpdateService({
+    const svc = updateService({
       webRoot: web(s.client), git: s.run, getJson: opts.getJson ?? s.getJson, identity: s.identity, webuiVersion: 'development',
       agentDir: () => opts.agentDir ?? null, channel: () => opts.channel ?? 'stable', includeAgent: () => true,
       ...(opts.autoApply ? { autoApply: opts.autoApply } : {}), ...(opts.npm ? { npm: opts.npm } : {}),
@@ -648,7 +656,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     const s = sourceInstall()
     const n = npmPackageInstall(s)
     const restarts: number[] = []
-    const svc = new UpdateService({
+    const svc = updateService({
       stateDir: opts.stateDir ?? tmp(), webRoot: n.packageRoot, git: s.run, npm: opts.npm ? opts.npm(n.npm) : n.npm, getJson: s.getJson, identity: s.identity, webuiVersion: 'web-v1.0.0',
       agentDir: () => opts.agentDir ?? null, channel: opts.channel ?? (() => 'stable'), includeAgent: () => true,
       ...(opts.autoApply ? { autoApply: opts.autoApply } : {}), ...(opts.checkEnabled ? { checkEnabled: opts.checkEnabled } : {}),
@@ -704,7 +712,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     const s = sourceInstall()
     const n = npmPackageInstall(s)
     const restarts: number[] = []
-    const svc = new UpdateService({
+    const svc = updateService({
       webRoot: n.packageRoot, git: s.run, npm: n.npm, getJson: s.getJson, identity: s.identity, webuiVersion: 'web-v1.0.0',
       stateDir: tmp(), agentDir: () => null, channel: () => 'stable', includeAgent: () => false, autoApply: () => true,
       blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
@@ -723,7 +731,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     const n = npmPackageInstall(s)
     let releaseReads = 0
     const getJson: GetJson = (path, opts) => { if (path.startsWith('/releases?')) releaseReads += 1; return s.getJson(path, opts) }
-    const svc = new UpdateService({
+    const svc = updateService({
       webRoot: n.packageRoot, git: s.run, npm: n.npm, getJson, identity: s.identity, webuiVersion: 'web-v1.0.0',
       stateDir: tmp(), agentDir: () => null, channel: () => 'stable', includeAgent: () => false, checkEnabled: () => true,
       blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
@@ -826,7 +834,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     const getJson: GetJson = async (path, opts) => (opts.asset ? s.getJson(path, opts) : [notes, ...(await s.getJson(path, opts) as Dict[])])
     const prompts: string[] = []
     let channel: 'stable' | 'experimental' = mismatch ? 'experimental' : 'stable'
-    const svc = new UpdateService({
+    const svc = updateService({
       stateDir: tmp(), webRoot: n.packageRoot, git: s.run, npm: n.npm, getJson, identity: s.identity, webuiVersion: 'web-v1.0.0',
       agentDir: () => null, channel: () => channel, includeAgent: () => false,
       blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
@@ -866,7 +874,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     }
     const n = npmPackageInstall(s, 'success', runtime)
     const restarts: number[] = []
-    const svc = new UpdateService({
+    const svc = updateService({
       stateDir: tmp(), webRoot: n.packageRoot, git: s.run, npm: n.npm, getJson, identity: s.identity, webuiVersion: 'web-v1.0.0', agentDir: () => null, channel: () => 'stable', includeAgent: () => false,
       blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
       scheduleRestart: () => restarts.push(1), log: () => undefined,
@@ -1581,7 +1589,7 @@ describe('Agent checkout updates', () => {
     git(a.origin, 'commit', '--allow-empty', '-m', 'experimental only')
     const latest = git(a.origin, 'rev-parse', 'HEAD')
     let channel: 'stable' | 'experimental' = 'stable'
-    const svc = new UpdateService({
+    const svc = updateService({
       webRoot: web(s.client), git: (args, cwd, timeout) => cwd === a.agent ? runGit(args, cwd, timeout) : s.run(args, cwd, timeout), getJson: noReleases, identity: s.identity, webuiVersion: 'test',
       agentDir: () => a.agent, channel: () => 'experimental', agentChannel: () => channel, includeAgent: () => true,
       blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
@@ -1680,7 +1688,7 @@ describe('Agent checkout updates', () => {
     writeFileSync(join(a.agent, 'notes.txt'), 'untracked survives\n')
     writeFileSync(join(a.agent, 'README'), 'local note\n')
     const gateway: string[] = []
-    const svc = new UpdateService({
+    const svc = updateService({
       webRoot: join(tmp(), 'web'), getJson: noReleases, identity: { release: () => DEV, stamped: () => DEV, runningSourceRevision: () => null }, webuiVersion: 'x',
       agentDir: () => a.agent, channel: () => 'stable', includeAgent: () => true, blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
       scheduleRestart: () => gateway.push('restart'), log: () => undefined,
@@ -1701,7 +1709,7 @@ describe('Agent checkout updates', () => {
     const s = sourceInstall()
     if (support !== undefined) write(join(web(s.client), 'sidecar/agent_support.json'), typeof support === 'string' ? support : JSON.stringify(support))
     if (opts.pin) s.id.release = { ...s.id.release, compatibleAgent: { ...(s.id.release.compatibleAgent as Dict), sourceRevision: opts.pin } }
-    return new UpdateService({
+    return updateService({
       webRoot: web(s.client), git: (args, cwd, timeout) => cwd === a.agent ? Promise.resolve(opts.onGit?.(args)).then((stub) => stub ?? runGit(args, cwd, timeout)) : s.run(args, cwd, timeout), getJson: noReleases, identity: s.identity, webuiVersion: 'test',
       agentDir: () => a.agent, channel: () => 'experimental', agentChannel: () => opts.agentChannel ?? 'stable', includeAgent: () => true,
       blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
@@ -1766,7 +1774,7 @@ describe('Agent checkout updates', () => {
     // The checkout fetches its local origin but reports a GitHub remote, whose releases `getPublicJson` stubs.
     const run: GitRun = (args, cwd, t) => (args[0] === 'remote' && args[1] === 'get-url' ? Promise.resolve({ ok: true, out: 'https://github.com/Synthetic/agent.git' }) : runGit(args, cwd, t))
     const prompts: string[] = []
-    const svc = new UpdateService({
+    const svc = updateService({
       webRoot: join(tmp(), 'web'), git: opts.git ?? run, getJson: noReleases, ...(opts.getPublicJson ? { getPublicJson: opts.getPublicJson } : {}), identity: { release: () => DEV, stamped: () => DEV, runningSourceRevision: () => null }, webuiVersion: 'x',
       agentDir: () => a.agent, channel: () => 'stable', agentChannel: () => opts.channel ?? 'stable', includeAgent: opts.includeAgent ?? (() => true), blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
       scheduleRestart: () => undefined, llm: (system, user) => { prompts.push(user); return opts.llm ? opts.llm(system, user) : Promise.resolve('- Notice: Chats open faster') }, log: () => undefined,
@@ -2168,7 +2176,7 @@ describe('Agent checkout updates', () => {
   })
 
   function agentService(agent: string, git: GitRun, events: string[], agentSync?: UpdateServiceDeps['agentSync'], stateDir = join(agent, '../web-state'), agentHomes?: UpdateServiceDeps['agentHomes']): UpdateService {
-    return new UpdateService({
+    return updateService({
       webRoot: join(tmp(), 'web'), git, getJson: noReleases, identity: { release: () => DEV, stamped: () => DEV, runningSourceRevision: () => null }, webuiVersion: 'x',
       agentDir: () => agent, channel: () => 'stable', includeAgent: () => true, blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
       ...(agentSync ? { agentSync } : {}),
@@ -2328,10 +2336,34 @@ describe('Agent checkout updates', () => {
     expect(events).toEqual(['restart'])
   })
 
+  it('TAL-1632: cleanup waits for the refresh check an update leaves running in the checkout', async () => {
+    const a = agentInstall()
+    const events: string[] = []
+    let release: (() => void) | null = null
+    const held = new Promise<void>((resolve) => { release = resolve })
+    let holding = false
+    // The owed refresh check's fetch runs after apply returns; hold it open in the checkout.
+    const run: GitRun = async (args, cwd, timeout) => {
+      if (!holding && events.includes('restart') && cwd === a.agent && args[0] === 'fetch') { holding = true; await held }
+      return runGit(args, cwd, timeout)
+    }
+    expect(await agentService(a.agent, run, events).apply('agent', null, () => true, { confirmedRevision: a.v2 })).toMatchObject({ ok: true, restart_scheduled: true })
+    await vi.waitFor(() => { expect(holding).toBe(true) })
+    let cleaned = false
+    const done = cleanup().then(() => { cleaned = true })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    // Removing the checkout now would race the git process the refresh is about to run in it.
+    expect(existsSync(a.agent)).toBe(true)
+    expect(cleaned).toBe(false)
+    release!()
+    await done
+    expect(existsSync(a.agent)).toBe(false)
+  })
+
   it('TAL-953: refuses an Agent update while a gateway restart runs, without touching the checkout', async () => {
     const a = agentInstall()
     const base = agentService(a.agent, runGit, []) as unknown as { deps: UpdateServiceDeps }
-    const svc = new UpdateService({ ...base.deps, gatewayRestarting: () => true })
+    const svc = updateService({ ...base.deps, gatewayRestarting: () => true })
     for (const run of [() => svc.apply('agent', null, () => true, { confirmedRevision: a.v2 }), () => svc.force('agent', null, { confirmedRevision: a.v2 }), () => svc.clearLock('agent', { confirmedRevision: a.v2 })]) {
       expect(await run()).toMatchObject({ ok: false, status: 'already_in_progress', target: 'agent' })
     }
@@ -2535,7 +2567,7 @@ describe('Agent checkout updates', () => {
     writeFileSync(join(a.agent, '.git/index.lock'), '')
     mkdirSync(join(a.agent, '.git/refs/heads'), { recursive: true })
     writeFileSync(join(a.agent, '.git/refs/heads/master.lock'), '')
-    const svc = new UpdateService({
+    const svc = updateService({
       webRoot: join(tmp(), 'web'), getJson: noReleases, identity: { release: () => DEV, stamped: () => DEV, runningSourceRevision: () => null }, webuiVersion: 'x',
       agentDir: () => a.agent, channel: () => 'stable', includeAgent: () => true, blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
       scheduleRestart: () => undefined, log: () => undefined,
@@ -2747,7 +2779,7 @@ describe('Web update summary fallback (TAL-1589)', () => {
   const commit = (n: number) => ({ sha: String(n).repeat(40), commit: { message: `web change ${String(n)}\nbody`, committer: { date: '2026-10-29T00:00:00Z' } } })
   function webSummary(behind: number, getJson: GetJson, llm: () => Promise<string>): { svc: UpdateService; calls: () => number } {
     let calls = 0
-    const svc = new UpdateService({
+    const svc = updateService({
       stateDir: tmp(), webRoot: join(tmp(), 'web'), git: runGit, getJson, identity: { release: () => DEV, stamped: () => DEV, runningSourceRevision: () => null }, webuiVersion: 'x',
       agentDir: () => null, channel: () => 'experimental', includeAgent: () => false,
       blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),

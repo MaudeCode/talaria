@@ -1431,6 +1431,8 @@ export class UpdateService {
   private applying = false
   /** TAL-1525: a forced check owed once the current apply releases its lock. */
   private refreshOwed = false
+  /** TAL-1632: the latest owed refresh check, which runs after the apply that owed it returns. */
+  private refreshing: Promise<unknown> = Promise.resolve()
   /** TAL-1525: the Web package installed for the pending restart; this process still runs the old one. */
   private installedWeb: Dict | null = null
   private autoTimer: NodeJS.Timeout | null = null
@@ -1638,7 +1640,13 @@ export class UpdateService {
   private refreshOwedCheck(): void {
     if (!this.refreshOwed) return
     this.refreshOwed = false
-    void this.check(true).catch((error: unknown) => { this.deps.log(`[updates] refresh after update failed: ${(error as Error).message}`) })
+    this.refreshing = this.check(true).catch((error: unknown) => { this.deps.log(`[updates] refresh after update failed: ${(error as Error).message}`) })
+  }
+
+  /** Resolves once every owed refresh check has finished, so a caller can safely remove the checkouts it reads. */
+  async settled(): Promise<void> {
+    let refreshing
+    do { refreshing = this.refreshing; await refreshing } while (refreshing !== this.refreshing)
   }
 
   startAutoApply(intervalMs = AUTO_UPDATE_INTERVAL_MS): void {
