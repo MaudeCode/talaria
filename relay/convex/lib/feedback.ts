@@ -1,5 +1,6 @@
 import type { Infer } from "convex/values";
 
+import { sha256Hex, timingSafeEqual } from "./crypto";
 import type { feedbackAttachmentTypeValidator, feedbackPayloadValidator } from "./validators";
 
 export type FeedbackPayload = Infer<typeof feedbackPayloadValidator>;
@@ -25,6 +26,13 @@ export const attachmentLimits = {
   types: Record<FeedbackAttachmentType, { kind: "image" | "video"; maxBytes: number }>;
   [key: string]: unknown;
 };
+
+/** Feedback is off until `FEEDBACK_OPERATOR_TOKEN_SHA256` is provisioned; then only that token is the operator. */
+export async function operatorAccess(token: string | null | undefined): Promise<"disabled" | "denied" | "granted"> {
+  const expected = process.env.FEEDBACK_OPERATOR_TOKEN_SHA256?.trim().toLowerCase();
+  if (!expected) return "disabled";
+  return token && timingSafeEqual(await sha256Hex(token), expected) ? "granted" : "denied";
+}
 
 export const maximumFeedbackBytes = 32 * 1_024;
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;

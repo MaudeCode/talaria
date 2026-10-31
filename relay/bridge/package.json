@@ -4,6 +4,7 @@
   "type": "module",
   "engines": { "node": ">=24" },
   "dependencies": {
+    "convex": "1.45.0",
     "sharp": "0.35.5"
   }
 }

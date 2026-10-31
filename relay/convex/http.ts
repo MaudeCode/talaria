@@ -14,10 +14,9 @@ import {
   randomToken,
   sha256,
   sha256Hex,
-  timingSafeEqual,
   verifyPublisherSignature,
 } from "./lib/crypto";
-import { attachmentLimits, matchesAttachmentType, maximumFeedbackBytes, parseFeedbackReport } from "./lib/feedback";
+import { attachmentLimits, matchesAttachmentType, maximumFeedbackBytes, operatorAccess, parseFeedbackReport } from "./lib/feedback";
 import {
   defaultNotificationPreferences,
   isSessionPhase,
@@ -876,11 +875,9 @@ const ticketKeyPattern = /^[A-Z][A-Z0-9]{0,15}-[1-9][0-9]{0,9}$/u;
 
 /** Feedback is off until the operator token is provisioned; then only that bearer may read the queue. */
 async function feedbackGate(request: Request, operator: boolean): Promise<Response | null> {
-  const expected = process.env.FEEDBACK_OPERATOR_TOKEN_SHA256?.trim().toLowerCase();
-  if (!expected) return json(404, { error: "not_found" });
-  if (!operator) return null;
-  const token = bearer(request);
-  return token && timingSafeEqual(await sha256Hex(token), expected) ? null : json(401, { error: "unauthorized" });
+  const access = await operatorAccess(operator ? bearer(request) : null);
+  if (access === "disabled") return json(404, { error: "not_found" });
+  return !operator || access === "granted" ? null : json(401, { error: "unauthorized" });
 }
 
 http.route({
