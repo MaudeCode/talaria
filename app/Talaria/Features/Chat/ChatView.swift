@@ -905,19 +905,6 @@ struct ChatView: View {
                     }
                 }
 
-                // The vertical bar has no keyboard accessory row, so it carries its own dismiss. The first
-                // trailing item sits at the bar's far end; the flexible space keeps it next to the keyboard.
-                if #available(iOS 26, *), hasVerticalToolbar, composerIsFocused {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button(action: dismissKeyboard) {
-                            Label("Hide Keyboard", systemImage: "keyboard.chevron.compact.down")
-                        }
-                        .accessibilityIdentifier("chat-hide-keyboard")
-                    }
-                    .overflowPriority(.dismissKeyboard)
-                    ToolbarSpacer(.flexible, placement: .topBarTrailing)
-                }
-
                 if hasVerticalToolbar, let sessionMenu {
                     ToolbarItem(placement: .topBarTrailing) {
                         Menu { sessionMenu } label: {
@@ -985,6 +972,19 @@ struct ChatView: View {
                         }
                         .overflowPriority(.chatQueuedMessages, includesHorizontal: true)
                     }
+                }
+
+                // The vertical bar has no keyboard accessory row, so it carries its own dismiss. As the last trailing
+                // item it ends the bar's top group beside the keyboard; the flexible space parts it from New Chat.
+                if #available(iOS 27.1, *), hasVerticalToolbar, composerIsFocused {
+                    ToolbarSpacer(.flexible, placement: .topBarTrailing)
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button(action: dismissKeyboard) {
+                            Label("Hide Keyboard", systemImage: "keyboard.chevron.compact.down")
+                        }
+                        .accessibilityIdentifier("chat-hide-keyboard")
+                    }
+                    .overflowPriority(.dismissKeyboard)
                 }
             }
     }

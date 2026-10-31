@@ -147,6 +147,7 @@ final class ChatHostedTests: XCTestCase {
     /// The vertical bar has no keyboard accessory row, so it carries its own Hide Keyboard while the composer is
     /// focused (TAL-1584). A horizontal bar never shows it.
     func testVerticalBarHidesTheKeyboardWhileTheComposerIsFocused() async throws {
+        guard #available(iOS 27.1, *) else { throw XCTSkip("Requires the vertical-bar SDK") }
         let fixture = try FixtureApp(for: self)
         let session = try await fixture.session()
         func hideKeyboard(in window: UIWindow) -> UIBarButtonItem? {
