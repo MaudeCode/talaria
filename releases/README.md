@@ -211,8 +211,8 @@ runtime token Buildx needs, masked, to that one build step.
 `bridge-build` builds the feedback bridge image in its own job beside
 `relay-build`, so it never lengthens it. `bridge-publish` copies those OCI bytes
 to `ghcr.io/maudecode/talaria-feedback-bridge:<Relay X.Y.Z>` after the Relay
-deployment, beside `web-publish` and `app-publish`, and only it holds
-`packages: write` for that image. Web and the bridge share `publish.py`'s
+deployment, beside `web-publish` and `app-publish`, with its own
+`packages: write` job token; no build job holds that permission. Web and the bridge share `publish.py`'s
 `publish_image`: GHCR tags are immutable, so a tag that already serves the
 built digest is left alone on a retry and one serving another manifest fails
 the job; the tag is then read back at the built digest. The release is the only
