@@ -1,0 +1,3 @@
+{
+  "entries": [{"category": "Added", "summary": "The web sidebar groups scheduled and webhook sessions under collapsible Scheduled sessions and Webhook sessions sections with counts, a short preview and a searchable View all list.", "highlight": false, "components": ["web"]}]
+}

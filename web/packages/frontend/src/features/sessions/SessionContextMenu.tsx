@@ -94,7 +94,7 @@ export function SessionContextMenu({ row, active }: { row: SessionRow; active: b
       >
         {!row.read_only && <MenuItem onClick={() => { setTitle(row.title); setDialog({ kind: 'rename' }) }}>{m.session_rename()}</MenuItem>}
         {!row.read_only && <MenuItem onClick={() => regen.mutate()}>{m.session_title_regenerate()}</MenuItem>}
-        {row.can_pin && <MenuItem onClick={() => pin.mutate({ id: sid, pinned: !row.pinned })}>{row.pinned ? m.session_unpin() : m.session_pin()}</MenuItem>}
+        {row.can_pin && <MenuItem onClick={() => pin.mutate({ id: sid, pinned: !row.pinned, group: row.sidebar_group })}>{row.pinned ? m.session_unpin() : m.session_pin()}</MenuItem>}
         {!row.read_only && <MenuItem onClick={() => { setProjectId(row.project_id ?? ''); setDialog({ kind: 'move' }) }}>{m.session_move_project()}</MenuItem>}
         <MenuSeparator />
         <MenuItem onClick={copyLink}>{m.session_copy_link()}</MenuItem>

@@ -127,6 +127,21 @@ describe('sidebar groups (TAL-1534)', () => {
   it('files archived rows under no group and counts no group for them', () => {
     expect(groups([row('kept', 2), row('gone', 3, { pinned: true, archived: true })])).toEqual({ rows: [['gone', null], ['kept', 'recent']], groups: [RECENT] })
   })
+
+  it('files cron and webhook rows, pinned or archived, under Scheduled and Webhook in the canonical order (TAL-1639)', () => {
+    const stored = [
+      row('chat', 6),
+      row('cron_job_20261031_120000', 5),
+      row('cron-pinned', 4, { source_tag: 'cron', pinned: true }),
+      row('hook', 3, { source_tag: 'webhook' }),
+      row('hook-archived', 2, { source_tag: 'webhook', archived: true }),
+      row('pin', 1, { pinned: true }),
+    ]
+    expect(groups(stored)).toEqual({
+      rows: [['cron-pinned', 'scheduled'], ['pin', 'pinned'], ['chat', 'recent'], ['cron_job_20261031_120000', 'scheduled'], ['hook', 'webhook'], ['hook-archived', 'webhook']],
+      groups: [PINNED, RECENT, { kind: 'scheduled', title: 'Scheduled sessions' }, { kind: 'webhook', title: 'Webhook sessions' }],
+    })
+  })
 })
 
 describe('Web-created diagnostic chats (TAL-1040)', () => {
