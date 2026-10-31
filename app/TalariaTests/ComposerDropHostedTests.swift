@@ -61,6 +61,30 @@ final class ComposerDropHostedTests: XCTestCase {
         XCTAssertTrue(HostedAccessibility.elements(in: window, labelContaining: "owner-").isEmpty, "An attachment was staged")
     }
 
+    /// Focusing the editor raises the keyboard, which lifts the composer whenever its frame arrives: on a slow runner,
+    /// after a drop has aimed at the composer (TAL-1614). The drop still lands on the composer.
+    func testADropLandsWhenTheKeyboardLiftsTheComposerAfterItsAim() async throws {
+        let window = try await hostFixtureChat(size: HostedSize.padLandscape)
+        let shown = try await awaitKeyboard(UIResponder.keyboardDidShowNotification) {
+            try await self.typeIntoComposer("Hello", in: window)
+        }
+        try XCTSkipUnless(shown, "No software keyboard lifts the composer on this simulator")
+        let editor = try XCTUnwrap(window.firstView(ofType: ComposerTextView.PastingTextView.self))
+        let hidden = await awaitKeyboard(UIResponder.keyboardDidHideNotification) { _ = editor.resignFirstResponder() }
+        XCTAssertTrue(hidden, "The keyboard did not hide")
+        let lowered = editor.convert(editor.bounds, to: window)
+
+        let operation = try await drop([textProvider(" world")], in: window, hovering: {
+            _ = await self.awaitKeyboard(UIResponder.keyboardDidShowNotification) { _ = editor.becomeFirstResponder() }
+            let lifted = await self.awaitCondition { editor.convert(editor.bounds, to: window).minY < lowered.minY }
+            XCTAssertTrue(lifted, "The keyboard did not lift the composer")
+        })
+
+        XCTAssertEqual(operation, .copy)
+        let landed = await awaitCondition { self.composerDraftText(in: window) == "Hello world" }
+        XCTAssertTrue(landed, "Draft was \(String(describing: composerDraftText(in: window)))")
+    }
+
     private func assertDropsLand(size: CGSize) async throws {
         let window = try await hostFixtureChat(size: size)
         try await typeIntoComposer("Hello world", in: window)
@@ -110,25 +134,31 @@ final class ComposerDropHostedTests: XCTestCase {
 
     // MARK: - Drop session
 
-    /// Delivers `providers` as one drop at `point`, or the composer's centre, and returns the operation its
-    /// destination proposed. `hoverScreenshot` names an image of the window while the drop hovers.
+    /// Delivers `providers` as one drop at `point`, or the composer's centre wherever it is when the destination asks,
+    /// and returns the operation its destination proposed. `hoverScreenshot` names an image of the window while the drop
+    /// hovers; `hovering` runs after the drop enters, before its destination proposes.
     private func drop(
         _ providers: [NSItemProvider],
         in window: UIWindow,
         at point: CGPoint? = nil,
-        hoverScreenshot: String? = nil
+        hoverScreenshot: String? = nil,
+        hovering: (() async -> Void)? = nil
     ) async throws -> UIDropOperation {
-        // A staged attachment's strip slides in above the card; aim once it has.
+        // A staged attachment's strip slides in above the card; aim once it has. Focusing the editor raises the
+        // keyboard, which lifts the composer whenever its frame arrives, on a slow runner after this aim (TAL-1614),
+        // so a drop on the composer follows it.
         settle(0.3)
-        let point = try point ?? composerCentre(in: window)
-        let session = HostedDropSession(providers: providers, point: point, window: window)
-        var view = window.hitTest(point, with: nil)
+        let aim = { try point ?? self.composerCentre(in: window) }
+        let start = try aim()
+        let session = HostedDropSession(providers: providers, window: window) { (try? aim()) ?? start }
+        var view = window.hitTest(start, with: nil)
         while let candidate = view {
             for case let interaction as UIDropInteraction in candidate.interactions {
                 guard let delegate = interaction.delegate,
                       delegate.dropInteraction?(interaction, canHandle: session) ?? true else { continue }
                 delegate.dropInteraction?(interaction, sessionDidEnter: session)
                 settle()
+                await hovering?()
                 let operation = delegate.dropInteraction?(interaction, sessionDidUpdate: session).operation ?? .cancel
                 settle()
                 if let hoverScreenshot {
@@ -147,6 +177,13 @@ final class ComposerDropHostedTests: XCTestCase {
             view = candidate.superview
         }
         return .cancel
+    }
+
+    /// Makes `change` and reports whether the keyboard then posted `notification`; a hardware keyboard posts none.
+    private func awaitKeyboard(_ notification: Notification.Name, after change: () async throws -> Void) async rethrows -> Bool {
+        let posted = XCTNSNotificationExpectation(name: notification)
+        try await change()
+        return await XCTWaiter().fulfillment(of: [posted], timeout: 5) == .completed
     }
 
     private func composerCentre(in window: UIWindow) throws -> CGPoint {
@@ -200,14 +237,15 @@ final class ComposerDropHostedTests: XCTestCase {
     }
 }
 
-/// An external drop session at one point of a hosted window: what UIKit hands a drop interaction's delegate.
+/// An external drop session over a hosted window, at the window point `point` returns when asked: what UIKit hands a
+/// drop interaction's delegate.
 private final class HostedDropSession: NSObject, UIDropSession {
     let items: [UIDragItem]
-    private let point: CGPoint
+    private let point: @MainActor () -> CGPoint
     private weak var window: UIWindow?
     let progress = Progress(totalUnitCount: 1)
 
-    init(providers: [NSItemProvider], point: CGPoint, window: UIWindow) {
+    init(providers: [NSItemProvider], window: UIWindow, point: @escaping @MainActor () -> CGPoint) {
         items = providers.map(UIDragItem.init(itemProvider:))
         self.point = point
         self.window = window
@@ -219,7 +257,7 @@ private final class HostedDropSession: NSObject, UIDropSession {
     var isRestrictedToDraggingApplication: Bool { false }
 
     func location(in view: UIView) -> CGPoint {
-        view.convert(point, from: window)
+        view.convert(point(), from: window)
     }
 
     func hasItemsConforming(toTypeIdentifiers typeIdentifiers: [String]) -> Bool {
