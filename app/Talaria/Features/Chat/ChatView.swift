@@ -3088,8 +3088,10 @@ struct ChatView: View {
 
     private func handlePhotoSelection(_ item: PhotosPickerItem) async {
         await stageAttachments([item]) { item in
-            guard let data = try await item.loadTransferable(type: Data.self) else { throw PastedFileError.unreadableURL }
-            return (data, "image_\(UUID().uuidString.prefix(8)).jpg", data)
+            guard let picked = try await item.loadTransferable(type: Data.self),
+                  let image = await ImagePreviewDownsampler.uploadImage(from: picked)
+            else { throw PastedFileError.unreadablePhoto }
+            return (image.data, "image_\(UUID().uuidString.prefix(8)).\(image.fileExtension)", image.data)
         }
     }
 
@@ -3805,6 +3807,7 @@ private struct PastedFile {
 private enum PastedFileError: LocalizedError {
     case unreadableURL
     case unreadableImage
+    case unreadablePhoto
     case fileTooLarge(filename: String)
 
     var errorDescription: String? {
@@ -3813,6 +3816,8 @@ private enum PastedFileError: LocalizedError {
             String(localized: "Could not read the pasted file.")
         case .unreadableImage:
             String(localized: "Could not read the pasted image.")
+        case .unreadablePhoto:
+            String(localized: "Could not read the selected photo.")
         case .fileTooLarge(let filename):
             PendingAttachment.uploadTooLargeMessage(filename: filename)
         }

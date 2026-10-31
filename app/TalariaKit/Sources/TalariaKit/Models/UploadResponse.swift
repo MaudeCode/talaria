@@ -58,50 +58,19 @@ public struct PendingAttachment: Identifiable, Equatable {
 public enum ImagePreviewDownsampler {
     public static let attachmentMaxPixelSize = 512
     public static let filePreviewMaxPixelSize = 2_048
+    public static let uploadMaxPixelSize = 4_096
 
     public static func previewData(from data: Data, maxPixelSize: Int) -> Data? {
         guard maxPixelSize > 0 else { return data }
-
-        let sourceOptions: [CFString: Any] = [kCGImageSourceShouldCache: false]
-        guard let source = CGImageSourceCreateWithData(data as CFData, sourceOptions as CFDictionary) else {
-            return nil
-        }
+        guard let source = imageSource(data) else { return nil }
 
         if let size = pixelSize(for: source),
            max(size.width, size.height) <= maxPixelSize {
             return data
         }
 
-        let thumbnailOptions: [CFString: Any] = [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceShouldCacheImmediately: true,
-            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
-        ]
-
-        guard let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnailOptions as CFDictionary) else {
-            return nil
-        }
-
-        let output = NSMutableData()
-        guard let destination = CGImageDestinationCreateWithData(
-            output,
-            "public.jpeg" as CFString,
-            1,
-            nil
-        ) else {
-            return nil
-        }
-
-        let destinationOptions: [CFString: Any] = [
-            kCGImageDestinationLossyCompressionQuality: 0.82
-        ]
-        CGImageDestinationAddImage(destination, thumbnail, destinationOptions as CFDictionary)
-        guard CGImageDestinationFinalize(destination) else {
-            return nil
-        }
-
-        return output as Data
+        guard let thumbnail = thumbnail(of: source, maxPixelSize: maxPixelSize) else { return nil }
+        return encode(thumbnail, as: "public.jpeg", quality: 0.82)
     }
 
     public static func previewDataAsync(from data: Data, maxPixelSize: Int) async -> Data? {
@@ -120,6 +89,48 @@ public enum ImagePreviewDownsampler {
             guard !Task.isCancelled else { return nil }
             return generatedPreviewData
         }
+    }
+
+    /// A picked photo re-encoded for upload (TAL-865): orientation applied, the long edge capped at
+    /// `uploadMaxPixelSize`, PNG when the image has an alpha channel and JPEG otherwise. The extension names the
+    /// encoded type. Nil when the data does not decode as an image. Runs off the caller's actor.
+    public static func uploadImage(from data: Data) async -> (data: Data, fileExtension: String)? {
+        await Task.detached(priority: .userInitiated) {
+            guard let source = imageSource(data),
+                  let image = thumbnail(of: source, maxPixelSize: uploadMaxPixelSize)
+            else { return nil }
+            // The source's flag, not the decoded bitmap's: HEIC decodes into an alpha-carrying bitmap even when opaque.
+            let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+            let hasAlpha = (properties?[kCGImagePropertyHasAlpha] as? Bool) ?? false
+            let encoded = hasAlpha
+                ? encode(image, as: "public.png", quality: nil)
+                : encode(image, as: "public.jpeg", quality: 0.85)
+            return encoded.map { ($0, hasAlpha ? "png" : "jpg") }
+        }.value
+    }
+
+    private static func imageSource(_ data: Data) -> CGImageSource? {
+        CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary)
+    }
+
+    /// The image with its orientation applied, its long edge at most `maxPixelSize`; never upscaled.
+    private static func thumbnail(of source: CGImageSource, maxPixelSize: Int) -> CGImage? {
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
+        ]
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+    }
+
+    private static func encode(_ image: CGImage, as type: String, quality: Double?) -> Data? {
+        let output = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(output, type as CFString, 1, nil) else { return nil }
+        let options = quality.map { [kCGImageDestinationLossyCompressionQuality: $0] as CFDictionary }
+        CGImageDestinationAddImage(destination, image, options)
+        guard CGImageDestinationFinalize(destination) else { return nil }
+        return output as Data
     }
 
     private static func pixelSize(for source: CGImageSource) -> (width: Int, height: Int)? {

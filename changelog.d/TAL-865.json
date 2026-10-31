@@ -1,0 +1,3 @@
+{
+  "entries": [{"category": "Fixed", "summary": "Photos picked from your library now upload as a right-sized JPEG or PNG with a matching file extension, so HEIC and large photos send reliably.", "highlight": false, "components": ["app"]}]
+}
