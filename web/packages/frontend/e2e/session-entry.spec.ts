@@ -59,7 +59,12 @@ async function liveHistory(page: Page) {
     content: Array.from({ length: 8 }, (_, paragraph) => `Paragraph ${paragraph + 1}: ${message.content} **Verified** with a [reference](https://example.test/report).`).join('\n\n'),
   } : message)
   const run: { stream?: ServerResponse | undefined } = {}
-  const server = createServer((_request, response) => {
+  const server = createServer((request, response) => {
+    // Only the routed run stream may take over; any other local client probing the port is turned away.
+    if (request.url !== '/stream') {
+      response.writeHead(404).end()
+      return
+    }
     run.stream = response
     response.writeHead(200, { 'content-type': 'text/event-stream', 'access-control-allow-origin': process.env.HERMES_E2E_BASE_URL!, 'access-control-allow-credentials': 'true' })
     response.write(`event: server_turn_started\ndata: ${JSON.stringify({ session_id: sid, stream_id: streamId })}\n\n`)
