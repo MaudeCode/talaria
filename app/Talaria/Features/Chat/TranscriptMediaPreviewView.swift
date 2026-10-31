@@ -31,6 +31,13 @@ struct TranscriptMediaPreviewView: View {
         )
     }
 
+    /// Previews a file on this device instead of the server's copy.
+    init(localFile: URL, item: TranscriptMediaPreviewItem) {
+        self.item = item
+        onAPIError = { _ in }
+        _viewModel = State(initialValue: TranscriptMediaPreviewViewModel(localFile: localFile, reference: item.reference))
+    }
+
     var body: some View {
         NavigationStack {
             Group {

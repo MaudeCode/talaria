@@ -10,6 +10,8 @@ struct FeedbackSheet: View {
     @Bindable var model: FeedbackComposer
     @State private var diagnosticsExpanded = false
     @State private var pickedItems: [PhotosPickerItem] = []
+    /// Its reference URL is the local file the composer staged.
+    @State private var previewItem: TranscriptMediaPreviewItem?
 
     var body: some View {
         NavigationStack {
@@ -69,6 +71,11 @@ struct FeedbackSheet: View {
                 if diagnosticsExpanded { await model.loadDiagnostics() }
             }
             .task { await model.loadAttachmentOptions() }
+            .sheet(item: $previewItem) { item in
+                if let file = URL(string: item.reference.url) {
+                    TranscriptMediaPreviewView(localFile: file, item: item)
+                }
+            }
             .onChange(of: pickedItems) { _, items in
                 guard !items.isEmpty else { return }
                 pickedItems = []
@@ -87,7 +94,9 @@ struct FeedbackSheet: View {
                     onAcceptOffer: { model.includeCurrentScreen() },
                     hangsFromCard: false,
                     onRemove: { model.removeAttachment($0) },
-                    onPreview: nil
+                    onPreview: { attachment in
+                        previewItem = model.previewReference(of: attachment.id).map(TranscriptMediaPreviewItem.init(reference:))
+                    }
                 )
                 .environment(\.retryPendingAttachment) { model.retryAttachment($0) }
                 .listRowInsets(EdgeInsets(top: 0, leading: 6, bottom: 0, trailing: 6))

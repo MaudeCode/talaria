@@ -69,6 +69,19 @@ final class FeedbackHostedTests: XCTestCase {
         XCTAssertNil(attachControl)
     }
 
+    func testTappingAnAttachedPhotoPreviewsTheCompressedFile() async throws {
+        let model = model(attachments: true)
+        await model.loadAttachmentOptions()
+        await model.addImage(syntheticPhoto())?.value
+        let window = try hostWindow(NavigationStack { AboutSettingsView(feedback: model) })
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Send Feedback"))
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Open attachment Photo"))
+        _ = try await requireElement(in: window, label: "Photo")
+        let done = await awaitCondition { HostedAccessibility.toolbarItem("Done", in: window) != nil }
+        XCTAssertTrue(done, "The preview sheet opens over the feedback form")
+        attachHostedScreenshot(window, name: "feedback-photo-preview")
+    }
+
     func testRefusedAttachmentConfirmsSentWithoutAttachments() async throws {
         let model = model(attachments: true, submit: { request in
             FeedbackResult(status: "sent", reportId: "synthetic-report",

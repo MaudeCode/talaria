@@ -220,6 +220,16 @@ public final class FeedbackComposer {
         }
     }
 
+    /// The compressed file exactly as it is sent, for the preview: the reference's `url` is that local file.
+    /// Nil until compression has written it.
+    public func previewReference(of id: UUID) -> TranscriptMediaReference? {
+        guard let attachment = attachments.first(where: { $0.id == id }) else { return nil }
+        let file = stagingDirectory.appendingPathComponent(attachment.fileName)
+        guard FileManager.default.fileExists(atPath: file.path) else { return nil }
+        return TranscriptMediaReference(url: file.absoluteString, name: Self.displayName(for: attachment), mime: attachment.contentType,
+                                        mediaKind: attachment.contentType.hasPrefix("video/") ? .video : .image)
+    }
+
     public func removeAttachment(_ id: UUID) {
         guard isEditable, let attachment = attachments.first(where: { $0.id == id }) else { return }
         attachments.removeAll { $0.id == id }
@@ -269,16 +279,26 @@ public final class FeedbackComposer {
         return Task {
             guard isCurrent else { return }
             var unresolvedEarlierAttempt = previouslyUnknown
-            do {
-                let result: FeedbackResult
-                do { result = try await submit(request) }
+            /// One send, retried once with the identical payload when its outcome is unknown.
+            @MainActor func attempt(_ request: FeedbackRequest) async throws -> FeedbackResult? {
+                do { return try await submit(request) }
                 catch {
-                    guard isCurrent else { return }
+                    guard isCurrent else { return nil }
                     guard Self.shouldRetry(error) else { throw error }
                     unresolvedEarlierAttempt = true
-                    result = try await submit(request)
+                    return try await submit(request)
                 }
-                guard isCurrent else { return }
+            }
+            do {
+                var result: FeedbackResult?
+                do { result = try await attempt(request) }
+                catch where !unresolvedEarlierAttempt && request.attachmentIds != nil && Self.isInvalid(error) {
+                    // Staged IDs expire after an hour and stay bound to a report Relay refused, so a new report stages
+                    // its files again. Never for an uncertain report: an earlier attempt may have been admitted.
+                    guard isCurrent, let replacement = await restage(request) else { throw error }
+                    result = try await attempt(replacement)
+                }
+                guard isCurrent, let result else { return }
                 guard result.status == "sent", !result.reportId.isEmpty else {
                     throw APIError.decoding(underlying: CocoaError(.coderReadCorrupt))
                 }
@@ -308,6 +328,25 @@ public final class FeedbackComposer {
     }
 
     private var isEditable: Bool { isCurrent && !isSending && !hasUnknownOutcome }
+
+    /// Uploads every retained file again and makes the draft a new report carrying the new IDs. Nil, leaving the failed
+    /// thumbnails to retry, when an upload fails or the identity changed.
+    private func restage(_ request: FeedbackRequest) async -> FeedbackRequest? {
+        for index in attachments.indices { attachments[index].attachmentId = nil }
+        for attachment in attachments { await upload(attachment.id) }
+        guard isCurrent else { return nil }
+        let ids = attachments.compactMap(\.attachmentId)
+        guard ids.count == attachments.count else {
+            persist()
+            return nil
+        }
+        var replacement = request
+        replacement.requestId = UUID()
+        replacement.attachmentIds = ids
+        draft = replacement
+        persist()
+        return replacement
+    }
 
     /// After a refusal the stamped envelope is spent: any change makes a new report with its own request ID.
     private func startNewReportIfRefused() {
@@ -426,6 +465,10 @@ public final class FeedbackComposer {
         if let api = error as? APIError,
            ["rate_limited", "feedback_unavailable", "invalid"].contains(api.serverMessage ?? "") { return true }
         return APIError.isDefinitiveWriteFailure(error)
+    }
+
+    private static func isInvalid(_ error: Error) -> Bool {
+        (error as? APIError)?.serverMessage == "invalid"
     }
 
     private static func shouldRetry(_ error: Error) -> Bool {

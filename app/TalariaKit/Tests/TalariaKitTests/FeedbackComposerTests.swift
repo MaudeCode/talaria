@@ -451,4 +451,119 @@ final class FeedbackComposerTests: XCTestCase {
         let current = await attachmentComposer(storage: storage, root: root)
         XCTAssertTrue(current.attachments.isEmpty)
     }
+
+    func testPreviewShowsTheCompressedFileAsSent() async throws {
+        let root = try stagingRoot()
+        var uploaded = Data()
+        let model = await attachmentComposer(root: root, upload: { data, type, _ in
+            uploaded = data
+            return .init(attachmentId: UUID(), contentType: type, bytes: data.count)
+        })
+        await model.addImage(try XCTUnwrap(TestImages.jpegDataWithLocation(width: 4_000, height: 3_000)))?.value
+        let id = try XCTUnwrap(model.attachments.first?.id)
+        let reference = try XCTUnwrap(model.previewReference(of: id))
+        XCTAssertEqual(reference.mediaKind, .image)
+        XCTAssertEqual(reference.displayName, "Photo")
+        let file = try XCTUnwrap(URL(string: reference.url))
+        XCTAssertTrue(file.isFileURL)
+        let preview = TranscriptMediaPreviewViewModel(localFile: file, reference: reference)
+        await preview.load()
+        XCTAssertNotNil(preview.previewData)
+        XCTAssertEqual(preview.originalByteCount, uploaded.count, "The preview shows the bytes that were uploaded")
+        model.removeAttachment(id)
+        XCTAssertNil(model.previewReference(of: id))
+    }
+
+    /// A server that accepts only IDs staged since the last restart of its staging window, as expiry and refused-report
+    /// claims behave: anything in `stale` is refused as `invalid`.
+    private func stagingServer(stale: @escaping () -> Set<UUID>, uploads: @escaping (UUID) -> Void, requests: @escaping (FeedbackRequest) -> Void)
+        -> (submit: (FeedbackRequest) async throws -> FeedbackResult, upload: (Data, String, String) async throws -> FeedbackAttachmentStaged) {
+        let submit: (FeedbackRequest) async throws -> FeedbackResult = { request in
+            requests(request)
+            if !(Set(request.attachmentIds ?? []).isDisjoint(with: stale())) {
+                throw APIError.http(statusCode: 400, body: "{\"error\":\"invalid\"}")
+            }
+            return FeedbackResult(status: "sent", reportId: "synthetic-report",
+                                  attachments: (request.attachmentIds ?? []).map { .init(attachmentId: $0, status: "sent") })
+        }
+        let upload: (Data, String, String) async throws -> FeedbackAttachmentStaged = { data, type, _ in
+            let id = UUID()
+            uploads(id)
+            return .init(attachmentId: id, contentType: type, bytes: data.count)
+        }
+        return (submit, upload)
+    }
+
+    func testExpiredStagingIDsAreStagedAgainForAnUnsentDraft() async throws {
+        let root = try stagingRoot()
+        let storage = defaults()
+        var staged: [UUID] = [], requests: [FeedbackRequest] = []
+        var expired = Set<UUID>()
+        let server = stagingServer(stale: { expired }, uploads: { staged.append($0) }, requests: { requests.append($0) })
+        let first = await attachmentComposer(storage: storage, root: root, submit: server.submit, upload: server.upload)
+        await first.addImage(try XCTUnwrap(TestImages.jpegData(width: 40, height: 30)))?.value
+        fill(first)
+        expired = Set(staged)
+
+        let relaunched = await attachmentComposer(storage: storage, root: root, submit: server.submit, upload: server.upload)
+        try await XCTUnwrap(relaunched.send()).value
+        XCTAssertEqual(staged.count, 2, "The retained local file is staged again")
+        XCTAssertEqual(requests.count, 2)
+        guard staged.count == 2, requests.count == 2 else { return }
+        XCTAssertNotEqual(requests[1].requestId, requests[0].requestId, "Different files make a different report")
+        XCTAssertEqual(requests[1].attachmentIds, [staged[1]])
+        XCTAssertFalse(relaunched.isPresented)
+        XCTAssertNil(relaunched.error)
+        XCTAssertTrue(relaunched.attachments.isEmpty, "The report settled")
+    }
+
+    func testAReplacementForARefusedReportStagesItsFilesAgain() async throws {
+        var staged: [UUID] = [], requests: [FeedbackRequest] = []
+        var claimedByRefusedReport = Set<UUID>()
+        var refuseNext = true
+        let server = stagingServer(stale: { claimedByRefusedReport }, uploads: { staged.append($0) }, requests: { requests.append($0) })
+        let model = await attachmentComposer(root: try stagingRoot(), submit: { request in
+            if refuseNext {
+                refuseNext = false
+                requests.append(request)
+                claimedByRefusedReport = Set(request.attachmentIds ?? [])
+                throw APIError.http(statusCode: 429, body: "{\"error\":\"rate_limited\",\"retryAfterSeconds\":1}")
+            }
+            return try await server.submit(request)
+        }, upload: server.upload)
+        await model.addImage(try XCTUnwrap(TestImages.jpegData(width: 40, height: 30)))?.value
+        fill(model)
+        try await XCTUnwrap(model.send()).value
+        XCTAssertTrue(model.isPresented, "The refusal rolls back to the draft")
+        model.edit { $0.title = "Edited after the refusal" }
+        try await XCTUnwrap(model.send()).value
+        XCTAssertEqual(requests.count, 3)
+        XCTAssertEqual(staged.count, 2, "The retained local file is staged again")
+        guard staged.count == 2, requests.count == 3 else { return }
+        XCTAssertEqual(requests[2].attachmentIds, [staged[1]], "The replacement report sends newly staged files")
+        XCTAssertNotEqual(requests[2].requestId, requests[1].requestId)
+        XCTAssertFalse(model.isPresented)
+        XCTAssertNil(model.error)
+    }
+
+    func testAnUncertainReportIsNeverRestagedUnderANewRequest() async throws {
+        let root = try stagingRoot()
+        let storage = defaults()
+        var staged: [UUID] = [], requests: [FeedbackRequest] = []
+        var stale = Set<UUID>()
+        let server = stagingServer(stale: { stale }, uploads: { staged.append($0) }, requests: { requests.append($0) })
+        let model = await attachmentComposer(storage: storage, root: root, submit: { request in
+            requests.append(request)
+            throw APIError.network(underlying: URLError(.timedOut))
+        }, upload: server.upload)
+        await model.addImage(try XCTUnwrap(TestImages.jpegData(width: 40, height: 30)))?.value
+        fill(model)
+        try await XCTUnwrap(model.send()).value
+        stale = Set(staged)
+        let relaunched = await attachmentComposer(storage: storage, root: root, submit: server.submit, upload: server.upload)
+        try await XCTUnwrap(relaunched.send()).value
+        XCTAssertEqual(staged.count, 1, "An earlier attempt may have been admitted, so its payload stays fixed")
+        XCTAssertTrue(requests.allSatisfy { $0 == requests[0] })
+        XCTAssertTrue(relaunched.hasUnknownOutcome)
+    }
 }
