@@ -1,4 +1,4 @@
-import { memo, useEffect, useLayoutEffect, useRef, useState, type DragEvent } from 'react'
+import { memo, useEffect, useId, useLayoutEffect, useRef, useState, type DragEvent } from 'react'
 import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Archive, ArchiveRestore, Filter, GitBranch, Plus, Search, Upload, Users, X } from 'lucide-react'
@@ -100,9 +100,10 @@ export const SessionListItem = memo(function SessionListItem({ row, active, proj
   onDragEnd?: () => void
 }) {
   useLocale()
+  const id = useId()
   const displayTitle = row.title || m.untitled()
   const content = (<>
-      <div className="session-text">
+      <div className="session-text" id={`${id}-text`}>
         <div className="session-title-row">
           <span className="session-title" title={displayTitle}>{displayTitle}</span>
           {row.worktree_branch && <span className="session-worktree-badge" role="img" aria-label={`${m.session_worktree_badge()}: ${row.worktree_branch}`} title={`${m.session_worktree_badge()}: ${row.worktree_branch}`}><GitBranch size={12} aria-hidden="true" /></span>}
@@ -115,30 +116,33 @@ export const SessionListItem = memo(function SessionListItem({ row, active, proj
   if (selection) return <button type="button" role="checkbox" aria-checked={selection.selected} disabled={selection.disabled} onClick={selection.onSelect} className={cn('session-item min-h-11 w-full text-left', selection.selected && 'active')} data-sid={row.session_id}>
     {content}<span aria-hidden="true">{selection.selected ? '✓' : ''}</span>
   </button>
+  // TAL-1120: the wrapper is the list item, so the anchor keeps its link role; its name skips the nested action buttons.
   return (
-    <Link
-      to="/session/$sessionId"
-      params={{ sessionId: row.session_id }}
-      onClick={closeMobileSidebar}
-      draggable={!!onDragStart && row.can_pin && !row.read_only}
-      onDragStart={(event) => { if (onDragStart) onDragStart(event, row); else event.preventDefault() }}
-      onDragEnd={onDragEnd}
-      role="listitem"
-      data-sid={row.session_id}
-      data-source={row.is_cli_session ? (row.source_label ?? 'CLI') : undefined}
-      aria-current={active ? 'page' : undefined}
-      className={cn('session-item', active && 'active', row.is_streaming && 'streaming', row.is_cli_session && 'cli-session', row.attention && 'needs-attention', row.archived && 'archived')}
-    >
-      {content}
-      {/* The rail shows status by color; this says it in words (TAL-365). */}
-      {row.is_streaming ? <span className="sr-only">{m.status_streaming()}</span> : row.attention && <span className="sr-only">{attentionLabel(row.attention.kind)}</span>}
-      <div className="session-actions">
-        {row.can_archive && <button type="button" className="session-archive-toggle" title={row.archived ? m.session_restore() : m.session_batch_archive()} aria-label={row.archived ? m.session_restore() : m.session_batch_archive()} onClick={(e) => { e.preventDefault(); e.stopPropagation(); onArchive(row.session_id, !row.archived) }}>
-          {row.archived ? <ArchiveRestore size={14} aria-hidden="true" /> : <Archive size={14} aria-hidden="true" />}
-        </button>}
-        <SessionContextMenu row={row} active={active} />
-      </div>
-    </Link>
+    <div role="listitem">
+      <Link
+        to="/session/$sessionId"
+        params={{ sessionId: row.session_id }}
+        onClick={closeMobileSidebar}
+        draggable={!!onDragStart && row.can_pin && !row.read_only}
+        onDragStart={(event) => { if (onDragStart) onDragStart(event, row); else event.preventDefault() }}
+        onDragEnd={onDragEnd}
+        aria-labelledby={`${id}-text ${id}-status`}
+        data-sid={row.session_id}
+        data-source={row.is_cli_session ? (row.source_label ?? 'CLI') : undefined}
+        aria-current={active ? 'page' : undefined}
+        className={cn('session-item', active && 'active', row.is_streaming && 'streaming', row.is_cli_session && 'cli-session', row.attention && 'needs-attention', row.archived && 'archived')}
+      >
+        {content}
+        {/* The rail shows status by color; this says it in words (TAL-365). */}
+        <span className="sr-only" id={`${id}-status`}>{row.is_streaming ? m.status_streaming() : row.attention ? attentionLabel(row.attention.kind) : null}</span>
+        <div className="session-actions">
+          {row.can_archive && <button type="button" className="session-archive-toggle" title={row.archived ? m.session_restore() : m.session_batch_archive()} aria-label={row.archived ? m.session_restore() : m.session_batch_archive()} onClick={(e) => { e.preventDefault(); e.stopPropagation(); onArchive(row.session_id, !row.archived) }}>
+            {row.archived ? <ArchiveRestore size={14} aria-hidden="true" /> : <Archive size={14} aria-hidden="true" />}
+          </button>}
+          <SessionContextMenu row={row} active={active} />
+        </div>
+      </Link>
+    </div>
   )
 })
 

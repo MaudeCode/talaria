@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Screen readers announce sidebar conversations as links named by their title.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
