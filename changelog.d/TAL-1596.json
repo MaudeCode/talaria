@@ -2,7 +2,7 @@
   "entries": [
     {
       "category": "Added",
-      "summary": "Send feedback in Talaria Web can attach screenshots and screen recordings, compressed in the browser with location metadata removed before upload.",
+      "summary": "Send feedback in Talaria Web can attach screenshots and screen recordings, compressed in the browser before upload.",
       "highlight": false,
       "components": [
         "web"
