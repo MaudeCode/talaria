@@ -1,0 +1,3 @@
+{
+  "entries": [{"category": "Fixed", "summary": "The AI summary of a pending Agent update is now generated once an in-progress Agent update finishes, instead of falling back to a placeholder.", "highlight": false, "components": ["web"]}]
+}

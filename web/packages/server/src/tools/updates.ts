@@ -15,6 +15,7 @@ export { backupPersistedStores, CHANNEL_SWITCH_BACKUPS } from '../sessions/stora
 import { UpdatesSummarySchema, WebUpdateChannelSchema, type AgentRecoveryState, type WebUpdateChannel, type RuntimeDescribe, type SidecarResult } from '@maudecode/talaria-web-contracts'
 import { z } from 'zod'
 import { readCapped } from '../http/capped.js'
+import { SidecarError } from '../sidecar/client.js'
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
@@ -1265,8 +1266,8 @@ function formatSections(text: string, details: Dict[]): [SummarySections, string
   return [sections, sectionsText(sections)]
 }
 /** Deterministic copy when the model has nothing to summarize or cannot answer; never titled as model output. */
-function fallbackSections(details: Dict[], resolved: boolean): [SummarySections, string] {
-  const sections: SummarySections = [{ title: 'About this update', items: uniqueBullets(fallbackBullets(details, resolved)) }]
+function fallbackSections(details: Dict[], resolved: boolean, deferred = false): [SummarySections, string] {
+  const sections: SummarySections = [{ title: 'About this update', items: deferred ? ['The summary will be ready when the Agent update finishes.'] : uniqueBullets(fallbackBullets(details, resolved)) }]
   return [sections, sectionsText(sections)]
 }
 const SUMMARY_SYSTEM = 'You write human-readable release summaries for Hermes users. Focus on what the user will notice in the product. Keep it simple, specific, and short. avoid technical jargon, implementation details, SHA names, branch names, and file paths unless necessary. Return only bullets. Do not include headings, markdown tables, intro paragraphs, or closing notes.'
@@ -1443,6 +1444,8 @@ export class UpdateService {
   private readonly summaryQueues = new Map<'webui' | 'agent', Promise<unknown>>()
   private readonly summarizing = new Map<string, Promise<Dict>>()
   private readonly summaryFailures = new Set<string>()
+  /** TAL-1591: targets whose model call the sidecar refused while the Agent runtime was mid-update; non-empty means the runtime is known stale. */
+  private readonly summaryDeferred = new Set<'webui' | 'agent'>()
   private readonly publishedTags = new Map<string, { at: number; tag: string | null }>()
   private readonly git: GitRun
   private readonly now: () => number
@@ -1494,14 +1497,22 @@ export class UpdateService {
     return next
   }
 
-  private preGenerateSummaries(status: Dict): void {
-    for (const target of ['webui', 'agent'] as const) {
+  private preGenerateSummaries(status: Dict, targets: readonly ('webui' | 'agent')[] = ['webui', 'agent']): void {
+    for (const target of targets) {
       const info = dict(status[target])
       if (updateTargetView(target, info, false).summary_available !== true) continue
       const automatic = this.deps.llm && this.deps.checkEnabled?.() !== false && this.deps.summarizeAutomatically?.() !== false
-      const work = automatic ? this.summarizeTarget(target, info) : this.queueSummary(target, () => this.refreshSummaryItems(target, info))
+      const work = automatic ? this.summarizeTarget(target, info, false, true) : this.queueSummary(target, () => this.refreshSummaryItems(target, info))
       void work.catch(() => { this.logSummaryFailure(this.summaryKey(target, info), target) })
     }
+  }
+
+  /** TAL-1591: the Agent runtime is current again, so deferred summaries are generated once. */
+  private resumeDeferredSummaries(): void {
+    if (!this.summaryDeferred.size) return
+    const targets = [...this.summaryDeferred]
+    this.summaryDeferred.clear()
+    this.preGenerateSummaries(this.cache, targets)
   }
 
   private agentChannel(): Channel { return this.deps.agentChannel?.() ?? DEFAULT_CHANNEL }
@@ -1647,6 +1658,7 @@ export class UpdateService {
     const lifecycle = this.lifecycle
     this.recoveryUnsubscribe = this.deps.onAgentReconnect?.((runtime) => {
       if (!this.autoStarted || lifecycle !== this.lifecycle) return
+      if (runtime.compatible && !runtime.stale) this.resumeDeferredSummaries()
       if (runtime.compatible && !runtime.stale && this.recovery.phase === 'blocked') {
         this.recoveryAttempt = 0
         this.recovery = { ...this.recovery, phase: 'waiting', attempt: 0, retry_at: null }
@@ -1765,6 +1777,7 @@ export class UpdateService {
       if (!result.ok || result.owed) throw new Error(result.detail || 'Agent recovery remains unverified.')
       await this.invalidate('agent')
       this.recovery = { phase: 'complete', attempt: this.recoveryAttempt, detail: 'Agent service and runtime recovery is verified.', retry_at: null, ...(result.operation ? { operation: result.operation } : {}), ...(result.revision ? { verified_revision: result.revision } : {}), ...(result.runtime_revision ? { runtime_revision: result.runtime_revision } : {}), ...(result.verified_version ? { verified_version: result.verified_version } : {}) }
+      this.resumeDeferredSummaries()
     } catch (error) {
       if (!current()) return
       this.recoveryDraining = false
@@ -2094,14 +2107,14 @@ export class UpdateService {
     return this.summarizeTarget(target, dict(this.cachedStatus()[target]), checksOff)
   }
 
-  private async summarizeTarget(target: 'webui' | 'agent', info: Dict, checksOff = false): Promise<Dict> {
+  private async summarizeTarget(target: 'webui' | 'agent', info: Dict, checksOff = false, automatic = false): Promise<Dict> {
     const view = updateTargetView(target, info, checksOff)
     const range = { current_version: typeof info.current_version === 'string' ? info.current_version : null, target_version: view.target_version ?? null }
     if (view.summary_available !== true) return { ok: true, target, ...range, summary: '', summary_sections: [], generated_by: 'none', source: 'none', cached: false }
     const key = this.summaryKey(target, info)
     const pending = this.summarizing.get(key)
     if (pending) return pending
-    const generating = this.queueSummary(target, () => this.generateSummary(target, info, range, key)).finally(() => { this.summarizing.delete(key) })
+    const generating = this.queueSummary(target, () => this.generateSummary(target, info, range, key, automatic)).finally(() => { this.summarizing.delete(key) })
     this.summarizing.set(key, generating)
     return generating
   }
@@ -2133,7 +2146,7 @@ export class UpdateService {
     return sections
   }
 
-  private async generateSummary(target: 'webui' | 'agent', info: Dict, range: Dict, key: string): Promise<Dict> {
+  private async generateSummary(target: 'webui' | 'agent', info: Dict, range: Dict, key: string, automatic: boolean): Promise<Dict> {
     let entry: PendingSummary | undefined
     let complete = false
     try { ({ entry, complete } = await this.refreshSummaryItems(target, info)) }
@@ -2143,18 +2156,27 @@ export class UpdateService {
     const last = entry?.items.at(-1)?.id ?? null
     const cached = Boolean(complete && entry?.summary_sections && entry.summarized_through === last)
     let sections = cached ? entry!.summary_sections : null
+    // Pre-generation skips a known-stale runtime; an on-demand request asks again, and its answer proves the runtime current.
+    let deferred = false
     if (!sections && entry && this.deps.llm && entry.items.length) {
       const at = entry.summarized_through === null ? 0 : entry.items.findIndex((item) => item.id === entry.summarized_through) + 1
-      try {
+      if (automatic && this.summaryDeferred.size) deferred = true
+      else try {
         sections = await this.foldSummary(entry.summary_sections, entry.items.slice(at), detail, source)
         if (complete && sections) {
           entry.summary_sections = sections
           entry.summarized_through = last
           this.persistSummaries()
         }
-      } catch { this.logSummaryFailure(key, target) }
+        this.summaryDeferred.delete(target)
+        this.resumeDeferredSummaries()
+      } catch (error) {
+        if (error instanceof SidecarError && error.condition === 'agent_runtime_stale') deferred = true
+        else this.logSummaryFailure(key, target)
+      }
+      if (deferred) this.summaryDeferred.add(target)
     }
-    const fallback = fallbackSections([detail], Boolean(entry))
+    const fallback = fallbackSections([detail], Boolean(entry), deferred)
     const summary = sections ? sectionsText(sections) : fallback[1]
     return { ok: true, target, ...range, summary, summary_sections: sections ?? fallback[0], generated_by: sections ? 'llm' : 'fallback', source, cached }
   }
