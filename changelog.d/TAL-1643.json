@@ -1,0 +1,3 @@
+{
+  "entries": [{"category": "Fixed", "summary": "The notifications button in the left rail shows its full label instead of a cut-off one.", "highlight": false, "components": ["web"]}]
+}

@@ -325,7 +325,7 @@ export function UpdateNotificationCenterButton({ placement }: { placement: 'rail
   const buttonClass = placement === 'rail'
     ? 'rail-btn has-tooltip relative flex w-[54px] min-h-12 flex-none flex-col items-center justify-center gap-[3px] rounded-(--rail-btn-radius) border-0 bg-transparent text-muted cursor-pointer p-0 hover:text-text hover:bg-hover'
     : 'app-titlebar-notifications relative inline-flex size-11 shrink-0 items-center justify-center bg-transparent border-0 text-muted rounded-lg cursor-pointer [-webkit-app-region:no-drag] hover:bg-hover hover:text-text'
-  return <button type="button" className={buttonClass} data-panel={placement === 'rail' ? 'update-notifications' : undefined} data-tooltip={m.update_notifications()} aria-label={m.update_notifications()} onClick={center.show}>
+  return <button type="button" className={buttonClass} data-panel={placement === 'rail' ? 'update-notifications' : undefined} data-tooltip={placement === 'rail' ? m.update_notifications_rail_label() : m.update_notifications()} aria-label={m.update_notifications()} onClick={center.show}>
     <Bell size={18} strokeWidth={1.5} aria-hidden="true" />
     {center.unread > 0 && <span className="absolute right-1.5 top-1.5 min-w-4 h-4 rounded-full bg-accent px-1 text-[10px] font-semibold leading-4 text-accent-fg text-center" aria-label={m.update_notifications_unread({ count: center.unread })}>{center.unread > 9 ? '9+' : center.unread}</span>}
   </button>
