@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The chat list stops checking on running chats while the sidebar is closed or the app is in the background, and checks once when you come back.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}

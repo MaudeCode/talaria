@@ -157,7 +157,9 @@ final class SessionListAutoRefreshTests: XCTestCase {
                 streamIDs: SessionListViewModel.activeStreamIDs(in: streaming),
                 hasActiveRows: !streaming.isEmpty,
                 isViewingCachedData: viewModel.isViewingCachedData,
-                isEventStreamLive: isLive
+                isEventStreamLive: isLive,
+                isListVisible: true,
+                isSceneActive: true
             )
             var elapsed = Duration.zero
             await SessionListAutoRefresh.monitorActiveRows(taskID, check: {
@@ -178,6 +180,144 @@ final class SessionListAutoRefreshTests: XCTestCase {
         let disconnectedReads = await readsInTenSeconds()
         XCTAssertLessThanOrEqual(disconnectedReads, 2, "At most one status read per streaming row per 10 s")
         XCTAssertGreaterThan(disconnectedReads, 0, "A dropped stream still falls back to polling")
+    }
+
+    /// The open chat already follows its own run, so the list asks after its streaming rows only while it is on
+    /// screen and the app is active (TAL-840): a closed drawer or overlay sidebar, or an inactive scene, sends nothing.
+    func testStreamingRowsStayQuietWhileTheListIsHiddenOrTheSceneInactive() async throws {
+        let requests = LockedCounter()
+        MockURLProtocol.requestHandler = { request in
+            switch request.url?.path {
+            case "/api/sessions":
+                _ = requests.increment()
+                return apiTestJSONResponse("""
+                {"sessions": [
+                  {"session_id": "run-a", "title": "A", "is_streaming": true, "active_stream_id": "stream-a"},
+                  {"session_id": "run-b", "title": "B", "is_streaming": true}
+                ]}
+                """, for: request)
+            case "/api/chat/stream/status":
+                _ = requests.increment()
+                return apiTestJSONResponse(#"{"active":true}"#, for: request)
+            default:
+                throw URLError(.badURL)
+            }
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        let server = try XCTUnwrap(URL(string: "https://example.test"))
+        let viewModel = SessionListViewModel(
+            server: server, client: APIClient(baseURL: server, session: URLSession(configuration: configuration))
+        )
+        await viewModel.load()
+        let streaming = viewModel.sessions.filter(SessionRowPresentation.isActiveStreaming)
+        XCTAssertEqual(streaming.count, 2)
+        let chat = SessionNavigationDestination.session(streaming[0])
+
+        /// Thirty seconds of the view's loop on a virtual clock, for each set of rows it can ask about: one status
+        /// read per stream, or a full list reload when no row carries a stream id.
+        func requestsInThirtySeconds(isListVisible: Bool, isSceneActive: Bool) async -> Int {
+            let before = requests.count
+            for streamIDs in [SessionListViewModel.activeStreamIDs(in: streaming), []] {
+                let taskID = SessionListAutoRefresh.ActiveRowTaskID(
+                    streamIDs: streamIDs,
+                    hasActiveRows: true,
+                    isViewingCachedData: false,
+                    isEventStreamLive: false,
+                    isListVisible: isListVisible,
+                    isSceneActive: isSceneActive
+                )
+                var elapsed = Duration.zero
+                await SessionListAutoRefresh.monitorActiveRows(taskID, check: {
+                    _ = await viewModel.refreshActiveSessionStatesIfNeeded(streamIDs: taskID.streamIDs)
+                }, sleep: { interval in
+                    guard elapsed + interval <= .seconds(30) else { throw CancellationError() }
+                    elapsed += interval
+                })
+            }
+            return requests.count - before
+        }
+
+        let compactDrawerClosed = SessionListAutoRefresh.isListVisible(
+            sidebar: makeSidebar(isRegularWidth: false, size: CGSize(width: 390, height: 844)),
+            drawerIsPresented: false,
+            destination: chat
+        )
+        let compactEmptyChatRoot = SessionListAutoRefresh.isListVisible(
+            sidebar: makeSidebar(isRegularWidth: false, size: CGSize(width: 390, height: 844)),
+            drawerIsPresented: false,
+            destination: nil
+        )
+        let regularOverlayClosed = SessionListAutoRefresh.isListVisible(
+            sidebar: makeSidebar(isRegularWidth: true, size: CGSize(width: 820, height: 1180)),
+            drawerIsPresented: false,
+            destination: chat
+        )
+        XCTAssertFalse(compactDrawerClosed, "A closed drawer hides the list at compact width")
+        XCTAssertFalse(compactEmptyChatRoot, "The empty chat root covers the list like any chat")
+        XCTAssertFalse(regularOverlayClosed, "A closed overlay sidebar hides the list at regular width")
+
+        let hiddenRequests = await requestsInThirtySeconds(isListVisible: compactDrawerClosed, isSceneActive: true)
+        XCTAssertEqual(hiddenRequests, 0, "A hidden list asks nothing about its streaming rows")
+        let overlayRequests = await requestsInThirtySeconds(isListVisible: regularOverlayClosed, isSceneActive: true)
+        XCTAssertEqual(overlayRequests, 0, "A closed overlay sidebar asks nothing about its streaming rows")
+        let inactiveRequests = await requestsInThirtySeconds(isListVisible: true, isSceneActive: false)
+        XCTAssertEqual(inactiveRequests, 0, "An inactive scene asks nothing about its streaming rows")
+        let visibleRequests = await requestsInThirtySeconds(isListVisible: true, isSceneActive: true)
+        XCTAssertGreaterThan(visibleRequests, 0, "An on-screen list still falls back to polling")
+    }
+
+    /// A tiled column stays beside the chat, so it is on screen; an open drawer or overlay sidebar is too.
+    func testTiledColumnOrOpenSidebarShowsTheList() throws {
+        let chat = SessionNavigationDestination.session(SessionSummary(sessionId: "run-a"))
+        XCTAssertTrue(SessionListAutoRefresh.isListVisible(
+            sidebar: makeSidebar(isRegularWidth: true, size: CGSize(width: 1180, height: 820)),
+            drawerIsPresented: false,
+            destination: chat
+        ))
+        XCTAssertTrue(SessionListAutoRefresh.isListVisible(
+            sidebar: makeSidebar(isRegularWidth: false, size: CGSize(width: 390, height: 844)),
+            drawerIsPresented: true,
+            destination: chat
+        ))
+        XCTAssertTrue(SessionListAutoRefresh.isListVisible(
+            sidebar: makeSidebar(isRegularWidth: true, size: CGSize(width: 820, height: 1180)),
+            drawerIsPresented: true,
+            destination: chat
+        ))
+        XCTAssertTrue(SessionListAutoRefresh.isListVisible(
+            sidebar: makeSidebar(isRegularWidth: false, size: CGSize(width: 390, height: 844)),
+            drawerIsPresented: false,
+            destination: .utility(.scheduled)
+        ))
+    }
+
+    /// A run can end while nothing was asking, so opening the sidebar or foregrounding checks once before the
+    /// first wait; any other restart keeps the 10 s cadence.
+    func testReturningToTheListChecksBeforeTheFirstWait() async {
+        let shown = makeActiveRowTaskID(isListVisible: true, isSceneActive: true)
+
+        for previous in [
+            makeActiveRowTaskID(isListVisible: false, isSceneActive: true),
+            makeActiveRowTaskID(isListVisible: true, isSceneActive: false),
+        ] {
+            let events = await activeRowEvents(shown, resumingFrom: previous)
+            XCTAssertEqual(events, [.refreshed, .slept(SessionListAutoRefresh.activeRowInterval), .refreshed])
+        }
+
+        for previous in [nil, makeActiveRowTaskID(isListVisible: true, isSceneActive: true, streamIDs: ["other"])] {
+            let events = await activeRowEvents(shown, resumingFrom: previous)
+            let interval = SessionListAutoRefresh.activeRowInterval
+            XCTAssertEqual(events, [.slept(interval), .refreshed, .slept(interval), .refreshed])
+        }
+    }
+
+    /// Cached rows are not live, so the monitor stays off whatever the list's visibility.
+    func testCachedDataStillStopsTheMonitor() async {
+        var cached = makeActiveRowTaskID(isListVisible: true, isSceneActive: true)
+        cached.isViewingCachedData = true
+        let events = await activeRowEvents(cached, resumingFrom: makeActiveRowTaskID(isListVisible: false, isSceneActive: true))
+        XCTAssertEqual(events, [])
     }
 
     // MARK: - Refresh queue
@@ -461,6 +601,40 @@ final class SessionListAutoRefreshTests: XCTestCase {
     }
 
     // MARK: - Support
+
+    private func makeActiveRowTaskID(
+        isListVisible: Bool,
+        isSceneActive: Bool,
+        streamIDs: [String] = ["stream-a"]
+    ) -> SessionListAutoRefresh.ActiveRowTaskID {
+        SessionListAutoRefresh.ActiveRowTaskID(
+            streamIDs: streamIDs,
+            hasActiveRows: true,
+            isViewingCachedData: false,
+            isEventStreamLive: false,
+            isListVisible: isListVisible,
+            isSceneActive: isSceneActive
+        )
+    }
+
+    private func makeSidebar(isRegularWidth: Bool, size: CGSize) -> SidebarPresentation {
+        SidebarPresentation(isRegularWidth: isRegularWidth, splitSize: size, hasVerticalBar: false, storedChoice: true)
+    }
+
+    /// The monitor's checks and waits until its second check.
+    private func activeRowEvents(
+        _ taskID: SessionListAutoRefresh.ActiveRowTaskID,
+        resumingFrom previous: SessionListAutoRefresh.ActiveRowTaskID?
+    ) async -> [Event] {
+        var events: [Event] = []
+        await SessionListAutoRefresh.monitorActiveRows(taskID, resumingFrom: previous, check: {
+            events.append(.refreshed)
+        }, sleep: { interval in
+            guard events.filter({ $0 == .refreshed }).count < 2 else { throw CancellationError() }
+            events.append(.slept(interval))
+        })
+        return events
+    }
 
     private enum Event: Equatable {
         case slept(Duration)
