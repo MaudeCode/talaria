@@ -1,7 +1,7 @@
 import { StartupTiming } from '../startup-timing.js'
 import type { ChildProcess } from 'node:child_process'
 import { delimiter } from 'node:path'
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -9,6 +9,7 @@ import { getEventListeners } from 'node:events'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SIDECAR_RPC_VERSION } from '@maudecode/talaria-web-contracts'
 import { SidecarClient, SidecarError, sidecarSpawnEnv } from './client.js'
+import { launchSidecar } from './discover.js'
 import { FakeSidecar } from './fake.js'
 
 const agentDir = process.env.HERMES_WEBUI_AGENT_DIR ?? resolve(homedir(), '.hermes/hermes-agent')
@@ -296,6 +297,55 @@ describe.skipIf(!agentAvailable)('SidecarClient against the pinned Agent', () =>
     await client.call('runtime.shutdown', { exit_code: 3 })
     await expect.poll(() => client?.status, { timeout: 5_000 }).toBe('incompatible')
     await expect(client.call('rpc.methods', {})).rejects.toBeInstanceOf(SidecarError)
+  })
+})
+
+
+describe('SidecarClient support warning against the verified Agent window (TAL-947)', () => {
+  const UNSUPPORTED = '[sidecar] This Agent version is not officially supported by Talaria and may cause issues.'
+  const PIN = 'a'.repeat(40)
+  const WINDOW_REVISION = 'b'.repeat(40)
+  const fixture = resolve(import.meta.dirname, '../../../contracts/fixtures/sidecar/runtime.json')
+  // Answers the handshake with the fixture result plus the overrides in argv[2].
+  const script = `const fs=require('fs');const value={...JSON.parse(fs.readFileSync(process.argv[1],'utf8'))['runtime.handshake'][0].result,...JSON.parse(process.argv[2])};require('readline').createInterface({input:process.stdin}).on('line',line=>{const req=JSON.parse(line);if(req.method==='runtime.handshake')process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:req.id,result:value})+'\\n')})`
+  let client: SidecarClient | null = null
+  afterEach(async () => { await client?.close(); client = null })
+
+  /** A test-owned web root whose `sidecar/agent_support.json` lists `releases`. */
+  const webRoot = (releases: unknown[]) => {
+    const root = mkdtempSync(resolve(tmpdir(), 'talaria-sidecar-window-'))
+    mkdirSync(resolve(root, 'sidecar'))
+    writeFileSync(resolve(root, 'sidecar', 'agent_support.json'), JSON.stringify({ schemaVersion: 1, releases }))
+    return root
+  }
+  const window = [
+    { releaseTag: 'v0.21.4', version: '0.21.4', sourceRevision: PIN },
+    { releaseTag: 'v0.21.5', version: '0.21.5', sourceRevision: WINDOW_REVISION },
+  ]
+
+  /** Launch through the runtime seam (`launchSidecar`) so the server's window reaches the client, and return the logged lines. */
+  const startWith = async (root: string, overrides: Record<string, unknown>) => {
+    const logs: string[] = []
+    client = launchSidecar({ env: { HERMES_WEBUI_SIDECAR_COMMAND: JSON.stringify([process.execPath, '-e', script, fixture, JSON.stringify({ pinned_revision: PIN, pinned_version: '0.21.4', ...overrides })]) }, hermesHome: root, webRoot: root, home: root, log: (l) => logs.push(l) })
+    await client!.start()
+    expect(client!.status).toBe('ready')
+    return logs
+  }
+
+  it('a window revision other than the pin logs no warning', async () => {
+    expect(await startWith(webRoot(window), { agent_revision: WINDOW_REVISION, agent_version: '0.21.5' })).not.toContain(UNSUPPORTED)
+  })
+
+  it('a revision outside the window logs the warning', async () => {
+    expect(await startWith(webRoot(window), { agent_revision: 'c'.repeat(40), agent_version: '0.21.5' })).toContain(UNSUPPORTED)
+  })
+
+  it('no revision and a window version logs no warning', async () => {
+    expect(await startWith(webRoot(window), { agent_revision: null, agent_version: '0.21.5' })).not.toContain(UNSUPPORTED)
+  })
+
+  it('an empty window logs the warning even for the pin', async () => {
+    expect(await startWith(webRoot([]), { agent_revision: PIN, agent_version: '0.21.4' })).toContain(UNSUPPORTED)
   })
 })
 

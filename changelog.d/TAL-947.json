@@ -1,0 +1,3 @@
+{
+  "entries": [{"category": "Fixed", "summary": "Talaria Web no longer logs an unsupported-Agent warning at startup for Agent releases it lists as supported.", "highlight": false, "components": ["web"]}]
+}

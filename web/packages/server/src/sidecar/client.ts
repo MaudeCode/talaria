@@ -9,6 +9,7 @@
  * HTTP layer forwards as the 503 `condition` field.
  */
 import { timingOutcome, type StartupTiming } from '../startup-timing.js'
+import type { SupportedAgent } from '../release.js'
 import { delimiter, resolve } from 'node:path'
 import { homedir } from 'node:os'
 import { spawn, type ChildProcess } from 'node:child_process'
@@ -67,6 +68,8 @@ export interface SidecarSpawnOptions {
   backoffMs?: number[]
   /** How long the handshake may take before the child is treated as hung and restarted. */
   handshakeTimeoutMs?: number
+  /** The verified Agent window (`supportedAgents(webRoot)`); an Agent outside it, or any Agent when it is empty or omitted, logs the unsupported warning. */
+  supportedAgents?: readonly Pick<SupportedAgent, 'version' | 'sourceRevision'>[]
 }
 
 /** The narrow interface the rest of the server depends on; `FakeSidecar` implements it too. */
@@ -231,7 +234,8 @@ export class SidecarClient implements SidecarLike {
       }
       this.describe = describe
       this.status = describe.compatible && !describe.stale ? 'ready' : 'incompatible'
-      const tested = describe.agent_revision !== null ? describe.agent_revision === describe.pinned_revision : describe.agent_version === describe.pinned_version
+      const window = this.opts.supportedAgents ?? []
+      const tested = describe.agent_revision !== null ? window.some((a) => a.sourceRevision === describe.agent_revision) : window.some((a) => a.version === describe.agent_version)
       if (describe.compatible && !tested) this.log('[sidecar] This Agent version is not officially supported by Talaria and may cause issues.')
       this.restartAttempt = 0
       for (const listener of [...this.handshakeListeners]) {
