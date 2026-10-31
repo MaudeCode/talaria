@@ -148,6 +148,9 @@ def path_suites(path):
         # the real Node server from the frontend job, so server changes run it too.
         if local.startswith(("sidecar/", *SIDECAR_SERVER_INPUTS)):
             return {"web_server", "web_frontend", "web_sidecar", "contracts"}
+        # Server unit tests stay out of the build that Playwright and the contracts probe run (tsconfig.build.json).
+        if local.startswith("packages/server/src/") and local.endswith(".test.ts"):
+            return {"web_server"}
         if local.startswith("packages/server/"):
             return {"web_server", "web_frontend", "contracts"}
         # The lockfile and Node version feed both the workspace builds and the container image.

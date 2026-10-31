@@ -1180,24 +1180,34 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     // never another provider's usable key.
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     expect((await s.deps.sessionStore.get(sid)).model_provider).toBeNull()
-    const deadline = Date.now() + 600
+    // The drain's clock stands still, so a retry deadline never passes and only the test opens the pool, however slow
+    // the runner (TAL-975). Each deadline is 200 ms past that clock: the recheck timer fires, pauses again until the
+    // pool opens, and then alone delivers the held wakeup.
+    const deps = (s.deps.completions as unknown as { deps: { now: () => number } }).deps
+    const realNow = deps.now
+    const clock = Date.now() / 1000
+    deps.now = () => clock
+    let poolOpen = false
     const asked: string[] = []
     sidecar.respond('usage.pool', (params) => {
       asked.push(params.provider)
-      const status = params.provider === 'openrouter' && Date.now() < deadline ? 'exhausted' as const : 'available' as const
-      return { entries: [{ credential_id: 'k1', label: 'k1', status, unavailable_reason: null, retry_after: new Date(deadline).toISOString(), matches_api_key: false }] }
+      const status = params.provider === 'openrouter' && !poolOpen ? 'exhausted' as const : 'available' as const
+      return { entries: [{ credential_id: 'k1', label: 'k1', status, unavailable_reason: null, retry_after: new Date((clock + 0.2) * 1000).toISOString(), matches_api_key: false }] }
     })
-    starts = []
-    sidecar.respond('chat.start', (params) => { starts.push(str(params.user_message)); return { ...completed(''), provider: 'openrouter', messages: [{ role: 'user', content: str(params.user_message) }], status: 'error' as const, failed: true, error: 'All 2 credential(s) exhausted for provider openrouter' } })
-    await complete(sid, `${sid}_1`)
-    await complete(sid, `${sid}_2`)
-    expect(starts).toHaveLength(1)
-    sidecar.respond('chat.start', (params) => { starts.push(str(params.user_message)); return completed('ok') })
-    for (let i = 0; i < 100 && starts.length < 2; i += 1) await new Promise((r) => setTimeout(r, 20))
-    expect(starts[1], 'the deadline alone resumes the held wakeup').toContain(`Background process ${sid}_2 completed`)
-    expect(new Set(asked)).toEqual(new Set(['openrouter']))
-    await idle()
-    expect((await s.deps.sessionStore.get(sid)).process_wakeup_pause).toBeNull()
+    try {
+      starts = []
+      sidecar.respond('chat.start', (params) => { starts.push(str(params.user_message)); return { ...completed(''), provider: 'openrouter', messages: [{ role: 'user', content: str(params.user_message) }], status: 'error' as const, failed: true, error: 'All 2 credential(s) exhausted for provider openrouter' } })
+      await complete(sid, `${sid}_1`)
+      await complete(sid, `${sid}_2`)
+      expect(starts).toHaveLength(1)
+      sidecar.respond('chat.start', (params) => { starts.push(str(params.user_message)); return completed('ok') })
+      poolOpen = true
+      for (let i = 0; i < 100 && starts.length < 2; i += 1) await new Promise((r) => setTimeout(r, 20))
+      expect(starts[1], 'the deadline alone resumes the held wakeup').toContain(`Background process ${sid}_2 completed`)
+      expect(new Set(asked)).toEqual(new Set(['openrouter']))
+      await idle()
+      expect((await s.deps.sessionStore.get(sid)).process_wakeup_pause).toBeNull()
+    } finally { deps.now = realNow }
   })
 })
 
