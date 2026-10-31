@@ -519,4 +519,35 @@ Unknown outcomes retain the exact snapshot for up to 30 days. Confirmed sends
 compact to a report-ID receipt; definitive refusals discard diagnostics and retain
 a quota marker for one hour. Expired entries are removed on the next admission.
 Concurrent calls for one request ID serialize through send and compaction. Submission
-logs contain only the request UUID and outcome. There is no client UI in this change.
+logs contain only the request UUID and outcome.
+
+### Feedback attachments
+
+`GET /api/feedback/options` publishes what clients may attach. Attachments are
+enabled only when this server is a registered Relay publisher, because Relay
+accepts files only on signed reports; `acceptedTypes`, sizes and the video limit
+mirror `contracts/fixtures/feedback-attachment-limits.json`
+(`FEEDBACK_ATTACHMENT_LIMITS`, kept equal by a contract test). Clients compress
+and strip metadata before upload; the server never re-encodes.
+
+`POST /api/feedback/attachments` stages one multipart `file` with its declared
+`contentType`. The bytes must match the type's signature (the shared magic table
+in `sessions/shares.ts`, with Relay's `ftyp` brands) and its size limit. Files live
+under `<state dir>/feedback-attachments`, indexed by the `feedback/attachments`
+document: a member may stage 15 files and 100 MB, the server 256 files and 1 GB,
+and an unreferenced file expires after one hour.
+
+`attachmentIds` on submit must name at most five of the member's own unexpired
+files, with at most one video; anything else is `invalid` before forwarding.
+Claiming checks and binds every file to the request atomically, so one file
+belongs to at most one report; a claim is returned when admission refuses the
+report. Admission stores the manifest (type, bytes, SHA-256) in the receipt, the
+fingerprint covers the file hashes, and the files live as long as the receipt:
+they are deleted once the report is sent, and a refused report keeps them for its
+one-hour quota marker so a retry of the same request can still send them. The server sends the manifest with the report, then PUTs each accepted
+file with its token. An unknown PUT outcome resubmits the identical report once
+(Relay keeps the report and reissues tokens only for files not stored) and retries;
+a second unknown outcome is `relay_unreachable`, and the client's retry with the
+same request ID resumes. The result lists every attachment as `sent` or `refused`
+with `tier`, `quota` or `disabled` from Relay, `invalid` for a rejected upload,
+or `expired` when the upload window closed.

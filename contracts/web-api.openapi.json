@@ -67048,10 +67048,91 @@
         }
       }
     },
+    "/api/feedback/options": {
+      "get": {
+        "operationId": "feedback.options",
+        "summary": "Attachment limits for this server: attachments are enabled only for a registered Relay publisher.",
+        "tags": [
+          "settings"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "attachments": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "videoAllowed": {
+                          "type": "boolean"
+                        },
+                        "maxCount": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "maxImageBytes": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "maxVideoBytes": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "maxVideoSeconds": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "acceptedTypes": {
+                          "type": "array",
+                          "items": {
+                            "enum": [
+                              "image/png",
+                              "image/jpeg",
+                              "image/heic",
+                              "image/webp",
+                              "video/mp4",
+                              "video/quicktime",
+                              "video/webm"
+                            ],
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "videoAllowed",
+                        "maxCount",
+                        "maxImageBytes",
+                        "maxVideoBytes",
+                        "maxVideoSeconds",
+                        "acceptedTypes"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "attachments"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/feedback/submit": {
       "post": {
         "operationId": "feedback.submit",
-        "summary": "Forward feedback to Relay. Reuse requestId after an unknown outcome. Errors: rate_limited with retryAfterSeconds (429), feedback_unavailable (503), relay_unreachable (502), invalid (400).",
+        "summary": "Forward feedback and its staged attachments to Relay; `attachments` reports each one as sent or refused with a reason. Reuse requestId after an unknown outcome. Errors: rate_limited with retryAfterSeconds (429), feedback_unavailable (503), relay_unreachable (502), invalid (400, including unknown, expired or another member's attachmentIds).",
         "tags": [
           "settings"
         ],
@@ -67117,6 +67198,15 @@
                       "platform"
                     ],
                     "additionalProperties": false
+                  },
+                  "attachmentIds": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 5,
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    }
                   }
                 },
                 "required": [
@@ -67146,11 +67236,46 @@
                     "reportId": {
                       "type": "string",
                       "minLength": 1
+                    },
+                    "attachments": {
+                      "type": "array",
+                      "maxItems": 5,
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "attachmentId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "status": {
+                            "enum": [
+                              "sent",
+                              "refused"
+                            ],
+                            "type": "string"
+                          },
+                          "reason": {
+                            "enum": [
+                              "tier",
+                              "quota",
+                              "disabled",
+                              "invalid",
+                              "expired"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "attachmentId",
+                          "status"
+                        ]
+                      }
                     }
                   },
                   "required": [
                     "status",
-                    "reportId"
+                    "reportId",
+                    "attachments"
                   ]
                 }
               }
@@ -103299,6 +103424,54 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/feedback/attachments": {
+      "post": {
+        "summary": "Stage one feedback attachment for this member; reference its `attachmentId` from `/api/feedback/submit` within an hour. Bytes must match the declared type and its size limit in `FEEDBACK_ATTACHMENT_LIMITS`.",
+        "tags": [
+          "settings"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "`FeedbackAttachmentStaged`: `{attachmentId, contentType, bytes}`.",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "400": {
+            "description": "`{error: \"invalid\"}`: missing or extra file, unknown type, size over the type limit, or bytes that do not match the type.",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "403": {
+            "description": "`{error: \"attachments_unavailable\"}`: this server may not attach this kind (not a registered Relay publisher).",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "413": {
+            "description": "Body exceeds the largest attachment limit.",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "429": {
+            "description": "`{error: \"rate_limited\", retryAfterSeconds}`: 15 files or 100 MB already staged for this member, or the server-wide staging cap.",
+            "content": {
+              "application/json": {}
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "description": "Field `contentType` (one of `acceptedTypes` from `/api/feedback/options`) and one `file` part.",
+          "content": {
+            "multipart/form-data": {}
           }
         }
       }

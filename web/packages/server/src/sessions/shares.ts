@@ -23,7 +23,20 @@ const SHARE_MEDIA_RE = /MEDIA:(?!https?:\/\/)([^\s)\]>]+)/g
 const SHARE_EMBED_MAX_BYTES = 512 * 1024
 const ALLOWED_MIME: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' }
 const PLACEHOLDER = '[*Local attachment omitted from public share*]'
-const IMAGE_MAGIC: Record<string, Buffer> = { 'image/png': Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), 'image/jpeg': Buffer.from([0xff, 0xd8, 0xff]), 'image/gif': Buffer.from('GIF8'), 'image/webp': Buffer.from('RIFF') }
+/**
+ * Leading-byte signatures: `magic` at offset `at` (default 0), and when `brands` is set, one of them at bytes 8-12
+ * (the WebP form type, or the ISO-BMFF `ftyp` major brand). The feedback brands match Relay's `matchesAttachmentType`.
+ */
+const IMAGE_MAGIC: Record<string, { magic: Buffer; at?: number; brands?: readonly string[] }> = {
+  'image/png': { magic: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]) },
+  'image/jpeg': { magic: Buffer.from([0xff, 0xd8, 0xff]) },
+  'image/gif': { magic: Buffer.from('GIF8') },
+  'image/webp': { magic: Buffer.from('RIFF'), brands: ['WEBP'] },
+  'image/heic': { magic: Buffer.from('ftyp'), at: 4, brands: ['heic', 'heix', 'heim', 'heis', 'hevc', 'hevx', 'mif1', 'msf1'] },
+  'video/mp4': { magic: Buffer.from('ftyp'), at: 4, brands: ['isom', 'iso2', 'iso3', 'iso4', 'iso5', 'iso6', 'mp41', 'mp42', 'avc1', 'M4V ', 'dash'] },
+  'video/quicktime': { magic: Buffer.from('ftyp'), at: 4, brands: ['qt  '] },
+  'video/webm': { magic: Buffer.from([0x1a, 0x45, 0xdf, 0xa3]) },
+}
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#x27;')
@@ -49,11 +62,12 @@ export function redactSharePaths(text: string, extraPaths: string[]): string {
   return out
 }
 
-function checkImageMagic(data: Buffer, mime: string): boolean {
-  const magic = IMAGE_MAGIC[mime]
-  if (!magic || !data.subarray(0, magic.length).equals(magic)) return false
-  if (mime === 'image/webp') return data.length >= 12 && data.subarray(8, 12).toString() === 'WEBP'
-  return true
+/** Whether the bytes start with the signature of `mime`; shared by public shares and feedback attachments. */
+export function checkImageMagic(data: Buffer, mime: string): boolean {
+  const signature = IMAGE_MAGIC[mime]
+  const at = signature?.at ?? 0
+  if (!signature || !data.subarray(at, at + signature.magic.length).equals(signature.magic)) return false
+  return !signature.brands || (data.length >= 12 && signature.brands.includes(data.subarray(8, 12).toString('latin1')))
 }
 
 /** The candidate file and the allowed root it sits under; the bytes are then read through an anchored walk from that root. */
