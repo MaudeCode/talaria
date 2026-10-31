@@ -16,13 +16,10 @@ from talaria_sidecar.methods import Registry, chat, commands, profiles
 @pytest.fixture
 def discovery(monkeypatch, tmp_path):
     _patch(monkeypatch)
-    monkeypatch.setattr(chat, "_MCP_DISCOVERIES", {})
-    monkeypatch.setattr(commands, "_MCP_DISCOVERED_HOMES", set())
     monkeypatch.setattr(chat, "_DRAINING", threading.Event())
     home = tmp_path / "profiles" / "alpha"
     home.mkdir(parents=True)
     monkeypatch.setattr(chat, "refresh_profile_agents_mcp_tools", lambda home: None)
-    monkeypatch.setattr(commands, "retire_unscoped_launch_mcp_servers", lambda: set())
     # The Agent boundary only. Real Talaria discovery orchestration and chat.start run below.
     release = threading.Event()
     entered = threading.Event()
