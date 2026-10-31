@@ -173,8 +173,8 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
   const [dragOver, setDragOver] = useState(false)
   const [configOpen, setConfigOpen] = useState(false)
   const [focusWithin, setFocusWithin] = useState(false)
-  // TAL-698: "within" is the composer's React tree: the card, the strip under it and the menus a strip chip portals out.
-  // A focus that lands outside it folds a phone's empty composer. A tap that starts inside defers a blur to nowhere
+  // TAL-698: focus on the card unfolds a phone's empty composer. "Within" is then the composer's React tree: the card,
+  // the strip under it and the menus a strip chip portals out. A focus that lands outside it folds the composer. A tap that starts inside defers a blur to nowhere
   // (iOS does not focus a tapped button) until the tap has run: it folds then unless focus came back or a chip's menu
   // opened.
   const focusedHere = useRef(false)
@@ -799,14 +799,14 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
 
   return (
     // Drops land anywhere on the composer, the image strip above the card included (TAL-1552).
-    <div ref={wrapper} className="composer-wrap" id="composerWrap" onFocus={() => { focusedHere.current = true; blurDeferred.current = false; setFocusWithin(true) }} onBlur={(e) => { if (e.relatedTarget) return; if (pressedHere.current) blurDeferred.current = true; else setFocusWithin(false) }} onPointerDown={() => { pressedHere.current = true }} onDragOver={(e) => { e.preventDefault(); wake(); if (!clarify) setDragOver(true) }} onDragLeave={() => setDragOver(false)} onDrop={onDrop}>
+    <div ref={wrapper} className="composer-wrap" id="composerWrap" onFocus={() => { focusedHere.current = true; blurDeferred.current = false }} onBlur={(e) => { if (e.relatedTarget) return; if (pressedHere.current) blurDeferred.current = true; else setFocusWithin(false) }} onPointerDown={() => { pressedHere.current = true }} onDragOver={(e) => { e.preventDefault(); wake(); if (!clarify) setDragOver(true) }} onDragLeave={() => setDragOver(false)} onDrop={onDrop}>
       <ComposerNotices key={sessionId ?? ''} notices={chipNotices} fallbackFocus={textarea} />
       {!clarify && <AttachmentTray files={files} placement="strip" onRemove={removeFile} onRetry={retryFile} />}
       <div
         className={cn('composer-box relative z-[2] flex flex-col mx-auto max-w-(--msg-max) border-(length:--composer-border-width) border-(--composer-border-color) rounded-(--composer-radius) shadow-(--composer-shadow) transition-[border-color,box-shadow] duration-(--dur) ease-(--ease) focus-within:border-(--composer-focus-border) focus-within:shadow-(--composer-focus-shadow) focus-within:outline-none max-[641px]:rounded-(--composer-radius-phone)', dragOver && 'drag-over', clarify && 'clarify-active', resting && 'is-resting')}
         id="composerBox"
         ref={box}
-        onFocus={wake}
+        onFocus={() => { setFocusWithin(true); wake() }}
         onPointerDown={wake}
       >
         {palette.open && <CommandPaletteList items={palette.items} active={palette.active} listId={palette.listId} onPick={applySuggestion} onHover={palette.setActive} />}
