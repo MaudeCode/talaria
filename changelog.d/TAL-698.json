@@ -1,0 +1,3 @@
+{
+  "entries": [{"category": "Fixed", "summary": "On a phone, the workspace, toolsets, mode and profile chips under an empty message box now open their menus instead of folding away.", "highlight": false, "components": ["web"]}]
+}

@@ -10,9 +10,9 @@ test.use({ serviceWorkers: 'block' })
 const owned: string[] = []
 test.afterEach(() => { for (const path of owned.splice(0)) rmSync(path, { recursive: true, force: true }) })
 
-/** A phone's resting composer hides the workspace strip; a draft keeps it out (an empty draft collapses it on tap, TAL-698). */
+/** A phone's resting composer hides the workspace strip until the empty prompt has focus (TAL-698). */
 async function workspaceChip(page: Page) {
-  await page.locator('#msg').fill('draft')
+  await page.locator('#msg').focus()
   return page.locator('#composerWorkspaceChip')
 }
 
