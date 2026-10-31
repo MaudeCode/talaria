@@ -1,0 +1,3 @@
+{
+  "entries": [{"category": "Fixed", "summary": "Context compression during a reply now shows once above the composer, with its elapsed time.", "highlight": false, "components": ["web"]}]
+}

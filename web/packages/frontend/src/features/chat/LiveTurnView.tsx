@@ -119,8 +119,11 @@ export function LiveStatusPill({ sessionId, background = false }: { sessionId: s
   const status = reconnecting ? null : turn.runStatus
   // Old servers omit run_status; retain their rate-limit presentation until that contract is retired.
   const wait = status?.phase === 'rate_limit_wait' ? status.wait : !status && !reconnecting ? turn.rateLimitWait : null
+  // TAL-1282: this pill alone shows a live turn's compression, timed from the server's span start. Old servers omit
+  // run_status; their open span stands in for the phase until that contract is retired.
+  const compressing = status?.phase === 'compressing' || (!status && !reconnecting && turn.compressionStartedAt !== null)
   let label = reconnecting ? m.live_reconnecting() : wait ? rateLimitLabel(wait, locale) : background ? m.live_background() : m.live_working()
-  if (status?.phase === 'compressing') label = m.live_compressing()
+  if (compressing) label = m.live_compressing()
   if (status?.phase === 'prompt_reading') {
     label = status.progress_percent === null ? m.live_prompt_reading() : m.live_prompt_reading_percent({ percent: new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 0 }).format(status.progress_percent / 100) })
   }
@@ -129,7 +132,8 @@ export function LiveStatusPill({ sessionId, background = false }: { sessionId: s
       <LaurelSpinner />
       <ProviderQuotaPace gauge={turn.usage?.plan_gauge} compact />
       <span className="live-run-label">{label}</span>
-      {!reconnecting && !background && !wait && (!status || status.phase === 'working') && <>{' '}<RunElapsed since={turn.startedAt} /></>}
+      {!reconnecting && !background && !wait && !compressing && (!status || status.phase === 'working') && <>{' '}<RunElapsed since={turn.startedAt} /></>}
+      {compressing && turn.compressionStartedAt !== null && <>{' '}<RunElapsed since={turn.compressionStartedAt} /></>}
       {turn.tps != null && <span className="font-mono text-[11px] tabular-nums opacity-75" title="Tokens per second">{turn.tps.toFixed(1)} tok/s</span>}
     </div>
   )

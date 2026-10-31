@@ -222,20 +222,32 @@ test('a manual compression still running when the session opens shows and clears
   await page.goto('/session/rejoin')
   const chip = page.locator('.composer-notices [data-notice="runtime:compressing"]')
   await expect(chip).toHaveText('Compressing context1m')
+  // TAL-1282: without a live turn this chip is the one indicator over the composer.
+  expect(await page.locator('.composer-wrap').evaluate((el) => el.textContent.split('Compressing context').length - 1)).toBe(1)
   done = true
   await expect(chip).toHaveCount(0)
   expect(starts).toBe(0)
 })
 
-/** TAL-1006: the Agent's automatic compression shows as a status chip with its time since the server's start, never in the transcript. */
-test('an automatic compression shows as a status chip until the server closes it', async ({ page }, testInfo) => {
+/** TAL-1006: the Agent's automatic compression shows in the live status chip with its time since the server's start,
+ *  never in the transcript. TAL-1282: the server's `compressing` frame and its `run_status` phase are one operation, so
+ *  the whole page, screen-reader regions included, says "Compressing context" exactly once. */
+test('an automatic compression shows once, in the live status chip, until the server closes it', async ({ page }, testInfo) => {
   const sid = 'auto-compress'
   const streamId = `${sid}-run`
   const attaching = hold()
   let stream = null as ServerResponse | null
   let seq = 0
   const send = (event: string, data: unknown) => { stream!.write(`id: ${streamId}:${String(++seq)}\nevent: ${event}\ndata: ${JSON.stringify(data)}\n\n`) }
-  const server = createServer((_request, response) => {
+  // What the server's publish boundary sends for one open compression span (turn.ts `put`).
+  const compressing = (startedAt: number) => {
+    send('compressing', { session_id: sid, message: 'Compressing context', started_at: startedAt })
+    send('run_status', { session_id: sid, status: { phase: 'compressing' } })
+  }
+  const occurrences = (text: string) => page.evaluate((t) => document.body.textContent.split(t).length - 1, text)
+  const server = createServer((request, response) => {
+    // Only the page's stream: a local port probe must not become the stream the frames go to.
+    if (!request.url?.includes('stream_id=')) return void response.writeHead(404).end()
     response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Access-Control-Allow-Origin': process.env.HERMES_E2E_BASE_URL!, 'Access-Control-Allow-Credentials': 'true' })
     stream = response
     send('reasoning', { text: 'Thinking about it' })
@@ -243,7 +255,10 @@ test('an automatic compression shows as a status chip until the server closes it
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   const address = server.address()
   if (!address || typeof address === 'string') throw new Error('Missing fixture port')
-  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: sid, title: 'Long session', messages: transcript(sid, 2).concat({ role: 'user', id: 5, content: 'Keep going' }), active_stream_id: streamId, is_streaming: true } } }))
+  await page.route('**/api/session?**', (route) => {
+    const id = new URL(route.request().url()).searchParams.get('session_id')
+    return route.fulfill({ json: { session: id === sid ? { session_id: sid, title: 'Long session', messages: transcript(sid, 2).concat({ role: 'user', id: 5, content: 'Keep going' }), active_stream_id: streamId, is_streaming: true } : { session_id: id, title: 'Other', messages: transcript(id ?? 'other', 1) } } })
+  })
   await page.route('**/api/chat/stream/status?**', (route) => route.fulfill({ json: { active: true, stream_id: streamId, replay_available: false } }))
   await page.route('**/api/chat/stream?**', async (route) => {
     await attaching.gate
@@ -252,27 +267,40 @@ test('an automatic compression shows as a status chip until the server closes it
   await page.route('**/api/session/draft', (route) => route.fulfill({ json: { ok: true } }))
   try {
     await page.goto(`/session/${sid}`)
-    await expect(page.locator('.composer-notices .live-run-status')).toContainText('Working')
+    const pill = page.locator('.composer-notices .live-run-status')
+    await expect(pill).toContainText('Working')
     await expectChipsCentred(page)
     expect(stream).toBeNull()
     attaching.release()
     // Working can render while EventSource is still connecting.
     await expect.poll(() => stream).not.toBeNull()
-    const chip = page.locator('.composer-notices [data-notice="runtime:compressing"]')
     const startedAt = Date.now() / 1000 - 75
-    expect(() => send('compressing', { session_id: sid, message: 'Compressing context', started_at: startedAt })).not.toThrow()
-    await expect(chip).toHaveText('Compressing context1m')
+    compressing(startedAt)
+    // Both frames have rendered once the pill reads the server's phase.
+    await expect(pill).toContainText('Compressing context')
+    expect(await occurrences('Compressing context')).toBe(1)
+    await expect(pill).toHaveText('Compressing context 1m')
+    await expect(page.locator('.composer-wrap .live-run-elapsed')).toHaveCount(1)
     // A heartbeat repeats the span's start.
-    send('compressing', { session_id: sid, message: 'Compressing context', started_at: startedAt })
-    await expect(chip).toHaveText('Compressing context1m')
+    compressing(startedAt)
+    await expect(pill).toHaveText('Compressing context 1m')
+    expect(await occurrences('Compressing context')).toBe(1)
     await expect(page.locator('#messages .compression-card')).toHaveCount(0)
     // One line: a chip, not a stacked panel.
-    expect((await chip.boundingBox())!.height).toBeLessThan(48)
-    if (process.env.TAL1006_SHOTS) await page.screenshot({ path: `${process.env.TAL1006_SHOTS}/compressing-${testInfo.project.name}.png` })
+    expect((await pill.boundingBox())!.height).toBeLessThan(48)
+    if (process.env.TAL1282_SHOTS) await page.screenshot({ path: `${process.env.TAL1282_SHOTS}/compressing-${testInfo.project.name}.png` })
     send('compressed', { session_id: sid, message: 'Compression finished' })
-    await expect(chip).toHaveCount(0)
-    await expect(page.locator('.composer-notices .live-run-status')).toContainText('Working')
+    send('run_status', { session_id: sid, status: { phase: 'working' } })
+    await expect(pill).toContainText('Working')
+    await expect.poll(() => occurrences('Compressing context')).toBe(0)
     await expect(page.locator('#messages .compression-card')).toHaveCount(0)
+    // Another span, then leaving the session: nothing stale follows to the next one.
+    compressing(Date.now() / 1000 - 5)
+    await expect.poll(() => occurrences('Compressing context')).toBe(1)
+    await page.evaluate(() => { history.pushState({}, '', '/session/other'); dispatchEvent(new PopStateEvent('popstate')) })
+    await expect(page).toHaveURL(/\/session\/other$/)
+    await expect(pill).toHaveCount(0)
+    await expect.poll(() => occurrences('Compressing context')).toBe(0)
   } finally {
     attaching.release()
     stream?.end()
