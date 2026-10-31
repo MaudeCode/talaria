@@ -1,4 +1,5 @@
 import XCTest
+import ImageIO
 import SwiftData
 @testable import TalariaKit
 
@@ -225,5 +226,344 @@ final class FeedbackComposerTests: XCTestCase {
                            "An old completion must neither restore nor erase the new identity's draft")
             XCTAssertEqual(other.draft, kept)
         }
+    }
+
+    // MARK: Attachments (TAL-1597)
+
+    private func options(enabled: Bool = true, videoAllowed: Bool = true, maxCount: Int = 5) -> FeedbackOptions {
+        FeedbackOptions(attachments: .init(enabled: enabled, videoAllowed: videoAllowed, maxCount: maxCount, maxImageBytes: 10_000_000,
+                                           maxVideoBytes: 20_000_000, maxVideoSeconds: 120,
+                                           acceptedTypes: ["image/png", "image/jpeg", "video/mp4"]))
+    }
+
+    private func stagingRoot() throws -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("FeedbackComposerTests-\(UUID())")
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+        return url
+    }
+
+    private func stagedFiles(in root: URL) -> [String] {
+        (FileManager.default.enumerator(atPath: root.path)?.allObjects as? [String] ?? []).filter { $0.contains(".") }
+    }
+
+    private func attachmentComposer(
+        storage: UserDefaults? = nil, root: URL, options: FeedbackOptions? = nil,
+        submit: ((FeedbackRequest) async throws -> FeedbackResult)? = nil,
+        upload: ((Data, String, String) async throws -> FeedbackAttachmentStaged)? = nil
+    ) async -> FeedbackComposer {
+        let resolved = options ?? self.options()
+        let model = FeedbackComposer(server: server, defaults: storage ?? defaults(), clientMetadata: metadata, stagingRoot: root,
+                                     submit: submit, options: { resolved },
+                                     upload: upload ?? { data, type, _ in .init(attachmentId: UUID(), contentType: type, bytes: data.count) })
+        await model.loadAttachmentOptions()
+        return model
+    }
+
+    func testAttachingFollowsTheServersOptions() async throws {
+        let root = try stagingRoot()
+        let photo = try XCTUnwrap(TestImages.jpegData(width: 40, height: 30))
+        let clip = root.appendingPathComponent("unused.mov")
+
+        let unloaded = FeedbackComposer(server: server, defaults: defaults(), clientMetadata: metadata, stagingRoot: root)
+        XCTAssertFalse(unloaded.attachmentsEnabled, "Attaching stays hidden until the server publishes its options")
+        XCTAssertNil(unloaded.addImage(photo))
+
+        let disabled = await attachmentComposer(root: root, options: options(enabled: false))
+        XCTAssertFalse(disabled.attachmentsEnabled)
+        XCTAssertEqual(disabled.remainingAttachmentSlots, 0)
+        XCTAssertNil(disabled.addImage(photo))
+        disabled.offerCurrentScreen(photo)
+        XCTAssertNil(disabled.currentScreenOffer)
+
+        let imagesOnly = await attachmentComposer(root: root, options: options(videoAllowed: false))
+        XCTAssertTrue(imagesOnly.attachmentsEnabled)
+        XCTAssertFalse(imagesOnly.videoAllowed)
+        XCTAssertNil(imagesOnly.addVideo(at: clip), "Videos are offered only when the server allows them")
+
+        let capped = await attachmentComposer(root: root, options: options(maxCount: 2))
+        await capped.addImage(photo)?.value
+        capped.offerCurrentScreen(photo)
+        XCTAssertNotNil(capped.currentScreenOffer)
+        await capped.includeCurrentScreen()?.value
+        XCTAssertEqual(capped.attachments.map(\.contentType), ["image/jpeg", "image/png"])
+        XCTAssertEqual(capped.remainingAttachmentSlots, 0)
+        XCTAssertNil(capped.addImage(photo), "maxCount bounds the attachments")
+        capped.offerCurrentScreen(photo)
+        XCTAssertNil(capped.currentScreenOffer, "A full report offers no screen capture")
+    }
+
+    func testCurrentScreenIsOnlyAnOfferUntilIncluded() async throws {
+        let root = try stagingRoot()
+        var requests: [FeedbackRequest] = []
+        let model = await attachmentComposer(root: root, submit: { request in
+            requests.append(request)
+            return FeedbackResult(status: "sent", reportId: "synthetic-report")
+        })
+        model.offerCurrentScreen(try XCTUnwrap(TestImages.pngData(width: 30, height: 60)))
+        XCTAssertNotNil(model.currentScreenOffer)
+        XCTAssertTrue(model.attachments.isEmpty, "The screen capture is never attached by default")
+        fill(model)
+        try await XCTUnwrap(model.send()).value
+        XCTAssertNil(requests.first?.attachmentIds)
+    }
+
+    func testPhotosAreReencodedWithoutLocationAndCapped() async throws {
+        let root = try stagingRoot()
+        var uploads: [(data: Data, type: String)] = []
+        let model = await attachmentComposer(root: root, upload: { data, type, _ in
+            uploads.append((data, type))
+            return .init(attachmentId: UUID(), contentType: type, bytes: data.count)
+        })
+        await model.addImage(try XCTUnwrap(TestImages.jpegDataWithLocation(width: 4_000, height: 3_000)))?.value
+        model.offerCurrentScreen(try XCTUnwrap(TestImages.pngData(width: 3_000, height: 6_000)))
+        await model.includeCurrentScreen()?.value
+        XCTAssertEqual(uploads.map(\.type), ["image/jpeg", "image/png"])
+        for upload in uploads {
+            let source = try XCTUnwrap(CGImageSourceCreateWithData(upload.data as CFData, nil))
+            let properties = try XCTUnwrap(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
+            XCTAssertNil(properties[kCGImagePropertyGPSDictionary], "GPS must never leave the phone")
+            XCTAssertNil(properties[kCGImagePropertyExifDictionary], "EXIF must never leave the phone")
+            let width = try XCTUnwrap(properties[kCGImagePropertyPixelWidth] as? Int)
+            let height = try XCTUnwrap(properties[kCGImagePropertyPixelHeight] as? Int)
+            XCTAssertEqual(max(width, height), 2_560)
+        }
+        XCTAssertEqual(CGImageSourceGetType(CGImageSourceCreateWithData(uploads[0].data as CFData, nil)!) as String?, "public.jpeg")
+        XCTAssertEqual(CGImageSourceGetType(CGImageSourceCreateWithData(uploads[1].data as CFData, nil)!) as String?, "public.png")
+        XCTAssertEqual(model.pendingAttachments.map(\.uploadPhase), [.ready, .ready])
+        XCTAssertTrue(model.pendingAttachments.allSatisfy { $0.thumbnailData != nil })
+    }
+
+    func testRemovingAnAttachmentDeletesItsStagedFileAndKeepsItOutOfTheReport() async throws {
+        let root = try stagingRoot()
+        var requests: [FeedbackRequest] = []
+        let model = await attachmentComposer(root: root, submit: { request in
+            requests.append(request)
+            return FeedbackResult(status: "sent", reportId: "synthetic-report")
+        })
+        let photo = try XCTUnwrap(TestImages.jpegData(width: 40, height: 30))
+        await model.addImage(photo)?.value
+        await model.addImage(photo)?.value
+        let removed = try XCTUnwrap(model.attachments.first)
+        let kept = try XCTUnwrap(model.attachments.last?.attachmentId)
+        XCTAssertEqual(stagedFiles(in: root).count, 4, "Each attachment keeps its compressed file and thumbnail")
+        model.removeAttachment(removed.id)
+        XCTAssertEqual(model.attachments.count, 1)
+        XCTAssertEqual(stagedFiles(in: root).filter { $0.contains(removed.id.uuidString) }, [])
+        fill(model)
+        try await XCTUnwrap(model.send()).value
+        XCTAssertEqual(requests.first?.attachmentIds, [kept])
+    }
+
+    func testFailedUploadBlocksSendUntilRetried() async throws {
+        let root = try stagingRoot()
+        var failing = true
+        let model = await attachmentComposer(root: root, upload: { data, type, _ in
+            if failing { throw APIError.network(underlying: URLError(.notConnectedToInternet)) }
+            return .init(attachmentId: UUID(), contentType: type, bytes: data.count)
+        })
+        fill(model)
+        await model.addImage(try XCTUnwrap(TestImages.jpegData(width: 40, height: 30)))?.value
+        let id = try XCTUnwrap(model.attachments.first?.id)
+        guard case .failed = model.pendingAttachments.first?.uploadPhase else { return XCTFail("The thumbnail shows its own failure") }
+        XCTAssertFalse(model.canSend)
+        failing = false
+        await model.retryAttachment(id)?.value
+        XCTAssertEqual(model.pendingAttachments.first?.uploadPhase, .ready)
+        XCTAssertTrue(model.canSend)
+    }
+
+    func testRetryAfterRelaunchResendsTheSameAttachmentIDs() async throws {
+        let root = try stagingRoot()
+        let storage = defaults()
+        var requests: [FeedbackRequest] = []
+        let model = await attachmentComposer(storage: storage, root: root, submit: { request in
+            requests.append(request)
+            throw APIError.network(underlying: URLError(.timedOut))
+        })
+        await model.addImage(try XCTUnwrap(TestImages.jpegData(width: 40, height: 30)))?.value
+        fill(model)
+        let ids = model.attachments.compactMap(\.attachmentId)
+        XCTAssertEqual(ids.count, 1)
+        try await XCTUnwrap(model.send()).value
+        XCTAssertTrue(model.hasUnknownOutcome)
+        XCTAssertNil(model.addImage(try XCTUnwrap(TestImages.jpegData(width: 40, height: 30))), "An uncertain report cannot gain attachments")
+
+        let relaunched = await attachmentComposer(storage: storage, root: root, submit: { request in
+            requests.append(request)
+            return FeedbackResult(status: "sent", reportId: "synthetic-report")
+        })
+        XCTAssertEqual(relaunched.attachments, model.attachments)
+        XCTAssertNotNil(relaunched.pendingAttachments.first?.thumbnailData, "The thumbnail survives relaunch")
+        try await XCTUnwrap(relaunched.send()).value
+        XCTAssertEqual(requests.count, 3)
+        XCTAssertTrue(requests.allSatisfy { $0 == requests[0] })
+        XCTAssertEqual(requests.last?.attachmentIds, ids)
+    }
+
+    func testSettledReportClearsStagedFilesAndReportsRefusedAttachments() async throws {
+        let root = try stagingRoot()
+        let model = await attachmentComposer(root: root, submit: { request in
+            let ids = try XCTUnwrap(request.attachmentIds)
+            return FeedbackResult(status: "sent", reportId: "synthetic-report", attachments: [
+                .init(attachmentId: ids[0], status: "sent"), .init(attachmentId: ids[1], status: "refused", reason: "quota")
+            ])
+        })
+        let photo = try XCTUnwrap(TestImages.jpegData(width: 40, height: 30))
+        await model.addImage(photo)?.value
+        await model.addImage(photo)?.value
+        XCTAssertFalse(stagedFiles(in: root).isEmpty)
+        fill(model)
+        try await XCTUnwrap(model.send()).value
+        XCTAssertTrue(model.attachments.isEmpty)
+        XCTAssertEqual(stagedFiles(in: root), [], "Settling the report removes its staged files")
+        XCTAssertEqual(model.confirmation.success?.title, "Sent without attachments")
+    }
+
+    func testFullySentAttachmentsKeepTheSentConfirmation() async throws {
+        let model = await attachmentComposer(root: try stagingRoot(), submit: { request in
+            FeedbackResult(status: "sent", reportId: "synthetic-report",
+                           attachments: (request.attachmentIds ?? []).map { .init(attachmentId: $0, status: "sent") })
+        })
+        await model.addImage(try XCTUnwrap(TestImages.jpegData(width: 40, height: 30)))?.value
+        fill(model)
+        try await XCTUnwrap(model.send()).value
+        XCTAssertEqual(model.confirmation.success?.title, "Feedback sent")
+    }
+
+    func testIdentityChangeClearsStagedFiles() async throws {
+        let root = try stagingRoot()
+        let storage = defaults()
+        let model = await attachmentComposer(storage: storage, root: root)
+        await model.addImage(try XCTUnwrap(TestImages.jpegData(width: 40, height: 30)))?.value
+        model.offerCurrentScreen(try XCTUnwrap(TestImages.pngData(width: 30, height: 60)))
+        XCTAssertFalse(stagedFiles(in: root).isEmpty)
+        let cacheRoot = root.appendingPathComponent("cache")
+        let container = try ModelContainer(for: CachedSession.self, CachedMessage.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none))
+        let reset = AuthManager.serverScopedStateReset(cacheContainer: container,
+            draftStore: ChatDraftStore(persistence: ChatDraftFilePersistence(directoryURL: cacheRoot)),
+            defaults: storage, responseCacheRoot: cacheRoot)
+        try await reset(server)
+        XCTAssertTrue(model.attachments.isEmpty)
+        XCTAssertNil(model.currentScreenOffer)
+        XCTAssertEqual(stagedFiles(in: root).filter { !$0.hasPrefix("cache") }, [], "The previous identity's files must be removed")
+        let current = await attachmentComposer(storage: storage, root: root)
+        XCTAssertTrue(current.attachments.isEmpty)
+    }
+
+    func testPreviewShowsTheCompressedFileAsSent() async throws {
+        let root = try stagingRoot()
+        var uploaded = Data()
+        let model = await attachmentComposer(root: root, upload: { data, type, _ in
+            uploaded = data
+            return .init(attachmentId: UUID(), contentType: type, bytes: data.count)
+        })
+        await model.addImage(try XCTUnwrap(TestImages.jpegDataWithLocation(width: 4_000, height: 3_000)))?.value
+        let id = try XCTUnwrap(model.attachments.first?.id)
+        let reference = try XCTUnwrap(model.previewReference(of: id))
+        XCTAssertEqual(reference.mediaKind, .image)
+        XCTAssertEqual(reference.displayName, "Photo")
+        let file = try XCTUnwrap(URL(string: reference.url))
+        XCTAssertTrue(file.isFileURL)
+        let preview = TranscriptMediaPreviewViewModel(localFile: file, reference: reference)
+        await preview.load()
+        XCTAssertNotNil(preview.previewData)
+        XCTAssertEqual(preview.originalByteCount, uploaded.count, "The preview shows the bytes that were uploaded")
+        model.removeAttachment(id)
+        XCTAssertNil(model.previewReference(of: id))
+    }
+
+    /// A server that accepts only IDs staged since the last restart of its staging window, as expiry and refused-report
+    /// claims behave: anything in `stale` is refused as `invalid`.
+    private func stagingServer(stale: @escaping () -> Set<UUID>, uploads: @escaping (UUID) -> Void, requests: @escaping (FeedbackRequest) -> Void)
+        -> (submit: (FeedbackRequest) async throws -> FeedbackResult, upload: (Data, String, String) async throws -> FeedbackAttachmentStaged) {
+        let submit: (FeedbackRequest) async throws -> FeedbackResult = { request in
+            requests(request)
+            if !(Set(request.attachmentIds ?? []).isDisjoint(with: stale())) {
+                throw APIError.http(statusCode: 400, body: "{\"error\":\"invalid\"}")
+            }
+            return FeedbackResult(status: "sent", reportId: "synthetic-report",
+                                  attachments: (request.attachmentIds ?? []).map { .init(attachmentId: $0, status: "sent") })
+        }
+        let upload: (Data, String, String) async throws -> FeedbackAttachmentStaged = { data, type, _ in
+            let id = UUID()
+            uploads(id)
+            return .init(attachmentId: id, contentType: type, bytes: data.count)
+        }
+        return (submit, upload)
+    }
+
+    func testExpiredStagingIDsAreStagedAgainForAnUnsentDraft() async throws {
+        let root = try stagingRoot()
+        let storage = defaults()
+        var staged: [UUID] = [], requests: [FeedbackRequest] = []
+        var expired = Set<UUID>()
+        let server = stagingServer(stale: { expired }, uploads: { staged.append($0) }, requests: { requests.append($0) })
+        let first = await attachmentComposer(storage: storage, root: root, submit: server.submit, upload: server.upload)
+        await first.addImage(try XCTUnwrap(TestImages.jpegData(width: 40, height: 30)))?.value
+        fill(first)
+        expired = Set(staged)
+
+        let relaunched = await attachmentComposer(storage: storage, root: root, submit: server.submit, upload: server.upload)
+        try await XCTUnwrap(relaunched.send()).value
+        XCTAssertEqual(staged.count, 2, "The retained local file is staged again")
+        XCTAssertEqual(requests.count, 2)
+        guard staged.count == 2, requests.count == 2 else { return }
+        XCTAssertNotEqual(requests[1].requestId, requests[0].requestId, "Different files make a different report")
+        XCTAssertEqual(requests[1].attachmentIds, [staged[1]])
+        XCTAssertFalse(relaunched.isPresented)
+        XCTAssertNil(relaunched.error)
+        XCTAssertTrue(relaunched.attachments.isEmpty, "The report settled")
+    }
+
+    func testAReplacementForARefusedReportStagesItsFilesAgain() async throws {
+        var staged: [UUID] = [], requests: [FeedbackRequest] = []
+        var claimedByRefusedReport = Set<UUID>()
+        var refuseNext = true
+        let server = stagingServer(stale: { claimedByRefusedReport }, uploads: { staged.append($0) }, requests: { requests.append($0) })
+        let model = await attachmentComposer(root: try stagingRoot(), submit: { request in
+            if refuseNext {
+                refuseNext = false
+                requests.append(request)
+                claimedByRefusedReport = Set(request.attachmentIds ?? [])
+                throw APIError.http(statusCode: 429, body: "{\"error\":\"rate_limited\",\"retryAfterSeconds\":1}")
+            }
+            return try await server.submit(request)
+        }, upload: server.upload)
+        await model.addImage(try XCTUnwrap(TestImages.jpegData(width: 40, height: 30)))?.value
+        fill(model)
+        try await XCTUnwrap(model.send()).value
+        XCTAssertTrue(model.isPresented, "The refusal rolls back to the draft")
+        model.edit { $0.title = "Edited after the refusal" }
+        try await XCTUnwrap(model.send()).value
+        XCTAssertEqual(requests.count, 3)
+        XCTAssertEqual(staged.count, 2, "The retained local file is staged again")
+        guard staged.count == 2, requests.count == 3 else { return }
+        XCTAssertEqual(requests[2].attachmentIds, [staged[1]], "The replacement report sends newly staged files")
+        XCTAssertNotEqual(requests[2].requestId, requests[1].requestId)
+        XCTAssertFalse(model.isPresented)
+        XCTAssertNil(model.error)
+    }
+
+    func testAnUncertainReportIsNeverRestagedUnderANewRequest() async throws {
+        let root = try stagingRoot()
+        let storage = defaults()
+        var staged: [UUID] = [], requests: [FeedbackRequest] = []
+        var stale = Set<UUID>()
+        let server = stagingServer(stale: { stale }, uploads: { staged.append($0) }, requests: { requests.append($0) })
+        let model = await attachmentComposer(storage: storage, root: root, submit: { request in
+            requests.append(request)
+            throw APIError.network(underlying: URLError(.timedOut))
+        }, upload: server.upload)
+        await model.addImage(try XCTUnwrap(TestImages.jpegData(width: 40, height: 30)))?.value
+        fill(model)
+        try await XCTUnwrap(model.send()).value
+        stale = Set(staged)
+        let relaunched = await attachmentComposer(storage: storage, root: root, submit: server.submit, upload: server.upload)
+        try await XCTUnwrap(relaunched.send()).value
+        XCTAssertEqual(staged.count, 1, "An earlier attempt may have been admitted, so its payload stays fixed")
+        XCTAssertTrue(requests.allSatisfy { $0 == requests[0] })
+        XCTAssertTrue(relaunched.hasUnknownOutcome)
     }
 }

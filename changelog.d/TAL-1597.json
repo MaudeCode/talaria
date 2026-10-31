@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Send Feedback can attach photos, screen recordings and the current screen; they are compressed and stripped of location data on your iPhone before upload.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}

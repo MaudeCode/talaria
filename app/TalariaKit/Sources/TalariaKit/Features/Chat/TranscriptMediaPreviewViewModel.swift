@@ -5,7 +5,7 @@ import SwiftUI
 @Observable
 public final class TranscriptMediaPreviewViewModel {
     private let reference: TranscriptMediaReference
-    private let apiClient: APIClient
+    private let fetchData: () async throws -> Data
     private var didLoad = false
     private var loadGeneration = 0
     private var originalData: Data?
@@ -24,7 +24,14 @@ public final class TranscriptMediaPreviewViewModel {
         apiClient: APIClient? = nil
     ) {
         self.reference = reference
-        self.apiClient = apiClient ?? APIClient(baseURL: server)
+        let client = apiClient ?? APIClient(baseURL: server)
+        fetchData = { try await client.transcriptMediaData(for: reference) }
+    }
+
+    /// Previews a file already on this device, such as a compressed feedback attachment (TAL-1597).
+    public init(localFile: URL, reference: TranscriptMediaReference) {
+        self.reference = reference
+        fetchData = { try Data(contentsOf: localFile) }
     }
 
     var canSaveImageToPhotos: Bool {
@@ -69,7 +76,7 @@ public final class TranscriptMediaPreviewViewModel {
         }
 
         do {
-            let data = try await apiClient.transcriptMediaData(for: reference)
+            let data = try await fetchData()
             guard !Task.isCancelled, loadGeneration == generation else { return }
             originalData = data
             originalByteCount = data.count
@@ -110,7 +117,7 @@ public final class TranscriptMediaPreviewViewModel {
             return originalData
         }
 
-        let data = try await apiClient.transcriptMediaData(for: reference)
+        let data = try await fetchData()
         try Task.checkCancellation()
         originalData = data
         originalByteCount = data.count

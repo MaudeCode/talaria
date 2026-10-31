@@ -1,3 +1,4 @@
+import PhotosUI
 import SwiftUI
 import TalariaKit
 import UIKit
@@ -8,6 +9,9 @@ struct FeedbackSheet: View {
     static let systemImage = "bubble.and.pencil"
     @Bindable var model: FeedbackComposer
     @State private var diagnosticsExpanded = false
+    @State private var pickedItems: [PhotosPickerItem] = []
+    /// Its reference URL is the local file the composer staged.
+    @State private var previewItem: TranscriptMediaPreviewItem?
 
     var body: some View {
         NavigationStack {
@@ -26,6 +30,10 @@ struct FeedbackSheet: View {
                     Toggle("Include Diagnostics", isOn: field(\.includeDiagnostics))
                 }
                 .disabled(model.hasUnknownOutcome)
+
+                if model.attachmentsEnabled || !model.attachments.isEmpty {
+                    attachmentSection
+                }
 
                 if model.draft.includeDiagnostics {
                     Section {
@@ -62,12 +70,79 @@ struct FeedbackSheet: View {
             .task(id: diagnosticsExpanded) {
                 if diagnosticsExpanded { await model.loadDiagnostics() }
             }
+            .task { await model.loadAttachmentOptions() }
+            .sheet(item: $previewItem) { item in
+                if let file = URL(string: item.reference.url) {
+                    TranscriptMediaPreviewView(localFile: file, item: item)
+                }
+            }
+            .onChange(of: pickedItems) { _, items in
+                guard !items.isEmpty else { return }
+                pickedItems = []
+                Task { await attach(items) }
+            }
         }
         .adaptiveFormPresentation()
     }
 
+    private var attachmentSection: some View {
+        Section {
+            if !model.pendingAttachments.isEmpty || model.currentScreenOffer != nil {
+                ComposerAttachmentStripView(
+                    photos: model.pendingAttachments,
+                    offer: model.currentScreenOffer,
+                    onAcceptOffer: { model.includeCurrentScreen() },
+                    hangsFromCard: false,
+                    onRemove: { model.removeAttachment($0) },
+                    onPreview: { attachment in
+                        previewItem = model.previewReference(of: attachment.id).map(TranscriptMediaPreviewItem.init(reference:))
+                    }
+                )
+                .environment(\.retryPendingAttachment) { model.retryAttachment($0) }
+                .listRowInsets(EdgeInsets(top: 0, leading: 6, bottom: 0, trailing: 6))
+            }
+            if model.remainingAttachmentSlots > 0 {
+                PhotosPicker(selection: $pickedItems, maxSelectionCount: model.remainingAttachmentSlots,
+                             matching: model.videoAllowed ? .any(of: [.images, .videos]) : .images) {
+                    Label(model.videoAllowed ? "Add Photo or Video" : "Add Photo", systemImage: "photo.on.rectangle")
+                }
+                .accessibilityIdentifier("feedback-add-attachment")
+            }
+            if let error = model.attachmentError {
+                SettingsErrorFootnote(error)
+            }
+        }
+        .disabled(model.hasUnknownOutcome)
+    }
+
+    /// Videos arrive as a temporary file copy, removed once compressed; photos arrive as data.
+    private func attach(_ items: [PhotosPickerItem]) async {
+        for item in items {
+            if item.supportedContentTypes.contains(where: { $0.conforms(to: .movie) }) {
+                guard let movie = try? await item.loadTransferable(type: PickedMovie.self) else { continue }
+                await model.addVideo(at: movie.url)?.value
+                try? FileManager.default.removeItem(at: movie.url)
+            } else if let data = try? await item.loadTransferable(type: Data.self) {
+                model.addImage(data)
+            }
+        }
+    }
+
     private func field<Value>(_ path: WritableKeyPath<FeedbackRequest, Value>) -> Binding<Value> {
         Binding(get: { model.draft[keyPath: path] }, set: { value in model.edit { $0[keyPath: path] = value } })
+    }
+}
+
+private struct PickedMovie: Transferable {
+    let url: URL
+
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(importedContentType: .movie) { received in
+            let copy = FileManager.default.temporaryDirectory
+                .appendingPathComponent("feedback-\(UUID().uuidString).\(received.file.pathExtension)")
+            try FileManager.default.copyItem(at: received.file, to: copy)
+            return Self(url: copy)
+        }
     }
 }
 
@@ -78,8 +153,23 @@ extension View {
         }), onDismiss: onDismiss) {
             if let model { FeedbackSheet(model: model) }
         }
+        // Captured before the sheet draws over it; offered to the user, never attached by default.
+        .onChange(of: isEnabled && model?.isPresented == true) { _, presented in
+            if presented { model?.offerCurrentScreen(UIApplication.shared.keyWindowPNG()) }
+        }
         .overlay(alignment: .top) {
             if isEnabled, let model { GitActionToastOverlay(state: model.confirmation) }
+        }
+    }
+}
+
+private extension UIApplication {
+    /// The key window as it last appeared on screen, before any pending update draws.
+    func keyWindowPNG() -> Data? {
+        guard let window = connectedScenes.compactMap({ $0 as? UIWindowScene }).flatMap(\.windows).first(where: \.isKeyWindow)
+        else { return nil }
+        return UIGraphicsImageRenderer(bounds: window.bounds).pngData { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
         }
     }
 }

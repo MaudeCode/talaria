@@ -303,7 +303,8 @@ public actor APIClient {
         method: String,
         encodedBody: Data?,
         timeout: TimeInterval? = nil,
-        accept: String = "application/json"
+        accept: String = "application/json",
+        contentType: String = "application/json"
     ) async throws -> (Data, HTTPURLResponse) {
         if method != "GET" && method != "HEAD" {
             switch endpoint {
@@ -323,7 +324,7 @@ public actor APIClient {
         request.setValue(accept, forHTTPHeaderField: "Accept")
 
         if let encodedBody {
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue(contentType, forHTTPHeaderField: "Content-Type")
             request.httpBody = encodedBody
         }
 
