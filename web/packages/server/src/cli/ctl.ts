@@ -132,25 +132,37 @@ export function isAlive(pid: number): boolean {
   try { process.kill(pid, 0); return true } catch (error) { return (error as NodeJS.ErrnoException).code === 'EPERM' }
 }
 
-function procArgs(env: Record<string, string | undefined>, pid: number): string {
+/** The process command line, `''` when `ps` finds no such process, or `null` when `ps` did not answer (timed out or missing). */
+function procArgs(env: Record<string, string | undefined>, pid: number): string | null {
   const r = hostTool(env, 'ps', ['-p', String(pid), '-o', 'args='])
+  if (r.error) return null
   return r.status === 0 ? r.stdout.trim() : ''
 }
 
-/** Python `_is_owned_webui_pid`: the state file names this checkout and the process command line references our bin or node. */
-function isOwnedPid(p: CtlPaths, ctx: CtlContext, pid: number): boolean {
+/**
+ * Python `_is_owned_webui_pid`: the state file names this checkout and the process command line references our bin or node.
+ * `null` when `ps` did not answer: ownership is unknown, so callers keep the PID and state files rather than treat them as stale.
+ */
+function isOwnedPid(p: CtlPaths, ctx: CtlContext, pid: number): boolean | null {
   const state = readState(p)
   if (!state.REPO_ROOT || resolve(state.REPO_ROOT) !== resolve(ctx.webRoot)) return false
   const args = procArgs(ctx.env, pid)
+  if (args === null) return null
   if (!args) return false
   const serve = ctx.serveCommand.slice(1).join(' ')
   // A reused PID belonging to an unrelated Node process must not be treated as ours: the command line has to name this checkout or the serve bin.
   return args.includes(ctx.webRoot) || (Boolean(serve) && args.includes(serve))
 }
 
-function currentPid(p: CtlPaths, ctx: CtlContext): number | null {
+/** The live recorded daemon and whether it is ours (`owned: null` when `ps` could not tell). */
+function recordedDaemon(p: CtlPaths, ctx: CtlContext): { pid: number; owned: boolean | null } | null {
   const pid = pidFromFile(p)
-  return pid !== null && isAlive(pid) && isOwnedPid(p, ctx, pid) ? pid : null
+  return pid !== null && isAlive(pid) ? { pid, owned: isOwnedPid(p, ctx, pid) } : null
+}
+
+function warnUnverified(ctx: CtlContext, pid: number): number {
+  ctx.warn(`[ctl] Could not verify that PID ${String(pid)} is this checkout's Talaria Web (ps did not answer); leaving its PID file in place.`)
+  return 1
 }
 
 function clearStalePid(p: CtlPaths, log: (line: string) => void): void {
@@ -336,10 +348,11 @@ export async function startCmd(ctx: CtlContext, argv: string[]): Promise<number>
   ctx.env.HERMES_WEBUI_STATE_DIR = (ctx.env.HERMES_WEBUI_STATE_DIR ?? '').trim() || p.stateDir
   mkdirSync(ctx.env.HERMES_WEBUI_STATE_DIR, { recursive: true })
   const binding = parseLaunchBinding(argv, ctx.env)
-  const existing = currentPid(p, ctx)
-  if (existing !== null) {
+  const existing = recordedDaemon(p, ctx)
+  if (existing?.owned === null) return warnUnverified(ctx, existing.pid)
+  if (existing?.owned) {
     const state = readState(p)
-    ctx.log(`[ctl] Talaria Web is already running (PID ${String(existing)})`)
+    ctx.log(`[ctl] Talaria Web is already running (PID ${String(existing.pid)})`)
     printCoordinates(ctx, state.HOST ?? binding.host, Number.parseInt(state.PORT ?? '', 10) || binding.port)
     return 0
   }
@@ -433,7 +446,9 @@ export async function stopCmd(ctx: CtlContext): Promise<number> {
     rmSync(p.pidFile, { force: true }); rmSync(p.stateFile, { force: true })
     return 0
   }
-  if (!isAlive(pid) || !isOwnedPid(p, ctx, pid)) { await warnIfUnmanaged(ctx, p); clearStalePid(p, ctx.log); return 0 }
+  const owned = isAlive(pid) ? isOwnedPid(p, ctx, pid) : false
+  if (owned === null) return warnUnverified(ctx, pid)
+  if (!owned) { await warnIfUnmanaged(ctx, p); clearStalePid(p, ctx.log); return 0 }
   ctx.log(`[ctl] Stopping Talaria Web (PID ${String(pid)})`)
   try { process.kill(pid, 'SIGTERM') } catch { /* gone */ }
   // The supervisor kills its worker after its grace; leave it time to reap that worker and exit before killing the group.
@@ -458,8 +473,10 @@ export async function statusCmd(ctx: CtlContext): Promise<number> {
   const host = state.HOST ?? ((ctx.env.HERMES_WEBUI_HOST ?? '').trim() || '127.0.0.1')
   const port = Number.parseInt(state.PORT ?? ((ctx.env.HERMES_WEBUI_PORT ?? '').trim() || '8787'), 10) || 8787
   const tls = Boolean((ctx.env.HERMES_WEBUI_TLS_CERT ?? '').trim()) && Boolean((ctx.env.HERMES_WEBUI_TLS_KEY ?? '').trim())
-  const pid = currentPid(p, ctx)
-  if (pid !== null) {
+  const daemon = recordedDaemon(p, ctx)
+  if (daemon?.owned === null) return warnUnverified(ctx, daemon.pid)
+  if (daemon?.owned) {
+    const pid = daemon.pid
     const etime = hostTool(ctx.env, 'ps', ['-p', String(pid), '-o', 'etime=']).stdout.trim()
     ctx.log('● talaria-web — running')
     ctx.log(`  PID:     ${String(pid)}`)

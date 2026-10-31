@@ -363,6 +363,26 @@ describe('ctl', () => {
     expect(hostToolCalls(home)).toContain('lsof')
   }, 15_000)
 
+  it('keeps a live daemon\'s PID and state files when ps cannot confirm ownership', async () => {
+    const home = scratch()
+    const port = await freePort()
+    const script = `const http=require('node:http');const port=Number(process.argv[process.argv.indexOf('--host')+2]);http.createServer((req,res)=>{res.end('{}')}).listen(port,'127.0.0.1');setInterval(()=>{},1000)`
+    const ctx = makeCtx(home, fakeServe(script))
+    expect(await runCtl(ctx, ['start', String(port)])).toBe(0)
+    stops.push(async () => { rmSync(join(home, 'bin', 'ps'), { force: true }); await runCtl(ctx, ['stop']) })
+    const p = ctlPaths(ctx)
+    const pid = Number(readState(p).PID)
+    stubHostTool(home, 'ps', 'exec sleep 60')
+    const unverified = `[ctl] Could not verify that PID ${String(pid)} is this checkout's Talaria Web (ps did not answer); leaving its PID file in place.`
+    for (const command of [['stop'], ['status'], ['start', String(port)]]) {
+      ctx.err.length = 0
+      expect(await runCtl(ctx, command)).toBe(1)
+      expect(ctx.err).toContain(unverified)
+      expect(existsSync(p.pidFile) && existsSync(p.stateFile)).toBe(true)
+    }
+    expect(() => { process.kill(pid, 0) }).not.toThrow()
+  }, 30_000)
+
   it('keeps the conservative launchd guard on the default port when lsof hangs and ss is unavailable', () => {
     const home = scratch()
     const ctx = makeCtx(home, ['node'], { HERMES_WEBUI_LAUNCHD_LABEL: 'com.example.webui' })
