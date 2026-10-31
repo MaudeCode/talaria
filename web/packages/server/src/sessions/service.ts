@@ -1172,6 +1172,8 @@ export class SessionService {
     // A metadata-only read lacks the history the gate counts, so it carries no flag.
     if (loadMessages) raw.can_compress = limited ? raw.read_only !== true && !isClaudeCodeSessionId(s.session_id) && (!s.active_stream_id || this.compactionWaiters.has(s.active_stream_id)) && limited.enoughContext : this.canCompress(s, raw.read_only === true, stateRows)
     raw.confirms_deep_truncate = true
+    // TAL-848: lets a client whose /clear outcome is unknown tell from a reread whether the clear committed.
+    raw.clear_generation = typeof s.clear_generation === 'string' ? s.clear_generation : null
     raw.pending_steers = raw.active_stream_id ? (this.deps.runtime.pendingSteers?.(str(raw.active_stream_id)) ?? []) : []
     // TAL-1006: the compression a client shows on load: the running manual job's, else the live run's open span.
     const job = this.compressionJobs.get(s.session_id)

@@ -145,6 +145,15 @@ extension APIClient {
         )
     }
 
+    /// TAL-848: removes the session's messages on the server; answers with the reset row.
+    func clearSession(id: String) async throws -> SessionMutationResponse {
+        try await send(
+            endpoint: .clearSession,
+            method: "POST",
+            body: SessionIDRequest(sessionId: id)
+        )
+    }
+
     func bulkSessions(action: SessionBulkAction, ids: [String]) async throws -> SessionBulkResponse {
         try await send(
             endpoint: .bulkSessions,

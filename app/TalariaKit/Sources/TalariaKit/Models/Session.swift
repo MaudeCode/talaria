@@ -978,6 +978,8 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
     /// TAL-929: the server holds an edit or regenerate cut of more than one user turn for confirmation; nil from a
     /// server that predates it, which cuts at once.
     public let confirmsDeepTruncate: Bool?
+    /// TAL-848: changes each time `/clear` empties the session; nil before any clear or from an older server.
+    public let clearGeneration: String?
     /// TAL-833: the standing `/goal`; nil when none runs or from a server that predates it.
     public let goal: SessionGoal?
     /// Server-resolved visibility. Reasoning arrives only when shown; nil preserves older-server presentation.
@@ -1050,6 +1052,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
         case canDuplicate
         case assistantName
         case confirmsDeepTruncate
+        case clearGeneration
         case goal
         case showReasoning
         case messages
@@ -1125,6 +1128,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
         canDuplicate = container.decodeLossyBoolIfPresent(forKey: .canDuplicate)
         assistantName = container.decodeLossyStringIfPresent(forKey: .assistantName)
         confirmsDeepTruncate = container.decodeLossyBoolIfPresent(forKey: .confirmsDeepTruncate)
+        clearGeneration = container.decodeLossyStringIfPresent(forKey: .clearGeneration)
         goal = try? container.decodeIfPresent(SessionGoal.self, forKey: .goal)
         messages = Self.decodeMessagesTolerantly(from: container)
         toolCalls = Self.decodeToolCallsTolerantly(from: container)

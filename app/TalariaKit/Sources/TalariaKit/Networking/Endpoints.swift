@@ -33,6 +33,8 @@ public enum Endpoint {
     case duplicateSession
     case compressSessionStart
     case compressSessionStatus(id: String)
+    /// TAL-848: `/clear` empties the session on the server for every device.
+    case clearSession
     case undoSession
     case retrySession
     case truncateSession
@@ -223,6 +225,8 @@ public enum Endpoint {
             return "/api/session/compress/start"
         case .compressSessionStatus:
             return "/api/session/compress/status"
+        case .clearSession:
+            return "/api/session/clear"
         case .undoSession:
             return "/api/session/undo"
         case .retrySession:

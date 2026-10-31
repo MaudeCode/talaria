@@ -105,6 +105,12 @@ public final class ChatViewModel {
     /// An edit or regenerate the server held for confirmation (TAL-929); `confirmDeepTruncate` resends it.
     public private(set) var deepTruncateConfirmation: DeepTruncateConfirmation?
     public private(set) var modelSwitchConfirmation: ModelSwitchConfirmation?
+    /// `/clear` waits on this confirmation before it clears the session on the server (TAL-848).
+    public private(set) var isConfirmingClear = false
+    /// The server's clear marker from the last load; an unknown `/clear` outcome compares a reread with it.
+    @ObservationIgnored private var loadedClearGeneration: String?
+    /// The outstanding `POST /api/session/clear`; sends and loads wait for it so it never overtakes newer input.
+    @ObservationIgnored private var clearConversationTask: Task<ClearConversationOutcome, Never>?
     @ObservationIgnored private var offeredOwnerModelConfirmation: ModelSwitchConfirmation?
 
     public var ownerModelChangeMessage: String? {
@@ -1675,6 +1681,8 @@ public final class ChatViewModel {
             errorMessage = String(localized: "The server did not provide a session ID.")
             return
         }
+        // A read issued during `/clear` would otherwise return the rows being cleared.
+        if let clear = clearConversationTask { _ = await clear.value }
 
         let titleVersionAtFetch = sessionListOwner?.resourceMetadataVersion(for: sessionID)
         resetPendingStreamingContentBuffers()
@@ -1792,6 +1800,7 @@ public final class ChatViewModel {
                 }
                 applyReadOnlyState(from: session, noticesChangesAtFetch: noticesChangesAtFetch, reasoningReadGeneration: loadRequestGeneration)
                 serverConfirmsDeepTruncate = session?.confirmsDeepTruncate == true
+                loadedClearGeneration = session?.clearGeneration
                 let newerSteerRows = pendingSteerRows(changedAfter: steerChangesAtFetch)
                 applyReloadedMessages(
                     mergedMessages,
@@ -1826,6 +1835,7 @@ public final class ChatViewModel {
             // read-only flag behind once its transcript has been rejected.
             applyReadOnlyState(from: session, noticesChangesAtFetch: noticesChangesAtFetch, reasoningReadGeneration: loadRequestGeneration)
             serverConfirmsDeepTruncate = session?.confirmsDeepTruncate == true
+            loadedClearGeneration = session?.clearGeneration
             applyBranchedFrom(from: session, modelContext: modelContext)
             // The live stream names newer files than a detail read mid-run, so the detail only seeds the page.
             companionFocus.seed(session?.focusPath)
@@ -3151,6 +3161,8 @@ public final class ChatViewModel {
 
         // The first row exists while creation/configuration/uploads are unresolved. Only this
         // send owns it; session adoption never invents a stream or another user row.
+        // The row shows at once; the request follows an outstanding `/clear` so the clear cannot remove it (TAL-848).
+        if let clear = clearConversationTask { _ = await clear.value }
         if preparesSession {
             let sessionReady = await waitForSession?() ?? false
             // The row's reservation ends before either adoption or rollback returns its files.
@@ -3598,12 +3610,87 @@ public final class ChatViewModel {
         sendErrorMessage = nil
     }
 
+    private func clearConversationRefusal() -> String? {
+        if isViewingCachedData { return String(localized: "Reconnect to the server to clear this conversation.") }
+        if activeStreamID != nil { return String(localized: "Stop the reply before clearing.") }
+        if sessionID == nil { return String(localized: "The server did not provide a session ID.") }
+        return nil
+    }
+
+    public func cancelClearConversation() {
+        isConfirmingClear = false
+    }
+
+    enum ClearConversationOutcome {
+        case cleared(title: String?)
+        case failed(message: String, error: Error?)
+    }
+
+    /// Clears the session on the server (TAL-848): the transcript empties at once, a refusal restores it with the
+    /// server's error, and an unknown outcome rereads the server's clear marker to keep or restore it. Never resent.
+    /// Not gated on `isConfirmingClear`: the alert resets its binding before the Clear button's task runs.
+    public func confirmClearConversation() async {
+        isConfirmingClear = false
+        if let refusal = clearConversationRefusal() { sendErrorMessage = refusal; return }
+        guard let sessionID, clearConversationTask == nil else { return }
+        let snapshot = (messages: messages, offset: messagesOffset, recentOffset: recentMessagesOffset,
+                        recentHasOlder: recentHasOlderMessages, hasOlder: hasOlderMessages,
+                        toolGroups: completedToolCallGroups, reasoningGroups: completedReasoningGroups,
+                        activity: archivedAssistantActivity)
+        let generationBeforeClear = loadedClearGeneration
+        clearTranscript()
+        // Reads already in flight carry the rows being cleared; later ones wait for the clear.
+        streamCoordinator.invalidateSessionLoads()
+        lastError = nil
+        let request = Task { await clearConversationOnServer(sessionID, generationBeforeClear: generationBeforeClear) }
+        clearConversationTask = request
+        let outcome = await request.value
+        clearConversationTask = nil
+        guard self.sessionID == sessionID else { return }
+        switch outcome {
+        case .cleared(let title):
+            if let title { displayTitle = Self.displayTitle(from: title) }
+            // Only rows sent after the clear remain, so this replaces the cleared transcript's cached rows.
+            cacheCurrentMessages(sessionID: sessionID, modelContext: runStatusCacheContext)
+            await loadMessages(modelContext: runStatusCacheContext)
+        case .failed(let message, let error):
+            // A message sent while the clear was outstanding stays after the restored history.
+            messages = snapshot.messages + messages
+            messagesOffset = snapshot.offset
+            recentMessagesOffset = snapshot.recentOffset
+            recentHasOlderMessages = snapshot.recentHasOlder
+            hasOlderMessages = snapshot.hasOlder
+            setCompletedToolCallGroups(snapshot.toolGroups)
+            completedReasoningGroups = snapshot.reasoningGroups
+            archivedAssistantActivity = snapshot.activity
+            lastError = error
+            sendErrorMessage = message
+        }
+    }
+
+    private func clearConversationOnServer(_ sessionID: String, generationBeforeClear: String?) async -> ClearConversationOutcome {
+        do {
+            let response = try await client.clearSession(id: sessionID)
+            if response.error == nil, let row = response.session { return .cleared(title: row.title) }
+            return .failed(message: response.error ?? String(localized: "The server did not return the cleared session."), error: nil)
+        } catch {
+            // Network loss, a timeout or a 5xx may have cleared it: the server's clear marker decides.
+            if !APIError.isDefinitiveWriteFailure(error),
+               let reread = try? await client.session(id: sessionID, includeMessages: false).session,
+               let generation = reread.clearGeneration, generation != generationBeforeClear {
+                return .cleared(title: reread.title)
+            }
+            return .failed(message: error.localizedDescription, error: error)
+        }
+    }
+
     func executeSlashCommand(_ command: SlashCommand, args: String = "") async -> SlashCommandExecutionResult {
         switch command.handler {
         case .clientSide(let action):
             switch action {
             case .clear:
-                clearTranscript()
+                if let refusal = clearConversationRefusal() { return .unsupported(friendlyMessage: refusal) }
+                isConfirmingClear = true
                 return .executed(message: nil)
             case .stop:
                 await cancelActiveStream()
