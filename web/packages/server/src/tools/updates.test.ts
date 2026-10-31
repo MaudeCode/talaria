@@ -18,6 +18,7 @@ import type { Dict } from '../config/agent-config.js'
 import { detectWebuiVersion, developmentInfo } from '../release.js'
 import { bootTestServer, WEB_ROOT } from '../test/harness.js'
 import { FakeSidecar } from '../sidecar/fake.js'
+import { SidecarError } from '../sidecar/client.js'
 import { RESTART_EXIT_CODE, supervise } from '../cli/supervise.js'
 import {
   applyAgentUpdate, applyWebUpdate, CACHE_TTL_S, checkAgentUpdate, checkWebUpdate, forceAgentUpdate, githubJson, inventoryLocks, npmInstallInfo, publishedWebRelease, ReleaseUnavailable,
@@ -2173,6 +2174,123 @@ describe('Agent checkout updates', () => {
     await svc.check(true)
     expect(await svc.summarize('agent')).toMatchObject({ generated_by: 'fallback', source: 'commits', summary_sections: [{ title: 'About this update', items: ['This build has no Hermes Agent changes.'] }] })
     expect(prompts).toEqual([])
+  })
+
+  /** TAL-1591: the sidecar refuses model work while the Agent runtime is mid-update. */
+  function deferredSummaryService(opts: { llm?: () => Promise<string> } = {}) {
+    const stateDir = tmp()
+    const logs: string[] = []
+    let stale = true
+    const llm = opts.llm ?? (() => stale ? Promise.reject(new SidecarError('Agent update recovery is incomplete.', { condition: 'agent_runtime_stale', data: { agent_update_state: 'incomplete', retryable: true } })) : Promise.resolve('- Notice: Chats open faster'))
+    const { svc, prompts } = summaryService(agentInstall(), { stateDir, summarizeAutomatically: () => true, getPublicJson: notesFor([]), log: (line) => logs.push(line), llm })
+    let reconnect: ((runtime: RuntimeDescribe) => void) | undefined
+    Object.assign((svc as unknown as { deps: object }).deps, { onAgentReconnect: (listener: (runtime: RuntimeDescribe) => void) => { reconnect = listener; return () => { reconnect = undefined } } })
+    return { svc, prompts, stateDir, logs, current: () => { stale = false }, reconnect: (runtime: RuntimeDescribe) => reconnect?.(runtime) }
+  }
+  const deferredSections = [{ title: 'About this update', items: ['The summary will be ready when the Agent update finishes.'] }]
+
+  it('defers the Agent summary while the runtime is stale and generates it once the sidecar reconnects current (TAL-1591)', async () => {
+    const { svc, prompts, stateDir, logs, current, reconnect } = deferredSummaryService()
+    await svc.check(true)
+    await vi.waitFor(() => { expect(prompts).toHaveLength(1) })
+    // On-demand Summarize asks again and answers honestly while the runtime still refuses.
+    expect(await svc.summarize('agent')).toMatchObject({ generated_by: 'fallback', source: 'release_notes', summary_sections: deferredSections })
+    expect(prompts).toHaveLength(2)
+    expect(logs.filter((line) => line.includes('summary'))).toEqual([])
+    expect(pendingSummary(stateDir)).toMatchObject({ items: [{ id: 'v2.0.0', text: 'Release notes for v2.0.0' }], summary_sections: null, summarized_through: null })
+    // A refresh while the runtime is known stale skips the model call.
+    await svc.check(true)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(prompts).toHaveLength(2)
+    current()
+    svc.startAutoApply(300000)
+    try {
+      reconnect({ ...new FakeSidecar().describe!, stale: true })
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(prompts).toHaveLength(2)
+      reconnect(new FakeSidecar().describe!)
+      await vi.waitFor(() => { expect(pendingSummary(stateDir)).toMatchObject({ summary_sections: [{ title: "What you'll notice", items: ['Chats open faster.'] }], summarized_through: 'v2.0.0' }) })
+      expect(prompts).toHaveLength(3)
+      reconnect(new FakeSidecar().describe!)
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(prompts).toHaveLength(3)
+      expect(await svc.summarize('agent')).toMatchObject({ generated_by: 'llm', cached: true })
+      expect(logs.filter((line) => line.includes('summary'))).toEqual([])
+    } finally { svc.stopAutoApply() }
+  })
+
+  it('generates a deferred Agent summary once recovery completes (TAL-1591)', async () => {
+    const { svc, prompts, stateDir, current } = deferredSummaryService()
+    await svc.check(true)
+    await vi.waitFor(() => { expect(prompts).toHaveLength(1) })
+    let owed = true
+    // Only the recovery hook may regenerate: the post-recovery refresh check is stubbed out.
+    const check = vi.spyOn(svc, 'check').mockResolvedValue({})
+    Object.assign((svc as unknown as { deps: object }).deps, {
+      recoverAgent: (probe: boolean) => { if (!probe) owed = false; return Promise.resolve({ ok: !owed, owed, fingerprint: owed ? 'retained' : '', detail: '' }) },
+    })
+    current()
+    svc.startAutoApply(300000)
+    try {
+      await vi.waitFor(() => { expect(svc.cachedStatus().agent_recovery).toMatchObject({ phase: 'complete' }) })
+      await vi.waitFor(() => { expect(pendingSummary(stateDir)).toMatchObject({ summary_sections: [{ title: "What you'll notice", items: ['Chats open faster.'] }], summarized_through: 'v2.0.0' }) })
+      expect(prompts).toHaveLength(2)
+      expect(check).toHaveBeenCalled()
+    } finally { svc.stopAutoApply() }
+  })
+
+  it('clears the deferral when an on-demand summary succeeds without a runtime signal (TAL-1591)', async () => {
+    const { svc, prompts, stateDir, current } = deferredSummaryService()
+    await svc.check(true)
+    await vi.waitFor(() => { expect(prompts).toHaveLength(1) })
+    current()
+    expect(await svc.summarize('agent')).toMatchObject({ generated_by: 'llm', summary_sections: [{ title: "What you'll notice", items: ['Chats open faster.'] }] })
+    expect(pendingSummary(stateDir)).toMatchObject({ summarized_through: 'v2.0.0' })
+    expect(prompts).toHaveLength(2)
+  })
+
+  it('retries a refusal that was in flight when the runtime became current (TAL-1591)', async () => {
+    const refuse = () => new SidecarError('Agent update recovery is incomplete.', { condition: 'agent_runtime_stale' })
+    let calls = 0
+    let settle: (() => void) | undefined
+    const { svc, prompts, stateDir, reconnect } = deferredSummaryService({
+      llm: () => {
+        calls += 1
+        if (calls === 1) return Promise.reject(refuse())
+        if (calls === 2) return new Promise<string>((_resolve, reject) => { settle = () => { reject(refuse()) } })
+        return Promise.resolve('- Notice: Chats open faster')
+      },
+    })
+    await svc.check(true)
+    await vi.waitFor(() => { expect(prompts).toHaveLength(1) })
+    const onDemand = svc.summarize('agent')
+    await vi.waitFor(() => { expect(settle).toBeDefined() })
+    svc.startAutoApply(300000)
+    try {
+      reconnect(new FakeSidecar().describe!)
+      settle!()
+      expect(await onDemand).toMatchObject({ generated_by: 'llm', summary_sections: [{ title: "What you'll notice", items: ['Chats open faster.'] }] })
+      expect(pendingSummary(stateDir)).toMatchObject({ summarized_through: 'v2.0.0' })
+      expect(prompts).toHaveLength(3)
+    } finally { svc.stopAutoApply() }
+  })
+
+  it.each([
+    ['a generic model error', new Error('model unavailable')],
+    ['another sidecar condition', new SidecarError('sidecar call aux.complete timed out', { condition: 'sidecar_timeout' })],
+  ])('keeps logging %s once per range without a deferred retry (TAL-1591)', async (_name, error) => {
+    const { svc, prompts, logs, reconnect } = deferredSummaryService({ llm: () => Promise.reject(error) })
+    await svc.check(true)
+    await vi.waitFor(() => { expect(logs.filter((line) => line.includes('summary'))).toHaveLength(1) })
+    expect(await svc.summarize('agent')).toMatchObject({ generated_by: 'fallback', summary_sections: [{ title: 'About this update', items: ['Hermes Agent v2.0.0 is available.'] }] })
+    expect(prompts).toHaveLength(2)
+    svc.startAutoApply(300000)
+    try {
+      reconnect(new FakeSidecar().describe!)
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(prompts).toHaveLength(2)
+      expect(logs.filter((line) => line.includes('summary'))).toHaveLength(1)
+    } finally { svc.stopAutoApply() }
   })
 
   function agentService(agent: string, git: GitRun, events: string[], agentSync?: UpdateServiceDeps['agentSync'], stateDir = join(agent, '../web-state'), agentHomes?: UpdateServiceDeps['agentHomes']): UpdateService {
