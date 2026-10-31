@@ -1092,8 +1092,9 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
 
   it('gateway start, stop, and restart run sidecar gateway.control and return only the Agent\'s error line, never CLI output (TAL-266, TAL-884)', async () => {
     const calls: Json[] = []
+    const timeouts: (number | undefined)[] = []
     let outcome: Json = {}
-    sidecar.respond('gateway.control', (params) => { calls.push(params); return outcome as never })
+    sidecar.respond('gateway.control', (params, _emit, opts) => { calls.push(params); timeouts.push(opts.timeoutMs); return outcome as never })
     try {
       outcome = { status: 'completed', message: 'Gateway service started successfully', detail: 'pid 4242 /srv/hermes secret' }
       let res = await post(s, '/api/gateway/start', { name: 'telegram' })
@@ -1106,9 +1107,14 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
       res = await post(s, '/api/gateway/stop', {})
       text = await res.text()
       expect([res.status, JSON.parse(text)]).toEqual([500, { error: 'Gateway stop failed with exit code 7', ok: false, action: 'stop', returncode: 7 }])
-      outcome = { status: 'failed', message: 'Gateway restart process timed out after 60s and was terminated', timed_out: true }
+      expect(calls[1]).toEqual({ profile_home: s.state, action: 'stop', interrupt: true, background_wait_seconds: 60 })
+      // TAL-980: a restart drains for the Agent's own budget, so the sidecar picks the wait and the call has no deadline.
+      outcome = { status: 'failed', message: 'Gateway restart process timed out after 1915s and was terminated', timed_out: true }
       res = await post(s, '/api/gateway/restart', {})
-      expect([res.status, await json(res)]).toEqual([504, { error: 'Gateway restart timed out after 60 seconds', ok: false, action: 'restart' }])
+      const body = await json(res)
+      expect(calls[2]).toEqual({ profile_home: s.state, action: 'restart', interrupt: true })
+      expect(timeouts.slice(0, 3)).toEqual([300_000, 300_000, 0])
+      expect([res.status, body]).toEqual([504, { error: 'Gateway restart process timed out after 1915s and was terminated', ok: false, action: 'restart' }])
       outcome = { status: 'busy', message: 'Another gateway action is already in progress. Please wait a moment and try again.' }
       res = await post(s, '/api/gateway/restart', {})
       expect([res.status, await json(res)]).toEqual([409, { error: 'Another gateway action is already in progress; try again shortly.', ok: false, action: 'restart' }])
