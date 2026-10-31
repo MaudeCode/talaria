@@ -1,0 +1,3 @@
+{
+  "entries": [{"category": "Fixed", "summary": "Reopening a tool's full output or a worklog page right after closing it now loads fresh instead of failing with the cancelled request.", "highlight": false, "components": ["web"]}]
+}
