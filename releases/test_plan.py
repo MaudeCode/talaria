@@ -11,6 +11,7 @@ from pathlib import Path
 
 from plan import assemble, resolve
 from release_set import COMMON_GATES, COMPONENTS
+from test_release_set import BRIDGE_IMAGE
 
 
 class PlanTests(unittest.TestCase):
@@ -61,6 +62,12 @@ class PlanTests(unittest.TestCase):
                 else:
                     values["deploymentId"] = "synthetic-relay"
                 result.append(receipt("build" + name.title(), **values))
+                if name == "relay":
+                    bridge = {"tag": values["tag"], "bridgeImage": {"ref": f"{BRIDGE_IMAGE}:{plan['components']['relay']['version']}",
+                                                                    "digest": "sha256:" + "b" * 64}}
+                    result.append(receipt("buildBridge", **bridge))
+                    if published:
+                        result.append(receipt("publishBridge", **bridge))
                 if published:
                     if name == "relay":
                         values["deployedRevision"] = plan["releaseSet"]
@@ -75,6 +82,8 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(candidate["status"], "candidate")
         self.assertEqual(candidate["components"]["app"]["buildNumber"], 321)
         self.assertIsNone(candidate["components"]["relay"]["deployedRevision"])
+        self.assertEqual(candidate["components"]["relay"]["bridgeImage"],
+                         {"ref": f"{BRIDGE_IMAGE}:3.0.0", "digest": "sha256:" + "b" * 64})
         with self.assertRaises(ValueError):
             assemble(plan, receipts, self.notes, complete=True)
         broken = deepcopy(receipts)
@@ -106,7 +115,9 @@ class PlanTests(unittest.TestCase):
         plan = resolve(self.root, self.request)
         for gate, field, value in (("publishWeb", "image", "wrong"), ("uploadApp", "buildNumber", 999),
                                    ("uploadApp", "ipaSha256", "d" * 64), ("buildApp", "ipaSha256", None),
-                                   ("deployRelay", "deployedRevision", "a" * 40)):
+                                   ("deployRelay", "deployedRevision", "a" * 40),
+                                   ("publishBridge", "bridgeImage", {"ref": f"{BRIDGE_IMAGE}:3.0.0", "digest": "sha256:" + "e" * 64}),
+                                   ("publishBridge", "tag", "relay-v9.0.0"), ("buildBridge", "tag", "relay-v9.0.0")):
             receipts = self.receipts(plan, published=True)
             next(item for item in receipts if item["gate"] == gate)[field] = value
             with self.assertRaises(ValueError):

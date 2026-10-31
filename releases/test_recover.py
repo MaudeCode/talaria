@@ -35,15 +35,16 @@ class RecoveryTests(unittest.TestCase):
         jobs = [{"name": "release / " + name, "conclusion": conclusion, "runner_name": "synthetic-runner",
                  "run_id": 123, "run_attempt": 4}
                 for name, conclusion in (("prepare", "success"), ("build-gate", "success"), ("relay-publish", "success"),
-                                         ("web-publish", "success"), ("Publish iOS app", "failure"), ("publish-set", "failure"))]
+                                         ("bridge-publish", "success"), ("web-publish", "success"), ("Publish iOS app", "failure"), ("publish-set", "failure"))]
         refs = {name: {"run": "123", "attempt": "1", "source": "a" * 40, "name": name, "sha256": "b" * 64}
-                for name in ("release-plan", "contract-receipts", "previous-app-receipts", "agent-receipts", "relay-build", "web-build", "app-build",
-                             "ios-ipa", "ios-dsyms", "relay-publish", "web-publish")}
+                for name in ("release-plan", "contract-receipts", "previous-app-receipts", "agent-receipts", "relay-build", "bridge-build",
+                             "web-build", "app-build", "ios-ipa", "ios-dsyms", "relay-publish", "bridge-publish", "web-publish")}
         needs = {name: {"result": "failure" if name == "app-publish" else "success", "outputs": {}}
-                 for name in ("prepare", "build-gate", "relay-publish", "web-publish", "app-publish")}
+                 for name in ("prepare", "build-gate", "relay-publish", "bridge-publish", "web-publish", "app-publish")}
         needs["prepare"]["outputs"] = {"source": "c" * 40, "app_changed": "true", "web_changed": "true", "relay_changed": "true"}
-        # build-gate also forwards the Web OCI image; recovery authenticates it but never restores it.
-        forwarded = {**refs, "web-image": {**refs["web-build"], "name": "web-image"}}
+        # build-gate also forwards the Web and bridge OCI images; recovery authenticates them but never restores them.
+        forwarded = {**refs, "web-image": {**refs["web-build"], "name": "web-image"},
+                     "bridge-image": {**refs["bridge-build"], "name": "bridge-image"}}
         needs["build-gate"]["outputs"]["artifacts"] = json.dumps(forwarded)
         return metadata, jobs, needs, refs
 
@@ -69,7 +70,7 @@ class RecoveryTests(unittest.TestCase):
                 broken[index][key] = value
                 with self.subTest(index=index, key=key), self.assertRaises(ValueError):
                     self.verify(metadata, broken, needs)
-        for name in ("ios-ipa", "web-image"):
+        for name in ("ios-ipa", "web-image", "bridge-image"):
             for key, value in (("run", "456"), ("attempt", "5"), ("attempt", "../4"), ("source", "d" * 40),
                                ("name", "../escape"), ("sha256", "bad")):
                 broken = deepcopy(needs)

@@ -17,7 +17,7 @@ from pathlib import Path
 
 from cli import REPOSITORY, ROOT, load, receipt, require_latest_predecessor, run_url, unused_release, write
 from plan import git
-from release_set import validate
+from release_set import BRIDGE_IMAGE, validate
 
 
 @contextlib.contextmanager
@@ -145,16 +145,48 @@ def web(plan, build, directory, output):
     tag = f"ghcr.io/maudecode/talaria-web:{component['tag']}"
     with timed("npm readback before GHCR"):
         npm_identity = verify_npm(component, build, directory)
-    with timed("GHCR image copy and readback"), tempfile.TemporaryDirectory(prefix="talaria-registry-auth-") as temporary:
+    publish_image(directory / "web.oci.tar", tag, image.split("@", 1)[1])
+    write(output, receipt("publishWeb", plan["releaseSet"], tag=component["tag"], image=image, npm=npm_identity))
+
+
+def _tag_digest(auth, tag):
+    """The manifest digest GHCR serves for ``tag``, or None when the tag does not exist."""
+    result = subprocess.run(["skopeo", "inspect", "--raw", "--authfile", auth, "docker://" + tag], capture_output=True)
+    if result.returncode == 0:
+        return "sha256:" + hashlib.sha256(result.stdout).hexdigest()
+    if b"manifest unknown" in result.stderr:
+        return None
+    raise ValueError(f"registry lookup failed for {tag}: {result.stderr.decode(errors='replace').strip()}")
+
+
+def publish_image(archive, tag, digest):
+    """Copy a built OCI archive to its immutable GHCR tag and require the tag to serve the built manifest digest.
+
+    A tag that already serves this digest is a finished earlier attempt, so a re-run copies nothing; a tag serving any
+    other manifest belongs to another build and fails."""
+    with timed(f"GHCR copy and readback of {tag}"), tempfile.TemporaryDirectory(prefix="talaria-registry-auth-") as temporary:
         auth = str(Path(temporary) / "auth.json")
         subprocess.run(["skopeo", "login", "--authfile", auth, "--username", os.environ["GITHUB_ACTOR"],
                         "--password-stdin", "ghcr.io"], input=os.environ["GH_TOKEN"], text=True, check=True)
-        subprocess.run(["skopeo", "copy", "--all", "--preserve-digests", "--authfile", auth,
-                        "oci-archive:" + str(directory / "web.oci.tar"), "docker://" + tag], check=True)
-        raw = subprocess.check_output(["skopeo", "inspect", "--raw", "--authfile", auth, "docker://" + image])
-        if "sha256:" + hashlib.sha256(raw).hexdigest() != image.split("@", 1)[1]:
-            raise ValueError("published Web manifest digest differs from the build")
-    write(output, receipt("publishWeb", plan["releaseSet"], tag=component["tag"], image=image, npm=npm_identity))
+        existing = _tag_digest(auth, tag)
+        if existing is None:
+            subprocess.run(["skopeo", "copy", "--all", "--preserve-digests", "--authfile", auth,
+                            "oci-archive:" + str(archive), "docker://" + tag], check=True)
+        elif existing != digest:
+            raise ValueError(f"{tag} already serves {existing}, not the built {digest}; image tags are immutable")
+        if _tag_digest(auth, tag) != digest:
+            raise ValueError(f"published {tag} manifest digest differs from the build")
+
+
+def bridge(plan, build, directory, output):
+    """Publish the Relay release's feedback bridge image after the Relay deployment."""
+    component = plan["components"]["relay"]
+    image = build.get("bridgeImage") or {}
+    if (build.get("result") != "success" or build.get("gate") != "buildBridge" or build.get("sourceRevision") != plan["releaseSet"]
+            or build.get("tag") != component["tag"] or image.get("ref") != f"{BRIDGE_IMAGE}:{component['version']}"):
+        raise ValueError("feedback bridge build receipt does not match the plan")
+    publish_image(directory / "bridge.oci.tar", image["ref"], image["digest"])
+    write(output, receipt("publishBridge", plan["releaseSet"], tag=component["tag"], bridgeImage=image))
 
 
 def _npm_integrity(path):
@@ -363,7 +395,7 @@ def finalize(plan, manifest, previous, artifacts):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("relay", "web-npm", "web", "build-app-receipt", "verify-app", "app", "finalize"))
+    parser.add_argument("operation", choices=("relay", "bridge", "web-npm", "web", "build-app-receipt", "verify-app", "app", "finalize"))
     parser.add_argument("--plan", type=Path, required=True)
     parser.add_argument("--build", type=Path)
     parser.add_argument("--directory", type=Path)
@@ -374,11 +406,13 @@ def main():
     args = parser.parse_args()
     plan = load(args.plan)
     authorize(plan)
-    component_name = {"relay": "relay", "web-npm": "web", "web": "web"}.get(args.operation, "app")
+    component_name = {"relay": "relay", "bridge": "relay", "web-npm": "web", "web": "web"}.get(args.operation, "app")
     if args.operation != "finalize" and not plan["changed"][component_name]:
         raise ValueError("unchanged components must not be republished")
     if args.operation == "relay":
         relay(plan, args.output)
+    elif args.operation == "bridge":
+        bridge(plan, load(args.build), args.directory, args.output)
     elif args.operation == "web-npm":
         print(web_npm(plan, load(args.build), args.directory))
     elif args.operation == "web":

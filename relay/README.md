@@ -97,17 +97,22 @@ redirects. A rerun resends the same report request ID and identical ticket input
 so a lost acknowledgement cannot create another ticket. Exit 0 means all
 reports in the fetched batch were delivered, or the queue was empty.
 
-The image is `ghcr.io/maudecode/talaria-feedback-bridge`, tagged `sha-<12-hex>`
-and `main`. Pull requests build and smoke-test it; bridge changes on main also
-publish it. The image runs as the non-root `node` user and adds Alpine's `ffmpeg`
-package, the pinned sharp install from `bridge/package-lock.json`, and the entry
-file. The image workflow also runs `bridge/smoke.ts` inside the built image,
-without network access, to prove real sharp and ffmpeg sanitization, including
-the synthetic 48 megapixel rotated, GPS-tagged HEIC in `bridge/fixtures/`.
+The image is `ghcr.io/maudecode/talaria-feedback-bridge`, tagged with the plain
+Relay version `X.Y.Z` of the `relay-vX.Y.Z` release that built it; the Relay
+release is its only publisher, and the release-set manifest records its digest
+(`releases/README.md`). Older `sha-<12-hex>` and `main` tags remain in the
+registry but no longer move. Pull requests and main pushes that touch the bridge
+build and check it without pushing. `bridge/build-image.sh`, used by both, builds
+a linux/amd64 OCI archive, loads those bytes and requires the non-root `node`
+user, exit 2 naming `RELAY_URL` when unconfigured, and `bridge/smoke.ts` passing
+inside the image without network access, which proves real sharp and ffmpeg
+sanitization, including the synthetic 48 megapixel rotated, GPS-tagged HEIC in
+`bridge/fixtures/`. The image adds Alpine's `ffmpeg` package, the pinned sharp
+install from `bridge/package-lock.json`, and the entry file.
 
 Deployment is separate. The intended in-cluster Kubernetes CronJob schedule is
 `*/2 * * * *` with `concurrencyPolicy: Forbid`, the five variables above supplied
-from cluster configuration/secrets, and a pinned SHA image. Kanvil remains
+from cluster configuration/secrets, and a pinned versioned image. Kanvil remains
 internal; only the bridge connects outbound to Relay. These source changes do
 not configure a deployment or enable Relay's feedback routes.
 

@@ -18,6 +18,9 @@ VALIDATOR = Draft202012Validator(SCHEMA)
 COMPONENTS = ("app", "web", "relay")
 COMMON_GATES = {"signedTags", "mainCI", "currentContracts", "previousAppContracts", "agentCompatibility"}
 PUBLISH_GATES = {"app": "uploadApp", "web": "publishWeb", "relay": "deployRelay"}
+# The Relay release also builds and publishes the feedback bridge image, tagged with Relay's plain version.
+BRIDGE_IMAGE = "ghcr.io/maudecode/talaria-feedback-bridge"
+BRIDGE_GATES = {"buildBridge", "publishBridge"}
 
 
 def require_version_advance(tag, prior_tag):
@@ -89,18 +92,23 @@ def validate(document, previous=None):
         gates[gate] = receipt
     required = COMMON_GATES | {f"build{name.title()}" for name in changed}
     relay = document["components"]["relay"]
+    publication = set(PUBLISH_GATES.values()) | {"publishBridge"}
+    if "relay" in changed:
+        required.add("buildBridge")
+        if relay.get("bridgeImage", {}).get("ref") != f"{BRIDGE_IMAGE}:{relay['version']}":
+            raise ValueError("changed Relay must record its feedback bridge image at the Relay version")
     if document["status"] == "complete":
-        required |= {PUBLISH_GATES[name] for name in changed}
+        required |= {PUBLISH_GATES[name] for name in changed} | ({"publishBridge"} if "relay" in changed else set())
         if relay["deployedRevision"] != relay["sourceRevision"]:
             raise ValueError("completed Relay must identify the deployed source revision")
     else:
-        if set(gates) & set(PUBLISH_GATES.values()):
+        if set(gates) & publication:
             raise ValueError("dry-run candidates cannot contain publication evidence")
         if "relay" in changed and relay["deployedRevision"] is not None:
             raise ValueError("dry-run candidate cannot claim a new Relay deployment")
     if missing := required - gates.keys():
         raise ValueError(f"missing successful gates: {', '.join(sorted(missing))}")
-    if set(gates) & set(PUBLISH_GATES.values()) - required:
+    if set(gates) & (publication | BRIDGE_GATES) - required:
         raise ValueError("unchanged components cannot be republished")
     combined = "\n\n".join(f"## {name.title()}\n\n{document['notes'][name].strip()}" for name in COMPONENTS)
     if document["notes"]["combined"] != combined:

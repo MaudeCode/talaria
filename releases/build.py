@@ -12,6 +12,7 @@ from pathlib import Path
 
 from cli import ROOT, load, receipt, run_url, write
 from plan import VERSION, git
+from release_set import BRIDGE_IMAGE
 from smoke_npm import smoke
 
 CONTRACTS = "@maudecode/talaria-web-contracts"
@@ -71,9 +72,18 @@ def bundled_peers(package):
     return sorted(peers - seen)
 
 
+def image_digest(metadata):
+    """The manifest digest Buildx recorded for the OCI archive it wrote."""
+    digest = load(metadata).get("containerimage.digest", "")
+    if not re.fullmatch(r"sha256:[a-f0-9]{64}", digest):
+        raise ValueError("container builder did not return an immutable manifest digest")
+    return digest
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("component", choices=("app", "web", "relay"))
+    parser.add_argument("component", choices=("app", "web", "relay", "bridge"),
+                        help="bridge: the Relay release's feedback bridge image")
     parser.add_argument("--plan", type=Path)
     parser.add_argument("--experimental", action="store_true",
                         help="Web only: pack the npm package for the Experimental channel from HEAD, without a plan or Docker image.")
@@ -89,18 +99,27 @@ def main():
         if not args.plan:
             parser.error("--plan is required")
         plan = load(args.plan)
-        if not plan["changed"][name] or git(ROOT, "rev-parse", "HEAD") != plan["releaseSet"]:
+        # The bridge ships with Relay: it builds from the Relay release's tag and version.
+        planned = "relay" if name == "bridge" else name
+        if not plan["changed"][planned] or git(ROOT, "rev-parse", "HEAD") != plan["releaseSet"]:
             raise ValueError("build requires a changed component at the release-set source")
-        component = plan["components"][name]
+        component = plan["components"][planned]
     workflow = os.environ.get("GITHUB_ACTIONS") == "true" and not experimental
     if workflow:
         run_url()
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=False)
+    labels = ["--label", "org.opencontainers.image.revision=" + component["sourceRevision"],
+              "--label", "org.opencontainers.image.version=" + component["version"]]
     stamp = ["python3", str(ROOT / "scripts/stamp-release.py"), name, "--version", component["version"],
              "--source-revision", component["sourceRevision"]]
     values = {"tag": component["tag"]}
-    if name == "relay":
+    if name == "bridge":
+        # Plain X.Y.Z, so registry consumers order tags as SemVer; the archive holds exactly the checked bytes.
+        ref = f"{BRIDGE_IMAGE}:{component['version']}"
+        subprocess.run([str(ROOT / "relay/bridge/build-image.sh"), ref, str(output), *labels], check=True)
+        values["bridgeImage"] = {"ref": ref, "digest": image_digest(output / "image-metadata.json")}
+    elif name == "relay":
         subprocess.run(["pnpm", "install", "--frozen-lockfile"], cwd=ROOT / "relay", check=True)
         subprocess.run(["pnpm", "check"], cwd=ROOT / "relay", check=True)
         subprocess.run([*stamp, "--deployment-id", component["deploymentId"]], cwd=ROOT, check=True)
@@ -164,15 +183,10 @@ def main():
             "--tag", f"ghcr.io/maudecode/talaria-web:{component['tag']}",
             "--build-arg", "HERMES_VERSION=" + component["tag"],
             "--build-arg", "TALARIA_PROVENANCE=" + json.dumps(provenance, separators=(",", ":")),
-            "--label", "org.opencontainers.image.revision=" + component["sourceRevision"],
-            "--label", "org.opencontainers.image.version=" + component["version"],
-            *cache_args,
+            *labels, *cache_args,
             "--output", f"type=oci,dest={output / 'web.oci.tar'}", "--metadata-file", str(metadata), str(ROOT / "web"),
         ], check=True)
-        digest = load(metadata).get("containerimage.digest", "")
-        if not re.fullmatch(r"sha256:[a-f0-9]{64}", digest):
-            raise ValueError("container builder did not return an immutable manifest digest")
-        values["image"] = "ghcr.io/maudecode/talaria-web@" + digest
+        values["image"] = "ghcr.io/maudecode/talaria-web@" + image_digest(metadata)
     else:
         if not plan["dryRun"]:
             raise ValueError("production App builds use the isolated signing workflow")

@@ -80,7 +80,7 @@ jobs:
           set -euo pipefail
           paths=()
           # The IPA and dSYMs were consumed above; finalization reads only these receipt handoffs.
-          for name in release-plan contract-receipts previous-app-receipts agent-receipts relay-build web-build app-build relay-publish web-publish app-publish; do
+          for name in release-plan contract-receipts previous-app-receipts agent-receipts relay-build bridge-build web-build app-build relay-publish bridge-publish web-publish app-publish; do
             paths+=("$name" "$RUNNER_TEMP/recovered/$name")
           done
           "$RELEASE_PYTHON" releases/artifacts.py put "${paths[@]}"

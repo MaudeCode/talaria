@@ -257,7 +257,7 @@ class PublicationTests(unittest.TestCase):
             self.assertEqual(set(re.findall(r"secrets\.([A-Z0-9_]+)", json.dumps(job))), secrets.get(name, set()))
             permissions = job.get("permissions", document["permissions"])
             self.assertEqual(permissions.get("contents"), "write" if name == "publish-set" else "read")
-            self.assertEqual(permissions.get("packages"), "write" if name == "web-publish" else None)
+            self.assertEqual(permissions.get("packages"), "write" if name in ("web-publish", "bridge-publish") else None)
             self.assertEqual(permissions.get("id-token"), "write" if name == "web-publish" else None)
         jobs = document["jobs"]
         # The alternate dry/signed App build is deliberately skipped. Publication
@@ -283,7 +283,9 @@ class PublicationTests(unittest.TestCase):
         self.assertNotIn("web-publish", jobs["app-publish"]["needs"])
         self.assertIn("relay-publish", jobs["app-publish"]["needs"])
         self.assertEqual(set(jobs["publish-set"]["needs"]), {
-            "prepare", "build-gate", "relay-publish", "web-publish", "app-publish"})
+            "prepare", "build-gate", "relay-publish", "bridge-publish", "web-publish", "app-publish"})
+        bridge = next(step["run"] for step in jobs["bridge-publish"]["steps"] if "publish.py\" bridge" in step.get("run", ""))
+        self.assertIn("${GITHUB_WORKFLOW_SHA}:releases/publish.py", bridge)
         self.assertTrue(any("check_results.py publication" in step.get("run", "")
                             for step in jobs["publish-set"]["steps"]))
         for job in (jobs["publish-set"], workflow("recover-cutover.yml")["jobs"]["publish-set"]):
@@ -403,7 +405,7 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual(len(node), 1, 'the Agent gate must provision Node for its selected server build')
         self.assertEqual(node[0][1]['with']['node-version-file'], 'web/.nvmrc')
         self.assertLess(node[0][0], next(index for index, step in enumerate(agent_steps) if 'check-release-agent.py' in step.get('run', '')))
-        builds = ("relay-build", "web-build", "app-dry-build", "app-signed-build")
+        builds = ("relay-build", "bridge-build", "web-build", "app-dry-build", "app-signed-build")
         # Every gate and build starts once prepare has the plan; both App contract gates share the contracts runner
         # (TAL-414). The Agent join waits for its release jobs, and the hosted tests for their lookup (TAL-1550).
         joins = {"agent": ["prepare", "agent-release"], "app-hosted-tests": ["prepare", "app-hosted-tests-lookup"]}
@@ -471,6 +473,15 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual(set(jobs["relay-publish"]["needs"]), {"prepare", "build-gate"})
         self.assertEqual(set(jobs["web-publish"]["needs"]), {"prepare", "build-gate", "relay-publish"})
         self.assertEqual(set(jobs["app-publish"]["needs"]), {"prepare", "build-gate", "relay-publish"})
+        # The bridge image builds in its own job beside relay-build and publishes after the Relay deployment, beside
+        # Web and the App, only for a changed Relay (TAL-1638).
+        self.assertEqual(jobs["bridge-build"]["if"], "needs.prepare.outputs.relay_changed == 'true'")
+        self.assertFalse([step for step in jobs["relay-build"]["steps"] if "bridge" in json.dumps(step)])
+        self.assertEqual(set(jobs["bridge-publish"]["needs"]), {"prepare", "build-gate", "relay-publish", "bridge-build"})
+        bridge_condition = " ".join(jobs["bridge-publish"]["if"].split())
+        for required in ("!cancelled()", "!inputs.dry_run", "needs.prepare.outputs.relay_changed == 'true'",
+                         "needs.build-gate.result == 'success'", "needs.relay-publish.result == 'success'"):
+            self.assertIn(required, bridge_condition)
         relay_done = ("(needs.relay-publish.result == 'success' || (needs.prepare.outputs.relay_changed == 'false' "
                       "&& needs.relay-publish.result == 'skipped'))")
         for name in ("relay-publish", "web-publish", "app-publish", "publish-set"):
@@ -481,7 +492,8 @@ class PublicationTests(unittest.TestCase):
                 self.assertIn("!inputs.dry_run", condition)
                 if name in ("web-publish", "app-publish"):
                     self.assertIn(relay_done, condition)
-        self.assertEqual(set(jobs["publish-set"]["needs"]), {"prepare", "build-gate", "relay-publish", "web-publish", "app-publish"})
+        self.assertEqual(set(jobs["publish-set"]["needs"]),
+                         {"prepare", "build-gate", "relay-publish", "bridge-publish", "web-publish", "app-publish"})
         # Measurement only: the timeline job reads the run after everything else and holds no credentials.
         timeline = jobs["timeline"]
         self.assertEqual((set(timeline["needs"]), timeline["if"], timeline["permissions"]),
@@ -541,7 +553,8 @@ class PublicationTests(unittest.TestCase):
                     for name, changed in zip(("app", "web", "relay"), (app, web, relay_changed))
                 }
                 jobs = []
-                for name, changed in zip(("app", "web", "relay"), (app, web, relay_changed)):
+                # The bridge image builds and publishes exactly when Relay does.
+                for name, changed in zip(("app", "web", "relay", "bridge"), (app, web, relay_changed, relay_changed)):
                     job = name + "-publish" if stage == "publication" else (
                         ("app-dry-build" if dry else "app-signed-build") if name == "app" else name + "-build")
                     jobs.append(job)
@@ -574,7 +587,7 @@ class PublicationTests(unittest.TestCase):
         base = {name: {"result": "success"} for name in ("prepare", "contracts", "component-contracts",
                                                           "agent-release", "agent", "app-dry-build")}
         base["prepare"]["outputs"] = {"app_changed": "true", "web_changed": "false", "relay_changed": "false"}
-        base.update({name: {"result": "skipped"} for name in ("relay-build", "web-build", "app-signed-build")})
+        base.update({name: {"result": "skipped"} for name in ("relay-build", "bridge-build", "web-build", "app-signed-build")})
         reused = {**base, "app-hosted-tests-lookup": {"result": "success", "outputs": {"reused": "true", "job_url": url}},
                   "app-hosted-tests": {"result": "skipped"}}
         fallback = {**base, "app-hosted-tests-lookup": {"result": "success", "outputs": {"reused": "false", "job_url": ""}},
@@ -614,7 +627,7 @@ class PublicationTests(unittest.TestCase):
         # Each supported Agent release runs in its own agent-release job; agent writes the one agentCompatibility
         # receipt only after they all passed and covered exactly the supported releases (TAL-1550).
         needs = {name: {"result": "success"} for name in ("prepare", "contracts", "component-contracts", "agent-release",
-                                                          "agent", "relay-build", "app-dry-build")}
+                                                          "agent", "relay-build", "bridge-build", "app-dry-build")}
         needs["prepare"]["outputs"] = {"app_changed": "false", "web_changed": "false", "relay_changed": "true"}
         needs.update({name: {"result": "skipped"} for name in ("web-build", "app-signed-build", "app-dry-build",
                                                                "app-hosted-tests-lookup", "app-hosted-tests")})
@@ -730,6 +743,12 @@ class PublicationTests(unittest.TestCase):
             self.assertEqual(json.loads((root / "receipts/currentContracts.json").read_text()), {"gate": "currentContracts"})
             with self.assertRaises(FileExistsError):
                 collect(root / "artifacts", root / "receipts")
+            for bucket, gate in (("bridge-build", "buildBridge"), ("bridge-publish", "publishBridge")):
+                (root / "artifacts" / bucket).mkdir()
+                (root / "artifacts" / bucket / "receipt.json").write_text(json.dumps({"gate": gate}))
+            collect(root / "artifacts", root / "bridge")
+            self.assertEqual({path.name for path in (root / "bridge").iterdir()},
+                             {"currentContracts.json", "buildBridge.json", "publishBridge.json"})
             first.write_text(json.dumps({"gate": "not-a-gate"}))
             with self.assertRaises(ValueError):
                 collect(root / "artifacts", root / "other")
@@ -760,6 +779,94 @@ class PublicationTests(unittest.TestCase):
                     publish.web(plan, build, root, root / "out.json")
             self.assertFalse([args for args in commands if args[0] == "skopeo"])
             write.assert_not_called()
+
+    def fake_skopeo(self, registry, pushed):
+        """skopeo against an in-memory registry of tag -> manifest bytes; `copy` stores ``pushed`` under its tag."""
+        commands = []
+
+        def run(args, **kwargs):
+            commands.append(args)
+            self.assertEqual(args[0], "skopeo")
+            if args[1] == "login":
+                self.assertEqual((kwargs["input"], args[args.index("--username") + 1]), ("t", "bot"))
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+            tag = args[-1].removeprefix("docker://")
+            if args[1] == "copy":
+                self.assertEqual(args[2:4], ["--all", "--preserve-digests"])
+                registry[tag] = pushed
+                return SimpleNamespace(returncode=0)
+            if args[1:3] == ["inspect", "--raw"]:
+                if tag in registry:
+                    return SimpleNamespace(returncode=0, stdout=registry[tag], stderr=b"")
+                return SimpleNamespace(returncode=1, stdout=b"", stderr=b"reading manifest: manifest unknown")
+            self.fail("unexpected command " + " ".join(args))
+        return commands, run
+
+    def test_bridge_publication_pushes_the_built_digest_to_an_immutable_version_tag(self):
+        """The release is the only publisher of the bridge image: X.Y.Z from relay-vX.Y.Z, read back at the built digest.
+        A re-run over the same digest copies nothing; a tag serving another manifest is never overwritten."""
+        manifest = b'{"synthetic": "bridge manifest"}'
+        digest = "sha256:" + hashlib.sha256(manifest).hexdigest()
+        ref = "ghcr.io/maudecode/talaria-feedback-bridge:3.0.0"
+        plan = {"releaseSet": "a" * 40, "changed": {"relay": True},
+                "components": {"relay": {"version": "3.0.0", "tag": "relay-v3.0.0"}}}
+        build = {"result": "success", "gate": "buildBridge", "sourceRevision": "a" * 40, "tag": "relay-v3.0.0",
+                 "bridgeImage": {"ref": ref, "digest": digest}}
+        cases = (("new tag", {}, manifest, True, None),
+                 ("re-run", {ref: manifest}, manifest, False, None),
+                 ("other digest", {ref: b'{"other": "build"}'}, manifest, False, "already serves"),
+                 ("readback differs", {}, b'{"lost": "write"}', True, "differs from the build"))
+        for label, registry, pushed, copies, error in cases:
+            with self.subTest(label), TemporaryDirectory() as temporary, \
+                    patch.dict(os.environ, {"GITHUB_ACTOR": "bot", "GH_TOKEN": "t"}), patch("publish.write") as write:
+                root = Path(temporary)
+                commands, run = self.fake_skopeo(dict(registry), pushed)
+                with patch("publish.subprocess.run", side_effect=run), patch("publish.receipt", side_effect=lambda gate, source, **values: {"gate": gate, **values}):
+                    if error:
+                        with self.assertRaisesRegex(ValueError, error):
+                            publish.bridge(plan, build, root, root / "out.json")
+                        write.assert_not_called()
+                    else:
+                        publish.bridge(plan, build, root, root / "out.json")
+                        write.assert_called_once_with(root / "out.json", {"gate": "publishBridge", "tag": "relay-v3.0.0",
+                                                                          "bridgeImage": {"ref": ref, "digest": digest}})
+                self.assertEqual([args[-2:] for args in commands if args[1] == "copy"],
+                                 [["oci-archive:" + str(root / "bridge.oci.tar"), "docker://" + ref]] if copies else [])
+        # The build receipt must name the plan's Relay version; registry errors are never read as a missing tag.
+        for change in ({"bridgeImage": {"ref": "ghcr.io/maudecode/talaria-feedback-bridge:2.0.0", "digest": digest}},
+                       {"gate": "buildRelay"}, {"tag": "relay-v2.0.0"}, {"sourceRevision": "b" * 40}):
+            with self.subTest(change=change), patch("publish.subprocess.run") as run, self.assertRaisesRegex(ValueError, "does not match"):
+                publish.bridge(plan, {**build, **change}, Path("/nonexistent"), Path("/nonexistent/out.json"))
+            run.assert_not_called()
+        with patch.dict(os.environ, {"GITHUB_ACTOR": "bot", "GH_TOKEN": "t"}), patch("publish.subprocess.run",
+                side_effect=lambda args, **kwargs: SimpleNamespace(returncode=1, stdout=b"", stderr=b"unauthorized") if args[1] == "inspect"
+                else SimpleNamespace(returncode=0)), self.assertRaisesRegex(ValueError, "registry lookup failed"):
+            publish.publish_image(Path("/nonexistent/bridge.oci.tar"), ref, digest)
+
+    def test_web_image_publication_shares_the_immutable_tag_helper(self):
+        """Web's GHCR tag goes through the same helper: an existing web-vX.Y.Z tag serving another build is refused."""
+        manifest = b'{"synthetic": "web index"}'
+        digest = "sha256:" + hashlib.sha256(manifest).hexdigest()
+        tag = "ghcr.io/maudecode/talaria-web:web-v1.0.0"
+        plan = {"releaseSet": "a" * 40, "components": {"web": {"version": "1.0.0", "tag": "web-v1.0.0"}}}
+        build = {"result": "success", "gate": "buildWeb", "sourceRevision": "a" * 40, "tag": "web-v1.0.0",
+                 "image": "ghcr.io/maudecode/talaria-web@" + digest, "npm": "@maudecode/talaria-web@1.0.0"}
+        for label, registry, error in (("new tag", {}, None), ("other build", {tag: b'{"other": "index"}'}, "already serves")):
+            with self.subTest(label), TemporaryDirectory() as temporary, \
+                    patch.dict(os.environ, {"GITHUB_ACTOR": "bot", "GH_TOKEN": "t"}), patch("publish.write") as write, \
+                    patch("publish.verify_npm", return_value=build["npm"]):
+                root = Path(temporary)
+                commands, run = self.fake_skopeo(dict(registry), manifest)
+                with patch("publish.subprocess.run", side_effect=run), patch("publish.receipt", return_value={}):
+                    if error:
+                        with self.assertRaisesRegex(ValueError, error):
+                            publish.web(plan, build, root, root / "out.json")
+                        write.assert_not_called()
+                    else:
+                        publish.web(plan, build, root, root / "out.json")
+                        write.assert_called_once()
+                self.assertEqual([args[-2:] for args in commands if args[1] == "copy"],
+                                 [] if error else [["oci-archive:" + str(root / "web.oci.tar"), "docker://" + tag]])
 
     def test_npm_publication_verifies_existing_versions_and_applies_the_channel_tag(self):
         """An already-published version is accepted only with identical bytes, and the channel dist-tag is always applied."""

@@ -14,6 +14,9 @@ from jsonschema import ValidationError
 
 from release_set import COMMON_GATES, COMPONENTS, PUBLISH_GATES, validate
 
+# The image the Relay release publishes; spelled out so the tests pin the registry contract independently.
+BRIDGE_IMAGE = "ghcr.io/maudecode/talaria-feedback-bridge"
+
 
 def candidate(sha="a" * 40):
     components = {
@@ -22,10 +25,11 @@ def candidate(sha="a" * 40):
     }
     components["app"]["buildNumber"] = 1
     components["web"].update(image="ghcr.io/maudecode/talaria-web@sha256:" + "b" * 64, npm="@maudecode/talaria-web@2.0.0")
-    components["relay"].update(deploymentId="synthetic-relay", deployedRevision=None)
+    components["relay"].update(deploymentId="synthetic-relay", deployedRevision=None,
+                               bridgeImage={"ref": f"{BRIDGE_IMAGE}:3.0.0", "digest": "sha256:" + "c" * 64})
     notes = {name: f"{name} release notes" for name in COMPONENTS}
     notes["combined"] = "\n\n".join(f"## {name.title()}\n\n{notes[name]}" for name in COMPONENTS)
-    gates = COMMON_GATES | {f"build{name.title()}" for name in COMPONENTS}
+    gates = COMMON_GATES | {f"build{name.title()}" for name in COMPONENTS} | {"buildBridge"}
     return {
         "schemaVersion": 1, "releaseSet": sha, "status": "candidate", "previousReleaseSet": None,
         "components": components, "agent": {"releaseTag": "v2026.9.21", "version": "0.21.4", "sourceRevision": "d" * 40},
@@ -45,7 +49,7 @@ def receipt(gate, sha):
 def complete(document):
     document["status"] = "complete"
     document["components"]["relay"]["deployedRevision"] = document["components"]["relay"]["sourceRevision"]
-    document["evidence"].extend(receipt(gate, document["releaseSet"]) for gate in PUBLISH_GATES.values())
+    document["evidence"].extend(receipt(gate, document["releaseSet"]) for gate in [*PUBLISH_GATES.values(), "publishBridge"])
     return document
 
 
@@ -124,6 +128,13 @@ class ReleaseSetTests(unittest.TestCase):
             lambda d: d["components"]["web"].update(image=d["components"]["web"]["image"] + "\n"),
             lambda d: d["components"]["app"].update(tag="app-v1.0.0\n", version="1.0.0\n"),
             lambda d: d["evidence"][0].update(runUrl=d["evidence"][0]["runUrl"] + "\n"),
+            lambda d: d["components"]["relay"].pop("bridgeImage"),
+            lambda d: d["components"]["relay"]["bridgeImage"].update(ref=f"{BRIDGE_IMAGE}:2.0.0"),
+            lambda d: d["components"]["relay"]["bridgeImage"].update(ref=f"{BRIDGE_IMAGE}:sha-0123456789ab"),
+            lambda d: d["components"]["relay"]["bridgeImage"].update(ref="ghcr.io/maudecode/talaria-web:3.0.0"),
+            lambda d: d["components"]["relay"]["bridgeImage"].update(digest="sha256:short"),
+            lambda d: d["components"]["relay"]["bridgeImage"].pop("digest"),
+            lambda d: d.update(evidence=[r for r in d["evidence"] if r["gate"] != "buildBridge"]),
         ]
         for change in changes:
             with self.subTest(change=change):
@@ -133,9 +144,14 @@ class ReleaseSetTests(unittest.TestCase):
                     validate(document)
 
     def test_candidate_cannot_claim_publication_or_be_promoted_without_receipts(self):
-        document = candidate()
-        document["evidence"].append(receipt("publishWeb", document["releaseSet"]))
-        with self.assertRaisesRegex(ValueError, "cannot contain publication"):
+        for gate in ("publishWeb", "publishBridge"):
+            document = candidate()
+            document["evidence"].append(receipt(gate, document["releaseSet"]))
+            with self.subTest(gate=gate), self.assertRaisesRegex(ValueError, "cannot contain publication"):
+                validate(document)
+        document = complete(candidate())
+        document["evidence"] = [r for r in document["evidence"] if r["gate"] != "publishBridge"]
+        with self.assertRaisesRegex(ValueError, "missing successful gates: publishBridge"):
             validate(document)
         document = candidate()
         document["components"]["relay"]["deployedRevision"] = document["releaseSet"]
@@ -156,8 +172,16 @@ class ReleaseSetTests(unittest.TestCase):
         for name in ("app", "relay"):
             document["components"][name] = deepcopy(previous["components"][name])
         document["components"]["web"].update(tag="web-v2.1.0", version="2.1.0")
-        document["evidence"] = [r for r in document["evidence"] if r["gate"] not in ("buildApp", "buildRelay")]
+        document["evidence"] = [r for r in document["evidence"] if r["gate"] not in ("buildApp", "buildRelay", "buildBridge")]
         self.assertEqual(validate(document, previous), ["web"])
+        # The bridge image ships only with a changed Relay.
+        for gate in ("buildBridge", "publishBridge"):
+            republished = complete(deepcopy(document))
+            republished["components"]["relay"] = deepcopy(previous["components"]["relay"])
+            republished["evidence"] = [r for r in republished["evidence"] if r["gate"] not in ("deployRelay", "uploadApp", "publishBridge")]
+            republished["evidence"].append(receipt(gate, document["releaseSet"]))
+            with self.subTest(gate=gate), self.assertRaisesRegex(ValueError, "cannot be republished"):
+                validate(republished, previous)
         with self.assertRaisesRegex(ValueError, "previous release manifest"):
             validate(document)
         for field in ("buildNumber", "version"):
@@ -199,6 +223,7 @@ class ReleaseSetTests(unittest.TestCase):
             version[-1] = str(int(version[-1]) + 1)
             version = ".".join(version)
             document["components"][name].update(tag=f"{name}-v{version}", version=version)
+        document["components"]["relay"]["bridgeImage"]["ref"] = f"{BRIDGE_IMAGE}:{document['components']['relay']['version']}"
         document["contracts"]["webRelay"] = {"web": [3], "relay": [3]}
         with self.assertRaisesRegex(ValueError, "previous Web"):
             validate(document, previous)

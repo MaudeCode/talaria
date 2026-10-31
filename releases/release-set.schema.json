@@ -43,7 +43,17 @@
           "properties": {
             "tag": {"pattern": "^relay-v"},
             "deploymentId": {"type": "string", "pattern": "^[a-z][a-z0-9-]+(?![\\s\\S])"},
-            "deployedRevision": {"anyOf": [{"$ref": "#/$defs/sha"}, {"type": "null"}]}
+            "deployedRevision": {"anyOf": [{"$ref": "#/$defs/sha"}, {"type": "null"}]},
+            "bridgeImage": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["ref", "digest"],
+              "description": "The feedback bridge image this Relay release built and published; absent from sets published before TAL-1638.",
+              "properties": {
+                "ref": {"type": "string", "pattern": "^ghcr\\.io/maudecode/talaria-feedback-bridge:(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"},
+                "digest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}(?![\\s\\S])"}
+              }
+            }
           }
         }
       }
@@ -87,7 +97,7 @@
         "additionalProperties": false,
         "required": ["gate", "sourceRevision", "runUrl", "result"],
         "properties": {
-          "gate": {"enum": ["signedTags", "mainCI", "buildApp", "buildWeb", "buildRelay", "currentContracts", "previousAppContracts", "agentCompatibility", "deployRelay", "publishWeb", "uploadApp"]},
+          "gate": {"enum": ["signedTags", "mainCI", "buildApp", "buildWeb", "buildRelay", "currentContracts", "previousAppContracts", "agentCompatibility", "deployRelay", "publishWeb", "uploadApp", "buildBridge", "publishBridge"]},
           "sourceRevision": {"$ref": "#/$defs/sha"},
           "runUrl": {"type": "string", "pattern": "^https://github\\.com/MaudeCode/talaria/actions/runs/[1-9][0-9]*(/attempts/[1-9][0-9]*)?(?![\\s\\S])"},
           "result": {"const": "success"}
