@@ -13,6 +13,13 @@
 :root[data-chat-width="wide"] { --msg-max: 1152px; }
 :root[data-chat-width="full"] { --msg-max: 100%; }
 
+/* Code tokens carry Shiki's github-light color in `--sdm-c` and github-dark in `--shiki-dark` (MarkdownRenderer's
+   SHIKI_THEMES). The app's .dark class picks one, not the OS scheme; each skin keeps its own code background. */
+@layer app {
+  [data-streamdown="code-block-body"] code > span > span { color: var(--sdm-c, inherit); }
+  :root.dark [data-streamdown="code-block-body"] code > span > span { color: var(--shiki-dark, var(--sdm-c, inherit)); }
+}
+
 /* Skin traits: the two structural variants a skin can opt into (SkinSpec.traits). Everything else a skin
    changes is a token value. */
 @layer app {

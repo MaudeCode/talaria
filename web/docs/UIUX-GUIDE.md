@@ -152,7 +152,9 @@ its own prose size or spacing scale.
 
 Code and tables are quoted content inside prose, not cards competing with it. A
 chat code block keeps its size on `--message-pre-code-font-size` and keeps
-syntax highlighting, the Copy button, and horizontal scrolling.
+syntax highlighting, the Copy button, and horizontal scrolling. Token colors follow
+the app's light or dark theme on the skin's own code background. Code blocks show
+no line numbers, labeled or not.
 
 An ordinary markdown table is a reading table: row separators only, no cell
 grid, no header fill, no zebra rows. A wide table scrolls inside the reading

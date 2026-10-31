@@ -7,8 +7,7 @@ import { highlightCode, highlighterLoaded, loadHighlighter, subscribeHighlighter
 export const ACTIONS = 'pointer-events-none sticky top-2 z-10 -mt-10 flex h-8 items-center justify-end'
 export const ACTION_BAR = 'pointer-events-auto flex shrink-0 items-center gap-2 rounded-md border border-sidebar bg-sidebar/80 px-1.5 py-1 supports-[backdrop-filter]:bg-sidebar/70 supports-[backdrop-filter]:backdrop-blur'
 export const BODY = 'overflow-x-auto rounded-md border border-border bg-background p-4 text-sm'
-// Tokens carry Streamdown's color properties (`--sdm-c`, `--shiki-dark`), with no color or line-number
-// utilities: those come from Streamdown's dist, which Tailwind does not scan, so the current look stays unchanged (TAL-1513).
+// Tokens carry Streamdown's color properties (`--sdm-c`, `--shiki-dark`); src/theme/theme.css turns them into colors.
 
 /** Shiki's root style string (`color:…;--shiki-dark:…`) as React style entries. */
 function rootStyle(result: TokensResult): CSSProperties {
