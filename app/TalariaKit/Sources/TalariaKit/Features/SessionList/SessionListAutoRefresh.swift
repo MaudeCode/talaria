@@ -73,33 +73,65 @@ extension SessionListAutoRefresh {
     /// is only the fallback for a dropped events stream: one read per streaming row per interval.
     static let activeRowInterval = Duration.seconds(10)
 
+    /// Whether the list's rows are on screen, for both polling loops: a shown sidebar column (only a tiled layout has
+    /// one), an open drawer or overlay sidebar, or a destination that shows the list's own rows. Every other root, the
+    /// empty chat included, covers it.
+    public static func isListVisible(
+        sidebar: SidebarPresentation,
+        drawerIsPresented: Bool,
+        destination: SessionNavigationDestination?
+    ) -> Bool {
+        sidebar.showsColumn
+            || drawerIsPresented
+            || destination?.showsSessionListRows == true
+    }
+
     /// `.task(id:)` for the active-row monitor: the list's streaming rows and what gates asking about them.
     public struct ActiveRowTaskID: Hashable {
         public var streamIDs: [String]
         public var hasActiveRows: Bool
         public var isViewingCachedData: Bool
         public var isEventStreamLive: Bool
+        public var isListVisible: Bool
+        public var isSceneActive: Bool
 
-        public init(streamIDs: [String], hasActiveRows: Bool, isViewingCachedData: Bool, isEventStreamLive: Bool) {
+        public init(
+            streamIDs: [String],
+            hasActiveRows: Bool,
+            isViewingCachedData: Bool,
+            isEventStreamLive: Bool,
+            isListVisible: Bool,
+            isSceneActive: Bool
+        ) {
             self.streamIDs = streamIDs
             self.hasActiveRows = hasActiveRows
             self.isViewingCachedData = isViewingCachedData
             self.isEventStreamLive = isEventStreamLive
+            self.isListVisible = isListVisible
+            self.isSceneActive = isSceneActive
         }
 
-        /// A live events stream suspends the monitor; its end changes the id and restarts it.
-        public var isEnabled: Bool { hasActiveRows && !isViewingCachedData && !isEventStreamLive }
+        /// A live events stream suspends the monitor; its end changes the id and restarts it. The open chat follows
+        /// its own run, so a hidden list or an inactive app asks nothing (TAL-840).
+        public var isEnabled: Bool {
+            hasActiveRows && !isViewingCachedData && !isEventStreamLive && isOnScreen
+        }
+
+        var isOnScreen: Bool { isListVisible && isSceneActive }
     }
 
-    /// Asks after the streaming rows every `activeRowInterval` while `taskID` is enabled.
+    /// Asks after the streaming rows every `activeRowInterval` while `taskID` is enabled. A run can end while the list
+    /// is hidden or the app inactive, so coming back from either checks once before the first wait.
     @MainActor
     public static func monitorActiveRows(
         _ taskID: ActiveRowTaskID,
+        resumingFrom previous: ActiveRowTaskID? = nil,
         check: () async -> Void,
         sleep: (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) async {
         guard taskID.isEnabled else { return }
-        await run(refreshesImmediately: false, interval: activeRowInterval, refresh: check, sleep: sleep)
+        let returnsOnScreen = previous.map { !$0.isOnScreen } ?? false
+        await run(refreshesImmediately: returnsOnScreen, interval: activeRowInterval, refresh: check, sleep: sleep)
     }
 }
 

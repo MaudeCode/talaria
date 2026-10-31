@@ -45,6 +45,8 @@ struct SessionListView: View {
     @State private var conversationRootHasAppeared = false
     @State private var isPresentingSettings = false
     @State private var isSessionEventStreamLive = false
+    /// The monitor id the last run started with, so a restart can tell the list just came back on screen.
+    @State private var lastActiveSessionMonitorTaskID: SessionListAutoRefresh.ActiveRowTaskID?
     @State private var settingsPath: [SettingsPane] = []
     @State private var pendingSettingsPath: [SettingsPane]?
     @State private var reopensSidebarAfterModal = false
@@ -404,7 +406,9 @@ struct SessionListView: View {
             }
             .task(id: activeSessionMonitorTaskID) {
                 let taskID = activeSessionMonitorTaskID
-                await SessionListAutoRefresh.monitorActiveRows(taskID) {
+                let previous = lastActiveSessionMonitorTaskID
+                lastActiveSessionMonitorTaskID = taskID
+                await SessionListAutoRefresh.monitorActiveRows(taskID, resumingFrom: previous) {
                     let refreshResult = await viewModel.refreshActiveSessionStatesIfNeeded(
                         streamIDs: taskID.streamIDs,
                         modelContext: modelContext
@@ -1713,11 +1717,16 @@ struct SessionListView: View {
         SessionListAutoRefresh.TaskID(
             server: server,
             isSceneActive: scenePhase == .active,
-            // Compact width refreshes the conversation list while its drawer is open.
-            isListVisible: horizontalSizeClass == .regular
-                || appSidebar.isPresented
-                || navigationState.destination == nil
-                || navigationState.destination?.showsSessionListRows == true
+            isListVisible: isSessionListVisible
+        )
+    }
+
+    /// One answer for both polling loops, so they agree on when the list is on screen.
+    private var isSessionListVisible: Bool {
+        SessionListAutoRefresh.isListVisible(
+            sidebar: sidebarPresentation,
+            drawerIsPresented: appSidebar.isPresented,
+            destination: navigationState.destination
         )
     }
 
@@ -1811,7 +1820,9 @@ struct SessionListView: View {
             streamIDs: SessionListViewModel.activeStreamIDs(in: activeSessions),
             hasActiveRows: !activeSessions.isEmpty,
             isViewingCachedData: viewModel.isViewingCachedData,
-            isEventStreamLive: isSessionEventStreamLive
+            isEventStreamLive: isSessionEventStreamLive,
+            isListVisible: isSessionListVisible,
+            isSceneActive: scenePhase == .active
         )
     }
 
