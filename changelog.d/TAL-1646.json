@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Relay release builds install the feedback bridge's dependencies before checking it.",
+      "highlight": false,
+      "components": ["relay"]
+    }
+  ]
+}
