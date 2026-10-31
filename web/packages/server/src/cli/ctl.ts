@@ -38,6 +38,9 @@ function hostTool(env: Record<string, string | undefined>, cmd: string, args: st
   return spawnSync(cmd, args, { encoding: 'utf8', env, timeout: HOST_TOOL_TIMEOUT_MS })
 }
 
+/** A supervisor probe that hit the bound, unlike a missing tool or an unknown job, cannot rule out a running instance. */
+const timedOut = (r: { error?: Error }): boolean => (r.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT'
+
 export interface CtlPaths { hermesHome: string; runtimeRoot: string; runtimeBase: string | null; worktreeMode: boolean; pidFile: string; logFile: string; stateFile: string; stateDir: string; launchdLabels: string[] }
 
 function gitPath(webRoot: string, flag: string): string {
@@ -249,33 +252,41 @@ function pidListensOnPort(env: Record<string, string | undefined>, pid: number, 
   return rows.some((r) => r.includes('pid=')) ? 1 : 2
 }
 
-/** Python `_launchd_webui_pid`: a launchd job with one of our labels listening on the wanted port blocks a second instance. */
-export function launchdConflictPid(p: CtlPaths, env: Record<string, string | undefined>, wantPort: number): { pid: number; label: string } | null {
+/**
+ * Python `_launchd_webui_pid`: a launchd job with one of our labels listening on the wanted port blocks a second instance.
+ * `pid: null` when `launchctl` did not answer for that label, so a running job cannot be ruled out.
+ */
+export function launchdConflictPid(p: CtlPaths, env: Record<string, string | undefined>, wantPort: number): { pid: number | null; label: string } | null {
   if (truthy(env.HERMES_WEBUI_CTL_ALLOW_LAUNCHD_CONFLICT)) return null
   for (const label of p.launchdLabels) {
     const pid = launchdJobPid(env, label, wantPort)
-    if (pid !== null) return { pid, label }
+    if (pid !== undefined) return { pid, label }
   }
   return null
 }
 
-function launchdJobPid(env: Record<string, string | undefined>, label: string, wantPort: number): number | null {
+/** The conflicting job's PID, `null` when `launchctl` did not answer, or `undefined` for no conflict. */
+function launchdJobPid(env: Record<string, string | undefined>, label: string, wantPort: number): number | null | undefined {
   const out = hostTool(env, 'launchctl', ['print', `gui/${String(userInfo().uid)}/${label}`])
-  if (out.error || out.status !== 0) return null
+  if (timedOut(out)) return null
+  if (out.error || out.status !== 0) return undefined
   const m = /^\s*pid = (\d+)/m.exec(out.stdout)
   const pid = m ? Number.parseInt(m[1] ?? '0', 10) : 0
-  if (!pid || !isAlive(pid)) return null
+  if (!pid || !isAlive(pid)) return undefined
   const listens = pidListensOnPort(env, pid, wantPort)
   if (listens === 0) return pid
-  if (listens === 1) return null
-  return wantPort === 8787 ? pid : null
+  if (listens === 1) return undefined
+  return wantPort === 8787 ? pid : undefined
 }
 
-function systemdUnitPort(env: Record<string, string | undefined>, scope: string, unit: string): string {
+/** The unit's configured port, `''` when it names none, or `null` when `systemctl` did not answer. */
+function systemdUnitPort(env: Record<string, string | undefined>, scope: string, unit: string): string | null {
   const unitEnv = hostTool(env, 'systemctl', [scope, 'show', '-p', 'Environment', '--value', unit])
+  if (timedOut(unitEnv)) return null
   const m1 = /HERMES_WEBUI_PORT=(\d+)/.exec(unitEnv.stdout || '')
   if (m1) return m1[1] ?? ''
   const exec = hostTool(env, 'systemctl', [scope, 'show', '-p', 'ExecStart', '--value', unit])
+  if (timedOut(exec)) return null
   const m2 = /--port[=\s](\d+)/.exec(exec.stdout || '')
   return m2 ? (m2[1] ?? '') : ''
 }
@@ -286,6 +297,7 @@ export function systemdConflict(env: Record<string, string | undefined>, wantPor
   const unit = (env.HERMES_WEBUI_SYSTEMD_UNIT ?? '').trim() || 'hermes-webui.service'
   for (const scope of ['--system', '--user']) {
     const state = hostTool(env, 'systemctl', [scope, 'show', '-p', 'ActiveState', '--value', unit])
+    if (timedOut(state)) return `unit ${unit} state is unknown (systemctl did not answer)`
     if (state.error || state.status !== 0) continue
     const active = state.stdout.trim()
     if (active === 'active') {
@@ -296,10 +308,12 @@ export function systemdConflict(env: Record<string, string | undefined>, wantPor
         if (listens === 1) continue
       }
       const unitPort = systemdUnitPort(env, scope, unit)
+      if (unitPort === null) return `unit ${unit} is active and its port is unknown (systemctl did not answer)`
       if (unitPort) { if (unitPort === String(wantPort)) return `unit ${unit} is active (configured for port ${unitPort})` }
       else if (wantPort === 8787) return `unit ${unit} is active`
     } else if (active === 'activating' || active === 'reloading') {
       const unitPort = systemdUnitPort(env, scope, unit)
+      if (unitPort === null) return `unit ${unit} is ${active} and its port is unknown (systemctl did not answer)`
       if (unitPort) { if (unitPort === String(wantPort)) return `unit ${unit} is ${active} (auto-restart pending on port ${unitPort})` }
       else if (wantPort === 8787) return `unit ${unit} is ${active} (auto-restart pending)`
     }
@@ -367,7 +381,9 @@ export async function startCmd(ctx: CtlContext, argv: string[]): Promise<number>
   ctx.env.HERMES_WEBUI_PORT = String(port)
   const launchd = launchdConflictPid(p, ctx.env, port)
   if (launchd !== null) {
-    ctx.warn(`[ctl] Refusing to start a second Talaria Web while launchd job ${launchd.label} is running (PID ${String(launchd.pid)}).`)
+    ctx.warn(launchd.pid === null
+      ? `[ctl] Refusing to start: launchctl did not answer about launchd job ${launchd.label}, so a running instance cannot be ruled out.`
+      : `[ctl] Refusing to start a second Talaria Web while launchd job ${launchd.label} is running (PID ${String(launchd.pid)}).`)
     ctx.warn(`[ctl] Use launchctl kickstart -k gui/${String(userInfo().uid)}/${launchd.label} or disable the launchd job before using talaria-web ctl start.`)
     return 2
   }

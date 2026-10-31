@@ -383,6 +383,20 @@ describe('ctl', () => {
     expect(() => { process.kill(pid, 0) }).not.toThrow()
   }, 30_000)
 
+  it.each([
+    ['launchctl', 'launchctl', 'exec sleep 60'],
+    ['systemctl ActiveState', 'systemctl', 'exec sleep 60'],
+    ['systemctl unit port', 'systemctl', 'case "$*" in *ActiveState*) echo activating; exit 0;; esac\nexec sleep 60'],
+  ])('refuses to start when a hung %s probe cannot rule out a supervised instance', async (_probe, tool, body) => {
+    const home = scratch()
+    const ctx = makeCtx(home, fakeServe('setInterval(()=>{},1000)'), { HERMES_WEBUI_START_GRACE: '1' })
+    stops.push(async () => { await runCtl(ctx, ['stop']) })
+    stubHostTool(home, tool, body)
+    expect(await runCtl(ctx, ['start', String(await freePort())])).toBe(2)
+    expect(ctx.err[0]).toContain(`${tool} did not answer`)
+    expect(existsSync(ctlPaths(ctx).pidFile)).toBe(false)
+  }, 15_000)
+
   it('keeps the conservative launchd guard on the default port when lsof hangs and ss is unavailable', () => {
     const home = scratch()
     const ctx = makeCtx(home, ['node'], { HERMES_WEBUI_LAUNCHD_LABEL: 'com.example.webui' })
