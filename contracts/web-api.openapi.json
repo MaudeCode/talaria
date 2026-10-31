@@ -81889,7 +81889,7 @@
     "/api/gateway/restart": {
       "post": {
         "operationId": "gateway.restart",
-        "summary": "Run `hermes gateway restart` for the active profile (operator only). A named profile the Agent refuses its own gateway starts the host gateway from the root profile, then retries. 409 while another gateway action runs, 500 with the Agent's first error line on failure, 504 after 60 seconds.",
+        "summary": "Run `hermes gateway restart` for the active profile (operator only). A named profile the Agent refuses its own gateway starts the host gateway from the root profile, then retries. The old gateway drains for the Agent's own restart budget before it is replaced. 409 while another gateway action runs, 500 with the Agent's first error line on failure, 504 with the sidecar's timeout message once that budget runs out.",
         "tags": [
           "tools"
         ],

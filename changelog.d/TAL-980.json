@@ -1,0 +1,3 @@
+{
+  "entries": [{"category": "Fixed", "summary": "Restarting the gateway through the Web API now waits for the Agent to finish its drain instead of stopping it after 60 seconds.", "highlight": false, "components": ["web"]}]
+}

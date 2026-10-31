@@ -181,13 +181,16 @@ async function gatewayAction(ctx: RequestContext, action: 'start' | 'stop' | 're
   if (!sidecar) throw new HttpError(500, 'Hermes Agent sidecar is not running', { ok: false, action })
   let outcome
   try {
-    outcome = await sidecar.call('gateway.control', { profile_home: home(ctx), action, interrupt: true, background_wait_seconds: GATEWAY_ACTION_TIMEOUT_S }, { timeoutMs: 300_000 })
+    // A restart drains the old gateway for the Agent's own exit budget (TAL-894): the sidecar picks that wait, and the call has no deadline (TAL-980).
+    outcome = action === 'restart'
+      ? await sidecar.call('gateway.control', { profile_home: home(ctx), action, interrupt: true }, { timeoutMs: 0 })
+      : await sidecar.call('gateway.control', { profile_home: home(ctx), action, interrupt: true, background_wait_seconds: GATEWAY_ACTION_TIMEOUT_S }, { timeoutMs: 300_000 })
   } catch (error) {
     throw new HttpError(500, sanitizeError(error), { ok: false, action })
   }
   if (outcome.status === 'busy_live_work') throw new HttpError(409, outcome.reason || 'The gateway still has live work.', { ok: false, action })
   if (outcome.status === 'busy') throw new HttpError(409, 'Another gateway action is already in progress; try again shortly.', { ok: false, action })
-  if (outcome.timed_out) throw new HttpError(504, `Gateway ${action} timed out after ${String(GATEWAY_ACTION_TIMEOUT_S)} seconds`, { ok: false, action })
+  if (outcome.timed_out) throw new HttpError(504, outcome.message, { ok: false, action })
   if (outcome.status === 'failed' && outcome.returncode !== undefined) {
     const error = outcome.reason ? `Gateway ${action} failed: ${outcome.reason}` : `Gateway ${action} failed with exit code ${String(outcome.returncode)}`
     throw new HttpError(500, error, { ok: false, action, returncode: outcome.returncode })
