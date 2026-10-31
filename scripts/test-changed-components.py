@@ -66,7 +66,10 @@ class RoutingTests(unittest.TestCase):
             (["web/sidecar/agent_dependency.json"], {"web_server", "web_sidecar", "contracts", "docker"}),
             (["web/sidecar/talaria_sidecar/rpc.py"], {"web_server", "web_frontend", "web_sidecar", "contracts"}),
             (["web/packages/server/src/api/auth.ts"], {"web_server", "web_frontend", "contracts"}),
-            (["web/packages/server/src/port/auth.port.test.ts"], {"web_server", "web_frontend", "contracts"}),
+            # Server unit tests are excluded from the built server the frontend and contracts jobs drive.
+            (["web/packages/server/src/port/auth.port.test.ts"], {"web_server"}),
+            (["web/packages/server/src/sessions/workers.test.ts", "changelog.d/TAL-975.json"], {"web_server"}),
+            (["web/packages/server/src/sidecar/client.test.ts"], {"web_server", "web_frontend", "web_sidecar", "contracts"}),
             (["web/package-lock.json"], {"web_server", "web_frontend", "web_sidecar", "docker", "contracts"}),
             (["web/skills/runtime/SKILL.md"], {"web_server", "web_frontend", "web_sidecar", "docker", "contracts"}),
             (["web/packages/frontend/src/guide.md"], {"web_frontend"}),
