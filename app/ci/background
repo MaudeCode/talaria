@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Runs a step's slow command in the background so the job's next steps overlap it, and collects it later (TAL-405,
+# TAL-1599). Hosted runner steps cannot share a shell, so the command's exit status, pid and log live in
+# $RUNNER_TEMP/NAME.{status,pid,log}.
+#   ci/background start NAME COMMAND [ARGUMENT...]   start COMMAND, detached from the step
+#   ci/background wait NAME                          print its log and exit with its status, once it has one
+set -euo pipefail
+operation=$1 name=$2
+shift 2
+base="${RUNNER_TEMP}/${name}"
+case "${operation}" in
+  start)
+    # shellcheck disable=SC2016 # The background shell expands these.
+    nohup bash -c '"$@"; echo $? > "$0.tmp"; mv "$0.tmp" "$0.status"' "${base}" "$@" > "${base}.log" 2>&1 < /dev/null &
+    echo $! > "${base}.pid"
+    ;;
+  wait)
+    while [[ ! -f "${base}.status" ]]; do
+      kill -0 "$(cat "${base}.pid")" 2>/dev/null || [[ -f "${base}.status" ]] ||
+        { cat "${base}.log"; echo "${name} stopped without a result" >&2; exit 1; }
+      sleep 1
+    done
+    cat "${base}.log"
+    exit "$(cat "${base}.status")"
+    ;;
+  *)
+    echo "Usage: ci/background start NAME COMMAND [ARGUMENT...] | ci/background wait NAME" >&2
+    exit 64
+    ;;
+esac

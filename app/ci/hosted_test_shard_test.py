@@ -17,18 +17,27 @@ loader.exec_module(shard)
 
 
 class HostedTestShardTests(unittest.TestCase):
-    def ran(self, last=("StreamHostedTests", "TasksHostedTests")):
+    def ran(self, last=("DuoFoldHostedTests", "TasksHostedTests")):
         return {**{index: list(names) for index, names in enumerate(shard.SHARDS, start=1)}, shard.COUNT: list(last)}
 
     def test_listed_shards_run_their_classes_and_the_last_runs_every_other_class(self):
         self.assertEqual(shard.COUNT, 4)
-        self.assertEqual(shard.selection(1), ["-only-testing:TalariaTests/TranscriptHostedTests"])
-        self.assertEqual(shard.selection(2), ["-only-testing:TalariaTests/ChatHostedTests", "-only-testing:TalariaTests/DuoFoldHostedTests"])
+        self.assertEqual(shard.selection(1), ["-only-testing:TalariaTests/SessionListHostedTests"])
+        self.assertEqual(shard.selection(3), ["-only-testing:TalariaTests/TranscriptHostedTests", "-only-testing:TalariaTests/StreamHostedTests"])
         self.assertEqual(shard.selection(4), ["-only-testing:TalariaTests", *(f"-skip-testing:TalariaTests/{name}" for name in shard.LISTED)])
         for invalid in (0, 5, -1):
             with self.subTest(shard=invalid), self.assertRaisesRegex(ValueError, "between 1 and 4"):
                 shard.selection(invalid)
         self.assertEqual(len(shard.LISTED), len(set(shard.LISTED)))
+
+    def test_recorded_class_times_keep_every_shard_within_90_seconds_of_the_mean(self):
+        # The split comes from measured class times (TAL-1599); a shard 1.5 minutes over the mean sets the suite's pace.
+        self.assertEqual(set(shard.SECONDS), set(shard.LISTED))
+        times = [sum(shard.SECONDS[name] for name in names) for names in shard.SHARDS] + [shard.OTHER_SECONDS]
+        mean = sum(times) / len(times)
+        for index, seconds in enumerate(times, start=1):
+            with self.subTest(shard=index):
+                self.assertLessEqual(seconds - mean, 90, f"shard {index} holds {seconds:.0f} s of tests, mean {mean:.0f} s")
 
     def test_every_listed_class_is_a_hosted_test_class(self):
         # A renamed class would otherwise only fail once CI ran the shard.
@@ -64,13 +73,13 @@ class HostedTestShardTests(unittest.TestCase):
 
     def test_check_requires_every_class_to_run_exactly_once(self):
         seen = shard.check(self.ran())
-        self.assertEqual(seen["TranscriptHostedTests"], 1)
+        self.assertEqual(seen["SessionListHostedTests"], 1)
         self.assertEqual(seen["TasksHostedTests"], 4)
         broken = {
-            "ran in shard 1 and shard 4": self.ran(last=("TranscriptHostedTests", "TasksHostedTests")),
+            "ran in shard 1 and shard 4": self.ran(last=("SessionListHostedTests", "TasksHostedTests")),
             "ran in shard 3 and shard 4": self.ran(last=("TasksHostedTests", "TasksHostedTests")) | {3: [*shard.SHARDS[2], "TasksHostedTests"]},
-            "shard 2 did not run DuoFoldHostedTests": self.ran() | {2: ["ChatHostedTests"]},
-            "shard 1 ran unlisted TasksHostedTests": self.ran(last=("StreamHostedTests",)) | {1: ["TranscriptHostedTests", "TasksHostedTests"]},
+            "shard 3 did not run StreamHostedTests": self.ran() | {3: ["TranscriptHostedTests"]},
+            "shard 1 ran unlisted TasksHostedTests": self.ran(last=("DuoFoldHostedTests",)) | {1: ["SessionListHostedTests", "TasksHostedTests"]},
             "shard 4 ran no classes": self.ran(last=()),
             "expected class lists for shards 1-4": {index: names for index, names in self.ran().items() if index != 3},
         }
@@ -89,13 +98,12 @@ class HostedTestShardTests(unittest.TestCase):
             for index, names in self.ran().items():
                 (lists / f"shard-{index}.txt").write_text("\n".join(names) + "\n")
             report = subprocess.check_output([script, "check", str(lists)], text=True)
-            self.assertIn("- Every one of 7 classes ran exactly once.", report)
-            (lists / "shard-4.txt").write_text("TranscriptHostedTests\n")
+            self.assertIn("- Every one of 6 classes ran exactly once.", report)
+            (lists / "shard-4.txt").write_text("SessionListHostedTests\n")
             result = subprocess.run([script, "check", str(lists)], capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("TranscriptHostedTests ran in shard 1 and shard 4", result.stderr)
-        self.assertEqual(subprocess.check_output([script, "args", "3"], text=True).split(),
-                         ["-only-testing:TalariaTests/SessionListHostedTests", "-only-testing:TalariaTests/RegularSplitHostedTests"])
+            self.assertIn("SessionListHostedTests ran in shard 1 and shard 4", result.stderr)
+        self.assertEqual(subprocess.check_output([script, "args", "2"], text=True).split(), ["-only-testing:TalariaTests/ChatHostedTests"])
 
 
 if __name__ == "__main__":

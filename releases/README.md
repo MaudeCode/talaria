@@ -95,22 +95,38 @@ exactly one of reuse (the suite skipped) or a successful suite run.
 share the one build (`app/ci/hosted-test-shard`): three fixed, measured sets of
 the slowest classes and a last shard that runs every other class, so a new
 class always runs. Its `App hosted tests` job then requires each shard's list
-of the classes it ran to show every class exactly once. Main CI measured
-1147 s of tests on one simulator (run 40494770210): about 25 minutes for the
-job. The shards hold about 300 s of tests each, so the suite should finish
-about 11 minutes after it starts. The App package tests start once the build
-ends, so the build and the four shards fill the five macOS slots.
+of the classes it ran to show every class exactly once. The split comes from
+the class times main CI run 41114665116 measured (1433 s of tests), which the
+script records: SessionList (362 s), Chat (354 s), Transcript with Stream
+(353 s) and every other class (363 s). `hosted_test_shard_test.py` fails when
+the recorded times leave a shard more than 90 s over the mean. Each shard job
+boots its simulator while the build runs, then prepares it in the background
+(`ci/background`) while it waits for and downloads the build. Booting and
+preparing took 3 to 8 minutes on hosted runners, mostly the notification
+service's restarts, so a shard job takes about 6 minutes of tests plus that.
+The App package tests start once the build ends, so the build and the four
+shards fill the five macOS slots.
 
 The pinned Agent gate runs one `agent-release` job per supported Agent release
-of the selected Web source (TAL-1550). `prepare` lists them
-(`scripts/check-release-agent.py --list`); each job checks its release with the
-runner's whole worker budget (`--release`) and writes its own receipt through
-`cli.py gate`. `agent` then requires the jobs to have covered exactly the
-supported releases (`--expect`) and writes the one `agentCompatibility`
-receipt the manifest records. A failed release job skips `agent`, which fails
-`build-gate`. On one runner the three releases took 26 minutes (release run
-40498046778); one release alone takes about 11 to 17 minutes in CI's sidecar
-matrix.
+of the selected Web source and shard of its sidecar suite: three shards each,
+nine jobs (TAL-1550, TAL-1599). `prepare` lists them
+(`scripts/check-release-agent.py --list`). Each job provisions its release,
+runs the Agent probe, verifies the release image beside the tests, and runs
+its shard's cases with the runner's whole worker budget (`--release --shard`).
+The suite runner deals each layer's cases round-robin in collection order, so
+a slow module's cases spread over the shards. Each job writes its gate receipt
+through `cli.py gate` and its compatibility receipt, with the cases it ran and
+the digest of the suite they were dealt from, and uploads both. `agent`
+gathers this run's receipts (`artifacts.py gather`; a rerun keeps the shards
+that passed before) and writes the one `agentCompatibility` receipt the
+manifest records only when the jobs are exactly the supported releases'
+shards (`--expect`), every shard's newest receipt in this run passed with the
+image verified on the selected source, and each release's shards ran every
+one of its sidecar test cases exactly once. A failed shard skips `agent`,
+which fails `build-gate`. The check prints each phase's start time to the job
+log as it runs. Before the shards, one release took 17 to 19.5 minutes (cutover
+run 40795594849): 16 minutes in the suite, with one diagnostic probe alone
+waiting about 4 minutes on its never-answering MCP server.
 
 The organization runs at most five macOS jobs at once. A release that reuses
 main CI's hosted tests needs two:
@@ -135,22 +151,22 @@ main CI's hosted tests needs two:
 The planned critical path of a release that reuses main CI's hosted tests, in
 minutes from the cutover run's start (the tag push is about a minute earlier
 when main CI on the tag commit is already green). The times come from the
-measured jobs of release run 40498046778 and CI's sidecar matrix; the
-`timeline` job measures each run:
+measured jobs of cutover run 40795594849 and the sharded Agent gate's plan;
+the `timeline` job measures each run:
 
 | Time | Event |
 |---|---|
-| 0:00-1:10 | `authorization`, then `prepare` (plan and Agent release list) |
-| 1:10 | every gate and build starts; `app-hosted-tests-lookup` finds main CI's hosted tests within a minute |
-| 8:10 | App build done; `web-build` done at about 9:20 |
-| 11:40 | `contracts` done (its two gates at 11:10) |
-| about 16:00 | the slowest `agent-release` job done (setup, the selected server build, then 11 to 17 minutes for its release) |
-| 17:00 | `agent`, then `build-gate`; `relay-publish` starts (about 0:50) |
-| 17:55 | `web-publish` (about 7:10) and `app-publish` (about 3:30) start |
-| 26:00 | `publish-set` published the manifest (about 27 minutes after the tag push) |
+| 0:00-2:10 | `authorization`, then `prepare` (plan and the Agent jobs) |
+| 2:10 | every gate and build starts; `app-hosted-tests-lookup` finds main CI's hosted tests within a minute |
+| 8:50 | `contracts` done; the signed App build at 10:45 |
+| about 10:00 | the slowest `agent-release` shard done (setup, the selected server build, provisioning and the probe, then its third of the suite beside the image check); `agent` about 0:40 later |
+| 11:25 | `web-build` done, the last gate or build |
+| 11:40 | `build-gate` done; `relay-publish` starts (about 0:50) |
+| 12:35 | `web-publish` (about 7:45, npm publication and readback 5:55) and `app-publish` (about 5:15) start |
+| 21:25 | `publish-set` published the manifest (about 22 minutes after the tag push) |
 
-The Agent release check is now the critical path; the 20-minute target of
-TAL-414 also needs it and `contracts` shortened. Queue time does not count
+`web-build` and the publication jobs are now the critical path: the 20-minute
+target of TAL-414 also needs `web-build` or `web-publish` shortened. Queue time does not count
 toward a job's timeout. A release may overlap pull-request CI, and whichever
 macOS jobs then do not fit start as slots free up. A job that holds a macOS
 slot never waits for a queued macOS job, so the plan cannot deadlock. The
