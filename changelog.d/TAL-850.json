@@ -1,0 +1,3 @@
+{
+  "entries": [{"category": "Fixed", "summary": "Messages queued during a reply are no longer lost when you leave the chat before it ends; they wait in the chat's draft until you send them.", "highlight": false, "components": ["app"]}]
+}

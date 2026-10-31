@@ -6327,6 +6327,25 @@ public final class ChatViewModel {
         }
     }
 
+    /// TAL-850: leaving the chat keeps what waited to send as its draft, queued texts first, and sends nothing. A steer
+    /// the server may hold stays queued (TAL-441).
+    public func moveQueuedMessagesToDraft(in draftStore: ChatDraftStore, for key: ChatDraftKey) async {
+        let moved = queuedSlashMessages.filter { $0.steerID == nil }
+        guard !moved.isEmpty else { return }
+        queuedSlashMessages.removeAll { $0.steerID == nil }
+        let draft = await draftStore.draft(for: key) ?? ChatDraft()
+        let text = (moved.map(\.text) + [draft.text])
+            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .joined(separator: "\n\n")
+        var attachments = draft.attachments
+        for record in moved.flatMap(\.attachments).map(ChatDraftAttachment.init(pending:)) {
+            guard let file = record.file, !attachments.contains(where: { $0.file == file }) else { continue }
+            attachments.append(record)
+        }
+        draftStore.setDraft(text, for: key)
+        draftStore.setAttachments(attachments, for: key)
+    }
+
     /// Edit: takes a queued message out of the queue and puts it back in the composer with its files.
     public func editQueuedMessage(id: UUID) {
         guard let message = takeQueuedMessage(id: id)?.message else { return }

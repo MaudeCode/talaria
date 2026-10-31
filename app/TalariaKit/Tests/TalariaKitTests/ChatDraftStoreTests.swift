@@ -919,7 +919,7 @@ final class ChatDraftStoreTests: XCTestCase {
     }
 }
 
-private actor RecordingChatDraftPersistence: ChatDraftPersisting {
+actor RecordingChatDraftPersistence: ChatDraftPersisting {
     private var drafts: [ChatDraftKey: ChatDraft]
     private var writes = 0
 
