@@ -2241,6 +2241,32 @@ describe('Agent checkout updates', () => {
     expect(prompts).toHaveLength(2)
   })
 
+  it('retries a refusal that was in flight when the runtime became current (TAL-1591)', async () => {
+    const refuse = () => new SidecarError('Agent update recovery is incomplete.', { condition: 'agent_runtime_stale' })
+    let calls = 0
+    let settle: (() => void) | undefined
+    const { svc, prompts, stateDir, reconnect } = deferredSummaryService({
+      llm: () => {
+        calls += 1
+        if (calls === 1) return Promise.reject(refuse())
+        if (calls === 2) return new Promise<string>((_resolve, reject) => { settle = () => { reject(refuse()) } })
+        return Promise.resolve('- Notice: Chats open faster')
+      },
+    })
+    await svc.check(true)
+    await vi.waitFor(() => { expect(prompts).toHaveLength(1) })
+    const onDemand = svc.summarize('agent')
+    await vi.waitFor(() => { expect(settle).toBeDefined() })
+    svc.startAutoApply(300000)
+    try {
+      reconnect(new FakeSidecar().describe!)
+      settle!()
+      expect(await onDemand).toMatchObject({ generated_by: 'llm', summary_sections: [{ title: "What you'll notice", items: ['Chats open faster.'] }] })
+      expect(pendingSummary(stateDir)).toMatchObject({ summarized_through: 'v2.0.0' })
+      expect(prompts).toHaveLength(3)
+    } finally { svc.stopAutoApply() }
+  })
+
   it.each([
     ['a generic model error', new Error('model unavailable')],
     ['another sidecar condition', new SidecarError('sidecar call aux.complete timed out', { condition: 'sidecar_timeout' })],

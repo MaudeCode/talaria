@@ -1446,6 +1446,8 @@ export class UpdateService {
   private readonly summaryFailures = new Set<string>()
   /** TAL-1591: targets whose model call the sidecar refused while the Agent runtime was mid-update; non-empty means the runtime is known stale. */
   private readonly summaryDeferred = new Set<'webui' | 'agent'>()
+  /** Counts runtime-current signals, so a refusal that was in flight across one is retried rather than deferred. */
+  private runtimeCurrentEpoch = 0
   private readonly publishedTags = new Map<string, { at: number; tag: string | null }>()
   private readonly git: GitRun
   private readonly now: () => number
@@ -1509,6 +1511,7 @@ export class UpdateService {
 
   /** TAL-1591: the Agent runtime is current again, so deferred summaries are generated once. */
   private resumeDeferredSummaries(): void {
+    this.runtimeCurrentEpoch += 1
     if (!this.summaryDeferred.size) return
     const targets = [...this.summaryDeferred]
     this.summaryDeferred.clear()
@@ -2161,18 +2164,23 @@ export class UpdateService {
     if (!sections && entry && this.deps.llm && entry.items.length) {
       const at = entry.summarized_through === null ? 0 : entry.items.findIndex((item) => item.id === entry.summarized_through) + 1
       if (automatic && this.summaryDeferred.size) deferred = true
-      else try {
-        sections = await this.foldSummary(entry.summary_sections, entry.items.slice(at), detail, source)
-        if (complete && sections) {
-          entry.summary_sections = sections
-          entry.summarized_through = last
-          this.persistSummaries()
+      else for (;;) {
+        const epoch = this.runtimeCurrentEpoch
+        try {
+          sections = await this.foldSummary(entry.summary_sections, entry.items.slice(at), detail, source)
+          if (complete && sections) {
+            entry.summary_sections = sections
+            entry.summarized_through = last
+            this.persistSummaries()
+          }
+          this.summaryDeferred.delete(target)
+          this.resumeDeferredSummaries()
+        } catch (error) {
+          if (!(error instanceof SidecarError && error.condition === 'agent_runtime_stale')) this.logSummaryFailure(key, target)
+          else if (epoch !== this.runtimeCurrentEpoch) continue
+          else deferred = true
         }
-        this.summaryDeferred.delete(target)
-        this.resumeDeferredSummaries()
-      } catch (error) {
-        if (error instanceof SidecarError && error.condition === 'agent_runtime_stale') deferred = true
-        else this.logSummaryFailure(key, target)
+        break
       }
       if (deferred) this.summaryDeferred.add(target)
     }
