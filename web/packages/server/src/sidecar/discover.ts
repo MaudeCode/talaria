@@ -9,6 +9,7 @@ import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { platformDefaultHermesHome } from '../config.js'
+import { supportedAgents } from '../release.js'
 import { SidecarClient } from './client.js'
 
 export interface DiscoverOptions {
@@ -183,14 +184,14 @@ export function launchSidecar(opts: LaunchOptions): SidecarClient | null {
   const scripted = scriptedSidecarCommand(opts.env)
   if (scripted) {
     opts.log(`[sidecar] starting scripted sidecar ${scripted.join(' ')}`)
-    return new SidecarClient({ python: scripted[0] ?? '', command: scripted, agentDir: discoverAgentDirForLaunch(opts) ?? '', sidecarDir: join(opts.webRoot, 'sidecar'), hermesHome: opts.hermesHome, env: () => stringEnv(opts.env), log: opts.log })
+    return new SidecarClient({ python: scripted[0] ?? '', command: scripted, agentDir: discoverAgentDirForLaunch(opts) ?? '', sidecarDir: join(opts.webRoot, 'sidecar'), hermesHome: opts.hermesHome, env: () => stringEnv(opts.env), log: opts.log, supportedAgents: supportedAgents(opts.webRoot) })
   }
   const agentDir = discoverAgentDirForLaunch(opts)
   if (!agentDir) {
     opts.log(`[sidecar] Hermes Agent not found (looked in ${agentCandidates(opts).join(', ')}); set HERMES_WEBUI_AGENT_DIR to enable chat`)
     return null
   }
-  const client = new SidecarClient({ python: () => discoverAgentPython(opts.env, agentDir, opts.hermesHome, opts.log), agentDir, sidecarDir: join(opts.webRoot, 'sidecar'), hermesHome: opts.hermesHome, env: () => stringEnv(opts.env), log: opts.log })
+  const client = new SidecarClient({ python: () => discoverAgentPython(opts.env, agentDir, opts.hermesHome, opts.log), agentDir, sidecarDir: join(opts.webRoot, 'sidecar'), hermesHome: opts.hermesHome, env: () => stringEnv(opts.env), log: opts.log, supportedAgents: supportedAgents(opts.webRoot) })
   opts.log(`[sidecar] starting for agent ${agentDir}`)
   return client
 }
