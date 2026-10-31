@@ -1,0 +1,3 @@
+{
+  "entries": [{"category": "Fixed", "summary": "Session rows no longer show an archive button on sessions that can't be archived, such as Claude Code imports and subagent chats.", "highlight": false, "components": ["web"]}]
+}

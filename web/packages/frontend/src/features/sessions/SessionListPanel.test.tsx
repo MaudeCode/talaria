@@ -23,7 +23,7 @@ vi.mock('@tanstack/react-router', () => ({
   Link: ({ children, className, ...rest }: { children: ReactNode; className?: string; 'data-sid'?: string }) => <a className={className} data-sid={rest['data-sid']}>{children}</a>,
 }))
 import * as api from '../../api/endpoints'
-import { groupSessionRows, SessionListPanel } from './SessionListPanel'
+import { groupSessionRows, SessionListItem, SessionListPanel } from './SessionListPanel'
 import { useSessionListStream } from './useSessionListStream'
 
 const now = Date.now() / 1000
@@ -274,6 +274,25 @@ describe('session row renders (TAL-1211)', () => {
   })
 })
 
+describe('session row archive toggle (TAL-1633)', () => {
+  const item = (r: SessionRow, onArchive = vi.fn()) => render(<SessionListItem row={r} active={false} proj={undefined} preview={undefined} timeLabel="now" onArchive={onArchive} />)
+
+  it.each([
+    ['a Claude Code import', row('cc', 'Imported', { can_archive: false, read_only: true, source_kind: 'claude_code' })],
+    ['an archived subagent child', row('sub', 'Child', { can_archive: false, archived: true })],
+  ])('hides the archive and restore toggle on %s the server refuses to archive', (_label, refused) => {
+    item(refused)
+    expect(screen.queryByRole('button', { name: /Archive|Restore/ })).toBeNull()
+    expect(document.querySelector('.session-archive-toggle')).toBeNull()
+  })
+
+  it('keeps the toggle on an archivable row and archives it', async () => {
+    const onArchive = vi.fn()
+    item(alpha, onArchive)
+    await userEvent.click(screen.getByRole('button', { name: 'Archive' }))
+    expect(onArchive).toHaveBeenCalledWith('alpha', true)
+  })
+})
 
 describe('optimistic session and project writes (TAL-1179)', () => {
   it('drops an archived row at once, before the write answers', async () => {
