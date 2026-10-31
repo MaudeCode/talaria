@@ -153,8 +153,8 @@ export class StreamRegistry {
   readonly owners = new Map<string, string>()
   readonly activeRuns = new Map<string, ActiveRun>()
   readonly cancelled = new Set<string>()
-  readonly partialText = new Map<string, string[]>()
-  readonly reasoningText = new Map<string, string[]>()
+  /** The run's streamed text and reasoning so far, appended per delta. */
+  readonly liveText = new Map<string, { text: string; reasoning: string }>()
   readonly liveToolCalls = new Map<string, Record<string, unknown>[]>()
   readonly goalRelated = new Set<string>()
   /** Runs whose journal missed a frame (an append failed), so it cannot replay the run's whole output. */
@@ -169,8 +169,7 @@ export class StreamRegistry {
     this.streams.set(streamId, channel)
     this.liveIds.add(streamId)
     this.owners.set(streamId, sessionId)
-    this.partialText.set(streamId, [])
-    this.reasoningText.set(streamId, [])
+    this.liveText.set(streamId, { text: '', reasoning: '' })
     this.liveToolCalls.set(streamId, [])
     return channel
   }
@@ -216,8 +215,7 @@ export class StreamRegistry {
     this.streams.delete(streamId)
     this.liveIds.delete(streamId)
     this.cancelled.delete(streamId)
-    this.partialText.delete(streamId)
-    this.reasoningText.delete(streamId)
+    this.liveText.delete(streamId)
     this.liveToolCalls.delete(streamId)
     this.goalRelated.delete(streamId)
     this.degradedJournals.delete(streamId)

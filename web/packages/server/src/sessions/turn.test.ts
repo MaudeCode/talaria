@@ -7,6 +7,7 @@ import { bootTestServer } from '../test/harness.js'
 import { walkSkillFiles } from '../tools/skills.js'
 import { classifyProviderError } from './turn.js'
 import { persistentStateSnapshot } from './state-saved.js'
+import { ReasoningTitleTracker } from './reasoning-titles.js'
 import { sessionPath } from '../test/storage.js'
 
 vi.mock('node:fs', { spy: true })
@@ -268,4 +269,44 @@ it('carries the continuing session phase in the completed foreground frame and b
     await server.deps.background.settleCommand(session.session_id, 'command', 'completed', 'Done')
     expect(await read()).toMatchObject({ activity_phase: 'completed' })
   } finally { server.deps.registry.liveIds.delete('background'); await server.close() }
+})
+
+
+describe('streamed reasoning titles (TAL-1215)', () => {
+  // `stableSnapshot` is the only caller that runs `normalizeReasoningTitles` over the whole reasoning so far.
+  const streamTurn = async (segments: { reasoning: number; tokens: number }[]) => {
+    const sidecar = new FakeSidecar()
+    let step = 0
+    sidecar.respond('chat.start', (params, emit) => {
+      for (const segment of segments) {
+        for (let i = 0; i < segment.reasoning; i += 1) emit({ event: 'reasoning', data: { text: `**Step ${String(++step)}**\n` } })
+        for (let i = 0; i < segment.tokens; i += 1) emit({ event: 'token', data: { text: 'word ' } })
+      }
+      return completed(params)
+    })
+    const server = await bootTestServer({ sidecar })
+    const snapshot = vi.spyOn(ReasoningTitleTracker.prototype, 'stableSnapshot')
+    try {
+      const session = await server.deps.sessionStore.newSession()
+      const start = await server.get('/api/chat/start', { method: 'POST', body: JSON.stringify({ session_id: session.session_id, message: 'hello' }), headers: { 'content-type': 'application/json' } })
+      const { stream_id: streamId } = await start.json() as { stream_id: string }
+      const frames = await server.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'stream_end')
+      const reasoning = frames.filter((f) => f.event === 'reasoning').map((f) => f.data as { text: string; titles?: string[] })
+      return { scans: snapshot.mock.calls.length, stable: reasoning.filter((f) => f.text === ''), deltas: reasoning.filter((f) => f.text !== '').length, tokens: frames.filter((f) => f.event === 'token').length }
+    } finally { snapshot.mockRestore(); await server.close() }
+  }
+
+  it('never rescans reasoning for a turn that streams only text', async () => {
+    const turn = await streamTurn([{ reasoning: 0, tokens: 500 }])
+    expect(turn.tokens).toBe(500)
+    expect(turn.scans).toBe(0)
+  })
+
+  it('rescans only after reasoning changed and keeps the stable title snapshots', async () => {
+    const turn = await streamTurn([{ reasoning: 25, tokens: 250 }, { reasoning: 25, tokens: 250 }])
+    expect(turn.deltas).toBe(50)
+    const firstEight = Array.from({ length: 8 }, (_, i) => `Step ${String(i + 1)}`)
+    expect(turn.stable).toEqual([{ text: '', titles: firstEight }, { text: '', titles: firstEight }])
+    expect(turn.scans).toBeLessThanOrEqual(50)
+  })
 })
