@@ -335,6 +335,12 @@ describe("Convex relay state", () => {
         query.eq("userId", "user-1").eq("publisherId", redemption.publisherId),
       ).unique());
     expect(ownerGrant?.profileId).toBe("profile-1");
+    const enrollment = await backend.run(async (ctx) => ({
+      keys: (await ctx.db.query("publisherKeys").collect()).map((key) => key.keyId),
+      unconsumed: (await ctx.db.query("publisherInvitations").collect())
+        .filter((invitation) => invitation.consumedAt === undefined).length,
+    }));
+    expect(enrollment).toEqual({ keys: ["key-1", "key-2"], unconsumed: 0 });
     const stillActive = await backend.query(internal.pairing.getPublisherKey, {
       publisherId: redemption.publisherId,
       keyId: "key-1",
@@ -590,6 +596,110 @@ describe("Convex relay state", () => {
       .map((publisher) => publisher.ownerUserId)
       .sort());
     expect(owners).toEqual(["attacker", "owner"]);
+  });
+
+  it("leaves every record unchanged when publisher registration refuses an over-limit replacement", async () => {
+    for (const existingPublisher of [false, true]) {
+      const backend = testBackend();
+      const now = 1_800_000_000_000;
+      const publisherId = "https://hermes.example";
+      await backend.run(async (ctx) => {
+        for (const userId of ["owner", "viewer"]) {
+          await ctx.db.insert("relayUsers", {
+            userId,
+            appleSubjectHash: `apple-${userId}`,
+            createdAt: now,
+            updatedAt: now,
+          });
+        }
+        await ctx.db.insert("publisherGrants", {
+          userId: "viewer",
+          publisherOwnerUserId: "owner",
+          publisherId,
+          profileId: "owner-profile",
+          createdAt: now,
+          updatedAt: now,
+        });
+        if (existingPublisher) {
+          await ctx.db.insert("publishers", {
+            version: 2,
+            ownerUserId: "viewer",
+            publisherId,
+            label: "Old label",
+            enabled: false,
+            createdAt: now,
+            updatedAt: now,
+          });
+        }
+        for (let index = 0; index < 501; index += 1) {
+          await ctx.db.insert("sessionStates", {
+            version: 2,
+            userId: "viewer",
+            profileId: "owner-profile",
+            deleted: false,
+            publisherId,
+            publisherLabel: "Owner",
+            sessionId: `session-${index}`,
+            eventId: `event-${index}`,
+            revision: 1,
+            title: "State",
+            phase: "running",
+            updatedAt: now,
+            deepLink: `/sessions/session-${index}`,
+            expiresAt: now + 60_000,
+            receivedAt: now,
+          });
+        }
+      });
+      await backend.mutation(internal.pairing.createPublisherInvitation, {
+        userId: "viewer",
+        tokenHash: "viewer-invite",
+        expiresAt: now + 60_000,
+        now,
+      });
+      const snapshot = () => backend.run(async (ctx) => ({
+        publishers: await ctx.db.query("publishers").collect(),
+        keys: await ctx.db.query("publisherKeys").collect(),
+        grants: await ctx.db.query("publisherGrants").collect(),
+        states: (await ctx.db.query("sessionStates").collect()).length,
+        invitations: await ctx.db.query("publisherInvitations").collect(),
+      }));
+      const before = await snapshot();
+      const redemption = {
+        tokenHash: "viewer-invite",
+        publisherId,
+        profileId: "viewer-profile",
+        keyId: "viewer-key",
+        label: "Viewer",
+        publicKey: "viewer-public-key",
+        now: now + 1,
+      };
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        await expect(backend.mutation(internal.pairing.redeemPublisherInvitation, redemption))
+          .resolves.toEqual({ ok: false, reason: "too_many_states" });
+        await expect(snapshot()).resolves.toEqual(before);
+      }
+
+      await backend.run(async (ctx) => {
+        const extra = await ctx.db.query("sessionStates").first();
+        await ctx.db.delete(extra!._id);
+      });
+      await expect(backend.mutation(internal.pairing.redeemPublisherInvitation, redemption))
+        .resolves.toMatchObject({ ok: true, profileId: "viewer-profile", profileIdPreserved: false });
+      const after = await snapshot();
+      expect(after.publishers).toEqual([expect.objectContaining({
+        ownerUserId: "viewer",
+        label: "Viewer",
+        enabled: true,
+      })]);
+      expect(after.keys).toEqual([expect.objectContaining({ keyId: "viewer-key" })]);
+      expect(after.grants).toEqual([expect.objectContaining({
+        publisherOwnerUserId: "viewer",
+        profileId: "viewer-profile",
+      })]);
+      expect(after.states).toBe(0);
+      expect(after.invitations).toEqual([expect.objectContaining({ consumedAt: now + 1 })]);
+    }
   });
 
   it("requires the registered publisher signature for profile enrollment", async () => {

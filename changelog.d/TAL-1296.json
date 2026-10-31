@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A refused Talaria Relay server registration no longer leaves a half-registered server or extra signing key behind.",
+      "highlight": false,
+      "components": ["relay"]
+    }
+  ]
+}
