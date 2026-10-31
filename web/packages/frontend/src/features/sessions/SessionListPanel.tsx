@@ -448,7 +448,8 @@ function SessionGroupDialog({ title, kind, rows, filters, activeId, projectsById
         </div>
       </div>
       <div className="session-list max-h-[60dvh]" role="list">
-        {matches === null ? <div className="session-list-note" role="status">{m.loading()}</div>
+        {matches === null && search.isError ? <div className="session-list-note session-list-error" role="alert">{m.error_generic()} <button type="button" className="linklike" onClick={() => { void search.refetch() }}>{m.retry()}</button></div>
+          : matches === null ? <div className="session-list-note" role="status">{m.loading()}</div>
           : matches.length === 0 ? <div className="session-list-note">{m.no_matching_sessions()}</div>
           : matches.map((row) => <SessionListItem key={row.session_id} row={row} active={row.session_id === activeId} proj={row.project_id ? projectsById.get(row.project_id) : undefined} preview={previews.get(row.session_id)} timeLabel={relativeTime(row.sort_ts)} onArchive={onArchive} />)}
       </div>

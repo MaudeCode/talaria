@@ -16,6 +16,8 @@ export interface MenuProps {
   initialFocus?: RefObject<HTMLElement | null>
 }
 
+/** Menus share the Select popup layer above dialogs (z 1300/1301), so a menu opened inside a dialog takes clicks (TAL-1639). */
+const POSITIONER = 'z-[1400] outline-none'
 const POPUP = 'min-w-44 max-w-[min(92vw,360px)] overflow-y-auto rounded-lg border border-border bg-surface p-1 text-sm text-text shadow-md outline-none'
 
 /** Base UI menu with token styling: keyboard navigation, typeahead, focus return, and escape are provided by Base UI. */
@@ -24,7 +26,7 @@ export function Menu({ trigger, children, side = 'bottom', align = 'start', open
     <BaseMenu.Root {...(open !== undefined ? { open } : {})} {...(onOpenChange ? { onOpenChange } : {})}>
       <BaseMenu.Trigger render={trigger} />
       <BaseMenu.Portal>
-        <BaseMenu.Positioner side={side} align={align} sideOffset={6} className="z-[1200] outline-none">
+        <BaseMenu.Positioner side={side} align={align} sideOffset={6} className={POSITIONER}>
           <BaseMenu.Popup aria-label={label} onFocus={(event) => { if (event.target === event.currentTarget) initialFocus?.current?.focus() }} className={cn(POPUP, className)}>
             {children}
           </BaseMenu.Popup>
@@ -40,7 +42,7 @@ export function ContextMenu({ trigger, children, className, label }: Pick<MenuPr
     <BaseContextMenu.Root>
       <BaseContextMenu.Trigger render={trigger} />
       <BaseContextMenu.Portal>
-        <BaseContextMenu.Positioner className="z-[1200] outline-none">
+        <BaseContextMenu.Positioner className={POSITIONER}>
           <BaseContextMenu.Popup aria-label={label} className={cn(POPUP, className)}>
             {children}
           </BaseContextMenu.Popup>

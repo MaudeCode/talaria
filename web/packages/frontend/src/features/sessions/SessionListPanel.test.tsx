@@ -290,6 +290,18 @@ describe('Scheduled and Webhook disclosures (TAL-1639)', () => {
     expect(within(dialog).getByText('nightly zebra')).toBeInTheDocument()
   })
 
+  it('says a failed View all search failed and retries it', async () => {
+    listed([alpha, ...cron, hook])
+    vi.mocked(api.searchSessions).mockRejectedValueOnce(new Error('offline')).mockResolvedValue({ sessions: [cron[2]!], sidebar_filtered: true, all_profiles: false, active_profile: 'default' })
+    panel()
+    await userEvent.click(await screen.findByRole('button', { name: /Scheduled sessions/ }))
+    await userEvent.click(screen.getByRole('button', { name: 'View all' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Scheduled sessions' })
+    await userEvent.type(within(dialog).getByRole('searchbox'), 'digest')
+    await userEvent.click(await within(dialog).findByRole('button', { name: 'Retry' }))
+    await waitFor(() => { expect([...dialog.querySelectorAll('[data-sid]')].map((el) => el.getAttribute('data-sid'))).toEqual(['cron-2']) })
+  })
+
   it('shows no disclosure the server lists no rows for', async () => {
     listed([alpha, other], { scheduled_session_count: 0, scheduled_sessions_truncated: false, webhook_session_count: 0, webhook_sessions_truncated: false })
     panel()

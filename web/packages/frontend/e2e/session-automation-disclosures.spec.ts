@@ -36,4 +36,11 @@ test('Scheduled and Webhook sessions sit in collapsed disclosures with a View al
   const dialog = page.getByRole('dialog', { name: 'Scheduled sessions' })
   await expect(dialog.locator('[data-sid]')).toHaveCount(7)
   await page.screenshot({ path: info.outputPath('view-all.png') })
+  // A row's action menu opens above the dialog and takes clicks (Playwright's trial click fails on an occluded target).
+  // Touch layouts hide the row action buttons, so the pointer check runs on desktop.
+  if (info.project.name !== 'desktop') return
+  const row = dialog.locator('[data-sid="cron_daily_6"]')
+  await row.hover()
+  await row.locator('.session-actions-trigger').click()
+  await page.getByRole('menuitem').first().click({ trial: true, timeout: 2000 })
 })
