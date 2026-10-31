@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "An open extension panel reconnects when the extension is updated, instead of looking ready while its actions do nothing until you reload the page.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

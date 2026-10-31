@@ -99,10 +99,12 @@ function BackgroundExtensionHost({ manifest }: { manifest: ExtensionManifest }) 
   return <ExtensionFrame manifest={manifest} iframe={iframe} className="hidden" />
 }
 
+/** React key for an extension frame: a changed manifest remounts it, because the host only starts on the iframe's load. */
+const manifestKey = (mf: ExtensionManifest): string => JSON.stringify(mf)
+
 export function ExtensionTtsHosts() {
   const manifests = useExtensionManifests()
-  // A changed manifest remounts its frame: the host only starts on the iframe's load.
-  return manifests.data?.manifests.filter((mf) => mf.enabled && mf.panel && mf.tts).map((mf) => <BackgroundExtensionHost key={JSON.stringify(mf)} manifest={mf} />)
+  return manifests.data?.manifests.filter((mf) => mf.enabled && mf.panel && mf.tts).map((mf) => <BackgroundExtensionHost key={manifestKey(mf)} manifest={mf} />)
 }
 
 export function ExtensionRoute({ extensionId }: { extensionId: string }) {
@@ -116,7 +118,7 @@ export function ExtensionRoute({ extensionId }: { extensionId: string }) {
         <HubPage title={extensionId}><ErrorState error={new Error(m.extensions_unknown())} /><Link to="/settings/$section" params={{ section: 'extensions' }} className="mt-2 inline-block text-sm text-accent-text underline">{m.settings_section_extensions_title()}</Link></HubPage>
       )}
       {manifest && !manifest.enabled && <HubPage title={manifest.name}><ErrorState error={new Error(m.extensions_disabled_panel())} /></HubPage>}
-      {manifest && manifest.enabled && <ExtensionPanel key={manifest.id} manifest={manifest} />}
+      {manifest && manifest.enabled && <ExtensionPanel key={manifestKey(manifest)} manifest={manifest} />}
     </AppShell>
   )
 }
