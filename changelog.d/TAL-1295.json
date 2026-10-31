@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Talaria Relay no longer turns off notifications on another of your devices when it rejects a device registration.",
+      "highlight": false,
+      "components": ["relay"]
+    }
+  ]
+}
