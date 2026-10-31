@@ -274,3 +274,38 @@ describe('managed source in the existing Files editor (TAL-1367)', () => {
     expect(editor).toHaveValue('second draft')
   })
 })
+
+describe('file tree keeps the server order (TAL-1303)', () => {
+  const dir = (name: string) => ({ name, path: name, type: 'dir', workspace_sort_rank: 1 })
+  const file = (name: string) => ({ name, path: name, type: 'file', workspace_sort_rank: 2, size: 3 })
+
+  it('lists a server directory before the files it precedes', async () => {
+    vi.mocked(api.listDir).mockResolvedValue({ entries: [dir('z-folder'), file('a.txt'), file('b.txt')] })
+    renderFiles()
+    await screen.findByRole('treeitem', { name: 'z-folder' })
+    expect(names()).toEqual(['z-folder', 'a.txt', 'b.txt'])
+  })
+
+  it('keeps symlinks, directories, files and mixed-case names exactly as sent', async () => {
+    const link = { name: 'Zlink', path: 'Zlink', type: 'symlink', target: 'docs', is_dir: true, workspace_sort_rank: 0, target_outside_workspace: false }
+    const order = [link, dir('beta'), dir('Alpha'), file('b.TXT'), file('A.txt'), file('.hidden')]
+    vi.mocked(api.listDir).mockResolvedValue({ entries: order })
+    renderFiles()
+    await screen.findByRole('treeitem', { name: 'beta' })
+    expect(names()).toEqual(['Zlink', 'beta', 'Alpha', 'b.TXT', 'A.txt', '.hidden'])
+  })
+
+  it('still opens a server directory, previews a file and asks for hidden files', async () => {
+    vi.mocked(api.listDir).mockImplementation((_sid, path) => Promise.resolve({ entries: path === 'z-folder' ? [{ ...file('inner.txt'), path: 'z-folder/inner.txt' }] : [dir('z-folder'), file('a.txt')] } as never))
+    renderFiles()
+    await userEvent.click(await screen.findByRole('treeitem', { name: 'z-folder' }))
+    await screen.findByRole('treeitem', { name: 'inner.txt' })
+    expect(api.listDir).toHaveBeenLastCalledWith('s1', 'z-folder', false)
+    await userEvent.click(screen.getByRole('button', { name: 'Up one level' }))
+    await userEvent.click(await screen.findByRole('treeitem', { name: 'a.txt' }))
+    expect(await screen.findByRole('textbox', { name: 'Preview' })).toHaveValue('Original A')
+    await userEvent.click(screen.getByRole('button', { name: 'Back' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Show hidden files' }))
+    await waitFor(() => expect(api.listDir).toHaveBeenLastCalledWith('s1', '.', true))
+  })
+})
