@@ -399,9 +399,15 @@ test('the wash under the composer has no edge around the card', async ({ page },
     const b = bubble.getBoundingClientRect()
     return { top: Math.round(b.top), bottom: Math.round(b.bottom), right: Math.round(b.right) }
   })
-  const placed = await place()
-  // Layout settles (lazy markdown, the virtualizer): the bubble must still span the dock before sampling.
-  await expect.poll(async () => JSON.stringify(await place())).toBe(JSON.stringify(placed))
+  let placed = await place()
+  // Layout settles (lazy markdown, the virtualizer): two samples in a row agree, and the later one is measured. A shift
+  // after the first sample must not hold the wait to that stale first value (TAL-1634).
+  await expect.poll(async () => {
+    const next = await place()
+    const settled = JSON.stringify(next) === JSON.stringify(placed)
+    placed = next
+    return settled
+  }).toBe(true)
   const dock = await box(page, '.composer-dock')
   const card = await box(page, '#composerBox')
   expect(placed.top).toBeLessThan(dock.y - 16)
