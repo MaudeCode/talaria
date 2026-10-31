@@ -76,7 +76,8 @@ function textEdits(source: string, from: number, to: number, resolver: MediaRefR
     const refStart = isToken ? cursor + MEDIA.length : cursor
     const refEnd = referenceEnd(source, refStart, to, isFileUrl)
     const raw = refEnd === null ? '' : source.slice(refStart, refEnd)
-    const media = raw ? mediaFor(isFileUrl ? fileUrlPath(raw) : raw, resolver) : null
+    const ref = raw && isFileUrl ? fileUrlPath(raw) : raw
+    const media = ref ? mediaFor(ref, resolver) : null
     if (media && refEnd !== null) {
       const label = escapeLabel(media.name)
       edits.push({ start: cursor, end: refEnd, text: media.kind === 'image' ? `![${label}](${media.url})` : `[${label}](${media.url})`, media })
@@ -135,12 +136,18 @@ function kindFor(mime: string): DisplayMedia['kind'] {
   return mime === 'application/pdf' ? 'pdf' : 'file'
 }
 
-function fileUrlPath(raw: string): string {
+/** Hosts that name this machine; `localhost` already parses to an empty host. */
+const LOCAL_FILE_HOSTS = new Set(['', 'localhost', '127.0.0.1', '[::1]'])
+
+/** A file URL's local path, or null when it names another host (`file://server/share/x`) and is not this machine's file. */
+function fileUrlPath(raw: string): string | null {
   try {
-    const { pathname } = new URL(raw)
+    const { hostname, pathname } = new URL(raw)
+    if (!LOCAL_FILE_HOSTS.has(hostname)) return null
     if (pathname) return safeDecode(pathname)
   } catch { /* not a parseable URL */ }
-  return safeDecode(raw.slice(FILE_URL.length))
+  const rest = raw.slice(FILE_URL.length)
+  return rest.startsWith('/') ? safeDecode(rest) : null
 }
 
 function safeDecode(text: string): string {
