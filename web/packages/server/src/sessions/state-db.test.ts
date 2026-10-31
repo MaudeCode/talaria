@@ -329,7 +329,9 @@ describe('state.db projection', () => {
   it.each([
     ['feishu', 'Feishu'], ['dingtalk', 'DingTalk'], ['bluebubbles', 'BlueBubbles'],
     ['qqbot', 'QQBot'], ['yuanbao', 'Yuanbao'], ['whatsapp_cloud', 'WhatsApp Cloud'],
-  ])('projects, deduplicates and protects %s sessions (TAL-939)', async (source, label) => {
+    ['imsg', 'iMessage (imsg)'], ['photon', 'iMessage via Photon'], ['google_chat', 'Google Chat'], ['simplex', 'SimpleX Chat'],
+    ['buzz', 'Buzz'], ['raft', 'Raft'], ['ntfy', 'ntfy'], ['a2a', 'A2A'], ['homeassistant', 'Home Assistant'],
+  ])('projects, deduplicates and protects %s sessions (TAL-939, TAL-945)', async (source, label) => {
     const sid = `platform-${source}`
     onTestFinished(() => {
       db.prepare('DELETE FROM messages WHERE session_id = ?').run(sid)

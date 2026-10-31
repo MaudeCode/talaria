@@ -58,8 +58,11 @@ describe('withSessionWireFlags source fields (TAL-310)', () => {
   })
 })
 
-describe('Agent messaging platforms (TAL-939)', () => {
-  it.each(['feishu', 'dingtalk', 'bluebubbles', 'qqbot', 'yuanbao', 'whatsapp_cloud'])('classifies and locks %s even with stale CLI metadata', (source) => {
+describe('Agent messaging platforms (TAL-939, TAL-945)', () => {
+  it.each([
+    'feishu', 'dingtalk', 'bluebubbles', 'qqbot', 'yuanbao', 'whatsapp_cloud',
+    'imsg', 'photon', 'google_chat', 'simplex', 'buzz', 'raft', 'ntfy', 'a2a', 'homeassistant',
+  ])('classifies and locks %s even with stale CLI metadata', (source) => {
     for (const marker of ['raw_source', 'source_tag']) {
       const row = { [marker]: ` ${source.toUpperCase()} `, is_cli_session: true }
       expect(sourceKind(row)).toBe('messaging')
@@ -70,5 +73,17 @@ describe('Agent messaging platforms (TAL-939)', () => {
         read_only: true, can_delete: false,
       })
     }
+  })
+})
+
+describe('plugin platform precedence (TAL-945)', () => {
+  it.each([
+    [{ session_id: 'cron_job_1', raw_source: 'imsg' }, 'cron'],
+    [{ source_tag: 'subagent', raw_source: 'photon' }, 'subagent'],
+    [{ raw_source: 'ntfy', source_label: 'Webhook' }, 'messaging'],
+    [{ raw_source: 'webhook' }, 'webhook'],
+    [{ raw_source: 'my_bridge' }, 'other'],
+  ])('%j is %s', (row, kind) => {
+    expect(sourceKind(row)).toBe(kind)
   })
 })
