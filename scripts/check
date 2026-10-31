@@ -19,6 +19,8 @@ case "$component" in
   relay)
     cd relay
     pnpm install --frozen-lockfile
+    # The bridge keeps its own npm lockfile because its image installs from it; the typecheck covers it too.
+    npm ci --prefix bridge --no-audit --no-fund
     pnpm check
     exec python3 "$root/scripts/check-relay-local.py"
     ;;

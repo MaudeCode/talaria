@@ -30,9 +30,5 @@ jobs:
         with:
           path: ${{ steps.pnpm.outputs.store }}
           key: pnpm-${{ runner.os }}-${{ hashFiles('relay/pnpm-lock.yaml') }}
-      - run: pnpm install --frozen-lockfile
-      # The feedback bridge keeps its own npm lockfile because its image installs from it.
-      - run: npm ci --prefix bridge
-      - run: pnpm check
-      - name: Validate anonymous local Convex deployment
-        run: python3 ../scripts/check-relay-local.py
+      # Installs Relay and the bridge's own npm lockfile, runs pnpm check, then validates a local deployment.
+      - run: ../scripts/check relay

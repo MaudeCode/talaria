@@ -120,7 +120,10 @@ def main():
         subprocess.run([str(ROOT / "relay/bridge/build-image.sh"), ref, str(output), *labels], check=True)
         values["bridgeImage"] = {"ref": ref, "digest": image_digest(output / "image-metadata.json")}
     elif name == "relay":
+        # scripts/check relay without its local validation, which must follow the stamp: the tests expect the
+        # unstamped release info. The bridge's own npm lockfile feeds the typecheck (TAL-1646).
         subprocess.run(["pnpm", "install", "--frozen-lockfile"], cwd=ROOT / "relay", check=True)
+        subprocess.run(["npm", "ci", "--prefix", "bridge", "--no-audit", "--no-fund"], cwd=ROOT / "relay", check=True)
         subprocess.run(["pnpm", "check"], cwd=ROOT / "relay", check=True)
         subprocess.run([*stamp, "--deployment-id", component["deploymentId"]], cwd=ROOT, check=True)
         subprocess.run(["python3", str(ROOT / "scripts/check-relay-local.py")], cwd=ROOT, check=True)

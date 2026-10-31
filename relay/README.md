@@ -68,9 +68,9 @@ a change during a run queues exactly one more. A delivery also runs every 120
 seconds so failed reports are retried. A subscription error (wrong token,
 feedback disabled) prints one fixed line and exits 1. SIGTERM exits 0 after the
 current delivery. Reports and diagnostics remain fenced untrusted text;
-install IDs are hashed before inclusion in ticket metadata. Run
-`npm ci --prefix bridge` once before `pnpm check`; the bridge keeps its own
-lockfile because its image installs from it.
+install IDs are hashed before inclusion in ticket metadata. The bridge keeps
+its own npm lockfile because its image installs from it; `scripts/check relay`
+installs both before `pnpm check`.
 
 Every attachment is untrusted. The bridge downloads each stored file, checks its
 length and SHA-256 against the queue entry, and re-encodes it in a per-report
