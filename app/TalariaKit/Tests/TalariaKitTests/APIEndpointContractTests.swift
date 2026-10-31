@@ -175,6 +175,7 @@ final class ContractReadinessTests: APIClientTestCase {
                 path: "/api/session/compress/status",
                 query: ["session_id": "session-123"]
             ),
+            .init(name: "clear session", endpoint: .clearSession, path: "/api/session/clear"),
             .init(name: "undo session", endpoint: .undoSession, path: "/api/session/undo"),
             .init(name: "retry session", endpoint: .retrySession, path: "/api/session/retry"),
             .init(name: "truncate session", endpoint: .truncateSession, path: "/api/session/truncate"),

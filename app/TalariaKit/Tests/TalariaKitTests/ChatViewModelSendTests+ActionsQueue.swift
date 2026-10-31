@@ -1126,38 +1126,6 @@ extension ChatViewModelSendTests {
     }
 
     @MainActor
-    func testClearSlashCommandClearsLocalTranscriptWithoutServerRequest() async throws {
-        var requestCount = 0
-        let viewModel = try makeViewModel { request in
-            requestCount += 1
-            switch request.url?.path {
-            case "/api/session":
-                return apiTestJSONResponse("""
-                {
-                  "session": {
-                    "session_id": "session-abc",
-                    "messages": [
-                      {"role": "user", "content": "Question", "timestamp": 1, "message_id": "u-1"},
-                      {"role": "assistant", "content": "Answer", "timestamp": 2, "message_id": "a-2"}
-                    ]
-                  }
-                }
-                """, for: request)
-            default:
-                XCTFail("Clear should not call \(request.url?.path ?? "unknown path").")
-                throw URLError(.badURL)
-            }
-        }
-
-        await viewModel.loadMessages()
-        let result = await viewModel.executeSlashCommand(try XCTUnwrap(SlashCommandCatalog.command(named: "clear")))
-
-        XCTAssertEqual(result, .executed(message: nil))
-        XCTAssertTrue(viewModel.messages.isEmpty)
-        XCTAssertEqual(requestCount, 1)
-    }
-
-    @MainActor
     func testAcceptedSteerRendersActualMessageInsideRunningTurnAndSettlesOnDone() async throws {
         let streamClient = SpySSEStreamingClient()
         let viewModel = try makeViewModel(streamClient: streamClient) { request in

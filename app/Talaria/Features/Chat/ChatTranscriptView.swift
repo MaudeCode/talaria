@@ -171,6 +171,8 @@ struct ChatTranscriptView: View {
             .onTapGesture {
                 onDismissKeyboard()
             }
+            // A transcript that empties and fills again (a `/clear` rolled back or reloaded) opens on its latest row.
+            .onAppear { initialScrollAnchor = .bottom }
         } else {
             transcriptScrollView
         }

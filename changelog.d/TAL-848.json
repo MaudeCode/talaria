@@ -1,0 +1,3 @@
+{
+  "entries": [{"category": "Fixed", "summary": "/clear now asks first, then clears the conversation on the server for every device, so reopening or refreshing the chat no longer brings the old messages back.", "highlight": false, "components": ["app"]}]
+}

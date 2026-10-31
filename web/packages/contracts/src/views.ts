@@ -371,6 +371,7 @@ export const SessionSchema = z.looseObject({
   source_references: z.array(AcceptedSourceReferenceSchema).optional(),
   context_detail_key: z.string().nullable().optional().describe('Opaque identity for open-only context details; changes with owner epoch, model and context.'),
   composer_state_key: z.string().optional().describe('Opaque profile-home and owner identity for device-local composer state; never an API session id.'),
+  clear_generation: NullableString.optional().describe('TAL-848: opaque marker that changes each time /clear empties the session; a client whose clear outcome is unknown compares it with its last read. Null before any clear; older servers omit it.'),
   session_id: SessionIdSchema, title: z.string(), workspace: z.string().optional(), created_workspace: z.string().nullable().optional(), model: NullableString.optional(), model_provider: NullableString.optional(),
   model_option_id: NullableString.optional().describe('TAL-301: the catalog entry id the stored model/provider selects; null when none.'),
   messages: z.array(MessageSchema).optional(), tool_calls: z.array(ToolCallSchema).optional(), created_at: UnixSeconds.optional(), updated_at: UnixSeconds.optional(), last_message_at: NullableNumber.optional(),

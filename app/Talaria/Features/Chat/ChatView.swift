@@ -1259,6 +1259,26 @@ struct ChatView: View {
                 Text(deepTruncateWarningMessage(confirmation))
             }
             .alert(
+                "Clear this conversation?",
+                isPresented: Binding(
+                    get: { viewModel.isConfirmingClear },
+                    set: { if !$0 { viewModel.cancelClearConversation() } }
+                )
+            ) {
+                Button("Cancel", role: .cancel) {
+                    viewModel.cancelClearConversation()
+                }
+                Button("Clear", role: .destructive) {
+                    ChatHaptics.destructiveConfirmationAccepted(isEnabled: isHapticsEnabled)
+                    Task {
+                        await viewModel.confirmClearConversation()
+                        if let lastError = viewModel.lastError { onAPIError(lastError) }
+                    }
+                }
+            } message: {
+                Text("Messages are removed from the server for every device.")
+            }
+            .alert(
                 "Start New Session?",
                 isPresented: $showProfileNewSessionConfirmation
             ) {
