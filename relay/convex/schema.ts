@@ -4,6 +4,7 @@ import { v } from "convex/values";
 import {
   activityModeValidator,
   aggregateValidator,
+  apnsRequestValidator,
   apsEnvironmentValidator,
   preferencesValidator,
   sessionPhaseValidator,
@@ -250,14 +251,7 @@ export default defineSchema({
     ),
     expectedToken: v.string(),
     stateFingerprint: v.string(),
-    request: v.object({
-      token: v.string(),
-      topic: v.string(),
-      environment: apsEnvironmentValidator,
-      pushType: v.union(v.literal("alert"), v.literal("liveactivity")),
-      priority: v.union(v.literal("5"), v.literal("10")),
-      payloadJson: v.string(),
-    }),
+    request: apnsRequestValidator,
     aggregate: v.optional(aggregateValidator),
     status: v.union(
       v.literal("queued"),

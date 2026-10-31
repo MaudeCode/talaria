@@ -126,7 +126,7 @@ describe("publisher alert eligibility", () => {
     await withoutActivity.mutation(internal.publishers.acceptSnapshot, { ...publish, nonce: "n1", receivedAt: now + 1, snapshotId: "s1", states: mixed });
     await runScheduledRecomputes(withoutActivity);
     expect(await jobs(withoutActivity)).toEqual([
-      expect.objectContaining({ kind: "notification", aps: { alert: { title: "session-2", body: "Input needed on Home" }, sound: "default" } }),
+      expect.objectContaining({ kind: "notification", aps: { alert: { title: "session-2", body: "Input needed on Home" }, sound: "default", "thread-id": expect.any(String) } }),
     ]);
   });
 
