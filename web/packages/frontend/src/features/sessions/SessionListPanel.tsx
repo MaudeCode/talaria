@@ -133,9 +133,9 @@ export const SessionListItem = memo(function SessionListItem({ row, active, proj
       {/* The rail shows status by color; this says it in words (TAL-365). */}
       {row.is_streaming ? <span className="sr-only">{m.status_streaming()}</span> : row.attention && <span className="sr-only">{attentionLabel(row.attention.kind)}</span>}
       <div className="session-actions">
-        <button type="button" className="session-archive-toggle" title={row.archived ? m.session_restore() : m.session_batch_archive()} aria-label={row.archived ? m.session_restore() : m.session_batch_archive()} onClick={(e) => { e.preventDefault(); e.stopPropagation(); onArchive(row.session_id, !row.archived) }}>
+        {row.can_archive && <button type="button" className="session-archive-toggle" title={row.archived ? m.session_restore() : m.session_batch_archive()} aria-label={row.archived ? m.session_restore() : m.session_batch_archive()} onClick={(e) => { e.preventDefault(); e.stopPropagation(); onArchive(row.session_id, !row.archived) }}>
           {row.archived ? <ArchiveRestore size={14} aria-hidden="true" /> : <Archive size={14} aria-hidden="true" />}
-        </button>
+        </button>}
         <SessionContextMenu row={row} active={active} />
       </div>
     </Link>
