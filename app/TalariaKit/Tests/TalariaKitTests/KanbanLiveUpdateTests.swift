@@ -346,6 +346,60 @@ final class KanbanLiveUpdateTests: KanbanDefaultsTestCase {
         second.setVisible(false)
     }
 
+    func testReturningToLoadedBoardKeepsItAndResumesStreamFromSavedCursor() async throws {
+        let client = LiveKanbanClient(
+            configuration: .writableConfiguration,
+            boardResults: [.success(.archivable), .success(.archived)]
+        )
+        let stream = KanbanStreamSpy()
+        let state = makeState(client: client, stream: stream)
+
+        await state.loadIfNeeded()
+        state.setVisible(true)
+        let card = try XCTUnwrap(state.allCards.first { $0.cardID == "CARD-1" })
+        await state.archiveCard(card)
+        XCTAssertTrue(state.hasAvailableArchiveUndo)
+        stream.emit(Self.eventsFrame(cursor: 12, kind: "task.archived"))
+        try await waitUntil { await client.boardCallCount == 2 }
+        let snapshot = state.snapshot
+        let cursor = state.liveCursor
+        XCTAssertEqual(cursor, 12)
+        let configurationCalls = await client.configurationCallCount
+        let boardsCalls = await client.boardsCallCount
+
+        // Opening a Card hides the Board; going back runs its appear entry point again.
+        state.setVisible(false)
+        await state.loadIfNeeded()
+        state.setVisible(true)
+
+        XCTAssertEqual(state.snapshot, snapshot)
+        XCTAssertTrue(state.hasAvailableArchiveUndo)
+        XCTAssertEqual(state.liveCursor, cursor)
+        let configurationCallsAfterReturn = await client.configurationCallCount
+        let boardsCallsAfterReturn = await client.boardsCallCount
+        let boardCallsAfterReturn = await client.boardCallCount
+        XCTAssertEqual(configurationCallsAfterReturn, configurationCalls)
+        XCTAssertEqual(boardsCallsAfterReturn, boardsCalls)
+        XCTAssertEqual(boardCallsAfterReturn, 2)
+        XCTAssertEqual(stream.startURLs.last?.queryValue("since"), "12")
+        state.setVisible(false)
+    }
+
+    func testAppearingWithoutLoadedBoardColdLoads() async throws {
+        let client = LiveKanbanClient(boardResults: [.failure(URLError(.notConnectedToInternet)), .success(.rich)])
+        let state = makeState(client: client, stream: KanbanStreamSpy())
+
+        await state.loadIfNeeded()
+        XCTAssertNil(state.snapshot)
+
+        await state.loadIfNeeded()
+        XCTAssertEqual(state.snapshot?.latestEventID, 11)
+        let configurationCalls = await client.configurationCallCount
+        let boardCalls = await client.boardCallCount
+        XCTAssertEqual(configurationCalls, 2)
+        XCTAssertEqual(boardCalls, 2)
+    }
+
     private func makeState(
         client: LiveKanbanClient,
         stream: KanbanStreamSpy,
@@ -439,17 +493,22 @@ private actor LiveKanbanClient: KanbanDataClient {
     private var boardsResults: [Result<KanbanBoardsResponse, Error>]
     private var boardResults: [Result<KanbanBoardSnapshot, Error>]
     private let eventsResult: Result<KanbanEventsEnvelope, Error>
+    private let configuration: KanbanConfiguration
     private(set) var boardRequests: [KanbanBoardRequest] = []
     private(set) var eventCallCount = 0
     private(set) var statsCallCount = 0
     private(set) var assigneeCallCount = 0
+    private(set) var configurationCallCount = 0
+    private(set) var boardsCallCount = 0
 
     init(
+        configuration: KanbanConfiguration = .liveConfiguration,
         boards: KanbanBoardsResponse = .single,
         boardResults: [Result<KanbanBoardSnapshot, Error>],
         eventsResult: Result<KanbanEventsEnvelope, Error> = .success(.events(cursor: 11)),
         boardsResults: [Result<KanbanBoardsResponse, Error>]? = nil
     ) {
+        self.configuration = configuration
         self.boardsResults = boardsResults ?? [.success(boards)]
         self.boardResults = boardResults
         self.eventsResult = eventsResult
@@ -457,8 +516,13 @@ private actor LiveKanbanClient: KanbanDataClient {
 
     var boardCallCount: Int { boardRequests.count }
 
-    func kanbanConfiguration() -> KanbanConfiguration { .liveConfiguration }
+    func kanbanConfiguration() -> KanbanConfiguration {
+        configurationCallCount += 1
+        return configuration
+    }
+
     func kanbanBoards() throws -> KanbanBoardsResponse {
+        boardsCallCount += 1
         guard !boardsResults.isEmpty else { return .single }
         if boardsResults.count > 1 {
             return try boardsResults.removeFirst().get()
@@ -491,6 +555,10 @@ private actor LiveKanbanClient: KanbanDataClient {
     func kanbanEvents(_ request: KanbanEventsRequest) throws -> KanbanEventsEnvelope {
         eventCallCount += 1
         return try eventsResult.get()
+    }
+
+    func setKanbanCardStatus(_ request: KanbanCardStatusRequest) -> KanbanCardMutationEnvelope {
+        decode(#"{"task":{"id":"\#(request.cardID)","status":"\#(request.status)",\#(allCardActions)}}"#)
     }
 }
 
@@ -535,6 +603,7 @@ private extension URL {
 
 private extension KanbanConfiguration {
     static let liveConfiguration: Self = decode(#"{"columns":["triage","ready"],"read_only":false}"#)
+    static let writableConfiguration: Self = decode(#"{"columns":["triage","todo","ready","done"],"read_only":false}"#)
 }
 
 private extension KanbanBoardsResponse {
@@ -545,6 +614,8 @@ private extension KanbanBoardsResponse {
 
 private extension KanbanBoardSnapshot {
     static let rich: Self = decode(#"{"changed":true,"latest_event_id":11,"read_only":false,"columns":[{"name":"ready","tasks":[{"id":"CARD-1","status":"ready"}]}]}"#)
+    static let archivable: Self = decode(#"{"changed":true,"latest_event_id":11,"read_only":false,"columns":[{"name":"ready","tasks":[{"id":"CARD-1","status":"ready",\#(allCardActions)}]}]}"#)
+    static let archived: Self = decode(#"{"changed":true,"latest_event_id":12,"read_only":false,"columns":[{"name":"ready","tasks":[]}]}"#)
     static let newer: Self = decode(#"{"changed":true,"latest_event_id":13,"read_only":false,"columns":[{"name":"ready","tasks":[{"id":"CARD-2","status":"ready"}]}]}"#)
     static let release: Self = decode(#"{"changed":true,"latest_event_id":20,"read_only":false,"columns":[{"name":"triage","tasks":[]}]}"#)
     static let releaseUpdated: Self = decode(#"{"changed":true,"latest_event_id":21,"read_only":false,"columns":[{"name":"triage","tasks":[{"id":"REL-1","status":"triage"}]}]}"#)

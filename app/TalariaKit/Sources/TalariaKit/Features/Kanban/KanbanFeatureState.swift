@@ -735,6 +735,13 @@ public final class KanbanFeatureState {
         return true
     }
 
+    /// The Board's appear entry point. Returning from a Card keeps a live-loaded Board, its archive Undo
+    /// and live cursor (TAL-841); only a missing or cached-only Board cold-loads, as `retry()` and `refresh()` do.
+    public func loadIfNeeded() async {
+        guard snapshot == nil || isShowingCachedBoard else { return }
+        await load()
+    }
+
     public func retry() async {
         if snapshot == nil {
             await load()

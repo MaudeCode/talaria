@@ -1,0 +1,3 @@
+{
+  "entries": [{"category": "Fixed", "summary": "Going back from a Kanban card keeps the board, its scroll position and any pending archive Undo instead of reloading.", "highlight": false, "components": ["app"]}]
+}
