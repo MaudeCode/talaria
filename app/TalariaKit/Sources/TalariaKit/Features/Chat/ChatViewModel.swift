@@ -111,6 +111,8 @@ public final class ChatViewModel {
     @ObservationIgnored private var loadedClearGeneration: String?
     /// The outstanding `POST /api/session/clear`; sends and loads wait for it so it never overtakes newer input.
     @ObservationIgnored private var clearConversationTask: Task<ClearConversationOutcome, Never>?
+    /// Counts `/clear`s; a history page read before the latest one carries rows it removed.
+    @ObservationIgnored private var transcriptClearCount = 0
     @ObservationIgnored private var offeredOwnerModelConfirmation: ModelSwitchConfirmation?
 
     public var ownerModelChangeMessage: String? {
@@ -2084,6 +2086,7 @@ public final class ChatViewModel {
         cacheErrorMessage = nil
         lastError = nil
         defer { isLoadingOlderMessages = false }
+        let clearCountAtFetch = transcriptClearCount
 
         do {
             let response = try await client.session(
@@ -2092,6 +2095,7 @@ public final class ChatViewModel {
                 messageLimit: Self.messagePageLimit,
                 messageBefore: messageBefore
             )
+            guard clearCountAtFetch == transcriptClearCount else { return false }
             guard let session = response.session else {
                 hasOlderMessages = false
                 return false
@@ -3641,6 +3645,7 @@ public final class ChatViewModel {
         clearTranscript()
         // Reads already in flight carry the rows being cleared; later ones wait for the clear.
         streamCoordinator.invalidateSessionLoads()
+        transcriptClearCount &+= 1
         lastError = nil
         let request = Task { await clearConversationOnServer(sessionID, generationBeforeClear: generationBeforeClear) }
         clearConversationTask = request

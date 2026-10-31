@@ -23,6 +23,10 @@ private final class ClearServer: @unchecked Sendable {
     var clearsOnRequest = true
     /// An older server sends no `clear_generation`.
     var reportsClearGeneration = true
+    /// The uncleared transcript's `_messages_offset`; above zero, older pages exist.
+    var unclearedOffset = 0
+    /// Answers reads with the pre-clear transcript, as a read the server served before the clear would have.
+    var answerUncleared = false
     /// Holds the next `GET /api/session` until the test releases it, answering with the transcript it saw on arrival.
     var heldRead: (arrived: XCTestExpectation, release: DispatchSemaphore)?
     private var recordedPaths: [String] = []
@@ -34,7 +38,10 @@ private final class ClearServer: @unchecked Sendable {
         lock.withLock { recordedPaths.append(request.url?.path ?? "") }
         switch request.url?.path {
         case "/api/session":
-            var json = lock.withLock { cleared } ? clearedSessionJSON : unclearedSessionJSON
+            var json = lock.withLock { cleared } && !answerUncleared ? clearedSessionJSON : unclearedSessionJSON
+            if unclearedOffset > 0, json == unclearedSessionJSON {
+                json = json.replacingOccurrences(of: #""messages":["#, with: #""_messages_offset":\#(unclearedOffset),"_messages_truncated":true,"messages":["#)
+            }
             if !reportsClearGeneration {
                 json = json.replacingOccurrences(of: #""clear_generation":"generation-before","#, with: "")
                     .replacingOccurrences(of: #""clear_generation":"generation-after","#, with: "")
@@ -274,6 +281,49 @@ extension ChatViewModelSendTests {
 
         XCTAssertEqual(model.messages.compactMap(\.content), ["Session finalized."])
         XCTAssertFalse(try CacheStore.cachedMessages(serverURL: clearServerURL, sessionID: "session-abc", in: context)
+            .contains { ["Old question", "Old answer"].contains($0.content) })
+    }
+
+    func testAnOlderPageInFlightWhenClearingCannotBringTheOldMessagesBack() async throws {
+        let host = "clear-page.test"
+        let server = ClearServer()
+        server.unclearedOffset = 50
+        let heldPage = DeferredRequests()
+        func answer(_ request: DeferredMockURLProtocol) {
+            do {
+                let (response, data) = try server.handle(request.request)
+                request.complete(withJSON: String(decoding: data, as: UTF8.self), statusCode: response.statusCode)
+            } catch {
+                request.fail(with: error)
+            }
+        }
+        DeferredMockURLProtocol.setOnRequest({ request in
+            let isOlderPage = request.request.url?.query?.contains("msg_before") == true
+            if isOlderPage { _ = heldPage.append(request) } else { answer(request) }
+        }, forHost: host)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+        let model = try makeViewModel(
+            server: try XCTUnwrap(URL(string: "https://\(host)")), protocolClasses: [DeferredMockURLProtocol.self],
+            handler: { _ in throw URLError(.badURL) }
+        )
+        let context = try makeContext()
+        await model.loadMessages(modelContext: context)
+        XCTAssertTrue(model.hasOlderMessages)
+        let olderPage = Task { await model.loadOlderMessages(modelContext: context) }
+        try await waitUntil { heldPage.count == 1 }
+
+        _ = await model.executeSlashCommand(try clearCommand())
+        await model.confirmClearConversation()
+        XCTAssertEqual(model.messages.compactMap(\.content), ["Session finalized."])
+        // The page was requested before the clear; it answers with the rows the clear removed.
+        server.answerUncleared = true
+        answer(heldPage.request(at: 0))
+        _ = await olderPage.value
+
+        XCTAssertEqual(model.messages.compactMap(\.content), ["Session finalized."],
+                       "A history page requested before the clear must not repaint the cleared rows")
+        XCTAssertFalse(try CacheStore.cachedMessages(serverURL: try XCTUnwrap(URL(string: "https://\(host)")),
+                                                     sessionID: "session-abc", in: context)
             .contains { ["Old question", "Old answer"].contains($0.content) })
     }
 
