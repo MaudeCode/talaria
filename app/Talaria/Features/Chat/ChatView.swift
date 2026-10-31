@@ -905,6 +905,19 @@ struct ChatView: View {
                     }
                 }
 
+                // The vertical bar has no keyboard accessory row, so it carries its own dismiss. The first
+                // trailing item sits at the bar's far end; the flexible space keeps it next to the keyboard.
+                if #available(iOS 26, *), hasVerticalToolbar, composerIsFocused {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button(action: dismissKeyboard) {
+                            Label("Hide Keyboard", systemImage: "keyboard.chevron.compact.down")
+                        }
+                        .accessibilityIdentifier("chat-hide-keyboard")
+                    }
+                    .overflowPriority(.dismissKeyboard)
+                    ToolbarSpacer(.flexible, placement: .topBarTrailing)
+                }
+
                 if hasVerticalToolbar, let sessionMenu {
                     ToolbarItem(placement: .topBarTrailing) {
                         Menu { sessionMenu } label: {

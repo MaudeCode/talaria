@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "On the iPhone Duo, the chat's vertical bar shows a Hide Keyboard button while you type, so you can close the keyboard without swiping the transcript.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}

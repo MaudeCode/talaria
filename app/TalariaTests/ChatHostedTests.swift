@@ -144,6 +144,48 @@ final class ChatHostedTests: XCTestCase {
         XCTAssertTrue(editor.isFirstResponder)
     }
 
+    /// The vertical bar has no keyboard accessory row, so it carries its own Hide Keyboard while the composer is
+    /// focused (TAL-1584). A horizontal bar never shows it.
+    func testVerticalBarHidesTheKeyboardWhileTheComposerIsFocused() async throws {
+        let fixture = try FixtureApp(for: self)
+        let session = try await fixture.session()
+        func hideKeyboard(in window: UIWindow) -> UIBarButtonItem? {
+            HostedAccessibility.toolbarItems(in: window).first { $0.accessibilityIdentifier == "chat-hide-keyboard" }
+        }
+        for vertical in [true, false] {
+            let window = try hostWindow(fixture.chat(session).environment(\.navigationHasVerticalToolbar, vertical))
+            _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
+            XCTAssertNil(hideKeyboard(in: window), "Hide Keyboard must wait for the composer's focus")
+            try await typeIntoComposer("Draft", in: window)
+            let loadedEditor = await composerTextView(in: window)
+            let editor = try XCTUnwrap(loadedEditor)
+            XCTAssertTrue(editor.isFirstResponder)
+            guard vertical else {
+                settle(0.3)
+                XCTAssertNil(hideKeyboard(in: window), "A horizontal bar must not show Hide Keyboard")
+                window.isHidden = true
+                window.rootViewController = nil
+                continue
+            }
+            let shown = await awaitCondition { hideKeyboard(in: window) != nil }
+            XCTAssertTrue(shown, "A focused composer must add Hide Keyboard to the vertical bar")
+            let item = try XCTUnwrap(hideKeyboard(in: window))
+            XCTAssertEqual(item.accessibilityLabel ?? item.title, "Hide Keyboard")
+            XCTAssertTrue(HostedAccessibility.activate(item))
+            let hidden = await awaitCondition { !editor.isFirstResponder && hideKeyboard(in: window) == nil }
+            XCTAssertTrue(hidden, "Hide Keyboard must end editing and leave the bar")
+            // Any other blur, such as a transcript swipe, also removes it.
+            XCTAssertTrue(editor.becomeFirstResponder())
+            let refocused = await awaitCondition { hideKeyboard(in: window) != nil }
+            XCTAssertTrue(refocused)
+            editor.resignFirstResponder()
+            let blurred = await awaitCondition { hideKeyboard(in: window) == nil }
+            XCTAssertTrue(blurred, "Hide Keyboard must leave the bar when the composer loses focus")
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+    }
+
     func testTabletopPartitionsTranscriptAndComposerWithoutLosingTheDraft() async throws {
         let fixture = try FixtureApp(for: self)
         let session = try await fixture.session()
