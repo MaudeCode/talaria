@@ -11,6 +11,7 @@ final class ToolbarActionTests: XCTestCase {
             .selectChats: .low, .chatsRefresh: .low,
             .create: .high, .refresh: .standard, .secondary: .low,
             .commit: .high, .done: .high, .share: .low,
+            .dismissKeyboard: .highest,
         ]
         XCTAssertEqual(Dictionary(uniqueKeysWithValues: ToolbarAction.allCases.map { ($0, $0.priority) }), expected)
     }

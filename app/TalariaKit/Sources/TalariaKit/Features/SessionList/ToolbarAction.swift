@@ -4,6 +4,7 @@ public enum ToolbarAction: CaseIterable, Sendable {
     case newChat, search, drawer, account, filters, notifications, selectChats, chatsRefresh
     case create, refresh, secondary
     case commit, done, share
+    case dismissKeyboard
 
     public enum Priority: Sendable {
         case highest, high, standard, low
@@ -11,7 +12,7 @@ public enum ToolbarAction: CaseIterable, Sendable {
 
     public var priority: Priority {
         switch self {
-        case .newChat, .search, .notifications: .highest
+        case .newChat, .search, .notifications, .dismissKeyboard: .highest
         case .chatGoal, .chatFiles, .chatCompanionPage, .chatBackgroundTasks, .chatQueuedMessages, .drawer, .account, .create, .commit, .done: .high
         case .chatGit, .filters, .refresh: .standard
         case .chatMore, .selectChats, .chatsRefresh, .secondary, .share: .low
