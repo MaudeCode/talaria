@@ -1657,6 +1657,26 @@ describe('Agent checkout updates', () => {
     expect(readFileSync(join(a.agent, 'README'), 'utf8')).toBe('preserve local edit\n')
   })
 
+  it.each([
+    ['the updater deadline', 'git fetch origin --quiet --tags --force timed out after 15s', 'The update check timed out after 15s. Try again.', 'The update check timed out after 15s. Try again.'],
+    ['a libcurl stall', 'fatal: unable to access \'https://example.invalid/agent.git/\': Operation timed out after 30000 milliseconds with 0 bytes received', 'Could not reach the remote repository. Check your internet connection and try again.', 'Could not reach the remote repository. Check your connection.'],
+    ['an unresolved host', 'fatal: unable to access \'https://example.invalid/agent.git/\': Could not resolve host: example.invalid', 'Could not reach the remote repository. Check your internet connection and try again.', 'Could not reach the remote repository. Check your connection.'],
+    ['another fetch failure', 'fatal: couldn\'t find remote ref refs/heads/gone', 'fetch failed: fatal: couldn\'t find remote ref refs/heads/gone', 'fetch failed: fatal: couldn\'t find remote ref refs/heads/gone'],
+  ])('reports a fetch failure from %s with its own wording (TAL-1149)', async (_case, out, applyMessage, forceMessage) => {
+    const agent = tmp()
+    mkdirSync(join(agent, '.git'))
+    const failing: GitRun = () => Promise.resolve({ ok: false, out })
+    expect(await applyAgentUpdate(agent, failing)).toEqual({ ok: false, message: applyMessage })
+    expect(await forceAgentUpdate(agent, failing, () => undefined)).toEqual({ ok: false, message: forceMessage })
+  })
+
+  it('keeps a locked fetch a lock conflict, not a timeout (TAL-1149)', async () => {
+    const agent = tmp()
+    mkdirSync(join(agent, '.git'))
+    const locked: GitRun = () => Promise.resolve({ ok: false, out: "fatal: Unable to create '/agent/.git/index.lock': File exists." })
+    expect(await applyAgentUpdate(agent, locked)).toMatchObject({ ok: false, lock_conflict: true })
+  })
+
   function agentInstall(withSync = false): { agent: string; origin: string; v1: string; v2: string } {
     const root = tmp()
     const origin = join(root, 'origin')

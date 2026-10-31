@@ -144,7 +144,12 @@ export function sanitizeGitDiagnostic(output: string, limit = 300): string {
   return s.length > limit ? `${s.slice(0, limit).trimEnd()}…` : s
 }
 
+/** `runGit`'s marker when its own deadline killed git; libcurl's "Operation timed out after N milliseconds" stays a network failure. */
+const GIT_DEADLINE = /^git .+ timed out after (\d+(?:\.\d+)?)s$/
+
 function fetchFailureMessage(out: string, network: string): string {
+  const deadline = GIT_DEADLINE.exec(out.trim())
+  if (deadline) return `The update check timed out after ${deadline[1] ?? ''}s. Try again.`
   const detail = sanitizeGitDiagnostic(out)
   if (!detail) return network
   const lower = detail.toLowerCase()
