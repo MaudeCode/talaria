@@ -221,12 +221,24 @@ describe('ctl', () => {
   const stops: (() => Promise<void>)[] = []
   afterEach(async () => { for (const stop of stops.splice(0)) await stop() })
 
+  // Host tools a ctl test may reach are stubs in `<home>/bin` that log their name to `<home>/host-tools.log`, so no test
+  // runs the machine's real lsof/ss/launchctl/systemctl (a system-wide lsof can block on an unreachable network mount).
+  // The real `ps` stays: daemon ownership checks need it, and it does not touch mounts.
+  const hostToolLog = (home: string): string => join(home, 'host-tools.log')
+  function stubHostTool(home: string, name: string, body: string): void {
+    writeFileSync(join(home, 'bin', name), `#!/bin/sh\necho ${name} >> '${hostToolLog(home)}'\n${body}\n`, { mode: 0o755 })
+  }
+  const hostToolCalls = (home: string): string[] => (existsSync(hostToolLog(home)) ? readFileSync(hostToolLog(home), 'utf8').split('\n').filter(Boolean) : [])
+
   function makeCtx(home: string, serveCommand: string[], extraEnv: Record<string, string> = {}): CtlContext & { out: string[]; err: string[] } {
     const out: string[] = []
     const err: string[] = []
     const webRoot = join(home, 'checkout', 'web')
     mkdirSync(webRoot, { recursive: true })
-    return { env: { PATH: process.env.PATH, HOME: home, HERMES_HOME: join(home, '.hermes'), HERMES_WEBUI_CTL_ISOLATE_WORKTREE: '0', ...extraEnv }, webRoot, home, serveCommand, log: (l) => out.push(l), warn: (l) => err.push(l), out, err }
+    mkdirSync(join(home, 'bin'), { recursive: true })
+    stubHostTool(home, 'launchctl', 'exit 113')
+    for (const tool of ['lsof', 'ss', 'systemctl']) stubHostTool(home, tool, 'exit 1')
+    return { env: { PATH: `${join(home, 'bin')}:${process.env.PATH ?? ''}`, HOME: home, HERMES_HOME: join(home, '.hermes'), HERMES_WEBUI_CTL_ISOLATE_WORKTREE: '0', ...extraEnv }, webRoot, home, serveCommand, log: (l) => out.push(l), warn: (l) => err.push(l), out, err }
   }
 
   it('resolves the ctl files under the Hermes home and parses the launch binding', () => {
@@ -336,7 +348,64 @@ describe('ctl', () => {
     ctx.out.length = 0
     expect(await runCtl(ctx, ['status'])).toBe(0)
     expect(ctx.out[0]).toBe('● talaria-web — running (not managed by talaria-web ctl)')
+    expect(hostToolCalls(home)).toContain('lsof')
   })
+
+  it('refuses a foreign server within the host-tool bound when lsof hangs', async () => {
+    const home = scratch()
+    const s = await bootTestServer()
+    stops.push(() => s.close())
+    const ctx = makeCtx(home, fakeServe('setInterval(()=>{},1000)'))
+    // `exec` so the timeout's SIGTERM reaches the sleeper itself and no grandchild keeps the output pipe open.
+    stubHostTool(home, 'lsof', 'exec sleep 60')
+    expect(await runCtl(ctx, ['start', String(s.running.port)])).toBe(2)
+    expect(ctx.err[0]).toContain('a live server is already responding on 127.0.0.1:')
+    expect(hostToolCalls(home)).toContain('lsof')
+  }, 15_000)
+
+  it('keeps a live daemon\'s PID and state files when ps cannot confirm ownership', async () => {
+    const home = scratch()
+    const port = await freePort()
+    const script = `const http=require('node:http');const port=Number(process.argv[process.argv.indexOf('--host')+2]);http.createServer((req,res)=>{res.end('{}')}).listen(port,'127.0.0.1');setInterval(()=>{},1000)`
+    const ctx = makeCtx(home, fakeServe(script))
+    expect(await runCtl(ctx, ['start', String(port)])).toBe(0)
+    stops.push(async () => { rmSync(join(home, 'bin', 'ps'), { force: true }); await runCtl(ctx, ['stop']) })
+    const p = ctlPaths(ctx)
+    const pid = Number(readState(p).PID)
+    stubHostTool(home, 'ps', 'exec sleep 60')
+    const unverified = `[ctl] Could not verify that PID ${String(pid)} is this checkout's Talaria Web (ps did not answer); leaving its PID file in place.`
+    for (const command of [['stop'], ['status'], ['start', String(port)]]) {
+      ctx.err.length = 0
+      expect(await runCtl(ctx, command)).toBe(1)
+      expect(ctx.err).toContain(unverified)
+      expect(existsSync(p.pidFile) && existsSync(p.stateFile)).toBe(true)
+    }
+    expect(() => { process.kill(pid, 0) }).not.toThrow()
+  }, 30_000)
+
+  it.each([
+    ['launchctl', 'launchctl', 'exec sleep 60'],
+    ['systemctl ActiveState', 'systemctl', 'exec sleep 60'],
+    ['systemctl unit port', 'systemctl', 'case "$*" in *ActiveState*) echo activating; exit 0;; esac\nexec sleep 60'],
+  ])('refuses to start when a hung %s probe cannot rule out a supervised instance', async (_probe, tool, body) => {
+    const home = scratch()
+    const ctx = makeCtx(home, fakeServe('setInterval(()=>{},1000)'), { HERMES_WEBUI_START_GRACE: '1' })
+    stops.push(async () => { await runCtl(ctx, ['stop']) })
+    stubHostTool(home, tool, body)
+    expect(await runCtl(ctx, ['start', String(await freePort())])).toBe(2)
+    expect(ctx.err[0]).toContain(`${tool} did not answer`)
+    expect(existsSync(ctlPaths(ctx).pidFile)).toBe(false)
+  }, 15_000)
+
+  it('keeps the conservative launchd guard on the default port when lsof hangs and ss is unavailable', () => {
+    const home = scratch()
+    const ctx = makeCtx(home, ['node'], { HERMES_WEBUI_LAUNCHD_LABEL: 'com.example.webui' })
+    stubHostTool(home, 'launchctl', `printf '\\tpid = ${String(process.pid)}\\n'`)
+    stubHostTool(home, 'lsof', 'exec sleep 60')
+    expect(launchdConflictPid(ctlPaths(ctx), ctx.env, 8787)).toEqual({ pid: process.pid, label: 'com.example.webui' })
+    expect(launchdConflictPid(ctlPaths(ctx), ctx.env, 18787)).toBeNull()
+    expect(hostToolCalls(home).filter((tool) => tool === 'lsof')).toHaveLength(2)
+  }, 20_000)
 
   it('detects a launchd job still under the legacy default label unless a label override is set', () => {
     const home = scratch()
@@ -344,18 +413,12 @@ describe('ctl', () => {
     // not depend on which of lsof/ss the machine has: launchctl knows only the legacy label, and lsof reports only that
     // pid listening on that port.
     const port = 18787
-    const bin = join(home, 'bin')
-    mkdirSync(bin, { recursive: true })
-    writeFileSync(join(bin, 'launchctl'), `#!/bin/sh\ncase "$2" in */com.parantoux.hermes-webui) printf '\\tpid = ${String(process.pid)}\\n'; exit 0;; esac\nexit 113\n`, { mode: 0o755 })
-    writeFileSync(join(bin, 'lsof'), `#!/bin/sh\ncase " $* " in *" -p ${String(process.pid)} -iTCP:${String(port)} "*) exit 0;; esac\nexit 1\n`, { mode: 0o755 })
-    const savedPath = process.env.PATH
-    process.env.PATH = `${bin}:${savedPath ?? ''}`
-    try {
-      const ctx = makeCtx(home, ['node'])
-      expect(launchdConflictPid(ctlPaths(ctx), ctx.env, port)).toEqual({ pid: process.pid, label: 'com.parantoux.hermes-webui' })
-      const custom = makeCtx(home, ['node'], { HERMES_WEBUI_LAUNCHD_LABEL: 'com.example.custom' })
-      expect(launchdConflictPid(ctlPaths(custom), custom.env, port)).toBeNull()
-    } finally { process.env.PATH = savedPath }
+    const ctx = makeCtx(home, ['node'])
+    const custom = makeCtx(home, ['node'], { HERMES_WEBUI_LAUNCHD_LABEL: 'com.example.custom' })
+    stubHostTool(home, 'launchctl', `case "$2" in */com.parantoux.hermes-webui) printf '\\tpid = ${String(process.pid)}\\n'; exit 0;; esac\nexit 113`)
+    stubHostTool(home, 'lsof', `case " $* " in *" -p ${String(process.pid)} -iTCP:${String(port)} "*) exit 0;; esac\nexit 1`)
+    expect(launchdConflictPid(ctlPaths(ctx), ctx.env, port)).toEqual({ pid: process.pid, label: 'com.parantoux.hermes-webui' })
+    expect(launchdConflictPid(ctlPaths(custom), custom.env, port)).toBeNull()
   })
 
   it('reports a server that dies during the startup grace window', async () => {

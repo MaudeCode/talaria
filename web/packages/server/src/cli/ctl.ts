@@ -31,6 +31,16 @@ export interface CtlContext {
 const truthy = (v: string | undefined): boolean => ['1', 'true', 'yes', 'on'].includes((v ?? '').trim().toLowerCase())
 const sleep = (ms: number): Promise<void> => new Promise((r) => { setTimeout(r, ms) })
 
+/** Every lsof/ss/launchctl/systemctl/ps probe is bounded: a hung tool reads as unavailable (`.error`), which each caller already treats conservatively. */
+const HOST_TOOL_TIMEOUT_MS = 5000
+
+function hostTool(env: Record<string, string | undefined>, cmd: string, args: string[]) {
+  return spawnSync(cmd, args, { encoding: 'utf8', env, timeout: HOST_TOOL_TIMEOUT_MS })
+}
+
+/** A supervisor probe that hit the bound, unlike a missing tool or an unknown job, cannot rule out a running instance. */
+const timedOut = (r: { error?: Error }): boolean => (r.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT'
+
 export interface CtlPaths { hermesHome: string; runtimeRoot: string; runtimeBase: string | null; worktreeMode: boolean; pidFile: string; logFile: string; stateFile: string; stateDir: string; launchdLabels: string[] }
 
 function gitPath(webRoot: string, flag: string): string {
@@ -125,25 +135,37 @@ export function isAlive(pid: number): boolean {
   try { process.kill(pid, 0); return true } catch (error) { return (error as NodeJS.ErrnoException).code === 'EPERM' }
 }
 
-function procArgs(pid: number): string {
-  const r = spawnSync('ps', ['-p', String(pid), '-o', 'args='], { encoding: 'utf8' })
+/** The process command line, `''` when `ps` finds no such process, or `null` when `ps` did not answer (timed out or missing). */
+function procArgs(env: Record<string, string | undefined>, pid: number): string | null {
+  const r = hostTool(env, 'ps', ['-p', String(pid), '-o', 'args='])
+  if (r.error) return null
   return r.status === 0 ? r.stdout.trim() : ''
 }
 
-/** Python `_is_owned_webui_pid`: the state file names this checkout and the process command line references our bin or node. */
-function isOwnedPid(p: CtlPaths, ctx: CtlContext, pid: number): boolean {
+/**
+ * Python `_is_owned_webui_pid`: the state file names this checkout and the process command line references our bin or node.
+ * `null` when `ps` did not answer: ownership is unknown, so callers keep the PID and state files rather than treat them as stale.
+ */
+function isOwnedPid(p: CtlPaths, ctx: CtlContext, pid: number): boolean | null {
   const state = readState(p)
   if (!state.REPO_ROOT || resolve(state.REPO_ROOT) !== resolve(ctx.webRoot)) return false
-  const args = procArgs(pid)
+  const args = procArgs(ctx.env, pid)
+  if (args === null) return null
   if (!args) return false
   const serve = ctx.serveCommand.slice(1).join(' ')
   // A reused PID belonging to an unrelated Node process must not be treated as ours: the command line has to name this checkout or the serve bin.
   return args.includes(ctx.webRoot) || (Boolean(serve) && args.includes(serve))
 }
 
-function currentPid(p: CtlPaths, ctx: CtlContext): number | null {
+/** The live recorded daemon and whether it is ours (`owned: null` when `ps` could not tell). */
+function recordedDaemon(p: CtlPaths, ctx: CtlContext): { pid: number; owned: boolean | null } | null {
   const pid = pidFromFile(p)
-  return pid !== null && isAlive(pid) && isOwnedPid(p, ctx, pid) ? pid : null
+  return pid !== null && isAlive(pid) ? { pid, owned: isOwnedPid(p, ctx, pid) } : null
+}
+
+function warnUnverified(ctx: CtlContext, pid: number): number {
+  ctx.warn(`[ctl] Could not verify that PID ${String(pid)} is this checkout's Talaria Web (ps did not answer); leaving its PID file in place.`)
+  return 1
 }
 
 function clearStalePid(p: CtlPaths, log: (line: string) => void): void {
@@ -218,10 +240,11 @@ export function portIsBindable(host: string, port: number): Promise<boolean> {
   })
 }
 
-function pidListensOnPort(pid: number, port: number): 0 | 1 | 2 {
-  const lsof = spawnSync('lsof', ['-nP', '-a', '-p', String(pid), `-iTCP:${String(port)}`, '-sTCP:LISTEN'], { encoding: 'utf8' })
+function pidListensOnPort(env: Record<string, string | undefined>, pid: number, port: number): 0 | 1 | 2 {
+  // `-b -w`: skip the stat/readlink kernel calls that block on an unreachable network mount; a TCP lookup needs none of them.
+  const lsof = hostTool(env, 'lsof', ['-b', '-w', '-nP', '-a', '-p', String(pid), `-iTCP:${String(port)}`, '-sTCP:LISTEN'])
   if (!lsof.error) return lsof.status === 0 ? 0 : 1
-  const ss = spawnSync('ss', ['-tlnp'], { encoding: 'utf8' })
+  const ss = hostTool(env, 'ss', ['-tlnp'])
   if (ss.error || ss.status !== 0) return 2
   const rows = ss.stdout.split('\n').filter((row) => new RegExp(`:${String(port)}$`).test(row.split(/\s+/)[3] ?? ''))
   if (!rows.length) return 1
@@ -229,33 +252,41 @@ function pidListensOnPort(pid: number, port: number): 0 | 1 | 2 {
   return rows.some((r) => r.includes('pid=')) ? 1 : 2
 }
 
-/** Python `_launchd_webui_pid`: a launchd job with one of our labels listening on the wanted port blocks a second instance. */
-export function launchdConflictPid(p: CtlPaths, env: Record<string, string | undefined>, wantPort: number): { pid: number; label: string } | null {
+/**
+ * Python `_launchd_webui_pid`: a launchd job with one of our labels listening on the wanted port blocks a second instance.
+ * `pid: null` when `launchctl` did not answer for that label, so a running job cannot be ruled out.
+ */
+export function launchdConflictPid(p: CtlPaths, env: Record<string, string | undefined>, wantPort: number): { pid: number | null; label: string } | null {
   if (truthy(env.HERMES_WEBUI_CTL_ALLOW_LAUNCHD_CONFLICT)) return null
   for (const label of p.launchdLabels) {
-    const pid = launchdJobPid(label, wantPort)
-    if (pid !== null) return { pid, label }
+    const pid = launchdJobPid(env, label, wantPort)
+    if (pid !== undefined) return { pid, label }
   }
   return null
 }
 
-function launchdJobPid(label: string, wantPort: number): number | null {
-  const out = spawnSync('launchctl', ['print', `gui/${String(userInfo().uid)}/${label}`], { encoding: 'utf8' })
-  if (out.error || out.status !== 0) return null
+/** The conflicting job's PID, `null` when `launchctl` did not answer, or `undefined` for no conflict. */
+function launchdJobPid(env: Record<string, string | undefined>, label: string, wantPort: number): number | null | undefined {
+  const out = hostTool(env, 'launchctl', ['print', `gui/${String(userInfo().uid)}/${label}`])
+  if (timedOut(out)) return null
+  if (out.error || out.status !== 0) return undefined
   const m = /^\s*pid = (\d+)/m.exec(out.stdout)
   const pid = m ? Number.parseInt(m[1] ?? '0', 10) : 0
-  if (!pid || !isAlive(pid)) return null
-  const listens = pidListensOnPort(pid, wantPort)
+  if (!pid || !isAlive(pid)) return undefined
+  const listens = pidListensOnPort(env, pid, wantPort)
   if (listens === 0) return pid
-  if (listens === 1) return null
-  return wantPort === 8787 ? pid : null
+  if (listens === 1) return undefined
+  return wantPort === 8787 ? pid : undefined
 }
 
-function systemdUnitPort(scope: string, unit: string): string {
-  const env = spawnSync('systemctl', [scope, 'show', '-p', 'Environment', '--value', unit], { encoding: 'utf8' })
-  const m1 = /HERMES_WEBUI_PORT=(\d+)/.exec(env.stdout || '')
+/** The unit's configured port, `''` when it names none, or `null` when `systemctl` did not answer. */
+function systemdUnitPort(env: Record<string, string | undefined>, scope: string, unit: string): string | null {
+  const unitEnv = hostTool(env, 'systemctl', [scope, 'show', '-p', 'Environment', '--value', unit])
+  if (timedOut(unitEnv)) return null
+  const m1 = /HERMES_WEBUI_PORT=(\d+)/.exec(unitEnv.stdout || '')
   if (m1) return m1[1] ?? ''
-  const exec = spawnSync('systemctl', [scope, 'show', '-p', 'ExecStart', '--value', unit], { encoding: 'utf8' })
+  const exec = hostTool(env, 'systemctl', [scope, 'show', '-p', 'ExecStart', '--value', unit])
+  if (timedOut(exec)) return null
   const m2 = /--port[=\s](\d+)/.exec(exec.stdout || '')
   return m2 ? (m2[1] ?? '') : ''
 }
@@ -265,21 +296,24 @@ export function systemdConflict(env: Record<string, string | undefined>, wantPor
   if (truthy(env.HERMES_WEBUI_CTL_ALLOW_SYSTEMD_CONFLICT)) return null
   const unit = (env.HERMES_WEBUI_SYSTEMD_UNIT ?? '').trim() || 'hermes-webui.service'
   for (const scope of ['--system', '--user']) {
-    const state = spawnSync('systemctl', [scope, 'show', '-p', 'ActiveState', '--value', unit], { encoding: 'utf8' })
+    const state = hostTool(env, 'systemctl', [scope, 'show', '-p', 'ActiveState', '--value', unit])
+    if (timedOut(state)) return `unit ${unit} state is unknown (systemctl did not answer)`
     if (state.error || state.status !== 0) continue
     const active = state.stdout.trim()
     if (active === 'active') {
-      const mainPid = Number.parseInt(spawnSync('systemctl', [scope, 'show', '-p', 'MainPID', '--value', unit], { encoding: 'utf8' }).stdout.trim() || '0', 10) || 0
+      const mainPid = Number.parseInt(hostTool(env, 'systemctl', [scope, 'show', '-p', 'MainPID', '--value', unit]).stdout.trim() || '0', 10) || 0
       if (mainPid > 0) {
-        const listens = pidListensOnPort(mainPid, wantPort)
+        const listens = pidListensOnPort(env, mainPid, wantPort)
         if (listens === 0) return `unit ${unit} is active (MainPID ${String(mainPid)} listens on port ${String(wantPort)})`
         if (listens === 1) continue
       }
-      const unitPort = systemdUnitPort(scope, unit)
+      const unitPort = systemdUnitPort(env, scope, unit)
+      if (unitPort === null) return `unit ${unit} is active and its port is unknown (systemctl did not answer)`
       if (unitPort) { if (unitPort === String(wantPort)) return `unit ${unit} is active (configured for port ${unitPort})` }
       else if (wantPort === 8787) return `unit ${unit} is active`
     } else if (active === 'activating' || active === 'reloading') {
-      const unitPort = systemdUnitPort(scope, unit)
+      const unitPort = systemdUnitPort(env, scope, unit)
+      if (unitPort === null) return `unit ${unit} is ${active} and its port is unknown (systemctl did not answer)`
       if (unitPort) { if (unitPort === String(wantPort)) return `unit ${unit} is ${active} (auto-restart pending on port ${unitPort})` }
       else if (wantPort === 8787) return `unit ${unit} is ${active} (auto-restart pending)`
     }
@@ -287,10 +321,10 @@ export function systemdConflict(env: Record<string, string | undefined>, wantPor
   return null
 }
 
-function listenerDiag(port: number): string {
-  const ss = spawnSync('ss', ['-tlnp'], { encoding: 'utf8' })
+function listenerDiag(env: Record<string, string | undefined>, port: number): string {
+  const ss = hostTool(env, 'ss', ['-tlnp'])
   if (!ss.error && ss.status === 0) { const row = ss.stdout.split('\n').find((r) => new RegExp(`:${String(port)}$`).test(r.split(/\s+/)[3] ?? '')); if (row) return row.trim() }
-  const lsof = spawnSync('lsof', ['-nP', `-iTCP:${String(port)}`, '-sTCP:LISTEN'], { encoding: 'utf8' })
+  const lsof = hostTool(env, 'lsof', ['-b', '-w', '-nP', `-iTCP:${String(port)}`, '-sTCP:LISTEN'])
   if (!lsof.error && lsof.status === 0) return (lsof.stdout.split('\n')[1] ?? '').trim()
   return ''
 }
@@ -328,10 +362,11 @@ export async function startCmd(ctx: CtlContext, argv: string[]): Promise<number>
   ctx.env.HERMES_WEBUI_STATE_DIR = (ctx.env.HERMES_WEBUI_STATE_DIR ?? '').trim() || p.stateDir
   mkdirSync(ctx.env.HERMES_WEBUI_STATE_DIR, { recursive: true })
   const binding = parseLaunchBinding(argv, ctx.env)
-  const existing = currentPid(p, ctx)
-  if (existing !== null) {
+  const existing = recordedDaemon(p, ctx)
+  if (existing?.owned === null) return warnUnverified(ctx, existing.pid)
+  if (existing?.owned) {
     const state = readState(p)
-    ctx.log(`[ctl] Talaria Web is already running (PID ${String(existing)})`)
+    ctx.log(`[ctl] Talaria Web is already running (PID ${String(existing.pid)})`)
     printCoordinates(ctx, state.HOST ?? binding.host, Number.parseInt(state.PORT ?? '', 10) || binding.port)
     return 0
   }
@@ -346,7 +381,9 @@ export async function startCmd(ctx: CtlContext, argv: string[]): Promise<number>
   ctx.env.HERMES_WEBUI_PORT = String(port)
   const launchd = launchdConflictPid(p, ctx.env, port)
   if (launchd !== null) {
-    ctx.warn(`[ctl] Refusing to start a second Talaria Web while launchd job ${launchd.label} is running (PID ${String(launchd.pid)}).`)
+    ctx.warn(launchd.pid === null
+      ? `[ctl] Refusing to start: launchctl did not answer about launchd job ${launchd.label}, so a running instance cannot be ruled out.`
+      : `[ctl] Refusing to start a second Talaria Web while launchd job ${launchd.label} is running (PID ${String(launchd.pid)}).`)
     ctx.warn(`[ctl] Use launchctl kickstart -k gui/${String(userInfo().uid)}/${launchd.label} or disable the launchd job before using talaria-web ctl start.`)
     return 2
   }
@@ -359,7 +396,7 @@ export async function startCmd(ctx: CtlContext, argv: string[]): Promise<number>
   const probeHost = probeTargetHost(binding.host)
   if (!truthy(ctx.env.HERMES_WEBUI_CTL_ALLOW_PORT_CONFLICT) && (await portAnswersHttp(probeHost, port))) {
     ctx.warn(`[ctl] Refusing to start: a live server is already responding on ${probeHost}:${String(port)}.`)
-    const diag = listenerDiag(port)
+    const diag = listenerDiag(ctx.env, port)
     if (diag) ctx.warn(`[ctl]   listener: ${diag}`)
     ctx.warn('[ctl] Stop that instance first (its own supervisor may restart it; check systemctl/launchctl).')
     return 2
@@ -407,7 +444,7 @@ async function warnIfUnmanaged(ctx: CtlContext, p: CtlPaths): Promise<void> {
   const probeHost = probeTargetHost(host || '127.0.0.1')
   if (await portAnswersHttp(probeHost, port)) {
     ctx.warn(`[ctl] Warning: an instance NOT managed by talaria-web ctl is still serving ${probeHost}:${String(port)}; not touching it.`)
-    const diag = listenerDiag(port)
+    const diag = listenerDiag(ctx.env, port)
     if (diag) ctx.warn(`[ctl]   listener: ${diag}`)
     ctx.warn('[ctl] If it is supervised (systemd/launchd), stop or restart it there instead.')
   }
@@ -425,7 +462,9 @@ export async function stopCmd(ctx: CtlContext): Promise<number> {
     rmSync(p.pidFile, { force: true }); rmSync(p.stateFile, { force: true })
     return 0
   }
-  if (!isAlive(pid) || !isOwnedPid(p, ctx, pid)) { await warnIfUnmanaged(ctx, p); clearStalePid(p, ctx.log); return 0 }
+  const owned = isAlive(pid) ? isOwnedPid(p, ctx, pid) : false
+  if (owned === null) return warnUnverified(ctx, pid)
+  if (!owned) { await warnIfUnmanaged(ctx, p); clearStalePid(p, ctx.log); return 0 }
   ctx.log(`[ctl] Stopping Talaria Web (PID ${String(pid)})`)
   try { process.kill(pid, 'SIGTERM') } catch { /* gone */ }
   // The supervisor kills its worker after its grace; leave it time to reap that worker and exit before killing the group.
@@ -450,9 +489,11 @@ export async function statusCmd(ctx: CtlContext): Promise<number> {
   const host = state.HOST ?? ((ctx.env.HERMES_WEBUI_HOST ?? '').trim() || '127.0.0.1')
   const port = Number.parseInt(state.PORT ?? ((ctx.env.HERMES_WEBUI_PORT ?? '').trim() || '8787'), 10) || 8787
   const tls = Boolean((ctx.env.HERMES_WEBUI_TLS_CERT ?? '').trim()) && Boolean((ctx.env.HERMES_WEBUI_TLS_KEY ?? '').trim())
-  const pid = currentPid(p, ctx)
-  if (pid !== null) {
-    const etime = spawnSync('ps', ['-p', String(pid), '-o', 'etime='], { encoding: 'utf8' }).stdout.trim()
+  const daemon = recordedDaemon(p, ctx)
+  if (daemon?.owned === null) return warnUnverified(ctx, daemon.pid)
+  if (daemon?.owned) {
+    const pid = daemon.pid
+    const etime = hostTool(ctx.env, 'ps', ['-p', String(pid), '-o', 'etime=']).stdout.trim()
     ctx.log('● talaria-web — running')
     ctx.log(`  PID:     ${String(pid)}`)
     ctx.log(`  Uptime:  ${etime || 'unknown'}`)
@@ -466,7 +507,7 @@ export async function statusCmd(ctx: CtlContext): Promise<number> {
   if (await portAnswersHttp(probeHost, port)) {
     ctx.log('● talaria-web — running (not managed by talaria-web ctl)')
     ctx.log('  PID:     -')
-    const diag = listenerDiag(port)
+    const diag = listenerDiag(ctx.env, port)
     if (diag) ctx.log(`  Listener: ${diag}`)
     ctx.log(`  Bound:   ${host}:${String(port)}`)
     ctx.log(`  Log:     ${p.logFile}`)
