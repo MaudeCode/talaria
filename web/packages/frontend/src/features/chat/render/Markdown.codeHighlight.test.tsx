@@ -51,3 +51,11 @@ it('highlights a streamed line as soon as its line break arrives', async () => {
   view.rerender(<Markdown text={'```ts\nconst a = 1\nconst b = 2\n'} streaming />)
   await waitFor(() => { expect(colored()).toEqual([true, true]) })
 })
+
+it('turns line numbers off for labeled and unlabeled fences alike (TAL-1513)', async () => {
+  render(<Markdown text={'```ts\nconst a = 1\n```\n\n```\nplain fence\n```'} />)
+  await waitFor(() => { expect(document.querySelectorAll('[data-streamdown="code-block-body"]')).toHaveLength(2) })
+  // Streamdown numbers lines with a CSS counter on the fence's <code> and a ::before on each line.
+  const numbered = [...document.querySelectorAll('[data-streamdown="code-block-body"]')].map((body) => /counter|before:/.test(body.innerHTML))
+  expect(numbered).toEqual([false, false])
+})

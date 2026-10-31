@@ -1,0 +1,3 @@
+{
+  "entries": [{"category": "Fixed", "summary": "Code blocks in chat show syntax colors again, following the light or dark theme on every skin.", "highlight": false, "components": ["web"]}]
+}

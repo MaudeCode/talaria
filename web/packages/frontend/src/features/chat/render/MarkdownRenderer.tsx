@@ -101,6 +101,7 @@ export default function MarkdownRenderer({ text, streaming = false, className, d
         shikiTheme={SHIKI_THEMES}
         dir={dir}
         controls={CONTROLS}
+        lineNumbers={false}
         linkSafety={linkSafety}
         urlTransform={urlTransform}
       >
