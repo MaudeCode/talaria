@@ -67220,6 +67220,11 @@
                           "minimum": 0,
                           "maximum": 9007199254740991
                         },
+                        "maxVideoCount": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
                         "maxImageBytes": {
                           "type": "integer",
                           "minimum": 0,
@@ -67255,6 +67260,7 @@
                         "enabled",
                         "videoAllowed",
                         "maxCount",
+                        "maxVideoCount",
                         "maxImageBytes",
                         "maxVideoBytes",
                         "maxVideoSeconds",

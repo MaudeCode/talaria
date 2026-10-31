@@ -525,8 +525,8 @@ logs contain only the request UUID and outcome.
 
 `GET /api/feedback/options` publishes what clients may attach. Attachments are
 enabled only when this server is a registered Relay publisher, because Relay
-accepts files only on signed reports; `acceptedTypes`, sizes and the video limit
-mirror `contracts/fixtures/feedback-attachment-limits.json`
+accepts files only on signed reports; `acceptedTypes`, sizes, `maxVideoCount`
+(zero without video) and the video length limit mirror `contracts/fixtures/feedback-attachment-limits.json`
 (`FEEDBACK_ATTACHMENT_LIMITS`, kept equal by a contract test). Clients compress
 and strip metadata before upload; the server never re-encodes.
 

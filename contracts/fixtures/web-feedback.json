@@ -19,6 +19,7 @@
       "enabled": true,
       "videoAllowed": true,
       "maxCount": 5,
+      "maxVideoCount": 1,
       "maxImageBytes": 10000000,
       "maxVideoBytes": 20000000,
       "maxVideoSeconds": 120,

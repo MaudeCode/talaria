@@ -15,7 +15,7 @@ import { postForm } from './client'
 import { loadedBuild, tabId } from '../app/tabBuild'
 import { UploadResponseSchema, type ChatStartRequest, type SessionId, type SessionNewRequestSchema, type SteerRequestSchema, type ApprovalRespondRequestSchema, type ClarifyRespondRequestSchema, type DraftRequestSchema } from '../contracts'
 import type { z } from 'zod'
-import { TranscribeResponseSchema, type SteerSendNowRequestSchema, type SteerWithdrawRequest } from '@maudecode/talaria-web-contracts'
+import { FeedbackAttachmentStagedSchema, TranscribeResponseSchema, type FeedbackAttachmentType, type SteerSendNowRequestSchema, type SteerWithdrawRequest } from '@maudecode/talaria-web-contracts'
 
 export const fetchGroups = (offset = 0) => orpc().groups.list({ offset })
 export const fetchGroup = (room_id: string, before_seq?: number, signal?: AbortSignal) => orpc().groups.view({ room_id, ...(before_seq === undefined ? {} : { before_seq }) }, signal ? { signal } : {})
@@ -366,3 +366,11 @@ export const agentImportResult = (receipt: string) => orpc().profileImport.resul
 
 export const fetchFeedbackDiagnostics = () => orpc().feedback.diagnostics()
 export const submitFeedback = (input: z.infer<typeof FeedbackSubmitSchema>) => orpc().feedback.submit(input)
+export const fetchFeedbackOptions = () => orpc().feedback.options()
+/** Stage one compressed feedback file; its `attachmentId` goes on `submitFeedback` within an hour. */
+export const uploadFeedbackAttachment = (file: Blob, contentType: FeedbackAttachmentType) => {
+  const form = new FormData()
+  form.set('contentType', contentType)
+  form.set('file', file)
+  return postForm('api/feedback/attachments', form, FeedbackAttachmentStagedSchema, { timeoutMs: 120_000 })
+}

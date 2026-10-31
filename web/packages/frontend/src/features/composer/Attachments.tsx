@@ -2,14 +2,17 @@ import { useEffect, useRef, useState } from 'react'
 import { X, FileText, LoaderCircle, RotateCw } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import type { UploadResponse } from '../../contracts'
-import type { GroupAttachmentSchema } from '@maudecode/talaria-web-contracts'
+import type { FeedbackAttachmentStagedSchema, GroupAttachmentSchema } from '@maudecode/talaria-web-contracts'
 import type { z } from 'zod'
 import { IconButton } from '../../ui/Button'
 import { ImageLightbox } from '../chat/ImageLightbox'
 
-export interface PendingFile { key: string; file: File; status: 'uploading' | 'done' | 'error'; upload?: UploadResponse | undefined; groupAttachment?: z.infer<typeof GroupAttachmentSchema> | undefined; error?: string | undefined }
+/** `compressing` precedes the upload where the client re-encodes first (Send feedback). Each owner fills its own receipt slot. */
+export interface PendingFile { key: string; file: File; status: 'compressing' | 'uploading' | 'done' | 'error'; upload?: UploadResponse | undefined; groupAttachment?: z.infer<typeof GroupAttachmentSchema> | undefined; feedback?: z.infer<typeof FeedbackAttachmentStagedSchema> | undefined; error?: string | undefined }
 
 const isImage = (f: PendingFile) => f.file.type.startsWith('image/')
+const busy = (f: PendingFile) => f.status === 'compressing' || f.status === 'uploading'
+const busyLabel = (f: PendingFile) => f.status === 'compressing' ? m.attachment_compressing() : m.uploading()
 
 /** One object URL per shown image, revoked when its file leaves the strip or the strip unmounts. */
 function useObjectUrls(files: readonly File[]): ReadonlyMap<File, string> {
@@ -31,18 +34,34 @@ function useObjectUrls(files: readonly File[]): ReadonlyMap<File, string> {
  * The composer's pending files (TAL-1552, after the App's TAL-634). Placement `strip`: images as thumbnails in a strip
  * hanging from the card's top edge, the mirror of the control strip under it; a thumbnail opens the image, retries a
  * failed upload, and carries a remove badge. Placement `card`: other files as chips inside the card, above the text.
+ * Placement `inline`: both in one wrapping row inside a form (Send feedback, TAL-1596).
  */
-export function AttachmentTray({ files, placement, onRemove, onRetry }: { files: PendingFile[]; placement: 'strip' | 'card'; onRemove: (key: string) => void; onRetry: (key: string) => void }) {
+export function AttachmentTray({ files, placement, onRemove, onRetry }: { files: PendingFile[]; placement: 'strip' | 'card' | 'inline'; onRemove: (key: string) => void; onRetry: (key: string) => void }) {
+  if (placement === 'inline') {
+    if (files.length === 0) return null
+    const images = files.filter(isImage)
+    const others = files.filter((f) => !isImage(f))
+    return (
+      <div className="flex flex-wrap items-end gap-2">
+        {images.length > 0 && <ImageStrip images={images} className="flex flex-wrap gap-2" onRemove={onRemove} onRetry={onRetry} />}
+        {others.length > 0 && <FileChips files={others} className="flex flex-wrap gap-2" onRemove={onRemove} onRetry={onRetry} />}
+      </div>
+    )
+  }
   const shown = files.filter((f) => isImage(f) === (placement === 'strip'))
   if (shown.length === 0) return null
-  if (placement === 'strip') return <ImageStrip images={shown} onRemove={onRemove} onRetry={onRetry} />
+  if (placement === 'strip') return <ImageStrip images={shown} className="attach-tray composer-strip composer-strip--top" onRemove={onRemove} onRetry={onRetry} />
+  return <FileChips files={shown} className="attach-tray flex flex-wrap gap-2 px-3 pt-2" onRemove={onRemove} onRetry={onRetry} />
+}
+
+function FileChips({ files, className, onRemove, onRetry }: { files: PendingFile[]; className: string; onRemove: (key: string) => void; onRetry: (key: string) => void }) {
   return (
-    <ul className="attach-tray flex flex-wrap gap-2 px-3 pt-2" aria-label={m.attachments_label()}>
-      {shown.map((f) => (
+    <ul className={className} aria-label={m.attachments_label()}>
+      {files.map((f) => (
         <li key={f.key} className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs ${f.status === 'error' ? 'border-error text-error' : 'border-border text-text'}`} data-status={f.status}>
           <FileText size={12} aria-hidden="true" />
           <span className="max-w-48 truncate">{f.file.name}</span>
-          {f.status === 'uploading' && <span className="text-muted">…</span>}
+          {busy(f) && <span className="text-muted" role="status" aria-label={`${busyLabel(f)} ${f.file.name}`}>…</span>}
           {f.status === 'error' && f.error && <span className="sr-only">{f.error}</span>}
           {f.status === 'error' && <IconButton label={`${m.retry()} ${f.file.name}`} className="h-5 w-5" onClick={() => onRetry(f.key)}><RotateCw size={12} aria-hidden="true" /></IconButton>}
           <IconButton label={`${m.remove()} ${f.file.name}`} className="h-5 w-5" onClick={() => onRemove(f.key)}><X size={12} aria-hidden="true" /></IconButton>
@@ -52,7 +71,7 @@ export function AttachmentTray({ files, placement, onRemove, onRetry }: { files:
   )
 }
 
-function ImageStrip({ images, onRemove, onRetry }: { images: PendingFile[]; onRemove: (key: string) => void; onRetry: (key: string) => void }) {
+function ImageStrip({ images, className, onRemove, onRetry }: { images: PendingFile[]; className: string; onRemove: (key: string) => void; onRetry: (key: string) => void }) {
   const urls = useObjectUrls(images.map((f) => f.file))
   // The enlarged image by key: an earlier upload finishing reorders `ready` but never switches the open image.
   const [enlarged, setEnlarged] = useState<string | null>(null)
@@ -60,16 +79,16 @@ function ImageStrip({ images, onRemove, onRetry }: { images: PendingFile[]; onRe
   const index = ready.findIndex((r) => r.key === enlarged)
   return (
     <>
-      <ul className="attach-tray composer-strip composer-strip--top" aria-label={m.attachments_label()}>
+      <ul className={className} aria-label={m.attachments_label()}>
         {images.map((f) => {
           const src = urls.get(f.file)
-          const label = f.status === 'error' ? `${m.retry()} ${f.file.name}` : f.status === 'uploading' ? `${m.uploading()} ${f.file.name}` : m.image_enlarge({ name: f.file.name })
+          const label = f.status === 'error' ? `${m.retry()} ${f.file.name}` : busy(f) ? `${busyLabel(f)} ${f.file.name}` : m.image_enlarge({ name: f.file.name })
           return (
             <li key={f.key} className="attach-thumb" data-status={f.status}>
-              <button type="button" className="attach-thumb-image" aria-label={label} title={f.error ?? label} aria-busy={f.status === 'uploading' || undefined} disabled={f.status === 'uploading'}
+              <button type="button" className="attach-thumb-image" aria-label={label} title={f.error ?? label} aria-busy={busy(f) || undefined} disabled={busy(f)}
                 onClick={() => { if (f.status === 'error') onRetry(f.key); else setEnlarged(f.key) }}>
                 {src && <img src={src} alt="" draggable={false} />}
-                {f.status === 'uploading' && <span className="attach-thumb-overlay"><LoaderCircle size={16} className="animate-spin motion-reduce:animate-none" aria-hidden="true" /></span>}
+                {busy(f) && <span className="attach-thumb-overlay"><LoaderCircle size={16} className="animate-spin motion-reduce:animate-none" aria-hidden="true" /></span>}
                 {f.status === 'error' && <span className="attach-thumb-overlay"><RotateCw size={16} aria-hidden="true" /></span>}
               </button>
               <IconButton label={`${m.remove()} ${f.file.name}`} className="attach-thumb-remove" onClick={() => onRemove(f.key)}><X size={10} strokeWidth={3} aria-hidden="true" /></IconButton>

@@ -1,25 +1,36 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { beforeAll, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest'
 import { FeedbackSubmitSchema } from '@maudecode/talaria-web-contracts'
 import { deferred } from '../../test/fixtures'
 
-vi.mock('../../api/endpoints', () => ({ submitFeedback: vi.fn(), fetchFeedbackDiagnostics: vi.fn() }))
+vi.mock('../../api/endpoints', () => ({ submitFeedback: vi.fn(), fetchFeedbackDiagnostics: vi.fn(), fetchFeedbackOptions: vi.fn(), uploadFeedbackAttachment: vi.fn() }))
 vi.mock('../toast/toast', () => ({ showToast: vi.fn(), showRichToast: vi.fn(), dismissToast: vi.fn() }))
+// jsdom has no canvas or WebCodecs; the real compression runs in Playwright (e2e/feedback-media.spec.ts).
+vi.mock('./feedbackMedia', () => ({ compressImage: vi.fn(), compressVideo: vi.fn() }))
+
+const ALL_TYPES = ['image/png', 'image/jpeg', 'image/heic', 'image/webp', 'video/mp4', 'video/quicktime', 'video/webm'] as const
+const OPTIONS = { attachments: { enabled: true, videoAllowed: true, maxCount: 5, maxVideoCount: 1, maxImageBytes: 10_000_000, maxVideoBytes: 20_000_000, maxVideoSeconds: 120, acceptedTypes: [...ALL_TYPES] } }
+type Options = typeof OPTIONS
 
 // The component's ApiError class comes from the same fresh module graph.
 let ApiError: typeof import('../../contracts/common').ApiError
 // The draft and open state live at module scope (a send outlives the section), so each case loads fresh modules.
-async function setup() {
+async function setup(options: Options = OPTIONS) {
   const api = await import('../../api/endpoints')
   const toasts = await import('../toast/toast')
+  const media = await import('./feedbackMedia')
+  vi.mocked(api.fetchFeedbackOptions).mockResolvedValue(options)
+  // Compression is identity here: a picked file is "compressed" to itself.
+  vi.mocked(media.compressImage).mockImplementation((file) => Promise.resolve({ ok: true, file, contentType: file.type as (typeof ALL_TYPES)[number] }))
+  vi.mocked(media.compressVideo).mockImplementation((file) => Promise.resolve({ ok: true, file, contentType: file.type as (typeof ALL_TYPES)[number] }))
   const { HelpSection } = await import('./HelpSection')
   // The shell owns the single dialog mount (TAL-1588); Help only opens it.
   const { FeedbackDialog } = await import('./FeedbackDialog')
   ;({ ApiError } = await import('../../contracts/common'))
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const view = render(<QueryClientProvider client={qc}><HelpSection /><FeedbackDialog /></QueryClientProvider>)
-  return { submit: vi.mocked(api.submitFeedback), diagnostics: vi.mocked(api.fetchFeedbackDiagnostics), toast: vi.mocked(toasts.showToast), sentToast: vi.mocked(toasts.showRichToast), dismiss: vi.mocked(toasts.dismissToast), ...view }
+  return { upload: vi.mocked(api.uploadFeedbackAttachment), compressImage: vi.mocked(media.compressImage), submit: vi.mocked(api.submitFeedback), diagnostics: vi.mocked(api.fetchFeedbackDiagnostics), toast: vi.mocked(toasts.showToast), sentToast: vi.mocked(toasts.showRichToast), dismiss: vi.mocked(toasts.dismissToast), ...view }
 }
 const open = () => fireEvent.click(screen.getByRole('button', { name: 'Send feedback' }))
 const title = () => screen.getByRole('textbox', { name: 'Title' })
@@ -30,9 +41,15 @@ function fill(kind = 'Feature request') {
   fireEvent.change(title(), { target: { value: 'Composer loses text' } })
   fireEvent.change(details(), { target: { value: 'After reconnecting the composer is empty.' } })
 }
+const picker = () => document.querySelector<HTMLInputElement>('input[data-feedback-picker]')
+const attach = () => screen.findByRole('button', { name: 'Attach' })
+const synthetic = (name: string, type: string, bytes = 64) => new File([new Uint8Array(bytes)], name, { type, lastModified: 1 })
+const pick = (...files: File[]) => fireEvent.change(picker()!, { target: { files } })
+const staged = (n: number) => ({ attachmentId: `00000000-0000-4000-8000-00000000000${String(n)}`, contentType: 'image/png' as const, bytes: 64 })
 const closed = () => waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
 const limited = () => new ApiError({ kind: 'http', status: 429, body: { error: 'rate_limited', retryAfterSeconds: 42 }, path: 'api/feedback/submit', message: 'rate_limited' })
 const unreachable = () => new ApiError({ kind: 'http', status: 502, body: { error: 'relay_unreachable' }, path: 'api/feedback/submit', message: 'relay_unreachable' })
+const invalid = () => new ApiError({ kind: 'http', status: 400, body: { error: 'invalid' }, path: 'api/feedback/submit', message: 'invalid' })
 const lost = () => new ApiError({ kind: 'network', path: 'api/feedback/submit', message: 'Failed to fetch' })
 
 // Transform the module graph once; every case then re-evaluates it cheaply.
@@ -42,7 +59,9 @@ beforeEach(() => {
   vi.resetModules()
   vi.clearAllMocks()
   localStorage.clear()
+  vi.stubGlobal('URL', Object.assign(class extends URL {}, { createObjectURL: (file: Blob) => `blob:synthetic/${(file as File).name}`, revokeObjectURL: vi.fn() }))
 })
+afterEach(() => { vi.unstubAllGlobals() })
 
 it('opens from Help with kind, title, details and diagnostics; Send needs a title and details within their limits', async () => {
   await setup()
@@ -186,4 +205,212 @@ it('keeps a report written while another is in flight when the first is refused'
   open()
   expect(title()).toHaveValue('Second report')
   expect(details()).toHaveValue('Written while the first was in flight.')
+})
+
+// TAL-1596: attachments, bounded by the server's feedback.options.
+it('offers Attach with the accept list from feedback.options', async () => {
+  await setup()
+  open()
+  await attach()
+  expect(picker()).toHaveAttribute('accept', ALL_TYPES.join(','))
+  expect(picker()).toHaveAttribute('multiple')
+})
+
+it('hides Attach when the server disables attachments', async () => {
+  const { diagnostics } = await setup({ attachments: { ...OPTIONS.attachments, enabled: false, videoAllowed: false, maxCount: 0, maxVideoCount: 0, acceptedTypes: [] } })
+  diagnostics.mockResolvedValue({ text: '', bytes: 0 })
+  open()
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Send' })).toBeVisible())
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(screen.queryByRole('button', { name: 'Attach' })).toBeNull()
+  expect(picker()).toBeNull()
+})
+
+it('offers no video types when videoAllowed is false and refuses a dropped video', async () => {
+  const { upload } = await setup({ attachments: { ...OPTIONS.attachments, videoAllowed: false, maxVideoCount: 0 } })
+  open()
+  await attach()
+  expect(picker()).toHaveAttribute('accept', 'image/png,image/jpeg,image/heic,image/webp')
+  fireEvent.drop(screen.getByRole('textbox', { name: 'Details' }).closest('form')!, { dataTransfer: { files: [synthetic('clip.mp4', 'video/mp4')] } })
+  expect(screen.getByRole('alert')).toHaveTextContent("clip.mp4 can't be attached.")
+  expect(upload).not.toHaveBeenCalled()
+})
+
+it('enforces maxCount and one video per report', async () => {
+  const { upload } = await setup({ attachments: { ...OPTIONS.attachments, maxCount: 2 } })
+  upload.mockImplementation(() => new Promise(() => undefined))
+  open()
+  await attach()
+  pick(synthetic('a.png', 'image/png'), synthetic('b.png', 'image/png'), synthetic('c.png', 'image/png'))
+  expect(screen.getByRole('alert')).toHaveTextContent('Attach up to 2 files.')
+  expect(screen.queryByRole('list', { name: 'Attachments' })).toBeNull()
+  pick(synthetic('one.mp4', 'video/mp4'), synthetic('two.webm', 'video/webm'))
+  expect(screen.getByRole('alert')).toHaveTextContent('Attach up to 1 video.')
+  pick(synthetic('a.png', 'image/png'), synthetic('b.png', 'image/png'))
+  await waitFor(() => expect(upload).toHaveBeenCalledTimes(2))
+  expect(screen.queryByRole('alert')).toBeNull()
+  pick(synthetic('c.png', 'image/png'))
+  expect(screen.getByRole('alert')).toHaveTextContent('Attach up to 2 files.')
+  expect(upload).toHaveBeenCalledTimes(2)
+})
+
+it('removes a chip, and its file stays out of the report', async () => {
+  const { upload, submit } = await setup()
+  upload.mockResolvedValue(staged(1))
+  submit.mockResolvedValue({ status: 'sent', reportId: 'synthetic-report-1', attachments: [] })
+  open()
+  await attach()
+  fill()
+  pick(synthetic('a.png', 'image/png'))
+  await screen.findByRole('button', { name: 'Enlarge a.png' })
+  fireEvent.click(screen.getByRole('button', { name: 'Remove a.png' }))
+  expect(screen.queryByRole('button', { name: 'Enlarge a.png' })).toBeNull()
+  fireEvent.click(send())
+  await closed()
+  await waitFor(() => expect(submit).toHaveBeenCalledTimes(1))
+  expect(submit.mock.calls[0]![0]).not.toHaveProperty('attachmentIds')
+})
+
+it('shows the server limit inline and uploads nothing when a file is still over it after compression', async () => {
+  const { upload, compressImage } = await setup()
+  open()
+  await attach()
+  compressImage.mockResolvedValueOnce({ ok: false, reason: 'too_large' })
+  pick(synthetic('huge.png', 'image/png'))
+  await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('huge.png is larger than 10 MB'))
+  expect(screen.queryByRole('list', { name: 'Attachments' })).toBeNull()
+  expect(upload).not.toHaveBeenCalled()
+})
+
+it('closes at once, sends once the upload finishes with its attachmentIds, and says when Relay refused them', async () => {
+  const { upload, submit, sentToast } = await setup()
+  const held = deferred<ReturnType<typeof staged>>()
+  upload.mockReturnValue(held.promise)
+  submit.mockResolvedValue({ status: 'sent', reportId: 'synthetic-report-1', attachments: [{ attachmentId: staged(1).attachmentId, status: 'refused', reason: 'quota' }] })
+  open()
+  await attach()
+  fill()
+  pick(synthetic('a.png', 'image/png'))
+  await screen.findByRole('button', { name: 'Uploading… a.png' })
+  fireEvent.click(send())
+  await closed()
+  expect(sentToast).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'feedback-sent', text: 'Feedback sent' }))
+  expect(submit).not.toHaveBeenCalled()
+  held.resolve(staged(1))
+  await waitFor(() => expect(submit).toHaveBeenCalledTimes(1))
+  expect(submit.mock.calls[0]![0].attachmentIds).toEqual([staged(1).attachmentId])
+  expect(FeedbackSubmitSchema.safeParse(submit.mock.calls[0]![0]).success).toBe(true)
+  await waitFor(() => expect(sentToast).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'feedback-sent', text: 'Sent without attachments' })))
+})
+
+it('rolls back to the draft with its attachments when the send is refused; the retry reuses requestId and attachmentIds', async () => {
+  const { upload, submit, toast } = await setup()
+  upload.mockResolvedValue(staged(1))
+  submit.mockRejectedValueOnce(limited())
+  open()
+  await attach()
+  fill()
+  pick(synthetic('a.png', 'image/png'))
+  await screen.findByRole('button', { name: 'Enlarge a.png' })
+  fireEvent.click(send())
+  await screen.findByRole('dialog', { name: 'Send feedback' })
+  expect(screen.getByRole('button', { name: 'Enlarge a.png' })).toBeVisible()
+  expect(toast).toHaveBeenLastCalledWith(expect.stringMatching(/^Feedback limit reached/), 4000, 'error')
+  submit.mockResolvedValueOnce({ status: 'sent', reportId: 'synthetic-report-1', attachments: [{ attachmentId: staged(1).attachmentId, status: 'sent' }] })
+  fireEvent.click(send())
+  await closed()
+  await waitFor(() => expect(submit).toHaveBeenCalledTimes(2))
+  expect(submit.mock.calls[1]![0]).toEqual(submit.mock.calls[0]![0])
+  expect(upload).toHaveBeenCalledTimes(1)
+})
+
+it('rolls back without sending when an attachment fails to upload, and Send waits for its retry', async () => {
+  const { upload, submit, toast } = await setup()
+  const held = deferred<never>()
+  upload.mockReturnValueOnce(held.promise)
+  open()
+  await attach()
+  fill()
+  pick(synthetic('a.png', 'image/png'))
+  fireEvent.click(send())
+  await closed()
+  held.reject(new Error('Failed to fetch'))
+  await screen.findByRole('dialog', { name: 'Send feedback' })
+  expect(submit).not.toHaveBeenCalled()
+  expect(toast).toHaveBeenLastCalledWith('Upload failed: a.png', 4000, 'error')
+  expect(screen.getByRole('button', { name: 'Retry a.png' })).toBeVisible()
+  expect(send()).toBeDisabled()
+  upload.mockResolvedValueOnce(staged(2))
+  fireEvent.click(screen.getByRole('button', { name: 'Retry a.png' }))
+  await screen.findByRole('button', { name: 'Enlarge a.png' })
+  expect(send()).toBeEnabled()
+})
+
+it('stages the attachments again when a refused report is edited, since its old request may still hold them', async () => {
+  const { upload, submit } = await setup()
+  upload.mockResolvedValueOnce(staged(1)).mockResolvedValueOnce(staged(2))
+  submit.mockRejectedValueOnce(unreachable()).mockRejectedValueOnce(unreachable())
+  open()
+  await attach()
+  fill()
+  pick(synthetic('a.png', 'image/png'))
+  await screen.findByRole('button', { name: 'Enlarge a.png' })
+  fireEvent.click(send())
+  await screen.findByRole('dialog', { name: 'Send feedback' })
+  expect(submit).toHaveBeenCalledTimes(2)
+  fireEvent.change(title(), { target: { value: 'Composer loses text after reconnecting' } })
+  await waitFor(() => expect(upload).toHaveBeenCalledTimes(2))
+  await screen.findByRole('button', { name: 'Enlarge a.png' })
+  submit.mockResolvedValueOnce({ status: 'sent', reportId: 'synthetic-report-1', attachments: [] })
+  fireEvent.click(send())
+  await closed()
+  await waitFor(() => expect(submit).toHaveBeenCalledTimes(3))
+  expect(submit.mock.calls[2]![0].requestId).not.toBe(submit.mock.calls[0]![0].requestId)
+  expect(submit.mock.calls[2]![0].attachmentIds).toEqual([staged(2).attachmentId])
+})
+
+it('keeps the attachmentIds a send carried across a reload, so the retry repeats the same envelope', async () => {
+  const first = await setup()
+  first.upload.mockResolvedValue(staged(1))
+  first.submit.mockReturnValue(new Promise(() => undefined))
+  open()
+  await attach()
+  fill()
+  pick(synthetic('a.png', 'image/png'))
+  await screen.findByRole('button', { name: 'Enlarge a.png' })
+  fireEvent.click(send())
+  await waitFor(() => expect(first.submit).toHaveBeenCalledTimes(1))
+  const before = first.submit.mock.calls[0]![0]
+  first.unmount()
+  vi.resetModules()
+  const { submit } = await setup()
+  submit.mockResolvedValue({ status: 'sent', reportId: 'synthetic-report-1', attachments: [] })
+  open()
+  expect(title()).toHaveValue('Composer loses text')
+  fireEvent.click(send())
+  await closed()
+  // The endpoint mock outlives the module reset, so the retry is its second call.
+  await waitFor(() => expect(submit).toHaveBeenCalledTimes(2))
+  expect(submit.mock.calls[1]![0]).toEqual(before)
+  expect(before.attachmentIds).toEqual([staged(1).attachmentId])
+})
+
+it('stages the files again and sends a new request when staged attachments were refused as invalid (expired)', async () => {
+  const { upload, submit } = await setup()
+  upload.mockResolvedValueOnce(staged(1)).mockResolvedValueOnce(staged(2))
+  submit.mockRejectedValueOnce(invalid()).mockResolvedValueOnce({ status: 'sent', reportId: 'synthetic-report-1', attachments: [] })
+  open()
+  await attach()
+  fill()
+  pick(synthetic('a.png', 'image/png'))
+  await screen.findByRole('button', { name: 'Enlarge a.png' })
+  fireEvent.click(send())
+  await closed()
+  await waitFor(() => expect(submit).toHaveBeenCalledTimes(2))
+  expect(upload).toHaveBeenCalledTimes(2)
+  expect(submit.mock.calls[0]![0].attachmentIds).toEqual([staged(1).attachmentId])
+  expect(submit.mock.calls[1]![0].attachmentIds).toEqual([staged(2).attachmentId])
+  expect(submit.mock.calls[1]![0].requestId).not.toBe(submit.mock.calls[0]![0].requestId)
+  await waitFor(() => expect(localStorage.getItem('hermes-feedback-draft')).toBeNull())
+  expect(screen.queryByRole('dialog')).toBeNull()
 })

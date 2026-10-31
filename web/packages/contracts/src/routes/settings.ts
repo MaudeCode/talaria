@@ -44,7 +44,7 @@ export const FeedbackDiagnosticsSchema = z.object({ text: z.string().max(16384),
 export const FeedbackOptionsSchema = z.object({
   attachments: z.object({
     enabled: z.boolean(), videoAllowed: z.boolean(),
-    maxCount: z.number().int().nonnegative(), maxImageBytes: z.number().int().nonnegative(), maxVideoBytes: z.number().int().nonnegative(), maxVideoSeconds: z.number().int().nonnegative(),
+    maxCount: z.number().int().nonnegative(), maxVideoCount: z.number().int().nonnegative(), maxImageBytes: z.number().int().nonnegative(), maxVideoBytes: z.number().int().nonnegative(), maxVideoSeconds: z.number().int().nonnegative(),
     acceptedTypes: z.array(FeedbackAttachmentTypeSchema),
   }),
 })
