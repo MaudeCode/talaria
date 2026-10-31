@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Opening a long chat while a reply is running on a slow device or browser shows the earlier answers right away instead of leaving them blank until the reply finishes.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
