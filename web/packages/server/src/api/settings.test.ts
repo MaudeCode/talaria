@@ -1789,6 +1789,17 @@ describe('catalog helpers', () => {
     expect(groups.map((g) => g.models[0]?.id)).toEqual(['@b:gpt', 'gpt'])
   })
 
+  it('labels dashed version numbers as dotted versions', () => {
+    expect(labelForModel('claude-opus-5-5', [])).toBe('Claude Opus 5.5')
+    expect(labelForModel('claude-opus-4-7', [])).toBe('Claude Opus 4.7')
+    expect(labelForModel('claude-sonnet-4-5-20250929', [])).toBe('Claude Sonnet 4.5 (2025-09-29)')
+    expect(labelForModel('anthropic/claude-3-5-haiku-20241022', [])).toBe('Claude 3.5 Haiku (2024-10-22)')
+    expect(labelForModel('claude-opus-4.7', [])).toBe('Claude Opus 4.7')
+    expect(labelForModel('gpt-6-sol', [])).toBe('GPT 6 SOL')
+    expect(labelForModel('gpt-4o-2024-08-06', [])).toBe('GPT 4O 2024 08 06')
+    expect(labelForModel('llama3:8b', [])).toBe('Llama3 (8B)')
+  })
+
   it('parses provider-qualified ids and coerces efforts down the ladder', () => {
     expect(parseProviderQualifiedModel('@custom:backup:model-a:free')).toEqual(['model-a:free', 'custom:backup'])
     expect(parseProviderQualifiedModel('@custom:127.0.0.1:1234:llama')).toEqual(['llama', 'custom:127.0.0.1:1234'])
