@@ -9,7 +9,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SidecarParams, SidecarResultInput } from '@maudecode/talaria-web-contracts'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer as bootServer, type BootOptions, type TestServer } from '../test/harness.js'
-import { sessionPath } from '../test/storage.js'
+import { sessionPath, useJsonStorage } from '../test/storage.js'
+
+// The cases read the saved session file after storage closed, which only the JSON backend leaves readable.
+useJsonStorage()
 
 const states: string[] = []
 /** Each case closes its server itself (that is what it tests); its state directory goes afterwards. */
