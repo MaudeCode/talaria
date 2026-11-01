@@ -1815,6 +1815,12 @@ describe('delegated subagents under person isolation (TAL-48)', () => {
       insertSession(db, { id: 'clihost', source: 'cli', started_at: 1100, title: 'CLI host', messages: [['user', 1101], ['assistant', 1102]] })
       insertSession(db, { id: 'subcli', source: 'subagent', started_at: 1103, parent: 'clihost', messages: [['user', 1104], ['assistant', 1105]] })
       s.deps.cliSessions.invalidate()
+      // The sidebar reads a bounded window of Agent rows; here the nested worker's parent falls outside it.
+      const read = s.deps.sessions.deps.cliSessions
+      s.deps.sessions.deps.cliSessions = async (profile, opts) => {
+        const result = await read(profile, opts)
+        return opts.sessionIds ? result : { ...result, rows: result.rows.filter((row) => row.session_id !== 'subalice') }
+      }
 
       for (const sid of ['subalice', 'subalicenested']) {
         expect((await s.get(`/api/session?session_id=${sid}&messages=0`, { headers: olive })).status, sid).toBe(404)
@@ -1823,7 +1829,7 @@ describe('delegated subagents under person isolation (TAL-48)', () => {
       const listed = async (h: Record<string, string>) => ((await (await s.get('/api/sessions', { headers: h })).json()) as { sessions: { session_id: string }[] }).sessions.map((r) => r.session_id)
       const aliceRows = await listed(alice)
       const oliveRows = await listed(olive)
-      expect(aliceRows).toEqual(expect.arrayContaining(['aliceparent', 'subalice', 'subalicenested']))
+      expect(aliceRows).toEqual(expect.arrayContaining(['aliceparent', 'subalicenested']))
       expect(aliceRows).not.toContain('subcli')
       expect(oliveRows).toEqual(expect.arrayContaining(['clihost', 'subcli']))
       for (const sid of ['aliceparent', 'subalice', 'subalicenested']) expect(oliveRows).not.toContain(sid)

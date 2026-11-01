@@ -1539,8 +1539,17 @@ export class SessionService {
       }
       return null
     }
+    // A delegated row whose parent is outside this listing window resolves from state.db, never as unowned.
+    const resolved = new Map<string, string | null>()
+    if (this.store.personAccess()) {
+      for (const row of cliRows ?? []) {
+        const id = str(row.session_id)
+        if (rowOwner(row) === null && str(row._parent_lineage_root_id || row.parent_session_id)) resolved.set(id, await this.foreignOwnerOf(id, activeProfile))
+      }
+    }
+    const listedOwner = (row: Row): string | null => rowOwner(row) ?? resolved.get(str(row.session_id)) ?? null
     const lookups = await withStateDbListingReads(() => this.listStateDbLookups(webuiRows, (cliRows ?? []).map((r) => str(r.session_id))))
-    const payload = (await buildSessionListPayload(this.store, { ...params, ...(cliRows ? { cliRows } : {}), ...(truncatedSources ? { truncatedSources } : {}), ...(agentStorage ? { agentStorage } : {}), gatewayIdentity, ...lookups, webuiRows, webDiagnosticIds, activeProfile, isolatedProfileMode: this.deps.isolatedProfileMode(), profilesMatch: this.deps.profilesMatch, rowVisible: (row) => this.personMaySee(rowOwner(row)) }))
+    const payload = (await buildSessionListPayload(this.store, { ...params, ...(cliRows ? { cliRows } : {}), ...(truncatedSources ? { truncatedSources } : {}), ...(agentStorage ? { agentStorage } : {}), gatewayIdentity, ...lookups, webuiRows, webDiagnosticIds, activeProfile, isolatedProfileMode: this.deps.isolatedProfileMode(), profilesMatch: this.deps.profilesMatch, rowVisible: (row) => this.personMaySee(listedOwner(row)) }))
     return sessionListResponse(payload, this.deps.runtime, this.deps.redactEnabled(), this.deps.now(), await this.workspaceNames([...payload.sessions, ...payload.sidebar_reference_sessions]))
   }
 
