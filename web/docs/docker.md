@@ -381,6 +381,14 @@ If detection picks the wrong owner, set both explicitly:
 docker run -e WANTED_UID=$(id -u) -e WANTED_GID=$(id -g) ...
 ```
 
+When the UID changes, the root phase aligns `/home/hermeswebui` itself rather than
+through `usermod`'s home walk. In two-container setups the Agent keeps replacing
+files in the shared `~/.hermes` during that walk, so a file or directory that
+disappears between listing and `chown` is skipped. Any other failure, such as
+`EACCES`, `EROFS`, `EIO` or a missing home, still stops startup. `.git`
+directories and a writable `~/.hermes/hermes-agent` checkout move from the old
+UID to the new one; a read-only Agent source mount is left untouched.
+
 ## Multi-container architecture
 
 The two- and three-container setups use **named Docker volumes** (not bind mounts) by default for a reason: named volumes solve the UID/GID problem by construction. Docker creates the volume's root directory with the correct ownership, all containers reading/writing to it see the same files, no host-side permission setup required.

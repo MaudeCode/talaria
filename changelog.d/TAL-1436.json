@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Docker first start no longer fails when the Agent replaces a file in the shared Hermes home while Web aligns its ownership.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

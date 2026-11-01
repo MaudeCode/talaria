@@ -173,6 +173,19 @@ def check_dashboard(compose, env):
         assert json.load(response)["provider"] == "basic"
 
 
+def check_identity(compose, env, expected_uid):
+    """hermeswebui runs as the requested UID with its passwd home intact, and no home entry outside the Agent source
+    keeps the build-time UID 1024 after a UID change, including .git trees that the ownership walk prunes."""
+    def run(*command):
+        return subprocess.check_output([*compose, "exec", "-T", "hermes-webui", *command], env=env, text=True).strip()
+    assert run("id", "-u", "hermeswebui") == expected_uid
+    assert run("getent", "passwd", "hermeswebui").split(":")[5] == "/home/hermeswebui"
+    if expected_uid != "1024":
+        stale = run("find", "/home/hermeswebui", "-path", "/home/hermeswebui/.hermes/hermes-agent", "-prune",
+                    "-o", "-uid", "1024", "-print", "-quit")
+        assert not stale, f"{stale} kept the build-time UID 1024"
+
+
 def smoke(variant, image, agent_image=None):
     with tempfile.TemporaryDirectory(prefix="talaria-docker-") as temporary:
         state = Path(temporary)
@@ -185,6 +198,13 @@ def smoke(variant, image, agent_image=None):
             # The Agent refuses to start a dashboard listening on 0.0.0.0 without a login.
             env.update(HERMES_DASHBOARD_BASIC_AUTH_USERNAME="smoke", HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=secrets.token_urlsafe(24))
         project = "talaria-smoke-" + uuid.uuid4().hex[:12]
+        if variant == "single":
+            # A checkout owned by the build-time UID: the ownership walk prunes .git, so only the old-UID migration
+            # that replaces usermod's own home walk can move it to the new UID.
+            subprocess.run([
+                "docker", "run", "--rm", "--entrypoint", "/bin/sh", "-v", f"{state / 'home'}:/fixture", image, "-c",
+                "mkdir -p /fixture/project/.git && echo ref > /fixture/project/.git/HEAD && chown -R 1024:1024 /fixture/project",
+            ], env=env, check=True)
         if variant.endswith("-uid"):
             data = state / "data"
             data.mkdir()
@@ -243,10 +263,15 @@ def smoke(variant, image, agent_image=None):
                                text=True, env=env, check=True, timeout=180)
             if variant == "three-container":
                 check_dashboard(compose, env)
-            if variant.endswith("-uid"):
-                actual = subprocess.check_output([*compose, "exec", "-T", "hermes-webui", "id", "-u", "hermeswebui"], env=env, text=True).strip()
-                assert actual == ("1001" if variant == "auto-uid" else "1024"), actual
-            print(f"PASS Docker {variant} health", flush=True)
+            # Compose variants change the build-time UID 1024 to 1000 (two- and three-container beside a read-only
+            # Agent source mount), auto-uid to 1001, and explicit-uid keeps 1024. A restart re-runs the entrypoint
+            # with the identity already aligned.
+            expected = {"auto-uid": "1001", "explicit-uid": "1024"}.get(variant, "1000")
+            check_identity(compose, env, expected)
+            subprocess.run([*compose, "restart", "hermes-webui"], env=env, check=True)
+            subprocess.run([*compose, "up", "-d", "--wait", "--wait-timeout", "300"], env=env, check=True)
+            check_identity(compose, env, expected)
+            print(f"PASS Docker {variant} health, identity and restart", flush=True)
         finally:
             subprocess.run([*compose, "logs", "--no-color", "--tail=60"], env=env, check=False)
             try:
