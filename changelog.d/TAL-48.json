@@ -1,0 +1,21 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "A shared server can keep each person's chats to that person: with single sign-on and HERMES_WEBUI_PERSON_ISOLATION on, everyone sees only their own sessions.",
+      "highlight": true,
+      "announce": false,
+      "components": [
+        "web"
+      ]
+    },
+    {
+      "category": "Added",
+      "summary": "On a server that keeps chats per person, Settings shows who you're signed in as and lets you sign in again.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}
