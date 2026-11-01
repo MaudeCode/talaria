@@ -933,6 +933,16 @@ export const SkillsSchema = z.looseObject({ skills: z.array(SkillSchema), catego
  * A linked file that is not UTF-8 text carries `binary: true` and its `size` instead of `content`.
  */
 export const SkillContentSchema = z.looseObject({ editable: z.boolean().optional(), name: z.string().optional(), content: z.string().optional(), path: z.string().optional(), linked_files: z.record(z.string(), z.array(z.string())).optional(), binary: z.literal(true).optional(), size: z.number().optional(), success: z.boolean().optional(), message: z.string().optional(), ok: z.boolean().optional() })
+/**
+ * TAL-1649: one skill a direct conversation loaded, from the server's own count of successful skill loads (an Agent
+ * `skill_view`, or an explicit load or bundle naming the session). `detail_available` says the active library still
+ * resolves the skill, so a client may open its content; `description` is the library's, else null.
+ */
+export const SessionSkillSchema = SkillSchema.pick({ name: true }).extend({ description: z.string().nullable(), count: z.number().int().positive(), detail_available: z.boolean() })
+export type SessionSkill = z.infer<typeof SessionSkillSchema>
+/** Ordered by the server (most used first, then by name). A session with no recorded loads, legacy or read-only, is `[]`. */
+export const SessionSkillsSchema = z.object({ session_id: z.string(), skills: z.array(SessionSkillSchema) })
+export type SessionSkills = z.infer<typeof SessionSkillsSchema>
 export const SkillsUsageSchema = z.looseObject({ usage: z.record(z.string(), z.looseObject({ use_count: z.number().optional(), view_count: z.number().optional(), patch_count: z.number().optional() })), skill_names: z.array(z.string()).optional(), total_invocations: z.number().optional(), unique_skills_used: z.number().optional() })
 export const MemorySchema = z.looseObject({
   memory: z.string(), user: z.string(), soul: z.string(), project_context: z.string().optional(), memory_path: z.string().optional(), user_path: z.string().optional(), soul_path: z.string().optional(), project_context_path: z.string().optional(),

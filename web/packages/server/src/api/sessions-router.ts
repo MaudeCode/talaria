@@ -24,7 +24,7 @@ import { previewUrl, readFilePreview } from '../workspace/preview.js'
 import { dirSignature, FileExistsError, listDir, makeAnchoredDir, NotFoundError, openAnchoredCreateFd, replaceAnchoredFile, PathTraversalError, renameAnchored, rmtreeAnchored, safeResolve, serializeEntriesForBrowser, unlinkAnchored, FileTooLargeError } from '../workspace/fs.js'
 import { randomUUID } from 'node:crypto'
 import { pyOsError, pyRepr, str } from '../util.js'
-import { ensureTrustedAuthSession, sessionCanManageServer } from '../auth/gate.js'
+import { activeProfileName, ensureTrustedAuthSession, sessionCanManageServer } from '../auth/gate.js'
 import { RelayPairingError } from '../sessions/relay.js'
 import { loginHash, WebPushRequestError, type WebPushRequester } from '../sessions/notify/web-push.js'
 import { requestBaseUrl } from './auth-raw.js'
@@ -221,6 +221,11 @@ export const sessionsRouter = os.router({
     contextDetail: os.session.contextDetail.handler(({ input, context: { ctx } }) => run(async () => {
       await guardVisibility(ctx, input.session_id)
       return ctx.deps.sessions.contextDetail(input.session_id, input.context_detail_key)
+    })),
+    skills: os.session.skills.handler(({ input, context: { ctx } }) => run(async () => {
+      if (!input.session_id) throw new HttpError(400, 'Missing session_id')
+      await guardVisibility(ctx, input.session_id)
+      return ctx.deps.sessions.sessionSkills(input.session_id, () => ctx.deps.skills.list(ctx.deps.profileHome(activeProfileName(ctx)), null))
     })),
     usage: os.session.usage.handler(({ input, context: { ctx } }) => run(async () => {
       if (!input.session_id) throw new HttpError(400, 'Missing session_id')

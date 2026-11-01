@@ -1,0 +1,20 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "A chat's side panel has a Skills page listing the skills used in that conversation and how often.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    },
+    {
+      "category": "Fixed",
+      "summary": "Side panel tabs keep their full names in a narrow panel instead of being cut off.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

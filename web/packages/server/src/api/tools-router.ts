@@ -454,7 +454,12 @@ export const toolsRouter = os.router({
       if (!name) throw new HttpError(400, 'name required')
       const file = str(input.file)
       if (file) return ctx.deps.skills.linkedFile(home(ctx), name, file)
-      return ctx.deps.skills.view(home(ctx), name)
+      // TAL-1649: naming a conversation makes a successful view one load in it; a library preview names none.
+      const sid = str(input.session_id).trim()
+      const fence = sid ? await ctx.deps.sessions.skillUseFence(sid) : null
+      const data = await ctx.deps.skills.view(home(ctx), name)
+      if (fence !== null && data.success === true) await ctx.deps.sessions.recordSkillUse(sid, [data.name], { generation: fence })
+      return data
     })),
     save: os.skills.save.handler(({ input, context: { ctx } }) => run(() => {
       requireFields(input, 'name', 'content')
@@ -590,7 +595,12 @@ export const toolsRouter = os.router({
       const command = str(input.command).trim()
       if (!command) throw new HttpError(400, 'command is required')
       try {
-        return await runningSidecar(ctx).call('commands.bundle_resolve', { profile_home: home(ctx), command }, { timeoutMs: 120_000 })
+        // TAL-1649: the skills a bundle loaded count in the conversation it names, under the generation captured first.
+        const sid = str(input.session_id).trim()
+        const fence = sid ? await ctx.deps.sessions.skillUseFence(sid) : null
+        const result = await runningSidecar(ctx).call('commands.bundle_resolve', { profile_home: home(ctx), command }, { timeoutMs: 120_000 })
+        if (fence !== null) await ctx.deps.sessions.recordSkillUse(sid, result.loaded_skills, { generation: fence })
+        return result
       } catch (error) {
         return commandFailure(error, 'bundle_not_found', 'Bundle command not found')
       }

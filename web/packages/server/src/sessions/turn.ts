@@ -47,6 +47,7 @@ import type { WorkspaceRegistry } from '../workspace/workspaces.js'
 import { str } from '../util.js'
 import { toolEditDiff } from './tool-display.js'
 import { startsBackgroundWork } from './background-tasks.js'
+import { skillGeneration, successfulSkillViewName } from './skill-provenance.js'
 import { recordWakeupPause } from './wakeup-pause.js'
 import { displayName } from '../providers/catalog.js'
 
@@ -570,7 +571,9 @@ export class TurnRunner {
       admission.admitting = false
       if (opts.goalRelated) this.registry.goalRelated.add(streamId)
       timing.end('admission')
-      const worker = this.run(s.session_id, streamId, channel, opts, compactionDue).catch((error: unknown) => {
+      // TAL-1649: the clear generation this run's skill loads count under; a clear during the run fences them out.
+      const skillFence = skillGeneration(s)
+      const worker = this.run(s.session_id, streamId, channel, opts, compactionDue, skillFence).catch((error: unknown) => {
         timing.finish(timingOutcome(error))
         this.deps.log(`[webui] ERROR turn ${streamId} crashed\n${error instanceof Error ? (error.stack ?? error.message) : String(error)}`)
       }).finally(() => { timing.finish(this.registry.cancelled.has(streamId) ? 'cancelled' : undefined); this.workers.delete(streamId) })
@@ -620,7 +623,7 @@ export class TurnRunner {
 
   // ── worker ───────────────────────────────────────────────────────────────
 
-  private async run(sessionId: string, streamId: string, channel: StreamChannel, opts: StartTurnOptions, compactionDue: boolean): Promise<void> {
+  private async run(sessionId: string, streamId: string, channel: StreamChannel, opts: StartTurnOptions, compactionDue: boolean, skillFence: number): Promise<void> {
     const { deps } = this
     const timing = opts.timing
     const closePreparation = timing?.begin('worker_preparation')
@@ -746,6 +749,8 @@ export class TurnRunner {
     let reasoningSegment = -1
     let reasoningOpen = false
     const liveToolCalls = this.registry.liveToolCalls.get(streamId) ?? []
+    // TAL-1649: completions already counted as skill loads; a redelivered completion never counts twice.
+    const countedSkillLoads = new Set<string>()
     // Each call's public `id`: the Agent's call id, else one minted here that its completion inherits through the pairing.
     const toolIds = new WeakMap<Record<string, unknown>, string>()
     let mintedToolIds = 0
@@ -954,6 +959,14 @@ export class TurnRunner {
                 this.lastCompletedTool.set(streamId, id)
                 const redacted = deps.redactEnabled()
                 await emitFrame('tool_complete', publicToolFrame(withToolId(complete, id), redacted, s.workspace), { redacted })
+                // TAL-1649: a successful skill_view is one load in this conversation (never an ephemeral clone's), counted while
+                // this run still owns the session under the clear generation it started with.
+                const skillName = opts.ephemeral ? null : successfulSkillViewName(data.name, rawResult)
+                const skillLoad = str(data.tid) || id
+                if (skillName && !countedSkillLoads.has(skillLoad) && !this.registry.cancelled.has(streamId)) {
+                  countedSkillLoads.add(skillLoad)
+                  await deps.service().recordSkillUse(sessionId, [skillName], { generation: skillFence, streamId })
+                }
                 // TAL-397: the todo tool's result is the session's new list; the settled session derives the same one.
                 // TAL-889: the sidecar attaches `todo_result` only to the Agent's todo tool, so no name check here.
                 const todos = parseTodoToolResult(todoResult)

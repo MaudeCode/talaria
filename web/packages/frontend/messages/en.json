@@ -2308,7 +2308,22 @@
 	"kanban_archive_board_title": "Archive board",
 	"kanban_archive_board_body": "Archive “{a0}”? Its tasks stay on disk.",
 	"skills_no_skills": "No skills found",
-	"skill_uses": "{n} uses",
+	"skill_uses": [
+		{
+			"declarations": [
+				"input n"
+			],
+			"selectors": [
+				"n"
+			],
+			"match": {
+				"n=1": "{n} use",
+				"n=*": "{n} uses"
+			}
+		}
+	],
+	"session_skills_empty": "No skills used in this chat yet.",
+	"session_skill_unavailable": "This skill is no longer in the library.",
 	"skill_content_label": "Skill content",
 	"skill_saved": "Skill saved",
 	"skill_category_all": "All categories",

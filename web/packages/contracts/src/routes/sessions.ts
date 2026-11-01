@@ -5,7 +5,7 @@ import { oc } from '@orpc/contract'
 import { z } from 'zod'
 import { ModelSelectionWarningSchema, SessionDeleteRefusedSchema } from '../sidecar/namespaces.js'
 import { ExecutionModesSchema } from '../gateway-session.js'
-import { AgentRuntimeMetadataSchema, SessionIdSchema, SessionRowSchema, SessionEnvelopeSchema, SessionsListSchema, SessionNewRequestSchema, DraftSchema, DraftResponseSchema, ProjectSchema, ProjectsSchema, SessionStatusSchema, SessionUsageSchema, SessionDeleteResultSchema, ShareReadSchema, ShareCreateResponseSchema, ActivitySceneRowSchema, ToolResultViewSchema, SessionSchema, AttachmentSchema } from '../views.js'
+import { AgentRuntimeMetadataSchema, SessionIdSchema, SessionRowSchema, SessionEnvelopeSchema, SessionsListSchema, SessionNewRequestSchema, DraftSchema, DraftResponseSchema, ProjectSchema, ProjectsSchema, SessionStatusSchema, SessionUsageSchema, SessionSkillsSchema, SessionDeleteResultSchema, ShareReadSchema, ShareCreateResponseSchema, ActivitySceneRowSchema, ToolResultViewSchema, SessionSchema, AttachmentSchema } from '../views.js'
 
 /** Session, project, share, and draft routes. Response rows are loose: the sidecar carries operator-defined extras. */
 
@@ -155,6 +155,7 @@ export const sessionsContract = {
     status: oc.route({ method: 'GET', path: '/api/session/status', tags }).input(SessionQuery).output(SessionStatusSchema),
     contextDetail: oc.route({ method: 'GET', path: '/api/session/context-detail', tags, summary: 'Read bounded, safe allocation estimates and context-file metadata from the existing Agent only.' }).input(SessionQuery.extend({ context_detail_key: z.string().min(1).max(128) })).output(ContextDetailSchema),
     usage: oc.route({ method: 'GET', path: '/api/session/usage', tags }).input(SessionQuery).output(SessionUsageSchema),
+    skills: oc.route({ method: 'GET', path: '/api/session/skills', tags, summary: 'TAL-1649: the skills this conversation loaded and how often, counted by the server from successful loads only. Never inferred from transcript text; a session without recorded loads answers an empty list.' }).input(SessionQuery).output(SessionSkillsSchema),
     new: oc.route({ method: 'POST', path: '/api/session/new', tags }).input(SessionNewRequestSchema).output(SessionEnvelopeSchema.extend({ worktree_skipped: z.string().optional() })),
     executionModes: oc.route({ method: 'GET', path: '/api/session/execution-modes', tags, summary: 'TAL-1040: which execution modes a fresh chat in the active profile can start in now.' }).input(z.object({})).output(ExecutionModesSchema),
     rename: oc.route({ method: 'POST', path: '/api/session/rename', tags }).input(SessionBody.extend({ title: z.string() })).output(SessionEnvelopeSchema),
