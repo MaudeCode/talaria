@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { McpCostPolicySchema } from '@maudecode/talaria-web-contracts'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -17,6 +17,8 @@ vi.mock('../../api/endpoints', () => ({
 }))
 vi.mock('../toast/toast', () => ({ showToast: vi.fn() }))
 import * as api from '../../api/endpoints'
+import { applyLocale } from '../../i18n/runtime'
+import { showToast } from '../toast/toast'
 import { McpSection } from './McpSection'
 
 function renderMcp() {
@@ -25,6 +27,23 @@ function renderMcp() {
 }
 
 describe('McpSection', () => {
+  afterEach(async () => { await applyLocale('en', { persist: false }) })
+
+  it('renders server status, tool count, tool list and toggle toast in German (TAL-1607)', async () => {
+    enabled.github = true
+    await applyLocale('de', { persist: false })
+    renderMcp()
+    const toggle = await screen.findByRole('switch', { name: 'github' })
+    const row = toggle.closest('li')!
+    expect(within(row).getByText('Aktiv')).toBeInTheDocument()
+    expect(within(row).getByText('2 Tools')).toBeInTheDocument()
+    expect(await screen.findByRole('list', { name: 'MCP-Tools' })).toBeInTheDocument()
+    await userEvent.click(toggle)
+    await waitFor(() => expect(within(row).getByText('Deaktiviert')).toBeInTheDocument())
+    expect(showToast).toHaveBeenLastCalledWith('MCP-Server «github» deaktiviert.')
+    enabled.github = true
+  })
+
   it('toggling a server PATCHes it and shows the status the server reports next', async () => {
     renderMcp()
     const toggle = await screen.findByRole('switch', { name: 'github' })

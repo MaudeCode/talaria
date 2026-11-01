@@ -9,6 +9,7 @@ import { localeChunk, splitMessageModule } from './localeSplit'
 import { applyLocale, currentLocale } from './runtime'
 import { add } from '../paraglide/messages/add.js'
 import { checkpoint_diff_files_changed } from '../paraglide/messages/checkpoint_diff_files_changed.js'
+import { settings_tab_preferences } from '../paraglide/messages/settings_tab_preferences.js'
 import { mcp_status_active } from '../paraglide/messages/mcp_status_active.js'
 import { profile_concept_desc_profiles } from '../paraglide/messages/profile_concept_desc_profiles.js'
 import { profile_concept_desc_together } from '../paraglide/messages/profile_concept_desc_together.js'
@@ -17,6 +18,15 @@ import { profile_concept_subtitle } from '../paraglide/messages/profile_concept_
 import { profile_concept_title } from '../paraglide/messages/profile_concept_title.js'
 import { settings_desc_transparent_stream_event_timestamps } from '../paraglide/messages/settings_desc_transparent_stream_event_timestamps.js'
 import { settings_label_transparent_stream_event_timestamps } from '../paraglide/messages/settings_label_transparent_stream_event_timestamps.js'
+import { mcp_tool_count } from '../paraglide/messages/mcp_tool_count.js'
+import { mcp_tools_inactive_configured_servers } from '../paraglide/messages/mcp_tools_inactive_configured_servers.js'
+import { mcp_enabled_toast } from '../paraglide/messages/mcp_enabled_toast.js'
+import { settings_section_appearance_title } from '../paraglide/messages/settings_section_appearance_title.js'
+import { settings_label_font_size } from '../paraglide/messages/settings_label_font_size.js'
+import { settings_section_conversation_title } from '../paraglide/messages/settings_section_conversation_title.js'
+import { settings_label_chat_activity_display_mode } from '../paraglide/messages/settings_label_chat_activity_display_mode.js'
+import { settings_section_preferences_title } from '../paraglide/messages/settings_section_preferences_title.js'
+import { settings_label_ignore_agent_updates } from '../paraglide/messages/settings_label_ignore_agent_updates.js'
 
 const OTHER_LOCALES = ['it', 'ja', 'ru', 'es', 'de', 'zh', 'zh_hant1', 'pt', 'ko', 'fr', 'cs', 'tr', 'pl', 'vi']
 const compiled = (name: string) => readFileSync(join(import.meta.dirname, '..', 'paraglide', 'messages', `${name}.js`), 'utf8')
@@ -73,7 +83,21 @@ describe('locale dictionaries at runtime', () => {
     await applyLocale('de', { persist: false })
     expect(add()).toBe('Hinzufügen')
     expect(checkpoint_diff_files_changed({ n: 1 })).toBe('1 Datei geändert')
-    expect(mcp_status_active()).toBe('Active')
+    expect(settings_tab_preferences()).toBe('Preferences')
+  })
+
+  it('renders the German MCP and settings strings with their inputs (TAL-1607)', async () => {
+    await applyLocale('de', { persist: false })
+    expect(mcp_status_active()).toBe('Aktiv')
+    expect(mcp_tool_count({ a0: '3' })).toBe('3 Tools')
+    expect(mcp_enabled_toast({ name: 'github' })).toBe('MCP-Server «github» aktiviert.')
+    expect(mcp_tools_inactive_configured_servers({ servers: 'github, slack' })).toBe('Konfiguriert, aber in dieser WebUI-Laufzeit inaktiv: github, slack.')
+    expect(settings_section_appearance_title()).toBe('Darstellung')
+    expect(settings_label_font_size()).toBe('Schriftgröße')
+    expect(settings_section_conversation_title()).toBe('Unterhaltung')
+    expect(settings_label_chat_activity_display_mode()).toBe('Aktivitätsanzeige')
+    expect(settings_section_preferences_title()).toBe('Präferenzen')
+    expect(settings_label_ignore_agent_updates()).toBe('Agent-Updates ignorieren')
   })
 
   it('renders the Russian profiles help and Transparent Stream timestamp setting instead of English (TAL-1127)', async () => {
