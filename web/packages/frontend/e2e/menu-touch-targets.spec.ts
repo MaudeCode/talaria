@@ -45,7 +45,7 @@ async function bootSession(page: Page, language?: string): Promise<void> {
   await settle(page)
   const hamburger = page.locator('#btnHamburger')
   if (await hamburger.isVisible()) await hamburger.click()
-  // Phones hide the row's actions column until TAL-699 adds the row's long-press entry; reveal it to reach the same menu.
+  // Phones hide the row's kebab (long-press opens the row's menu, TAL-699); reveal it to drive the kebab's own menu.
   if (await coarse(page)) await page.addStyleTag({ content: '.session-actions{display:flex !important;opacity:1 !important}' })
 }
 

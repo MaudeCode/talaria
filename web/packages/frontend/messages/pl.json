@@ -573,6 +573,7 @@
 	"session_title_regenerated": "Tytuł wygenerowany ponownie: {title}",
 	"session_title_regenerate_failed": "Ponowne generowanie tytułu nie powiodło się: ",
 	"session_copy_link": "Kopiuj link do konwersacji",
+	"session_open_new_tab": "Otwórz w nowej karcie",
 	"session_copy_link_desc": "Kopiuj bezpośredni link do tej konwersacji",
 	"session_link_copied": "Link do konwersacji skopiowany do schowka",
 	"session_link_copy_failed": "Nie udało się skopiować linku do konwersacji: ",

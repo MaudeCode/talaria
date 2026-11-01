@@ -504,6 +504,7 @@
 	"session_title_regenerated": "Titel neu generiert: {title}",
 	"session_title_regenerate_failed": "Titel neu generieren fehlgeschlagen: ",
 	"session_copy_link": "Unterhaltungslink kopieren",
+	"session_open_new_tab": "In neuem Tab öffnen",
 	"session_copy_link_desc": "Direkten Link zu dieser Unterhaltung kopieren",
 	"session_link_copied": "Unterhaltungslink in die Zwischenablage kopiert",
 	"session_link_copy_failed": "Unterhaltungslink konnte nicht kopiert werden: ",

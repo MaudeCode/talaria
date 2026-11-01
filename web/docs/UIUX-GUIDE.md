@@ -339,6 +339,25 @@ Do not hardcode new colors, radii, shadows, or typography values into isolated
 components when a token or existing variable can carry the intent. If a token is
 missing, explain why a new one is needed.
 
+## Context menus
+
+Every item-level surface with actions (a row, card, chip, tile, message, or file
+entry) opens a custom menu on right-click and long-press through the shared
+`ContextMenu` in `packages/frontend/src/ui/Menu.tsx`:
+
+- its items are the same list as the surface's visible trigger, defined once
+  and rendered in both (see `ProjectChip.tsx` and `SessionMenuItems`),
+- the visible trigger (a kebab or actions button) stays for keyboard and
+  assistive-technology users,
+- a surface whose only action is its own click target needs no menu,
+- text fields, selected text, and links nested in the surface keep the
+  browser's own menu; `ContextMenu` already handles this, so do not repeat the
+  check,
+- do not call `onContextMenu` directly.
+
+When a surface is itself a link, its menu replaces the browser's link menu, so
+add **Open in new tab** at the top of its items.
+
 ## Evidence expected for UI changes
 
 For any interface or interaction change:
@@ -359,6 +378,7 @@ Do:
 - use existing tokens, variables, and component patterns,
 - protect action-required states such as errors and approvals,
 - put explanatory copy in a `HelpTip` (`FieldRow` `hint`, `HubPage` `help`) beside its label.
+- give every item-level surface with actions a right-click and long-press menu through `ContextMenu`, with the same items as its visible trigger (see "Context menus").
 
 Don't:
 

@@ -560,6 +560,7 @@
 	"session_title_regenerated": "タイトルを再生成しました: {title}",
 	"session_title_regenerate_failed": "タイトルの再生成に失敗しました: ",
 	"session_copy_link": "会話リンクをコピー",
+	"session_open_new_tab": "新しいタブで開く",
 	"session_copy_link_desc": "この会話への直接リンクをコピー",
 	"session_link_copied": "会話リンクをクリップボードにコピーしました",
 	"session_link_copy_failed": "会話リンクをコピーできませんでした: ",

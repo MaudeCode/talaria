@@ -560,6 +560,7 @@
 	"session_title_regenerated": "Başlık yeniden oluşturuldu: {title}",
 	"session_title_regenerate_failed": "Başlık yeniden oluşturma başarısız: ",
 	"session_copy_link": "Konuşma bağlantısını kopyala",
+	"session_open_new_tab": "Yeni sekmede aç",
 	"session_copy_link_desc": "Bu konuşmaya doğrudan bağlantı kopyala",
 	"session_link_copied": "Konuşma bağlantısı panoya kopyalandı",
 	"session_link_copy_failed": "Konuşma bağlantısı kopyalanamadı: ",

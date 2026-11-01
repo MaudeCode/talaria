@@ -714,6 +714,7 @@
 	"session_title_regenerated": "Title regenerated: {title}",
 	"session_title_regenerate_failed": "Regenerate title failed: ",
 	"session_copy_link": "Copy conversation link",
+	"session_open_new_tab": "Open in new tab",
 	"session_copy_link_desc": "Copy a direct link to this conversation",
 	"session_link_copied": "Conversation link copied to clipboard",
 	"session_link_copy_failed": "Failed to copy conversation link: ",

@@ -560,6 +560,7 @@
 	"session_title_regenerated": "제목이 다시 생성됨: {title}",
 	"session_title_regenerate_failed": "제목 다시 생성 실패: ",
 	"session_copy_link": "대화 링크 복사",
+	"session_open_new_tab": "새 탭에서 열기",
 	"session_copy_link_desc": "이 대화로 바로 가는 링크 복사",
 	"session_link_copied": "대화 링크가 클립보드에 복사되었습니다",
 	"session_link_copy_failed": "대화 링크를 복사하지 못했습니다: ",

@@ -515,6 +515,7 @@
 	"session_title_regenerated": "Título regenerado: {title}",
 	"session_title_regenerate_failed": "Error al regenerar el título: ",
 	"session_copy_link": "Copiar enlace de conversación",
+	"session_open_new_tab": "Abrir en una pestaña nueva",
 	"session_copy_link_desc": "Copia un enlace directo a esta conversación",
 	"session_link_copied": "Enlace de conversación copiado al portapapeles",
 	"session_link_copy_failed": "No se pudo copiar el enlace de conversación: ",

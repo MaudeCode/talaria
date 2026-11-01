@@ -504,6 +504,7 @@
 	"session_title_regenerated": "标题已重新生成：{title}",
 	"session_title_regenerate_failed": "重新生成标题失败：",
 	"session_copy_link": "复制对话链接",
+	"session_open_new_tab": "在新标签页中打开",
 	"session_copy_link_desc": "复制此对话的直接链接",
 	"session_link_copied": "对话链接已复制到剪贴板",
 	"session_link_copy_failed": "无法复制对话链接：",

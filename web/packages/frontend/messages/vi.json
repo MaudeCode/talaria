@@ -560,6 +560,7 @@
 	"session_title_regenerated": "Đã tạo lại tiêu đề: {title}",
 	"session_title_regenerate_failed": "Tạo lại tiêu đề thất bại: ",
 	"session_copy_link": "Sao chép liên kết cuộc trò chuyện",
+	"session_open_new_tab": "Mở trong thẻ mới",
 	"session_copy_link_desc": "Sao chép liên kết trực tiếp tới cuộc trò chuyện này",
 	"session_link_copied": "Đã sao chép liên kết cuộc trò chuyện vào clipboard",
 	"session_link_copy_failed": "Sao chép liên kết cuộc trò chuyện thất bại: ",
