@@ -46,6 +46,7 @@ vi.mock('../../ui/Menu', async (original) => {
   }) }
 })
 import { ExecutionModeChip, ModelChip, ToolsetsChip, WorkspaceChip } from './chips'
+import { Dialog } from '../../ui/Dialog'
 import { fetchModels } from '../../api/endpoints'
 
 function renderChip(props: { model: string | null; optionId: string | null }, onChange = vi.fn()) {
@@ -105,6 +106,87 @@ describe('ModelChip', () => {
     act(() => search.focus())
     await userEvent.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+    expect(trigger).toHaveFocus()
+  })
+
+  // TAL-1625: a touch opening keeps the software keyboard down so the list stays visible; the footer chip and the
+  // overflow panel's row share the policy.
+  it.each([['footer chip', false], ['overflow row', true]])('a touch opening of the %s leaves search unfocused and the list in reach (TAL-1625)', async (_, row) => {
+    catalog = COLON_CATALOG
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={qc}><ModelChip model={null} optionId={null} row={row} onChange={vi.fn()} /></QueryClientProvider>)
+    const user = userEvent.setup()
+    await user.pointer({ keys: '[TouchA]', target: screen.getByRole('button') })
+    const search = await screen.findByRole('searchbox')
+    await screen.findAllByRole('menuitemradio')
+    const menu = screen.getByRole('menu')
+    expect(search).not.toHaveFocus()
+    expect(menu).toHaveFocus()
+    // Base UI's delayed popup focus must not pull focus into search either.
+    act(() => menu.focus())
+    expect(search).not.toHaveFocus()
+    expect(screen.getByRole('menuitemradio', { name: 'Claude Opus 4.7' })).toBeVisible()
+  })
+
+  it('a keyboard opening focuses search for typing and ArrowDown, each key acting once (TAL-1625)', async () => {
+    catalog = COLON_CATALOG
+    const onChange = vi.fn()
+    renderChip({ model: null, optionId: null }, onChange)
+    const user = userEvent.setup()
+    const trigger = screen.getByRole('button')
+    act(() => trigger.focus())
+    await user.keyboard('{Enter}')
+    const search = await screen.findByRole('searchbox')
+    await screen.findAllByRole('menuitemradio')
+    expect(search).toHaveFocus()
+    await user.keyboard('gem')
+    expect(search).toHaveValue('gem')
+    expect(screen.getAllByRole('menuitemradio')).toHaveLength(2)
+    await user.keyboard('{ArrowDown}')
+    expect(screen.getAllByRole('menuitemradio')[0]).toHaveFocus()
+    await user.keyboard('{ArrowDown}')
+    expect(screen.getAllByRole('menuitemradio')[1]).toHaveFocus()
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+    expect(trigger).toHaveFocus()
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('a touch opening with a hardware keyboard sends a printable key to search; touching search keeps focus through the refresh (TAL-1625)', async () => {
+    catalog = COLON_CATALOG
+    renderChip({ model: null, optionId: null })
+    const user = userEvent.setup()
+    await waitFor(() => expect(screen.getByRole('button')).toHaveTextContent('M'))
+    // The opening refresh is held so it resolves after the touch on search.
+    let release!: () => void
+    const refreshed = { ...COLON_CATALOG, groups: [...COLON_CATALOG.groups, { provider: 'Mistral', provider_id: 'mistral', models: [{ id: '@mistral:large', label: 'Mistral Large', provider_id: 'mistral', bare_id: 'large' }] }] }
+    vi.mocked(fetchModels).mockImplementationOnce(() => new Promise((resolve) => { release = () => resolve(refreshed) }))
+    await user.pointer({ keys: '[TouchA]', target: screen.getByRole('button') })
+    const search = await screen.findByRole('searchbox')
+    expect(screen.getByRole('menu')).toHaveFocus()
+    await user.keyboard('o')
+    expect(search).toHaveFocus()
+    expect(search).toHaveValue('o')
+    await user.clear(search)
+    act(() => screen.getByRole('menu').focus())
+    await user.pointer({ keys: '[TouchA]', target: search })
+    expect(search).toHaveFocus()
+    act(() => { release() })
+    expect(await screen.findByRole('menuitemradio', { name: 'Mistral Large' })).toBeVisible()
+    expect(screen.getByRole('searchbox')).toHaveFocus()
+  })
+
+  it('Escape after a touch opening closes only the picker inside a dialog and returns focus to the chip (TAL-1625)', async () => {
+    catalog = COLON_CATALOG
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={qc}><Dialog open onOpenChange={vi.fn()} title="Settings"><ModelChip model={null} optionId={null} onChange={vi.fn()} /></Dialog></QueryClientProvider>)
+    const user = userEvent.setup()
+    const trigger = within(screen.getByRole('dialog')).getByRole('button')
+    await user.pointer({ keys: '[TouchA]', target: trigger })
+    await screen.findAllByRole('menuitemradio')
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
     expect(trigger).toHaveFocus()
   })
 

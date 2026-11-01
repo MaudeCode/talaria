@@ -1,6 +1,6 @@
 import { Menu as BaseMenu } from '@base-ui/react/menu'
 import { ContextMenu as BaseContextMenu } from '@base-ui/react/context-menu'
-import { useRef, type ComponentProps, type ReactElement, type ReactNode, type RefObject, type SyntheticEvent } from 'react'
+import { useRef, type ComponentProps, type FocusEvent, type KeyboardEvent, type ReactElement, type ReactNode, type RefObject, type SyntheticEvent } from 'react'
 import type { BaseUIEvent } from '@base-ui/react/types'
 import { cn } from './cn'
 
@@ -13,8 +13,11 @@ export interface MenuProps {
   onOpenChange?: (open: boolean) => void
   className?: string
   label?: string
-  /** A search menu keeps its input focused when the opening popup receives delayed focus. */
-  initialFocus?: RefObject<HTMLElement | null>
+  /**
+   * A search menu's input, inside `header` (TAL-1625). A keyboard or mouse opening focuses it; a touch or pen opening
+   * focuses the list, so no software keyboard covers it, and a printable key typed there then goes to the input.
+   */
+  search?: RefObject<HTMLElement | null>
   /** Stays pinned above the scrolling rows, such as a search field (TAL-1131). */
   header?: ReactNode
 }
@@ -47,14 +50,72 @@ function revealRows(scroller: HTMLElement | null) {
   return () => { observer.disconnect() }
 }
 
+/** Base UI's rule for what opened a popup: a click with no click count came from the keyboard, else the pressing pointer. */
+function openingModality(event: Event, pointer: string): string {
+  return event instanceof KeyboardEvent || (event.type === 'click' && (event as MouseEvent).detail === 0) ? 'keyboard' : pointer
+}
+
+/** A key that types into a search field rather than driving the list (Space activates the highlighted row). */
+function typesText(event: KeyboardEvent<HTMLElement>): boolean {
+  return event.key.length === 1 && event.key !== ' ' && !event.ctrlKey && !event.metaKey && !event.altKey
+}
+
 /** Base UI menu with token styling: keyboard navigation, typeahead, focus return, and escape are provided by Base UI. */
-export function Menu({ trigger, children, side = 'bottom', align = 'start', open, onOpenChange, className, label, initialFocus, header }: MenuProps) {
+export function Menu({ trigger, children, side = 'bottom', align = 'start', open, onOpenChange, className, label, search, header }: MenuProps) {
+  // The last trigger press's pointer type; an opening reads it once, so a stale value never outlives its press.
+  const pointer = useRef('')
+  // Whether this opening focuses `search`, and whether Base UI's first-row focus on a keyboard opening is still to come.
+  const toSearch = useRef(false)
+  const rowPending = useRef(false)
+  const changeOpen: NonNullable<ComponentProps<typeof BaseMenu.Root>['onOpenChange']> = (next, details) => {
+    const modality = next ? openingModality(details.event, pointer.current) : ''
+    pointer.current = ''
+    toSearch.current = modality === 'keyboard' || modality === 'mouse'
+    rowPending.current = modality === 'keyboard'
+    onOpenChange?.(next)
+  }
+  // Base UI's queued opening focus goes to the first tabbable element, the search field, and stands down once focus is
+  // already inside; the opening's own target is focused first, as the popup mounts. A re-render hands the same node to
+  // a new callback, which leaves focus where the user put it.
+  const placedOn = useRef<HTMLElement | null>(null)
+  const placeFocus = (popup: HTMLElement | null) => {
+    const input = search?.current
+    if (!popup || popup === placedOn.current) return
+    placedOn.current = popup
+    if (input) (toSearch.current ? input : popup).focus({ preventScroll: true })
+  }
+  // A later focus of the popup itself, or Base UI's one first-row focus on a keyboard opening, goes back to search.
+  const focusSearch = (event: FocusEvent<HTMLElement>) => {
+    const input = search?.current
+    if (!input || !toSearch.current || event.target === input) return
+    if (event.target === event.currentTarget) input.focus()
+    else if (rowPending.current) { rowPending.current = false; input.focus() }
+  }
+  const searchKeys = (event: BaseUIEvent<KeyboardEvent<HTMLElement>>) => {
+    rowPending.current = false
+    const input = search?.current
+    if (!input || event.nativeEvent.isComposing) return
+    if (event.target === input) {
+      // From search, ArrowDown and ArrowUp reach the first and last row; a row's focus moves Base UI's highlight with it.
+      if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+      const rows = event.currentTarget.querySelectorAll<HTMLElement>('[role^="menuitem"]:not([aria-disabled="true"])')
+      const row = event.key === 'ArrowDown' ? rows[0] : rows[rows.length - 1]
+      if (!row) return
+      event.preventBaseUIHandler()
+      event.preventDefault()
+      row.focus()
+    } else if (typesText(event)) {
+      // Focus moves before the key's input, so the character lands in search instead of Base UI's typeahead.
+      event.preventBaseUIHandler()
+      input.focus()
+    }
+  }
   return (
-    <BaseMenu.Root {...(open !== undefined ? { open } : {})} {...(onOpenChange ? { onOpenChange } : {})}>
-      <BaseMenu.Trigger render={trigger} />
+    <BaseMenu.Root {...(open !== undefined ? { open } : {})} onOpenChange={changeOpen}>
+      <BaseMenu.Trigger render={trigger} onPointerDown={(event) => { pointer.current = event.pointerType }} />
       <BaseMenu.Portal>
         <BaseMenu.Positioner side={side} align={align} sideOffset={6} className={POSITIONER}>
-          <BaseMenu.Popup ref={header ? undefined : revealRows} aria-label={label} onFocus={(event) => { if (event.target === event.currentTarget) initialFocus?.current?.focus() }} className={cn(POPUP, header ? 'flex flex-col' : 'overflow-y-auto', className)}>
+          <BaseMenu.Popup ref={header ? placeFocus : revealRows} aria-label={label} onFocus={focusSearch} onKeyDown={searchKeys} onPointerDown={() => { rowPending.current = false }} className={cn(POPUP, header ? 'flex flex-col' : 'overflow-y-auto', className)}>
             {header ? <>{header}<div ref={revealRows} className="min-h-0 overflow-y-auto">{children}</div></> : children}
           </BaseMenu.Popup>
         </BaseMenu.Positioner>

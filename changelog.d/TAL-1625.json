@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Opening the model picker by touch in Talaria Web no longer raises the on-screen keyboard over the model list; opening it with a keyboard puts the cursor in its search field.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

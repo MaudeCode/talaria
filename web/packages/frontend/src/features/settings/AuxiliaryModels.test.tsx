@@ -113,6 +113,24 @@ describe('Auxiliary models settings', () => {
     expect(after.getByRole('button', { name: /Title generation/ })).toHaveTextContent('beta · Llama3')
   })
 
+  // TAL-1625: opening a slot's picker never pulls focus into its search, by touch or keyboard; the list stays in view.
+  it('opens a slot picker by touch or keyboard without focusing its search', async () => {
+    renderSetting()
+    const user = userEvent.setup()
+    const row = (await openList()).getByRole('button', { name: /Title generation/ })
+    await user.pointer({ keys: '[TouchA]', target: row })
+    const touched = within(row.closest('li')!)
+    await touched.findByRole('region', { name: 'Anthropic' })
+    expect(touched.getByRole('searchbox')).not.toHaveFocus()
+    const vision = (await openList()).getByRole('button', { name: /Vision/ })
+    act(() => vision.focus())
+    await user.keyboard('{Enter}')
+    const typed = within(vision.closest('li')!)
+    await typed.findByRole('region', { name: 'Anthropic' })
+    expect(typed.getByRole('searchbox')).not.toHaveFocus()
+    expect(vision).toHaveFocus()
+  })
+
   it('ticks only the server-selected entry when two providers list the same bare model', async () => {
     vi.mocked(api.fetchAuxiliaryModels).mockResolvedValue(auxState({ title_generation: pinnedBeta }))
     renderSetting()
