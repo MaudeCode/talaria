@@ -144,7 +144,9 @@ HTML path beneath `dist/` or `static/`, for example `"panel": "dist/index.html"`
 That document loads the Web extension SDK and completes its normal handshake.
 A native Desktop SDK bundle without this opt-in is listed with
 `web_extension_migration_required`, without Open or enable controls. Desktop
-SDK globals are not emulated. Relative assets resolve beside the panel, and
+SDK globals are not emulated. The one exception is the reviewed Meshy plugin:
+its native API backs Talaria's own gallery (`native_view: "meshy_gallery"`)
+and inline model previews, still without loading its Desktop bundle (TAL-1514). Relative assets resolve beside the panel, and
 only known static file types are served, without dotfiles or symlinks.
 
 The existing enable switch persists the Agent's per-profile plugin admission.

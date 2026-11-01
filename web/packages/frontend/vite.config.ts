@@ -34,7 +34,13 @@ export default defineConfig({
   ...(devProxy
     ? { server: { host: true, proxy: { [PROXY_ROUTE]: { target: devProxy, changeOrigin: true, headers: { origin: devProxy }, rewrite: (path: string) => path.replace(PROXIED, '') } } } }
     : {}),
-  resolve: { alias: { '~': new URL('./src', import.meta.url).pathname } },
+  resolve: {
+    alias: [
+      { find: '~', replacement: new URL('./src', import.meta.url).pathname },
+      // TAL-1514: an inert stand-in for a decoder that compiles WebAssembly on import (see the stub).
+      { find: /^three\/examples\/jsm\/libs\/meshopt_decoder\.module\.js$/, replacement: new URL('./src/features/meshy/meshopt-stub.ts', import.meta.url).pathname },
+    ],
+  },
   // The SPA prerender fetches the Vite preview server at the URL Vite reports. Where `localhost` resolves to ::1
   // first (Docker build sandboxes), the default host listens on IPv6 while that URL is 127.0.0.1, so pin IPv4.
   preview: { host: '127.0.0.1' },

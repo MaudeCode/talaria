@@ -110,7 +110,7 @@ function ActivityBody({ activity, mode, earlier, sessionId }: { activity: TurnAc
   const outcome = terminalOutcomeLabel(status)
   const render = (item: ActivityItem, last: boolean): ReactNode => {
     switch (item.kind) {
-      case 'text': return <div key={item.key} className="msg-body"><Markdown text={item.display ?? item.text} streaming={activeTail && last} /><MediaTiles media={item.media} /></div>
+      case 'text': return <div key={item.key} className="msg-body"><Markdown text={item.display ?? item.text} streaming={activeTail && last} /><MediaTiles media={item.media} sessionId={sessionId} /></div>
       case 'reasoning': return <ReasoningBlock key={item.key} text={item.text} titles={item.titles} disclosureKey={item.disclosureKey} live={activeTail && last} />
       case 'steering': return <SteerMessage key={item.key} text={item.text} />
       case 'tool': return <ToolCard key={item.key} call={item.call} sessionId={sessionId} />
@@ -158,7 +158,7 @@ function ActivityBody({ activity, mode, earlier, sessionId }: { activity: TurnAc
       {mode === 'hide_all_activity' && items.filter((item) => item.kind === 'steering').map((item) => render(item, false))}
       {!running && <SettleSpacer turnKey={activity.key} />}
       {outcome && <div role="status" className="text-muted">{outcome}</div>}
-      {finalAnswer.trim() && <CollapsedBody excerpt={activity.finalAnswerExcerpt}>{(excerpt) => <div className="msg-body" data-final-answer="1"><Markdown text={excerpt ?? activity.finalAnswerDisplay?.display ?? finalAnswer} /><MediaTiles media={activity.finalAnswerDisplay?.media} /></div>}</CollapsedBody>}
+      {finalAnswer.trim() && <CollapsedBody excerpt={activity.finalAnswerExcerpt}>{(excerpt) => <div className="msg-body" data-final-answer="1"><Markdown text={excerpt ?? activity.finalAnswerDisplay?.display ?? finalAnswer} /><MediaTiles media={activity.finalAnswerDisplay?.media} sessionId={sessionId} /></div>}</CollapsedBody>}
     </DisclosureTurnContext>
   )
 }

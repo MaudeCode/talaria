@@ -78,6 +78,7 @@ import { WindowLimiter } from './api/tools-router.js'
 import { CronService } from './tools/crons.js'
 import { KanbanService } from './tools/kanban.js'
 import { DashboardPlugins } from './tools/dashboard-plugins.js'
+import { MeshyHost } from './tools/meshy.js'
 import { ExtensionService } from './tools/extensions.js'
 import { agentHealth, dashboardStatus, gatewayRestartBlockers, liveGateways } from './tools/health.js'
 import { gatewayLifecycle } from './tools/gateway-lifecycle.js'
@@ -792,6 +793,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       return streamId ? cancelSessionStream(deps, streamId, target.session_id) : { ok: true, cancelled: false }
     }),
   })
+  const dashboardPlugins = new DashboardPlugins({ env, hermesHome: config.hermesHome, settings, sidecar: () => sidecar })
   const deps: AppDeps = {
     config,
     settings,
@@ -918,7 +920,8 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     }),
     kanban: new KanbanService({ sidecar: () => sidecar, config: agentConfig }),
     extensions: new ExtensionService({ documents: storage.documents, env, stateDir: config.stateDir, isAuthEnabled: () => auth.isAuthEnabled(), fetch: lazyFetch, log }),
-    dashboardPlugins: new DashboardPlugins({ env, hermesHome: config.hermesHome, settings, sidecar: () => sidecar }),
+    dashboardPlugins,
+    meshy: new MeshyHost({ plugins: dashboardPlugins, fetch: lazyFetch }),
     terminals,
     commitMessage: async (session, systemPrompt, userPrompt) => {
       if (!sidecar) throw new GitWorkspaceError('Commit message generation needs the Agent sidecar, which is not running', 'aux_unavailable')

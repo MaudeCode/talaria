@@ -255,6 +255,31 @@ explicit Resume. Failed or refused steps stop the run. No schedule or recurring
 execution is created. App adoption is tracked separately in TAL-1356.
 
 
+## Meshy models and gallery
+
+A `::meshy-model{task="…" path="…" title="…"}` paragraph in an assistant reply
+becomes a `model` display media item with an empty `url` and an opaque
+`model.ref`; its line leaves the display text. `/api/meshy/card` honours a ref
+only when that exact directive is in the session's assistant text, then admits
+only what the native plugin inventory lists. Clients never parse directives or
+see a host path or signed asset URL.
+
+`plugins.meshy` is a closed adapter over the Meshy plugin's native dashboard
+API, admitted only at the reviewed catalog revision with matching file digests
+and the profile's current consent. Its Desktop bundle never runs. Every asset is
+an opaque grant bound to the signed-in owner, profile home, login generation
+(a profile switch revokes it), plugin revision and task. Each byte request
+rechecks consent, revision and the native listing. Local files open no-follow
+under their anchor and must be regular, single-link, self-contained `.glb`
+models (no `uri`, no external decoders) or images within the native size cap;
+remote images come only from Meshy's asset host over https, without redirects.
+
+`availability` names `ready`, `missing_key`, `plugin_unavailable`,
+`agent_incompatible` and `unavailable`. Unknown credits and balances stay null.
+Downloads are explicit, use the native writer (which never overwrites another
+file), and a partial image set reports what arrived. Follow-up actions only put
+the server's `draft` in a composer; nothing is sent or spent by Talaria.
+
 ## Managed session buffers
 
 The Files list/read/save procedures accept `source: "managed"` for the fixed

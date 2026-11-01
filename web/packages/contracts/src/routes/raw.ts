@@ -88,6 +88,11 @@ export const RAW_ROUTES: readonly RawRoute[] = [
     responses: { 200: { description: 'Media bytes.', contentType: 'application/octet-stream' }, 206: { description: 'Partial content.' }, 304: { description: 'ETag matched.' }, 403: { description: 'Path not in an allowed location.', contentType: 'application/json' }, 404: { description: 'Not found.', contentType: 'application/json' } },
   },
   {
+    method: 'GET', path: '/api/meshy/asset', summary: 'TAL-1514: bytes behind a Meshy asset grant. Each request rechecks the signed-in owner, profile generation, the reviewed plugin revision and consent, and the native inventory; local files open no-follow under their anchor, GLBs must be self-contained, remote images come only from Meshy\'s asset host without redirects.', tags: ['files'],
+    query: { grant: { description: 'Opaque grant from a Meshy overview, card or details response.', required: true } },
+    responses: { 200: { description: 'Model or image bytes.', contentType: ['model/gltf-binary', 'image/png', 'image/jpeg', 'image/webp'] }, 206: { description: 'Partial content.' }, 304: { description: 'ETag matched.' }, 403: { description: 'Refused before any bytes: not self-contained, a link, or too large.', contentType: 'application/json' }, 404: { description: 'Unknown, expired, revoked or foreign grant.', contentType: 'application/json' }, 502: { description: 'The remote asset redirected, failed or was not an image.', contentType: 'application/json' } },
+  },
+  {
     method: 'GET', path: '/api/folder/download', summary: 'ZIP of a workspace folder (symlinks escaping the workspace are skipped).', tags: ['files'],
     query: { session_id: { description: 'Session whose workspace anchors the path.', required: true }, path: { description: 'Workspace-relative folder.' } },
     responses: { 200: { description: 'ZIP stream.', contentType: 'application/zip' }, 404: { description: 'Folder missing.', contentType: 'application/json' }, 413: { description: 'Folder exceeds the configured size or file-count cap.', contentType: 'application/json' } },

@@ -56,6 +56,7 @@ import type { WindowLimiter } from '../api/tools-router.js'
 import type { CronService } from '../tools/crons.js'
 import type { KanbanService } from '../tools/kanban.js'
 import type { DashboardPlugins } from '../tools/dashboard-plugins.js'
+import type { MeshyHost } from '../tools/meshy.js'
 import type { ExtensionService } from '../tools/extensions.js'
 import type { TerminalRegistry } from '../tools/terminal.js'
 import type { OidcService } from '../auth/oidc.js'
@@ -228,6 +229,8 @@ export interface AppDeps {
   kanban: KanbanService
   extensions: ExtensionService
   dashboardPlugins: DashboardPlugins
+  /** TAL-1514: Meshy previews and gallery over the reviewed native plugin. */
+  meshy: MeshyHost
   terminals: TerminalRegistry
 }
 

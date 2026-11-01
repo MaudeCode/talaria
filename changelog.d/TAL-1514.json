@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "With the Meshy plugin installed, Talaria Web shows Meshy 3D models in chat and in a Meshy gallery: orbit and zoom them, play their animations, download other formats and image sets, and see what made each model. Follow-up requests go into the message box and are never sent or charged on their own.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "media": { "url": "", "name": "Orange robot", "mime": "model/gltf-binary", "kind": "model", "model": { "ref": "WyIwMTkyYTNiNC1jNWQ2LTdlOGYtOWEwYi0xYzJkM2U0ZjVhNmIiLCIvc3ludGhldGljL21vZGVsLmdsYiIsIk9yYW5nZSByb2JvdCJd" } },
+  "card": {
+    "availability": "ready", "message": null, "balance": 1180, "title": "Orange robot",
+    "task": { "task_id": "0192a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b", "status": "succeeded", "progress": 100, "terminal": true, "stage": "refine", "error": null },
+    "item": {
+      "key": "local:5c1b7a8e2f3d4a6b", "task_id": "0192a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b", "kind": "model", "title": "Orange robot", "prompt": "A small orange robot",
+      "task_type": "text-to-3d-refine", "created_at": 1761912000000, "credits": null, "thumbnail": null,
+      "model": { "url": "./api/meshy/asset?grant=opaque-grant", "name": "model.glb", "mime": "model/gltf-binary", "kind": "model", "bytes": 4096 },
+      "images": [], "saved": true, "expired": false, "download_incomplete": false, "can_download": true
+    }
+  },
+  "running": { "availability": "ready", "message": null, "balance": null, "title": "Orange robot", "item": null, "task": { "task_id": "0192a3b4-c5d6-7e8f-9a0b-bbbbbbbbbbbb", "status": "in_progress", "progress": 38, "terminal": false, "stage": "preview", "error": null } },
+  "overview": {
+    "availability": "missing_key", "message": "Add a Meshy API key in Plugins to see generations and download files.", "balance": null, "auto_rotate": true, "recent": [], "active": [],
+    "local": [{
+      "key": "local:9d0e1f2a3b4c5d6e", "task_id": "0192a3b4-c5d6-7e8f-9a0b-aaaaaaaaaaaa", "kind": "image", "title": "Robot concept sheet", "prompt": "Robot concept sheet",
+      "task_type": null, "created_at": 1761908400000, "credits": null,
+      "thumbnail": { "url": "./api/meshy/asset?grant=opaque-image", "name": "image-1.png", "mime": "image/png", "kind": "image", "bytes": null },
+      "model": null, "images": [{ "url": "./api/meshy/asset?grant=opaque-image", "name": "image-1.png", "mime": "image/png", "kind": "image", "bytes": null }],
+      "saved": true, "expired": false, "download_incomplete": true, "can_download": false
+    }]
+  },
+  "details": {
+    "availability": "ready", "message": null, "balance": null, "task_id": "0192a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b", "is_preview": false,
+    "formats": [{ "format": "glb", "label": "GLB", "saved": true }, { "format": "glb:walking", "label": "GLB · walking", "saved": false }],
+    "conversions": [{ "id": "convert-stl", "label": "Convert to STL", "cost": 1, "affordable": null, "draft": "Meshy task 0192a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b: convert it to STL using meshy_convert (1 credit)." }],
+    "actions": [{ "id": "remesh", "label": "Remesh", "cost": 5, "affordable": null, "draft": "Meshy task 0192a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b: remesh it with meshy_remesh (5 credits)." }],
+    "provenance": { "prompt": "A small orange robot", "prompt_inherited": false, "texture_prompt": null, "style_prompt": null, "negative_prompt": null, "source_image": null, "settings": [], "seed": null, "credits": null, "created_at": null, "parents": [], "children": [], "recorded": false }
+  },
+  "partial_images": { "availability": "ready", "message": null, "balance": null, "saved": ["image-1.png"], "complete": false, "error": "Some images did not download. Retry to resume." }
+}

@@ -121,3 +121,29 @@ describe('projectMediaRefs (TAL-186)', () => {
     expect(projected?.media.map((m) => m.url)).toEqual([A])
   })
 })
+
+describe('Meshy model directives (TAL-1514)', () => {
+  const TASK = '0192a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b'
+  it('projects a directive paragraph into one model item and removes the raw line from display text', () => {
+    const projected = projectMediaRefs(`Saved it.\n\n::meshy-model{path="/tmp/robot.glb" task="${TASK}" title="Robot"}`, resolver())
+    expect(projected?.media).toHaveLength(1)
+    expect(projected?.media[0]).toMatchObject({ kind: 'model', name: 'Robot', mime: 'model/gltf-binary' })
+    expect(projected?.text).not.toContain('::meshy-model')
+  })
+
+  it('leaves invalid directives, code and inline mentions as written', () => {
+    for (const line of [
+      '::meshy-model{task="../../etc"}', '::meshy-model{path="relative/robot.glb"}', '::meshy-model{path="/tmp/scene.gltf"}',
+      '::meshy-model{url="https://assets.meshy.ai/x.glb"}', '::meshy-model{task="' + TASK + '" task="' + TASK + '"}', '::meshy-model{task=' + TASK + '}',
+      'See ::meshy-model{task="' + TASK + '"} inline', '```\n::meshy-model{task="' + TASK + '"}\n```', '`::meshy-model{task="' + TASK + '"}`',
+    ]) expect(projectMediaRefs(line, resolver())?.media.some((m) => m.kind === 'model') ?? false, line).toBe(false)
+  })
+
+  it('keeps each model of a reply, in order, and rewrites nothing inside a directive line', () => {
+    const other = '0192a3b4-c5d6-7e8f-9a0b-ffffffffffff'
+    const projected = projectMediaRefs(`::meshy-model{task="${TASK}" title="MEDIA:/tmp/a.png"}\n::meshy-model{task="${other}"}\n\nMEDIA:/tmp/a.png`, resolver())
+    expect(projected?.media.map((m) => [m.kind, m.name])).toEqual([['model', 'MEDIA:/tmp/a.png'], ['model', 'Meshy model'], ['image', 'a.png']])
+    expect(new Set(projected?.media.map((m) => m.model?.ref)).size).toBe(3)
+    expect(projected?.text.trim()).toBe(`![a.png](${A})`)
+  })
+})

@@ -2,6 +2,7 @@ import { DelegationRegistrySchema, DelegationBlockSchema } from '../delegation.j
 import { GroupSidecarParamsSchema, GroupSidecarResultSchema } from '../groups-native.js'
 import { PlanGaugeSchema, ModelAllowanceSnapshotSchema } from '../plan-usage.js'
 import { OutboundDraftRefSchema, OutboundDraftFieldsSchema, OutboundDraftResultSchema } from '../outbound-drafts.js'
+import { MeshySidecarParamsSchema, MeshySidecarResultSchema } from '../meshy.js'
 import { McpCostPolicyDataSchema } from '../mcp-cost-policy.js'
 import { McpEventsDataSchema } from '../mcp-events.js'
 import { ContextDetailSchema } from '../context-detail.js'
@@ -151,6 +152,8 @@ export const COMMANDS_METHODS = {
     params: ProfileHomeParams.extend({ action: z.enum(['list', 'read', 'save']), session_id: z.string().min(1).max(200), name: ManagedBufferName.optional(), content: z.string().max(MAX_MANAGED_BUFFER_BYTES).optional() }),
     result: z.object({ supported: z.boolean(), buffers: z.array(z.object({ name: ManagedBufferName, size: ManagedBufferSize, read_only: z.boolean() })).max(200), content: z.string().max(MAX_MANAGED_BUFFER_BYTES).optional(), size: ManagedBufferSize.optional(), read_only: z.boolean().optional(), write_semantics: z.literal('unconditional') }),
   },
+  /** TAL-1514: closed adapter over the reviewed native Meshy plugin API. No arbitrary paths, hosts or credit-spending calls. */
+  'plugins.meshy': { params: MeshySidecarParamsSchema, result: MeshySidecarResultSchema },
   'plugins.dashboard_list': { params: ProfileHomeParams, result: z.object({ supported: z.boolean(), plugins: z.array(AgentDashboardPluginSchema) }) },
   'plugins.dashboard_toggle': { params: DashboardNameParams.extend({ enabled: z.boolean() }), result: z.object({ ok: z.literal(true) }) },
   'plugins.dashboard_asset': { params: DashboardNameParams.extend({ path: z.string() }), result: AgentDashboardResponseSchema },

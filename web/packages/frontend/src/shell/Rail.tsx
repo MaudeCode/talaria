@@ -32,7 +32,7 @@ export function Rail() {
   const dashboard = useDashboardStatusQuery(bootstrap.features.dashboard)
   const newChat = useNewChat()
   const manifests = useExtensionManifests(bootstrap.features.extensions || true)
-  const extNav = (manifests.data?.manifests ?? []).filter((e) => e.enabled && e.panel && e.nav)
+  const extNav = (manifests.data?.manifests ?? []).filter((e) => e.enabled && (e.panel || e.native_view) && e.nav)
   const hidden = hiddenTabs ?? readHiddenTabs()
   const { visible } = orderedNav(readTabOrder(), hidden)
   const isDesktop = useIsDesktop()

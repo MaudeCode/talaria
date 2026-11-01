@@ -1,4 +1,5 @@
 import { McpCostPatchSchema } from '../mcp-cost-policy.js'
+import { MeshyCardQuerySchema, MeshyCardSchema, MeshyDetailsQuerySchema, MeshyDetailsSchema, MeshyOverviewSchema, MeshySaveImagesInputSchema, MeshySaveInputSchema, MeshySaveResultSchema, MeshyTaskQuerySchema, MeshyTaskResultSchema } from '../meshy.js'
 import { oc, type OpenAPI } from '@orpc/contract'
 import { SkillRevisionsInputSchema, SkillRevisionsSchema } from '../sidecar/namespaces.js'
 import { SkillReplayJobSchema, SkillReplayJobsSchema, SkillReplayPlanQuerySchema, SkillReplayPlanSchema, SkillReplayStartSchema } from '../skill-replay.js'
@@ -193,5 +194,14 @@ export const toolsContract = {
       .input(z.object({ text: z.string().max(100_000) })).output(SpeechPrepareSchema),
   },
   transcribeWarm: oc.route({ method: 'POST', path: '/api/transcribe/warm', tags, summary: 'Start loading the profile\'s speech-to-text engine in the background and answer at once (TAL-916). Send when a recording starts and the capability has warm_supported.' }).output(z.object({ ok: z.literal(true) })),
+  /** TAL-1514: the reviewed native Meshy plugin, for the active profile. Nothing here generates or spends credits. */
+  meshy: {
+    overview: oc.route({ method: 'GET', path: '/api/meshy/overview', tags, summary: 'Recent generations, saved models and image sets, running tasks and the balance, each asset behind an owner/profile/revision-bound grant. `availability` names missing-key, plugin and old-Agent states.' }).output(MeshyOverviewSchema),
+    card: oc.route({ method: 'GET', path: '/api/meshy/card', tags, summary: 'Resolve a `model` media ref. The server finds the directive again in that session\'s assistant text, then admits only what the native inventory lists; 404 when the session or directive is not found.' }).input(MeshyCardQuerySchema).output(MeshyCardSchema),
+    task: oc.route({ method: 'GET', path: '/api/meshy/task', tags, summary: 'One task as a full snapshot; poll until `terminal`.' }).input(MeshyTaskQuerySchema).output(MeshyTaskResultSchema),
+    details: oc.route({ method: 'GET', path: '/api/meshy/details', tags, summary: 'Download formats, follow-up drafts and "Made from" for a task. `beside`: a model asset url from this owner, to list formats saved next to it.' }).input(MeshyDetailsQuerySchema).output(MeshyDetailsSchema),
+    save: oc.route({ method: 'POST', path: '/api/meshy/save', tags, summary: 'Explicitly download one format Meshy already produced (no credits). Never overwrites another file; an unknown outcome says so and is never retried.' }).input(MeshySaveInputSchema).output(MeshySaveResultSchema),
+    saveImages: oc.route({ method: 'POST', path: '/api/meshy/save-images', tags, summary: 'Explicitly download every image of an image task. A partial set reports `complete: false` with what arrived; retrying resumes.' }).input(MeshySaveImagesInputSchema).output(MeshySaveResultSchema),
+  },
   clientEvents: oc.route({ method: 'POST', path: '/api/client-events/log', tags, summary: 'Bounded browser diagnostics; only whitelisted scalar fields are logged.' }).input(Loose).output(z.object({ ok: z.literal(true), event: z.string().nullable() })),
 }

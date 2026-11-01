@@ -53,6 +53,7 @@ const html = (body: Buffer | string): PluginFile => ({ body: Buffer.isBuffer(bod
 export class DashboardPlugins {
   private readonly bindingKey = randomBytes(32)
   private readonly assetScopes = new Map<string, { scope: AgentDashboardScope; generation: string }>()
+  private readonly grants = new Map<string, { scope: AgentDashboardScope; generation: string; value: unknown }>()
   private readonly owners = new Map<string, { generation: string; pending: Set<AbortController> }>()
   constructor(private readonly deps: DashboardPluginDeps) {}
 
@@ -88,6 +89,33 @@ export class DashboardPlugins {
     // Store a credential hash, never the login cookie. The grant names only this static source.
     this.assetScopes.set(id, { scope: { ...scope }, generation: this.owner(scope).generation })
     return `agent-dashboard-plugins/${signAssetGrant(this.bindingKey, 'agent-dashboard', id)}/${panel}`
+  }
+
+  /**
+   * TAL-1514: an opaque grant for one value, bound to the owner, profile home and this login generation (a profile switch
+   * revokes it). The same value in the same scope reuses its grant. Holders recheck the value's own authority on use.
+   */
+  bindGrant(namespace: string, scope: AgentDashboardScope, key: string, value: unknown): string {
+    const generation = this.owner(scope).generation
+    const id = createHmac('sha256', this.bindingKey).update(JSON.stringify([namespace, scope.home, scope.owner, generation, key])).digest('hex').slice(0, 40)
+    this.grants.delete(id)
+    if (this.grants.size >= 4096) this.grants.delete(this.grants.keys().next().value!)
+    this.grants.set(id, { scope: { ...scope }, generation, value })
+    return signAssetGrant(this.bindingKey, namespace, id)
+  }
+
+  /** The value behind a grant, or null when it is unknown, expired, revoked by a new generation, or another caller's. */
+  grantValue(namespace: string, segment: string, caller: AgentDashboardScope): { scope: AgentDashboardScope; value: unknown } | null {
+    const id = assetGrantValue(this.bindingKey, namespace, segment)
+    const bound = id ? this.grants.get(id) : undefined
+    if (!bound) return null
+    if (bound.generation !== this.owner(bound.scope).generation || caller.owner !== bound.scope.owner || caller.home !== bound.scope.home) return null
+    return { scope: bound.scope, value: bound.value }
+  }
+
+  /** One cancellable, generation-checked sidecar call for an owner's native plugin work. */
+  call<T>(scope: AgentDashboardScope, call: (sidecar: SidecarLike, signal: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<T> {
+    return this.agentCall(scope, call, signal)
   }
 
   async agentAssetGrant(segment: string, path: string, signal?: AbortSignal, caller?: AgentDashboardScope): Promise<PluginFile | null> {
@@ -129,6 +157,12 @@ export class DashboardPlugins {
     }
     return list.plugins.map((plugin) => {
       const id = this.agentId(scope, plugin.name)
+      // TAL-1514: Meshy's dashboard API backs the app's own gallery; its Desktop bundle is never loaded.
+      if (plugin.name === 'meshy' && plugin.has_api && !plugin.panel) {
+        return { id, display_id: plugin.name, name: text(plugin.label, 80) || 'Meshy', version: text(plugin.version, 40), description: text(plugin.description, 300),
+          source: 'agent-plugin', agent_host: true, enabled: plugin.enabled, can_toggle: false, panel: null, native_view: 'meshy_gallery',
+          nav: { label: 'Meshy' }, capabilities: [], permissions: {}, settings_schema: [], theme: null, tts: null, sidecar: null, legacy_injection: false, warnings: [] }
+      }
       return { id, display_id: plugin.name, name: text(plugin.label, 80) || plugin.name, version: text(plugin.version, 40), description: text(plugin.description, 300),
         source: 'agent-plugin', agent_host: true, enabled: plugin.enabled, can_toggle: plugin.panel !== null,
         panel: plugin.panel ? this.panelGrant(scope, id, plugin.panel) : null,
