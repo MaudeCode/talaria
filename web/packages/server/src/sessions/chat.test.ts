@@ -606,7 +606,8 @@ describe('chat turns through the sidecar', () => {
     const content = frames.filter((f) => !['metering', 'run_status'].includes(f.event))
     expect(eventNames(content).slice(0, 7)).toEqual(['context_status', 'reasoning', 'tool', 'tool_complete', 'reasoning', 'token', 'token'])
     expect(content[0]?.data).toEqual({ session_id: sid, prefill: { status: 'not_configured', source: 'none', label: '', message_count: 0 } })
-    expect(content[4]?.data).toEqual({ text: '', titles: ['thinking'] })
+    // TAL-1175: the snapshot names the segment it closes, which the tool already ended.
+    expect(content[4]?.data).toEqual({ text: '', titles: ['thinking'], disclosure_key: `${streamId}:reasoning:0` })
     expect(names).toContain('done')
     expect(names).toContain('title')
     expect(names[names.length - 1]).toBe('stream_end')

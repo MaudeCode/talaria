@@ -11,7 +11,7 @@ export interface DisplayBody { display?: string; media?: DisplayMedia[] }
 
 export type ActivityItem =
   | ({ key: string; kind: 'text'; text: string } & DisplayBody)
-  | { key: string; kind: 'reasoning'; text: string; titles?: string[] }
+  | { key: string; kind: 'reasoning'; text: string; titles?: string[]; disclosureKey?: string }
   | { key: string; kind: 'tool'; call: ToolCardData }
   | { key: string; kind: 'steering'; text: string; consumed: boolean }
 
@@ -100,7 +100,7 @@ export function sceneItems(value: unknown): ActivityItem[] {
     const row = record(raw)
     const key = text(row.row_id)
     if (row.role === 'prose') return [{ key, kind: 'text', text: text(row.text), ...displayBody(row.display_text, row.media) }]
-    if (row.role === 'reasoning') return [{ key, kind: 'reasoning', text: text(row.text), titles: Array.isArray(row.titles) ? row.titles.map(text) : [] }]
+    if (row.role === 'reasoning') return [{ key, kind: 'reasoning', text: text(row.text), titles: Array.isArray(row.titles) ? row.titles.map(text) : [], ...(text(row.disclosure_key) ? { disclosureKey: text(row.disclosure_key) } : {}) }]
     if (row.role === 'steering') return [{ key, kind: 'steering', text: text(row.text), consumed: record(row.steering).consumed === true }]
     if (row.role !== 'tool') return []
     const tool = record(row.tool)

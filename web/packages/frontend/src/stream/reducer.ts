@@ -41,7 +41,8 @@ export interface LiveToolCall {
 
 export type Segment =
   | { kind: 'text'; text: string; interim?: boolean }
-  | { kind: 'reasoning'; text: string; titles: string[] }
+  /** `disclosureKey`: the server's segment identity (TAL-1175), shared with the settled scene row. */
+  | { kind: 'reasoning'; text: string; titles: string[]; disclosureKey?: string }
   | { kind: 'tool'; toolId: string }
   /** A consumed steer, at the place the server will persist it: after the tool that had completed. */
   | { kind: 'steering'; steerId: string; text: string }
@@ -174,11 +175,12 @@ function appendText(segments: Segment[], text: string): Segment[] {
   return [...segments, { kind: 'text', text }]
 }
 
-function appendReasoning(segments: Segment[], text: string, titles: string[] | null): Segment[] {
+/** A delta continues the open reasoning segment unless the server names a different one. */
+function appendReasoning(segments: Segment[], text: string, titles: string[] | null, disclosureKey: string | undefined): Segment[] {
   const last = segments[segments.length - 1]
-  if (last?.kind === 'reasoning') return [...segments.slice(0, -1), { kind: 'reasoning', text: last.text + text, titles: titles ?? last.titles }]
+  if (last?.kind === 'reasoning' && (disclosureKey === undefined || last.disclosureKey === undefined || disclosureKey === last.disclosureKey)) return [...segments.slice(0, -1), { ...last, text: last.text + text, titles: titles ?? last.titles }]
   if (!text && !titles) return segments
-  return [...segments, { kind: 'reasoning', text, titles: titles ?? [] }]
+  return [...segments, { kind: 'reasoning', text, titles: titles ?? [], ...(disclosureKey === undefined ? {} : { disclosureKey }) }]
 }
 
 function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event' }>): LiveTurn {
@@ -217,7 +219,7 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
       const t = live()
       const text = event.data.text ?? ''
       const titles = Array.isArray(event.data.titles) ? event.data.titles.filter((x) => x.trim()).slice(0, 8) : null
-      return { ...t, reasoningText: t.reasoningText + text, reasoningTitles: titles ?? t.reasoningTitles, segments: appendReasoning(t.segments, text, titles) }
+      return { ...t, reasoningText: t.reasoningText + text, reasoningTitles: titles ?? t.reasoningTitles, segments: appendReasoning(t.segments, text, titles, event.data.disclosure_key) }
     }
     case 'tool': {
       if (terminal) return stamped
