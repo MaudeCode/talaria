@@ -14,7 +14,7 @@ import { PasskeyStore } from './auth/passkeys.js'
 import { PresenceLeases, RelayService } from './sessions/relay.js'
 import { ActivityStates } from './sessions/notify/activity.js'
 import { NotificationHub } from './sessions/notify/channel.js'
-import { liveLoginHashes, WebPushChannel } from './sessions/notify/web-push.js'
+import { liveLoginHashes, loginHash, WebPushChannel } from './sessions/notify/web-push.js'
 import { CliSessionSource } from './sessions/cli-sessions.js'
 import { ClaudeCodeSessionSource, claudeCodeProjectsDir } from './sessions/claude-code.js'
 import { GatewayWatcherRegistry } from './sessions/gateway-watcher.js'
@@ -29,7 +29,7 @@ import { HygieneTicker } from './tools/hygiene.js'
 import { PruneAdvice } from './tools/prune-advice.js'
 import { McpHealthProber } from './tools/mcp-health.js'
 import { loadConfig, truthy, type Env, type LoadConfigOptions } from './config.js'
-import type { AppDeps } from './http/context.js'
+import type { AppDeps, RequestScope } from './http/context.js'
 import { checkoutRevision, detectWebuiVersion, loadReleaseInfo, loadWhatsNew } from './release.js'
 import { gatewayDrainDetail, ghcrExperimental, githubJson, normalizeChannel, normalizeWebChannel, purgePycache, sanitizeGitDiagnostic, UpdateService, waitUntilRestartSafe, type RestartBlockers } from './tools/updates.js'
 import { UpdateNotificationStore } from './tools/update-notifications.js'
@@ -82,6 +82,8 @@ import { agentHealth, dashboardStatus, gatewayRestartBlockers, liveGateways } fr
 import { gatewayLifecycle } from './tools/gateway-lifecycle.js'
 import { GatewayRestartQueue, restartGateway } from './tools/gateway-restart.js'
 import { TerminalRegistry } from './tools/terminal.js'
+import { personIdentity, personIsolationEnabled } from './auth/person.js'
+import { sessionCanManageServer } from './auth/gate.js'
 
 export interface CreateDepsOptions extends LoadConfigOptions {
   log?: (line: string) => void
@@ -161,7 +163,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   // Python `init_profile_state` + `switch_profile(process_wide=False)`: the sticky `~/.hermes/active_profile` is
   // the process default; a request's profile cookie or bound session overrides it for that request only, and
   // `activeProfile()` reads the request scope so every domain (sessions, workspaces, drains) sees the same answer.
-  const requestScope = new AsyncLocalStorage<{ requestProfile: string | null; notificationOwner?: string }>()
+  const requestScope = new AsyncLocalStorage<RequestScope>()
   // Python `_is_isolated_profile_mode`: the explicit startup opt-in AND a `.../profiles/<name>` shaped HERMES_HOME pin
   // the process to that one profile (no switching, listing, creating, deleting, or cross-profile reads).
   const isolatedProfile = truthy(env.HERMES_WEBUI_ISOLATED_PROFILE) && basename(dirname(config.hermesHome)) === 'profiles' && existsSync(dirname(dirname(config.hermesHome))) ? basename(config.hermesHome) : null
@@ -256,6 +258,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   }
   const store = new SessionStore({
     storage,
+    personAccess: () => requestScope.getStore()?.personAccess,
     drafts,
     events,
     // Python `_profile_default_model_state`: the profile's own config.yaml model, else the global default. The provider
@@ -516,9 +519,17 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     events,
     registry, pending, store, background, activitySummary: (session) => sessions.activitySummary(session), presence, activity, profileHome, profilesMatch, fetch: () => lazyFetch, now, log,
     agentSessions: (profile) => readImportableAgentSessionRowsAsync(join(profileHome(profile), 'state.db')),
+    personIsolation: () => personIsolationEnabled(env),
     documents: storage.documents, env, canonicalProfile: (p) => (isRootProfile(p) ? 'default' : p),
   })
-  const webPush = new WebPushChannel({ documents: storage.documents, activity, lookup: () => deps.dnsLookup, fetch: () => deps.pinnedFetch, liveLogins: () => liveLoginHashes(auth, { sessionBindingIsCurrent: (info) => oidc?.sessionBindingIsCurrent(info) ?? Promise.resolve(false) }), profileExists: (profile) => { try { return statSync(profileHome(profile)).isDirectory() } catch { return false } }, env, now, log })
+  const webPush = new WebPushChannel({ documents: storage.documents, activity, lookup: () => deps.dnsLookup, fetch: () => deps.pinnedFetch, liveLogins: () => liveLoginHashes(auth, { sessionBindingIsCurrent: (info) => oidc?.sessionBindingIsCurrent(info) ?? Promise.resolve(false) }),
+    // TAL-48: a subscription acts with its login's person authority; a login that is gone has none.
+    personAccessFor: async (login) => {
+      if (!personIsolationEnabled(env)) return undefined
+      const info = login ? auth.liveSessions().find((session) => loginHash(session.token) === login) : undefined
+      return info ? { personId: personIdentity(info)?.id ?? null, serverOwner: await sessionCanManageServer({ deps }, info) } : { personId: null, serverOwner: false }
+    },
+    profileExists: (profile) => { try { return statSync(profileHome(profile)).isDirectory() } catch { return false } }, env, now, log })
   const notifications = new NotificationHub(activity, [relay, webPush], events)
   const turns = new TurnRunner({
     notifications: updateNotifications,
@@ -706,8 +717,10 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   const asCaller = async <T>(callerId: string, fn: (caller: Session) => Promise<T>): Promise<T> => {
     const caller = await storedSession(callerId)
     if (!caller) throw new SidecarServerError(`no Talaria session ${callerId}`, 'caller_unknown')
+    // TAL-48: a session's tools act for the session's person; an unowned session acts with owner authority over unowned sessions only.
+    const personAccess = personIsolationEnabled(env) ? { personId: caller.owner_person_id, serverOwner: !caller.owner_person_id } : undefined
     try {
-      return await requestScope.run({ requestProfile: caller.profile ?? 'default' }, () => fn(caller))
+      return await requestScope.run({ requestProfile: caller.profile ?? 'default', ...(personAccess ? { personAccess } : {}) }, () => fn(caller))
     } catch (error) {
       if (error instanceof HttpFailure) throw new SidecarServerError(error.message, typeof error.extra.code === 'string' ? error.extra.code : 'refused')
       throw error

@@ -631,7 +631,12 @@ export const toolsRouter = os.router({
   insights: os.insights.handler(({ input, context: { ctx } }) => run(async () => {
     let entries: Dict[] = []
     try { entries = (await ctx.deps.sessionStore.readIndexEntries()) } catch { entries = [] }
-    return buildInsights(entries, input.days, ctx.deps.nowSeconds(), (cutoff) => stateDbSessionReadAsync([], 'insightsSessionRows', join(home(ctx), 'state.db'), cutoff)) as never
+    // TAL-48: insights cover only the sessions this request may see; Agent rows of other sessions are unowned.
+    const sessions = ctx.deps.sessions
+    entries = entries.filter((entry) => sessions.personMaySee(entry.owner_person_id))
+    const visible = new Set(entries.map((entry) => str(entry.session_id)))
+    const stateRows = async (cutoff: number) => (await stateDbSessionReadAsync([], 'insightsSessionRows', join(home(ctx), 'state.db'), cutoff)).filter((row) => visible.has(str(row.session_id)) || sessions.personMaySee(null))
+    return buildInsights(entries, input.days, ctx.deps.nowSeconds(), stateRows) as never
   })),
   logs: os.logs.handler(({ input, signal, context: { ctx } }) => run(() => readLogTail(home(ctx), input.file, input.tail, signal) as Promise<never>)),
   ops: {

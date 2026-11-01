@@ -213,6 +213,11 @@ export interface RelayPublisherDeps {
   agentSessions: (profile: string) => Promise<Record<string, unknown>[]>
   /** Shared with the other notification channels; a standalone publisher tracks its own. */
   activity?: ActivityStates
+  /**
+   * TAL-48: person isolation is on. Relay enrollment is per profile, not per person, so a person's session is never
+   * published to the profile's devices; only unowned sessions are.
+   */
+  personIsolation?: () => boolean
   fetch: () => typeof fetch
   now: () => number
   log: (line: string) => void
@@ -373,9 +378,14 @@ export class RelayPublisher {
     }
   }
 
+  /** A session reaches the profile's relay scope unless it belongs to a person under isolation. */
+  private publishesOwner(owner: unknown): boolean {
+    return !(this.deps.personIsolation?.() && owner)
+  }
+
   /** Python `build_states`: the shared activity rows, numbered with this relay's revisions. */
   async buildStates(profile: string): Promise<RelayState[]> {
-    const states: RelayState[] = (await this.activity.states(profile, () => { this.changed() })).map((row) => {
+    const states: RelayState[] = (await this.activity.states(profile, () => { this.changed() })).filter((row) => this.publishesOwner(row.ownerPersonId)).map((row) => {
       const state: RelayState = { sessionId: row.sessionId, streamId: row.streamId, eventId: 'snapshot:0:' + row.sessionId, revision: 0, ...(row.activityPhase ? { activityPhase: row.activityPhase } : {}), title: row.title, phase: row.phase, startedAt: row.startedAt, updatedAt: row.updatedAt, deepLink: row.deepLink }
       if (this.alertEligibilitySupported && !row.alertEligible) state.alertEligible = false
       return state
@@ -489,7 +499,7 @@ export class RelayPublisher {
       // A compressed Agent chat keeps its lineage root's id and start, so later segments are not new sessions.
       const agent = agentRows.get(profile) ?? []
       const seen = [
-        ...index.filter((row) => Number(row.message_count) > 0 && this.deps.profilesMatch(row.profile as string | null | undefined, profile)).map((row) => [row.session_id, row.created_at]),
+        ...index.filter((row) => Number(row.message_count) > 0 && this.deps.profilesMatch(row.profile as string | null | undefined, profile) && this.publishesOwner(row.owner_person_id)).map((row) => [row.session_id, row.created_at]),
         ...agent.map((row) => [row._lineage_root_id || row.id, row.started_at]),
       ]
       for (const [rawSid, created] of seen) {

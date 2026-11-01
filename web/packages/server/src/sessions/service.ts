@@ -44,6 +44,7 @@ import type { ProjectStore } from '../projects.js'
 import { loadGatewaySessionIdentityMap } from './list.js'
 import { join } from 'node:path'
 import type { GatewaySessions } from './gateway-sessions.js'
+import { personMaySee as ownerVisibleTo } from '../auth/person.js'
 
 export class HttpFailure extends Error {
   constructor(readonly status: number, message: string, readonly extra: Record<string, unknown> = {}) {
@@ -328,6 +329,22 @@ export class SessionService {
     return this.deps.profilesMatch(typeof profile === 'string' ? profile : null, this.deps.activeProfile())
   }
 
+  /** TAL-48: person isolation's ownership rule for the current request (`personMaySee`); a null owner is unowned. */
+  personMaySee(owner: unknown): boolean {
+    return ownerVisibleTo(this.store.personAccess(), owner)
+  }
+
+  /** The owner of `sid` lets this request see it, whatever its profile; always true while isolation is off. */
+  async personMaySeeSessionId(sid: string): Promise<boolean> {
+    if (!this.store.personAccess()) return true
+    try { return this.personMaySee((await this.store.get(sid, { metadataOnly: true })).owner_person_id) } catch { return this.personMaySee(null) }
+  }
+
+  /** Every session read, write and projection goes through this: the request's person owns it and its profile is active. */
+  visibleToRequest(session: { profile?: unknown; owner_person_id?: unknown }): boolean {
+    return this.personMaySee(session.owner_person_id) && this.visibleToActiveProfile(typeof session.profile === 'string' ? session.profile : null)
+  }
+
   /**
    * Python `_session_id_visible_to_request_profile`, applied to the id as handlers see it (trimmed): a padded id must
    * not slip past the profile check into a handler that trims and trusts it. A non-empty id that is still unsafe after
@@ -341,9 +358,10 @@ export class SessionService {
     try {
       session = (await this.store.get(sid, { metadataOnly: true }))
     } catch {
-      return true
+      // No Web session: an Agent-only (state.db) session or no session at all, which no person owns.
+      return this.personMaySee(null)
     }
-    return this.visibleToActiveProfile(session.profile)
+    return this.visibleToRequest(session)
   }
 
   private localTargets: { key: string; ids: Map<string, string> } | null = null
@@ -430,7 +448,7 @@ export class SessionService {
   }
 
   private async orphanCandidates(rows: Row[]): Promise<string[]> {
-    return (await filterAsync(rows, async (r) => r.read_only && isOrphanPrunableSource(r) && this.visibleToActiveProfile(str(r.profile) || null) && !(await this.activeRunBlocking(str(r.session_id)))))
+    return (await filterAsync(rows, async (r) => r.read_only && isOrphanPrunableSource(r) && this.visibleToRequest(r) && !(await this.activeRunBlocking(str(r.session_id)))))
       .map((r) => str(r.session_id))
   }
 
@@ -815,6 +833,8 @@ export class SessionService {
    */
   async claimOrSynthesizeCliSession(sid: string, metaIn?: Row | null, reads?: SessionGateReads, opts: { transcript?: boolean } = {}): Promise<{ session: Session | null; reason: 'materialized' | 'not_claimable' | 'was_webui' | 'no_foreign_state' | 'invalid_sid'; summary?: StateDbMessageSummary }> {
     if (!isSafeSessionId(sid)) return { session: null, reason: 'invalid_sid' }
+    // TAL-48: an Agent-only session belongs to no person, so under person isolation only a server owner reaches it.
+    if (!this.personMaySee(null)) return { session: null, reason: 'no_foreign_state' }
     const profile = this.deps.activeProfile()
     sid = await this.resolveSessionId(sid)
     if (reads?.sid !== sid) reads = this.sessionGateReads(sid)
@@ -1133,8 +1153,9 @@ export class SessionService {
       return (await this.foreignSessionDetail(sid, loadMessages, msgLimit, msgBefore))
     }
     const revisionBefore = (await this.loadRevision(s))
-    if (!this.visibleToActiveProfile(s.profile)) {
-      if (s.profile) throw new HttpFailure(409, 'Session belongs to a different profile', { code: 'session_profile_mismatch', session_id: sid, profile: s.profile })
+    if (!this.visibleToRequest(s)) {
+      // Another person's session is not found, whatever its profile; only an own session reports a profile mismatch.
+      if (s.profile && this.personMaySee(s.owner_person_id)) throw new HttpFailure(409, 'Session belongs to a different profile', { code: 'session_profile_mismatch', session_id: sid, profile: s.profile })
       throw new HttpFailure(404, 'Session not found')
     }
     await this.clearStaleStreamState(s)
@@ -1260,9 +1281,10 @@ export class SessionService {
     let title: unknown
     try {
       const parent = (await this.store.get(parentId, { metadataOnly: true, promote: false, cacheOnMiss: false }))
-      if (!this.visibleToActiveProfile(parent.profile)) return null
+      if (!this.visibleToRequest(parent)) return null
       title = parent.title
     } catch {
+      if (!this.personMaySee(null)) return null
       // A read-only foreign parent (a cron run) has no sidecar and opens from the active profile's state.db while it
       // has transcript rows and is not a deleted chat (`claimOrSynthesizeCliSession`'s `was_webui` and `no_foreign_state`).
       const dbPath = this.stateDbPath(null)
@@ -1304,6 +1326,7 @@ export class SessionService {
     const meta = (await reads.meta())
     const profile = str(meta?.profile) || null
     const profileAgnostic = str(meta?.source_tag || meta?.raw_source).trim().toLowerCase() === 'claude_code'
+    if (!this.personMaySee(null)) throw new HttpFailure(404, 'Session not found')
     if (!profileAgnostic && !this.visibleToActiveProfile(profile)) {
       if (profile) throw new HttpFailure(409, 'Session belongs to a different profile', { code: 'session_profile_mismatch', session_id: sid, profile })
       throw new HttpFailure(404, 'Session not found')
@@ -1438,7 +1461,7 @@ export class SessionService {
     return { rows: [...new Map([...existing, ...extra.rows].map((row) => [str(row.session_id), row])).values()], storage: extra.storage }
   }
 
-  async list(params: Omit<ListParams, 'activeProfile' | 'isolatedProfileMode' | 'profilesMatch' | 'cliRows' | 'gatewayIdentity' | 'stateDbSources' | 'truncatedSources' | 'agentStorage' | 'pruneOrphanedImports' | 'webuiRows' | 'webDiagnosticIds'>): Promise<{ body: ListResponse; etag: string }> {
+  async list(params: Omit<ListParams, 'activeProfile' | 'isolatedProfileMode' | 'profilesMatch' | 'rowVisible' | 'cliRows' | 'gatewayIdentity' | 'stateDbSources' | 'truncatedSources' | 'agentStorage' | 'pruneOrphanedImports' | 'webuiRows' | 'webDiagnosticIds'>): Promise<{ body: ListResponse; etag: string }> {
     const activeProfile = this.deps.activeProfile()
     const webuiRows = (await allSessions(this.store, { sidebarMetadataOnly: true }))
     const wantState = params.showCliSessions || params.showCronSessions || params.showWebhookSessions || params.showKanbanSessions
@@ -1463,7 +1486,7 @@ export class SessionService {
       if (expanded.storage && (expanded.storage.state === 'corrupt' || agentStorage?.state === 'ok')) agentStorage = expanded.storage
     }
     const lookups = await withStateDbListingReads(() => this.listStateDbLookups(webuiRows, (cliRows ?? []).map((r) => str(r.session_id))))
-    const payload = (await buildSessionListPayload(this.store, { ...params, ...(cliRows ? { cliRows } : {}), ...(truncatedSources ? { truncatedSources } : {}), ...(agentStorage ? { agentStorage } : {}), gatewayIdentity, ...lookups, webuiRows, webDiagnosticIds, activeProfile, isolatedProfileMode: this.deps.isolatedProfileMode(), profilesMatch: this.deps.profilesMatch }))
+    const payload = (await buildSessionListPayload(this.store, { ...params, ...(cliRows ? { cliRows } : {}), ...(truncatedSources ? { truncatedSources } : {}), ...(agentStorage ? { agentStorage } : {}), gatewayIdentity, ...lookups, webuiRows, webDiagnosticIds, activeProfile, isolatedProfileMode: this.deps.isolatedProfileMode(), profilesMatch: this.deps.profilesMatch, rowVisible: (row) => this.personMaySee(row.owner_person_id) }))
     return sessionListResponse(payload, this.deps.runtime, this.deps.redactEnabled(), this.deps.now(), await this.workspaceNames([...payload.sessions, ...payload.sidebar_reference_sessions]))
   }
 
@@ -1527,6 +1550,7 @@ export class SessionService {
   async search(q: string, opts: { content: boolean; depth: number; allProfiles: boolean }): Promise<Record<string, unknown>> {
     const activeProfile = this.deps.activeProfile()
     let sessions = (await allSessions(this.store))
+    sessions = sessions.filter((r) => this.personMaySee(r.owner_person_id))
     if (!opts.allProfiles) sessions = sessions.filter((r) => this.deps.profilesMatch(str(r.profile) || null, activeProfile))
     const metadata = await this.persistedAliasMetadata(sessions)
     sessions = reconcileLocalSessionRows(sessions, metadata.rows, this.deps.profilesMatch)
@@ -1644,7 +1668,7 @@ export class SessionService {
     if (await this.store.wasDeleted(ref.session_id) || await this.store.wasDeleted(ref.tip_session_id)) throw unavailable()
     let local: Session | null = null
     try { local = await this.store.get(ref.tip_session_id, { metadataOnly: !history }) } catch (error) { if (!(error instanceof SessionNotFound)) throw error }
-    if (local && !this.deps.profilesMatch(local.profile, profile)) throw unavailable()
+    if (local ? !this.visibleToRequest(local) : !this.personMaySee(null)) throw unavailable()
     const report = await stateDbSessionReadAsync(emptyLineageReport(ref.tip_session_id), 'stateDbLineageReport', path, ref.tip_session_id)
     if (!report?.found || report.manual_review || report.lineage_key !== ref.session_id || report.tip_session_id !== ref.tip_session_id) throw unavailable()
     const segments = report.segments as Row[]
@@ -1840,7 +1864,8 @@ export class SessionService {
     let s = (await this.get404(sid, {}, reads))
     s = (await this.store.ensureFull(sid, s))
     if (pinRequested && !s.pinned) {
-      const rows = (await allSessions(this.store))
+      // TAL-48: the pin limit counts only the pins this request can see, never another person's.
+      const rows = (await allSessions(this.store)).filter((r) => this.personMaySee(r.owner_person_id))
       const byId = new Map(rows.filter((r) => r.session_id).map((r) => [str(r.session_id), r]))
       byId.set(s.session_id, s.compact())
       const targetLineage = lineageRootId(s.compact(), byId)
@@ -2643,6 +2668,7 @@ export class SessionService {
     const watermark = session.truncation_watermark_compressed ? { truncation_watermark: session.truncation_watermark, truncation_boundary: session.truncation_boundary, truncation_watermark_compressed: true } : {}
     const copied = new Session(
       {
+        owner_person_id: this.store.newSessionOwner(),
         title: `${session.title || 'Untitled'} (copy)`, workspace: session.workspace, model: session.model, model_provider: session.model_provider,
         messages: withMirrorSources(copyJson(session.messages), session), tool_calls: copyJson(session.tool_calls), pinned: false, archived: false, project_id: session.project_id, profile: session.profile,
         input_tokens: session.input_tokens, output_tokens: session.output_tokens, estimated_cost: session.estimated_cost, cache_read_tokens: session.cache_read_tokens, cache_write_tokens: session.cache_write_tokens,
@@ -2687,6 +2713,7 @@ export class SessionService {
     const forkedContext = copyJson(truncateContextForDisplayKeep(sourceContext, sourceMessages, forkKeep))
     const branch = new Session(
       {
+        owner_person_id: this.store.newSessionOwner(),
         workspace: source.workspace, model: source.model, model_provider: source.model_provider, profile: source.profile, title, messages: withMirrorSources(forked, source), project_id: source.project_id,
         personality: source.personality, enabled_toolsets: source.enabled_toolsets, context_length: source.context_length, threshold_tokens: source.threshold_tokens,
         context_messages: forkedContext, gateway_routing: copyJson(source.gateway_routing), context_engine: source.context_engine, context_engine_state: copyJson(source.context_engine_state),
@@ -2732,13 +2759,14 @@ export class SessionService {
     const child = await this.withMutationLock(sid, async () => {
       // Validated under the lock: a delete that won it leaves no source to fork.
       const source = (await this.store.get(sid))
-      if (!this.visibleToActiveProfile(source.profile)) throw new HttpFailure(404, 'Session not found')
+      if (!this.visibleToRequest(source)) throw new HttpFailure(404, 'Session not found')
       if (!compressionRecoveryPayload(source)) throw new HttpFailure(409, 'Session does not have a compression recovery action.')
       const existing = (await this.compressionRecoveryChild(sid, action, source.profile))
       if (existing) return existing
       const base = (source.title || 'Untitled').trim() || 'Untitled'
       const fresh = new Session(
         {
+          owner_person_id: this.store.newSessionOwner(),
           title: base.endsWith(' (focused continuation)') ? base : `${base} (focused continuation)`, workspace: source.workspace, model: source.model, model_provider: source.model_provider,
           project_id: source.project_id, profile: source.profile, session_source: 'fork', personality: source.personality, enabled_toolsets: copyJson(source.enabled_toolsets),
           context_length: source.context_length, threshold_tokens: source.threshold_tokens, gateway_routing: copyJson(source.gateway_routing), gateway_routing_history: copyJson(source.gateway_routing_history),
@@ -2885,7 +2913,8 @@ export class SessionService {
         try { s = await this.store.get(candidate.session_id) }
         catch (error) { if (error instanceof SessionNotFound) return; throw error }
         const shouldDelete = zeroOnly ? s.messages.length === 0 : s.title === 'Untitled' && s.messages.length === 0
-        if (!shouldDelete || (await this.isReadOnly(s))) return
+        // TAL-48: a person cleans up only their own sessions.
+        if (!shouldDelete || !this.personMaySee(s.owner_person_id) || (await this.isReadOnly(s))) return
         // A first turn in flight has no messages yet; a later cleanup decides once it settles.
         if (s.hasPendingPrompt || (await this.activeRunBlocking(s.session_id))) return
         // Keep the session (and its revoke route) if its share cannot be revoked.
@@ -2944,7 +2973,7 @@ export class SessionService {
     }
     const defaults = (await this.store.deps.defaults(this.deps.activeProfile()))
     const s = new Session(
-      { title: typeof body.title === 'string' ? body.title : 'Imported session', workspace, model: typeof body.model === 'string' ? body.model : defaults.model, messages: messages as Message[], tool_calls: stripPublicInternalFields(rawToolCalls) as Record<string, unknown>[], profile: this.deps.activeProfile() },
+      { title: typeof body.title === 'string' ? body.title : 'Imported session', workspace, model: typeof body.model === 'string' ? body.model : defaults.model, messages: messages as Message[], tool_calls: stripPublicInternalFields(rawToolCalls) as Record<string, unknown>[], profile: this.deps.activeProfile(), owner_person_id: this.store.newSessionOwner() },
       defaults,
     )
     s.pinned = Boolean(body.pinned)
@@ -3050,7 +3079,7 @@ export class SessionService {
       if (error instanceof HttpFailure && error.status === 403) throw new HttpFailure(403, 'Read-only imported sessions cannot persist anchor scenes')
       throw error
     }
-    if (!this.visibleToActiveProfile(s.profile)) throw new HttpFailure(404, 'Session not found')
+    if (!this.visibleToRequest(s)) throw new HttpFailure(404, 'Session not found')
     return this.withMutationLock(sid, async () => {
       let placement
       try {
@@ -3069,7 +3098,7 @@ export class SessionService {
     try {
       let session = (await this.store.get(sid))
       if (session.loadedMetadataOnly) session = (await this.store.load(sid)) ?? session
-      if (!this.visibleToActiveProfile(session.profile)) throw new HttpFailure(404, 'Session not found')
+      if (!this.visibleToRequest(session)) throw new HttpFailure(404, 'Session not found')
       return { session, transcript: this.mergedTranscript(session, session.messages, await this.stateDbRows(session)), stored: true }
     } catch (error) {
       if (error instanceof HttpFailure) throw error
@@ -3155,7 +3184,7 @@ export class SessionService {
     sid = await this.resolveSessionId(sid)
     return this.store.withLock(sid, async () => {
       const session = await this.get404(sid)
-      if (!this.visibleToActiveProfile(session.profile)) throw new HttpFailure(404, 'Session not found')
+      if (!this.visibleToRequest(session)) throw new HttpFailure(404, 'Session not found')
       return fn(await this.store.ensureFull(sid, session))
     })
   }

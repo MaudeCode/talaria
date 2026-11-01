@@ -49,6 +49,8 @@ export function requireField(body: Record<string, unknown>, ...fields: string[])
 }
 
 function visibleOrRetag(deps: AppDeps, s: Session, requestedProfile: string): void {
+  // TAL-48: another person's session is not found and is never retagged.
+  if (!deps.sessions.personMaySee(s.owner_person_id)) throw new HttpFailure(404, 'Session not found')
   const active = deps.activeProfile()
   if (deps.profilesMatch(s.profile, active)) return
   const hasTurns = s.messages.length > 0 || s.context_messages.length > 0 || s.hasPendingPrompt

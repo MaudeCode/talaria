@@ -3,15 +3,15 @@ import { createHash, randomUUID } from 'node:crypto'
 import { readDocument } from '../sessions/storage/document.js'
 import type { DocumentBackend } from '../sessions/storage/backend.js'
 import type { SessionInfo } from '../auth/store.js'
+import { personIdentity } from '../auth/person.js'
 import { str } from '../util.js'
 import type { GatewayProcess } from './health.js'
 
 export function updateNotificationOwner(session: SessionInfo | null): string {
   const authType = str(session?.auth_type).trim()
   if (authType === 'oidc') {
-    const issuer = str(session?.oidc_issuer).trim()
-    const subject = typeof session?.oidc_subject === 'string' ? session.oidc_subject : ''
-    if (issuer && subject.trim()) return `oidc:${createHash('sha256').update(JSON.stringify([issuer, subject]), 'utf8').digest('hex')}`
+    const person = personIdentity(session)
+    if (person) return person.id
     const token = str(session?.token).trim()
     if (token) return `oidc-session:${createHash('sha256').update(JSON.stringify([token]), 'utf8').digest('hex')}`
   }

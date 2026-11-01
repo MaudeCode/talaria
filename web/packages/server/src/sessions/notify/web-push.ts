@@ -15,6 +15,7 @@ import { readDocument, updateDocument } from '../storage/document.js'
 import type { ActivityState, ActivityStates } from './activity.js'
 import { alertForTransition, DEFAULT_ALERT_PREFERENCES, type AlertKind, type AlertPreferences } from './alerts.js'
 import type { NotificationChannel } from './channel.js'
+import { personMaySee, type PersonAccess } from '../../auth/person.js'
 
 const MAX_SUBSCRIPTIONS = 64
 const MAX_TRIES = 3
@@ -43,6 +44,11 @@ export interface WebPushDeps {
   liveLogins: () => Promise<Set<string>>
   /** A deleted profile's subscriptions are deleted with it. */
   profileExists: (profile: string) => boolean
+  /**
+   * TAL-48: the session authority of the login a subscription belongs to while person isolation is on (undefined
+   * while it is off), so a subscriber is alerted only about sessions that login may open.
+   */
+  personAccessFor?: (login: string | null) => Promise<PersonAccess | undefined>
   env: Record<string, string | undefined>
   now: () => number
   log: (line: string) => void
@@ -185,6 +191,8 @@ export class WebPushChannel implements NotificationChannel {
       await this.mutate((all) => { for (let i = all.length - 1; i >= 0; i--) if (!valid(all[i]!)) all.splice(i, 1) })
       subs = subs.filter(valid)
     }
+    const access = new Map<Subscription, PersonAccess | undefined>()
+    for (const sub of subs) access.set(sub, await this.deps.personAccessFor?.(sub.login))
     const profiles = new Set(subs.map((s) => s.profile))
     for (const profile of this.lastPhase.keys()) if (!profiles.has(profile)) this.lastPhase.delete(profile)
     for (const profile of profiles) {
@@ -196,7 +204,7 @@ export class WebPushChannel implements NotificationChannel {
         next.set(row.sessionId, phase)
         if (!previous) continue
         for (const sub of subs) {
-          if (sub.profile !== profile) continue
+          if (sub.profile !== profile || !personMaySee(access.get(sub), row.ownerPersonId)) continue
           const kind = alertForTransition(previous.get(row.sessionId) ?? null, { phase, alertEligible: row.alertEligible }, sub.preferences)
           if (kind) this.track(this.deliver(sub, row, kind))
         }

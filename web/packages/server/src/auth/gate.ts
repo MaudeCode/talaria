@@ -8,7 +8,8 @@ import { truthy } from '../config.js'
 import { formatSetCookie } from './cookies.js'
 import { COOKIE_NAME_RE } from './cookies.js'
 import { AuthStore, CSRF_HEADER_NAME, type SessionInfo } from './store.js'
-import { validProfileName, type RequestContext } from '../http/context.js'
+import { PERSON_ISOLATION_VERSION, personIdentity, personIsolationEnabled } from './person.js'
+import { validProfileName, type AppDeps, type RequestContext } from '../http/context.js'
 import { checkSameOriginBrowserRequest, csrfRejectionError, isBrowserUnsafeRequest, rawPeerIsTrustedProxy, type CsrfFailure } from '../http/origin.js'
 import type { AuthStatus } from '@maudecode/talaria-web-contracts'
 import { PREVIEW_PREFIX } from '../workspace/preview.js'
@@ -244,7 +245,7 @@ export function trustedSessionAllowsActiveProfile(ctx: RequestContext, info: Ses
 }
 
 /** Owner authority for `OPERATOR_ONLY_PATHS` (Python `session_can_manage_server`). */
-export async function sessionCanManageServer(ctx: RequestContext, info: SessionInfo | null): Promise<boolean> {
+export async function sessionCanManageServer(ctx: { deps: Pick<AppDeps, 'auth' | 'oidc'> }, info: SessionInfo | null): Promise<boolean> {
   if (!(await ctx.deps.auth.isAuthEnabled())) return true
   if (!info) return false
   const authType = info.auth_type ?? ''
@@ -357,6 +358,8 @@ export async function checkAuth(ctx: RequestContext): Promise<boolean> {
       return false
     }
     ctx.authRefreshCookie = ctx.trusted.cookieValue ?? cookieVal
+    // TAL-48: bind the request's session authority once; every session check reads it from the request scope.
+    if (personIsolationEnabled(ctx.deps.config.env)) ctx.personAccess = { personId: personIdentity(info)?.id ?? null, serverOwner: await sessionCanManageServer(ctx, info) }
     return true
   }
   if (path.startsWith('/api/')) {
@@ -428,6 +431,10 @@ export async function authStatusPayload(ctx: RequestContext): Promise<AuthStatus
     can_manage_server: await sessionCanManageServer(ctx, sessionInfo),
   }
   if (auth.isTrustedAuthEnabled() || sessionInfo?.auth_type === 'trusted') payload.trusted_auth_enabled = true
+  // Isolation needs a sign-in to tell people apart; a server without auth stays single-user.
+  const isolated = authEnabled && personIsolationEnabled(ctx.deps.config.env)
+  payload.person_isolation = { version: PERSON_ISOLATION_VERSION, enabled: isolated }
+  if (isolated && loggedIn) payload.person = personIdentity(sessionInfo)
   if (sessionInfo && (sessionInfo.auth_type === 'trusted' || sessionInfo.auth_type === 'oidc')) {
     payload.auth_type = sessionInfo.auth_type
     payload.user = sessionInfo.username

@@ -254,6 +254,8 @@ export class Session {
   archived: boolean
   project_id: string | null
   plan_gauge: PlanGauge | null
+  /** TAL-48: the opaque person who created this session under person isolation; null for an unowned session. */
+  owner_person_id: string | null
   input_tokens: number
   output_tokens: number
   estimated_cost: unknown
@@ -377,6 +379,8 @@ export class Session {
     const projectId = take('project_id', null)
     this.project_id = projectId ? str(projectId) : null
     this.plan_gauge = PlanGaugeSchema.safeParse(take('plan_gauge', null)).data ?? null
+    const owner = take('owner_person_id', null)
+    this.owner_person_id = typeof owner === 'string' && owner ? owner : null
     this.input_tokens = Number(take('input_tokens', 0) ?? 0) || 0
     this.output_tokens = Number(take('output_tokens', 0) ?? 0) || 0
     this.estimated_cost = take('estimated_cost', null)
@@ -495,6 +499,9 @@ export class Session {
       meta.pending_user_source = null
     }
     if (this.plan_gauge !== null) meta.plan_gauge = this.plan_gauge
+    // Written only when set, so an unowned session's document keeps its existing shape; it precedes `messages`, so
+    // metadata-only reads see it.
+    if (this.owner_person_id) meta.owner_person_id = this.owner_person_id
     meta.message_count = this.messages.length
     meta.anchor_scene_index = anchorSceneIndexFromRecords(this.anchor_activity_scenes)
     this.anchorSceneIndex = { ...(meta.anchor_scene_index as Record<string, number>) }
@@ -545,6 +552,7 @@ export class Session {
       project_id: this.project_id,
       profile: this.profile,
       ...(this.plan_gauge !== null ? { plan_gauge: this.plan_gauge } : {}),
+      ...(this.owner_person_id ? { owner_person_id: this.owner_person_id } : {}),
       input_tokens: this.input_tokens,
       output_tokens: this.output_tokens,
       estimated_cost: this.estimated_cost,

@@ -17,6 +17,7 @@ import type { ServerConfig } from '../config.js'
 import { truthy } from '../config.js'
 import { parseCookieHeader } from '../auth/cookies.js'
 import type { AuthStore, SessionInfo } from '../auth/store.js'
+import type { PersonAccess } from '../auth/person.js'
 import type { SettingsStore } from '../settings.js'
 import type { AssetCache, SpaShell } from '../spa.js'
 import type { StartupGate } from '../startup.js'
@@ -91,6 +92,9 @@ export function loggedUrl(url: string | undefined): string {
   return `${target.slice(0, q + 1)}${query.join('&')}`
 }
 
+/** What `requestScope` binds for one request (the request context itself, or a session acting as its caller). */
+export interface RequestScope { requestProfile: string | null; notificationOwner?: string; personAccess?: PersonAccess }
+
 export interface AppDeps {
   config: ServerConfig
   settings: SettingsStore
@@ -115,7 +119,7 @@ export interface AppDeps {
   /** The request's profile when called inside `requestScope.run`, else the process default. */
   activeProfile: () => string
   /** Binds `activeProfile()` to the request context for the whole handler (cookie, bound session, and later retags). */
-  requestScope: AsyncLocalStorage<{ requestProfile: string | null; notificationOwner?: string }>
+  requestScope: AsyncLocalStorage<RequestScope>
   isRootProfile: (name: string) => boolean
   /** The agent's display name for a profile (`assistant_name`). */
   assistantName: (profile: string | null) => string
@@ -275,6 +279,8 @@ export class RequestContext {
   authRefreshCookie: string | null = null
   requestProfile: string | null = null
   notificationOwner?: string
+  /** TAL-48: the request's session authority while person isolation is on (set by the auth gate). */
+  personAccess?: PersonAccess
   csrfFailure: CsrfFailure = null
   /** Headers a `RawResponse` asks the oRPC layer to add. */
   extraResponseHeaders: Record<string, string> = {}

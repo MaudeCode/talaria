@@ -13,10 +13,10 @@ export async function fileSourceSession(ctx: RequestContext, sid: string) {
   try { session = await ctx.deps.sessionStore.get(sid, { metadataOnly: true }) }
   catch {
     const profile = ctx.deps.activeProfile()
-    if (!isSafeSessionId(sid) || !await stateDbSessionReadAsync(false, 'stateDbHasSession', ctx.deps.cliSessions.dbPath(profile), sid)) throw new HttpError(404, 'Session not found')
+    if (!ctx.deps.sessions.personMaySee(null) || !isSafeSessionId(sid) || !await stateDbSessionReadAsync(false, 'stateDbHasSession', ctx.deps.cliSessions.dbPath(profile), sid)) throw new HttpError(404, 'Session not found')
     return { session: null, profile }
   }
-  if (!ctx.deps.profilesMatch(session.profile, ctx.deps.activeProfile())) throw new HttpError(404, 'Session not found')
+  if (!ctx.deps.sessions.visibleToRequest(session)) throw new HttpError(404, 'Session not found')
   return { session, profile: session.profile }
 }
 

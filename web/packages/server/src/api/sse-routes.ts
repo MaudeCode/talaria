@@ -511,8 +511,15 @@ export async function handleSessionEvents(ctx: RequestContext): Promise<void> {
         continue
       }
       // A global invalidation may span profiles; playback instructions never cross the bound request profile.
-      const web_audio = event.web_audio?.filter((completion) => ctx.deps.profilesMatch(completion.profile, ctx.deps.activeProfile()))
-      sse.event(event.type, { ...event, web_audio, stream: 'sessions' })
+      let web_audio = event.web_audio?.filter((completion) => ctx.deps.profilesMatch(completion.profile, ctx.deps.activeProfile()))
+      const payload: Record<string, unknown> = { ...event, stream: 'sessions' }
+      // TAL-48: another person's session is never named, and its completion never plays; a coalesced event that no
+      // longer names its session cannot prove whose completion it carries.
+      if (ctx.personAccess && !(event.session_id && await ctx.deps.sessions.personMaySeeSessionId(event.session_id))) {
+        Reflect.deleteProperty(payload, 'session_id')
+        web_audio = undefined
+      }
+      sse.event(event.type, { ...payload, web_audio })
       lastWrite = Date.now()
     }
   } finally {
