@@ -2783,10 +2783,10 @@ export class SessionService {
       if (removed.has(sid)) continue
       const aborted = await this.store.withLock(sid, async () => {
         if (this.store.sessions.has(sid)) return false
-        // Strict: an unreadable session directory is not proof the owner is gone, so the sweep stops instead.
-        let owners: Set<string>
-        try { owners = await this.store.persistedIds({ strict: true }) } catch { return true }
-        if (owners.has(sid)) return false
+        // Fail closed: an unreadable owner path is not proof the owner is gone, so the sweep stops instead.
+        let owned: boolean
+        try { owned = await this.store.exists(sid) } catch { return true }
+        if (owned) return false
         try { await this.store.deps.drafts.delete(sid) } catch { draftDeleteFailed = true }
         return false
       })

@@ -3318,9 +3318,10 @@ describe('session draft deletion (TAL-1073)', () => {
     mkdirSync(dir, { recursive: true })
     writeFileSync(join(dir, 'tal1073-unlisted.json'), JSON.stringify({ session_id: 'tal1073-unlisted', title: 'Kept', messages: [{ role: 'user', content: 'hi' }], created_at: 1, updated_at: 1 }))
     writeDraftFile('tal1073-unlisted', 'unlisted text')
-    // Simulate EACCES on the session directory: a lenient listing reads as empty, a strict one throws.
+    // Simulate EACCES on the session directory: the lenient listing reads as empty and the owner lookup throws.
     const store = s.deps.sessionStore
-    vi.spyOn(store, 'persistedIds').mockImplementation((opts = {}) => opts.strict ? Promise.reject(Object.assign(new Error('synthetic EACCES'), { code: 'EACCES' })) : Promise.resolve(new Set<string>()))
+    vi.spyOn(store, 'persistedIds').mockResolvedValue(new Set<string>())
+    vi.spyOn(store, 'exists').mockRejectedValue(Object.assign(new Error('synthetic EACCES'), { code: 'EACCES' }))
     expect(await call('/api/sessions/cleanup_zero_message')).toEqual([500, { error: 'Failed to delete session data' }])
     expect([existsSync(join(dir, 'tal1073-unlisted.json')), draftText('tal1073-unlisted')]).toEqual([true, 'unlisted text'])
   })
