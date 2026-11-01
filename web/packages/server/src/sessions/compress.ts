@@ -104,6 +104,8 @@ export interface CompressionJob {
   turns: Set<string>
   /** TAL-1005: started by the server for an over-threshold session, not by the user's `/compress`. */
   automatic: boolean
+  /** TAL-1284: started ahead of a turn for an idle near-threshold session; an archive drops its result. */
+  idle: boolean
   /** Settles when the worker finishes; never rejects. */
   done: Promise<void>
 }

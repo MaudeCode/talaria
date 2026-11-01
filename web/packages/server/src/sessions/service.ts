@@ -216,12 +216,43 @@ const RECOVERY_JOURNAL_MAX_BYTES = 8 * 1024 * 1024
 const RECOVERY_JOURNAL_MAX_ROWS = 65536
 const isDict = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof v === 'object' && !Array.isArray(v)
 
+/** TAL-1284: an idle session compacts ahead of its next turn from this share (percent) of that turn's threshold. */
+export const IDLE_COMPACTION_PERCENT = 95
+/** TAL-1284: and after this long without a turn or prompt. */
+export const IDLE_COMPACTION_SECONDS = 300
+
+/**
+ * The context the next turn sends (the post-compression estimate, else the last prompt) and its threshold (the next
+ * turn's, else the last turn's), when both are positive.
+ */
+function contextFigures(s: { post_compression_context_tokens_estimate?: unknown; last_prompt_tokens?: unknown; next_turn_threshold_tokens?: unknown; threshold_tokens?: unknown }): { used: number; threshold: number } | null {
+  const positive = (v: unknown): number | null => { const n = Math.trunc(Number(v ?? 0)); return Number.isFinite(n) && n > 0 ? n : null }
+  const used = positive(s.post_compression_context_tokens_estimate) ?? positive(s.last_prompt_tokens)
+  const threshold = positive(s.next_turn_threshold_tokens) ?? positive(s.threshold_tokens)
+  return used !== null && threshold !== null ? { used, threshold } : null
+}
+
+/** TAL-1284: an index row with no archive, turn or prompt whose last message is `IDLE_COMPACTION_SECONDS` old. */
+function idleRow(row: Record<string, unknown>, now: number): boolean {
+  const last = Number(row.last_message_at)
+  return !row.archived && !row.active_stream_id && !row.has_pending_user_message && Number.isFinite(last) && last > 0 && now - last >= IDLE_COMPACTION_SECONDS
+}
+
+/** TAL-1284: the index row fields a turn, a compression or a model change moves; an unchanged generation is tried once. */
+function idleGeneration(row: Record<string, unknown>): string {
+  return JSON.stringify([row.last_message_at, row.last_prompt_tokens, row.post_compression_context_tokens_estimate, row.threshold_tokens, row.model, row.model_provider, row.profile])
+}
+
 export class SessionService {
   owner: GatewaySessions | null = null
   /** TAL-255: one manual compression worker per session, shared by every compress route. */
   private readonly compressionJobs: CompressionJobs
   /** TAL-1005: the turns now waiting on their session's compression job before they read its history. */
   private readonly compactionWaiters = new Set<string>()
+  /** TAL-1284: the one idle compaction this server runs at a time. */
+  private idleCompactionJob: CompressionJob | null = null
+  /** TAL-1284: each listed session's index row generation the idle sweep last tried. */
+  private readonly idleCompactionTried = new Map<string, string>()
   private worktreeRetainRetry: ReturnType<typeof setTimeout> | null = null
   private worktreesUnconfirmed = 0
 
@@ -2089,23 +2120,32 @@ export class SessionService {
    * Python `_handle_session_compress_start`: validate, then join the session's running job or start a fresh one (a
    * finished job is replaced). The stale-runtime refusal comes before a job exists; a running job is joined without it.
    */
-  async startCompression(sid: string, focusRaw: unknown, opts: { automatic?: boolean } = {}): Promise<CompressionJob> {
+  async startCompression(sid: string, focusRaw: unknown, opts: { automatic?: boolean; idle?: boolean } = {}): Promise<CompressionJob> {
     const running = (): CompressionJob | undefined => { const job = this.compressionJobs.get(sid); return job?.status === 'running' ? job : undefined }
     // A running job is joined first: once it has installed its short context, the guards below would refuse a new one.
     const existing = running()
     if (existing) return existing
     const { s } = (await this.compressionTarget(sid))
+    // TAL-1284: an idle start is admitted only while the session is still idle and near its threshold, before and after
+    // the runtime check; a turn admitted after the job exists joins it instead.
+    const stillIdle = (): void => {
+      if (!opts.idle || this.idleCompactionDue(s.compact(), s, this.deps.now())) return
+      if (s.archived) this.idleCompactionTried.delete(sid)
+      throw new HttpFailure(409, 'Session is no longer idle near its compression threshold.')
+    }
+    stillIdle()
     const focusTopic = str(focusRaw).trim().slice(0, 500) || null
     await ensureAgentRuntimeCurrent(this.deps.sidecar?.() ?? null)
     // Another start may have admitted a job while the runtime check awaited.
     const admitted = running()
     if (admitted) return admitted
+    stillIdle()
     // The detached job (and its finalize) is the profile's activity until it settles; checked and taken in one step.
     const profile = s.profile ?? null
     if (this.deps.profileDeleting?.(profile)) throw new HttpFailure(409, `Profile '${str(profile)}' is being deleted.`)
     const release = this.deps.profileActivity?.(profile)
     const now = this.deps.now()
-    const job: CompressionJob = { session_id: sid, focus_topic: focusTopic, status: 'running', started_at: now, updated_at: now, turns: new Set(), automatic: opts.automatic === true, done: Promise.resolve() }
+    const job: CompressionJob = { session_id: sid, focus_topic: focusTopic, status: 'running', started_at: now, updated_at: now, turns: new Set(), automatic: opts.automatic === true || opts.idle === true, idle: opts.idle === true, done: Promise.resolve() }
     job.done = this.compressSession(job).finally(() => { release?.(); this.compressionJobs.expireLater(job) }).then(
       (result) => { Object.assign(job, { status: 'done', result, updated_at: this.deps.now() }) },
       (error: unknown) => {
@@ -2173,10 +2213,45 @@ export class SessionService {
 
   /** Whether the session's context (the post-compression estimate, else the last prompt) reached the next turn's threshold. */
   compactionDue(s: Session): boolean {
-    const positive = (v: unknown): number | null => { const n = Math.trunc(Number(v ?? 0)); return Number.isFinite(n) && n > 0 ? n : null }
-    const used = positive(s.post_compression_context_tokens_estimate) ?? positive(s.last_prompt_tokens)
-    const threshold = positive(s.next_turn_threshold_tokens) ?? positive(s.threshold_tokens)
-    return used !== null && threshold !== null && used >= threshold
+    const figures = contextFigures(s)
+    return figures !== null && figures.used >= figures.threshold
+  }
+
+  /**
+   * TAL-1284: whether an idle compaction may start: `row` (the session's index row) has no archive, turn or prompt and
+   * no activity for `IDLE_COMPACTION_SECONDS`, and `s` holds at least `IDLE_COMPACTION_PERCENT` of its next turn's
+   * threshold (integer arithmetic, so the boundary is exact).
+   */
+  private idleCompactionDue(row: Record<string, unknown>, s: Session, now: number): boolean {
+    const figures = contextFigures(s)
+    return idleRow(row, now) && !s.archived && !s.active_stream_id && !s.hasPendingPrompt && figures !== null && figures.used * 100 >= figures.threshold * IDLE_COMPACTION_PERCENT
+  }
+
+  /**
+   * TAL-1284: one maintenance tick of idle compaction. Index rows pick the idle unarchived candidates; only those
+   * (newest first) read their metadata for the threshold, and only an eligible one loads its context, in
+   * `startCompression`'s idle admission. At most one idle job runs across the server, and each row generation is tried
+   * once, whatever the outcome, so a failure, lock skip or no-op waits for a new turn, a new estimate or a model change.
+   * An archive forgets the try, so unarchiving rearms it.
+   */
+  async compactIdleSessions(): Promise<void> {
+    if (this.idleCompactionJob?.status === 'running' || !this.deps.sidecar?.()) return
+    const now = this.deps.now()
+    let rows: Record<string, unknown>[]
+    try { rows = await this.store.readIndexEntries() } catch { return }
+    const listed = new Set(rows.map((row) => str(row.session_id)))
+    for (const sid of this.idleCompactionTried.keys()) if (!listed.has(sid)) this.idleCompactionTried.delete(sid)
+    const candidates = rows.filter((row) => idleRow(row, now) && contextFigures(row) !== null && this.idleCompactionTried.get(str(row.session_id)) !== idleGeneration(row)).sort((a, b) => Number(b.last_message_at) - Number(a.last_message_at))
+    for (const row of candidates) {
+      const sid = str(row.session_id)
+      this.idleCompactionTried.set(sid, idleGeneration(row))
+      try {
+        if (!this.idleCompactionDue(row, (await this.store.get(sid, { metadataOnly: true, cacheOnMiss: false, promote: false })), now)) continue
+        const job = await this.startCompression(sid, null, { idle: true })
+        if (job.idle) this.idleCompactionJob = job
+        return
+      } catch { /* no longer eligible: the next candidate */ }
+    }
   }
 
   /** The session a compression may run on now, and the model history it compresses: the context a turn would send, so a
@@ -2344,6 +2419,17 @@ export class SessionService {
     const waited = (id: unknown): boolean => job.turns.has(str(id)) || this.compactionWaiters.has(str(id))
     const sameRows = (a: Message[], b: Message[]): boolean => JSON.stringify(a) === JSON.stringify(b)
     const turnTail = (rows: Message[], base: Message[]): Message[] | null => (sameRows(rows.slice(0, base.length), base) && rows.slice(base.length).every((m) => waited(m._turn_id)) ? rows.slice(base.length) : null)
+    // TAL-1284: an idle job is maintenance: a session archived (or a profile being deleted) meanwhile keeps its context.
+    const abandoned = (live: Session): void => {
+      if (!job.idle) return
+      if (live.archived) {
+        // Unarchived, the same context is eligible again.
+        this.idleCompactionTried.delete(sid)
+        throw new HttpFailure(409, 'Session was archived during compression.')
+      }
+      if (this.deps.profileDeleting?.(live.profile ?? null)) throw new HttpFailure(409, `Profile '${str(live.profile)}' is being deleted.`)
+    }
+    abandoned(s)
     const sidecar = this.deps.sidecar?.()
     if (!sidecar) throw new HttpFailure(400, 'Compression failed: the Agent sidecar is not running')
     const [model, provider] = this.deps.modelStateFromRequest(s.model, s.model_provider, s.model_provider)
@@ -2367,6 +2453,7 @@ export class SessionService {
       const current = await this.withMutationLock(sid, async () => {
         let live: Session
         try { live = (await this.store.get(sid)) } catch { throw new HttpFailure(404, 'Session not found') }
+        abandoned(live)
         // One state.db read serves the check, the kept display rows, and the boundary; every gate below decides after it.
         const read = await this.stateDbRead(live)
         const turn = live.active_stream_id

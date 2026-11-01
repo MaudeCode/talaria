@@ -592,6 +592,20 @@ rows waiting turns added meanwhile (their prompts and Stops) and keeps them afte
 the compressed context. A failed, `lock_skipped`, or `nothing_to_do` job leaves
 the turn to the Agent's own preflight compression.
 
+An idle session also compacts ahead of its next turn (TAL-1284). On each
+maintenance tick (the hygiene ticker, every minute) the server reads the session
+index for unarchived sessions with no turn or prompt whose last message is at
+least 300 seconds old. Only those read their metadata, and the session qualifies
+when its context (the post-compression estimate, else the last prompt) is at
+least 95% of the next turn's threshold. Opening or polling a chat does not move
+that clock. One idle job runs across the server at a time; it is the same
+joinable job, so a turn sent meanwhile joins it, and a turn admitted before it
+prevents it. Each index generation (last message, context figures, model,
+profile) is tried once whatever the outcome, so a failure, `lock_skipped` or
+`nothing_to_do` waits for a new turn, estimate or model. An archive or profile
+deletion before the commit drops the result, finalized as uncommitted; unarchiving
+rearms the session. Like every automatic job, it leaves the list order alone.
+
 Provider sign-in is `oauth.*` (TAL-398). `oauth.start` runs the Agent's own
 device-code request for Nous Portal, OpenAI Codex, xAI, or MiniMax under the
 profile home and returns the code to show. A sidecar thread waits for the

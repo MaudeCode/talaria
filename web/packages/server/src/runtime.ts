@@ -782,7 +782,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     skills: new SkillsService({ sidecar: () => sidecar, config: agentConfig, log }),
     mcp: new McpService({ sidecar: () => sidecar, config: agentConfig, health: mcpHealth }),
     completions,
-    hygiene: new HygieneTicker({ env, stateDir: config.stateDir, port: () => config.port, journal, now, log, sweeps: [() => { completions.sweep() }, async () => { (await turns.sweep()) }, () => pruneAdvice.sweep()] }),
+    hygiene: new HygieneTicker({ env, stateDir: config.stateDir, port: () => config.port, journal, now, log, sweeps: [() => { completions.sweep() }, async () => { (await turns.sweep()) }, () => pruneAdvice.sweep(), () => sessions.compactIdleSessions()] }),
     mcpHealth,
     nowSeconds: now,
     // Python `_webui_runtime_payload`: the four owner sections with their `available` flags.
