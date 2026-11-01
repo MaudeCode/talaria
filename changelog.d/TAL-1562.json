@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Desktop conversations deleted in Hermes Desktop no longer linger in the Web session list.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
