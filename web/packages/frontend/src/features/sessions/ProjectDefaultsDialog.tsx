@@ -3,23 +3,26 @@ import { useState } from 'react'
 import { X } from 'lucide-react'
 import type { z } from 'zod'
 import { m } from '../../paraglide/messages.js'
-import type * as api from '../../api/endpoints'
+import * as api from '../../api/endpoints'
 import type { ProjectSchema } from '../../contracts'
 import { Dialog } from '../../ui/Dialog'
 import { Button } from '../../ui/Button'
 import { Select } from '../../ui/Select'
 import { useModelsQuery, useWorkspacesQuery } from '../../app/queries'
-import { catalogEntryById, catalogModelOptgroups } from '../../lib/modelEntry'
+import { catalogEntryById } from '../../lib/modelEntry'
+import { useResourceMutation } from './useResourceMutation'
+import { showErrorToast } from '../toast/errorToast'
+import { catalogModelOptgroups } from '../../lib/modelOptgroups'
 
 type Project = z.infer<typeof ProjectSchema>
 /** The editable bindings; `model` is a catalog entry id, or the saved bare model while it stays untouched. */
-export interface Defaults { workspaces: string[]; default_workspace: string; model: string }
+interface Defaults { workspaces: string[]; default_workspace: string; model: string }
 /** One save: the request, the project as it shows until the server confirms, and the draft a refusal reopens. */
-export interface DefaultsSave { body: Parameters<typeof api.bindProject>[0]; shown: Partial<Project>; draft: Defaults }
+interface DefaultsSave { body: Parameters<typeof api.bindProject>[0]; shown: Partial<Project>; draft: Defaults }
 const savedModel = (project: Project) => project.model_option_id ?? project.model ?? ''
 
 /** TAL-1032: a project's bound workspaces, the one new chats start in, and their model. Every choice comes from the saved workspace list and the model catalog. */
-export function ProjectDefaultsDialog({ project, initial, onCancel, onSave }: { project: Project; initial: Defaults | null; onCancel: () => void; onSave: (save: DefaultsSave) => void }) {
+function ProjectDefaultsDialog({ project, initial, onCancel, onSave }: { project: Project; initial: Defaults | null; onCancel: () => void; onSave: (save: DefaultsSave) => void }) {
   const [draft, setDraft] = useState<Defaults>(() => initial ?? { workspaces: project.workspaces ?? [], default_workspace: project.default_workspace ?? '', model: savedModel(project) })
   const workspaces = useWorkspacesQuery()
   const models = useModelsQuery()
@@ -81,4 +84,25 @@ export function ProjectDefaultsDialog({ project, initial, onCancel, onSave }: { 
       </form>
     </Dialog>
   )
+}
+
+/**
+ * The project's defaults editor and its save. The project shows the saved defaults at once; a refusal rolls them back and
+ * reopens the editor on the draft. ProjectChip keeps this mounted after the first open, so a save outlives the closed editor.
+ */
+export function ProjectDefaults({ project, open, onOpenChange }: { project: Project; open: boolean; onOpenChange: (open: boolean) => void }) {
+  const [draft, setDraft] = useState<Defaults | null>(null)
+  const [opened, setOpened] = useState(open)
+  // Closing forgets the draft, so a menu open starts on the saved defaults; a refusal restores its draft after the close.
+  if (opened !== open) { setOpened(open); if (!open) setDraft(null) }
+  const bind = useResourceMutation({
+    resource: () => `project:${project.project_id}`,
+    effect: ({ shown }: DefaultsSave) => ({ fields: shown }),
+    mutationFn: ({ body }) => api.bindProject(body), onError: (e) => showErrorToast(e),
+  })
+  const save = (next: DefaultsSave) => {
+    onOpenChange(false)
+    bind.mutate(next, { onError: () => { onOpenChange(true); setDraft(next.draft) } })
+  }
+  return open ? <ProjectDefaultsDialog project={project} initial={draft} onCancel={() => onOpenChange(false)} onSave={save} /> : null
 }

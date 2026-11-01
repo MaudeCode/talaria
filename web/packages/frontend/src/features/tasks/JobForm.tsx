@@ -19,7 +19,8 @@ import { cn } from '../../ui/cn'
 import { useModelsQuery, useProfilesQuery } from '../../app/queries'
 import { contextFromList, cronResource, jobId } from './cronJob'
 import { newResource, useResourceMutation } from '../sessions/useResourceMutation'
-import { catalogEntryById, catalogModelOptgroups } from '../../lib/modelEntry'
+import { catalogEntryById } from '../../lib/modelEntry'
+import { catalogModelOptgroups } from '../../lib/modelOptgroups'
 
 export type EditorMode = 'create' | 'edit' | 'duplicate'
 

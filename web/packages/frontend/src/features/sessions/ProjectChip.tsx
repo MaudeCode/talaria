@@ -10,7 +10,6 @@ import { ContextMenu, Menu, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparat
 import { ConfirmDialog, Dialog } from '../../ui/Dialog'
 import { Button } from '../../ui/Button'
 import { TextInput } from '../../ui/Field'
-import type { DefaultsSave, Defaults } from './ProjectDefaultsDialog'
 import { cn } from '../../ui/cn'
 import { showErrorToast } from '../toast/errorToast'
 
@@ -28,13 +27,13 @@ const PROJECT_COLORS: { hex: string; name: () => string }[] = [
 
 type Project = z.infer<typeof ProjectSchema>
 // The editor loads on first open, keeping the catalog picker out of the sidebar's static bundle.
-const ProjectDefaultsDialog = lazy(() => import('./ProjectDefaultsDialog').then((module) => ({ default: module.ProjectDefaultsDialog })))
+const ProjectDefaults = lazy(() => import('./ProjectDefaultsDialog').then((module) => ({ default: module.ProjectDefaults })))
 
 /** A sidebar project filter chip; right-click, long-press or the selected chip's actions button opens new chat, defaults, rename, recolor and delete (TAL-565, TAL-1032). */
 export function ProjectChip({ project, active, onSelect, onDeleted }: { project: Project; active: boolean; onSelect: () => void; onDeleted: () => void }) {
   const [dialog, setDialog] = useState<'rename' | 'defaults' | 'delete' | null>(null)
-  // A refused save reopens the editor on its draft; null opens it on the saved defaults.
-  const [draft, setDraft] = useState<Defaults | null>(null)
+  // Mounted from the first open on, so a save outlives the closed editor and a refusal can reopen it.
+  const [defaultsLoaded, setDefaultsLoaded] = useState(false)
   const newChat = useNewChat()
   const [name, setName] = useState(project.name)
   const id = project.project_id
@@ -42,21 +41,11 @@ export function ProjectChip({ project, active, onSelect, onDeleted }: { project:
   // `project` is the displayed project, so a recolor keeps a rename the server has not confirmed yet.
   const rename = useResourceMutation({ resource: () => `project:${id}`, effect: (name: string) => ({ fields: { name } }), mutationFn: (name) => api.renameProject(id, name), onError: fail })
   const recolor = useResourceMutation({ resource: () => `project:${id}`, effect: (color: string) => ({ fields: { color } }), mutationFn: (color) => api.renameProject(id, project.name, color), onError: fail })
-  // The project shows the saved defaults at once; a refusal rolls them back and reopens the editor on the draft.
-  const bind = useResourceMutation({
-    resource: () => `project:${id}`,
-    effect: ({ shown }: DefaultsSave) => ({ fields: shown }),
-    mutationFn: ({ body }) => api.bindProject(body), onError: fail,
-  })
-  const saveDefaults = (save: DefaultsSave) => {
-    setDialog(null)
-    bind.mutate(save, { onError: () => { setDraft(save.draft); setDialog('defaults') } })
-  }
   const del = useResourceMutation({ resource: () => `project:${id}`, effect: () => ({ remove: true }), mutationFn: () => api.deleteProject(id), onError: fail })
   const items = (
     <>
       <MenuItem onClick={() => { void newChat(id) }}>{m.project_new_chat()}</MenuItem>
-      <MenuItem onClick={() => { setDraft(null); setDialog('defaults') }}>{m.project_defaults()}</MenuItem>
+      <MenuItem onClick={() => { setDefaultsLoaded(true); setDialog('defaults') }}>{m.project_defaults()}</MenuItem>
       <MenuItem onClick={() => { setName(project.name); setDialog('rename') }}>{m.rename()}</MenuItem>
       <MenuRadioGroup value={project.color ?? ''} onValueChange={(hex: string) => recolor.mutate(hex)} aria-label={m.project_color()} className="flex px-1">
         {PROJECT_COLORS.map((c) => (
@@ -97,7 +86,7 @@ export function ProjectChip({ project, active, onSelect, onDeleted }: { project:
           </form>
         </Dialog>
       )}
-      {dialog === 'defaults' && <Suspense fallback={null}><ProjectDefaultsDialog project={project} initial={draft} onCancel={() => setDialog(null)} onSave={saveDefaults} /></Suspense>}
+      {defaultsLoaded && <Suspense fallback={null}><ProjectDefaults project={project} open={dialog === 'defaults'} onOpenChange={(open) => setDialog(open ? 'defaults' : null)} /></Suspense>}
       <ConfirmDialog open={dialog === 'delete'} onOpenChange={(o) => { if (!o) setDialog(null) }} title={m.project_delete_confirm({ name: project.name })} description={m.project_delete_desc()} confirmLabel={m.project_delete()} cancelLabel={m.cancel()} danger onConfirm={() => { del.mutate(); onDeleted() }} />
     </>
   )
