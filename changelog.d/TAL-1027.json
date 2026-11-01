@@ -1,0 +1,3 @@
+{
+  "entries": [{"category": "Fixed", "summary": "Retry and Undo in a compressed chat now remove the selected message and reply from what the model sees next.", "highlight": false, "components": ["web"]}]
+}
