@@ -12,7 +12,7 @@ import { useDebounced } from '../../lib/useDebounced'
 import { HelpTip } from '../../ui/Field'
 import { Dialog } from '../../ui/Dialog'
 import { useNewChat } from './useNewChat'
-import { SessionContextMenu } from './SessionContextMenu'
+import { SessionActions, SessionContextMenu } from './SessionContextMenu'
 import { ProjectChip } from './ProjectChip'
 import { closeMobileSidebar } from '../../shell/useShellState'
 import { inTextField } from '../../shell/useShortcuts'
@@ -336,6 +336,7 @@ export function SessionListPanel() {
   })
 
   return (
+    <SessionActions rows={filtered}>
     <div className={cn('panel-view active', searchOpen && 'search-open')} id="panelChat">
       <PanelHead
         title={m.tab_chat()}
@@ -419,6 +420,7 @@ export function SessionListPanel() {
       </div>
       {viewAll && <SessionGroupDialog title={GROUP_LABEL[viewAll.id]()} kind={viewAll.id} rows={viewAllGroup?.rows ?? []} filters={searchFilters} activeId={activeId} projectsById={projectsById} onArchive={onArchive} onClose={() => setViewAll(null)} />}
     </div>
+    </SessionActions>
   )
 }
 
@@ -447,12 +449,14 @@ function SessionGroupDialog({ title, kind, rows, filters, activeId, projectsById
           <input type="search" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={m.filter_conversations()} aria-label={m.filter_conversations()} autoComplete="off" data-1p-ignore data-lpignore="true" />
         </div>
       </div>
+      <SessionActions rows={matches ?? []}>
       <div className="session-list max-h-[60dvh]" role="list">
         {matches === null && search.isError ? <div className="session-list-note session-list-error" role="alert">{m.error_generic()} <button type="button" className="linklike" onClick={() => { void search.refetch() }}>{m.retry()}</button></div>
           : matches === null ? <div className="session-list-note" role="status">{m.loading()}</div>
           : matches.length === 0 ? <div className="session-list-note">{m.no_matching_sessions()}</div>
           : matches.map((row) => <SessionListItem key={row.session_id} row={row} active={row.session_id === activeId} proj={row.project_id ? projectsById.get(row.project_id) : undefined} preview={previews.get(row.session_id)} timeLabel={relativeTime(row.sort_ts)} onArchive={onArchive} />)}
       </div>
+      </SessionActions>
     </Dialog>
   )
 }

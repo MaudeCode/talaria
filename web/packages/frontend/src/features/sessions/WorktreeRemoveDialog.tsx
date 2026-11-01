@@ -4,7 +4,7 @@ import type { WorktreeStatus } from '@maudecode/talaria-web-contracts'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
-import { Dialog } from '../../ui/Dialog'
+import { Dialog, type DialogProps } from '../../ui/Dialog'
 import { Button } from '../../ui/Button'
 import { showToast } from '../toast/toast'
 
@@ -12,7 +12,7 @@ import { showToast } from '../toast/toast'
  * Remove a worktree chat's git worktree (TAL-605). The server's removal check, read fresh on open, decides whether
  * removal is blocked and whether it needs `force`; the dialog words that check and sends the server's `force_required`.
  */
-export function WorktreeRemoveDialog({ sessionId, onClose }: { sessionId: string; onClose: () => void }) {
+export function WorktreeRemoveDialog({ sessionId, onClose, finalFocus }: { sessionId: string; onClose: () => void; finalFocus?: DialogProps['finalFocus'] }) {
   const worktree = useQuery({ queryKey: keys.sessions.worktree(sessionId), queryFn: () => api.fetchWorktreeStatus(sessionId), staleTime: 0, gcTime: 0 })
   const remove = useResourceMutation({
     resource: () => `session:${sessionId}`,
@@ -24,7 +24,7 @@ export function WorktreeRemoveDialog({ sessionId, onClose }: { sessionId: string
   })
   const status = worktree.data?.status
   return (
-    <Dialog open onOpenChange={(o) => { if (!o) onClose() }} title={m.session_worktree_remove()} description={status ? m.session_worktree_remove_desc({ path: status.path }) : undefined}>
+    <Dialog open onOpenChange={(o) => { if (!o) onClose() }} finalFocus={finalFocus} title={m.session_worktree_remove()} description={status ? m.session_worktree_remove_desc({ path: status.path }) : undefined}>
       <WorktreeRemoveCheck status={status} error={worktree.error} />
       <div className="mt-4 flex justify-end gap-2">
         <Button onClick={onClose}>{m.cancel()}</Button>
