@@ -1,0 +1,3 @@
+{
+  "entries": [{"category": "Changed", "summary": "Auxiliary Models now has its own Settings page with inline task editing, a per-task reasoning effort limited to what each model supports, and model lists that load without blocking the page.", "highlight": false, "components": ["web"]}]
+}

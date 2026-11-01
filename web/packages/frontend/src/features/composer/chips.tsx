@@ -110,12 +110,13 @@ const ModelMenuRow = memo(function ModelMenuRow({ entry, locale }: { entry: Mode
 })
 
 const EFFORTS = ['default', 'minimal', 'low', 'medium', 'high', 'xhigh'] as const
-export function ReasoningChip({ value, levels, onChange, row }: { value: string | null; levels: string[] | undefined; onChange: (level: string | null) => void; row?: boolean }) {
+/** `defaultLabel` names what no saved level falls back to (the auxiliary delegation slot inherits its parent's, TAL-1285). */
+export function ReasoningChip({ value, levels, onChange, row, defaultLabel = m.reasoning_default() }: { value: string | null; levels: string[] | undefined; onChange: (level: string | null) => void; row?: boolean; defaultLabel?: string }) {
   const options = levels?.length ? ['default', ...levels] : [...EFFORTS]
   return (
-    <Menu label={m.composer_control_reasoning()} side="top" trigger={<Chip id={row ? undefined : "composerReasoningChip"} icon={<Brain size={16} aria-hidden="true" />} label={value ?? m.reasoning_default()} title={m.composer_control_reasoning()} row={row} className="composer-reasoning-chip" />}>
+    <Menu label={m.composer_control_reasoning()} side="top" trigger={<Chip id={row ? undefined : "composerReasoningChip"} icon={<Brain size={16} aria-hidden="true" />} label={value ?? defaultLabel} title={m.composer_control_reasoning()} row={row} className="composer-reasoning-chip" />}>
       <MenuRadioGroup value={value ?? 'default'} onValueChange={(v: string) => onChange(v === 'default' ? null : v)}>
-        {options.map((o) => <MenuRadioItem key={o} value={o} className={RADIO_CLASS}>{o === 'default' ? m.reasoning_default() : o}</MenuRadioItem>)}
+        {options.map((o) => <MenuRadioItem key={o} value={o} className={RADIO_CLASS}>{o === 'default' ? defaultLabel : o}</MenuRadioItem>)}
       </MenuRadioGroup>
     </Menu>
   )

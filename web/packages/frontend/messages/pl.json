@@ -848,7 +848,6 @@
 	"settings_main_advanced_service_tier_default": "Domyślny / wyłączony",
 	"settings_main_advanced_service_tier_priority": "Priorytetowy (szybki)",
 	"settings_label_auxiliary_models": "Modele pomocnicze",
-	"settings_desc_auxiliary_models": "Pomocnicze trasowanie zadań dla wizji, kompresji, generowania tytułów itp. „Auto” używa Twojego głównego modelu czatu.",
 	"settings_btn_reset_aux_models": "Resetuj wszystko do auto",
 	"settings_btn_apply_aux_models": "Zastosuj zmiany",
 	"settings_aux_provider_auto": "używaj głównego modelu",

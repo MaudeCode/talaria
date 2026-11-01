@@ -835,7 +835,6 @@
 	"settings_main_advanced_service_tier_default": "Default / off",
 	"settings_main_advanced_service_tier_priority": "Priority (fast)",
 	"settings_label_auxiliary_models": "Modèles auxiliaires",
-	"settings_desc_auxiliary_models": "Routage des tâches secondaires : vision, compression, génération de titres, etc. « Auto » utilise votre modèle de chat principal.",
 	"settings_btn_reset_aux_models": "Tout réinitialiser à auto",
 	"settings_btn_apply_aux_models": "Appliquer les modifications",
 	"settings_aux_provider_auto": "utiliser le modèle principal",

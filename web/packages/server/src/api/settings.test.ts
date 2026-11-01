@@ -19,6 +19,7 @@ type Json = Record<string, unknown>
 const dictOf = (v: unknown): Json => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Json) : {})
 const post = (s: TestServer, path: string, body: unknown, headers: Record<string, string> = {}): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json', ...headers } })
 const json = async (res: Response): Promise<Json> => (await res.json()) as Json
+const tasksFrom = (body: Json): Record<string, { reasoning: Record<string, unknown> }> => Object.fromEntries(((dictOf(body.auxiliary).tasks ?? []) as { task: string; reasoning: Record<string, unknown> }[]).map((t) => [t.task, t]))
 
 /** An in-memory config.yaml the fake sidecar serves and stores, keyed by profile home. */
 function fakeConfigStore(sidecar: FakeSidecar, initial: Record<string, Json> = {}): Map<string, Json> {
@@ -952,7 +953,7 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
       // A plugin task exists only in the profile whose Agent lists it; while Auto it shows its base slot's model.
       const { tasks: builtins, reserved } = loadSidecarFixtures().get('aux.tasks')![0]!.result as SidecarResult<'aux.tasks'>
       expect(reserved).toContain('goal_judge')
-      const sideTask = { key: 'side_task', label: 'Side model', description: 'side summaries', inherit_from: 'compression', reasoning_effort: '', effective: { provider: 'anthropic', model: 'claude-opus-4-7', base_url: '' } }
+      const sideTask = { key: 'side_task', label: 'Side model', description: 'side summaries', inherit_from: 'compression', reasoning_effort: '', effective: { provider: 'anthropic', model: 'claude-opus-4-7', base_url: '' }, takes_reasoning: true }
       sidecar.respond('aux.tasks', (params) => ({ tasks: params.profile_home === s.state ? [...builtins, sideTask] : builtins, reserved }))
       const opus = (await json(await s.get('/api/models'))).groups as { provider_id: string; models: { id: string; label: string }[] }[]
       const opusLabel = opus.find((g) => g.provider_id === 'anthropic')!.models.find((m) => m.id.endsWith('claude-opus-4-7'))!.label
@@ -1001,7 +1002,7 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     const saved = configs.get(s.state)
     const reset = (config: Json): void => { configs.set(s.state, config); s.deps.agentConfig.invalidate(); s.deps.catalog.invalidate() }
     const { tasks: builtins, reserved } = loadSidecarFixtures().get('aux.tasks')![0]!.result as SidecarResult<'aux.tasks'>
-    const row = { key: 'delegation', label: 'Delegation', description: 'subagent model (delegate_task)', inherit_from: null, reasoning_effort: '', effective: null }
+    const row = { key: 'delegation', label: 'Delegation', description: 'subagent model (delegate_task)', inherit_from: null, reasoning_effort: '', effective: null, takes_reasoning: true }
     sidecar.respond('aux.tasks', () => ({ tasks: [...builtins.filter((t) => t.key !== 'delegation'), row], reserved }))
     const set = (provider: string, model: string): Promise<Response> => post(s, '/api/model/set', { scope: 'auxiliary', task: 'delegation', provider, model })
     const delegation = (): Json => dictOf(configs.get(s.state)?.delegation)
@@ -1032,6 +1033,115 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     } finally {
       sidecar.respond('aux.tasks', undefined)
       if (saved) reset(saved)
+    }
+  })
+
+  it('auxiliary reasoning: server-supported efforts, explicit vs inherited, effort-only and combined writes, reconciliation, rejection, and reset (TAL-1285)', async () => {
+    const saved = configs.get(s.state)
+    const reset = (config: Json): void => { configs.set(s.state, config); s.deps.agentConfig.invalidate(); s.deps.catalog.invalidate() }
+    interface Reasoning { saved: string | null; effective: string | null; inherited: boolean; default_source: string; options: string[]; unavailable: string | null }
+    interface Task { task: string; provider: string; model: string; reasoning: Reasoning }
+    const read = async (): Promise<Record<string, Task>> => Object.fromEntries(((await json(await s.get('/api/model/auxiliary'))).tasks as Task[]).map((t) => [t.task, t]))
+    const set = (body: Json): Promise<Response> => post(s, '/api/model/set', { scope: 'auxiliary', ...body })
+    const aux = (): Json => dictOf(configs.get(s.state)?.auxiliary)
+    const efforts: Record<string, string[]> = { 'claude-opus-4-7': ['low', 'medium', 'high'], 'claude-sonnet-4-6': ['low', 'medium', 'high'], 'small-model': ['low', 'high'] }
+    let effortReads = 0
+    sidecar.respond('models.reasoning_efforts', (params) => { effortReads += 1; return { efforts: efforts[params.model] ?? [], supports_reasoning: params.model in efforts } })
+    const FULL = ['low', 'medium', 'high', 'none']
+    reset({ model: { default: 'claude-sonnet-4-6', provider: 'anthropic' }, agent: { reasoning_effort: 'high' }, auxiliary: { compression: { provider: 'anthropic', model: 'claude-opus-4-7', reasoning_effort: 'medium' } }, delegation: { max_iterations: 50 } })
+    try {
+      // Read: an explicit override, an inherited default, slots the Agent says ignore an effort, and delegation's parent default.
+      let tasks = await read()
+      expect(tasks.compression!.reasoning).toEqual({ saved: 'medium', effective: '', inherited: false, default_source: 'provider', options: FULL, unavailable: null })
+      expect(tasks.title_generation!.reasoning).toMatchObject({ saved: null, inherited: true, default_source: 'provider', options: FULL, unavailable: null })
+      expect(tasks.review!.reasoning).toMatchObject({ options: [], unavailable: 'slot' })
+      expect(tasks.memory_query_rewrite!.reasoning).toMatchObject({ options: [], unavailable: 'slot' })
+      expect(tasks.delegation!.reasoning).toMatchObject({ saved: null, inherited: true, default_source: 'parent', options: FULL })
+      // Each distinct route's capability is read once per listing: the pinned Opus route and the main Sonnet route.
+      effortReads = 0
+      await read()
+      expect(effortReads).toBe(2)
+
+      // An effort-only write keeps the route; the global chat effort, the main model and the other slots stay as they were.
+      expect((await set({ task: 'compression', reasoning_effort: 'high' })).status).toBe(200)
+      expect(aux().compression).toEqual({ provider: 'anthropic', model: 'claude-opus-4-7', reasoning_effort: 'high' })
+      expect(configs.get(s.state)?.agent).toEqual({ reasoning_effort: 'high' })
+      expect(configs.get(s.state)?.model).toEqual({ default: 'claude-sonnet-4-6', provider: 'anthropic' })
+      expect(Object.keys(aux())).toEqual(['compression'])
+
+      // Unsupported combinations are rejected and nothing is written, including a route change that carries a bad effort.
+      const before = JSON.stringify(configs.get(s.state))
+      for (const bad of [
+        { task: 'compression', reasoning_effort: 'xhigh' },
+        { task: 'compression', reasoning_effort: 'bogus' },
+        { task: 'review', reasoning_effort: 'low' },
+        { task: 'compression', provider: 'openrouter', model: 'plain-model', reasoning_effort: 'low' },
+      ]) expect((await set(bad)).status).toBe(400)
+      expect(JSON.stringify(configs.get(s.state))).toBe(before)
+
+      // A route change keeps a supported effort, steps an unsupported one down the ladder, and clears it when the model has no control.
+      expect((await set({ task: 'compression', provider: 'openai', model: 'small-model' })).status).toBe(200)
+      expect(aux().compression).toEqual({ provider: 'openai', model: 'small-model', reasoning_effort: 'high' })
+      expect((await set({ task: 'compression', provider: 'anthropic', model: 'claude-opus-4-7', reasoning_effort: 'medium' })).status).toBe(200)
+      expect((await set({ task: 'compression', provider: 'openai', model: 'small-model' })).status).toBe(200)
+      expect(aux().compression).toEqual({ provider: 'openai', model: 'small-model', reasoning_effort: 'low' })
+      let res = await set({ task: 'compression', provider: 'openrouter', model: 'plain-model' })
+      expect(aux().compression).toEqual({ provider: 'openrouter', model: 'plain-model' })
+      expect(tasksFrom(await json(res)).compression!.reasoning).toMatchObject({ saved: null, options: [], unavailable: 'model' })
+
+      // Model and effort persist together; null clears the override and keeps the route; Auto keeps an effort the main model supports.
+      expect((await set({ task: 'title_generation', provider: 'openai', model: 'small-model', reasoning_effort: 'high' })).status).toBe(200)
+      expect(aux().title_generation).toEqual({ provider: 'openai', model: 'small-model', reasoning_effort: 'high' })
+      res = await set({ task: 'title_generation', reasoning_effort: null })
+      expect(aux().title_generation).toEqual({ provider: 'openai', model: 'small-model' })
+      expect(tasksFrom(await json(res)).title_generation!.reasoning).toMatchObject({ saved: null, inherited: true })
+      expect((await set({ task: 'title_generation', reasoning_effort: 'low' })).status).toBe(200)
+      expect((await set({ task: 'title_generation', provider: 'auto', model: '' })).status).toBe(200)
+      expect(aux().title_generation).toEqual({ provider: 'auto', model: '', reasoning_effort: 'low' })
+
+      // The delegation slot's effort lives in the top-level section, never auxiliary.delegation.
+      expect((await set({ task: 'delegation', reasoning_effort: 'low' })).status).toBe(200)
+      expect(configs.get(s.state)?.delegation).toEqual({ max_iterations: 50, reasoning_effort: 'low' })
+      expect(aux().delegation).toBeUndefined()
+
+      // Reset All returns every slot to Auto and clears every saved effort.
+      expect((await set({ task: '__reset__', provider: 'auto', model: '' })).status).toBe(200)
+      expect(aux()).toMatchObject({ compression: { provider: 'auto', model: '' }, title_generation: { provider: 'auto', model: '' } })
+      expect(Object.values(aux()).some((entry) => 'reasoning_effort' in dictOf(entry))).toBe(false)
+      expect('reasoning_effort' in dictOf(configs.get(s.state)?.delegation)).toBe(false)
+      tasks = await read()
+      expect(Object.values(tasks).every((t) => t.reasoning.inherited)).toBe(true)
+
+      // When the Agent cannot say which levels a route takes, nothing is offered or accepted, and a route change keeps the saved effort.
+      reset({ ...configs.get(s.state), auxiliary: { compression: { provider: 'anthropic', model: 'claude-opus-4-7', reasoning_effort: 'medium' } } })
+      sidecar.respond('models.reasoning_efforts', () => { throw new SidecarError('no capability', { condition: 'sidecar_error' }) })
+      expect((await read()).compression!.reasoning).toMatchObject({ saved: 'medium', options: [], unavailable: 'agent' })
+      expect((await set({ task: 'compression', reasoning_effort: 'low' })).status).toBe(400)
+      expect((await set({ task: 'compression', provider: 'anthropic', model: 'claude-sonnet-4-6' })).status).toBe(200)
+      expect(aux().compression).toEqual({ provider: 'anthropic', model: 'claude-sonnet-4-6', reasoning_effort: 'medium' })
+    } finally {
+      sidecar.respond('models.reasoning_efforts', (params) => ({ efforts: params.model.startsWith('claude') ? ['low', 'medium', 'high'] : [], supports_reasoning: params.model.startsWith('claude') }))
+      if (saved) reset(saved)
+    }
+  })
+
+  it('auxiliary reads start the delegation, slot and reasoning reads together instead of one after another (TAL-1285)', async () => {
+    const registry = loadSidecarFixtures().get('aux.delegation')![0]!.result as SidecarResult<'aux.delegation'>
+    let release!: () => void
+    const held = new Promise<void>((resolve) => { release = resolve })
+    sidecar.respond('aux.delegation', async () => { await held; return registry })
+    try {
+      s.deps.agentConfig.invalidate()
+      sidecar.calls.length = 0
+      const pending = s.get('/api/model/auxiliary')
+      // While the delegation registry is held, the Agent's slot list and each route's reasoning levels are already being read.
+      await vi.waitFor(() => { expect(sidecar.calls.map((c) => c.method)).toEqual(expect.arrayContaining(['aux.delegation', 'aux.tasks', 'models.reasoning_efforts'])) }, { timeout: 2_000 })
+      expect(sidecar.calls.filter((c) => c.method === 'aux.tasks')).toHaveLength(1)
+      release()
+      expect((await pending).status).toBe(200)
+    } finally {
+      release()
+      sidecar.respond('aux.delegation', undefined)
     }
   })
 

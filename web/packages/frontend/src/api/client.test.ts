@@ -300,7 +300,7 @@ it('propagates managed config conflicts without retrying or requesting re-login'
   const onUnauthorized = vi.fn()
   configureClient({ transport: adapter, authEnabled: true, onUnauthorized })
   await expect(saveSettings({ max_tokens: 1234 })).rejects.toMatchObject({ kind: 'http', status: 409, message, body, retryable: false })
-  await expect(setAuxiliaryModel('delegation', 'claude-opus-4-7', 'anthropic')).rejects.toMatchObject({ kind: 'http', status: 409, message, body, retryable: false })
+  await expect(setAuxiliaryModel('delegation', { model: 'claude-opus-4-7', provider: 'anthropic' })).rejects.toMatchObject({ kind: 'http', status: 409, message, body, retryable: false })
   expect(adapter.calls).toHaveLength(2)
   expect(onUnauthorized).not.toHaveBeenCalled()
 })

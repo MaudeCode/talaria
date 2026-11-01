@@ -867,7 +867,6 @@
 	"settings_main_advanced_service_tier_default": "По умолчанию / выкл.",
 	"settings_main_advanced_service_tier_priority": "Priority (быстро)",
 	"settings_label_auxiliary_models": "Вспомогательные модели",
-	"settings_desc_auxiliary_models": "Маршрутизация побочных задач: зрение, сжатие, генерация заголовков и т.д. «Авто» использует основную модель чата.",
 	"settings_btn_reset_aux_models": "Сбросить всё на авто",
 	"settings_btn_apply_aux_models": "Применить изменения",
 	"settings_aux_provider_auto": "использовать основную модель",

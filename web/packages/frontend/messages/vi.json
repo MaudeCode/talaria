@@ -835,7 +835,6 @@
 	"settings_main_advanced_service_tier_default": "Default / off",
 	"settings_main_advanced_service_tier_priority": "Priority (fast)",
 	"settings_label_auxiliary_models": "Model phụ trợ",
-	"settings_desc_auxiliary_models": "Điều hướng tác vụ phụ cho vision, nén, tạo tiêu đề, v.v. \"Auto\" sẽ dùng model chat chính.",
 	"settings_btn_reset_aux_models": "Đặt lại tất cả về auto",
 	"settings_btn_apply_aux_models": "Áp dụng thay đổi",
 	"settings_aux_provider_auto": "dùng model chính",

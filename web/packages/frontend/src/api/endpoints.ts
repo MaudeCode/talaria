@@ -68,8 +68,9 @@ export const fetchModels = (freshness?: 'session_visit') => orpc().models.list(f
 /** config.yaml model.default (and provider): `/api/settings` does not persist `default_model`. */
 export const setDefaultModel = (model: string, provider?: string | null, advanced?: { service_tier: string }) => orpc().models.setDefault({ model, ...(provider ? { provider } : {}), ...(advanced ? { advanced } : {}) })
 export const fetchAuxiliaryModels = () => orpc().models.auxiliary()
-/** One auxiliary task slot (`__reset__` returns every slot to Auto); answers the refreshed `auxiliary` state. */
-export const setAuxiliaryModel = (task: string, model: string, provider?: string | null) => orpc().models.set({ scope: 'auxiliary', task, model, ...(provider ? { provider } : {}) })
+/** One auxiliary task slot (`__reset__` returns every slot to Auto); answers the refreshed `auxiliary` state. Without `model`, only `reasoning_effort` changes (TAL-1285). */
+export const setAuxiliaryModel = (task: string, write: { model?: string | undefined; provider?: string | null | undefined; reasoning_effort?: string | null | undefined }) =>
+  orpc().models.set({ scope: 'auxiliary', task, ...(write.model !== undefined ? { model: write.model } : {}), ...(write.provider ? { provider: write.provider } : {}), ...(write.reasoning_effort !== undefined ? { reasoning_effort: write.reasoning_effort } : {}) })
 export const fetchProviders = () => orpc().providers.list()
 /** Ollama / LM Studio: saves the base URL (and optional key) and makes `model` the default. */
 export const saveSelfHostedProvider = (body: { provider: string; base_url: string; model: string; api_key?: string }) => orpc().providers.selfHosted(body)

@@ -835,7 +835,6 @@
 	"settings_main_advanced_service_tier_default": "Default / off",
 	"settings_main_advanced_service_tier_priority": "Priority (fast)",
 	"settings_label_auxiliary_models": "보조 모델",
-	"settings_desc_auxiliary_models": "비전, 압축, 제목 생성 등 보조 작업 라우팅. \"자동\"은 기본 채팅 모델을 사용합니다.",
 	"settings_btn_reset_aux_models": "모두 자동으로 재설정",
 	"settings_btn_apply_aux_models": "변경 사항 적용",
 	"settings_aux_provider_auto": "기본 모델 사용",

@@ -7433,6 +7433,12 @@
                   "type": "null"
                 }
               ]
+            },
+            "takes_reasoning": {
+              "type": [
+                "boolean",
+                "null"
+              ]
             }
           },
           "required": [
@@ -7441,7 +7447,8 @@
             "description",
             "inherit_from",
             "reasoning_effort",
-            "effective"
+            "effective",
+            "takes_reasoning"
           ],
           "additionalProperties": false
         }

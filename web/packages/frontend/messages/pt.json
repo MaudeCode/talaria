@@ -727,7 +727,6 @@
 	"settings_main_advanced_service_tier_default": "Default / off",
 	"settings_main_advanced_service_tier_priority": "Priority (fast)",
 	"settings_label_auxiliary_models": "Modelos auxiliares",
-	"settings_desc_auxiliary_models": "Roteamento para tarefas secundárias como visão, compressão, geração de títulos, etc. \"Auto\" usa o modelo de chat principal.",
 	"settings_btn_reset_aux_models": "Restaurar tudo para auto",
 	"settings_btn_apply_aux_models": "Aplicar alterações",
 	"settings_aux_provider_auto": "usar modelo principal",

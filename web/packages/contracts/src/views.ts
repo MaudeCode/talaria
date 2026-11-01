@@ -812,6 +812,14 @@ export const ProviderCostHistorySchema = z.looseObject({
 })
 export type ProviderCostHistory = z.infer<typeof ProviderCostHistorySchema>
 export const PersonalitiesSchema = z.looseObject({ personalities: z.array(z.looseObject({ name: z.string(), description: z.string().optional() })) })
+export const AuxiliaryReasoningSchema = z.looseObject({
+  saved: z.string().nullable().describe("The effort saved on the slot (`none` disables reasoning); null when none is saved and the slot inherits its default."),
+  effective: z.string().nullable().describe("The effort the slot runs with; `''` is the default named by `default_source`; null when the Agent does not report it."),
+  inherited: z.boolean().describe('No effort is saved, so the slot runs with its default.'),
+  default_source: z.enum(['provider', 'parent']).describe("What the default is: the provider's (auxiliary tasks) or the parent agent's (delegation)."),
+  options: z.array(z.string()).describe("Efforts the slot may save, in order (`none` last). Empty when `unavailable` is set."),
+  unavailable: z.enum(['slot', 'model', 'agent']).nullable().describe("Why no effort can be saved: the slot ignores one, its route's model has no reasoning control, or the Agent did not say. Null when `options` apply."),
+})
 /** One auxiliary task slot in server order (TAL-388). The server owns ordering, normalization, and catalog matching. */
 export const AuxiliaryTaskSchema = z.looseObject({
   task: z.string(), label: z.string(), description: z.string(),
@@ -830,6 +838,8 @@ export const AuxiliaryTaskSchema = z.looseObject({
   inherit_from: z.string().nullable(),
   /** TAL-800: the reasoning effort the slot runs with (the Agent's default until one is saved; `''` = provider default); null when the Agent does not report its slots. */
   reasoning_effort: z.string().nullable(),
+  /** TAL-1285: the slot's reasoning control, resolved by the server against the route the slot runs on (its pin, the slot it inherits, else the main model). */
+  reasoning: AuxiliaryReasoningSchema,
 })
 export const AuxiliaryModelsSchema = z.looseObject({ delegation: DelegationSettingsSchema.optional(), main: z.looseObject({ model: z.string().optional(), provider: z.string().optional(), base_url: z.string().optional(), api_key_set: z.boolean().optional(), service_tier: z.enum(['', 'default', 'priority', 'ultrafast']).optional().describe('Empty string is the Standard value returned by older servers.'), supported_speed_tiers: z.array(SpeedTierSchema).optional() }), tasks: z.array(AuxiliaryTaskSchema) })
 export const MaxTokensSchema = z.looseObject({ max_tokens: NullableNumber, max_tokens_effective: NullableNumber, max_tokens_fallback: NullableNumber })

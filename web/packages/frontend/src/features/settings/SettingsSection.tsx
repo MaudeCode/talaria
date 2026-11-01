@@ -6,6 +6,7 @@ import { PreferencesSection } from './PreferencesSection'
 import { ConversationSection } from './ConversationSection'
 import { SpeechSection } from './SpeechSection'
 import { ProvidersSection } from './ProvidersSection'
+import { AuxiliaryModelsSection } from './AuxiliaryModels'
 import { ConnectorsSection } from '../connectors/ConnectorsSection'
 import { PluginsSection } from './PluginsSection'
 import { ExtensionsSection } from './ExtensionsSection'
@@ -20,6 +21,7 @@ const SECTIONS: Partial<Record<Section, () => ReactNode>> = {
   conversation: () => <ConversationSection />,
   speech: () => <SpeechSection />,
   providers: () => <ProvidersSection />,
+  auxiliary: () => <AuxiliaryModelsSection />,
   connectors: () => <ConnectorsSection />,
   plugins: () => <PluginsSection />,
   extensions: () => <ExtensionsSection />,
