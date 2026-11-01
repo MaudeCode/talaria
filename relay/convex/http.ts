@@ -304,6 +304,7 @@ function parseState(
   const title = stringField(value, "title", 120);
   const phase = value.phase;
   const activityPhase = value.activityPhase;
+  const startedAt = value.startedAt === undefined ? undefined : numberField(value, "startedAt");
   const updatedAt = numberField(value, "updatedAt");
   const deepLink = stringField(value, "deepLink", 512);
   const alertEligible = value.alertEligible;
@@ -318,6 +319,7 @@ function parseState(
     !title ||
     !isSessionPhase(phase) ||
     (activityPhase !== undefined && !isSessionPhase(activityPhase)) ||
+    (startedAt !== undefined && (startedAt === null || !Number.isSafeInteger(startedAt) || startedAt < 0)) ||
     updatedAt === null ||
     !deepLink ||
     !safePath(deepLink)
@@ -332,6 +334,7 @@ function parseState(
     title,
     phase,
     ...(isSessionPhase(activityPhase) ? { activityPhase } : {}),
+    ...(startedAt === undefined ? {} : { startedAt }),
     updatedAt,
     deepLink,
     alertEligible,
@@ -542,6 +545,7 @@ http.route({
               title: state.title,
               phase: state.phase,
               activityPhase: state.activityPhase,
+              startedAt: state.startedAt,
               updatedAt: state.updatedAt,
               deepLink: state.deepLink,
               alertEligible: state.alertEligible,

@@ -4,6 +4,7 @@ import { webcrypto } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { expect, it, vi } from "vitest";
 
+import { internal } from "../convex/_generated/api";
 import { bytesToBase64Url, sha256 } from "../convex/lib/crypto";
 import { defaultNotificationPreferences } from "../convex/lib/model";
 import schema from "../convex/schema";
@@ -113,5 +114,47 @@ it("accepts only the bounded session-started fields for the publisher's own prof
     expect(await other.json()).toEqual({ status: "unauthorized" });
   } finally {
     clock.mockRestore();
+  }
+});
+
+it("times a relay-pushed Live Activity from the run's start, not from the activity's registration", async () => {
+  let clock = now;
+  const spy = vi.spyOn(Date, "now").mockImplementation(() => clock);
+  try {
+    const { backend, signedPut } = await relayWithPublisher();
+    const runStartedAt = now - 60_000;
+    const snapshot = (revision: number) => {
+      const body = JSON.parse(fixture("publisher-snapshot")) as { snapshotId: string; states: Record<string, unknown>[] };
+      body.snapshotId = `contract-snapshot-${String(revision)}`;
+      body.states = body.states.map((state) => ({
+        ...state, startedAt: runStartedAt, revision: now + revision, eventId: `snapshot:${String(now + revision)}:contract-session`,
+        updatedAt: clock,
+      }));
+      return JSON.stringify(body);
+    };
+    expect((await signedPut(publisherPath("prf_default", "snapshot"), snapshot(1))).status).toBe(200);
+    const invalid = JSON.parse(snapshot(1)) as { states: Record<string, unknown>[] };
+    invalid.states[0]!.startedAt = 1.5;
+    expect((await signedPut(publisherPath("prf_default", "snapshot"), JSON.stringify(invalid))).status).toBe(400);
+    // The phone registers its activity (or reconnects) well after the run began.
+    clock = now + 30_000;
+    const headers = { authorization: "Bearer contract-session-token", "x-talaria-device-id": "contract-device", "content-type": "application/json" };
+    const registration = await backend.fetch("/v1/devices/contract-device/live-activities/contract-activity", {
+      method: "PUT", headers, body: fixture("app-registration"),
+    });
+    expect(registration.status).toBe(200);
+    clock = now + 60_000;
+    expect((await signedPut(publisherPath("prf_default", "snapshot"), snapshot(2))).status).toBe(200);
+    await backend.mutation(internal.delivery.recompute, { userId: "contract-user" });
+    const jobs = await backend.run((ctx) => ctx.db.query("deliveryJobs").collect());
+    const updates = jobs.filter((job) => job.kind === "live_activity_update" && job.activityId === "contract-activity");
+    expect(updates.length).toBeGreaterThan(0);
+    // Swift's default Codable Date representation is seconds since 2001-01-01.
+    const swiftRunStart = runStartedAt / 1_000 - 978_307_200;
+    for (const job of updates) {
+      expect(JSON.parse(job.request.payloadJson).aps["content-state"].startedAt).toBe(swiftRunStart);
+    }
+  } finally {
+    spy.mockRestore();
   }
 });

@@ -9,6 +9,7 @@
       "title": "Contract fixture",
       "phase": "running",
       "activityPhase": "running",
+      "startedAt": 1799999940000,
       "updatedAt": 1800000000000,
       "deepLink": "/sessions/contract-session",
       "alertEligible": false

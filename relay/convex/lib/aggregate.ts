@@ -59,6 +59,7 @@ export function rowForState(state: SessionState, phase = activityPhase(state)): 
     title: state.title,
     phase,
     status: statusForPhase(phase),
+    ...(state.startedAt === undefined ? {} : { startedAt: state.startedAt }),
     updatedAt: state.updatedAt,
     deepLink: state.deepLink,
   };

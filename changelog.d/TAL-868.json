@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The lock-screen Live Activity timer counts from when the run started, matching the chat, instead of restarting when the relay takes over.",
+      "highlight": false,
+      "components": [
+        "relay",
+        "web"
+      ]
+    }
+  ]
+}

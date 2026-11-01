@@ -13,6 +13,7 @@
         "streamId": "contract-stream",
         "title": "Contract fixture",
         "phase": "running",
+        "startedAt": 1799999940000,
         "updatedAt": 1800000000000,
         "deepLink": "/sessions/contract-session",
         "publisherId": "https://contract.example",
