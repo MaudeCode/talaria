@@ -45,8 +45,12 @@ test('the right panel shows Agents and Files as tabs that keep their state', asy
   await expect(entries.nth(2)).toContainText('Needs attention')
   // TAL-494: a finished unit links its subagent's read-only transcript.
   await expect(entries.nth(0).getByRole('link', { name: 'Open transcript' })).toHaveAttribute('href', /\/session\/child-docs$/)
-  // Two short tabs never overflow the panel's header, at either width.
-  expect(await tabs.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true)
+  // Every tab keeps its whole label at either width; a narrow header scrolls the strip and keeps the selected tab in view (TAL-1649).
+  await expect.poll(() => tabs.evaluate((el) => {
+    const strip = el.getBoundingClientRect()
+    const selected = el.querySelector('[aria-selected="true"]')!.getBoundingClientRect()
+    return [...el.querySelectorAll('[role="tab"]')].every((tab) => tab.scrollWidth <= tab.clientWidth) && selected.left >= strip.left - 0.5 && selected.right <= strip.right + 0.5
+  })).toBe(true)
   if (process.env.TAL373_SHOTS) await page.screenshot({ path: `${process.env.TAL373_SHOTS}/agents-${testInfo.project.name}.png` })
 
   await tabs.getByRole('tab', { name: 'Files' }).click()
