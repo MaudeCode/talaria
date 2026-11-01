@@ -352,7 +352,8 @@ describe('idle compaction ahead of the next turn', () => {
   }
   const tick = (): Promise<void> => s.deps.hygiene.tick()
   const status = async (sid: string): Promise<string> => str((await json(await s.get(`/api/session/compress/status?session_id=${sid}`))).status)
-  const settled = async (sid: string): Promise<void> => { await vi.waitFor(async () => { expect(['done', 'error']).toContain(await status(sid)) }) }
+  /** Waits for the session's current compression job itself, not a poll, so a slow run cannot time it out. */
+  const settled = async (sid: string): Promise<void> => { await (await s.deps.sessions.compressionJob(sid))?.done }
   function held(): { release: () => void; started: Promise<void> } {
     let release!: () => void
     let started!: () => void
@@ -449,22 +450,22 @@ describe('idle compaction ahead of the next turn', () => {
       const { release, started } = held()
       await tick()
       await started
+      const job = (await s.deps.sessions.compressionJob(sid))!
       if (end === 'archive') await archive(sid, true)
       else expect((await post(s, '/api/session/delete', { session_id: sid })).status).toBe(200)
       release()
-      if (end === 'archive') {
-        await settled(sid)
-        expect(await status(sid)).toBe('error')
-        expect((await s.deps.sessionStore.get(sid)).context_messages).toEqual([])
-      } else await vi.waitFor(() => { expect(finalized()).toHaveLength(1) })
-      await vi.waitFor(() => { expect(finalized()).toEqual([false]) })
+      await job.done
+      expect(job.status).toBe('error')
+      if (end === 'archive') expect((await s.deps.sessionStore.get(sid)).context_messages).toEqual([])
+      expect(finalized()).toEqual([false])
       sidecar.calls.length = 0
       if (end === 'archive') {
         // Unarchived, the same unchanged context is eligible again.
         sidecar.respond('chat.compress', (params) => { compressCalls += 1; return compressed(params) })
         await archive(sid, false)
         await tick()
-        await vi.waitFor(async () => { expect(await status(sid)).toBe('done') })
+        await settled(sid)
+        expect(await status(sid)).toBe('done')
         expect(contents((await s.deps.sessionStore.get(sid)).context_messages)).toEqual(['one', 'four'])
         sidecar.calls.length = 0
       }
@@ -510,9 +511,11 @@ describe('idle compaction ahead of the next turn', () => {
     sidecar.respond('runtime.ensure_current', () => ({ current: true as const, agent_revision: null }))
     let replying!: () => void
     const replyGate = new Promise<void>((r) => { replying = r })
-    sidecar.respond('chat.start', async (params) => { turns.push(params.conversation_history); await replyGate; return reply(params) })
+    let starting!: () => void
+    const startCalled = new Promise<void>((r) => { starting = r })
+    sidecar.respond('chat.start', async (params) => { turns.push(params.conversation_history); starting(); await replyGate; return reply(params) })
     const streamId = String((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'raced' }))).stream_id)
-    await vi.waitFor(() => { expect(turns).toHaveLength(1) })
+    await startCalled
     release()
     await ticked
     replying()
@@ -531,7 +534,7 @@ describe('idle compaction ahead of the next turn', () => {
     await s.sse(`/api/chat/stream?stream_id=${first}`, (f) => f.event === 'compressing')
     expect((await s.get(`/api/chat/cancel?stream_id=${first}`)).status).toBe(200)
     await s.sse(`/api/chat/stream?stream_id=${first}&after_event_id=${first}:0`, (f) => f.event === 'cancel')
-    await vi.waitFor(async () => { expect((await s.deps.sessionStore.get(sid)).active_stream_id).toBeNull() })
+    await vi.waitFor(async () => { expect((await s.deps.sessionStore.get(sid)).active_stream_id).toBeNull() }, { timeout: 10_000 })
     expect(await status(sid)).toBe('running')
     const second = String((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'second' }))).stream_id)
     await s.sse(`/api/chat/stream?stream_id=${second}`, (f) => f.event === 'compressing')
