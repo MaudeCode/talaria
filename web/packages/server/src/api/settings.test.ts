@@ -1591,8 +1591,10 @@ describe('provider quota windows carry server-computed pace (TAL-409)', () => {
     writeFileSync(join(s.state, '.quota_scope_id'), `${'0'.repeat(31)}1\n`)
     sidecar.respond('providers.model_ids', (params) => ({ provider: params.provider, model_ids: [] }))
     sidecar.respond('providers.auth_status', (params) => ({ status: { logged_in: false, provider: params.provider ?? '', error: 'not logged in' } }))
+    // TAL-1125: Codex answers with the sidecar's serialisation of a 24-hour and a 5-hour window the Agent both labels "Session".
+    const codex = AccountUsageSnapshotSchema.parse(JSON.parse(readFileSync(join(import.meta.dirname, '../../../../sidecar/tests/fixtures/usage_account_codex_durations.json'), 'utf8')))
     // The pre-TAL-409 sidecar's `str(datetime)` form, a blank-label window, a 5h session, a weekly and a monthly window.
-    sidecar.respond('usage.account', (params) => ({ snapshot: { provider: params.provider, available: true, title: 'Claude limits', plan: 'max', fetched_at: '2026-09-28 07:59:30+00:00', details: [], windows: [
+    sidecar.respond('usage.account', (params) => params.provider === 'openai-codex' ? { snapshot: codex } : ({ snapshot: { provider: params.provider, available: true, title: 'Claude limits', plan: 'max', fetched_at: '2026-09-28 07:59:30+00:00', details: [], windows: [
       { label: '  ', used_percent: 50, reset_at: '2026-09-28 09:00:00+00:00' },
       { label: ' Session ', used_percent: 10, reset_at: '2026-09-28 12:00:00+00:00', detail: null },
       { label: 'Weekly', used_percent: 32, reset_at: '2026-10-03 08:00:00+00:00' },
@@ -1600,6 +1602,18 @@ describe('provider quota windows carry server-computed pace (TAL-409)', () => {
     ] } }))
   })
   afterAll(() => s.close())
+
+  it('a provider window duration outranks the label: a 24-hour "Session" gets no 5h pace (TAL-1125)', async () => {
+    const quota = await json(await s.get('/api/provider/quota?provider=openai-codex&refresh=1'))
+    expect(ProviderQuotaSchema.safeParse(quota).success).toBe(true)
+    const limits = dictOf(quota.account_limits)
+    expect((limits.windows as Json[]).map((w) => [w.label, w.window_seconds, w.pace === null, w.forecast === null])).toEqual([['24-hour', 86_400, true, true], ['Session', 18_000, false, false]])
+    expect((limits.windows as Json[])[1]).toMatchObject({ pace: { minutes_to_reset: 120, elapsed_minutes: 180, expected_remaining_percent: 40 } })
+    expect(limits).toMatchObject({ pace_window_index: 1, session_window_index: 1, weekly_window_index: null, identity: 'codex:acct-synthetic:user-synthetic' })
+    // The provider's response body never reached the server, so it never reaches a client.
+    expect(limits).not.toHaveProperty('raw')
+    expect((limits.windows as Json[])[0]).not.toHaveProperty('limit_window_seconds')
+  })
 
   const session = {
     label: 'Session', used_percent: 10, remaining_percent: 90, reset_at: '2026-09-28T12:00:00Z', detail: null, window_seconds: 18_000,

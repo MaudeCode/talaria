@@ -1,0 +1,22 @@
+{
+  "provider": "openai-codex",
+  "fetched_at": "2026-09-28T07:59:30Z",
+  "windows": [
+    {
+      "label": "Session",
+      "used_percent": 50,
+      "reset_at": "2026-09-28T09:00:00Z",
+      "limit_window_seconds": 86400
+    },
+    {
+      "label": "Session",
+      "used_percent": 7,
+      "reset_at": "2026-09-28T10:00:00Z",
+      "limit_window_seconds": 18000
+    }
+  ],
+  "details": [],
+  "unavailable_reason": null,
+  "identity": "codex:acct-synthetic:user-synthetic",
+  "available": true
+}

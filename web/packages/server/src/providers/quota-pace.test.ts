@@ -31,9 +31,44 @@ describe('quota window pace', () => {
     expect(one({ label: 'Weekly', reset_at: resetIn(3600) }).pace).toBeNull()
     expect(one({ label: 'Monthly', used_percent: 10, reset_at: resetIn(3600) })).toMatchObject({ window_seconds: null, pace: null, forecast: null })
     // A provider-reported length wins over the label, and only 5h and weekly windows have a pace.
-    expect(one({ label: 'Weekly', window_seconds: 3600, used_percent: 10, reset_at: resetIn(1800) })).toMatchObject({ window_seconds: 3600, pace: null })
+    expect(one({ label: 'Weekly', window_seconds: 3600, used_percent: 10, reset_at: resetIn(1800) })).toMatchObject({ label: '1-hour', window_seconds: 3600, pace: null })
     // `remaining_percent` stands in for a missing `used_percent`.
     expect(one({ label: '5h', remaining_percent: 70, reset_at: resetIn(3 * 3600) })).toMatchObject({ used_percent: null, remaining_percent: 70, pace: { expected_remaining_percent: 60, pace_delta_percent: 10 } })
+  })
+
+  it('a provider duration is authoritative: a 24-hour "Session" gets no 5h pace (TAL-1125)', () => {
+    // Codex's 24-hour primary window, labelled "Session" by position, 50% used with an hour to reset.
+    const daily = normalizeQuotaWindows([{ label: 'Session', limit_window_seconds: 86_400, used_percent: 50, reset_at: resetIn(3600) }], NOW)
+    expect(daily.windows[0]).toMatchObject({ label: '24-hour', window_seconds: 86_400, pace: null, forecast: null })
+    expect(daily).toMatchObject({ pace_window_index: null, session_window_index: null, weekly_window_index: null })
+    // `window_seconds` wins over the alias; a matching label stays as the provider wrote it.
+    expect(one({ label: 'Session', window_seconds: 18_000, limit_window_seconds: 86_400, used_percent: 10, reset_at: resetIn(4 * 3600) }))
+      .toMatchObject({ label: 'Session', window_seconds: 18_000, pace: { expected_remaining_percent: 80 } })
+    // A weekly-only response the provider still calls "Session" is weekly, though its reset is under 5h away.
+    const weeklyOnly = normalizeQuotaWindows([{ label: 'Session', limit_window_seconds: 604_800, used_percent: 90, reset_at: resetIn(3600) }], NOW)
+    expect(weeklyOnly.windows[0]).toMatchObject({ label: 'Weekly', window_seconds: 604_800, pace: { minutes_to_reset: 60, elapsed_minutes: 10_020 } })
+    expect(weeklyOnly).toMatchObject({ pace_window_index: 0, session_window_index: null, weekly_window_index: 0 })
+    // Swapped labels follow the durations; a fractional length truncates like the Agent's label lookup.
+    const swapped = normalizeQuotaWindows([{ label: 'Weekly', limit_window_seconds: 18_000, used_percent: 10 }, { label: 'Session', limit_window_seconds: 604_800.9, used_percent: 20 }], NOW)
+    expect(swapped.windows.map((w) => [w.label, w.window_seconds])).toEqual([['Session', 18_000], ['Weekly', 604_800]])
+    expect(swapped).toMatchObject({ pace_window_index: 1, session_window_index: 0, weekly_window_index: 1 })
+    // Two "Session" windows of different lengths keep one duration each.
+    const both = normalizeQuotaWindows([{ label: 'Session', limit_window_seconds: 86_400, used_percent: 50, reset_at: resetIn(3600) }, { label: 'Session', limit_window_seconds: 18_000, used_percent: 7, reset_at: resetIn(7200) }], NOW)
+    expect(both.windows.map((w) => [w.label, w.window_seconds, w.pace !== null])).toEqual([['24-hour', 86_400, false], ['Session', 18_000, true]])
+    expect(both).toMatchObject({ pace_window_index: 1, session_window_index: 1, weekly_window_index: null })
+    // Other lengths name themselves; a provider label that is not a generic Session/Weekly is kept.
+    expect(one({ label: 'Weekly', limit_window_seconds: 172_800, used_percent: 1 }).label).toBe('2-day')
+    expect(one({ label: 'Session', limit_window_seconds: 5400, used_percent: 1 }).label).toBe('Usage limit')
+    expect(one({ label: 'Current session', limit_window_seconds: 86_400, used_percent: 1 }).label).toBe('Current session')
+  })
+
+  it('an absent, invalid or boolean duration falls back to the label heuristics (TAL-1125)', () => {
+    for (const bad of [null, true, false, 0, -18_000, '86400', Number.NaN, Number.POSITIVE_INFINITY, {}]) {
+      for (const key of ['window_seconds', 'limit_window_seconds']) {
+        expect(one({ label: 'Session', [key]: bad, used_percent: 10, reset_at: resetIn(4 * 3600) }), `${key}=${JSON.stringify(bad)}`)
+          .toMatchObject({ label: 'Session', window_seconds: 18_000, pace: { expected_remaining_percent: 80 } })
+      }
+    }
   })
 
   it('the forecast budgets per day or hour and warns when the projection empties before reset', () => {
