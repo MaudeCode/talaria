@@ -12,6 +12,8 @@ import { SidecarError, type SidecarLike } from '../sidecar/client.js'
 import { HttpFailure } from '../sessions/service.js'
 
 const NAMESPACE = 'skill-replays'
+/** Admission receipts outlive pruned results, so a retried request id is never admitted twice. */
+const RECEIPTS = 'skill-replay-receipts'
 export const DEFAULT_REPLAY_COST_USD = 0.5
 const RETAINED_PER_SCOPE = 20
 const LISTED = 10
@@ -130,6 +132,11 @@ export class SkillReplayService {
     }
     const existing = (await readDocument(this.deps.documents, NAMESPACE, id))?.value as StoredJob | null | undefined
     if (existing) return reused(existing)
+    const receipt = (await readDocument(this.deps.documents, RECEIPTS, id))?.value as { fingerprint?: string } | null | undefined
+    if (receipt) {
+      if (receipt.fingerprint !== fingerprint) throw new HttpFailure(409, 'This request id already admitted a different replay', { condition: 'replay_request_reused' })
+      throw new HttpFailure(409, 'This replay already ran; its results are no longer retained', { condition: 'replay_pruned' })
+    }
     if ((await this.scoped(scope)).some((job) => ACTIVE.has(job.state))) throw new HttpFailure(409, 'A replay is already running for this profile', { condition: 'replay_busy' })
     const plan = await this.sidecarPlan(home, input)
     const drift = (message: string): never => { throw new HttpFailure(409, message, { condition: 'replay_drift' }) }
@@ -226,7 +233,12 @@ export class SkillReplayService {
   }
 
   private async prune(scope: ReplayScope): Promise<void> {
-    for (const job of (await this.scoped(scope)).filter((row) => !ACTIVE.has(row.state)).slice(RETAINED_PER_SCOPE)) await this.deps.documents.delete(NAMESPACE, job.id)
+    for (const job of (await this.scoped(scope)).filter((row) => !ACTIVE.has(row.state)).slice(RETAINED_PER_SCOPE)) {
+      // The receipt lands before the result goes, so no crash between them reopens the request id.
+      await updateDocument(this.deps.documents, RECEIPTS, job.id, (value) => value ? { value, result: null, skip: true }
+        : { value: { owner: job.owner, profile: job.profile, fingerprint: job.fingerprint, created_at: job.created_at }, result: null })
+      await this.deps.documents.delete(NAMESPACE, job.id)
+    }
   }
 
   private async sidecarPlan(home: string, input: { name: string; baseline: string; candidate: string }): Promise<Plan> {

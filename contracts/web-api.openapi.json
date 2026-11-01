@@ -78892,7 +78892,7 @@
       },
       "post": {
         "operationId": "skills.replayStart",
-        "summary": "Admit one confirmed replay. The request binds owner, profile, skill, both revisions, case fixtures, route and budget; any drift refuses before a provider call. Repeating a request_id returns the admitted job. 409: drift, a reused request_id, or a replay already running.",
+        "summary": "Admit one confirmed replay. The request binds owner, profile, skill, both revisions, case fixtures, route and budget; any drift refuses before a provider call. Repeating a request_id returns the admitted job. 409: drift, a reused request_id, a request_id whose results were pruned, or a replay already running.",
         "tags": [
           "tools"
         ],

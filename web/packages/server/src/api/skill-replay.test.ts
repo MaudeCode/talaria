@@ -211,3 +211,22 @@ it('keeps refused, provider-error and unknown outcomes explicit', async () => {
   expect(job).toMatchObject({ state: 'completed', unreported_calls: 3 })
   expect(job.summary.map((row) => row.passed + row.failed)).toEqual([0, 1])
 })
+
+it('never re-executes a request id whose results were pruned', async () => {
+  const sidecar = new FakeSidecar()
+  sidecar.respond('skills.replay_plan', () => plan({ cases: [plan().cases[0]!] }))
+  sidecar.respond('skills.replay_case', (params) => answer(params))
+  const s = await boot(sidecar)
+  const id = (i: number) => `6f1c2d3e-4b5a-4c6d-8e7f-${String(i).padStart(12, '0')}`
+  for (let i = 0; i < 22; i += 1) {
+    expect((await start(s, { request_id: id(i), case_ids: [FIXTURES[0]] })).status).toBe(200)
+    await settled(s)
+  }
+  const sent = caseCalls(sidecar).length
+  expect(sent).toBe(44)
+  const retry = await start(s, { request_id: id(0), case_ids: [FIXTURES[0]] })
+  expect(retry.status).toBe(409)
+  expect(await retry.json()).toMatchObject({ condition: 'replay_pruned' })
+  expect((await start(s, { request_id: id(0) })).status).toBe(409)
+  expect(caseCalls(sidecar)).toHaveLength(sent)
+}, 30_000)

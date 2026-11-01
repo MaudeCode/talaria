@@ -429,7 +429,9 @@ fixture IDs, route and budget. The server re-plans and refuses any drift (409
 `replay_drift`) before a call. `request_id` makes admission idempotent: a retry
 after an uncertain acknowledgement returns the admitted job; reuse for a
 different replay is 409 `replay_request_reused`. One replay runs per owner and
-profile (409 `replay_busy`).
+profile (409 `replay_busy`). Each owner and profile keeps its 20 newest finished
+jobs; an older job leaves an admission receipt in `skill-replay-receipts`, so
+retrying its `request_id` is 409 `replay_pruned` and never runs again.
 
 Jobs are private documents in the `skill-replays` namespace. Runs execute in
 order; each is persisted `dispatched` before `skills.replay_case` sends exactly
