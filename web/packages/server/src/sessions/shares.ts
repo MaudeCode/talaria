@@ -24,6 +24,24 @@ const SHARE_EMBED_MAX_BYTES = 512 * 1024
 const ALLOWED_MIME: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' }
 const PLACEHOLDER = '[*Local attachment omitted from public share*]'
 /**
+ * Content-supplied inline `data:` URIs never reach a public share: their bytes are opaque to the credential
+ * redactor, and an image that renders hides whatever follows a valid header. Only `embedShareMedia` output, which
+ * runs after this pass, may carry one. Every pattern consumes its whole match or stops at a delimiter the next
+ * opener needs, and the unbounded ones run only up to their last closer, so each scan stays linear.
+ */
+// A whole markdown image with a data: destination, including the <angle> form and a title.
+const MD_DATA_IMAGE_RE = /!\[(?:[^\]!]|!(?!\[))*\]\(\s*(?:<\s*)?data:(?:[^()\n]|\([^()\n]*\))*\)/gi
+// The renderer's looser image rule: up to the first ")" across newlines.
+const MD_DATA_IMAGE_LOOSE_RE = /!\[(?:[^\]!]|!(?!\[))*\]\(data:image\/[^)]*\)/gi
+// A raw or entity-escaped <img> tag, ended only at ">" or "&gt;" like the renderer's own tag rule.
+const IMG_TAG_RE = /(?:<|&lt;)\s*img\b(?:[^>&]|&(?!gt;))*(?:>|&gt;)/gi
+// Quoted values of text-only attributes: "metadata:" in an alt keeps its https image.
+const IMG_TEXT_ATTR_RE = /(?<![\w:-])(?:alt|title|aria-label|aria-description)\s*=\s*(?:"[^"]*"|'[^']*')/gi
+// A data: that starts a URI, even split by whitespace (the browser strips it), anywhere in a tag.
+const DATA_URI_START_RE = /\bdata:\s*(?=[a-z0-9!#$&^_.+-]+\/|[;,])/i
+// Catch-all: a URI-shaped data: through the end of its token. Prose such as "data: 5 rows" stays.
+const DATA_URI_RE = /\bdata:(?=[a-z0-9!#$&^_.+-]+\/|[;,])[^\s<>()[\]`]*/gi
+/**
  * Leading-byte signatures: `magic` at offset `at` (default 0), and when `brands` is set, one of them at bytes 8-12
  * (the WebP form type, or the ISO-BMFF `ftyp` major brand). The feedback brands match Relay's `matchesAttachmentType`.
  */
@@ -110,6 +128,28 @@ function readAnchoredImage(root: string, path: string): Buffer | null {
   }
 }
 
+/** Applies `re` only up to the end of the last `closer`, so every opener finds one and unclosed runs stay linear. */
+function replaceBeforeLast(text: string, closers: string[], re: RegExp, replace: (match: string) => string): string {
+  const cut = Math.max(...closers.map((c) => { const at = text.lastIndexOf(c); return at < 0 ? 0 : at + c.length }))
+  return cut ? text.slice(0, cut).replace(re, replace) + text.slice(cut) : text
+}
+
+/** Replaces every content-supplied inline data: URI with the placeholder. Never decodes a payload. */
+function omitInlineData(text: string): string {
+  if (!/data:/i.test(text)) return text
+  let out = replaceBeforeLast(text, ['>', '&gt;', '&GT;'], IMG_TAG_RE, (tag) =>
+    DATA_URI_START_RE.test(tag) || /data:/i.test(tag.replace(IMG_TEXT_ATTR_RE, '')) ? PLACEHOLDER : tag)
+  out = out.replace(MD_DATA_IMAGE_RE, PLACEHOLDER)
+  out = replaceBeforeLast(out, [')'], MD_DATA_IMAGE_LOOSE_RE, () => PLACEHOLDER)
+  out = out.replace(SHARE_MEDIA_RE, (whole, ref: string) => (/^data:/i.test(ref) ? PLACEHOLDER : whole))
+  return out.replace(DATA_URI_RE, PLACEHOLDER)
+}
+
+/** The share-only pipeline every published string passes through: credentials, inline data, then local paths. */
+function sanitizeShareText(text: string, redactPaths: string[], embed: (text: string) => string = (t) => t): string {
+  return redactSharePaths(embed(omitInlineData(redactSensitive(text))), redactPaths)
+}
+
 export function embedShareMedia(text: string, allowedRoots: string[], home: string): string {
   if (!text) return text
   const allowed = allowedRoots.filter(Boolean).map((r) => resolvePathLikePython(r, home))
@@ -133,9 +173,7 @@ export function sanitizeShareMessage(message: unknown, redactPaths: string[], al
   // Only the reply's prose is published: inline thinking and leaked tool-call XML never reach a snapshot.
   let text = shareMessageText(normalizeAssistantDisplay({ ...message, role }))
   if (!text) return null
-  text = redactSensitive(text)
-  text = embedShareMedia(text, allowedRoots, home)
-  text = redactSharePaths(text, redactPaths)
+  text = sanitizeShareText(text, redactPaths, (t) => embedShareMedia(t, allowedRoots, home))
   if (!text.trim()) return null
   const sanitized: Record<string, unknown> = { role, content: text }
   if (typeof message.timestamp === 'number') sanitized.timestamp = message.timestamp
@@ -157,9 +195,7 @@ export function buildShareSnapshot(session: Session, messages: unknown[], opts: 
     if (sanitized) safe.push(sanitized)
   }
   if (!safe.length) throw new Error('This conversation has no shareable messages yet.')
-  let title = typeof session.title === 'string' ? session.title : 'Untitled'
-  title = redactSensitive(title || 'Untitled')
-  title = redactSharePaths(title, redactPaths) || 'Untitled'
+  const title = sanitizeShareText((typeof session.title === 'string' && session.title) || 'Untitled', redactPaths) || 'Untitled'
   return { title, messages: safe, message_count: safe.length }
 }
 
