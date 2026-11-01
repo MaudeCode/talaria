@@ -15,6 +15,7 @@ import { SidecarError } from '../sidecar/client.js'
 import { serveFileBytes } from '../workspace/media.js'
 import type { MeshyDirective } from '../workspace/media-refs.js'
 import type { AgentDashboardScope, DashboardPlugins } from './dashboard-plugins.js'
+import { ExtensionError } from './extensions.js'
 
 type NativeLocal = z.infer<typeof MeshyNativeLocalSchema>
 type NativeRecent = z.infer<typeof MeshyNativeRecentSchema>
@@ -78,7 +79,10 @@ export class MeshyHost {
     } catch (error) {
       // An older sidecar has no such method: the Agent side cannot host this adapter.
       if (error instanceof SidecarError && (error.code === -32601 || error.condition === 'agent_incompatible')) return { availability: 'agent_incompatible', message: null, balance: null, revision: null }
-      if (error instanceof SidecarError) return { availability: 'unavailable', message: 'The Agent did not answer. Try again.', balance: null, revision: null }
+      // A profile switch or closed request mid-call: the answer belongs to nobody now.
+      if (error instanceof ExtensionError && error.status === 404) throw new MeshyError('not found', 404)
+      // No running sidecar, a busy host or a timeout.
+      if (error instanceof SidecarError || error instanceof ExtensionError) return { availability: 'unavailable', message: 'The Agent did not answer. Try again.', balance: null, revision: null }
       throw error
     }
   }

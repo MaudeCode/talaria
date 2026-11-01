@@ -106,15 +106,13 @@ def test_states_are_explicit_for_missing_key_plugin_and_old_agent(native):
     assert native.call('overview') == {'availability': 'agent_incompatible', 'message': None, 'balance': None, 'revision': None}
 
 
-def test_revocation_while_native_code_runs_discards_its_answer(native, monkeypatch):
-    real = native.routes.get
+def test_revocation_while_native_code_runs_discards_its_answer(native):
     def revoke(method, query, body):
         native.consent = False
         return 200, {'task': TASK, 'status': 'SUCCEEDED'}
     native.routes['/task'] = revoke
     result = native.call('task', task_id=TASK)
     assert result['availability'] == 'plugin_unavailable' and 'task' not in result
-    assert real is not None
 
 
 def test_asset_custody_requires_native_listing_and_refuses_links_hardlinks_and_unlisted_files(native, tmp_path):

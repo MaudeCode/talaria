@@ -146,6 +146,13 @@ describe('Meshy previews (TAL-1514)', () => {
     expect(await (await b.server.get('/api/meshy/overview')).json()).toMatchObject({ availability: 'agent_incompatible', local: [], recent: [] })
   })
 
+  it('answers unavailable, not an error, when no Agent sidecar runs', async () => {
+    server = await bootTestServer({ sidecar: null })
+    const response = await server.get('/api/meshy/overview')
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ availability: 'unavailable', recent: [], local: [] })
+  })
+
   it('saves beside a model only from a grant the caller holds', async () => {
     const b = await backend()
     const overview = await (await b.server.get('/api/meshy/overview')).json() as MeshyOverview
