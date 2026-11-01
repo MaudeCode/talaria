@@ -80,12 +80,34 @@ async function liveHistory(page: Page) {
     server.closeAllConnections()
     await new Promise<void>((resolve) => server.close(() => resolve()))
   }
-  return { sid, run, close }
+  return { sid, streamId, run, close }
 }
 
 test('long history beside a live run renders on a slow CPU', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop', 'CPU throttling is a Chromium desktop measurement')
   const history = await liveHistory(page)
+  // TAL-1637: the run's status answers once the newest answer shows, so the live turn attaches while the rest of the
+  // history is still rendering. One blocking render of all 300 answers used to hold it for seconds.
+  let answerStatus!: () => void
+  const newestShown = new Promise<void>((resolve) => { answerStatus = resolve })
+  await page.exposeFunction('newestAnswerShown', answerStatus)
+  await page.route('**/api/chat/stream/status?**', async (route) => {
+    await newestShown
+    await route.fulfill({ json: { active: true, stream_id: history.streamId, replay_available: true } })
+  })
+  await page.addInitScript(() => {
+    const w = window as unknown as { newestAnswerShown: () => void; oldestBeforeLive?: boolean }
+    let shown = false
+    new MutationObserver((_, observer) => {
+      if (!shown && document.querySelector('[data-message-key="600"] .msg-body')?.textContent?.includes('Paragraph 8:')) {
+        shown = true
+        w.newestAnswerShown()
+      }
+      if (!document.querySelector('.live-turn')) return
+      w.oldestBeforeLive = !!document.querySelector('[data-message-key="2"] .msg-body')?.textContent
+      observer.disconnect()
+    }).observe(document, { childList: true, subtree: true })
+  })
   const cpu = await page.context().newCDPSession(page)
   try {
     // TAL-1592: rendering 300 rows takes longer than the live turn's one-second elapsed tick, which used to restart
@@ -93,8 +115,11 @@ test('long history beside a live run renders on a slow CPU', async ({ page }, te
     await cpu.send('Emulation.setCPUThrottlingRate', { rate: 4 })
     await page.goto(`/session/${history.sid}`)
     await expect(page.locator('.live-turn')).toBeAttached()
+    expect(await page.evaluate(() => (window as unknown as { oldestBeforeLive?: boolean }).oldestBeforeLive), 'the live turn attaches before the whole history renders').toBe(false)
     await expect(page.locator('[data-message-key="600"] .msg-body')).toContainText('Paragraph 8:')
+    await expect(page.locator('[data-message-key="2"] .msg-body')).toContainText('Paragraph 8:')
   } finally {
+    answerStatus()
     await cpu.send('Emulation.setCPUThrottlingRate', { rate: 1 })
     await cpu.detach()
     await page.goto('about:blank')
@@ -123,6 +148,8 @@ test('off-screen history halves long tasks during a 200-token stream', async ({ 
         history.run.stream = undefined
         await page.goto(`/session/${sid}`)
         await expect(page.locator('[data-message-key="600"] .msg-body')).toContainText('Paragraph 8:')
+        // History Markdown renders newest first, a batch per task (TAL-1637); measure only once all of it has.
+        await expect(page.locator('[data-message-key="2"] .msg-body')).toContainText('Paragraph 8:')
         await expect(page.locator('[data-message-key]')).toHaveCount(600)
         await expect.poll(() => !!history.run.stream).toBe(true)
         await expect.poll(() => distance(page)).toBeLessThan(2)

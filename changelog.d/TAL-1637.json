@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Opening a long chat while a reply is running on a slow device shows the running reply and the latest answers first, instead of waiting for every earlier answer to render.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
