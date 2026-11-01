@@ -45,8 +45,13 @@ async function watchNativeMenu(page: Page): Promise<() => Promise<boolean[]>> {
   return () => page.evaluate(() => (window as unknown as { nativeMenus: boolean[] }).nativeMenus)
 }
 
-/** Holds one touch point past Base UI's 500 ms long-press, as a finger would. */
+/**
+ * Holds one touch point past Base UI's 500 ms long-press, as a finger would. A raw CDP touch skips Playwright's
+ * actionability checks, and the closed phone drawer still counts as visible while translated off-screen, so the row
+ * must sit fully on screen before its box is read; otherwise the touch lands off-viewport (TAL-1676).
+ */
 async function longPress(page: Page, target: Locator): Promise<void> {
+  await expect(target).toBeInViewport({ ratio: 1 })
   const box = await target.boundingBox()
   if (!box) throw new Error('long-press target is not visible')
   const point = { x: box.x + box.width / 3, y: box.y + box.height / 2 }
