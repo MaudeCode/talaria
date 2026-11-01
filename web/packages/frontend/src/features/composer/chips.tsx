@@ -4,7 +4,7 @@ import { Popover } from '@base-ui/react/popover'
 import { ChevronDown, Cpu, Brain, Wrench, FolderOpen, GitBranch, Shield } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import { useContextDetailQuery, useExecutionModesQuery, useModelsQuery, useWorkspacesQuery, useToolsetsCatalogQuery } from '../../app/queries'
-import { Menu, MenuGroup, MenuGroupLabel, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator } from '../../ui/Menu'
+import { MENU_ROW, Menu, MenuGroup, MenuGroupLabel, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator } from '../../ui/Menu'
 import { cn } from '../../ui/cn'
 import { catalogEntryById, catalogGroupLabel, catalogModelSections, ModelOptionContent, type ModelEntry } from '../../lib/modelEntry'
 import { useLocale } from '../../i18n/useLocale'
@@ -44,7 +44,7 @@ export function Chip({ icon, label, title, className, disabled, row, size = 'sm'
   )
 }
 
-const RADIO_CLASS = 'flex cursor-default select-none items-center gap-2 rounded-md px-2.5 py-1.5 text-sm outline-none data-[highlighted]:bg-hover data-[checked]:text-accent-text'
+const RADIO_CLASS = cn(MENU_ROW, 'data-[checked]:text-accent-text')
 
 /** TAL-807: the server's rate-limit state for a provider group: its account limit or a low quota level (never both). */
 function GroupLimitBadge({ group, locale }: { group: Models['groups'][number]; locale: string }) {
@@ -74,7 +74,7 @@ export function ModelChip({ model, optionId, onChange, row }: { model: string | 
   const label = selected ? selected.label ?? selected.id : (model ?? models.data?.default_model) || '—'
   return (
     // TAL-807: opening the picker reads the catalog again, so a rate limit or quota level reflects the server now.
-    <Menu open={open} initialFocus={searchInput} label={m.composer_control_model()} side="top" className="max-h-[60vh] min-w-72 max-w-[calc(100vw-2rem)]" onOpenChange={(open) => { setOpen(open); if (open) void models.refetch() }} trigger={<Chip id={row ? undefined : "composerModelChip"} icon={<Cpu size={16} aria-hidden="true" />} label={label} title={m.composer_control_model()} row={row} className="composer-model-chip" />}>
+    <Menu open={open} initialFocus={searchInput} label={m.composer_control_model()} side="top" className="min-w-72 max-w-[calc(100vw-2rem)] [--menu-max-height:60vh]" onOpenChange={(open) => { setOpen(open); if (open) void models.refetch() }} trigger={<Chip id={row ? undefined : "composerModelChip"} icon={<Cpu size={16} aria-hidden="true" />} label={label} title={m.composer_control_model()} row={row} className="composer-model-chip" />}>
       <div className="p-1"><input ref={searchInput} type="search" autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder={m.model_search_placeholder()} aria-label={m.model_search_placeholder()} className="h-8 w-full rounded-md border border-border bg-input px-2 text-sm text-text" onKeyDown={(e) => { if (e.key !== 'Escape') e.stopPropagation() }} /></div>
       <MenuRadioGroup value={selected?.id ?? ''} onValueChange={onSelect}>
         {groups.map((g) => (
