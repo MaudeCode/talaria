@@ -25,6 +25,9 @@ const activityAt = (e: Dict): number => Math.max(num(e.created_at), num(e.update
  * each counter's larger value: a claimed CLI session's index entry starts at zero while its state.db row keeps the
  * usage from before the claim and the Agent's later turns. The later activity time places it in the window, and the
  * snapshot with that activity names its model.
+ *
+ * The window runs from the cutoff through the server clock: a session whose activity time is later (clock skew, a bad
+ * import) counts nowhere.
  */
 export async function buildInsights(entries: Dict[], daysRaw: unknown, nowSeconds: number, stateRows: (cutoff: number) => Dict[] | Promise<Dict[]> = () => []): Promise<Dict> {
   const parsed = Number.parseInt(str(daysRaw ?? '30'), 10)
@@ -41,7 +44,7 @@ export async function buildInsights(entries: Dict[], daysRaw: unknown, nowSecond
     const model = num(row.updated_at) > num(e.updated_at) ? str(row.model) || str(e.model) : str(e.model) || str(row.model)
     return { ...e, ...Object.fromEntries(USAGE_FIELDS.map((k) => [k, Math.max(num(e[k]), num(row[k]))])), estimated_cost: Math.max(cost(e.estimated_cost), cost(row.estimated_cost)), updated_at: Math.max(num(e.updated_at), num(row.updated_at)), model }
   })
-  const sessions = [...merged, ...state.values()].filter((e) => activityAt(e) >= cutoff)
+  const sessions = [...merged, ...state.values()].filter((e) => activityAt(e) >= cutoff && activityAt(e) <= nowSeconds)
   let totalMessages = 0
   let totalInput = 0
   let totalOutput = 0
