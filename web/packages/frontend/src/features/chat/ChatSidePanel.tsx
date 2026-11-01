@@ -26,7 +26,7 @@ export function ChatSidePanel({ sessionId, workspace, open, onToggle, onClose }:
   const pages: PanelPage[] = [
     { id: 'files', label: m.ws_panel_files(), render: (active) => <FilesPage workspace={workspace} sessionId={sessionId} active={active} restored={restored} /> },
     { id: 'agents', label: m.panel_agents(), render: (active) => <AgentsPage sessionId={sessionId} active={active} /> },
-    { id: 'checkpoints', label: m.checkpoint_title(), render: (active) => <CheckpointsPage workspace={workspace} sessionId={sessionId} active={active} onRestored={(paths) => setRestored((r) => ({ seq: (r?.seq ?? 0) + 1, paths }))} /> },
+    { id: 'checkpoints', label: m.checkpoint_title(), render: (active) => <CheckpointsPage workspace={workspace} sessionId={sessionId} active={active} onRestored={(paths, restoredIn) => setRestored((r) => ({ seq: (r?.seq ?? 0) + 1, paths, workspace: restoredIn }))} /> },
   ]
   return (
     <PanelPageHost

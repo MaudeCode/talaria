@@ -20,12 +20,13 @@ interface Picked { id: string; message: string }
 
 const listed = (files: string[], message: (inputs: { files: string }) => string): string[] => (files.length ? [message({ files: files.join(', ') })] : [])
 
-/** `onRestored` gets the files a restore rewrote, so another page can drop its unsaved edits of them. */
-export function CheckpointsPage({ workspace, sessionId, active, onRestored }: { workspace: string | null | undefined; sessionId: string; active: boolean; onRestored: (paths: string[]) => void }) {
+/** `onRestored` gets the files a restore rewrote and the workspace it ran in, so another page can drop its unsaved edits of
+ * them even when the restore answers after a workspace switch. */
+export function CheckpointsPage({ workspace, sessionId, active, onRestored }: { workspace: string | null | undefined; sessionId: string; active: boolean; onRestored: (paths: string[], workspace: string) => void }) {
   return <WorkspaceCheckpoints key={JSON.stringify(keys.checkpoints.all(sessionId, workspace ?? ''))} workspace={workspace ?? ''} sessionId={sessionId} active={active} onRestored={onRestored} />
 }
 
-function WorkspaceCheckpoints({ workspace, sessionId, active, onRestored }: { workspace: string; sessionId: string; active: boolean; onRestored: (paths: string[]) => void }) {
+function WorkspaceCheckpoints({ workspace, sessionId, active, onRestored }: { workspace: string; sessionId: string; active: boolean; onRestored: (paths: string[], workspace: string) => void }) {
   const qc = useQueryClient()
   const [viewing, setViewing] = useState<Picked | null>(null)
   const [restoring, setRestoring] = useState<Picked | null>(null)
@@ -40,7 +41,7 @@ function WorkspaceCheckpoints({ workspace, sessionId, active, onRestored }: { wo
       if (failed.length) showToast(`${m.checkpoint_restore()}: ${[...failed, ...kept].join('; ')}`, 6000, 'error')
       else if (kept.length) showRichToast({ id: `checkpoint-restored-${workspace}`, title: m.checkpoint_restored(), text: kept.join(' · '), ttl: 10000, kind: 'info', dismissible: true, actions: [] })
       else showToast(m.checkpoint_restored())
-      onRestored(res.files_restored)
+      onRestored(res.files_restored, workspace)
       // The restore rewrote workspace files: drop every view of them.
       void Promise.all([
         qc.invalidateQueries({ queryKey: keys.checkpoints.all(sessionId, workspace) }),

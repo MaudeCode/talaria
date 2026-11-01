@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Unsaved Files edits now stay when you switch workspaces, go back to the folder, or open another file.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
