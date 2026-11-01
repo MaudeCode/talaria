@@ -19,8 +19,8 @@ beforeEach(() => {
   vi.mocked(api.fetchSkillContent).mockReset().mockResolvedValue({ success: true, content: 'Current editable content', linked_files: {} })
   vi.mocked(api.fetchSkillRevisions).mockReset().mockResolvedValue(SkillRevisionsSchema.parse(fixture))
   vi.mocked(api.fetchSkillReplays).mockReset().mockResolvedValue({ jobs: [] })
-  vi.mocked(api.fetchSkillReplayPlan).mockReset().mockResolvedValue(planFixture as SkillReplayPlan)
-  vi.mocked(api.startSkillReplay).mockReset().mockResolvedValue(jobFixture as SkillReplayJob)
+  vi.mocked(api.fetchSkillReplayPlan).mockReset().mockResolvedValue(planFixture as unknown as SkillReplayPlan)
+  vi.mocked(api.startSkillReplay).mockReset().mockResolvedValue(jobFixture as unknown as SkillReplayJob)
   vi.mocked(api.cancelSkillReplay).mockReset()
 })
 
@@ -62,8 +62,8 @@ it('discards history that finishes after the profile context changes', async () 
   expect(screen.getByRole('region', { name: 'Saved revisions' }).querySelector('pre')).toBeNull()
 })
 
-const plan = planFixture as SkillReplayPlan
-const job = jobFixture as SkillReplayJob
+const plan = planFixture as unknown as SkillReplayPlan
+const job = jobFixture as unknown as SkillReplayJob
 
 it('asks consent for the exact revisions, cases, provider and budget before admitting one bound replay', async () => {
   await openHistory()
