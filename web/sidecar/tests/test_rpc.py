@@ -200,3 +200,93 @@ def test_unbuffered_input_preserves_a_large_utf8_frame_across_os_reads() -> None
             break
         threading.Event().wait(.01)
     assert json.loads(output.getvalue())['result'] == {'length': len(text), 'matches': True}
+
+
+def test_a_huge_request_body_parses_on_its_worker_so_the_next_call_is_answered_first(monkeypatch) -> None:
+    """A multi-MB chat.start history must not hold up dispatch of the requests read after it (TAL-1228)."""
+    from talaria_sidecar import rpc
+    real_loads, release, parsed = json.loads, threading.Event(), threading.Event()
+
+    def slow_loads(text, *args, **kwargs):
+        if len(text) > 1_000_000:
+            release.wait(10)  # stands in for a slow multi-MB parse
+            try:
+                return real_loads(text, *args, **kwargs)
+            finally:
+                parsed.set()
+        return real_loads(text, *args, **kwargs)
+
+    monkeypatch.setattr(rpc, 'json', type('SlowJson', (), {'loads': staticmethod(slow_loads), 'dumps': staticmethod(json.dumps)}))
+    history = [{'role': 'user', 'content': 'synthetic ' * 100_000} for _ in range(20)]
+    big = {'jsonrpc': '2.0', 'id': 1, 'method': 'chat.start', 'params': {'session_id': 'synthetic', 'conversation_history': history},
+           'trace_id': '22222222-2222-4222-8222-222222222222'}
+    small = {'jsonrpc': '2.0', 'id': 2, 'method': 'models.list', 'params': {}}
+    read_fd, write_fd = os.pipe()
+    output = io.BytesIO()
+    answered, parse_done_at_answer = threading.Event(), []
+    server = RpcServer({'chat.start': lambda ctx, params: {'turns': len(params['conversation_history'])},
+                        'models.list': lambda ctx, params: {'models': []}}, stdin=os.fdopen(read_fd, 'rb'), stdout=output)
+    write = server._write
+
+    def observe(message):
+        if message.get('id') == 2:
+            parse_done_at_answer.append(parsed.is_set())
+            answered.set()
+        write(message)
+
+    server._write = observe
+    reader = threading.Thread(target=server.serve_forever, daemon=True)
+    reader.start()
+    writer = threading.Thread(target=lambda: (os.write(write_fd, (json.dumps(big) + '\n' + json.dumps(small) + '\n').encode()), os.close(write_fd)), daemon=True)
+    writer.start()
+    try:
+        assert answered.wait(3), 'models.list waited behind the chat.start body parse'
+        assert parse_done_at_answer == [False]
+    finally:
+        release.set()
+        writer.join(5)
+        reader.join(5)
+    for _ in range(300):
+        replies = {json.loads(raw)['id']: json.loads(raw) for raw in output.getvalue().splitlines()}
+        if len(replies) == 2:
+            break
+        threading.Event().wait(0.01)
+    assert replies[1]['result'] == {'turns': 20}
+    assert replies[2]['result'] == {'models': []}
+
+
+def _serve_lines(lines: list[bytes], methods: dict) -> list[dict]:
+    stdout = io.BytesIO()
+    RpcServer(methods, stdin=io.BytesIO(b''.join(line + b'\n' for line in lines)), stdout=stdout).serve_forever()
+    for _ in range(300):
+        replies = [json.loads(raw) for raw in stdout.getvalue().splitlines()]
+        if len(replies) == len(lines):
+            break
+        threading.Event().wait(0.01)
+    return replies
+
+
+def test_malformed_bodies_answer_the_standard_errors_under_the_best_known_id() -> None:
+    lines = [
+        b'{"jsonrpc":"2.0","id":1,"method":"echo","params":{"broken":',  # routed by its head, parsed on the worker
+        b'not json',
+        b'{"jsonrpc":"1.0","id":3,"method":"echo"}',
+        b'{"jsonrpc":"2.0","id":4,"method":"echo","params":{},"method":"other"}',  # body disagrees with its routing head
+        b'{"jsonrpc":"2.0","params":{"method":"nested","id":0},"id":5,"method":"echo"}',  # head after params: full parse
+    ]
+    replies = {r['id']: r for r in _serve_lines(lines, {'echo': lambda ctx, params: {'params': params}})}
+    assert replies[1]['error']['code'] == -32700
+    assert replies[None]['error']['code'] == -32700
+    assert replies[3]['error']['code'] == -32600
+    assert replies[4]['error']['code'] == -32600
+    assert replies[5]['result'] == {'params': {'method': 'nested', 'id': 0}}
+
+
+def test_a_routed_chat_start_keeps_the_trace_and_session_identity_from_its_body(caplog) -> None:
+    import logging
+    caplog.set_level(logging.INFO)
+    trace = '33333333-3333-4333-8333-333333333333'
+    line = json.dumps({'jsonrpc': '2.0', 'id': 9, 'method': 'chat.start', 'params': {'session_id': 'synthetic'}, 'trace_id': trace}).encode()
+    assert _serve_lines([line], {'chat.start': lambda ctx, params: {'status': 'completed'}})[0]['result'] == {'status': 'completed'}
+    records = [json.loads(r.message) for r in caplog.records if r.message.startswith('{"event":"chat_start_timing"')]
+    assert [(r['trace_id'], r['rpc_id'], 'session_key' in r) for r in records] == [(trace, 9, True)]

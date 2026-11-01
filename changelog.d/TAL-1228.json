@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Model lists, usage and other requests no longer wait while a long chat's history is read at the start of a turn.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
