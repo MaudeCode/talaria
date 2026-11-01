@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import type Sharp from "sharp";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
-import { watch } from "../bridge/bridge.ts";
+import { serveHealth, watch } from "../bridge/bridge.ts";
 
 const bridge = fileURLToPath(new URL("../bridge/bridge.ts", import.meta.url));
 // The bridge owns its sharp install; tests use the same copy to make and inspect images.
@@ -289,7 +289,7 @@ it("delivers the maximum queue batch without dropping reports", async () => {
   expect(f.acks).toHaveLength(50);
 });
 
-it.each(["RELAY_URL", "KANVIL_URL", "RELAY_SYNC_URL"])("rejects invalid %s without reflecting the value", async (name) => {
+it.each(["RELAY_URL", "KANVIL_URL", "RELAY_SYNC_URL", "HEALTH_PORT"])("rejects invalid %s without reflecting the value", async (name) => {
   const f = await fixture([]);
   const result = await run({ ...f.env, [name]: `https://${intakeKey}@example.invalid/?token=${operatorToken}` });
   expect(result.code).toBe(2);
@@ -545,5 +545,25 @@ describe("watch mode", () => {
     await vi.advanceTimersByTimeAsync(240_000);
     expect(h.deliver).not.toHaveBeenCalled();
     error.mockRestore();
+  });
+});
+
+describe("health endpoint", () => {
+  it("answers 503 until healthy, 200 while healthy, and 404 elsewhere", async () => {
+    let healthy = false;
+    const server = await serveHealth(0, () => healthy);
+    cleanups.push(() => new Promise<void>((resolve) => server.close(() => resolve())));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("Expected a TCP address");
+    const get = (path: string, method = "GET") => fetch(`http://127.0.0.1:${address.port}${path}`, { method });
+    expect((await get("/healthz")).status).toBe(503);
+    healthy = true;
+    const ok = await get("/healthz");
+    expect(ok.status).toBe(200);
+    expect(await ok.text()).toBe("ok");
+    healthy = false;
+    expect((await get("/healthz")).status).toBe(503);
+    expect((await get("/")).status).toBe(404);
+    expect((await get("/healthz", "POST")).status).toBe(404);
   });
 });
