@@ -92,7 +92,9 @@ def test_dependency_sync_writer_stops_with_its_rpc_owner(tmp_path, stop):
     proc = SidecarProcess(home, agent_dir=agent, python=sys.executable)
     try:
         request = proc.request('runtime.sync_dependencies', {'agent_dir': str(agent)})
-        _wait_for_file(agent / 'grandchild.pid')
+        # Each writer records its pid before its first append; stopping in that gap leaves no file to measure.
+        for name in ('writes', 'child-writes'):
+            _wait_for_file(agent / name)
         if stop == 'cancel':
             proc.request('rpc.cancel', {'id': request})
         elif stop == 'shutdown':
