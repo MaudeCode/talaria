@@ -1506,7 +1506,7 @@ describe('run-journal retention sweep', () => {
     const controller = new AbortController()
     // The abort lands on the next loop turn, while the sweep is listing and stat-ing the session's journals.
     const result = await journal.pruneSettled({ now: Date.now() / 1000, retentionSeconds: 14 * DAY, keepRecent: 1, signal: controller.signal, pause: () => { setImmediate(() => { controller.abort() }); return Promise.resolve() } })
-    expect(result).toEqual({ examined: 6, terminal: 0, pruned: 0, bytes_reclaimed: 0 })
+    expect(result).toEqual({ examined: 6, terminal: 0, pruned: 0, bytes_reclaimed: 0, archives_removed: 0 })
   })
 
   it('keeps nonterminal and recent journals, writes faithful summaries, and leaves dry runs and disabled retention untouched', async () => {
@@ -1521,7 +1521,7 @@ describe('run-journal retention sweep', () => {
     utimesSync(journal.pathFor('sess', 'a'), old, old)
     await writeRun(journal, 'small', 'only', { mtime: old })
     const before = tree(dir)
-    expect(await new JsonJournal(dir, { HERMES_WEBUI_RUN_JOURNAL_RETENTION_DAYS: '0' }).pruneSettled({ now })).toEqual({ examined: 0, terminal: 0, pruned: 0, bytes_reclaimed: 0 })
+    expect(await new JsonJournal(dir, { HERMES_WEBUI_RUN_JOURNAL_RETENTION_DAYS: '0' }).pruneSettled({ now })).toEqual({ examined: 0, terminal: 0, pruned: 0, bytes_reclaimed: 0, archives_removed: 0 })
     const dry = await journal.pruneSettled({ now, keepRecent: 1, dryRun: true })
     expect(dry).toMatchObject({ examined: 5, terminal: 3, pruned: 2 })
     expect(tree(dir)).toEqual(before)

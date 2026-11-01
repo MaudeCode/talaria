@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/require-await -- Synchronous JSON transactions implement the async storage port. */
 import { rmSync } from 'node:fs'
 import { closeSync, existsSync, fsync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, statSync, unlinkSync, constants as fsConstants, type BigIntStats } from 'node:fs'
-import { open, readdir, readFile, stat, type FileHandle } from 'node:fs/promises'
+import { lstat, open, readdir, readFile, stat, type FileHandle } from 'node:fs/promises'
 import { setImmediate as nextTurn } from 'node:timers/promises'
 import { atomicWriteTextAsync, writeFully, writeFullyAsync } from '../../fs/atomic.js'
 import { dirname, join } from 'node:path'
@@ -333,11 +333,12 @@ export class JsonJournal implements JournalBackend {
    * `signal` stops the sweep at its next yield; `pause` replaces the default yield (`setImmediate`).
    */
   async pruneSettled(opts: PruneOptions = {}): Promise<PruneResult> {
-    const result: PruneResult = { examined: 0, terminal: 0, pruned: 0, bytes_reclaimed: 0 }
+    const result: PruneResult = { examined: 0, terminal: 0, pruned: 0, bytes_reclaimed: 0, archives_removed: 0 }
     const retention = opts.retentionSeconds ?? this.policy.retentionSeconds
     const keep = opts.keepRecent ?? this.policy.keepRecent
     const maxRuns = opts.maxRuns ?? this.policy.maxRuns
     const maxBytes = opts.maxBytes ?? this.policy.maxBytes
+    const maxArchiveBytes = opts.maxArchiveBytes ?? this.policy.maxArchiveBytes
     const now = opts.now ?? Date.now() / 1000
     const cutoff = now - retention
     const root = this.root()
@@ -431,7 +432,46 @@ export class JsonJournal implements JournalBackend {
       }
       if (opts.signal?.aborted) return result
     }
+    if (maxArchiveBytes > 0) await this.trimArchives(sessions, maxArchiveBytes, opts, result, proceed)
     return result
+  }
+
+  /**
+   * Remove the oldest archives while the instance's archived bytes exceed `maxArchiveBytes`, so retained history cannot
+   * fill the state volume. A removed run keeps the summary published with its archive and reads as pruned history. An
+   * archive whose run still has a live journal (its continuation needs the prefix) or no readable summary stays.
+   */
+  private async trimArchives(sessions: string[], maxArchiveBytes: number, opts: PruneOptions, result: PruneResult, proceed: () => Promise<boolean>): Promise<void> {
+    const archives: { sid: string; rid: string; st: BigIntStats }[] = []
+    let total = 0
+    for (const sid of sessions) {
+      if (!(await proceed())) return
+      let names: string[]
+      try { names = (await readdir(join(this.root(), sid, ARCHIVE_DIR))).filter((n) => n.endsWith(ARCHIVE_SUFFIX)) } catch { continue }
+      for (const name of names) {
+        const rid = name.slice(0, -ARCHIVE_SUFFIX.length)
+        try {
+          validateId(rid, 'run_id')
+          const st = await lstat(join(this.root(), sid, ARCHIVE_DIR, name), { bigint: true })
+          if (!st.isFile()) continue
+          total += Number(st.size)
+          archives.push({ sid, rid, st })
+        } catch { /* vanished or not a run */ }
+      }
+    }
+    if (total <= maxArchiveBytes) return
+    archives.sort((a, b) => (a.st.mtimeNs < b.st.mtimeNs ? -1 : a.st.mtimeNs > b.st.mtimeNs ? 1 : `${a.sid}/${a.rid}`.localeCompare(`${b.sid}/${b.rid}`)))
+    for (const { sid, rid, st } of archives) {
+      if (total <= maxArchiveBytes || opts.signal?.aborted) return
+      const live = this.pathFor(sid, rid)
+      const path = this.archivePathFor(sid, rid)
+      // No await separates these checks from the unlink.
+      if (existsSync(live) || [...this.writers].some((writer) => writer.path === live) || this.loadPrunedSummary(live)?.journal_pruned !== true) continue
+      try { if (!sameFile(lstatSync(path, { bigint: true }), st)) continue } catch { continue }
+      if (!opts.dryRun) { try { unlinkSync(path) } catch { continue } }
+      total -= Number(st.size)
+      result.archives_removed += 1
+    }
   }
 
   /**

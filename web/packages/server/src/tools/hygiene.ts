@@ -134,7 +134,10 @@ export class HygieneTicker {
     if (this.retentionLastRun !== null && now - this.retentionLastRun < RETENTION_INTERVAL_S) return this.pending()
     this.retentionLastRun = now
     this.retention = this.deps.journal.pruneSettled({ now, signal, ...(this.deps.sessions ? { protectedRuns: sessionRunReferences(this.deps.sessions) } : {}) })
-      .then((result) => { if (result.pruned) this.deps.log(`[webui] run-journal retention archived ${String(result.pruned)} journals (${String(result.bytes_reclaimed)} live bytes)`) })
+      .then((result) => {
+        if (result.pruned) this.deps.log(`[webui] run-journal retention archived ${String(result.pruned)} journals (${String(result.bytes_reclaimed)} live bytes)`)
+        if (result.archives_removed) this.deps.log(`[webui] run-journal retention removed ${String(result.archives_removed)} oldest archives to fit HERMES_WEBUI_RUN_JOURNAL_ARCHIVE_MAX_BYTES`)
+      })
       .catch((error: unknown) => { this.warn('run-journal retention', error) })
       .finally(() => { this.retention = null })
     return this.pending()

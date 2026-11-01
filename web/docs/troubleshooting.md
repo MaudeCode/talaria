@@ -168,9 +168,14 @@ a pruned run there. Runs that an earlier release already pruned keep only that
 summary; their events cannot be recovered, and a reconnect cursor aimed at one
 returns `cursor_pruned`, which tells the caller to reload the settled transcript.
 
-Archives use far less disk than the live journals they replace, but they are
-not deleted on a schedule. Deleting a session removes its live journals,
-archives and summaries together.
+Archives use far less disk than the live journals they replace. They have no
+age limit; instead the instance keeps at most
+`HERMES_WEBUI_RUN_JOURNAL_ARCHIVE_MAX_BYTES` of them, 2 GiB by default. Past
+that budget each sweep removes the oldest archives first. A removed run keeps
+its summary and reads like a run an earlier release pruned. An archive whose
+run still has a live journal, or that has no readable summary, is kept. Set the
+budget to `0` to keep every archive. Deleting a session removes its live
+journals, archives and summaries together.
 
 A run is archived when it is past the retention age, or while its session
 exceeds a live journal budget, oldest runs first. The budgets are soft: the
@@ -190,8 +195,12 @@ The policy can be adjusted with:
   `268435456` (256 MiB); the live journal byte budget per session. `0` disables
   it.
 
-A budget that is not a whole number (or is above 100000 runs or 100 GiB) is
-treated as disabled.
+- `HERMES_WEBUI_RUN_JOURNAL_ARCHIVE_MAX_BYTES`, default `2147483648` (2 GiB);
+  the instance-wide budget for archived journals. `0` disables it.
+
+A budget that is not a whole number (or, for the per-session budgets, is above
+100000 runs or 100 GiB) is treated as disabled, so a typo never removes
+archives.
 
 Changing these values does not affect active/nonterminal run recovery.
 

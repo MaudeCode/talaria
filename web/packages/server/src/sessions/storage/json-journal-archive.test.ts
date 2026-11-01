@@ -319,7 +319,7 @@ describe('run-journal archival', () => {
     await writeRun(journal, 'kept', 'run')
     await sweep(journal)
     expect(fs.existsSync(journal.archivePathFor('kept', 'run'))).toBe(true)
-    // No automatic expiry: archives outlive any number of later sweeps.
+    // Within the archive budget nothing expires: archives outlive any number of later sweeps.
     expect(await sweep(journal, { now: Date.now() / 1000 + 3650 * DAY })).toMatchObject({ pruned: 0 })
     expect((await journal.readRunEvents('kept', 'run')).length).toBe(3)
     expect(await journal.deleteSession('kept')).toBe(true)
@@ -434,8 +434,40 @@ describe('retention budgets and protection', () => {
     } finally { vi.doUnmock('node:fs'); vi.resetModules() }
   })
 
+  it('removes the oldest archives past the instance archive budget, keeping their summaries', async () => {
+    const journal = fixture()
+    for (const [i, sid] of ['a', 'b', 'c', 'd', 'e'].entries()) {
+      await writeRun(journal, sid, 'run', { text: `${sid} `.repeat(4000) })
+      await sweep(journal)
+      // Archives are published in order a..e; set their ages explicitly so the order is deterministic.
+      fs.utimesSync(journal.archivePathFor(sid, 'run'), old + i, old + i)
+    }
+    const size = (sid: string): number => fs.statSync(journal.archivePathFor(sid, 'run')).size
+    // `b` gained a live continuation, which still needs its archived prefix; `c` lost its summary.
+    const writer = await journal.writer('b', 'run')
+    await writer.appendSseEvent('token', { text: 'continuation' })
+    await writer.close()
+    fs.rmSync(join(journal.root(), 'c', 'run.summary.json'))
+    const budget = size('d') + size('e')
+    const before = fs.readdirSync(journal.sessionDir, { recursive: true }).sort()
+    expect(await sweep(journal, { retentionSeconds: 365 * DAY, maxArchiveBytes: budget, dryRun: true })).toMatchObject({ archives_removed: 3 })
+    expect(fs.readdirSync(journal.sessionDir, { recursive: true }).sort(), 'a dry run removes nothing').toEqual(before)
+    expect(await sweep(journal, { retentionSeconds: 365 * DAY, maxArchiveBytes: 0 }), 'zero turns the budget off').toMatchObject({ archives_removed: 0 })
+    expect(await sweep(journal, { retentionSeconds: 365 * DAY, maxArchiveBytes: budget })).toMatchObject({ archives_removed: 3 })
+    expect(['a', 'b', 'c', 'd', 'e'].map((sid) => fs.existsSync(journal.archivePathFor(sid, 'run')))).toEqual([false, true, true, false, false])
+    // The removed run reads as pruned history: its summary stays and replay honestly reports it unavailable.
+    expect(await journal.findRunSummary('run')).toBeTruthy()
+    expect(await journal.latestRunSummary('a', 'run')).toMatchObject({ journal_pruned: true, terminal: true, last_seq: 3 })
+    expect(await journal.readRunEvents('a', 'run')).toEqual([])
+    expect((await journal.readSessionRunEvents('a', 'run:1')).status).toBe('cursor_pruned')
+    expect((await journal.readRunEvents('b', 'run')).map((e) => e.seq)).toEqual([1, 2, 3, 4])
+  })
+
   it('reads its caps once from the server environment, disabling any it cannot parse', () => {
-    expect(retentionPolicy({})).toEqual({ retentionSeconds: 14 * DAY, keepRecent: 3, maxRuns: 40, maxBytes: 256 * 1024 * 1024 })
+    expect(retentionPolicy({})).toEqual({ retentionSeconds: 14 * DAY, keepRecent: 3, maxRuns: 40, maxBytes: 256 * 1024 * 1024, maxArchiveBytes: 2 * 1024 * 1024 * 1024 })
+    expect(retentionPolicy({ HERMES_WEBUI_RUN_JOURNAL_ARCHIVE_MAX_BYTES: '0' }).maxArchiveBytes, 'zero turns the archive budget off').toBe(0)
+    expect(retentionPolicy({ HERMES_WEBUI_RUN_JOURNAL_ARCHIVE_MAX_BYTES: '2GB' }).maxArchiveBytes, 'an invalid budget never removes archives').toBe(0)
+    expect(retentionPolicy({ HERMES_WEBUI_RUN_JOURNAL_ARCHIVE_MAX_BYTES: '1048576' }).maxArchiveBytes).toBe(1048576)
     const caps = (runsValue: string, bytesValue: string) => {
       const { maxRuns, maxBytes } = retentionPolicy({ HERMES_WEBUI_RUN_JOURNAL_RETENTION_MAX_RUNS_PER_SESSION: runsValue, HERMES_WEBUI_RUN_JOURNAL_RETENTION_MAX_BYTES_PER_SESSION: bytesValue })
       return [maxRuns, maxBytes]

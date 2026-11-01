@@ -230,8 +230,10 @@ cursor to an event that was not flushed to the journal.
 Settled journals older than `HERMES_WEBUI_RUN_JOURNAL_RETENTION_DAYS` (14), or
 past a session's soft live budget (40 journals, 256 MiB), are archived as
 verified gzip, keeping the `HERMES_WEBUI_RUN_JOURNAL_KEEP_RECENT` (3) newest per
-session live. Cursors into an archived run replay it like a live one. A cursor
-into a run an earlier release compacted to a summary falls back to a snapshot.
+session live. Cursors into an archived run replay it like a live one. Past the
+instance archive budget (2 GiB) the oldest archives are removed, leaving their
+summaries. A cursor into a run whose events are gone (removed by that budget,
+or compacted to a summary by an earlier release) falls back to a snapshot.
 
 ### Settled prompts
 
