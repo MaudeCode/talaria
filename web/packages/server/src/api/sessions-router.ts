@@ -28,6 +28,7 @@ import { ensureTrustedAuthSession, sessionCanManageServer } from '../auth/gate.j
 import { RelayPairingError } from '../sessions/relay.js'
 import { EscapeGrantExpired, type EscapeRequest } from '../workspace/escape.js'
 import { ProfileError } from '../profiles/profiles.js'
+import type { Settings } from '../settings.js'
 import { ConfigUnavailable } from '../config/agent-config.js'
 
 const os = implement({ ...sessionsContract, ...workspacesContract }).$context<ApiContext>().use(requestSessionIdGuard)
@@ -98,11 +99,15 @@ const SIDEBAR_SEARCH_KEYS = ['project_id', 'sidebar_source', 'include_archived',
 
 /** The `/api/sessions` row selection for a list or sidebar-search query (TAL-308 shares it). */
 async function sidebarListParams(ctx: RequestContext, input: SessionsListQuery): Promise<Parameters<RequestContext['deps']['sessions']['list']>[0]> {
-  const settings = (await ctx.deps.settings.load())
+  return sidebarListSelection(await ctx.deps.settings.load(), input, allProfilesEnabled(ctx, input.all_profiles))
+}
+
+/** The row selection `/api/sessions` makes for `input` under `settings`; the agent's `session_list` uses it with no input (TAL-1164). */
+export function sidebarListSelection(settings: Settings, input: SessionsListQuery, allProfiles: boolean): Parameters<RequestContext['deps']['sessions']['list']>[0] {
   const overrideKeys = ['show_cli_sessions', 'show_claude_code_sessions', 'show_cron_sessions', 'show_webhook_sessions', 'show_kanban_sessions'] as const
   const sidebarSourceRaw = (input.sidebar_source ?? '').trim().toLowerCase()
   return {
-    allProfiles: allProfilesEnabled(ctx, input.all_profiles),
+    allProfiles,
     includeArchived: queryFlag(input.include_archived),
     excludeHidden: queryFlag(input.exclude_hidden),
     visibleOnly: true,

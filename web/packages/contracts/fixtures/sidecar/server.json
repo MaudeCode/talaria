@@ -1,0 +1,37 @@
+{
+  "server.session_list": [
+    {
+      "params": {
+        "caller_session_id": "20261020_120000_caller",
+        "query": null
+      },
+      "result": {
+        "sessions": [
+          {
+            "session_id": "20261020_120500_busy",
+            "title": "Refactor the importer",
+            "updated_at": 1792500300,
+            "is_caller": false,
+            "is_streaming": true,
+            "pending_steer_count": 1,
+            "attention": {
+              "kind": "approval",
+              "count": 1,
+              "severity": "critical"
+            }
+          },
+          {
+            "session_id": "20261020_120000_caller",
+            "title": "Coordinate the release",
+            "updated_at": 1792500000,
+            "is_caller": true,
+            "is_streaming": true,
+            "pending_steer_count": 0,
+            "attention": null
+          }
+        ],
+        "truncated": false
+      }
+    }
+  ]
+}

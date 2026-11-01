@@ -1,5 +1,26 @@
 # Sidecar RPC (TAL-245)
 
+RPC v67 lets the sidecar call the server (TAL-1164). It writes a request in the
+`server.*` namespace on stdout with a string id `s:<n>`, and the server answers on
+the sidecar's stdin; integer ids stay the server's own requests. The server
+dispatches only the allowlist `SIDECAR_SERVER_METHODS` in the contracts package,
+each handler calling the service function its HTTP route uses, and answers
+anything else with METHOD_NOT_FOUND. It replies only to the process that asked, so
+a restarted sidecar never receives a predecessor's answer. A call times out after
+30 seconds unless the caller passes its own timeout; shutdown, a closed stdin or a
+broken stdout fails every waiting call with `server_unavailable`. Schemas and the
+recorded `server.json` fixture cover both directions; `npm run fixtures` exports
+them to `sidecar/tests/fixtures/server_schemas.json` for the Python suite.
+
+The first consumer is the opt-in `talaria` agent toolset, registered in the
+Agent's tool registry once the Agent imports. It is never a profile default; the
+toolsets picker turns it on for a session or profile. Its `session_list` tool
+sends the calling Web session id (an agent that compression moved onto a new
+Agent session id maps back through the sidecar's running turns), and the server
+resolves that session's profile and answers with up to 50 of that profile's
+`/api/sessions` rows, newest first, with `is_caller`, `is_streaming`,
+`pending_steer_count` and `attention`. An unknown caller gets `caller_unknown`.
+
 RPC v64 lets session-bound `commands.exec` emit the existing `clarify` and
 `clarify_resolved` frames. The Agent's `bind_asker` and `clarify_asker` own choice
 labels and private-value mapping. Commands reuse the chat clarification waiter
@@ -208,6 +229,8 @@ redirects both `sys.stdout` and fd 1 to stderr, so Agent code that prints
   `{"jsonrpc":"2.0","method":"stream","params":{"id":<request id>,"seq":<int>,"event":"<name>","data":{...}}}`
 
 - Server-originated notification (no id): `{"jsonrpc":"2.0","method":"<ns>.<name>","params":{...}}`
+- Sidecar-originated request (string id): `{"jsonrpc":"2.0","id":"s:<n>","method":"server.<name>","params":{...}}`,
+  answered on stdin by a result or error carrying the same id.
 - Cancellation is a separate request: `rpc.cancel` with `{"id":<request id>}`.
   The cancelled call still completes with a result whose `status` is
   `"cancelled"`, so the server never waits on a dangling id.

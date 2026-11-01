@@ -1,0 +1,3 @@
+{
+  "entries": [{"category": "Added", "summary": "Chats can turn on the Talaria toolset, letting the agent list the other chats in its profile and see which are running or waiting on you.", "highlight": false, "components": ["web"]}]
+}

@@ -20,6 +20,7 @@ import {
 } from '@maudecode/talaria-web-contracts'
 
 import { AGENT_IMPORT_ENV } from './env.js'
+import { answerSidecarRequest, type SidecarServerHandlers } from './server-methods.js'
 
 export class SidecarError extends Error {
   readonly code: number
@@ -84,6 +85,8 @@ export interface SidecarLike {
   onHandshake?: (listener: (runtime: RuntimeDescribe) => void) => () => void
   /** Run `gate` now when ready, then after every compatible handshake before the sidecar reports ready again. */
   addReadyGate?: (gate: ReadyGate) => Promise<void>
+  /** Answer the sidecar's `server.*` requests with these handlers (TAL-1164); without them every one is METHOD_NOT_FOUND. */
+  serveSidecarRequests?: (handlers: SidecarServerHandlers) => void
 }
 
 /** Work a (re)started sidecar finishes before any caller sees it ready; a failure is logged and readiness proceeds. */
@@ -168,6 +171,7 @@ export class SidecarClient implements SidecarLike {
   private readonly handshakeListeners = new Set<(runtime: RuntimeDescribe) => void>()
   private readonly readyGates = new Set<ReadyGate>()
   private readonly pending = new Map<number, Pending>()
+  private serverHandlers: SidecarServerHandlers = {}
   private restartAttempt = 0
   private restartTimer: ReturnType<typeof setTimeout> | null = null
   private closed = false
@@ -180,6 +184,19 @@ export class SidecarClient implements SidecarLike {
   onHandshake(listener: (runtime: RuntimeDescribe) => void): () => void {
     this.handshakeListeners.add(listener)
     return () => { this.handshakeListeners.delete(listener) }
+  }
+
+  serveSidecarRequests(handlers: SidecarServerHandlers): void {
+    this.serverHandlers = handlers
+  }
+
+  /** Answer one sidecar request on the stdin of the process that asked; a restarted process reuses its `s:` ids. */
+  private answerSidecar(child: ChildProcess | null, message: unknown): void {
+    void answerSidecarRequest(this.serverHandlers, message).then((reply) => {
+      if (!reply) { this.log(`[sidecar] invalid request: ${JSON.stringify(message).slice(0, 200)}`); return }
+      if (this.child !== child || !child?.stdin?.writable) return
+      child.stdin.write(JSON.stringify(reply) + '\n')
+    })
   }
 
   async addReadyGate(gate: ReadyGate): Promise<void> {
@@ -267,6 +284,11 @@ export class SidecarClient implements SidecarLike {
       parsed = JSON.parse(line)
     } catch {
       this.log(`[sidecar] non-JSON stdout line: ${line.slice(0, 200)}`)
+      return
+    }
+    // Sidecar-originated requests carry string ids; the server's own requests and stream frames use integers.
+    if (typeof parsed === 'object' && parsed !== null && 'method' in parsed && typeof (parsed as { id?: unknown }).id === 'string') {
+      this.answerSidecar(this.child, parsed)
       return
     }
     const incoming = RpcIncomingSchema.safeParse(parsed)

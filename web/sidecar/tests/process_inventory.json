@@ -725,6 +725,13 @@
         ""
       ]
     },
+    "tests/test_chat_toolsets.py::test_talaria_toolset_is_registered_listed_and_off_by_default": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: the sidecar registers its talaria toolset in the installed release's tool registry, the catalog lists it, and the release's own default toolset resolution leaves it off. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_chat_vault.py::test_vault_prompts_through_chat_start": {
       "layer": "compatibility",
       "reason": "Supported-Agent API compatibility: vault prompts through chat start. Uses the real installed release, not a fabricated API response.",

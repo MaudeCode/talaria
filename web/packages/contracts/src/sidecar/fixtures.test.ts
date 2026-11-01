@@ -3,6 +3,7 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { SIDECAR_METHODS, type SidecarMethodName } from './methods.js'
 import { GATEWAY_METHODS } from './namespaces.js'
+import { SIDECAR_SERVER_METHODS } from './server.js'
 import { SIDECAR_RPC_VERSION } from './version.js'
 
 const fixtureDir = resolve(import.meta.dirname, '../../fixtures/sidecar')
@@ -15,8 +16,9 @@ for (const file of readdirSync(fixtureDir).filter((name) => name.endsWith('.json
 
 describe('sidecar method fixtures (recorded from the pinned Agent)', () => {
   it.each(recorded)('%s parses with its method schemas', (method, fixture) => {
-    expect(SIDECAR_METHODS).toHaveProperty(method)
-    const definition = SIDECAR_METHODS[method] as { params: { parse: (v: unknown) => unknown }; result: { parse: (v: unknown) => unknown }; stream?: { parse: (v: unknown) => unknown } }
+    const methods = { ...SIDECAR_METHODS, ...SIDECAR_SERVER_METHODS }
+    expect(methods).toHaveProperty(method)
+    const definition = methods[method as keyof typeof methods] as { params: { parse: (v: unknown) => unknown }; result: { parse: (v: unknown) => unknown }; stream?: { parse: (v: unknown) => unknown } }
     expect(definition.params.parse(fixture.params)).toBeTruthy()
     expect(definition.result.parse(fixture.result)).toBeTruthy()
     for (const frame of fixture.stream ?? []) {
@@ -28,7 +30,7 @@ describe('sidecar method fixtures (recorded from the pinned Agent)', () => {
   it('records every method that is not credential, network, or process bound', () => {
     const seen = new Set(recorded.map(([method]) => method))
     const unexercised = new Set(['rpc.cancel', 'rpc.methods', 'runtime.shutdown', 'goals.restore', 'commands.exec', 'providers.resolve_runtime', 'oauth.start', 'oauth.poll', 'oauth.cancel', 'oauth.submit_redirect', 'plugins.oauth_logout', 'aux.complete', 'stt.transcribe', 'stt.stream', 'stt.stream_audio', 'gateway.control', 'gateway.restart', 'mcp.reload', 'cron.run', 'worktree.create', 'worktree.retain', 'chat.start', 'chat.interrupt', 'chat.steer', 'chat.steer_withdraw', 'chat.steer_now', 'chat.evict_agent', 'chat.commit_memory', 'chat.refine', 'chat.compress', 'chat.compress_finalize', 'approval.respond', 'approval.pending', 'approval.set_yolo', 'clarify.respond', 'config.set'])
-    const missing = Object.keys(SIDECAR_METHODS).filter((m) => !seen.has(m as SidecarMethodName) && !unexercised.has(m))
+    const missing = [...Object.keys(SIDECAR_METHODS), ...Object.keys(SIDECAR_SERVER_METHODS)].filter((m) => !seen.has(m as SidecarMethodName) && !unexercised.has(m))
     expect(missing).toEqual([])
   })
 

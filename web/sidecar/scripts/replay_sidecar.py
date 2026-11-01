@@ -128,6 +128,8 @@ def build_methods() -> dict:
     spoken: dict[str, dict] = {}
     for path in sorted(FIXTURES.glob("*.json")):
         for method, entries in json.loads(path.read_text()).items():
+            if method.startswith("server."):
+                continue  # answered by the server, not the sidecar
             if entries:
                 methods[method] = _replay(_resolve(entries[0], subs))
             if method == "text.spoken":

@@ -67,7 +67,8 @@ def main() -> int:
     for previous in [json.loads(path.read_text(encoding="utf-8")) for path in stale]:
         for method, entries in previous.items():
             namespace = method.split(".", 1)[0]
-            if method in UNEXERCISED and method not in fixtures.get(namespace, {}):
+            # `server.*` methods are answered by the server, never recorded from the sidecar.
+            if (method in UNEXERCISED or method.startswith("server.")) and method not in fixtures.get(namespace, {}):
                 fixtures.setdefault(namespace, {})[method] = entries
     for path in stale:
         path.unlink()

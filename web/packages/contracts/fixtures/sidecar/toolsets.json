@@ -379,6 +379,13 @@
             "unavailable_reason": null
           },
           {
+            "name": "talaria",
+            "description": "List this profile's Talaria chats and whether each one is running or waiting on you.",
+            "available": true,
+            "selected": false,
+            "unavailable_reason": null
+          },
+          {
             "name": "terminal",
             "description": "Terminal/command execution and process management tools",
             "available": true,

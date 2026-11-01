@@ -34,7 +34,10 @@ import { RESTART_EXIT_CODE } from './cli/supervise.js'
 import { displayBotName, pyBool, SettingsStore } from './settings.js'
 import { AssetCache, SpaShell } from './spa.js'
 import { StartupGate } from './startup.js'
-import { SessionStore } from './sessions/store.js'
+import { SessionNotFound, SessionStore } from './sessions/store.js'
+import { SidecarServerError } from './sidecar/server-methods.js'
+import type { Session } from './sessions/session.js'
+import { sidebarListSelection } from './api/sessions-router.js'
 import { JsonStorage } from './sessions/storage/json.js'
 import type { StorageBackend } from './sessions/storage/backend.js'
 import { DraftStore } from './sessions/drafts.js'
@@ -671,6 +674,18 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   const extensionsEnabled = (): boolean => { try { return deps.extensions.enabledSync() } catch { return false } }
   sessions.owner = new GatewaySessions({ onWebCompletion: (profile, sid, identity) => { relay.noteWebCompletion(profile, sid, identity) }, service: sessions, sidecar: () => sidecar, registry, journal, events, channels,
     profileHome, activeProfile, showReasoning: async (home) => showReasoning(await agentConfig.read(home)), redactEnabled: sessions.deps.redactEnabled, now, log })
+  // TAL-1164: the `talaria` agent toolset. A tool call names the Web session whose agent made it; that session's
+  // profile scopes every answer, exactly as a request bound to that session would be.
+  sidecar?.serveSidecarRequests?.({
+    'server.session_list': async ({ caller_session_id, query }) => {
+      let caller: Session
+      try { caller = await store.get(caller_session_id, { metadataOnly: true, cacheOnMiss: false }) } catch (error) {
+        if (error instanceof SessionNotFound) throw new SidecarServerError(`no Talaria session ${caller_session_id}`, 'caller_unknown')
+        throw error
+      }
+      return requestScope.run({ requestProfile: caller.profile ?? 'default' }, async () => sessions.agentSessionList(caller.session_id, query ?? null, sidebarListSelection(await settings.load(), {}, false)))
+    },
+  })
   const deps: AppDeps = {
     config,
     settings,

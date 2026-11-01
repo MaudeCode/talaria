@@ -9,6 +9,7 @@ import { join, resolve } from 'node:path'
 import { RPC_ERROR_CODES, SIDECAR_METHODS, SIDECAR_RPC_VERSION, type RuntimeDescribe, type SidecarMethodName, type SidecarParams, type SidecarResult, type SidecarResultInput } from '@maudecode/talaria-web-contracts'
 import { SidecarError, type CallOptions, type ReadyGate, type SidecarLike, type SidecarStatus, type StreamFrame } from './client.js'
 import { writeEnvFile } from '../test/env-file.js'
+import { answerSidecarRequest, type SidecarReply, type SidecarServerHandlers } from './server-methods.js'
 
 type Responder<M extends SidecarMethodName> = (params: SidecarParams<M>, emit: (frame: Omit<StreamFrame, 'seq'>) => void, opts: CallOptions) => SidecarResultInput<M> | Promise<SidecarResultInput<M>>
 
@@ -71,6 +72,18 @@ export class FakeSidecar implements SidecarLike {
   respond<M extends SidecarMethodName>(method: M, responder: Responder<M> | undefined): void {
     if (responder) this.responders.set(method, responder)
     else this.responders.delete(method)
+  }
+
+  private serverHandlers: SidecarServerHandlers = {}
+  private serverSeq = 0
+
+  serveSidecarRequests(handlers: SidecarServerHandlers): void {
+    this.serverHandlers = handlers
+  }
+
+  /** What the server answers when the sidecar sends `method` (TAL-1164). */
+  async serverRequest(method: string, params: Record<string, unknown>): Promise<SidecarReply> {
+    return (await answerSidecarRequest(this.serverHandlers, { jsonrpc: '2.0', id: `s:${++this.serverSeq}`, method, params }))!
   }
 
   async addReadyGate(gate: ReadyGate): Promise<void> {

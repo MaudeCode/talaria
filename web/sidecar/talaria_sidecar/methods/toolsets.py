@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from ..home import profile_home_param, scoped_home
+from ..talaria_toolset import TOOLSET as TALARIA_TOOLSET, TOOLSET_DESCRIPTION as TALARIA_TOOLSET_DESCRIPTION
 
 
 def disabled_toolsets(cfg: dict | None = None) -> list[str]:
@@ -37,7 +38,7 @@ def catalog(override) -> dict:
     for name in sorted(set(definitions) | set(selected)):
         available = name in definitions and name not in disabled and bool(set(resolve_toolset(name)) & tools)
         rows.append({
-            'name': name, 'description': str(definitions.get(name, {}).get('description') or ''),
+            'name': name, 'description': TALARIA_TOOLSET_DESCRIPTION if name == TALARIA_TOOLSET else str(definitions.get(name, {}).get('description') or ''),
             'available': available, 'selected': name in selected,
             'unavailable_reason': None if available else 'disabled' if name in disabled else 'unavailable',
         })

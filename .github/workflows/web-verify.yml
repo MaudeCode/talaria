@@ -60,10 +60,10 @@ jobs:
           npm run openapi
           git diff --exit-code -- ../contracts/web-api.openapi.json ../contracts/whats-new.schema.json
 
-      - name: Generated sidecar result schemas are committed
+      - name: Generated sidecar and server method schemas are committed
         run: |
           npm run fixtures -w packages/contracts
-          git diff --exit-code -- sidecar/tests/fixtures/schemas.json
+          git diff --exit-code -- sidecar/tests/fixtures/schemas.json sidecar/tests/fixtures/server_schemas.json
 
   agent-releases:
     if: inputs.sidecar

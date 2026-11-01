@@ -190,3 +190,16 @@ def test_catalog_discovers_named_profile_plugin_before_any_turn(handshaken, herm
     assert next(row for row in rows if row['name'] == 'catalog_plugin')['available'] is False
     other = handshaken.result('toolsets.catalog', {'profile_home': str(hermes_home), 'enabled_toolsets': None})
     assert not any(row['name'] == 'catalog_plugin' for row in other['toolsets'])
+
+
+@requires_agent
+def test_talaria_toolset_is_registered_listed_and_off_by_default(handshaken, hermes_home) -> None:
+    """TAL-1164: the sidecar's own ``talaria`` toolset is in the catalog, never a profile default, and the picker turns it on."""
+    defaults = handshaken.result('toolsets.catalog', {'profile_home': str(hermes_home), 'enabled_toolsets': None})
+    row = next((r for r in defaults['toolsets'] if r['name'] == 'talaria'), None)
+    assert row is not None, 'the talaria toolset is missing from the catalog'
+    assert row['available'] is True and row['selected'] is False, row
+    assert row['description'] == "List this profile's Talaria chats and whether each one is running or waiting on you."
+    assert 'talaria' not in defaults['selected_toolsets']
+    picked = handshaken.result('toolsets.catalog', {'profile_home': str(hermes_home), 'enabled_toolsets': ['file', 'talaria']})
+    assert next(r for r in picked['toolsets'] if r['name'] == 'talaria')['selected'] is True
