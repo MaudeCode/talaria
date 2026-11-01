@@ -702,6 +702,8 @@
 	"settings_desc_session_jump_buttons": "Hiển thị nút Đầu nổi để nhảy tới đầu các lịch sử phiên dài.",
 	"settings_label_terminal_auto_expand": "Tự mở rộng terminal khi có output",
 	"settings_desc_terminal_auto_expand": "Tự động mở rộng panel terminal đang thu gọn khi một lệnh đang chạy phát sinh output mới.",
+	"settings_label_terminal_screen_reader": "Chế độ trình đọc màn hình cho terminal",
+	"settings_desc_terminal_screen_reader": "Cho phép trình đọc màn hình đọc đầu ra terminal của workspace. Nếu không cần, hãy để tắt; nó làm mỗi lần cập nhật terminal tốn thêm công.",
 	"settings_label_session_endless_scroll": "Tải tin nhắn cũ khi cuộn lên",
 	"settings_desc_session_endless_scroll": "Khi bật, các tin nhắn cũ sẽ tự động tải khi bạn cuộn lên trên. Khi tắt, dùng nút tải tin nhắn cũ.",
 	"settings_label_auto_scroll_follow": "Tự động cuộn theo nội dung mới",

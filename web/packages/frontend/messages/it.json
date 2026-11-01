@@ -715,6 +715,8 @@
 	"settings_desc_session_jump_buttons": "Mostra un pulsante fluttuante Inizio per saltare all'inizio delle sessioni lunghe.",
 	"settings_label_terminal_auto_expand": "Espandi automaticamente il terminale sull'output",
 	"settings_desc_terminal_auto_expand": "Espandi automaticamente il pannello terminale compresso quando un comando in esecuzione emette nuovo output.",
+	"settings_label_terminal_screen_reader": "Modalità screen reader del terminale",
+	"settings_desc_terminal_screen_reader": "Consente agli screen reader di leggere l'output del terminale del workspace. Altrimenti lascialo disattivato: appesantisce ogni aggiornamento del terminale.",
 	"settings_label_session_endless_scroll": "Carica messaggi precedenti scorrendo in alto",
 	"settings_desc_session_endless_scroll": "Se abilitato, i messaggi precedenti si caricano automaticamente scorrendo in alto. Se disabilitato, usa il pulsante messaggi precedenti.",
 	"settings_label_auto_scroll_follow": "Segui automaticamente i nuovi contenuti",

@@ -646,6 +646,8 @@
 	"settings_desc_session_jump_buttons": "显示悬浮的开头按钮，用于跳转到较长会话历史的开头。",
 	"settings_label_terminal_auto_expand": "输出时自动展开终端",
 	"settings_desc_terminal_auto_expand": "当运行中的命令产生新输出时，自动展开已折叠的终端面板。",
+	"settings_label_terminal_screen_reader": "终端屏幕阅读器模式",
+	"settings_desc_terminal_screen_reader": "让屏幕阅读器读取工作区终端输出。不需要时请保持关闭；它会增加每次终端更新的开销。",
 	"settings_label_session_endless_scroll": "向上滚动时加载更早的消息",
 	"settings_desc_session_endless_scroll": "启用后，向上滚动时会自动加载更早的消息。禁用时请使用加载更早消息按钮。",
 	"settings_label_auto_scroll_follow": "自动跟随新内容",

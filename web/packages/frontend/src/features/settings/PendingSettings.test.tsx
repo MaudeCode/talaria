@@ -39,7 +39,7 @@ it('renders actual preference and conversation controls before their writes fini
   await user.click(screen.getByRole('combobox', { name: 'Send Key' }))
   await user.click(await screen.findByRole('option', { name: /Ctrl/ }))
   expect(screen.getByRole('combobox', { name: 'Send Key' })).toHaveTextContent(/Ctrl/)
-  for (const name of ['Show non-WebUI sessions', 'Notification sound', 'Browser notifications', 'Render markdown in user messages']) {
+  for (const name of ['Show non-WebUI sessions', 'Notification sound', 'Browser notifications', 'Render markdown in user messages', 'Terminal screen reader mode']) {
     const control = screen.getByRole('switch', { name })
     await user.click(control)
     expect(control).toBeChecked()

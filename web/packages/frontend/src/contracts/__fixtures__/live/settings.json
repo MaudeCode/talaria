@@ -92,6 +92,7 @@
     "sync_to_insights": false,
     "tab_order": [],
     "terminal_auto_expand_on_output": false,
+    "screen_reader_mode": false,
     "theme": "dark",
     "transparent_stream_event_timestamps": true,
     "tts_auto_read": false,

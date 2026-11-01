@@ -702,6 +702,8 @@
 	"settings_desc_session_jump_buttons": "긴 세션 기록의 처음으로 이동하는 떠 있는 시작 버튼을 표시합니다.",
 	"settings_label_terminal_auto_expand": "출력 시 터미널 자동 펼치기",
 	"settings_desc_terminal_auto_expand": "실행 중인 명령이 새 출력을 생성할 때 접힌 터미널 패널을 자동으로 펼칩니다.",
+	"settings_label_terminal_screen_reader": "터미널 스크린 리더 모드",
+	"settings_desc_terminal_screen_reader": "스크린 리더가 워크스페이스 터미널 출력을 읽을 수 있게 합니다. 필요하지 않으면 끄세요. 터미널을 갱신할 때마다 작업이 늘어납니다.",
 	"settings_label_session_endless_scroll": "위로 스크롤할 때 이전 메시지 불러오기",
 	"settings_desc_session_endless_scroll": "활성화하면 위로 스크롤할 때 이전 메시지를 자동으로 불러옵니다. 비활성화하면 이전 메시지 버튼을 사용합니다.",
 	"settings_label_auto_scroll_follow": "새 내용 자동 따라가기",

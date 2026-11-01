@@ -702,6 +702,8 @@
 	"settings_desc_session_jump_buttons": "Afficher un bouton flottant Début pour aller au début des longs historiques de session.",
 	"settings_label_terminal_auto_expand": "Développer automatiquement le terminal en cas de sortie",
 	"settings_desc_terminal_auto_expand": "Développer automatiquement le panneau de terminal réduit lorsqu'une commande en cours d'exécution émet une nouvelle sortie.",
+	"settings_label_terminal_screen_reader": "Mode lecteur d'écran du terminal",
+	"settings_desc_terminal_screen_reader": "Permet aux lecteurs d'écran de lire la sortie du terminal de l'espace de travail. Laissez-le désactivé sinon ; il alourdit chaque mise à jour du terminal.",
 	"settings_label_session_endless_scroll": "Charger les anciens messages en faisant défiler vers le haut",
 	"settings_desc_session_endless_scroll": "Lorsqu'il est activé, les anciens messages se chargent automatiquement lorsque vous faites défiler vers le haut. Lorsqu'il est désactivé, utilisez le bouton des messages plus anciens.",
 	"settings_label_auto_scroll_follow": "Suivre automatiquement le nouveau contenu",

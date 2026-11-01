@@ -126,6 +126,7 @@ export function settingsDefaults(opts: { defaultWorkspace: string; botName: stri
     show_thinking: true,
     simplified_tool_calling: true,
     terminal_auto_expand_on_output: false,
+    screen_reader_mode: false,
     workspace_todos_tab: false,
     api_redact_enabled: true,
     dashboard_plugins: {},

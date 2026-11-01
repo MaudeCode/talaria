@@ -881,6 +881,8 @@
 	"settings_desc_session_jump_buttons": "Show a floating Start button for jumping to the beginning of long session histories.",
 	"settings_label_terminal_auto_expand": "Auto-expand terminal on output",
 	"settings_desc_terminal_auto_expand": "Expand the collapsed terminal panel automatically when a running command emits new output.",
+	"settings_label_terminal_screen_reader": "Terminal screen reader mode",
+	"settings_desc_terminal_screen_reader": "Lets screen readers read workspace terminal output. Leave it off otherwise; it adds work to every terminal update.",
 	"settings_label_session_endless_scroll": "Load older messages while scrolling up",
 	"settings_desc_session_endless_scroll": "When enabled, older messages load automatically as you scroll upward. When disabled, use the older-messages button.",
 	"settings_label_auto_scroll_follow": "Auto-follow new content",
