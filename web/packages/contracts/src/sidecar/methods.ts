@@ -65,4 +65,3 @@ export type SidecarResult<M extends SidecarMethodName> = z.output<SidecarMethods
 /** A result before its schema applies defaults (what a fake sidecar may answer; the call parses it). */
 export type SidecarResultInput<M extends SidecarMethodName> = z.input<SidecarMethods[M]['result']>
 export type SidecarStreamEvent<M extends SidecarMethodName> = SidecarMethods[M] extends { stream: infer S extends z.ZodType } ? z.output<S> : never
-
