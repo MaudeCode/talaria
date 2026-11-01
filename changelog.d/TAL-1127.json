@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Russian now translates the Profiles help and the Transparent Stream timestamp setting.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

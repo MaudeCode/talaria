@@ -10,6 +10,13 @@ import { applyLocale, currentLocale } from './runtime'
 import { add } from '../paraglide/messages/add.js'
 import { checkpoint_diff_files_changed } from '../paraglide/messages/checkpoint_diff_files_changed.js'
 import { mcp_status_active } from '../paraglide/messages/mcp_status_active.js'
+import { profile_concept_desc_profiles } from '../paraglide/messages/profile_concept_desc_profiles.js'
+import { profile_concept_desc_together } from '../paraglide/messages/profile_concept_desc_together.js'
+import { profile_concept_desc_workspaces } from '../paraglide/messages/profile_concept_desc_workspaces.js'
+import { profile_concept_subtitle } from '../paraglide/messages/profile_concept_subtitle.js'
+import { profile_concept_title } from '../paraglide/messages/profile_concept_title.js'
+import { settings_desc_transparent_stream_event_timestamps } from '../paraglide/messages/settings_desc_transparent_stream_event_timestamps.js'
+import { settings_label_transparent_stream_event_timestamps } from '../paraglide/messages/settings_label_transparent_stream_event_timestamps.js'
 
 const OTHER_LOCALES = ['it', 'ja', 'ru', 'es', 'de', 'zh', 'zh_hant1', 'pt', 'ko', 'fr', 'cs', 'tr', 'pl', 'vi']
 const compiled = (name: string) => readFileSync(join(import.meta.dirname, '..', 'paraglide', 'messages', `${name}.js`), 'utf8')
@@ -67,6 +74,17 @@ describe('locale dictionaries at runtime', () => {
     expect(add()).toBe('Hinzufügen')
     expect(checkpoint_diff_files_changed({ n: 1 })).toBe('1 Datei geändert')
     expect(mcp_status_active()).toBe('Active')
+  })
+
+  it('renders the Russian profiles help and Transparent Stream timestamp setting instead of English (TAL-1127)', async () => {
+    await applyLocale('ru', { persist: false })
+    expect(profile_concept_title()).toBe('Профили и рабочие пространства')
+    expect(profile_concept_subtitle()).toBe('Профили определяют, как работает агент; рабочие пространства — с какими файлами он работает.')
+    expect(profile_concept_desc_profiles()).toContain('нужен другой контекст или другие возможности')
+    expect(profile_concept_desc_workspaces()).toMatch(/^Папки проектов/)
+    expect(profile_concept_desc_together()).toContain('«кто работает?»')
+    expect(settings_label_transparent_stream_event_timestamps()).toBe('Показывать метки времени событий «Прозрачного потока»')
+    expect(settings_desc_transparent_stream_event_timestamps()).toBe('Оставляет видимым время под ответом, скрывая метки времени отдельных событий.')
   })
 
   it('applies the latest of overlapping switches', async () => {
