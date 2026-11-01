@@ -27,6 +27,15 @@ describe('bootstrap language on an open server', () => {
     expect((await bootstrap(s, { 'accept-language': 'ja;q=0, de;q=0.5' })).browser_language).toBe('de')
   })
 
+  it('saving an unrelated setting keeps the language unset', async () => {
+    const saved = await s.get('/api/settings', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sound_enabled: true }) })
+    expect(saved.status).toBe(200)
+    expect((await s.deps.settings.readRaw()).sound_enabled).toBe(true)
+    expect((await s.deps.settings.readRaw()).language).toBeUndefined()
+    expect((await bootstrap(s, { 'accept-language': FR_CA })).language).toBe('')
+    expect((await s.deps.settings.load()).language).toBe('en')
+  })
+
   it('an explicit saved language is reported as the choice, the negotiated one alongside', async () => {
     const saved = await s.get('/api/settings', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ language: 'de' }) })
     expect(saved.status).toBe(200)
