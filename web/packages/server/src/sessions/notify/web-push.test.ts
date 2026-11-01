@@ -261,7 +261,7 @@ describe('Web Push under person isolation (TAL-48)', () => {
         expect((await server.get(PUSH_PATH, { method: 'POST', headers, body: JSON.stringify({ endpoint, keys: { p256dh: keys.p256dh, auth: keys.auth } }) })).status).toBe(200)
       }
       const created = await server.get('/api/session/new', { method: 'POST', headers: alice, body: '{}' })
-      const sid = String(((await created.json()) as { session: { session_id: string } }).session.session_id)
+      const sid = ((await created.json()) as { session: { session_id: string } }).session.session_id
       server.deps.registry.activeRuns.set('stream-alice', { stream_id: 'stream-alice', session_id: sid, started_at: 1, phase: 'running', workspace: server.state, model: null, provider: null, ephemeral: false })
       const settle = async (): Promise<void> => { server.deps.notifications.changed(); await server.deps.webPush.idle() }
       await settle()
