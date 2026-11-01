@@ -49,6 +49,8 @@ def agent(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         monkeypatch.setitem(sys.modules, name, module)
     monkeypatch.setattr(services, "_gateway_home_matches", lambda home, runtime, used: used is pause and state.verified)
     monkeypatch.setattr(services, "listener_state", lambda pid, port: state.listeners.get(pid, "none") if port == 8642 else "none")
+    state.occupied = set()
+    monkeypatch.setattr(gateway, "_port_in_use", lambda port: port in state.occupied)
     return state
 
 
@@ -69,6 +71,33 @@ def test_a_verified_gateway_owns_the_port_only_when_it_holds_every_listener(agen
     agent.listeners = listeners
     assert gateway.ownership(agent.work, 8642)["state"] == expected
     assert gateway.ownership(agent.work, 9000)["state"] == "unbound"  # another port: nothing listens there
+
+
+@pytest.mark.parametrize(("runtimes", "expected"), [({}, "foreign"), ({"work": OWN}, "foreign")])
+def test_a_port_held_by_something_the_inventory_cannot_see_is_foreign(agent, runtimes, expected) -> None:
+    """A tunnel answering 401/503, or another user's listener, still occupies the port: no custody can be restored over it."""
+    agent.runtimes = {getattr(agent, home): identity for home, identity in runtimes.items()}
+    agent.occupied = {8642}
+    assert gateway.ownership(agent.work, 8642)["state"] == expected
+    assert gateway.ownership(agent.work, 9000)["state"] == ("unbound" if runtimes else "stopped")
+
+
+def test_port_in_use_tries_both_loopback_families(monkeypatch: pytest.MonkeyPatch) -> None:
+    import socket
+
+    tried = []
+
+    def connect(address, timeout):
+        tried.append((address, timeout))
+        if address[0] != "::1":
+            raise ConnectionRefusedError()
+        return socket.socket()
+
+    monkeypatch.setattr(socket, "create_connection", connect)
+    assert gateway._port_in_use(8642) is True
+    assert tried == [(("127.0.0.1", 8642), 1.0), (("::1", 8642), 1.0)]
+    monkeypatch.setattr(socket, "create_connection", lambda address, timeout: (_ for _ in ()).throw(ConnectionRefusedError()))
+    assert gateway._port_in_use(8642) is False
 
 
 def test_the_root_profile_checks_only_its_own_home(agent) -> None:

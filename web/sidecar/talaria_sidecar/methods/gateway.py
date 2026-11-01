@@ -6,6 +6,7 @@ import logging
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import threading
@@ -80,6 +81,18 @@ def _host_serves(home: Path, budget_deadline: float) -> bool:
         time.sleep(0.5)
 
 
+def _port_in_use(port: int) -> bool:
+    """Something accepts loopback connections on ``port``, whoever owns it: an HTTP error or a silent listener still
+    occupies the port, and an owner the socket inventory cannot see (another user's process) still answers a connect."""
+    for host in ("127.0.0.1", "::1"):
+        try:
+            with socket.create_connection((host, port), timeout=1.0):
+                return True
+        except OSError:
+            continue
+    return False
+
+
 def _ownership_state(home: Path, port: int) -> str:
     """TAL-1627: who owns loopback ``port`` for the profile at ``home``. Only the Agent's own gateway identity checks (PID
     lock identity, home, command line and profile) name a gateway, the root host's too for a named profile it serves,
@@ -104,11 +117,11 @@ def _ownership_state(home: Path, port: int) -> str:
     except Exception:  # noqa: BLE001 - unreadable identity or socket inventory proves nothing
         log.debug("gateway ownership probe failed for %s", home, exc_info=True)
         return "unverified"
-    if not held:
-        return "stopped"
     if "owned" in held:
         return "owned"
-    return "unbound" if set(held) == {"none"} else "foreign"
+    if "other" in held or _port_in_use(port):
+        return "foreign"  # no gateway of this profile holds the port, yet something does
+    return "unbound" if held else "stopped"
 
 
 def _start_command(home: Path) -> str | None:
