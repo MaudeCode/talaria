@@ -86,6 +86,16 @@ async function liveHistory(page: Page) {
 test('long history beside a live run renders on a slow CPU', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop', 'CPU throttling is a Chromium desktop measurement')
   const history = await liveHistory(page)
+  // TAL-1637: one blocking render of all 300 answers held the live turn's attach for seconds. Record, at the commit
+  // that first shows the newest answer, whether the oldest had rendered too.
+  await page.addInitScript(() => {
+    const w = window as unknown as { oldestWithNewest?: boolean }
+    new MutationObserver((_, observer) => {
+      if (!document.querySelector('[data-message-key="600"] .msg-body')?.textContent?.includes('Paragraph 8:')) return
+      w.oldestWithNewest = !!document.querySelector('[data-message-key="2"] .msg-body')?.textContent
+      observer.disconnect()
+    }).observe(document, { childList: true, subtree: true })
+  })
   const cpu = await page.context().newCDPSession(page)
   try {
     // TAL-1592: rendering 300 rows takes longer than the live turn's one-second elapsed tick, which used to restart
@@ -94,6 +104,7 @@ test('long history beside a live run renders on a slow CPU', async ({ page }, te
     await page.goto(`/session/${history.sid}`)
     await expect(page.locator('.live-turn')).toBeAttached()
     await expect(page.locator('[data-message-key="600"] .msg-body')).toContainText('Paragraph 8:')
+    expect(await page.evaluate(() => (window as unknown as { oldestWithNewest?: boolean }).oldestWithNewest), 'the history renders newest first, a batch per task').toBe(false)
   } finally {
     await cpu.send('Emulation.setCPUThrottlingRate', { rate: 1 })
     await cpu.detach()
@@ -123,6 +134,8 @@ test('off-screen history halves long tasks during a 200-token stream', async ({ 
         history.run.stream = undefined
         await page.goto(`/session/${sid}`)
         await expect(page.locator('[data-message-key="600"] .msg-body')).toContainText('Paragraph 8:')
+        // History Markdown renders newest first, a batch per task (TAL-1637); measure only once all of it has.
+        await expect(page.locator('[data-message-key="2"] .msg-body')).toContainText('Paragraph 8:')
         await expect(page.locator('[data-message-key]')).toHaveCount(600)
         await expect.poll(() => !!history.run.stream).toBe(true)
         await expect.poll(() => distance(page)).toBeLessThan(2)
