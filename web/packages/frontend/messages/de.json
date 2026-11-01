@@ -1539,7 +1539,7 @@
 	"cron_job_updated": "Aufgabe aktualisiert.",
 	"cron_model_label": "Modell-Überschreibung",
 	"cron_model_hint": "Überschreibt das Standardmodell für diesen Auftrag.",
-	"cron_model_no_agent_hint": "No-agent jobs run the configured script directly; model is unused.",
+	"cron_model_no_agent_hint": "Reine Skript-Jobs führen das konfigurierte Skript direkt aus; das Modell wird nicht verwendet.",
 	"cron_model_use_default": "Standard (Profil-/Systemstandard verwenden)",
 	"cron_delete_confirm_title": "Aufgabe löschen",
 	"cron_delete_confirm_message": "Sind Sie sicher?",
