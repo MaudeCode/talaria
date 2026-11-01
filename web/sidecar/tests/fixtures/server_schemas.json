@@ -109,5 +109,185 @@
       ],
       "additionalProperties": false
     }
+  },
+  "server.queue_list": {
+    "params": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "caller_session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "caller_session_id",
+        "session_id"
+      ]
+    },
+    "result": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string"
+        },
+        "is_streaming": {
+          "type": "boolean"
+        },
+        "pending_steers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "steer_id": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              },
+              "submitted_at": {
+                "type": "number"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "pending",
+                  "sending_now"
+                ]
+              },
+              "actions": {
+                "type": "object",
+                "properties": {
+                  "edit": {
+                    "type": "boolean"
+                  },
+                  "cancel": {
+                    "type": "boolean"
+                  },
+                  "send_now": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "edit",
+                  "cancel",
+                  "send_now"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "steer_id",
+              "text",
+              "submitted_at",
+              "state",
+              "actions"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "session_id",
+        "is_streaming",
+        "pending_steers"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "server.queue_send_now": {
+    "params": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "caller_session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "steer_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "caller_session_id",
+        "session_id",
+        "steer_id"
+      ]
+    },
+    "result": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "redirected": {
+          "type": "boolean"
+        },
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "delivered",
+            "next_step",
+            "not_running",
+            "taken",
+            "failed"
+          ]
+        }
+      },
+      "required": [
+        "redirected",
+        "outcome"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "server.queue_withdraw": {
+    "params": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "caller_session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "steer_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "caller_session_id",
+        "session_id",
+        "steer_id"
+      ]
+    },
+    "result": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "withdrawn": {
+          "type": "boolean"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "withdrawn"
+      ],
+      "additionalProperties": false
+    }
   }
 }

@@ -86,3 +86,73 @@ describe('server.session_list (TAL-1164)', () => {
     }
   })
 })
+
+describe('server.queue_list, server.queue_send_now, server.queue_withdraw (TAL-1167)', () => {
+  it('lists, delivers and withdraws another session\'s pending steers, refusing self, cross-profile and read-only targets', async () => {
+    const sidecar = new FakeSidecar()
+    const s = await bootTestServer({ sidecar })
+    try {
+      const post = async (path: string, body: unknown): Promise<Record<string, unknown>> => (await (await s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })).json()) as Record<string, unknown>
+      mkdirSync(join(s.state, 'profiles', 'other'), { recursive: true })
+      const save = async (session_id: string, profile: string, extra: Record<string, unknown> = {}) => {
+        await s.deps.sessionStore.save(new Session({ session_id, title: session_id, profile, updated_at: 1_792_500_000, messages: [{ role: 'user', content: session_id, timestamp: 1_792_500_000 }], ...extra }, { workspace: s.state, model: null }))
+      }
+      await save('agentcaller', 'default')
+      await save('agentidle', 'default')
+      await save('agentforeign', 'other')
+      await save('agentimported', 'default', { read_only: true })
+      // A streaming target with two pending steers.
+      const target = String(((await post('/api/session/new', {})).session as Record<string, unknown>).session_id)
+      let finish: () => void = () => undefined
+      sidecar.respond('chat.steer', () => ({ accepted: true, fallback: null, can_redirect: true }))
+      sidecar.respond('chat.start', (_params, emit) => new Promise((resolve) => {
+        emit({ event: 'token', data: { text: 'working' } })
+        finish = () => { resolve({ status: 'completed', messages: [{ role: 'user', content: 'task' }, { role: 'assistant', content: 'done' }], final_response: 'done', error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '', usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: 0 }, context: { context_length: 200000 }, model: 'test-model', provider: 'test', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] } as never) }
+      }))
+      const streamId = String((await post('/api/chat/start', { session_id: target, message: 'task' })).stream_id)
+      await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'token')
+      await post('/api/chat/steer', { session_id: target, text: 'first', display_text: 'First', steer_id: 'steer-q1' })
+      await post('/api/chat/steer', { session_id: target, text: 'second', display_text: 'Second', steer_id: 'steer-q2' })
+
+      const ask = async (method: 'server.queue_list' | 'server.queue_send_now' | 'server.queue_withdraw', params: Record<string, unknown>) => {
+        const reply = await sidecar.serverRequest(method, { caller_session_id: 'agentcaller', ...params })
+        if ('error' in reply) return reply
+        return { result: SIDECAR_SERVER_METHODS[method].result.parse(reply.result) }
+      }
+      const pending = (steer_id: string, text: string) => ({ steer_id, text, state: 'pending', actions: { edit: true, cancel: true, send_now: true } })
+      expect(await ask('server.queue_list', { session_id: target })).toMatchObject({ result: { session_id: target, is_streaming: true, pending_steers: [pending('steer-q1', 'First'), pending('steer-q2', 'Second')] } })
+
+      // send-now: each outcome the route answers.
+      sidecar.respond('chat.steer_now', () => ({ redirected: true, withdrawn: true, delivery: 'steer' }))
+      expect(await ask('server.queue_send_now', { session_id: target, steer_id: 'steer-q1' })).toEqual({ result: { redirected: true, outcome: 'delivered' } })
+      expect(await ask('server.queue_send_now', { session_id: target, steer_id: 'steer-nope' })).toEqual({ result: { redirected: false, outcome: 'taken' } })
+      sidecar.respond('chat.steer_now', () => ({ redirected: false, withdrawn: true, requeued: 'kept' }))
+      expect(await ask('server.queue_send_now', { session_id: target, steer_id: 'steer-q2' })).toEqual({ result: { redirected: false, outcome: 'next_step' } })
+      sidecar.respond('chat.steer_now', () => { throw new Error('synthetic redirect failure') })
+      expect(await ask('server.queue_send_now', { session_id: target, steer_id: 'steer-q2' })).toEqual({ result: { redirected: false, outcome: 'failed' } })
+      expect(await ask('server.queue_send_now', { session_id: 'agentidle', steer_id: 'steer-q2' })).toEqual({ result: { redirected: false, outcome: 'not_running' } })
+      expect(await ask('server.queue_list', { session_id: target })).toMatchObject({ result: { pending_steers: [{ steer_id: 'steer-q2', state: 'pending' }, { steer_id: 'steer-q1', state: 'sending_now' }] } })
+
+      // withdraw: taken back with its text, then gone.
+      sidecar.respond('chat.steer_withdraw', () => ({ withdrawn: true }))
+      expect(await ask('server.queue_withdraw', { session_id: target, steer_id: 'steer-q2' })).toEqual({ result: { withdrawn: true, text: 'Second' } })
+      expect(await ask('server.queue_withdraw', { session_id: target, steer_id: 'steer-q2' })).toEqual({ result: { withdrawn: false } })
+      expect(await ask('server.queue_list', { session_id: 'agentidle' })).toEqual({ result: { session_id: 'agentidle', is_streaming: false, pending_steers: [] } })
+
+      // Refused targets, for every tool.
+      for (const method of ['server.queue_list', 'server.queue_send_now', 'server.queue_withdraw'] as const) {
+        const refused = (session_id: string) => ask(method, { session_id, steer_id: 'steer-q1' })
+        expect(await refused('agentcaller')).toMatchObject({ error: { data: { condition: 'self_target' } } })
+        expect(await refused('agentforeign')).toMatchObject({ error: { message: 'no Talaria session agentforeign in this profile', data: { condition: 'target_unknown' } } })
+        expect(await refused('agentmissing')).toMatchObject({ error: { data: { condition: 'target_unknown' } } })
+        expect(await refused('agentimported')).toMatchObject({ error: { message: 'Read-only imported sessions cannot be modified from WebUI', data: { condition: 'read_only' } } })
+        expect(await sidecar.serverRequest(method, { caller_session_id: 'nosuchsession', session_id: target, steer_id: 'steer-q1' })).toMatchObject({ error: { data: { condition: 'caller_unknown' } } })
+      }
+      expect(await ask('server.queue_list', { session_id: target })).toMatchObject({ result: { pending_steers: [{ steer_id: 'steer-q1', state: 'sending_now' }] } })
+      finish()
+      await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'stream_end')
+    } finally {
+      await s.close()
+    }
+  })
+})

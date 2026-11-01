@@ -21,6 +21,17 @@ resolves that session's profile and answers with up to 50 of that profile's
 `/api/sessions` rows, newest first, with `is_caller`, `is_streaming`,
 `pending_steer_count` and `attention`. An unknown caller gets `caller_unknown`.
 
+RPC v68 adds the toolset's queue tools (TAL-1167), each a `server.*` method that
+calls the service behind a route: `queue_list` (`server.queue_list`) returns a
+target session's `is_streaming` and its detail's `pending_steers`, oldest first;
+`queue_send_now` (`server.queue_send_now`) answers what
+`POST /api/chat/steer/send-now` answers, with its `outcome`; and `queue_withdraw`
+(`server.queue_withdraw`) answers what `POST /api/chat/steer/withdraw` answers
+for reason `cancel`. The target must be in the caller's profile
+(`target_unknown`, which another profile's session also gets), must not be the
+caller, whose own queue drains only after its turn ends (`self_target`), and must
+be writable (`read_only`, with the server's reason).
+
 RPC v64 lets session-bound `commands.exec` emit the existing `clarify` and
 `clarify_resolved` frames. The Agent's `bind_asker` and `clarify_asker` own choice
 labels and private-value mapping. Commands reuse the chat clarification waiter

@@ -1174,7 +1174,7 @@ export class SessionService {
     raw.confirms_deep_truncate = true
     // TAL-848: lets a client whose /clear outcome is unknown tell from a reread whether the clear committed.
     raw.clear_generation = typeof s.clear_generation === 'string' ? s.clear_generation : null
-    raw.pending_steers = raw.active_stream_id ? (this.deps.runtime.pendingSteers?.(str(raw.active_stream_id)) ?? []) : []
+    raw.pending_steers = this.pendingSteersOf(raw.active_stream_id)
     // TAL-1006: the compression a client shows on load: the running manual job's, else the live run's open span.
     const job = this.compressionJobs.get(s.session_id)
     raw.run_status = this.currentRunStatus(s.session_id, str(raw.active_stream_id) || null)
@@ -1397,7 +1397,7 @@ export class SessionService {
     const rows = (await this.list(params)).body.sessions
       .filter((row) => !needle || str(row.title).toLowerCase().includes(needle))
       .sort((a, b) => sessionSortTimestamp(b) - sessionSortTimestamp(a))
-    const steers = (row: Row): number => (row.is_streaming && row.active_stream_id ? this.deps.runtime.pendingSteers?.(str(row.active_stream_id)).length ?? 0 : 0)
+    const steers = (row: Row): number => (row.is_streaming ? this.pendingSteersOf(row.active_stream_id).length : 0)
     return {
       sessions: rows.slice(0, AGENT_SESSION_LIST_LIMIT).map((row) => ({
         session_id: str(row.session_id),
@@ -1410,6 +1410,18 @@ export class SessionService {
       })),
       truncated: rows.length > AGENT_SESSION_LIST_LIMIT,
     }
+  }
+
+  /** TAL-424: the pending steers of a live stream id, oldest first, as session detail ships them; none without one. */
+  private pendingSteersOf(streamId: unknown): PendingSteer[] {
+    return streamId ? this.deps.runtime.pendingSteers?.(str(streamId)) ?? [] : []
+  }
+
+  /** TAL-1167: the agent tool `queue_list`: the target's run state and its detail's `pending_steers`. */
+  agentQueue(target: Session): SidecarServerResultInput<'server.queue_list'> {
+    const streamId = str(target.active_stream_id)
+    const isStreaming = Boolean(streamId) && this.deps.runtime.activeStreamIds.has(streamId)
+    return { session_id: target.session_id, is_streaming: isStreaming, pending_steers: this.pendingSteersOf(isStreaming ? streamId : null) }
   }
 
   async search(q: string, opts: { content: boolean; depth: number; allProfiles: boolean }): Promise<Record<string, unknown>> {
