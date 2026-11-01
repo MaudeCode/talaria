@@ -293,9 +293,9 @@ describe('MCP events opt-in and subscription health (TAL-1510)', () => {
     const config = { read: (home: string) => Promise.resolve(structuredClone(homes[home]!)) } as unknown as AgentConfig
     const service = new McpService({ config, sidecar: () => sidecar })
     const [a, b] = await Promise.all([service.servers('/profiles/a'), service.servers('/profiles/b')])
-    const states = (r: Dict) => Object.fromEntries((r.servers as Dict[]).map((s): [string, unknown[]] => { const events = s.events as { state: string; subscriptions: { active: number } }; return [String(s.name), [events.state, events.subscriptions.active]] }))
-    expect(states(a)).toEqual({ events: ['subscribed', 2], other: ['ready', 0] })
-    expect(states(b)).toEqual({ events: ['needs_public_url', 0] })
+    const states = (r: Dict) => Object.fromEntries((r.servers as Dict[]).map((s): [string, unknown[]] => { const events = s.events as { state: string; counts: unknown[] }; return [String(s.name), [events.state, events.counts]] }))
+    expect(states(a)).toEqual({ events: ['subscribed', [{ state: 'active', count: 2 }]], other: ['ready', []] })
+    expect(states(b)).toEqual({ events: ['needs_public_url', []] })
   })
 
   it('edits only the events key through the existing update and never adds a public URL or listener', async () => {
@@ -305,7 +305,7 @@ describe('MCP events opt-in and subscription health (TAL-1510)', () => {
     const service = new McpService({ config: memoryConfig(cfg), sidecar: () => sidecarFor({ '/profiles/a': { runtime: [], data } }) })
     const on = await service.update('/profiles/a', 'events', { events: true })
     expect(cfg).toEqual({ platforms: { webhook: { enabled: false } }, mcp_servers: { events: { ...retained, events: true }, sibling: { command: 'sibling' } } })
-    expect(on.server.events).toMatchObject({ enabled: true, state: 'needs_public_url', subscriptions: { active: 0 } })
+    expect(on.server.events).toMatchObject({ enabled: true, state: 'needs_public_url', counts: [] })
     const off = await service.update('/profiles/a', 'events', { events: false })
     expect(cfg).toEqual({ platforms: { webhook: { enabled: false } }, mcp_servers: { events: retained, sibling: { command: 'sibling' } } })
     expect(off.server.events).toMatchObject({ enabled: false, state: 'off' })

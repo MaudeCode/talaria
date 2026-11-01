@@ -40,7 +40,7 @@ const EVENT_STATE: Record<McpEvents['state'], { label: () => string; tone: strin
   lapsed: { label: m.mcp_events_state_lapsed, tone: 'border-error/50 text-error' },
   error: { label: m.mcp_events_state_error, tone: 'border-error/50 text-error' },
 }
-const EVENT_COUNTS: Record<keyof McpEvents['subscriptions'], (v: { n: string }) => string> = {
+const EVENT_COUNTS: Record<McpEvents['counts'][number]['state'], (v: { n: string }) => string> = {
   active: m.mcp_events_count_active, refresh_overdue: m.mcp_events_count_refresh_overdue, lapsed: m.mcp_events_count_lapsed, pending: m.mcp_events_count_pending, paused: m.mcp_events_count_paused,
 }
 

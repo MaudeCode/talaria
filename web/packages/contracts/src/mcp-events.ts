@@ -9,10 +9,14 @@ const Count = z.number().int().nonnegative()
  */
 export const McpEventSubscriptionsSchema = z.object({ active: Count, refresh_overdue: Count, lapsed: Count, pending: Count, paused: Count })
 
-/** Sidecar `mcp.events`: native event support, the webhook callback prerequisite, and per-server utilities and subscriptions. */
+/**
+ * Sidecar `mcp.events`: native event support, the webhook callback prerequisite, and per-server utilities and
+ * subscriptions. `supported`: the installed Agent ships `tools.mcp_tool_events`. `callback`:
+ * `platforms.webhook.extra.public_url` is an https origin, absent, or set but not https.
+ */
 export const McpEventsDataSchema = z.object({
-  supported: z.boolean().describe('The installed Agent ships MCP events (`tools.mcp_tool_events`).'),
-  callback: z.enum(['ready', 'missing', 'not_https']).describe('`platforms.webhook.extra.public_url`: an https origin, absent, or set but not https.'),
+  supported: z.boolean(),
+  callback: z.enum(['ready', 'missing', 'not_https']),
   servers: z.array(z.object({ name: z.string(), utilities: Count, subscriptions: McpEventSubscriptionsSchema })),
 })
 
@@ -24,16 +28,25 @@ export const McpEventsDataSchema = z.object({
  */
 export const McpEventsStateSchema = z.enum(['unsupported', 'off', 'needs_public_url', 'invalid_public_url', 'unavailable', 'ready', 'subscribed', 'refresh_overdue', 'lapsed', 'error'])
 
-/** TAL-1510: one MCP server's experimental events opt-in and native subscription health. */
+/**
+ * TAL-1510: one MCP server's experimental events opt-in and native subscription health. Field notes live here, not in
+ * `.describe()`, because the schema ships in the static Web layout (TAL-1403 budget).
+ * - `enabled`: configured opt-in (`mcp_servers.<name>.events`); it never implies a live subscription.
+ * - `can_edit`: PUT `{events}` may change the opt-in (a config.yaml server on an Agent with events, or an opted-in one to turn off).
+ * - `detail`: redacted native reason for `unavailable`; empty otherwise.
+ * - `utilities`: event utility tools (`list_event_types`, `subscribe_event`, `unsubscribe_event`) this runtime registered.
+ * - `counts`: the non-zero subscription counts in display order.
+ * - `show_state`: the row shows `state` beside the server status (only once opted in).
+ * - `show_panel`: the row offers the events disclosure (editable, or already opted in).
+ */
 export const McpEventsSchema = z.object({
   supported: z.boolean(),
-  enabled: z.boolean().describe('Configured opt-in (`mcp_servers.<name>.events`). It never implies a live subscription.'),
-  can_edit: z.boolean().describe('PUT `{events}` may change the opt-in: a config.yaml server on an Agent with events, or an opted-in one to turn off.'),
+  enabled: z.boolean(),
+  can_edit: z.boolean(),
   state: McpEventsStateSchema,
-  detail: z.string().describe('Redacted native reason for `unavailable` or `error`; empty otherwise.'),
-  utilities: Count.describe('Event utility tools (`list_event_types`, `subscribe_event`, `unsubscribe_event`) this runtime registered.'),
-  subscriptions: McpEventSubscriptionsSchema,
-  counts: z.array(z.object({ state: McpEventSubscriptionsSchema.keyof(), count: Count.positive() })).describe('The non-zero subscription counts in display order.'),
-  show_state: z.boolean().describe('The row shows `state` beside the server status: only once opted in.'),
-  show_panel: z.boolean().describe('The row offers the events disclosure: editable, or already opted in.'),
+  detail: z.string(),
+  utilities: Count,
+  counts: z.array(z.object({ state: McpEventSubscriptionsSchema.keyof(), count: Count.positive() })),
+  show_state: z.boolean(),
+  show_panel: z.boolean(),
 })

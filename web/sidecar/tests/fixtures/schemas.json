@@ -4848,8 +4848,7 @@
     "type": "object",
     "properties": {
       "supported": {
-        "type": "boolean",
-        "description": "The installed Agent ships MCP events (`tools.mcp_tool_events`)."
+        "type": "boolean"
       },
       "callback": {
         "type": "string",
@@ -4857,8 +4856,7 @@
           "ready",
           "missing",
           "not_https"
-        ],
-        "description": "`platforms.webhook.extra.public_url`: an https origin, absent, or set but not https."
+        ]
       },
       "servers": {
         "type": "array",

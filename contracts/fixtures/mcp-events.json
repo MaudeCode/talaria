@@ -23,13 +23,6 @@
         "state": "unsupported",
         "detail": "",
         "utilities": 0,
-        "subscriptions": {
-          "active": 0,
-          "refresh_overdue": 0,
-          "lapsed": 0,
-          "pending": 0,
-          "paused": 0
-        },
         "counts": [],
         "show_state": false,
         "show_panel": false
@@ -58,13 +51,6 @@
         "state": "unsupported",
         "detail": "",
         "utilities": 0,
-        "subscriptions": {
-          "active": 0,
-          "refresh_overdue": 0,
-          "lapsed": 0,
-          "pending": 0,
-          "paused": 0
-        },
         "counts": [],
         "show_state": true,
         "show_panel": true
@@ -104,13 +90,6 @@
         "state": "off",
         "detail": "",
         "utilities": 0,
-        "subscriptions": {
-          "active": 0,
-          "refresh_overdue": 0,
-          "lapsed": 0,
-          "pending": 0,
-          "paused": 0
-        },
         "counts": [],
         "show_state": false,
         "show_panel": true
@@ -151,13 +130,6 @@
         "state": "needs_public_url",
         "detail": "",
         "utilities": 3,
-        "subscriptions": {
-          "active": 0,
-          "refresh_overdue": 0,
-          "lapsed": 0,
-          "pending": 0,
-          "paused": 0
-        },
         "counts": [],
         "show_state": true,
         "show_panel": true
@@ -198,13 +170,6 @@
         "state": "invalid_public_url",
         "detail": "",
         "utilities": 3,
-        "subscriptions": {
-          "active": 0,
-          "refresh_overdue": 0,
-          "lapsed": 0,
-          "pending": 0,
-          "paused": 0
-        },
         "counts": [],
         "show_state": true,
         "show_panel": true
@@ -245,13 +210,6 @@
         "state": "ready",
         "detail": "",
         "utilities": 3,
-        "subscriptions": {
-          "active": 0,
-          "refresh_overdue": 0,
-          "lapsed": 0,
-          "pending": 0,
-          "paused": 0
-        },
         "counts": [],
         "show_state": true,
         "show_panel": true
@@ -292,13 +250,6 @@
         "state": "subscribed",
         "detail": "",
         "utilities": 3,
-        "subscriptions": {
-          "active": 1,
-          "refresh_overdue": 0,
-          "lapsed": 0,
-          "pending": 0,
-          "paused": 1
-        },
         "counts": [
           {
             "state": "active",
@@ -348,13 +299,6 @@
         "state": "unavailable",
         "detail": "",
         "utilities": 0,
-        "subscriptions": {
-          "active": 0,
-          "refresh_overdue": 0,
-          "lapsed": 0,
-          "pending": 0,
-          "paused": 0
-        },
         "counts": [],
         "show_state": true,
         "show_panel": true
@@ -395,13 +339,6 @@
         "state": "refresh_overdue",
         "detail": "",
         "utilities": 0,
-        "subscriptions": {
-          "active": 1,
-          "refresh_overdue": 1,
-          "lapsed": 0,
-          "pending": 0,
-          "paused": 0
-        },
         "counts": [
           {
             "state": "active",
@@ -451,13 +388,6 @@
         "state": "lapsed",
         "detail": "",
         "utilities": 0,
-        "subscriptions": {
-          "active": 1,
-          "refresh_overdue": 1,
-          "lapsed": 1,
-          "pending": 0,
-          "paused": 0
-        },
         "counts": [
           {
             "state": "active",
@@ -511,13 +441,6 @@
         "state": "ready",
         "detail": "",
         "utilities": 3,
-        "subscriptions": {
-          "active": 0,
-          "refresh_overdue": 0,
-          "lapsed": 0,
-          "pending": 0,
-          "paused": 0
-        },
         "counts": [],
         "show_state": true,
         "show_panel": true
@@ -558,13 +481,6 @@
         "state": "unavailable",
         "detail": "connect refused: [REDACTED CREDENTIAL]",
         "utilities": 0,
-        "subscriptions": {
-          "active": 0,
-          "refresh_overdue": 0,
-          "lapsed": 0,
-          "pending": 0,
-          "paused": 0
-        },
         "counts": [],
         "show_state": true,
         "show_panel": true
@@ -589,13 +505,6 @@
         "state": "error",
         "detail": "",
         "utilities": 0,
-        "subscriptions": {
-          "active": 0,
-          "refresh_overdue": 0,
-          "lapsed": 0,
-          "pending": 0,
-          "paused": 0
-        },
         "counts": [],
         "show_state": true,
         "show_panel": true
@@ -619,13 +528,6 @@
         "state": "off",
         "detail": "",
         "utilities": 0,
-        "subscriptions": {
-          "active": 0,
-          "refresh_overdue": 0,
-          "lapsed": 0,
-          "pending": 0,
-          "paused": 0
-        },
         "counts": [],
         "show_state": false,
         "show_panel": false

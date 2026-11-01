@@ -70,7 +70,7 @@ export function eventsView(cfg: unknown, summary: Dict, runtime: Dict | null, da
   const can_edit = summary.can_toggle === true && (supported || enabled)
   const counts = SUBSCRIPTION_ORDER.filter((key) => subscriptions[key] > 0).map((key) => ({ state: key, count: subscriptions[key] }))
   return { supported, enabled, can_edit, state, detail: state === 'unavailable' ? safeText(runtime?.error, 300) : '', utilities: row?.utilities ?? 0,
-    subscriptions, counts, show_state: enabled, show_panel: can_edit || enabled }
+    counts, show_state: enabled, show_panel: can_edit || enabled }
 }
 
 /** Python `_server_summary`. */
