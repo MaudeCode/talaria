@@ -96,7 +96,7 @@ describe('live dictation (TAL-802)', () => {
     FakeTap.last = undefined
     FakeSocket.last = undefined as never
     getUserMedia.mockReset().mockResolvedValue({ getTracks: () => [track] })
-    vi.mocked(api.transcribeRecording).mockReset().mockResolvedValue({ ok: true, transcript: ' from the recording ', filtered: false })
+    vi.mocked(api.transcribeRecording).mockReset().mockResolvedValue({ ok: true, transcript: ' from the recording ', filtered: false, no_speech: false })
     track.stop.mockReset()
     FakeRecorder.deferStop = false
     FakeRecorder.pending = []
@@ -165,6 +165,28 @@ describe('live dictation (TAL-802)', () => {
     expect((ends[0] as Error).message).toBe('Speech-to-text is unavailable on this server')
   })
 
+  it('reports no speech from the recorded fallback without any text (TAL-1608)', async () => {
+    vi.mocked(api.transcribeRecording).mockResolvedValue({ ok: true, transcript: '', filtered: false, no_speech: true })
+    const { handle, texts, ends, ws } = await start()
+    ws.receive(exchange.events[0])
+    ws.close()
+    handle.stop()
+    await vi.waitFor(() => { expect(ends).toHaveLength(1) })
+    expect(liveDictationErrorKind(ends[0])).toBe('no_speech')
+    // The partial already shown is the last text: no empty transcript replaces it.
+    expect(texts).toEqual([exchange.events[0]?.text])
+    expect(api.transcribeRecording).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps a filtered empty transcript an ordinary result, not no speech (TAL-1608)', async () => {
+    vi.mocked(api.transcribeRecording).mockResolvedValue({ ok: true, transcript: '', filtered: true, no_speech: false })
+    const { handle, texts, ends, ws } = await start()
+    ws.close()
+    handle.stop()
+    await vi.waitFor(() => { expect(ends).toEqual([null]) })
+    expect(texts).toEqual([''])
+  })
+
   it('cancel closes the stream and releases the microphone without any callback', async () => {
     const { handle, texts, ends, ws } = await start()
     handle.cancel()
@@ -215,8 +237,11 @@ describe('live dictation (TAL-802)', () => {
     expect(ends).toEqual([])
   })
 
-  it('cancel aborts a fallback upload already in flight and ignores its late answer (TAL-1298)', async () => {
-    let answer: (value: { ok: true; transcript: string; filtered: boolean }) => void = () => undefined
+  it.each([
+    ['a transcript', { ok: true as const, transcript: 'too late', filtered: false, no_speech: false }],
+    ['no speech (TAL-1608)', { ok: true as const, transcript: '', filtered: false, no_speech: true }],
+  ])('cancel aborts a fallback upload already in flight and ignores its late answer: %s (TAL-1298)', async (_answer, late) => {
+    let answer: (value: { ok: true; transcript: string; filtered: boolean; no_speech: boolean }) => void = () => undefined
     vi.mocked(api.transcribeRecording).mockImplementation(() => new Promise((resolve) => { answer = resolve }))
     const { handle, texts, ends, ws } = await start()
     ws.close()
@@ -226,7 +251,7 @@ describe('live dictation (TAL-802)', () => {
     expect(signal?.aborted).toBe(false)
     handle.cancel()
     expect(signal?.aborted).toBe(true)
-    answer({ ok: true, transcript: 'too late', filtered: false })
+    answer(late)
     await flush()
     expect(texts).toEqual([])
     expect(ends).toEqual([])

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import re
 import secrets
 import tempfile
 import threading
@@ -151,6 +152,11 @@ def stream_audio(stream_id: str, audio_b64: str, end: bool) -> dict:
     return {"ok": True}
 
 
+# TAL-1608: the one message the Agent's command provider raises after a clean exit with no output file and no stdout.
+# A crash quotes its stderr inside "exited with code N: ...", so only this complete single-line form counts.
+_CLEAN_EMPTY = re.compile(r"command stt provider wrote no output file at \S(?:[^\r\n]*\S)? and produced no stdout\.?", re.IGNORECASE)
+
+
 def transcribe(audio_b64: str, suffix: str) -> dict:
     try:
         from tools.transcription_tools import transcribe_audio
@@ -170,6 +176,8 @@ def transcribe(audio_b64: str, suffix: str) -> dict:
         Path(path).unlink(missing_ok=True)
     if not isinstance(result, dict) or not result.get("success"):
         message = str((result or {}).get("error") or "Transcription failed") if isinstance(result, dict) else "Transcription failed"
+        if _CLEAN_EMPTY.fullmatch(message.strip()):
+            return {"transcript": "", "filtered": False, "no_speech": True}
         lowered = message.lower()
         raise RpcError(message, condition="stt_unavailable" if "unavailable" in lowered or "not configured" in lowered else "stt_failed")
     return dictation(str(result.get("transcript") or ""))

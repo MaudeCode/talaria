@@ -10,10 +10,18 @@ import type { DictationErrorKind } from './dictation'
 import pcmTapUrl from './pcmTap.worklet.ts?worker&url'
 
 export interface LiveDictation {
-  /** End the recording: the stream's final transcript, else the recording's. Rejects when neither is available. */
+  /** End the recording: the stream's final transcript, else the recording's. Rejects when neither is available, with `NoSpeechError` when the server heard none. */
   stop: () => Promise<string>
   /** Drop the recording and close the stream without a transcript; a pending `stop` uploads nothing and rejects. */
   cancel: () => void
+}
+
+/** TAL-1608: the server's `no_speech` answer for the recording; the composer shows its no-speech notice and keeps the draft. */
+export class NoSpeechError extends Error {
+  constructor() {
+    super('No speech detected')
+    this.name = 'NoSpeechError'
+  }
 }
 
 /** The sidecar's finalize waits up to 20 s for the provider. */
@@ -114,8 +122,9 @@ export async function startLiveDictation(onPartial: (text: string) => void): Pro
         const file = await blob
         live()
         if (!file) throw new Error('nothing was recorded')
-        const { transcript } = await transcribeRecording(file, `dictation.${extension(file.type)}`, upload.signal)
+        const { transcript, no_speech } = await transcribeRecording(file, `dictation.${extension(file.type)}`, upload.signal)
         live()
+        if (no_speech) throw new NoSpeechError()
         return transcript.trim()
       })()
       return stopping
@@ -198,8 +207,9 @@ export function dictateLive(onText: (text: string) => void, onEnd: (error: unkno
   }
 }
 
-/** A refused microphone reads as `denied`; anything else is a plain error. */
+/** A refused microphone reads as `denied` and the server's no-speech answer as `no_speech`; anything else is a plain error. */
 export function liveDictationErrorKind(error: unknown): DictationErrorKind {
+  if (error instanceof NoSpeechError) return 'no_speech'
   return error instanceof DOMException && (error.name === 'NotAllowedError' || error.name === 'SecurityError') ? 'denied' : 'other'
 }
 
