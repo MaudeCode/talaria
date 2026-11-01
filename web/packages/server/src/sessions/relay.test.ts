@@ -994,3 +994,41 @@ describe('session activity lifecycle (TAL-1520)', () => {
     } finally { server.deps.registry.liveIds.clear(); server.deps.relay.stop(); await server.close() }
   })
 })
+
+describe('session-started events under person isolation (TAL-48)', () => {
+  it('never announces a person\'s Agent-owned chat to the shared profile scope', async () => {
+    const s = await bootTestServer({ sidecar: new FakeSidecar(), env: { HERMES_WEBUI_PERSON_ISOLATION: '1' } })
+    const relay = fakeRelay()
+    s.deps.fetch = relay.fetch
+    try {
+      await s.deps.relay.pair({ relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'x' }, 'default', true)
+      for (let i = 0; i < 2; i++) {
+        const before = relay.snapshots().length
+        s.deps.relay.current()!.changed()
+        await vi.waitFor(() => { expect(relay.snapshots().length).toBeGreaterThan(before) })
+      }
+      const db = openStateDb(join(s.state, 'state.db'))
+      db.exec(`CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT NOT NULL, model TEXT, started_at REAL NOT NULL, message_count INTEGER DEFAULT 0, title TEXT, parent_session_id TEXT, ended_at REAL, end_reason TEXT);
+        CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT, timestamp REAL NOT NULL)`)
+      const startedAt = Date.now() / 1000
+      for (const id of ['diagnostic_alice_01', 'cli_unowned_0001']) {
+        db.prepare('INSERT INTO sessions (id, source, started_at, message_count, title) VALUES (?, ?, ?, ?, ?)').run(id, 'cli', startedAt, 1, id)
+        db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(id, 'user', 'hi', startedAt)
+      }
+      db.close()
+      // Alice started this diagnostic chat through Web, so its person is recorded.
+      expect(await s.deps.sessionStore.recordForeignOwner('diagnostic_alice_01', 'oidc:alice')).toBe(true)
+      const started = (): string[] => relay.calls.filter((c) => c.url.endsWith('/started')).map((c) => String(c.body.sessionId))
+      await vi.waitFor(() => {
+        s.deps.relay.current()!.changed()
+        expect(started()).toContain('cli_unowned_0001')
+      })
+      s.deps.relay.current()!.changed()
+      await new Promise((r) => setTimeout(r, 200))
+      expect(started()).not.toContain('diagnostic_alice_01')
+    } finally {
+      s.deps.relay.stop()
+      await s.close()
+    }
+  })
+})

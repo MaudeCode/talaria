@@ -486,6 +486,8 @@ export class RelayPublisher {
     }
     let index: Record<string, unknown>[] = []
     try { index = await this.deps.store.readIndexEntries() } catch { /* no resident index */ }
+    // TAL-48: an Agent chat a person started through Web carries that person's recorded ownership.
+    const foreignOwners = await this.deps.store.foreignOwners()
     const eligible = new Set<string>()
     for (const [profile, cfg] of Object.entries(this.config.profiles)) if (await this.publishes(profile, cfg)) eligible.add(profile)
     return (await this.mutateStarted((ledger) => {
@@ -500,7 +502,7 @@ export class RelayPublisher {
       const agent = agentRows.get(profile) ?? []
       const seen = [
         ...index.filter((row) => Number(row.message_count) > 0 && this.deps.profilesMatch(row.profile as string | null | undefined, profile) && this.publishesOwner(row.owner_person_id)).map((row) => [row.session_id, row.created_at]),
-        ...agent.map((row) => [row._lineage_root_id || row.id, row.started_at]),
+        ...agent.filter((row) => this.publishesOwner(foreignOwners.get(str(row._lineage_root_id || row.id)) ?? foreignOwners.get(str(row.id)))).map((row) => [row._lineage_root_id || row.id, row.started_at]),
       ]
       for (const [rawSid, created] of seen) {
         const sid = str(rawSid).trim()
