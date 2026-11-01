@@ -5,7 +5,8 @@ import type { z } from 'zod'
 import { expect, settle, test } from './fixtures'
 
 test.use({ serviceWorkers: 'block' })
-const fixture = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../contracts/fixtures/skill-revisions.json'), 'utf8')) as z.infer<typeof SkillRevisionsSchema>
+// Replay controls have their own spec (skill-replay.spec.ts); inspection stays free of them here.
+const fixture = { ...(JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../contracts/fixtures/skill-revisions.json'), 'utf8')) as z.infer<typeof SkillRevisionsSchema>), replay_available: false }
 
 test('inspects actual saved revisions and a server comparison without executing or editing', async ({ page }, testInfo) => {
   const writes: string[] = []

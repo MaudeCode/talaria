@@ -29,5 +29,5 @@
     "to_revision": "c90c31a27b54b0780133445e20c79272c5638154ca78a3e62245f4442c1c3bb0",
     "diff": "--- 2275ec836c9d\n+++ 92cdc45de509\n@@ -1 +1,2 @@\n Use recorded results.\n+Keep answers concise.\n"
   },
-  "replay_available": false
+  "replay_available": true
 }

@@ -305,7 +305,30 @@ export const SkillRevisionsSchema = z.object({
   revisions: z.array(z.object({ id: SkillRevisionIdSchema, sha256: SkillRevisionIdSchema, label: z.string().max(12), saved_at: z.string().nullable(), actor: z.string().max(80).nullable(), current: z.boolean() })).max(64),
   selected: z.object({ revision: SkillRevisionIdSchema, content: z.string().max(32 * 1024) }).nullable(),
   comparison: z.object({ from_revision: SkillRevisionIdSchema, to_revision: SkillRevisionIdSchema, diff: z.string().max(128 * 1024) }).nullable(),
-  replay_available: z.literal(false),
+  /** Two saved revisions exist to replay against each other; the replay plan decides whether execution is possible. */
+  replay_available: z.boolean(),
+})
+const ReplayReason = z.enum(['backend_unavailable', 'identity_unavailable', 'history_unavailable', 'invalid_history', 'route_unsupported', 'no_cases'])
+export const SkillReplayRouteSchema = z.object({ provider: z.string().min(1).max(64), model: z.string().min(1).max(200) })
+export const SkillReplayPlanInputSchema = z.object({ name: z.string().min(1).max(256), baseline: SkillRevisionIdSchema, candidate: SkillRevisionIdSchema })
+export const SkillReplayRevisionSchema = z.object({ id: SkillRevisionIdSchema, sha256: SkillRevisionIdSchema, label: z.string().max(12), role: z.enum(['baseline', 'candidate']) })
+/** One saved case's fixed recorded fixture; `id` binds the exact recorded turn, profile and skill. */
+export const SkillReplayCaseSchema = z.object({ id: SkillRevisionIdSchema, case_id: z.string().max(128), title: z.string().max(120), mode: z.enum(['plan', 'reply']), input_tokens_bound: z.number().int().positive() })
+export const SkillReplayPlanSidecarSchema = z.object({
+  state: z.enum(['ready', 'unavailable']), reason: ReplayReason.nullable(),
+  revisions: z.array(SkillReplayRevisionSchema).max(2), cases: z.array(SkillReplayCaseSchema).max(12), unavailable_cases: z.number().int().nonnegative(),
+  route: SkillReplayRouteSchema.nullable(), max_output_tokens: z.number().int().positive(),
+})
+/** One provider call's actual answer. `unknown`: the request may have reached the provider; it is never resent. */
+export const SkillReplayCaseResultSchema = z.object({
+  outcome: z.enum(['completed', 'error', 'unknown']), error: z.string().max(240).nullable(), finish_reason: z.string().max(40).nullable(), provider: z.string().max(80).nullable(),
+  content: z.string().max(4000), tool_calls: z.array(z.object({ name: z.string().max(128), arguments: z.string().max(1000) })).max(32),
+  input_tokens: z.number().nullable(), output_tokens: z.number().nullable(), cost_usd: z.number().nullable(),
+  checks: z.record(z.string(), z.boolean()), passed: z.boolean().nullable(), input_tokens_bound: z.number().int(),
+})
+export const SkillReplayCaseParamsSchema = z.object({
+  profile_home: z.string().min(1), name: z.string().min(1).max(256), baseline: SkillRevisionIdSchema, candidate: SkillRevisionIdSchema, revision: SkillRevisionIdSchema, sha256: SkillRevisionIdSchema,
+  fixture: SkillRevisionIdSchema, route: SkillReplayRouteSchema, max_input_tokens: z.number().int().positive(), max_output_tokens: z.number().int().positive(), max_price_per_million: z.number().positive(),
 })
 export const SkillViewSchema = z.union([
   z.object({ success: z.literal(true), name: z.string(), description: z.string(), tags: z.array(z.string()), related_skills: z.array(z.string()), content: z.string(), path: z.string(), skill_dir: z.string().nullable(), linked_files: z.record(z.string(), z.array(z.string())), editable: z.boolean().optional() }),
@@ -313,6 +336,8 @@ export const SkillViewSchema = z.union([
 ])
 export const SKILLS_METHODS = {
   'skills.revisions': { params: SkillRevisionsInputSchema.extend({ profile_home: z.string().min(1) }), result: SkillRevisionsSchema },
+  'skills.replay_plan': { params: SkillReplayPlanInputSchema.extend({ profile_home: z.string().min(1) }), result: SkillReplayPlanSidecarSchema },
+  'skills.replay_case': { params: SkillReplayCaseParamsSchema, result: SkillReplayCaseResultSchema },
   'skills.list': { params: ProfileHomeParams.extend({ category: z.string().nullable().optional() }), result: z.object({ success: z.boolean().optional(), skills: z.array(SkillRowSchema), categories: z.array(z.string()), count: z.number().int(), message: z.string().optional() }) },
   'skills.view': { params: ProfileHomeParams.extend({ name: z.string().min(1) }), result: SkillViewSchema },
   'skills.find': { params: ProfileHomeParams.extend({ name: z.string().min(1) }), result: z.object({ found: z.boolean(), skill_dir: z.string().nullable(), skill_md: z.string().nullable(), load_name: z.string().optional(), declared_name: z.string().optional(), sibling_load_names: z.array(z.string()).optional() }) },

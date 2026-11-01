@@ -46,7 +46,7 @@ def test_exact_saved_revisions_provenance_and_diff_are_read_only(store):
     b = store
     before = {str(p): p.read_bytes() for p in b.home.rglob('*') if p.is_file()}
     result = b.call()
-    assert result['state'] == 'available' and result['replay_available'] is False
+    assert result['state'] == 'available' and result['replay_available'] is True
     assert [r['sha256'] for r in result['revisions']] == b.hashes[::-1]
     assert [r['current'] for r in result['revisions']] == [True, False]
     assert result['revisions'][0]['actor'] == 'user'

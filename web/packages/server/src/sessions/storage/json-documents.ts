@@ -24,6 +24,7 @@ const formats: Record<string, Format> = {
   background: { directory: 'sessions/_background' },
   'prompt-queues': { directory: 'prompt-queues', secret: true },
   'connector-offers': { directory: 'connector-offers', secret: true },
+  'skill-replays': { directory: 'skill-replays', secret: true },
   catalog: { files: { 'quota-scope': '.quota_scope_id' }, text: true },
   'relay-keys': { text: true, secret: true },
   'relay-identities': { text: true, secret: true },

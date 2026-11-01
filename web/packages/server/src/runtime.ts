@@ -65,6 +65,7 @@ import { ProviderCatalog } from './providers/catalog.js'
 import { containedProfileHome, escapedProfileMessage, ProfileError, ProfileService } from './profiles/profiles.js'
 import { Onboarding } from './onboarding.js'
 import { SkillsService } from './tools/skills.js'
+import { SkillReplayService } from './tools/skill-replay.js'
 import { McpService } from './tools/mcp.js'
 import { WindowLimiter } from './api/tools-router.js'
 import { CronService } from './tools/crons.js'
@@ -213,6 +214,8 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     return resolvePathLikePython(override ? override.replace(/^~(?=$|\/)/, home) : join(config.stateDir, 'attachments'))
   }
   const sidecar = opts.sidecar ?? null
+  const skillReplays = new SkillReplayService({ documents: storage.documents, sidecar: () => sidecar, now: () => new Date(now() * 1000), log })
+  await skillReplays.initialize()
   const pruneAdvice = new PruneAdvice({ sidecar: () => deps.sidecar(), profiles: agentProfiles, lease: (name) => deps.profiles.beginWrite(name), notifications: updateNotifications, now, log })
   const agentConfig = new AgentConfig({ sidecar: () => sidecar, env })
   /** A profile's config.yaml `model` as [model, provider] as written; '' / null when unset or not yet read. */
@@ -780,6 +783,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     nativeOidcLimiter: new WindowLimiter(60, 10, now),
     clearPasskeys: async () => { (await passkeys.clear()) },
     skills: new SkillsService({ sidecar: () => sidecar, config: agentConfig, log }),
+    skillReplays,
     mcp: new McpService({ sidecar: () => sidecar, config: agentConfig, health: mcpHealth }),
     completions,
     hygiene: new HygieneTicker({ env, stateDir: config.stateDir, port: () => config.port, journal, now, log, sweeps: [() => { completions.sweep() }, async () => { (await turns.sweep()) }, () => pruneAdvice.sweep()] }),

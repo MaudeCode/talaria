@@ -64,6 +64,7 @@ SCENARIOS: list[tuple[str, dict]] = [
     ("skills.view", {"profile_home": "{profile}", "name": "apple-notes"}),
     ("skills.view", {"profile_home": "{profile}", "name": "does-not-exist"}),
     ("skills.revisions", {"profile_home": "{profile}", "name": "apple-notes"}),
+    ("skills.replay_plan", {"profile_home": "{profile}", "name": "apple-notes", "baseline": "a" * 64, "candidate": "b" * 64}),
     # skill bundles (run_scenarios seeds the profile's media-kit bundle; one member is not installed)
     ("commands.bundles", {"profile_home": "{profile}"}),
     ("commands.bundle_resolve", {"profile_home": "{profile}", "command": "/media-kit find a cat"}),
@@ -187,6 +188,9 @@ UNEXERCISED = {"plugins.catalog", "plugins.install", "plugins.update", "models.s
 
 # Enabling a plugin is covered with synthetic profile fixtures by test_dashboard_plugins.py and test_dashboard_host_compat.py.
 UNEXERCISED.add("plugins.dashboard_toggle")
+
+# A replay case sends a provider request; test_skill_replay.py covers it with a fake transport.
+UNEXERCISED.add("skills.replay_case")
 
 # Delegation edits are covered by the disposable native configuration contract test.
 UNEXERCISED.update({"aux.delegation", "aux.delegation_backend", "aux.delegation_routes"})

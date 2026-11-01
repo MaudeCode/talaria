@@ -250,6 +250,10 @@ Skills → a skill → **Saved revisions** inspects history from the enabled, co
 reviewed Hermetic backend. It shows real saved revisions, known provenance and a text
 comparison. Missing, ambiguous or unverifiable history stays unavailable. Inspection
 does not create history, migrate plugin data, run saved checks or change a skill.
+**Replay saved checks** sends the skill's saved cases against two saved revisions after you
+confirm the exact revisions, cases, provider and budget. Replays need an OpenRouter main
+model, which enforces the per-call price ceiling. Planned tool calls are scored, never run.
+You can cancel a replay; its results stay in the panel.
 
 Select text within a chat message, then choose **Quote selection** to append it as a Markdown quote
 to the current draft. The action keeps the draft, attachments and cursor, and never sends a message.

@@ -944,6 +944,13 @@ Both native context-local and legacy environment profile bindings retain those
 flags. Other calls retain their existing process-recovery behavior. A v61 peer
 is rejected at handshake before Agent loading.
 
+RPC v70 adds `skills.replay_plan` and `skills.replay_case` for
+[Saved-check replay](../CONTRACTS.md#saved-check-replay) and makes
+`skills.revisions.replay_available` a boolean. Both run in the profile scope with
+`load_plugins=False` and `recover_processes=False`. `skills.replay_case` raises
+`invalid_params` or `route_unsupported` only before its single provider request;
+afterwards it reports `completed`, `error` or `unknown`.
+
 RPC v65 adds `profiles.import` with `discover`, `preview`, `apply` and read-only
 `result` actions. The shared result is `AgentImportResultSchema`. The adapter
 loads attested structured importer/sync APIs, not plugin CLI output or Desktop

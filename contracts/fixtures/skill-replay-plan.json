@@ -1,0 +1,47 @@
+{
+  "state": "ready",
+  "reason": null,
+  "revisions": [
+    {
+      "id": "6048797235b54c5212fbd2d6c9510e079b66f1c0673131893aa10cf485466dc8",
+      "sha256": "2275ec836c9d45100d0bf2313979375345ada41e0ae195e6339b12d728cf6a37",
+      "label": "2275ec836c9d",
+      "role": "baseline"
+    },
+    {
+      "id": "c90c31a27b54b0780133445e20c79272c5638154ca78a3e62245f4442c1c3bb0",
+      "sha256": "92cdc45de5094d40adcad9403c26d5d199773a20217311909aa0f2c21f0acb56",
+      "label": "92cdc45de509",
+      "role": "candidate"
+    }
+  ],
+  "cases": [
+    {
+      "id": "5d1b6f0c2a9e4b7d8c3f1a2e9b0c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0c",
+      "case_id": "c1a2b3c4",
+      "title": "Email the weekly summary",
+      "mode": "plan",
+      "input_tokens_bound": 4096
+    },
+    {
+      "id": "9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b1a0f9e8d",
+      "case_id": "c5d6e7f8",
+      "title": "Answer without tools when asked for a definition",
+      "mode": "reply",
+      "input_tokens_bound": 2048
+    }
+  ],
+  "unavailable_cases": 1,
+  "route": {
+    "provider": "openrouter",
+    "model": "vendor/model-a"
+  },
+  "max_output_tokens": 1500,
+  "budget": {
+    "max_cost_usd": 0.5,
+    "max_calls": 4,
+    "max_output_tokens": 1500,
+    "max_input_tokens": 12288,
+    "max_price_per_million": 27.27272
+  }
+}

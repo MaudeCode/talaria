@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Replay a skill's saved checks against two saved revisions with a confirmed, capped budget in Skills.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
