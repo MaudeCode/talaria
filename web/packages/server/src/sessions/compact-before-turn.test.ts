@@ -578,19 +578,28 @@ describe('idle compaction ahead of the next turn', () => {
     ['nothing_to_do', (params) => ({ ...compressed(params), status: 'nothing_to_do', messages: params.conversation_history, summary: null, commit_token: null, message: 'Nothing to compress yet.' })],
   ]
   for (const [name, outcome] of outcomes) {
-    it(`does not retry unchanged context after ${name}, and a new turn's figures rearm it`, async () => {
+    it(`does not retry unchanged context after ${name}; unarchiving or a new turn's figures rearm it`, async () => {
       const sid = await seeded(NEAR)
       sidecar.respond('chat.compress', (params) => { compressCalls += 1; return outcome(params) })
       await tick()
       await settled(sid)
       for (let i = 0; i < 3; i += 1) { clock += 60; await tick() }
       expect(compressCalls).toBe(1)
+      // Unarchiving rearms the unchanged context once; archived, it is never tried.
+      await archive(sid, true)
+      await tick()
+      expect(compressCalls).toBe(1)
+      await archive(sid, false)
+      await tick()
+      await settled(sid)
+      await tick()
+      expect(compressCalls).toBe(2)
       const session = (await s.deps.sessionStore.get(sid))
       session.last_prompt_tokens = 422_000
       await s.deps.sessionStore.save(session, { touchUpdatedAt: false })
       await tick()
       await settled(sid)
-      expect(compressCalls).toBe(2)
+      expect(compressCalls).toBe(3)
     })
   }
 

@@ -603,8 +603,8 @@ joinable job, so a turn sent meanwhile joins it, and a turn admitted before it
 prevents it. Each index generation (last message, context figures, model,
 profile) is tried once whatever the outcome, so a failure, `lock_skipped` or
 `nothing_to_do` waits for a new turn, estimate or model. An archive or profile
-deletion before the commit drops the result, finalized as uncommitted; unarchiving
-rearms the session. Like every automatic job, it leaves the list order alone.
+deletion before the commit drops the result, finalized as uncommitted. Unarchiving
+forgets any earlier try, so the session is eligible again. Like every automatic job, it leaves the list order alone.
 
 Provider sign-in is `oauth.*` (TAL-398). `oauth.start` runs the Agent's own
 device-code request for Nous Portal, OpenAI Codex, xAI, or MiniMax under the

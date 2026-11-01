@@ -1941,6 +1941,8 @@ export class SessionService {
         throw error
       }
       if (archived && !wasArchived) await this.finalizeSession(sid, s.profile, 'archive', stateDbReadLineage(s) ?? undefined)
+      // TAL-1284: unarchived, the same context is eligible for idle compaction again, whatever an earlier try ended in.
+      if (!archived) this.idleCompactionTried.delete(sid)
     }, { allowReadOnly: true })
     const sidecar = this.deps.sidecar?.()
     if (!archived && sidecar) await this.retainWorktrees((method, params, opts) => sidecar.call(method, params, opts), s).catch(() => undefined)
@@ -2130,7 +2132,6 @@ export class SessionService {
     // the runtime check; a turn admitted after the job exists joins it instead.
     const stillIdle = (): void => {
       if (!opts.idle || this.idleCompactionDue(s.compact(), s, this.deps.now())) return
-      if (s.archived) this.idleCompactionTried.delete(sid)
       throw new HttpFailure(409, 'Session is no longer idle near its compression threshold.')
     }
     stillIdle()
@@ -2232,7 +2233,7 @@ export class SessionService {
    * (newest first) read their metadata for the threshold, and only an eligible one loads its context, in
    * `startCompression`'s idle admission. At most one idle job runs across the server, and each row generation is tried
    * once, whatever the outcome, so a failure, lock skip or no-op waits for a new turn, a new estimate or a model change.
-   * An archive forgets the try, so unarchiving rearms it.
+   * Unarchiving forgets the try, so it rearms the session.
    */
   async compactIdleSessions(): Promise<void> {
     if (this.idleCompactionJob?.status === 'running' || !this.deps.sidecar?.()) return
@@ -2422,11 +2423,7 @@ export class SessionService {
     // TAL-1284: an idle job is maintenance: a session archived (or a profile being deleted) meanwhile keeps its context.
     const abandoned = (live: Session): void => {
       if (!job.idle) return
-      if (live.archived) {
-        // Unarchived, the same context is eligible again.
-        this.idleCompactionTried.delete(sid)
-        throw new HttpFailure(409, 'Session was archived during compression.')
-      }
+      if (live.archived) throw new HttpFailure(409, 'Session was archived during compression.')
       if (this.deps.profileDeleting?.(live.profile ?? null)) throw new HttpFailure(409, `Profile '${str(live.profile)}' is being deleted.`)
     }
     abandoned(s)
