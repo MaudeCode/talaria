@@ -301,9 +301,12 @@ This cache is process-local and does not survive a reload.
 ## 10. Localisation
 
 Paraglide JS compiles `packages/frontend/messages/<locale>.json` into tree-shakeable
-message functions with per-locale chunks. The runtime strategy is
-`localStorage` (`hermes-lang`) then the server `language` setting from
-bootstrap then `en`. No locale path segments. `scripts/i18n-gate.mjs`
+message functions with per-locale chunks. Boot precedence (`i18n/runtime.ts`) is
+the explicitly saved server `language` setting from bootstrap, then
+`localStorage` (`hermes-lang`), then bootstrap's `browser_language` (the server's
+`Accept-Language` negotiation over the shared catalog in
+`packages/contracts/src/locales.ts`), then `en`. The negotiated language is never
+persisted as a choice. No locale path segments. `scripts/i18n-gate.mjs`
 fails the build when English is missing a key any locale defines, when
 placeholders differ between English and a translation, or when a locale has a
 key English lacks. Plural forms for tool summaries are message variants.

@@ -46,7 +46,13 @@ export const BootstrapSchema = z.object({
   webui_version: z.string(),
   max_upload_bytes: z.number().int().positive(),
   csrf_token: z.string(),
+  /** The explicitly saved `language` setting; `` when none is saved or the request is unauthenticated. */
   language: z.string(),
+  /**
+   * TAL-1031: the supported locale code the request's `Accept-Language` prefers, or `en` (`negotiateLocale`).
+   * A first-visit fallback for the Web client, never a saved choice; optional because older servers omit it.
+   */
+  browser_language: z.string().optional(),
   bot_name: z.string(),
   /** The active profile's agent name, as `assistant_name` on a session. */
   assistant_name: z.string(),

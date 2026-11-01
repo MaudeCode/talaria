@@ -272,6 +272,9 @@
                     "language": {
                       "type": "string"
                     },
+                    "browser_language": {
+                      "type": "string"
+                    },
                     "bot_name": {
                       "type": "string"
                     },
