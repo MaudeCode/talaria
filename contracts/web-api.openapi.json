@@ -5546,7 +5546,7 @@
                                           "type": "null"
                                         }
                                       ],
-                                      "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path."
+                                      "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                     },
                                     "name": {
                                       "type": "string"
@@ -5890,7 +5890,7 @@
                                                   "type": "null"
                                                 }
                                               ],
-                                              "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path."
+                                              "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                             },
                                             "args": {},
                                             "preview": {
@@ -6709,7 +6709,7 @@
                                     "type": "null"
                                   }
                                 ],
-                                "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path."
+                                "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                               },
                               "name": {
                                 "type": "string"
@@ -8011,7 +8011,7 @@
                               "type": "null"
                             }
                           ],
-                          "description": "TAL-1458: the last non-null `focus_path` of the session's persisted tool calls, so a reopened chat shows its file before any stream event; null when none."
+                          "description": "TAL-1458: the last non-null `focus_path` of the session's persisted tool calls, so a reopened chat shows its file before any stream event; null when none. TAL-1537: absolute paths inside the session workspace count."
                         },
                         "branched_from": {
                           "anyOf": [
@@ -9777,7 +9777,7 @@
                                           "type": "null"
                                         }
                                       ],
-                                      "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path."
+                                      "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                     },
                                     "name": {
                                       "type": "string"
@@ -10121,7 +10121,7 @@
                                                   "type": "null"
                                                 }
                                               ],
-                                              "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path."
+                                              "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                             },
                                             "args": {},
                                             "preview": {
@@ -10940,7 +10940,7 @@
                                     "type": "null"
                                   }
                                 ],
-                                "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path."
+                                "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                               },
                               "name": {
                                 "type": "string"
@@ -12242,7 +12242,7 @@
                               "type": "null"
                             }
                           ],
-                          "description": "TAL-1458: the last non-null `focus_path` of the session's persisted tool calls, so a reopened chat shows its file before any stream event; null when none."
+                          "description": "TAL-1458: the last non-null `focus_path` of the session's persisted tool calls, so a reopened chat shows its file before any stream event; null when none. TAL-1537: absolute paths inside the session workspace count."
                         },
                         "branched_from": {
                           "anyOf": [
@@ -13151,7 +13151,7 @@
                                           "type": "null"
                                         }
                                       ],
-                                      "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path."
+                                      "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                     },
                                     "name": {
                                       "type": "string"
@@ -13495,7 +13495,7 @@
                                                   "type": "null"
                                                 }
                                               ],
-                                              "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path."
+                                              "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                             },
                                             "args": {},
                                             "preview": {
@@ -14314,7 +14314,7 @@
                                     "type": "null"
                                   }
                                 ],
-                                "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path."
+                                "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                               },
                               "name": {
                                 "type": "string"
@@ -15616,7 +15616,7 @@
                               "type": "null"
                             }
                           ],
-                          "description": "TAL-1458: the last non-null `focus_path` of the session's persisted tool calls, so a reopened chat shows its file before any stream event; null when none."
+                          "description": "TAL-1458: the last non-null `focus_path` of the session's persisted tool calls, so a reopened chat shows its file before any stream event; null when none. TAL-1537: absolute paths inside the session workspace count."
                         },
                         "branched_from": {
                           "anyOf": [
@@ -18578,7 +18578,7 @@
                                           "type": "null"
                                         }
                                       ],
-                                      "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path."
+                                      "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                     },
                                     "name": {
                                       "type": "string"
@@ -18922,7 +18922,7 @@
                                                   "type": "null"
                                                 }
                                               ],
-                                              "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path."
+                                              "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                             },
                                             "args": {},
                                             "preview": {
@@ -19741,7 +19741,7 @@
                                     "type": "null"
                                   }
                                 ],
-                                "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path."
+                                "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                               },
                               "name": {
                                 "type": "string"
@@ -21043,7 +21043,7 @@
                               "type": "null"
                             }
                           ],
-                          "description": "TAL-1458: the last non-null `focus_path` of the session's persisted tool calls, so a reopened chat shows its file before any stream event; null when none."
+                          "description": "TAL-1458: the last non-null `focus_path` of the session's persisted tool calls, so a reopened chat shows its file before any stream event; null when none. TAL-1537: absolute paths inside the session workspace count."
                         },
                         "branched_from": {
                           "anyOf": [
@@ -23577,7 +23577,7 @@
                                           "type": "null"
                                         }
                                       ],
-                                      "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path."
+                                      "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                     },
                                     "name": {
                                       "type": "string"
@@ -23921,7 +23921,7 @@
                                                   "type": "null"
                                                 }
                                               ],
-                                              "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path."
+                                              "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                             },
                                             "args": {},
                                             "preview": {
@@ -24740,7 +24740,7 @@
                                     "type": "null"
                                   }
                                 ],
-                                "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path."
+                                "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                               },
                               "name": {
                                 "type": "string"
@@ -26042,7 +26042,7 @@
                               "type": "null"
                             }
                           ],
-                          "description": "TAL-1458: the last non-null `focus_path` of the session's persisted tool calls, so a reopened chat shows its file before any stream event; null when none."
+                          "description": "TAL-1458: the last non-null `focus_path` of the session's persisted tool calls, so a reopened chat shows its file before any stream event; null when none. TAL-1537: absolute paths inside the session workspace count."
                         },
                         "branched_from": {
                           "anyOf": [
@@ -29295,7 +29295,7 @@
                                           "type": "null"
                                         }
                                       ],
-                                      "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path."
+                                      "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                     },
                                     "name": {
                                       "type": "string"
@@ -29639,7 +29639,7 @@
                                                   "type": "null"
                                                 }
                                               ],
-                                              "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path."
+                                              "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                             },
                                             "args": {},
                                             "preview": {
@@ -30458,7 +30458,7 @@
                                     "type": "null"
                                   }
                                 ],
-                                "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path."
+                                "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                               },
                               "name": {
                                 "type": "string"
@@ -31760,7 +31760,7 @@
                               "type": "null"
                             }
                           ],
-                          "description": "TAL-1458: the last non-null `focus_path` of the session's persisted tool calls, so a reopened chat shows its file before any stream event; null when none."
+                          "description": "TAL-1458: the last non-null `focus_path` of the session's persisted tool calls, so a reopened chat shows its file before any stream event; null when none. TAL-1537: absolute paths inside the session workspace count."
                         },
                         "branched_from": {
                           "anyOf": [
@@ -32618,7 +32618,7 @@
                                           "type": "null"
                                         }
                                       ],
-                                      "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path."
+                                      "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                     },
                                     "name": {
                                       "type": "string"
@@ -32962,7 +32962,7 @@
                                                   "type": "null"
                                                 }
                                               ],
-                                              "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path."
+                                              "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                             },
                                             "args": {},
                                             "preview": {
@@ -33781,7 +33781,7 @@
                                     "type": "null"
                                   }
                                 ],
-                                "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path."
+                                "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                               },
                               "name": {
                                 "type": "string"
@@ -35083,7 +35083,7 @@
                               "type": "null"
                             }
                           ],
-                          "description": "TAL-1458: the last non-null `focus_path` of the session's persisted tool calls, so a reopened chat shows its file before any stream event; null when none."
+                          "description": "TAL-1458: the last non-null `focus_path` of the session's persisted tool calls, so a reopened chat shows its file before any stream event; null when none. TAL-1537: absolute paths inside the session workspace count."
                         },
                         "branched_from": {
                           "anyOf": [
@@ -36003,7 +36003,7 @@
                                           "type": "null"
                                         }
                                       ],
-                                      "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path."
+                                      "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                     },
                                     "name": {
                                       "type": "string"
@@ -36347,7 +36347,7 @@
                                                   "type": "null"
                                                 }
                                               ],
-                                              "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path."
+                                              "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                             },
                                             "args": {},
                                             "preview": {
@@ -37166,7 +37166,7 @@
                                     "type": "null"
                                   }
                                 ],
-                                "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path."
+                                "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                               },
                               "name": {
                                 "type": "string"
@@ -38468,7 +38468,7 @@
                               "type": "null"
                             }
                           ],
-                          "description": "TAL-1458: the last non-null `focus_path` of the session's persisted tool calls, so a reopened chat shows its file before any stream event; null when none."
+                          "description": "TAL-1458: the last non-null `focus_path` of the session's persisted tool calls, so a reopened chat shows its file before any stream event; null when none. TAL-1537: absolute paths inside the session workspace count."
                         },
                         "branched_from": {
                           "anyOf": [
@@ -39386,7 +39386,7 @@
                                           "type": "null"
                                         }
                                       ],
-                                      "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path."
+                                      "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                     },
                                     "name": {
                                       "type": "string"
@@ -39730,7 +39730,7 @@
                                                   "type": "null"
                                                 }
                                               ],
-                                              "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path."
+                                              "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                             },
                                             "args": {},
                                             "preview": {
@@ -40549,7 +40549,7 @@
                                     "type": "null"
                                   }
                                 ],
-                                "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path."
+                                "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                               },
                               "name": {
                                 "type": "string"
@@ -41851,7 +41851,7 @@
                               "type": "null"
                             }
                           ],
-                          "description": "TAL-1458: the last non-null `focus_path` of the session's persisted tool calls, so a reopened chat shows its file before any stream event; null when none."
+                          "description": "TAL-1458: the last non-null `focus_path` of the session's persisted tool calls, so a reopened chat shows its file before any stream event; null when none. TAL-1537: absolute paths inside the session workspace count."
                         },
                         "branched_from": {
                           "anyOf": [
@@ -42618,7 +42618,7 @@
                                     "type": "null"
                                   }
                                 ],
-                                "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path."
+                                "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                               },
                               "args": {},
                               "preview": {
@@ -52184,7 +52184,7 @@
                                           "type": "null"
                                         }
                                       ],
-                                      "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path."
+                                      "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                     },
                                     "name": {
                                       "type": "string"
@@ -52528,7 +52528,7 @@
                                                   "type": "null"
                                                 }
                                               ],
-                                              "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path."
+                                              "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                             },
                                             "args": {},
                                             "preview": {
@@ -53347,7 +53347,7 @@
                                     "type": "null"
                                   }
                                 ],
-                                "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path."
+                                "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                               },
                               "name": {
                                 "type": "string"
@@ -54649,7 +54649,7 @@
                               "type": "null"
                             }
                           ],
-                          "description": "TAL-1458: the last non-null `focus_path` of the session's persisted tool calls, so a reopened chat shows its file before any stream event; null when none."
+                          "description": "TAL-1458: the last non-null `focus_path` of the session's persisted tool calls, so a reopened chat shows its file before any stream event; null when none. TAL-1537: absolute paths inside the session workspace count."
                         },
                         "branched_from": {
                           "anyOf": [
@@ -55555,7 +55555,7 @@
                                           "type": "null"
                                         }
                                       ],
-                                      "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path."
+                                      "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                     },
                                     "name": {
                                       "type": "string"
@@ -55899,7 +55899,7 @@
                                                   "type": "null"
                                                 }
                                               ],
-                                              "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path."
+                                              "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                             },
                                             "args": {},
                                             "preview": {
@@ -56718,7 +56718,7 @@
                                     "type": "null"
                                   }
                                 ],
-                                "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path."
+                                "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                               },
                               "name": {
                                 "type": "string"
@@ -58020,7 +58020,7 @@
                               "type": "null"
                             }
                           ],
-                          "description": "TAL-1458: the last non-null `focus_path` of the session's persisted tool calls, so a reopened chat shows its file before any stream event; null when none."
+                          "description": "TAL-1458: the last non-null `focus_path` of the session's persisted tool calls, so a reopened chat shows its file before any stream event; null when none. TAL-1537: absolute paths inside the session workspace count."
                         },
                         "branched_from": {
                           "anyOf": [
@@ -59318,7 +59318,7 @@
                                           "type": "null"
                                         }
                                       ],
-                                      "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path."
+                                      "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                     },
                                     "name": {
                                       "type": "string"
@@ -59662,7 +59662,7 @@
                                                   "type": "null"
                                                 }
                                               ],
-                                              "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path."
+                                              "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                             },
                                             "args": {},
                                             "preview": {
@@ -60481,7 +60481,7 @@
                                     "type": "null"
                                   }
                                 ],
-                                "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path."
+                                "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                               },
                               "name": {
                                 "type": "string"
@@ -61783,7 +61783,7 @@
                               "type": "null"
                             }
                           ],
-                          "description": "TAL-1458: the last non-null `focus_path` of the session's persisted tool calls, so a reopened chat shows its file before any stream event; null when none."
+                          "description": "TAL-1458: the last non-null `focus_path` of the session's persisted tool calls, so a reopened chat shows its file before any stream event; null when none. TAL-1537: absolute paths inside the session workspace count."
                         },
                         "branched_from": {
                           "anyOf": [
@@ -62956,7 +62956,7 @@
                                               "type": "null"
                                             }
                                           ],
-                                          "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path."
+                                          "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                         },
                                         "name": {
                                           "type": "string"
@@ -63296,7 +63296,7 @@
                                                       "type": "null"
                                                     }
                                                   ],
-                                                  "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path."
+                                                  "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                                 },
                                                 "args": {},
                                                 "preview": {
@@ -64086,7 +64086,7 @@
                                         "type": "null"
                                       }
                                     ],
-                                    "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path."
+                                    "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                   },
                                   "name": {
                                     "type": "string"
@@ -65388,7 +65388,7 @@
                                   "type": "null"
                                 }
                               ],
-                              "description": "TAL-1458: the last non-null `focus_path` of the session's persisted tool calls, so a reopened chat shows its file before any stream event; null when none."
+                              "description": "TAL-1458: the last non-null `focus_path` of the session's persisted tool calls, so a reopened chat shows its file before any stream event; null when none. TAL-1537: absolute paths inside the session workspace count."
                             },
                             "branched_from": {
                               "anyOf": [
@@ -100912,7 +100912,7 @@
                                           "type": "null"
                                         }
                                       ],
-                                      "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path."
+                                      "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                     },
                                     "name": {
                                       "type": "string"
@@ -101256,7 +101256,7 @@
                                                   "type": "null"
                                                 }
                                               ],
-                                              "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path."
+                                              "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                             },
                                             "args": {},
                                             "preview": {

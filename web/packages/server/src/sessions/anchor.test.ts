@@ -349,7 +349,7 @@ describe('anchor scenes over HTTP', () => {
     const scene = (detail.messages as Json[])[1]?._anchor_activity_scene as Json
     // Both the preview and the paged rows carry each tool's server kind and target.
     const normalized = normalizeSceneRows([...rows, ...legacyRows])
-    const all = withSceneToolDisplay(normalized, normalized, true)
+    const all = withSceneToolDisplay(normalized, normalized, true, null)
     expect(scene).toMatchObject({ activity_rows_total: all.length, activity_rows_offset: all.length - 80, activity_rows_complete: false })
     expect(scene.activity_rows).toEqual(all.slice(-80))
 

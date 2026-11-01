@@ -576,6 +576,30 @@ describe('chat turns through the sidecar', () => {
     expect((list.sessions as Json[]).find((r) => r.session_id === sid)).toMatchObject({ title: 'Greeting exchange', message_count: 4 })
   })
 
+  it('names a read call\'s absolute path inside the session workspace as its focus path on live frames and the session (TAL-1537)', async () => {
+    const sid = await newSession(s)
+    const workspace = str(((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).workspace)
+    expect(workspace.startsWith('/')).toBe(true)
+    const args = { path: `${workspace}/README.md` }
+    sidecar.respond('chat.start', (params, emit) => {
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'read_file', preview: null, args, tid: 'call_1' } })
+      emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'read_file', preview: 'contents', args, tid: 'call_1', is_error: false } })
+      return completed([
+        { role: 'user', content: str(params.user_message) },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'read_file', arguments: JSON.stringify(args) } }] },
+        { role: 'tool', tool_call_id: 'call_1', content: 'contents' },
+        { role: 'assistant', content: 'Two lines.' },
+      ])
+    })
+    sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "README summary"', usage: null }))
+    const streamId = String((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'Summarize the README' }))).stream_id)
+    const frames = (await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'stream_end')).filter((f) => f.event === 'tool' || f.event === 'tool_complete')
+    expect(frames.map((f) => [f.event, (f.data as Json).focus_path])).toEqual([['tool', 'README.md'], ['tool_complete', 'README.md']])
+    const detail = (await json(await s.get(`/api/session?session_id=${sid}&messages=1&msg_limit=50`))).session as Json
+    expect(detail.focus_path).toBe('README.md')
+    expect((detail.tool_calls as Json[]).map((c) => c.focus_path)).toEqual(['README.md'])
+  })
+
   it('saves a completed turn\'s tool screenshots as text in both histories and keeps user images (TAL-544)', async () => {
     const sid = await newSession(s)
     const screenshot = `data:image/png;base64,${'A'.repeat(64)}`

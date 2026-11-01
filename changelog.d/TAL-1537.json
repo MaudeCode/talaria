@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The companion page now shows the file the agent reads or edits when it names the file by its full path inside the chat's workspace.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

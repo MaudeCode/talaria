@@ -1,7 +1,14 @@
-import { describe, expect, it } from 'vitest'
+import { homedir } from 'node:os'
+import { describe, expect, it, vi } from 'vitest'
 import { withToolCallOutcomes } from './merge.js'
 import { diffHunks } from '../text/diff.js'
 import { decidedEditDiff, EDIT_DIFF_MAX_LINES, toolArgs, toolDisplay, toolEditDiff, toolKind, toolProgress } from './tool-display.js'
+
+// TAL-1537: a `~/` path expands against a stubbed home.
+vi.mock('node:os', async (importOriginal) => {
+  const os = await importOriginal<typeof import('node:os')>()
+  return { ...os, homedir: vi.fn(os.homedir) }
+})
 
 describe('toolKind', () => {
   it.each([
@@ -74,6 +81,31 @@ describe('toolDisplay', () => {
       ['write_file', { file: `${'p'.repeat(130)}.ts` }],
       ['write_file', { path: '  ' }],
     ] as const) expect(toolDisplay(name, args).focus_path, `${name} ${JSON.stringify(args)}`).toBeNull()
+  })
+})
+
+describe('focus path of an absolute path inside the workspace (TAL-1537)', () => {
+  const ws = '/w/repo'
+
+  it('names an absolute or home path inside the workspace by its workspace-relative remainder', () => {
+    expect(toolDisplay('read_file', { path: '/w/repo/README.md' }, ws).focus_path).toBe('README.md')
+    expect(toolDisplay('write_file', { path: '/w/repo/src/a.ts', content: 'x' }, ws).focus_path).toBe('src/a.ts')
+    expect(toolDisplay('read_file', { path: '/w/repo/./src/../README.md' }, ws).focus_path).toBe('README.md')
+    expect(toolDisplay('read_file', { path: '/w/repo/README.md' }, `${ws}/`).focus_path).toBe('README.md')
+    vi.mocked(homedir).mockReturnValueOnce('/w')
+    expect(toolDisplay('read_file', { path: '~/repo/x.md' }, ws).focus_path).toBe('x.md')
+    expect(toolDisplay('read_file', { path: 'src/a.ts' }, ws).focus_path).toBe('src/a.ts')
+  })
+
+  it('is null for the root, a path outside it, a name-prefix sibling, a call without a workspace, and non-file calls', () => {
+    for (const path of ['/w/repo', '/w/repo/', '/w/repo2/a.md', '/etc/passwd', '/w/repo/../x', '/w/repo/two\nlines']) {
+      expect(toolDisplay('read_file', { path }, ws).focus_path, path).toBeNull()
+    }
+    expect(toolDisplay('write_file', { file: `/w/repo/${'p'.repeat(130)}.ts` }, ws).focus_path).toBeNull()
+    expect(toolDisplay('read_file', { path: '/w/repo/README.md' }).focus_path).toBeNull()
+    expect(toolDisplay('read_file', { path: '/w/repo/README.md' }, null).focus_path).toBeNull()
+    expect(toolDisplay('terminal', { command: 'cat /w/repo/a.ts', path: '/w/repo/a.ts' }, ws).focus_path).toBeNull()
+    expect(toolDisplay('search_files', { pattern: 'x', path: '/w/repo/src' }, ws).focus_path).toBeNull()
   })
 })
 
