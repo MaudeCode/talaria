@@ -10,6 +10,14 @@
  * relative path, so the kernel resolves it against that directory's vnode and
  * a pathname swapped underneath us can never be followed. The sections are
  * synchronous, so nothing else in the process observes the temporary cwd.
+ *
+ * The root itself is acquired the same way: the walk starts at `/` and opens
+ * every component of the canonical root, so an ancestor swapped for a symlink
+ * after the root was resolved fails closed instead of redirecting the walk.
+ * Directories that are only traversed open search-only (Linux `O_PATH`, Darwin
+ * `O_SEARCH`), so a directory with execute but no read permission is crossed
+ * exactly as the kernel's own lookup would; a directory being listed still
+ * opens read-only.
  */
 import { closeSync, constants, existsSync, fchmodSync, fsyncSync, fstatSync, ftruncateSync, lstatSync, mkdirSync, openSync, readdirSync, readSync, readlinkSync, renameSync, rmdirSync, statSync, unlinkSync, type Stats } from 'node:fs'
 import { createHash, randomBytes } from 'node:crypto'
@@ -24,6 +32,38 @@ const O_NOFOLLOW = constants.O_NOFOLLOW ?? 0
 const O_DIRECTORY = constants.O_DIRECTORY ?? 0
 // A FIFO planted where a file is expected would park the single-threaded server in open(2); regular files ignore the flag.
 const O_NONBLOCK = constants.O_NONBLOCK ?? 0
+
+/** Linux `O_PATH` from asm-generic; alpha, parisc and sparc use other bits, so they keep the read-only open. */
+const LINUX_O_PATH = 0o10000000
+const LINUX_O_PATH_ARCHES = new Set(['x64', 'ia32', 'arm', 'arm64', 'ppc', 'ppc64', 's390', 's390x', 'riscv64', 'loong64'])
+/** Darwin `O_EXEC` (`sys/fcntl.h`); `O_SEARCH` is `O_EXEC | O_DIRECTORY`. Node does not export either. */
+const DARWIN_O_EXEC = 0x40000000
+
+/**
+ * The flags that open a directory the walk only traverses. `supported` is false where a no-follow directory open
+ * is unavailable, and every anchored helper then refuses rather than fall back to an unchecked pathname.
+ */
+export function directoryOpenPolicy(platform: string, arch: string, c: Partial<Record<'O_RDONLY' | 'O_DIRECTORY' | 'O_NOFOLLOW' | 'O_SEARCH', number>>): { supported: boolean; traverse: number } {
+  const noFollowDir = (c.O_DIRECTORY ?? 0) | (c.O_NOFOLLOW ?? 0)
+  if (platform === 'win32' || !c.O_DIRECTORY || !c.O_NOFOLLOW) return { supported: false, traverse: 0 }
+  let search = c.O_RDONLY ?? 0
+  if (platform === 'linux' && LINUX_O_PATH_ARCHES.has(arch)) search = LINUX_O_PATH
+  else if (platform === 'darwin') search = c.O_SEARCH ?? DARWIN_O_EXEC
+  return { supported: true, traverse: search | noFollowDir }
+}
+
+/** The live policy, feature-checked once: a kernel that rejects the search-only bit traverses with read-only opens. */
+const POLICY = (() => {
+  const policy = directoryOpenPolicy(process.platform, process.arch, constants)
+  if (!policy.supported) return policy
+  try {
+    closeSync(openSync('/', policy.traverse))
+    return policy
+  } catch {
+    return { supported: true, traverse: constants.O_RDONLY | O_DIRECTORY | O_NOFOLLOW }
+  }
+})()
+const LIST_FLAGS = constants.O_RDONLY | O_DIRECTORY | O_NOFOLLOW
 
 export class PathTraversalError extends Error {}
 export class NotFoundError extends Error {}
@@ -82,12 +122,8 @@ class DirHandle {
     const previous = process.cwd()
     try { process.chdir(this.path) } catch { throw new NotFoundError(`Not found: ${this.path}`) }
     try {
-      const here = openSync('.', constants.O_RDONLY | O_DIRECTORY)
-      try {
-        if (!sameFile(fstatSync(here), fstatSync(this.fd))) throw new NotFoundError(`Not found: ${this.path}`)
-      } finally {
-        closeSync(here)
-      }
+      // `.` always names the cwd vnode, so stat needs no read permission and cannot be redirected.
+      if (!sameFile(statSync('.'), fstatSync(this.fd))) throw new NotFoundError(`Not found: ${this.path}`)
       return op()
     } finally {
       process.chdir(previous)
@@ -100,21 +136,25 @@ function sameFile(a: Stats, b: Stats): boolean {
   return a.dev === b.dev && a.ino === b.ino
 }
 
-/** Open `name` inside `dir` as a directory, refusing symlinks. */
-function openChildDir(dir: DirHandle, name: string, opts: { createMissing?: boolean } = {}): DirHandle {
+/** Open `name` inside `dir` as a directory, refusing symlinks; `list` keeps read permission for enumeration. */
+function openChildDir(dir: DirHandle, name: string, opts: { createMissing?: boolean; list?: boolean } = {}): DirHandle {
+  const flags = opts.list ? LIST_FLAGS : POLICY.traverse
+  const path = join(dir.path, name)
   const fd = dir.anchored(() => {
     const target = dir.child(name)
     try {
-      return openSync(target, constants.O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+      return openSync(target, flags)
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT' && opts.createMissing) {
         mkdirSync(target, { mode: 0o755 })
-        return openSync(target, constants.O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+        return openSync(target, flags)
       }
-      throw new NotFoundError(`Not found: ${join(dir.path, name)}`)
+      throw new NotFoundError(`Not found: ${path}`)
     }
   })
-  return new DirHandle(fd, join(dir.path, name))
+  // `O_PATH | O_NOFOLLOW` can hand back the symlink itself; only a real directory continues the walk.
+  if (!fstatSync(fd).isDirectory()) { closeSync(fd); throw new NotFoundError(`Not found: ${path}`) }
+  return new DirHandle(fd, path)
 }
 
 /** A root whose pathname the caller validated earlier (escape grants): opening it must still yield that inode. */
@@ -131,17 +171,32 @@ export function withPinnedRoot<T>(root: string, id: { dev: number; ino: number }
   }
 }
 
-function openRoot(root: string, rootResolved: string, target: string): number {
-  let fd: number
-  try { fd = openSync(rootResolved, constants.O_RDONLY | O_DIRECTORY | O_NOFOLLOW) } catch { throw new NotFoundError(`Not found: ${target}`) }
-  if (pinnedRoot?.path === root) {
-    const st = fstatSync(fd)
-    if (st.dev !== pinnedRoot.dev || st.ino !== pinnedRoot.ino) {
-      closeSync(fd)
-      throw new NotFoundError(`Not found: ${target}`)
+/**
+ * Acquire the canonical root by walking it from `/` one no-follow component at a time, so no ancestor pathname is
+ * trusted after resolution. A pinned root must still be the inode the caller validated.
+ */
+function openRoot(root: string, rootResolved: string, target: string, opts: { list?: boolean } = {}): DirHandle {
+  const refuse = () => new NotFoundError(`Not found: ${target}`)
+  if (!POLICY.supported || !rootResolved.startsWith(sep)) throw refuse()
+  const parts = rootResolved.split(sep).filter(Boolean)
+  let dir: DirHandle
+  try { dir = new DirHandle(openSync(sep, opts.list && !parts.length ? LIST_FLAGS : POLICY.traverse), sep) } catch { throw refuse() }
+  try {
+    for (const [i, part] of parts.entries()) {
+      if (part === '.' || part === '..') throw refuse()
+      const next = openChildDir(dir, part, { list: opts.list === true && i === parts.length - 1 })
+      dir.close()
+      dir = next
     }
+    if (pinnedRoot?.path === root) {
+      const st = fstatSync(dir.fd)
+      if (st.dev !== pinnedRoot.dev || st.ino !== pinnedRoot.ino) throw refuse()
+    }
+  } catch {
+    dir.close()
+    throw refuse()
   }
-  return fd
+  return dir
 }
 
 /** Walk from the root to the parent of the leaf, one descriptor at a time. Caller closes the returned handle. */
@@ -151,7 +206,7 @@ function openAnchoredParent(root: string, target: string, opts: { createMissingD
   if (!parts.length) throw new PathTraversalError(`Invalid target: ${target}`)
   const leaf = parts[parts.length - 1] ?? ''
   if (!leaf || leaf === '.' || leaf === '..') throw new PathTraversalError(`Invalid target: ${target}`)
-  let dir = new DirHandle(openRoot(root, rootResolved, target), rootResolved)
+  let dir = openRoot(root, rootResolved, target)
   try {
     for (const part of parts.slice(0, -1)) {
       if (!part || part === '.' || part === '..') throw new PathTraversalError(`Path traversal blocked: ${target}`)
@@ -171,7 +226,7 @@ export function openAnchoredFd(root: string, target: string, opts: { wantDir: bo
   const rootResolved = resolvePathLikePython(root)
   if (relParts(rootResolved, target).length === 0) {
     if (!opts.wantDir) throw new NotFoundError(`Not found: ${target}`)
-    return openRoot(root, rootResolved, target)
+    return openRoot(root, rootResolved, target, { list: true }).fd
   }
   const { dir, leaf } = openAnchoredParent(root, target)
   try {
@@ -366,7 +421,7 @@ export function renameAnchored(root: string, source: string, dest: string): void
       })
       return
     }
-    const to = destParent === rootResolved ? new DirHandle(openSync(rootResolved, constants.O_RDONLY | O_DIRECTORY | O_NOFOLLOW), rootResolved) : (() => { const p = openAnchoredParent(rootResolved, destParent); const h = openChildDir(p.dir, p.leaf); p.dir.close(); return h })()
+    const to = destParent === rootResolved ? openRoot(rootResolved, rootResolved, dest) : (() => { const p = openAnchoredParent(rootResolved, destParent); const h = openChildDir(p.dir, p.leaf); p.dir.close(); return h })()
     try {
       to.anchored(() => { assertAbsent(to.child(leaf), leaf) })
       if (DESCRIPTOR_PATHS) {
@@ -375,14 +430,23 @@ export function renameAnchored(root: string, source: string, dest: string): void
       }
       // Without renameat only one side of a rename can be cwd-anchored, so the entry hops through the root: the
       // root's own pathname has no workspace-controlled component, and the hop name is fresh, so each step names
-      // one anchored side and one path nobody inside the workspace can redirect.
-      const hop = join(rootResolved, `.talaria-move-${randomBytes(8).toString('hex')}`)
-      from.dir.anchored(() => { renameSync(from.dir.child(from.leaf), hop) })
+      // one anchored side and one path nobody inside the workspace can redirect. The root pathname must still name
+      // the root we walked to before each hop step, so a swapped root ancestor fails closed.
+      // ponytail: the identity check narrows the ancestor-swap window to the rename itself; renameat would close it.
+      const rootDir = destParent === rootResolved ? to : openRoot(rootResolved, rootResolved, dest)
       try {
-        to.anchored(() => { assertAbsent(to.child(leaf), leaf); renameSync(hop, to.child(leaf)) })
-      } catch (error) {
-        try { from.dir.anchored(() => { renameSync(hop, from.dir.child(from.leaf)) }) } catch { /* the entry stays at the hop path */ }
-        throw error
+        const hop = join(rootResolved, `.talaria-move-${randomBytes(8).toString('hex')}`)
+        rootDir.assertIdentity()
+        from.dir.anchored(() => { renameSync(from.dir.child(from.leaf), hop) })
+        try {
+          rootDir.assertIdentity()
+          to.anchored(() => { assertAbsent(to.child(leaf), leaf); renameSync(hop, to.child(leaf)) })
+        } catch (error) {
+          try { from.dir.anchored(() => { renameSync(hop, from.dir.child(from.leaf)) }) } catch { /* the entry stays at the hop path */ }
+          throw error
+        }
+      } finally {
+        if (rootDir !== to) rootDir.close()
       }
     } finally {
       to.close()

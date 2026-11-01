@@ -1,6 +1,6 @@
 /** Anchored file helpers: descriptor-relative walks refuse symlinked components at every depth (Python `openat`). */
 import { spawnSync } from 'node:child_process'
-import { chmodSync, closeSync, fstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, closeSync, existsSync, fstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -8,6 +8,8 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 // Lets a test act between the walk's lstat of an entry and its descent into it.
 const afterLstat = vi.hoisted(() => ({ hook: null as ((path: string) => void) | null }))
 const afterChmod = vi.hoisted(() => ({ hook: null as (() => void) | null }))
+// One-shot hook run before the next `openSync`, i.e. immediately before an anchored walk acquires its root.
+const beforeOpen = vi.hoisted(() => ({ hook: null as (() => void) | null }))
 vi.mock('node:fs', async (importOriginal) => {
   const fs = await importOriginal<typeof import('node:fs')>()
   const lstatSync = ((path: string, opts?: unknown) => {
@@ -15,10 +17,16 @@ vi.mock('node:fs', async (importOriginal) => {
     afterLstat.hook?.(path)
     return result
   }) as typeof fs.lstatSync
-  return { ...fs, default: { ...fs, lstatSync }, lstatSync, fchmodSync: (fd: number, mode: number) => { fs.fchmodSync(fd, mode); afterChmod.hook?.() } }
+  const openSync = ((...args: Parameters<typeof fs.openSync>) => {
+    const hook = beforeOpen.hook
+    beforeOpen.hook = null
+    hook?.()
+    return fs.openSync(...args)
+  }) as typeof fs.openSync
+  return { ...fs, default: { ...fs, lstatSync, openSync }, lstatSync, openSync, fchmodSync: (fd: number, mode: number) => { fs.fchmodSync(fd, mode); afterChmod.hook?.() } }
 })
 
-import { dirSignature, FileExistsError, listDir, makeAnchoredDir, NotFoundError, openAnchoredCreateFd, openAnchoredFd, openAnchoredWriteFd, PathTraversalError, renameAnchored, replaceAnchoredFile, rmtreeAnchored, serializeEntriesForBrowser, unlinkAnchored } from './fs.js'
+import { dirSignature, directoryOpenPolicy, FileExistsError, listDir, makeAnchoredDir, NotFoundError, openAnchoredCreateFd, openAnchoredFd, openAnchoredWriteFd, PathTraversalError, renameAnchored, replaceAnchoredFile, rmtreeAnchored, serializeEntriesForBrowser, unlinkAnchored, withAnchoredDir, withPinnedRoot } from './fs.js'
 
 describe('anchored walk', () => {
   let root = ''
@@ -285,6 +293,114 @@ describe('anchored walk', () => {
     // Writes: refused before any truncation.
     expect(() => openAnchoredWriteFd(root, fifo)).toThrow(NotFoundError)
     expect(() => { replaceAnchoredFile(root, fifo, Buffer.from('bad')); }).toThrow(NotFoundError)
+  })
+})
+
+describe('root acquisition', () => {
+  let base = ''
+  beforeAll(() => { base = realpathSync(mkdtempSync(join(tmpdir(), 'anchored-acquire-'))) })
+  afterAll(() => { rmSync(base, { recursive: true, force: true }) })
+  afterEach(() => { beforeOpen.hook = null })
+
+  /** `<case>/anc/ws` is the approved root; `<case>/evil/ws` mirrors it outside, and an ancestor swap points `anc` at `evil`. */
+  function layout(name: string): { dir: string; ws: string; evil: string; swapAncestor: () => void } {
+    const dir = join(base, name)
+    for (const side of ['anc', 'evil']) {
+      mkdirSync(join(dir, side, 'ws', 'sub', 'tree'), { recursive: true })
+      writeFileSync(join(dir, side, 'ws', 'sub', 'f.txt'), side)
+      writeFileSync(join(dir, side, 'ws', 'sub', 'tree', 't.txt'), side)
+    }
+    return {
+      dir, ws: join(dir, 'anc', 'ws'), evil: join(dir, 'evil', 'ws'),
+      swapAncestor: () => { renameSync(join(dir, 'anc'), join(dir, 'anc-held')); symlinkSync(join(dir, 'evil'), join(dir, 'anc')) },
+    }
+  }
+
+  // Every helper below acquires the root through the same walk; none may act on the outside mirror.
+  it.each([
+    ['read', (ws: string) => { closeSync(openAnchoredFd(ws, join(ws, 'sub', 'f.txt'), { wantDir: false })) }],
+    ['read of the root itself', (ws: string) => { closeSync(openAnchoredFd(ws, ws, { wantDir: true })) }],
+    ['list', (ws: string) => { listDir(ws, 'sub') }],
+    ['write', (ws: string) => { closeSync(openAnchoredWriteFd(ws, join(ws, 'sub', 'f.txt'))) }],
+    ['replace', (ws: string) => { replaceAnchoredFile(ws, join(ws, 'sub', 'f.txt'), Buffer.from('replaced')) }],
+    ['create', (ws: string) => { closeSync(openAnchoredCreateFd(ws, join(ws, 'sub', 'new.txt'))) }],
+    ['mkdir', (ws: string) => { makeAnchoredDir(ws, join(ws, 'sub', 'made')) }],
+    ['unlink', (ws: string) => { unlinkAnchored(ws, join(ws, 'sub', 'f.txt')) }],
+    ['rmtree', (ws: string) => { rmtreeAnchored(ws, join(ws, 'sub', 'tree')) }],
+    ['rename into the root', (ws: string) => { renameAnchored(ws, join(ws, 'sub', 'f.txt'), join(ws, 'moved.txt')) }],
+  ])('refuses a %s after an ancestor of the root is swapped for a symlink', (_name, op) => {
+    const { ws, evil, swapAncestor } = layout(`swap-${_name.replaceAll(' ', '-')}`)
+    const cwd = process.cwd()
+    const before = readdirSync(join(evil, 'sub')).sort()
+    let fired = false
+    beforeOpen.hook = () => { fired = true; swapAncestor() }
+    expect(() => { op(ws) }).toThrow(NotFoundError)
+    expect(fired).toBe(true)
+    expect(process.cwd()).toBe(cwd)
+    expect(readdirSync(join(evil, 'sub')).sort()).toEqual(before)
+    expect(readFileSync(join(evil, 'sub', 'f.txt'), 'utf8')).toBe('evil')
+    expect(readdirSync(evil)).toEqual(['sub'])
+  })
+
+  it('refuses a pinned root replaced by another real directory, and reads it while it is still the pinned inode', () => {
+    const { dir, ws } = layout('pinned')
+    const id = statSync(ws)
+    const read = () => { const fd = openAnchoredFd(ws, join(ws, 'sub', 'f.txt'), { wantDir: false }); try { return readFileSync(fd, 'utf8') } finally { closeSync(fd) } }
+    expect(withPinnedRoot(ws, id, read)).toBe('anc')
+    renameSync(ws, join(dir, 'anc', 'ws-held'))
+    renameSync(join(dir, 'evil', 'ws'), ws)
+    expect(() => withPinnedRoot(ws, id, read)).toThrow(NotFoundError)
+    expect(() => withPinnedRoot(ws, id, () => withAnchoredDir(ws, ws, () => 'listed'))).toThrow(NotFoundError)
+  })
+
+  it.runIf(existsSync('/dev/fd'))('closes every descriptor it opened on success, refusal and error', () => {
+    const { ws, swapAncestor } = layout('closure')
+    const open = () => readdirSync('/dev/fd').length
+    const baseline = open()
+    closeSync(openAnchoredFd(ws, join(ws, 'sub', 'f.txt'), { wantDir: false }))
+    listDir(ws, 'sub')
+    expect(() => openAnchoredFd(ws, join(ws, 'sub', 'missing.txt'), { wantDir: false })).toThrow(NotFoundError)
+    beforeOpen.hook = swapAncestor
+    expect(() => openAnchoredFd(ws, join(ws, 'sub', 'f.txt'), { wantDir: false })).toThrow(NotFoundError)
+    expect(open()).toBe(baseline)
+  })
+
+  it('traverses search-only directories above and below the root without listing permission', () => {
+    const dir = join(base, 'search-only')
+    mkdirSync(join(dir, 'locked', 'ws', 'inner', 'more'), { recursive: true })
+    writeFileSync(join(dir, 'locked', 'ws', 'inner', 'more', 'f.txt'), 'reached')
+    const ws = join(dir, 'locked', 'ws')
+    chmodSync(join(dir, 'locked'), 0o111)
+    chmodSync(join(ws, 'inner'), 0o111)
+    try {
+      const fd = openAnchoredFd(ws, join(ws, 'inner', 'more', 'f.txt'), { wantDir: false })
+      try { expect(readFileSync(fd, 'utf8')).toBe('reached') } finally { closeSync(fd) }
+      // Enumeration still needs read permission on the listed directory itself.
+      expect(listDir(ws, 'inner/more').map((e) => e.name)).toEqual(['f.txt'])
+      if (process.getuid?.() !== 0) expect(() => listDir(ws, 'inner')).toThrow()
+    } finally {
+      chmodSync(join(ws, 'inner'), 0o755)
+      chmodSync(join(dir, 'locked'), 0o755)
+    }
+  })
+})
+
+describe('directory open policy', () => {
+  const posix = { O_RDONLY: 0, O_DIRECTORY: 0x10000, O_NOFOLLOW: 0x20000 }
+  it('opens traversal handles search-only where the platform defines it, and read-only elsewhere', () => {
+    expect(directoryOpenPolicy('linux', 'x64', posix)).toEqual({ supported: true, traverse: 0o10000000 | 0x10000 | 0x20000 })
+    expect(directoryOpenPolicy('linux', 'arm64', posix)).toEqual({ supported: true, traverse: 0o10000000 | 0x10000 | 0x20000 })
+    // An architecture whose O_PATH value differs keeps the read-only open rather than guess a bit.
+    expect(directoryOpenPolicy('linux', 'sparc', posix)).toEqual({ supported: true, traverse: 0x10000 | 0x20000 })
+    const darwin = { O_RDONLY: 0, O_DIRECTORY: 0x100000, O_NOFOLLOW: 0x100 }
+    expect(directoryOpenPolicy('darwin', 'arm64', darwin)).toEqual({ supported: true, traverse: 0x40000000 | 0x100000 | 0x100 })
+    expect(directoryOpenPolicy('darwin', 'arm64', { ...darwin, O_SEARCH: 0x40100000 })).toEqual({ supported: true, traverse: 0x40100000 | 0x100 })
+  })
+
+  it('refuses anchoring where no-follow directory opens are unavailable', () => {
+    expect(directoryOpenPolicy('win32', 'x64', { O_RDONLY: 0 }).supported).toBe(false)
+    expect(directoryOpenPolicy('linux', 'x64', { O_RDONLY: 0, O_DIRECTORY: 0x10000 }).supported).toBe(false)
+    expect(directoryOpenPolicy('freebsd', 'x64', { O_RDONLY: 0, O_NOFOLLOW: 0x100 }).supported).toBe(false)
   })
 })
 

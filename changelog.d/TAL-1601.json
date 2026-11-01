@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Public shares and workspace file actions refuse a folder swapped for a link above the workspace, and images inside folders you can enter but not list now appear in shares.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
