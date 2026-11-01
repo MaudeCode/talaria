@@ -19,7 +19,8 @@ SCRIPT = Path(__file__).resolve().parents[2] / "docker_init.bash"
 HOME = "/home/hermeswebui"
 ENOENT = "No such file or directory"
 
-# Each stub appends one JSON line per call to $STUB_LOG, then follows its $STUB_* instructions.
+# Each stub appends one JSON line per call to $STUB_LOG, then follows its $STUB_* instructions. The real tool
+# keeps the bare argv[0] the entrypoint uses, because GNU tools prefix their diagnostics with it.
 STUB = textwrap.dedent("""\
     #!/usr/bin/env python3
     import json, os, shutil, sys
@@ -42,7 +43,7 @@ STUB = textwrap.dedent("""\
         if os.environ.get("STUB_CHOWN_DRY"):
             sys.exit(0)
     if name == "find":
-        code = os.spawnv(os.P_WAIT, real, [real, *args])
+        code = os.spawnv(os.P_WAIT, real, [name, *args])
         extra = os.environ.get("STUB_FIND_STDERR")
         if extra:
             sys.stderr.write(extra + "\\n")
@@ -59,7 +60,7 @@ STUB = textwrap.dedent("""\
     if name == "getent":
         print("hermeswebui:x:1024:1024::" + os.environ["STUB_PASSWD_HOME"] + ":/bin/bash")
         sys.exit(0)
-    os.execv(real, [real, *args])
+    os.execv(real, [name, *args])
 """)
 
 
