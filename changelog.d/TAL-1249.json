@@ -1,0 +1,3 @@
+{
+  "entries": [{"category": "Fixed", "summary": "Opening a session started outside Talaria, such as a CLI conversation, now loads its details and the latest page of messages without reading the whole history first.", "highlight": false, "components": ["web"]}]
+}

@@ -628,6 +628,11 @@ describe('single-session state.db lookups off the event loop (TAL-923)', () => {
   const post = (path: string, body: Json): Promise<Response> => s.get(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
   const subagentStart = (): Promise<Response> => post('/api/chat/start', { session_id: 'sub-a', message: 'hi' })
   const SUBAGENT_REFUSAL = [403, 'session is read-only in its foreign store; cannot be claimed writeable in WebUI']
+  const foreignDetail = async (query: string): Promise<unknown[]> => {
+    const res = await s.get(`/api/session?session_id=cli-d${query}`)
+    const session = ((await res.json()) as { session: Json }).session
+    return [res.status, (session.messages as Json[]).length, session.message_count]
+  }
   beforeAll(async () => {
     s = await bootTestServer()
     dbPath = join(s.state, 'state.db')
@@ -643,10 +648,12 @@ describe('single-session state.db lookups off the event loop (TAL-923)', () => {
       const res = await subagentStart()
       expect([res.status, ((await res.json()) as Json).error]).toEqual(SUBAGENT_REFUSAL)
     })).toEqual([])
-    expect(await opensDuring(s, dbPath, async () => {
-      const res = await s.get('/api/session?session_id=cli-d')
-      expect(((await res.json()) as { session: Json }).session).toMatchObject({ session_id: 'cli-d', title: 'cli-d title', read_only: false })
-    })).toEqual([])
+    for (const query of ['', '&messages=0', '&msg_limit=1']) {
+      expect(await opensDuring(s, dbPath, async () => {
+        const res = await s.get(`/api/session?session_id=cli-d${query}`)
+        expect(((await res.json()) as { session: Json }).session).toMatchObject({ session_id: 'cli-d', title: 'cli-d title', read_only: false, message_count: 2 })
+      }), query).toEqual([])
+    }
     for (const pinned of [true, false]) {
       expect(await opensDuring(s, dbPath, async () => {
         const res = await post('/api/session/pin', { session_id: 'web-p', pinned })
@@ -703,6 +710,9 @@ describe('single-session state.db lookups off the event loop (TAL-923)', () => {
   it.each([
     ['a chat start on a state.db-only subagent session', async () => { const res = await subagentStart(); return [res.status, ((await res.json()) as Json).error] }, SUBAGENT_REFUSAL],
     ['a pin', async () => { const res = await post('/api/session/pin', { session_id: 'web-p', pinned: true }); return [res.status, ((await res.json()) as { session: Json }).session.pinned] }, [200, true]],
+    // TAL-1249: a foreign session opened metadata-only, and a page of it.
+    ['a metadata-only state.db-only detail', async () => foreignDetail('&messages=0'), [200, 0, 2]],
+    ['a page of a state.db-only detail', async () => foreignDetail('&msg_limit=1'), [200, 1, 2]],
   ])('answers /health while a slow state.db holds %s', async (_, request, outcome) => {
     await expectHealthyWhileSlow(s, request, outcome)
   }, 60_000)
