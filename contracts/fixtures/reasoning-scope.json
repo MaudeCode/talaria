@@ -19,5 +19,16 @@
   "refusal": {
     "error": "Reasoning changes are unavailable for this conversation",
     "code": "reasoning_unsupported"
+  },
+  "read": {
+    "session_id": "direct-chat"
+  },
+  "session": {
+    "session_id": "direct-chat",
+    "reasoning_effort": "low"
+  },
+  "inherited": {
+    "session_id": "legacy-chat",
+    "reasoning_effort": null
   }
 }

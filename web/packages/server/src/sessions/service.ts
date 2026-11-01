@@ -1,4 +1,5 @@
 import { reasoningProjection } from './reasoning-display.js'
+import { validReasoningEffort } from '../config/agent-config.js'
 import { AGENT_SESSION_LIST_LIMIT, SESSION_WAIT_MESSAGE_LIMIT, MAX_SOURCE_REFERENCES, SourceReferenceSchema, type SourceReference, type AcceptedSourceReference, unavailableContextDetail, type SessionActivityPhase, type ContextDetail } from '@maudecode/talaria-web-contracts'
 import { filterAsync } from '../util.js'
 import { statSignature } from '../fs/stat.js'
@@ -2203,6 +2204,32 @@ export class SessionService {
     return typeof s.personality === 'string' ? s.personality : null
   }
 
+  /**
+   * TAL-1647: a direct chat's own reasoning effort (`''` is the provider default), never the profile's. The target is
+   * read under the lock, so the write lands on the current record beside concurrent share and draft saves.
+   */
+  async setReasoningEffort(sid: string, effort: string): Promise<Session> {
+    await this.rejectViewOnly(sid, 'modified')
+    return this.withMutationLock(sid, async () => {
+      const s = await this.mutationTarget(sid, 'modified')
+      if (!this.visibleToActiveProfile(s.profile)) throw new HttpFailure(404, 'Session not found')
+      s.reasoning_effort = effort
+      await this.store.save(s)
+      return s
+    })
+  }
+
+  /** TAL-1647: the chat a reasoning read describes, or null for a chat Web keeps no record of; another profile's is not found. */
+  async reasoningSession(sid: string): Promise<Session | null> {
+    let s: Session
+    try { s = await this.store.get((await this.resolveSessionId(sid)), { metadataOnly: true }) } catch (error) {
+      if (error instanceof SessionNotFound) return null
+      throw error
+    }
+    if (!this.visibleToActiveProfile(s.profile)) throw new HttpFailure(404, 'Session not found')
+    return s
+  }
+
   // ── transcript mutations ─────────────────────────────────────────────────
 
   /**
@@ -2769,7 +2796,7 @@ export class SessionService {
         title: `${session.title || 'Untitled'} (copy)`, workspace: session.workspace, model: session.model, model_provider: session.model_provider,
         messages: withMirrorSources(copyJson(session.messages), session), tool_calls: copyJson(session.tool_calls), pinned: false, archived: false, project_id: session.project_id, profile: session.profile,
         input_tokens: session.input_tokens, output_tokens: session.output_tokens, estimated_cost: session.estimated_cost, cache_read_tokens: session.cache_read_tokens, cache_write_tokens: session.cache_write_tokens,
-        personality: session.personality, enabled_toolsets: session.enabled_toolsets, context_length: session.context_length, threshold_tokens: session.threshold_tokens,
+        personality: session.personality, reasoning_effort: session.reasoning_effort, enabled_toolsets: session.enabled_toolsets, context_length: session.context_length, threshold_tokens: session.threshold_tokens,
         ...watermark, context_messages: copyJson(session.context_messages),
         gateway_routing: copyJson(session.gateway_routing), gateway_routing_history: copyJson(session.gateway_routing_history), llm_title_generated: session.llm_title_generated,
         manual_title: session.manual_title, composer_draft: copyJson(session.composer_draft), context_engine: session.context_engine, context_engine_state: copyJson(session.context_engine_state),
@@ -2812,7 +2839,7 @@ export class SessionService {
       {
         owner_person_id: this.store.newSessionOwner(),
         workspace: source.workspace, model: source.model, model_provider: source.model_provider, profile: source.profile, title, messages: withMirrorSources(forked, source), project_id: source.project_id,
-        personality: source.personality, enabled_toolsets: source.enabled_toolsets, context_length: source.context_length, threshold_tokens: source.threshold_tokens,
+        personality: source.personality, reasoning_effort: source.reasoning_effort, enabled_toolsets: source.enabled_toolsets, context_length: source.context_length, threshold_tokens: source.threshold_tokens,
         context_messages: forkedContext, gateway_routing: copyJson(source.gateway_routing), context_engine: source.context_engine, context_engine_state: copyJson(source.context_engine_state),
         parent_session_id: source.session_id, session_source: 'fork',
       },
@@ -2865,7 +2892,7 @@ export class SessionService {
         {
           owner_person_id: this.store.newSessionOwner(),
           title: base.endsWith(' (focused continuation)') ? base : `${base} (focused continuation)`, workspace: source.workspace, model: source.model, model_provider: source.model_provider,
-          project_id: source.project_id, profile: source.profile, session_source: 'fork', personality: source.personality, enabled_toolsets: copyJson(source.enabled_toolsets),
+          project_id: source.project_id, profile: source.profile, session_source: 'fork', personality: source.personality, reasoning_effort: source.reasoning_effort, enabled_toolsets: copyJson(source.enabled_toolsets),
           context_length: source.context_length, threshold_tokens: source.threshold_tokens, gateway_routing: copyJson(source.gateway_routing), gateway_routing_history: copyJson(source.gateway_routing_history),
           parent_session_id: source.session_id, worktree_path: source.worktree_path, worktree_branch: source.worktree_branch, worktree_repo_root: source.worktree_repo_root, worktree_created_at: source.worktree_created_at,
           ...(source.extra[WORKTREE_RETAINED_KEY] === true ? { [WORKTREE_RETAINED_KEY]: true } : {}),
@@ -3070,7 +3097,9 @@ export class SessionService {
     }
     const defaults = (await this.store.deps.defaults(this.deps.activeProfile()))
     const s = new Session(
-      { title: typeof body.title === 'string' ? body.title : 'Imported session', workspace, model: typeof body.model === 'string' ? body.model : defaults.model, messages: messages as Message[], tool_calls: stripPublicInternalFields(rawToolCalls) as Record<string, unknown>[], profile: this.deps.activeProfile(), owner_person_id: this.store.newSessionOwner() },
+      { title: typeof body.title === 'string' ? body.title : 'Imported session', workspace, model: typeof body.model === 'string' ? body.model : defaults.model, messages: messages as Message[], tool_calls: stripPublicInternalFields(rawToolCalls) as Record<string, unknown>[], profile: this.deps.activeProfile(), owner_person_id: this.store.newSessionOwner(),
+        // TAL-1647: an export's own effort comes along; a document without one inherits the profile default.
+        reasoning_effort: typeof body.reasoning_effort === 'string' && validReasoningEffort(body.reasoning_effort) ? body.reasoning_effort : null },
       defaults,
     )
     s.pinned = Boolean(body.pinned)

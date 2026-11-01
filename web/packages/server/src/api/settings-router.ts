@@ -9,6 +9,7 @@ import { HttpError, type ApiContext } from './router.js'
 import { requestSessionIdGuard } from './session-visibility.js'
 import type { RequestContext } from '../http/context.js'
 import { activeProfileName, buildProfileCookie, ensureTrustedAuthSession, sessionCanManageServer } from '../auth/gate.js'
+import type { Session } from '../sessions/session.js'
 import { forwardedClientIp, isLoopback, rawPeerIsTrustedProxy } from '../http/origin.js'
 import { isPrivateLan } from '../http/addresses.js'
 import { HttpFailure } from '../sessions/service.js'
@@ -227,6 +228,11 @@ const auxEfforts = (ctx: RequestContext): AuxEfforts => async (model, provider) 
   }
 }
 const effortsResolver = (ctx: RequestContext) => async (model: string, provider: string): Promise<string[]> => (await auxEfforts(ctx)(model, provider, '')) ?? []
+/** TAL-1647: a chat's reasoning status: its own effort, coerced for the model and provider its turns run on. */
+const chatReasoningStatus = (ctx: RequestContext, config: Dict, chat: Session) => {
+  const [model, provider] = ctx.deps.sessions.turnModel(chat)
+  return reasoningStatus(config, effortsResolver(ctx), { model, provider, effort: chat.reasoning_effort })
+}
 
 const OAUTH_GATE_DENIED = 'Onboarding OAuth is only available from local networks when auth is not enabled. To bypass this on a remote server, set HERMES_WEBUI_ONBOARDING_OPEN=1.'
 
@@ -428,16 +434,14 @@ export const settingsRouter = os.router({
     })),
   },
   reasoning: {
-    get: os.reasoning.get.handler(({ input, context: { ctx } }) => run(async () => reasoningStatus(await ctx.deps.agentConfig.read(home(ctx)), effortsResolver(ctx), { model: input.model ?? null, provider: input.provider ?? null, baseUrl: input.base_url ?? null }))),
+    get: os.reasoning.get.handler(({ input, context: { ctx } }) => run(async () => {
+      const config = await ctx.deps.agentConfig.read(home(ctx))
+      // TAL-1647: a chat answers with its own effort for the model its turns run on; a chat Web keeps no record of reads the profile's.
+      const chat = input.session_id === undefined ? null : await ctx.deps.sessions.reasoningSession(input.session_id)
+      return chat ? chatReasoningStatus(ctx, config, chat) : reasoningStatus(config, effortsResolver(ctx), { model: input.model ?? null, provider: input.provider ?? null, baseUrl: input.base_url ?? null })
+    })),
     set: os.reasoning.set.handler(({ input, context: { ctx } }) => run(async () => {
       const h = home(ctx)
-      if (input.session_id !== undefined && input.effort !== undefined && input.effort !== null) {
-        try { await ctx.deps.sessions.getForMutation(input.session_id) } catch (error) {
-          // Native and other read-only chats must never fall through to the profile default.
-          if (error instanceof HttpFailure && error.status === 403) throw new HttpError(409, 'Reasoning changes are unavailable for this conversation', { code: 'reasoning_unsupported' })
-          throw error
-        }
-      }
       if (input.display !== undefined && input.display !== null) {
         const flag = str(input.display).trim().toLowerCase()
         let show: boolean
@@ -457,6 +461,16 @@ export const settingsRouter = os.router({
       if (input.effort !== undefined && input.effort !== null) {
         const raw = str(input.effort).trim().toLowerCase()
         if (!validReasoningEffort(raw)) throw new HttpError(400, `Unknown reasoning effort '${str(input.effort)}'. Valid: none, minimal, low, medium, high, xhigh, max, ultra.`)
+        if (input.session_id !== undefined) {
+          // TAL-1647: a chat's change is that chat's alone; the profile default stays as it was.
+          let chat: Session
+          try { chat = await ctx.deps.sessions.setReasoningEffort(input.session_id, raw) } catch (error) {
+            // Native and other read-only chats must never fall through to the profile default.
+            if (error instanceof HttpFailure && error.status === 403) throw new HttpError(409, 'Reasoning changes are unavailable for this conversation', { code: 'reasoning_unsupported' })
+            throw error
+          }
+          return chatReasoningStatus(ctx, await ctx.deps.agentConfig.read(h), chat)
+        }
         const config = await ctx.deps.agentConfig.update(h, (c) => {
           const agent = c.agent && typeof c.agent === 'object' && !Array.isArray(c.agent) ? (c.agent as Dict) : {}
           if (raw) agent.reasoning_effort = raw

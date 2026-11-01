@@ -536,8 +536,18 @@ export function showReasoning(config: Config): boolean {
   return boolean(webui) ?? boolean(display.show_reasoning) ?? true
 }
 
-export async function reasoningStatus(config: Config, resolve: EffortsResolver, opts: { model?: string | null; provider?: string | null; baseUrl?: string | null } = {}): Promise<ReasoningStatus> {
-  const agent = dict(config.agent)
+/** TAL-1647: a chat's own effort wins; `null` (a legacy chat, or no chat) inherits the profile's `agent.reasoning_effort`. */
+export function effectiveReasoningEffort(config: Config, chosen: string | null = null): string {
+  return chosen ?? str(dict(config.agent).reasoning_effort)
+}
+
+/** TAL-1647: the profile default a new chat keeps as its own; `''` (none set) is the provider default. */
+export function profileReasoningEffort(config: Config): string {
+  const raw = str(dict(config.agent).reasoning_effort).trim().toLowerCase()
+  return validReasoningEffort(raw) ? raw : ''
+}
+
+export async function reasoningStatus(config: Config, resolve: EffortsResolver, opts: { model?: string | null; provider?: string | null; baseUrl?: string | null; effort?: string | null } = {}): Promise<ReasoningStatus> {
   let model = str(opts.model).trim()
   let provider = str(opts.provider).trim()
   let baseUrl = str(opts.baseUrl).trim()
@@ -550,7 +560,7 @@ export async function reasoningStatus(config: Config, resolve: EffortsResolver, 
   const supported = model ? await resolve(model, provider, baseUrl) : []
   return {
     show_reasoning: showReasoning(config),
-    reasoning_effort: coerceReasoningEffort(str(agent.reasoning_effort), supported, provider),
+    reasoning_effort: coerceReasoningEffort(effectiveReasoningEffort(config, opts.effort ?? null), supported, provider),
     supported_efforts: supported,
     supports_reasoning_effort: supported.length > 0,
     supports_thinking_toggle: supported.length > 0,

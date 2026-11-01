@@ -12,7 +12,8 @@ export const keys = {
   agentImports: ['profile', 'imports'] as const,
   activeProfile: ['profile', 'active'] as const,
   models: ['models'] as const,
-  reasoning: (model: string | null | undefined, provider: string | null | undefined) => ['reasoning', model ?? null, provider ?? null] as const,
+  /** TAL-1647: a chat's own effort; the model fields refetch it when the chat's model changes. */
+  reasoning: (sessionId: string | null | undefined, model: string | null | undefined, provider: string | null | undefined) => ['reasoning', sessionId ?? null, model ?? null, provider ?? null] as const,
   providers: ['providers'] as const,
   providerQuotas: ['providers', 'quotas'] as const,
   providerCostHistory: ['providers', 'cost-history', 'openrouter'] as const,

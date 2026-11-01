@@ -249,7 +249,7 @@ export const chatRouter = os.router({
       const prompt = str(body.prompt).trim()
       if (!prompt) throw new HttpError(400, 'prompt is required')
       const [model, modelProvider] = ctx.deps.sessions.turnModel(parent, {})
-      const bg = (await ctx.deps.sessionStore.newSession({ workspace: parent.workspace, model, modelProvider, profile: parent.profile }))
+      const bg = (await ctx.deps.sessionStore.newSession({ workspace: parent.workspace, model, modelProvider, profile: parent.profile, reasoningEffort: parent.reasoning_effort }))
       bg.title = `bg: ${prompt.slice(0, 60)}`
       await ctx.deps.sessionStore.save(bg)
       // Python: `uuid.uuid4().hex[:8]`; a failed run still completes the task so `/api/background/tasks` reports it,
@@ -326,7 +326,7 @@ export const chatRouter = os.router({
     if (!question) throw new HttpError(400, 'question is required')
     // TAL-518: a side question runs in its own hidden session, so the chat's running turn does not block it.
     const [model, modelProvider] = ctx.deps.sessions.turnModel(s, {})
-    const ephemeral = (await ctx.deps.sessionStore.newSession({ workspace: s.workspace, model, modelProvider, profile: s.profile }))
+    const ephemeral = (await ctx.deps.sessionStore.newSession({ workspace: s.workspace, model, modelProvider, profile: s.profile, reasoningEffort: s.reasoning_effort }))
     const context = await ctx.deps.sessions.sideQuestionContext(s)
     ephemeral.messages = structuredClone(s.messages)
     ephemeral.context_messages = context

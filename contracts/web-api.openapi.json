@@ -7125,6 +7125,17 @@
                             }
                           ]
                         },
+                        "reasoning_effort": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1647: this chat's stored reasoning effort; null inherits the profile default, '' is the provider default. `GET /api/reasoning?session_id=` resolves it for the chat's model."
+                        },
                         "input_tokens": {
                           "type": "number"
                         },
@@ -11437,6 +11448,17 @@
                             }
                           ]
                         },
+                        "reasoning_effort": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1647: this chat's stored reasoning effort; null inherits the profile default, '' is the provider default. `GET /api/reasoning?session_id=` resolves it for the chat's model."
+                        },
                         "input_tokens": {
                           "type": "number"
                         },
@@ -14891,6 +14913,17 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "reasoning_effort": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1647: this chat's stored reasoning effort; null inherits the profile default, '' is the provider default. `GET /api/reasoning?session_id=` resolves it for the chat's model."
                         },
                         "input_tokens": {
                           "type": "number"
@@ -20433,6 +20466,17 @@
                             }
                           ]
                         },
+                        "reasoning_effort": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1647: this chat's stored reasoning effort; null inherits the profile default, '' is the provider default. `GET /api/reasoning?session_id=` resolves it for the chat's model."
+                        },
                         "input_tokens": {
                           "type": "number"
                         },
@@ -25534,6 +25578,17 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "reasoning_effort": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1647: this chat's stored reasoning effort; null inherits the profile default, '' is the provider default. `GET /api/reasoning?session_id=` resolves it for the chat's model."
                         },
                         "input_tokens": {
                           "type": "number"
@@ -31365,6 +31420,17 @@
                             }
                           ]
                         },
+                        "reasoning_effort": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1647: this chat's stored reasoning effort; null inherits the profile default, '' is the provider default. `GET /api/reasoning?session_id=` resolves it for the chat's model."
+                        },
                         "input_tokens": {
                           "type": "number"
                         },
@@ -34768,6 +34834,17 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "reasoning_effort": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1647: this chat's stored reasoning effort; null inherits the profile default, '' is the provider default. `GET /api/reasoning?session_id=` resolves it for the chat's model."
                         },
                         "input_tokens": {
                           "type": "number"
@@ -38235,6 +38312,17 @@
                             }
                           ]
                         },
+                        "reasoning_effort": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1647: this chat's stored reasoning effort; null inherits the profile default, '' is the provider default. `GET /api/reasoning?session_id=` resolves it for the chat's model."
+                        },
                         "input_tokens": {
                           "type": "number"
                         },
@@ -41698,6 +41786,17 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "reasoning_effort": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1647: this chat's stored reasoning effort; null inherits the profile default, '' is the provider default. `GET /api/reasoning?session_id=` resolves it for the chat's model."
                         },
                         "input_tokens": {
                           "type": "number"
@@ -55243,6 +55342,17 @@
                             }
                           ]
                         },
+                        "reasoning_effort": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1647: this chat's stored reasoning effort; null inherits the profile default, '' is the provider default. `GET /api/reasoning?session_id=` resolves it for the chat's model."
+                        },
                         "input_tokens": {
                           "type": "number"
                         },
@@ -58694,6 +58804,17 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "reasoning_effort": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1647: this chat's stored reasoning effort; null inherits the profile default, '' is the provider default. `GET /api/reasoning?session_id=` resolves it for the chat's model."
                         },
                         "input_tokens": {
                           "type": "number"
@@ -62539,6 +62660,17 @@
                             }
                           ]
                         },
+                        "reasoning_effort": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1647: this chat's stored reasoning effort; null inherits the profile default, '' is the provider default. `GET /api/reasoning?session_id=` resolves it for the chat's model."
+                        },
                         "input_tokens": {
                           "type": "number"
                         },
@@ -66224,6 +66356,17 @@
                                   "type": "null"
                                 }
                               ]
+                            },
+                            "reasoning_effort": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "TAL-1647: this chat's stored reasoning effort; null inherits the profile default, '' is the provider default. `GET /api/reasoning?session_id=` resolves it for the chat's model."
                             },
                             "input_tokens": {
                               "type": "number"
@@ -76987,10 +77130,21 @@
     "/api/reasoning": {
       "get": {
         "operationId": "reasoning.get",
+        "summary": "TAL-1647: with session_id, that chat's own effort coerced for its turn model and provider (model/provider/base_url are ignored); another profile's chat is 404, and a chat Web keeps no record of reads the profile default. Without it, the profile default.",
         "tags": [
           "settings"
         ],
         "parameters": [
+          {
+            "name": "session_id",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
           {
             "name": "model",
             "in": "query",
@@ -77065,7 +77219,7 @@
       },
       "post": {
         "operationId": "reasoning.set",
-        "summary": "Body is `{display: show|hide}` or `{effort, session_id?, model?, provider?, base_url?}`. Chat effort changes carry session_id; read-only/native targets return 409 reasoning_unsupported without changing profile defaults. Omit session_id only for explicit profile settings.",
+        "summary": "Body is `{display: show|hide}` or `{effort, session_id?, model?, provider?, base_url?}`. TAL-1647: an effort with session_id is that chat's alone (`''` is the provider default) and answers its status as GET does; the profile default is unchanged. Read-only/native targets return 409 reasoning_unsupported and missing ones 404, without writes. Omit session_id only for explicit profile settings.",
         "tags": [
           "settings"
         ],

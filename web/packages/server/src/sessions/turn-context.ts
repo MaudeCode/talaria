@@ -5,7 +5,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { coerceReasoningEffort, dict, isDict, type Config } from '../config/agent-config.js'
+import { coerceReasoningEffort, dict, effectiveReasoningEffort, isDict, type Config } from '../config/agent-config.js'
 import { BACKGROUND_TURN_PROMPT } from './background-updates.js'
 import { VALID_REASONING_EFFORTS } from '../providers/tables.js'
 import { str } from '../util.js'
@@ -51,17 +51,17 @@ export function maxTokensFromConfig(config: Config): number | null {
   return positiveInt(config.max_tokens ?? dict(config.agent).max_tokens)
 }
 
-/** Python `parse_reasoning_effort` of the coerced `agent.reasoning_effort`. */
-export function reasoningConfigFromConfig(config: Config, provider: string | null, supported: string[] = []): { enabled: boolean; effort?: string } | null {
-  const effort = coerceReasoningEffort(str(dict(config.agent).reasoning_effort), supported, provider ?? '')
+/** Python `parse_reasoning_effort` of the coerced chat effort, else `agent.reasoning_effort` (TAL-1647). */
+export function reasoningConfigFromConfig(config: Config, provider: string | null, supported: string[] = [], chosen: string | null = null): { enabled: boolean; effort?: string } | null {
+  const effort = coerceReasoningEffort(effectiveReasoningEffort(config, chosen), supported, provider ?? '')
   if (!effort) return null
   if (effort === 'none') return { enabled: false }
   return (VALID_REASONING_EFFORTS as readonly string[]).includes(effort) ? { enabled: true, effort } : null
 }
 
 /** The config-decided `AIAgent` budgets a turn builds its agent with; `/refine` builds the same agent (TAL-902). */
-export function agentBuildParams(config: Config, source: string, provider: string | null, env: Record<string, string | undefined>): { max_iterations: number | null; max_tokens: number | null; reasoning_config: { enabled: boolean; effort?: string } | null } {
-  return { max_iterations: processWakeupMaxIterations(maxIterationsFromConfig(config), source, env), max_tokens: maxTokensFromConfig(config), reasoning_config: reasoningConfigFromConfig(config, provider) }
+export function agentBuildParams(config: Config, source: string, provider: string | null, env: Record<string, string | undefined>, reasoningEffort: string | null = null): { max_iterations: number | null; max_tokens: number | null; reasoning_config: { enabled: boolean; effort?: string } | null } {
+  return { max_iterations: processWakeupMaxIterations(maxIterationsFromConfig(config), source, env), max_tokens: maxTokensFromConfig(config), reasoning_config: reasoningConfigFromConfig(config, provider, [], reasoningEffort) }
 }
 
 /** A context value on one line: one with a line break or other control character is JSON-quoted, so it cannot add prompt lines. */

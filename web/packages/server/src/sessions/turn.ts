@@ -824,7 +824,7 @@ export class TurnRunner {
       const turnContext = {
         system_message: workspaceSystemMessage(str(s.created_workspace) || str(s.workspace)),
         ephemeral_system_prompt: webuiEphemeralSystemPrompt({ config: cfg, personalityPrompt: findPersonality(personalities, personality)?.prompt ?? null, sessionId, profile: s.profile ?? null, workspace: opts.workspace, hermesHome: deps.profileHome(s.profile), homeDisplay: deps.homeDisplay?.() ?? '~/.hermes', background: turnOrigin(opts.source) === 'background' }),
-        ...agentBuildParams(cfg, opts.source ?? 'webui', opts.modelProvider ?? s.model_provider ?? null, deps.env ?? {}),
+        ...agentBuildParams(cfg, opts.source ?? 'webui', opts.modelProvider ?? s.model_provider ?? null, deps.env ?? {}, s.reasoning_effort),
       }
       // Python `_public_prefill_context_status`: the session-recall prefill hook was dropped with TAL-245, so the
       // context frame always reports the not-configured shape.
@@ -1750,7 +1750,7 @@ export class TurnRunner {
     await this.deps.service().assertWritable(s)
     return (await sidecar.call('chat.refine', {
       profile_home: this.deps.profileHome(s.profile), session_id: s.session_id, messages, focus, model: model ?? '', model_provider: provider,
-      enabled_toolsets: this.deps.toolsetsFor(s), ...agentBuildParams(cfg, 'webui', provider, this.deps.env ?? {}),
+      enabled_toolsets: this.deps.toolsetsFor(s), ...agentBuildParams(cfg, 'webui', provider, this.deps.env ?? {}, s.reasoning_effort),
       ...this.agentWorkspace(s, (await this.deps.service().turnWorkspace(s))),
     }, { timeoutMs: 120_000 })).output
   }
