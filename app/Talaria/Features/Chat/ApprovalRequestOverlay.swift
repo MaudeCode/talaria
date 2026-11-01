@@ -168,23 +168,30 @@ struct ApprovalRequestOverlay: View {
 
     private var actions: some View {
         VStack(spacing: 8) {
-            // The approval's owner may accept fewer choices (TAL-1043); only those are offered.
-            HStack(spacing: 8) {
-                if prompt.pending.allows(.once) {
-                    approvalButton("Allow once", systemImage: "checkmark.circle.fill", choice: .once, prominent: true)
+            // The approval's owner may accept fewer choices (TAL-1043); only those are offered, and none may be (TAL-1414).
+            if ApprovalChoice.allCases.contains(where: prompt.pending.allows) {
+                HStack(spacing: 8) {
+                    if prompt.pending.allows(.once) {
+                        approvalButton("Allow once", systemImage: "checkmark.circle.fill", choice: .once, prominent: true)
+                    }
+                    if prompt.pending.allows(.session) {
+                        approvalButton("Allow session", systemImage: "lock.open", choice: .session, prominent: false)
+                    }
                 }
-                if prompt.pending.allows(.session) {
-                    approvalButton("Allow session", systemImage: "lock.open", choice: .session, prominent: false)
-                }
-            }
 
-            HStack(spacing: 8) {
-                if prompt.pending.allows(.always) {
-                    approvalButton("Always allow", systemImage: "star.fill", choice: .always, prominent: false)
+                HStack(spacing: 8) {
+                    if prompt.pending.allows(.always) {
+                        approvalButton("Always allow", systemImage: "star.fill", choice: .always, prominent: false)
+                    }
+                    if prompt.pending.allows(.deny) {
+                        approvalButton("Deny", systemImage: "xmark.circle.fill", choice: .deny, prominent: false, role: .destructive)
+                    }
                 }
-                if prompt.pending.allows(.deny) {
-                    approvalButton("Deny", systemImage: "xmark.circle.fill", choice: .deny, prominent: false, role: .destructive)
-                }
+            } else {
+                Text("This approval can't be answered here.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             if prompt.pending.allowsApprovalBypass {

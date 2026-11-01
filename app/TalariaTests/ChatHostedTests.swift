@@ -1937,10 +1937,20 @@ final class ApprovalOverlayLayoutTests: XCTestCase {
         XCTAssertFalse(frame.intersects(fold))
     }
 
+    func testAnApprovalOfferingNoChoiceSaysSoAndOffersNoAnswer() throws {
+        let window = try hostApproval(size: HostedSize.phone, divisions: [], allowedChoices: [], canEnableYolo: false)
+        attachHostedScreenshot(window, name: "approval-no-choices")
+        XCTAssertNotNil(HostedAccessibility.element(in: window, label: "This approval can't be answered here."))
+        for title in ["Allow once", "Allow session", "Always allow", "Deny", "Skip all this session"] {
+            XCTAssertNil(HostedAccessibility.element(in: window, label: title), title)
+        }
+    }
+
     private func hostApproval(size: CGSize, divisions: [CGRect],
-                              description: String = "Run the fixture command?") throws -> UIWindow {
+                              description: String = "Run the fixture command?",
+                              allowedChoices: [ApprovalChoice]? = nil, canEnableYolo: Bool? = nil) throws -> UIWindow {
         let pending = PendingApproval(approvalId: "synthetic-fold-approval", command: "echo fixture",
-                                      description: description)
+                                      description: description, allowedChoices: allowedChoices, canEnableYolo: canEnableYolo)
         return try hostWindow(ApprovalRequestOverlay(
             prompt: ApprovalPromptState(sessionID: "synthetic-fold-session", pending: pending, pendingCount: 1),
             isResponding: false, errorMessage: nil, onChoice: { _ in }, onSkipAll: {},

@@ -377,6 +377,30 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(viewModel.streamWarningMessage, "Live history was truncated. The final answer will refresh from the owning Agent.")
     }
 
+    /// TAL-1414: a present but malformed choice list offers nothing, over the chat stream and the pending API alike; only an
+    /// absent field (an older server) allows all four, and a valid list keeps exactly the choices Talaria can send.
+    func testMalformedApprovalChoicesOfferNoAnswerOverTheStreamAndTheAPI() async throws {
+        let stream = SpySSEStreamingClient()
+        let normal = try Self.ownerAttachmentJSON("normal")
+        let viewModel = try ownerViewModel(OwnerRequestLog(), streamClient: stream, session: { Self.ownerSessionObject(attachment: normal, activeStreamID: "owner-stream") })
+        await viewModel.loadMessages()
+        await viewModel.reconnectStreamIfNeeded()
+
+        let shapes: [(choices: String, offered: [ApprovalChoice])] = [
+            ("null", []), (#"{"once":true}"#, []), (#""once""#, []), (#"["once",3]"#, []), ("[]", []),
+            (#"["once","view","deny"]"#, [.once, .deny]),
+        ]
+        for (index, shape) in shapes.enumerated() {
+            let frame = #"{"approval_id":"prompt-\#(index)","command":"rm -rf build","allowed_choices":\#(shape.choices),"pending_count":1}"#
+            stream.emit(SSEEventDecoder.decode(eventType: "approval", data: frame))
+            let streamed = try XCTUnwrap(viewModel.approvalPrompt?.pending, shape.choices)
+            XCTAssertEqual(streamed.approvalId, "prompt-\(index)", shape.choices)
+            XCTAssertEqual(ApprovalChoice.allCases.filter(streamed.allows), shape.offered, "stream \(shape.choices)")
+            let fetched = try XCTUnwrap(JSONDecoder().decode(ApprovalPendingResponse.self, from: Data(#"{"pending":\#(frame),"pending_count":1}"#.utf8)).pending)
+            XCTAssertEqual(ApprovalChoice.allCases.filter(fetched.allows), shape.offered, "API \(shape.choices)")
+        }
+    }
+
     /// The approval stream opens with a snapshot of the server's local queue, which an owner's prompts never enter; that
     /// empty snapshot must not hide the owner approval the chat stream already showed. Later updates still apply.
     func testTheApprovalStreamsEmptySnapshotKeepsAnOwnerApprovalTheChatStreamShowed() async throws {

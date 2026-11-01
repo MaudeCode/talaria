@@ -248,6 +248,7 @@
 	"approval_btn_always_title": "Always allow this command pattern",
 	"approval_btn_deny": "Deny",
 	"approval_btn_deny_title": "Deny — do not run this command",
+	"approval_unavailable": "This approval can't be answered here.",
 	"approval_responding": "Responding…",
 	"approval_gateway_unsupported": "Approvals require a newer gateway. Upgrade the connected Hermes gateway to enable this.",
 	"approval_gateway_unsupported_label": "Approvals not supported",

@@ -523,7 +523,9 @@ export const SteerRequestSchema = z.looseObject({ session_id: SessionIdSchema, t
 export const SteerResponseSchema = z.looseObject({ accepted: z.boolean(), fallback: NullableString.optional(), stream_id: NullableString.optional(), steer_id: z.string().optional(), started_turn: ChatStartResponseSchema.optional() })
 
 export const ApprovalPendingSchema = z.looseObject({
-  allowed_choices: z.array(z.enum(['once', 'session', 'always', 'deny'])).optional(), can_enable_yolo: z.boolean().optional(),
+  allowed_choices: z.array(z.enum(['once', 'session', 'always', 'deny'])).optional()
+    .describe('The answers this approval accepts; empty when its owner offered none Talaria can send. Absent (older servers, direct sessions) accepts all four.'),
+  can_enable_yolo: z.boolean().optional(),
   approval_id: z.string().optional(), session_id: z.string().optional(), command: z.string().optional(), description: z.string().optional(), title: z.string().optional(), name: z.string().optional(), kind: z.string().optional(),
   reason: z.string().optional(), action: z.string().optional(), question: z.string().optional(), status: z.string().optional(), pending_count: z.number().optional(), run_id: z.string().optional(), mirror_token: z.string().optional(),
 })

@@ -21,6 +21,25 @@ describe('ApprovalCard', () => {
     expect(screen.getByRole('button', { name: /deny/i })).toBeEnabled()
     expect(screen.queryByRole('button', { name: /more/i })).not.toBeInTheDocument()
   })
+  it('offers no answer when the server publishes none, and Enter does not allow it (TAL-1414)', async () => {
+    render(<ApprovalCard sessionId="native" pending={{ approval_id: 'none-offered', command: 'echo fixture', allowed_choices: [], can_enable_yolo: false }} onResolved={() => undefined} />)
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument()
+    for (const name of [/allow once/i, /^deny$/i, /more/i]) expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
+    expect(screen.getByText("This approval can't be answered here.")).toBeInTheDocument()
+    vi.mocked(api.respondApproval).mockClear()
+    await userEvent.keyboard('{Enter}')
+    expect(api.respondApproval).not.toHaveBeenCalled()
+  })
+
+  it('offers Deny alone when that is the only published choice (TAL-1414)', async () => {
+    render(<ApprovalCard sessionId="native" pending={{ approval_id: 'deny-only', command: 'echo fixture', allowed_choices: ['deny'], can_enable_yolo: false }} onResolved={() => undefined} />)
+    expect(screen.queryByRole('button', { name: /allow once/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^deny$/i })).toBeEnabled()
+    vi.mocked(api.respondApproval).mockClear()
+    await userEvent.keyboard('{Enter}')
+    expect(api.respondApproval).not.toHaveBeenCalled()
+  })
+
   it('renders the command with alertdialog semantics and answers "allow once"', async () => {
     const onResolved = vi.fn()
     render(<ApprovalCard sessionId="s1" pending={{ approval_id: 'a1', command: 'rm -rf build', pending_count: 2 }} onResolved={onResolved} />)

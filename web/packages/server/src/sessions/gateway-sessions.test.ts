@@ -1403,6 +1403,40 @@ describe('canonical owner attachment', () => {
     expect((await post('/api/approval/respond', { session_id: sid, approval_id: 'expired-native', choice: 'once' })).status).toBe(409)
   })
 
+  it.each([
+    ['null', null, []], ['an object', { once: true }, []], ['a scalar', 'once', []], ['a mixed array', ['once', 3], []],
+    ['missing', undefined, []], ['partly unknown', ['once', 'view', 'deny'], ['once', 'deny']],
+  ] as const)('publishes only the approval choices the owner names when they are %s, over HTTP and the chat stream (TAL-1414)', async (_, choices, allowed) => {
+    const prompts = [{ kind: 'approval', prompt_id: 'approval-native', execution_generation: 1, command: 'echo fixture', ...(choices === undefined ? {} : { choices }) }]
+    const snap = snapshot({ running: true, pending: [admission()], prompts })
+    sidecar.respond('gateway.session', (params, send, opts) => {
+      if (params.action !== 'watch') return attached(snap)
+      send({ event: 'snapshot', data: attached(snap) })
+      return new Promise((resolve) => { opts.signal!.addEventListener('abort', () => { resolve(attached(snap)) }, { once: true }) })
+    })
+    const res = await s.get(`/api/approval/pending?session_id=${sid}`)
+    expect(res.status).toBe(200)
+    expect((await res.json() as { pending: unknown }).pending).toMatchObject({ approval_id: 'approval-native', allowed_choices: allowed, can_enable_yolo: false })
+    const row = SessionEnvelopeSchema.parse(await (await s.get(`/api/session?session_id=${sid}`)).json())
+    const frames = await s.sse(`/api/chat/stream?stream_id=${row.session.active_stream_id!}`, (frame) => frame.event === 'approval')
+    expect(frames.at(-1)?.data).toMatchObject({ approval_id: 'approval-native', allowed_choices: allowed, can_enable_yolo: false })
+  })
+
+  it('refuses an approval choice its owner did not offer without sending it (TAL-1414)', async () => {
+    const prompts = [
+      { kind: 'approval', prompt_id: 'offered', execution_generation: 1, command: 'echo fixture', choices: ['once', 'deny'] },
+      { kind: 'approval', prompt_id: 'malformed', execution_generation: 1, command: 'echo fixture', choices: null },
+    ]
+    sidecar.respond('gateway.session', () => attached(snapshot({ prompts })))
+    expect((await post('/api/approval/respond', { session_id: sid, approval_id: 'offered', choice: 'always' })).status).toBe(409)
+    expect((await post('/api/approval/respond', { session_id: sid, approval_id: 'malformed', choice: 'once' })).status).toBe(409)
+    expect((await post('/api/approval/respond', { session_id: sid, approval_id: 'malformed', choice: 'deny' })).status).toBe(409)
+    expect(sidecar.calls.filter((c) => (c.params as { action?: string }).action === 'approval')).toEqual([])
+    expect((await post('/api/approval/respond', { session_id: sid, approval_id: 'offered', choice: 'deny' })).status).toBe(200)
+    expect(sidecar.calls.filter((c) => (c.params as { action?: string }).action === 'approval').map((c) => c.params))
+      .toEqual([expect.objectContaining({ prompt_id: 'offered', choice: 'deny' })])
+  })
+
   it('projects an owner clarify batch as one card and locks each answer, keeping the owner-reported progress', async () => {
     const snap = snapshot({ running: true, pending: [admission()] })
     const questions = [{ qid: 'q0', question: 'Pick a color', choices: ['blue (Recommended)', 'green'], multi_select: false },

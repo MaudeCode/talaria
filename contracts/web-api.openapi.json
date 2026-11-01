@@ -65785,7 +65785,8 @@
                                   "deny"
                                 ],
                                 "type": "string"
-                              }
+                              },
+                              "description": "The answers this approval accepts; empty when its owner offered none Talaria can send. Absent (older servers, direct sessions) accepts all four."
                             },
                             "can_enable_yolo": {
                               "type": "boolean"
