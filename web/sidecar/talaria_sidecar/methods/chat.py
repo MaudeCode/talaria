@@ -636,15 +636,23 @@ def _post_compression_context(agent: Any, messages: list, system_message: Any) -
     ``_prune_context_tool_results_after_compression`` / ``_estimate_post_compression_context_tokens``)."""
     compressor = getattr(agent, "context_compressor", None)
     context = messages
-    prune = getattr(compressor, "_prune_old_tool_results", None)
-    if callable(prune):
-        try:
-            pruned, count = prune(copy.deepcopy(messages), protect_tail_count=getattr(compressor, "protect_last_n", 20), protect_tail_tokens=getattr(compressor, "tail_token_budget", None))
-            if count and isinstance(pruned, list) and len(pruned) == len(messages):
-                context = pruned
-        except Exception:  # noqa: BLE001 - the hard cap below still bounds the context
-            log.debug("post-compression tool-result pruning failed", exc_info=True)
-    context = _cap_tool_results(context, compressor, messages)
+    try:
+        from agent.context_compressor import ContextCompressor
+    except ImportError:
+        ContextCompressor = None
+    # TAL-1558: an external context engine owns its tool bodies (reference markers, cache-stable prefix), so only the
+    # active native compressor (or none) gets pruned and capped. The active object decides: a configured engine that
+    # failed to load leaves the native one in place.
+    if compressor is None or ContextCompressor is None or isinstance(compressor, ContextCompressor):
+        prune = getattr(compressor, "_prune_old_tool_results", None)
+        if callable(prune):
+            try:
+                pruned, count = prune(copy.deepcopy(messages), protect_tail_count=getattr(compressor, "protect_last_n", 20), protect_tail_tokens=getattr(compressor, "tail_token_budget", None))
+                if count and isinstance(pruned, list) and len(pruned) == len(messages):
+                    context = pruned
+            except Exception:  # noqa: BLE001 - the hard cap below still bounds the context
+                log.debug("post-compression tool-result pruning failed", exc_info=True)
+        context = _cap_tool_results(context, compressor, messages)
     estimate = None
     try:
         from agent.model_metadata import estimate_request_tokens_rough

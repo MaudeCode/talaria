@@ -15,9 +15,11 @@ from conftest import AGENT_DIR, AGENT_PYTHON, isolated_env, requires_agent
 PROBE = """
 import json, os, sys
 from pathlib import Path
+from types import SimpleNamespace
 sys.path.append(sys.argv[1])
 from agent.context_compressor import ContextCompressor
-from agent.model_metadata import estimate_tokens_rough
+from agent.context_engine import ContextEngine
+from agent.model_metadata import estimate_tokens_rough, estimate_request_tokens_rough
 from talaria_sidecar.home import scoped_home
 from talaria_sidecar.methods import chat
 
@@ -28,9 +30,36 @@ class NoPrune(ContextCompressor):
     def _prune_old_tool_results(self, messages, protect_tail_count, protect_tail_tokens=None, **kwargs):
         return messages, 0
 
+# TAL-1558: a plugin engine owns its tool bodies (reference markers, cache-stable prefix). It happens to expose the
+# native private pruning hook and budget attributes; neither may be applied to it.
+REF_RAW = "\u27e6lcm-ref:blob-7f3a\u27e7 " + RAW
+PRUNE_CALLS = []
+
+class ExternalEngine(ContextEngine):
+    name = "stand-in-lcm"
+    tail_token_budget = 512
+    threshold_tokens = 1024
+    protect_last_n = 1
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def update_from_response(self, usage):
+        pass
+
+    def should_compress(self, prompt_tokens=None):
+        return False
+
+    def compress(self, messages, current_tokens=None, **kwargs):
+        return messages
+
+    def _prune_old_tool_results(self, messages, *args, **kwargs):
+        PRUNE_CALLS.append(len(messages))
+        return [{**m, "content": "pruned"} if m.get("role") == "tool" else m for m in messages], 1
+
 def agent_class(compressor, compress, raw=RAW):
     class FakeAgent:
-        tools = [{"type": "function", "function": {"name": "read_file", "parameters": {}}}]
+        tools = FakeTools
 
         def __init__(self, **kwargs):
             self.context_compressor = compressor
@@ -50,6 +79,8 @@ def agent_class(compressor, compress, raw=RAW):
             }
     return lambda: FakeAgent
 
+FakeTools = [{"type": "function", "function": {"name": "read_file", "parameters": {}}}]
+
 class Ctx:
     cancelled = False
 
@@ -65,8 +96,12 @@ cases = [
     ("dense", NoPrune, True, DENSE, ""),
     ("ephemeral", ContextCompressor, True, RAW, "Personality. " * 8000),
     ("uncompressed", ContextCompressor, False, RAW, ""),
+    ("external", ExternalEngine, True, REF_RAW, "Personality. " * 8000),
 ]
 for i, (name, cls, compress, raw, ephemeral) in enumerate(cases):
+    # The active engine object decides, never its configured name: each case's config names the other kind of engine
+    # (a native compressor here stands for an unavailable configured engine's fallback).
+    (home / "config.yaml").write_text("context:\\n  engine: %s\\n" % ("compressor" if cls is ExternalEngine else "stand-in-lcm"))
     compressor = cls("m", config_context_length=100000, quiet_mode=True, provider="p")
     chat._agent_class = agent_class(compressor, compress, raw)
     params = {"profile_home": str(home), "session_id": f"s{i}", "stream_id": f"st{i}", "user_message": "read it", "model": "m", "model_provider": "p", "enabled_toolsets": ["memory"], "system_message": "You are helpful.", "ephemeral_system_prompt": ephemeral}
@@ -80,7 +115,14 @@ for i, (name, cls, compress, raw, ephemeral) in enumerate(cases):
         "context_roles": [m["role"] for m in context] if context else None,
         "estimate": result.get("post_compression_context_tokens_estimate"),
         "marker": "[Talaria context budget:" in (context[3]["content"] if context else ""),
+        "identical": context == result["messages"] if context else None,
+        "estimate_of_context": estimate_request_tokens_rough(context, system_prompt="You are helpful.\\n\\n" + ephemeral if ephemeral else "You are helpful.", tools=FakeTools) if context else None,
     }
+out["prune_calls"] = PRUNE_CALLS
+# An Agent without a compressor (missing or None) keeps the hard cap.
+for name, agent in (("missing", SimpleNamespace()), ("none", SimpleNamespace(context_compressor=None))):
+    context, _ = chat._post_compression_context(agent, result["messages"], "You are helpful.")
+    out[name] = "[Talaria context budget:" in context[3]["content"]
 print(json.dumps(out))
 """
 
@@ -112,7 +154,19 @@ def test_an_auto_compressed_turn_returns_pruned_context_and_its_estimate(tmp_pat
     # The next request also carries the ephemeral system prompt, so the estimate counts it (~26k rough tokens here).
     assert out["ephemeral"]["estimate"] > agent_prune["estimate"] + 20000
     # Without a compression the turn reports neither.
-    assert out["uncompressed"] == {"display_raw": True, "within_budget": None, "context_len": None, "context_roles": None, "estimate": None, "marker": False}
+    assert out["uncompressed"] == {"display_raw": True, "within_budget": None, "context_len": None, "context_roles": None, "estimate": None, "marker": False, "identical": None, "estimate_of_context": None}
+    # TAL-1558: an external context engine's tool bodies and reference markers reach the next request byte for byte:
+    # no native private pruning and no Talaria cap, even with a config naming the native engine.
+    external = out["external"]
+    assert external["display_raw"] and external["context_roles"] == roles
+    assert external["identical"] and not external["marker"], external
+    assert external["context_len"] == raw_len + len("\u27e6lcm-ref:blob-7f3a\u27e7 ")
+    assert out["prune_calls"] == []
+    assert out["missing"] and out["none"]
+    # Its estimate describes that unpruned context plus the ephemeral prompt.
+    assert external["estimate"] == external["estimate_of_context"] > 100000
+    for name in ("agent_prune", "hard_cap", "ephemeral"):
+        assert out[name]["estimate"] == out[name]["estimate_of_context"], name
 
 
 # TAL-891: tool payloads put ``exit_code`` / ``error`` / ``success`` after ``output``, so the cap cut the outcome away

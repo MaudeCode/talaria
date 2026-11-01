@@ -287,6 +287,9 @@ Standalone helper callers still load their own config.
 After automatic compression, `chat.start` returns capped model context separately from the full visible
 transcript. The cap preserves paired skill loads' reload markers and failure verdicts even after the raw-output
 budget is exhausted. Skill bodies still spend that budget; inline slash-skill user messages remain intact.
+Only the Agent's native `ContextCompressor` (including subclasses), or no engine, gets this pruning and cap; the
+active engine object decides, not its configured name. An external context engine's tool bodies and reference markers
+pass through unchanged, and the request estimate describes the context actually returned.
 
 Canonical Agent sessions have one additional observation path: `gateway.session` in the existing
 sidecar gateway namespace discovers an already running owner, obtains a profile-bound one-use ticket,
