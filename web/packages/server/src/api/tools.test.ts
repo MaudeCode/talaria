@@ -11,6 +11,7 @@ import type { SessionInfo } from '../auth/store.js'
 import { gatewayStatus } from '../tools/health.js'
 import type { GatewayMode } from '@maudecode/talaria-web-contracts'
 import { buildInsights } from '../tools/insights.js'
+import { insightsSessionRows } from '../sessions/state-db.js'
 import { homeDotenvKeys, setHomeDotenvKeys } from '../cli/dotenv.js'
 import { serverSummary, maskSecrets } from '../tools/mcp.js'
 import { readProjectContext } from '../tools/memory.js'
@@ -1021,6 +1022,52 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     }
   })
 
+  // TAL-1115: the window starts at local midnight `days - 1` calendar days back and lists each calendar day once, even
+  // when a DST change makes a day 23 or 25 hours long. `rows` are activity times; `in` lists the window's days with
+  // the sessions each one holds, and a row on no listed day sits outside the window.
+  it.each([
+    { tz: 'America/New_York', now: '2026-03-09T14:00:00-04:00', days: 3, rows: ['2026-03-06T23:59:59-05:00', '2026-03-07T00:00:00-05:00', '2026-03-08T12:00:00-04:00', '2026-03-09T10:00:00-04:00'], in: { '2026-03-07': 1, '2026-03-08': 1, '2026-03-09': 1 } },
+    { tz: 'America/New_York', now: '2026-03-08T12:00:00-04:00', days: 1, rows: ['2026-03-07T23:59:59-05:00', '2026-03-08T00:00:00-05:00', '2026-03-08T03:00:00-04:00'], in: { '2026-03-08': 2 } },
+    { tz: 'America/New_York', now: '2026-11-02T14:00:00-05:00', days: 3, rows: ['2026-10-30T23:59:59-04:00', '2026-10-31T00:00:00-04:00', '2026-10-31T00:30:00-04:00', '2026-11-01T01:30:00-05:00', '2026-11-02T09:00:00-05:00'], in: { '2026-10-31': 2, '2026-11-01': 1, '2026-11-02': 1 } },
+    { tz: 'America/New_York', now: '2026-03-20T12:00:00-04:00', days: 30, rows: ['2026-02-18T23:59:59-05:00', '2026-02-19T00:00:00-05:00', '2026-03-08T23:30:00-04:00', '2026-03-20T08:00:00-04:00'], in: { '2026-02-19': 1, '2026-03-08': 1, '2026-03-20': 1 } },
+    { tz: 'UTC', now: '2026-03-09T14:00:00Z', days: 3, rows: ['2026-03-06T23:59:59Z', '2026-03-07T00:00:00Z', '2026-03-08T12:00:00Z', '2026-03-09T10:00:00Z'], in: { '2026-03-07': 1, '2026-03-08': 1, '2026-03-09': 1 } },
+    { tz: 'Asia/Kolkata', now: '2026-03-09T14:00:00+05:30', days: 3, rows: ['2026-03-06T23:59:59+05:30', '2026-03-07T00:00:00+05:30', '2026-03-08T12:00:00+05:30', '2026-03-09T10:00:00+05:30'], in: { '2026-03-07': 1, '2026-03-08': 1, '2026-03-09': 1 } },
+  ])('insights list each calendar day of a $days-day window in $tz at $now (TAL-1115)', async ({ tz, now: nowIso, days, rows, in: expected }) => {
+    const previousTz = process.env.TZ
+    process.env.TZ = tz
+    const now = Date.parse(nowIso) / 1000
+    const at = rows.map((iso) => Date.parse(iso) / 1000)
+    // Rows alternate between the session index and state.db; the first is in both, counted once with the state.db usage.
+    const entries: Json[] = at.flatMap((ts, i) => (i % 2 === 0 ? [{ session_id: `s${String(i)}`, created_at: ts, updated_at: ts, input_tokens: i === 0 ? 0 : 10, output_tokens: i === 0 ? 0 : 5, message_count: 1, model: 'm' }] : []))
+    const dbPath = join(s.deps.profileHome('default'), 'state.db')
+    const db = openStateDb(dbPath)
+    db.exec('CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT, model TEXT, message_count INTEGER, input_tokens INTEGER, output_tokens INTEGER, started_at REAL, ended_at REAL)')
+    const insert = db.prepare('INSERT INTO sessions VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    at.forEach((ts, i) => { if (i % 2 === 1 || i === 0) insert.run(`s${String(i)}`, 'cli', 'm', 1, 10, 5, ts, null) })
+    db.close()
+    const index = vi.spyOn(s.deps.sessionStore, 'readIndexEntries').mockResolvedValue(entries)
+    const clock = vi.spyOn(s.deps, 'nowSeconds').mockReturnValue(now)
+    try {
+      const direct = await buildInsights(entries, String(days), now, (cutoff) => insightsSessionRows(dbPath, cutoff))
+      const body = await json(await s.get(`/api/insights?days=${String(days)}`))
+      expect(body).toEqual(direct)
+      const series = body.daily_tokens as Json[]
+      expect(series).toHaveLength(days)
+      expect(new Set(series.map((d) => d.date)).size).toBe(days)
+      expect(series.at(-1)?.date).toBe(nowIso.slice(0, 10))
+      expect(Object.fromEntries(series.filter((d) => Number(d.sessions)).map((d) => [d.date, d.sessions]))).toEqual(expected)
+      const sessions = Object.values(expected).reduce((n, v) => n + v, 0)
+      expect(body).toMatchObject({ total_sessions: sessions, total_tokens: sessions * 15, total_input_tokens: sessions * 10 })
+      expect(series.reduce((n, d) => n + Number(d.input_tokens) + Number(d.output_tokens), 0)).toBe(body.total_tokens)
+    } finally {
+      clock.mockRestore()
+      index.mockRestore()
+      rmSync(dbPath)
+      if (previousTz === undefined) delete process.env.TZ
+      else process.env.TZ = previousTz
+    }
+  })
+
   it('shutdown and restart are operator-gated and restart maps sidecar outcomes', async () => {
     sidecar.respond('gateway.restart', () => ({ status: 'busy', message: 'Restart already in progress. Please wait a moment and try again.' }))
     let res = await post(s, '/api/health/restart', {})
@@ -1594,6 +1641,16 @@ describe('tools helpers', () => {
     const insights = await buildInsights([{ created_at: now - 100, updated_at: now - 50, input_tokens: 10, output_tokens: 5, cache_read_tokens: 5, estimated_cost: '$0.5', message_count: 3, model: 'm' }, { created_at: now - 10 * 86_400 * 4 }], '3', now)
     expect(insights).toMatchObject({ period_days: 3, total_sessions: 1, total_messages: 3, total_tokens: 15, total_cost: 0.5, total_cache_hit_percent: 50 })
     expect((insights.models as Json[])[0]).toMatchObject({ model: 'm', sessions: 1, session_share: 100, cost_share: 100 })
+  })
+
+  it('insights place a session on the day of the activity that admitted it to the window (TAL-1115)', async () => {
+    const now = 1_760_000_000
+    // An index entry whose stored update predates its creation is admitted by its creation time and counted on that day.
+    const insights = await buildInsights([{ created_at: now - 100, updated_at: now - 10 * 86_400, input_tokens: 10, output_tokens: 5, model: 'm' }], '3', now)
+    const series = insights.daily_tokens as Json[]
+    expect(insights).toMatchObject({ total_sessions: 1, total_tokens: 15 })
+    expect(series.reduce((n, d) => n + Number(d.sessions), 0)).toBe(1)
+    expect(series.reduce((n, d) => n + Number(d.input_tokens) + Number(d.output_tokens), 0)).toBe(15)
   })
 
   it('insights divide cache reads by the whole prompt a Talaria chat records as input (TAL-1173)', async () => {
