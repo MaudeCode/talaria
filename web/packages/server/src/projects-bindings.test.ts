@@ -98,6 +98,13 @@ describe('project bindings', () => {
     expect((await post('/api/projects/bind', { project_id: foreign, workspaces: [a] })).status).toBe(404)
     expect(stored()).toBe(before)
     expect((await post('/api/session/new', { project_id: foreign })).status).toBe(404)
+    // Naming the project's profile in the body never authorizes it: the project must belong to the request's active profile.
+    const worktree = vi.spyOn(s.deps.worktrees, 'create')
+    const create = vi.spyOn(s.deps.sessionStore, 'newSession')
+    expect((await post('/api/session/new', { project_id: foreign, profile: 'work', worktree: true })).status).toBe(404)
+    expect((await post('/api/session/new', { project_id: pid, profile: 'work' })).status).toBe(404)
+    expect(worktree).not.toHaveBeenCalled()
+    expect(create).not.toHaveBeenCalled()
   })
 
   it('keeps an unavailable saved choice identifiable and never re-routes it', async () => {

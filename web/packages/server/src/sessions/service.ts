@@ -1712,17 +1712,19 @@ export class SessionService {
   async withProjectDefaults(body: Record<string, unknown>): Promise<Record<string, unknown>> {
     const id = body.project_id
     if (typeof id !== 'string' || !id) return body
-    const profile = (typeof body.profile === 'string' && body.profile) || this.deps.activeProfile()
+    // The project must belong to the request's active profile; a profile named in the body never authorizes another's project.
+    const active = this.deps.activeProfile()
     const project = (await this.deps.projects.load()).find((p) => p.project_id === id)
-    if (!project || !this.deps.profilesMatch(project.profile ?? null, profile)) throw new HttpFailure(404, 'Project not found')
+    const named = typeof body.profile === 'string' && body.profile ? body.profile : null
+    if (!project || !this.deps.profilesMatch(project.profile ?? null, active) || (named && !this.deps.profilesMatch(named, active))) throw new HttpFailure(404, 'Project not found')
     const bound = projectBindings(project)
     const out = { ...body }
     if (bound.default_workspace && (!body.workspace || body.workspace_inherited_from_prev_session === true)) {
       out.workspace = bound.default_workspace
       delete out.workspace_inherited_from_prev_session
     }
-    const named = (value: unknown): boolean => typeof value === 'string' && !!value.trim()
-    if (bound.model && !named(body.model) && !named(body.model_provider)) { out.model = bound.model; out.model_provider = bound.model_provider }
+    const picked = (value: unknown): boolean => typeof value === 'string' && !!value.trim()
+    if (bound.model && !picked(body.model) && !picked(body.model_provider)) { out.model = bound.model; out.model_provider = bound.model_provider }
     return out
   }
 
