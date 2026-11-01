@@ -30,18 +30,26 @@ function idToken(claims: Json): string {
   return `${header}.${payload}.${b64u(sig)}`
 }
 
-interface Idp { tokens: Json[]; claimsFor: (nonce: string) => Json; fetch: typeof fetch }
-function fakeIdp(now: () => number): Idp {
+interface Idp { tokens: Json[]; tokenAuth: (string | null)[]; claimsFor: (nonce: string) => Json; fetch: typeof fetch }
+/**
+ * `discovery` merges into the discovery document. `basic` makes the token endpoint a strict client_secret_basic provider: it
+ * answers 401 invalid_client unless the request carries exactly that Authorization value and no form secret.
+ */
+function fakeIdp(now: () => number, opts: { discovery?: Json; basic?: string } = {}): Idp {
   const idp: Idp = {
     tokens: [],
+    tokenAuth: [],
     claimsFor: (nonce) => ({ iss: ISSUER, aud: 'web-client', sub: 'user-1', email: 'kim@example.com', groups: ['admins'], exp: now() + 300, iat: now(), nonce }),
     fetch: (input, init) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
-      if (url === `${ISSUER}/.well-known/openid-configuration`) return Promise.resolve(Response.json({ issuer: ISSUER, authorization_endpoint: `${ISSUER}/authorize`, token_endpoint: `${ISSUER}/token`, jwks_uri: `${ISSUER}/jwks` }))
+      if (url === `${ISSUER}/.well-known/openid-configuration`) return Promise.resolve(Response.json({ issuer: ISSUER, authorization_endpoint: `${ISSUER}/authorize`, token_endpoint: `${ISSUER}/token`, jwks_uri: `${ISSUER}/jwks`, ...opts.discovery }))
       if (url === `${ISSUER}/jwks`) return Promise.resolve(Response.json({ keys: [{ ...jwk, kid: 'k1', use: 'sig', alg: 'RS256' }] }))
       if (url === `${ISSUER}/token`) {
         const form = Object.fromEntries(new URLSearchParams(typeof init?.body === 'string' ? init.body : ''))
+        const authorization = new Headers(init?.headers).get('authorization')
         idp.tokens.push(form)
+        idp.tokenAuth.push(authorization)
+        if (opts.basic !== undefined && (authorization !== opts.basic || 'client_secret' in form)) return Promise.resolve(Response.json({ error: 'invalid_client' }, { status: 401 }))
         const nonce = (form.code ?? '').split(':')[1] ?? ''
         return Promise.resolve(Response.json({ id_token: idToken(idp.claimsFor(nonce)), token_type: 'Bearer' }))
       }
@@ -840,5 +848,186 @@ describe('OIDC operator config availability', () => {
     expect((await oidc.resolve()).config_read_failed).toBe(true)
     expect(oidc.availableSync()).toBe(false)
     expect(oidc.enabledSync()).toBe(true)
+  })
+})
+
+// ── OIDC token endpoint client authentication ─────────────────────────────
+
+const OIDC_BASE_ENV = { HERMES_WEBUI_OIDC_ISSUER: ISSUER, HERMES_WEBUI_OIDC_CLIENT_ID: 'web-client', HERMES_WEBUI_OIDC_ALLOW_CLAIM: 'groups', HERMES_WEBUI_OIDC_ALLOW_VALUES: 'admins', HERMES_WEBUI_OIDC_TRUSTED_PRIVATE_HOSTS: 'idp.example' }
+const BASIC_ONLY = { token_endpoint_auth_methods_supported: ['none', 'client_secret_basic'] }
+/** `Basic base64(id:secret)` over credentials already form-urlencoded by hand, so the expectation never reuses the encoder under test. */
+const basicOf = (encodedId: string, encodedSecret: string): string => `Basic ${Buffer.from(`${encodedId}:${encodedSecret}`, 'ascii').toString('base64')}`
+
+describe('OIDC browser and native login against a client_secret_basic-only provider', () => {
+  let s: TestServer
+  let idp: Idp
+  const now = () => Date.now() / 1000
+  const expected = basicOf('web-client', 'synthetic+s3cr%3Aet%2B%2F%25%C3%A9')
+  beforeAll(async () => {
+    s = await bootTestServer({ env: { ...OIDC_BASE_ENV, HERMES_WEBUI_OIDC_CLIENT_SECRET: 'synthetic s3cr:et+/%é' } })
+    idp = fakeIdp(now, { discovery: BASIC_ONLY, basic: expected })
+    s.deps.fetch = idp.fetch
+  })
+  afterAll(() => s.close())
+
+  it('browser callback authenticates with the Basic header alone and creates the session', async () => {
+    const start = await s.get('/api/auth/oidc/start?next=%2Fsettings')
+    const { state, code } = providerCode(start.headers.get('location') ?? '')
+    const cb = await s.get(`/api/auth/oidc/callback?state=${state}&code=${code}`)
+    expect(cb.status).toBe(302)
+    expect(cb.headers.get('location')).toBe('/settings')
+    expect(s.deps.auth.getSessionInfo(cookieOf(cb, s.deps.auth.cookieName()))).toMatchObject({ oidc_issuer: ISSUER, oidc_subject: 'user-1' })
+    expect(idp.tokenAuth.at(-1)).toBe(expected)
+    const form = idp.tokens.at(-1) ?? {}
+    expect(form).toEqual({ grant_type: 'authorization_code', code, code_verifier: expect.stringMatching(/^[A-Za-z0-9_-]{64}$/) as unknown, redirect_uri: `http://127.0.0.1:${String(s.running.port)}/api/auth/oidc/callback` })
+  })
+
+  it('native handoff completes the provider exchange with Basic and mints the app session', async () => {
+    const verifier = b64u(randomBytes(48))
+    const challenge = b64u(createHash('sha256').update(verifier, 'ascii').digest())
+    const clientState = b64u(randomBytes(24))
+    const started = await json(await post(s, '/api/auth/oidc/native/start', { callback_url: 'talaria://oidc-callback', state: clientState, code_challenge: challenge, code_challenge_method: 'S256' }))
+    const authz = new URL(String(started.authorization_url))
+    const start = await s.get(authz.pathname + authz.search)
+    const { state, code } = providerCode(start.headers.get('location') ?? '')
+    const cb = await s.get(`/api/auth/oidc/callback?state=${state}&code=${code}`)
+    expect(cb.status).toBe(302)
+    const app = new URL(cb.headers.get('location') ?? '')
+    expect(app.searchParams.get('error')).toBeNull()
+    expect(idp.tokenAuth.at(-1)).toBe(expected)
+    const exchanged = await post(s, '/api/auth/oidc/native/exchange', { flow_id: started.flow_id, code: app.searchParams.get('code'), state: clientState, code_verifier: verifier })
+    expect(exchanged.status).toBe(200)
+    const cookie = cookieOf(exchanged, s.deps.auth.cookieName())
+    expect(await json(await s.get('/api/auth/status', { headers: { cookie: `${s.deps.auth.cookieName()}=${cookie ?? ''}` } }))).toMatchObject({ logged_in: true, auth_type: 'oidc' })
+  })
+
+  it('sends Basic to an untrusted issuer only over the pinned connection and refuses a token redirect', async () => {
+    const env = { ...OIDC_BASE_ENV, HERMES_WEBUI_OIDC_TRUSTED_PRIVATE_HOSTS: '', HERMES_WEBUI_OIDC_CLIENT_SECRET: 'synthetic s3cr:et+/%é' }
+    const u = await bootTestServer({ env })
+    try {
+      const provider = fakeIdp(now, { discovery: BASIC_ONLY, basic: expected })
+      const urls: string[] = []
+      const tokenAuth: string[] = []
+      let redirect = false
+      u.deps.fetch = () => Promise.reject(new Error('plain fetch must not be used for an untrusted host'))
+      u.deps.dnsLookup = () => Promise.resolve([{ address: '93.184.216.34', family: 4 }])
+      u.deps.pinnedFetch = (url, init) => {
+        urls.push(url)
+        if (!url.endsWith('/token')) return provider.fetch(url, init)
+        tokenAuth.push(init.headers?.Authorization ?? '')
+        return redirect ? Promise.resolve(new Response(null, { status: 307, headers: { location: 'https://elsewhere.example/token' } })) : provider.fetch(url, init)
+      }
+      const login = async (): Promise<Response> => {
+        const { state, code } = providerCode((await u.get('/api/auth/oidc/start')).headers.get('location') ?? '')
+        return u.get(`/api/auth/oidc/callback?state=${state}&code=${code}`)
+      }
+      expect((await login()).status).toBe(302)
+      redirect = true
+      const refused = await login()
+      expect(refused.status).toBe(502)
+      expect(cookieOf(refused, u.deps.auth.cookieName())).toBeNull()
+      expect(tokenAuth).toEqual([expected, expected])
+      expect(urls.every((url) => url.startsWith(`${ISSUER}/`))).toBe(true)
+    } finally { await u.close() }
+  })
+})
+
+describe('OIDC token endpoint authentication method', () => {
+  const BASE = 'http://127.0.0.1:8787'
+  interface Run { form: Json; authorization: string | null; logs: string[] }
+  /** One provider code exchange through the real service, against a fresh discovery cache. */
+  const exchange = async (opts: { env?: Record<string, string>; discovery?: Json; operator?: Json; clientId?: string } = {}): Promise<Run> => {
+    const now = () => Date.now() / 1000
+    const idp = fakeIdp(now, opts.discovery ? { discovery: opts.discovery } : {})
+    const clientId = opts.clientId ?? 'web-client'
+    idp.claimsFor = (nonce) => ({ iss: ISSUER, aud: clientId, sub: 'user-1', groups: ['admins'], exp: now() + 300, nonce })
+    const logs: string[] = []
+    const oidc = new OidcService({
+      env: { ...OIDC_BASE_ENV, HERMES_WEBUI_OIDC_CLIENT_ID: clientId, ...opts.env }, operatorConfig: () => Promise.resolve(opts.operator ?? {}), profileHome: () => '',
+      fetch: () => idp.fetch, pinned: () => { throw new Error('trusted host uses plain fetch') }, now, log: (line) => { logs.push(line) },
+    })
+    const { state, code } = providerCode(await oidc.authorizationRedirect(BASE, null, null))
+    await oidc.completeCodeFlow(BASE, state, code)
+    expect(idp.tokens).toHaveLength(1)
+    return { form: idp.tokens[0] ?? {}, authorization: idp.tokenAuth[0] ?? null, logs }
+  }
+  const SECRET = { HERMES_WEBUI_OIDC_CLIENT_SECRET: 'synthetic-secret' }
+  const BASIC = basicOf('web-client', 'synthetic-secret')
+
+  it.each<[string, Json, 'post' | 'basic']>([
+    ['absent methods', {}, 'post'],
+    ['a string instead of a list', { token_endpoint_auth_methods_supported: 'client_secret_basic' }, 'post'],
+    ['a null list', { token_endpoint_auth_methods_supported: null }, 'post'],
+    ['non-string entries', { token_endpoint_auth_methods_supported: [42, { method: 'client_secret_basic' }] }, 'post'],
+    ['an empty list', { token_endpoint_auth_methods_supported: [] }, 'post'],
+    ['both methods', { token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'] }, 'post'],
+    ['post only', { token_endpoint_auth_methods_supported: ['client_secret_post'] }, 'post'],
+    ['neither method', { token_endpoint_auth_methods_supported: ['private_key_jwt', 'none'] }, 'post'],
+    ['Basic only', BASIC_ONLY, 'basic'],
+    ['Basic only, differently cased', { token_endpoint_auth_methods_supported: [' Client_Secret_Basic '] }, 'basic'],
+  ])('auto with %s uses %s', async (_case, discovery, method) => {
+    const run = await exchange({ env: SECRET, discovery })
+    if (method === 'basic') {
+      expect(run.authorization).toBe(BASIC)
+      expect(run.form).not.toHaveProperty('client_secret')
+      expect(run.form).not.toHaveProperty('client_id')
+    } else {
+      expect(run.authorization).toBeNull()
+      expect(run.form).toMatchObject({ client_id: 'web-client', client_secret: 'synthetic-secret' })
+    }
+    expect(run.form).toMatchObject({ grant_type: 'authorization_code', redirect_uri: `${BASE}/api/auth/oidc/callback` })
+    expect(run.form.code_verifier).toMatch(/^[A-Za-z0-9_-]{64}$/)
+  })
+
+  it('an explicit method overrides discovery in both directions', async () => {
+    const basic = await exchange({ env: { ...SECRET, HERMES_WEBUI_OIDC_TOKEN_AUTH_METHOD: 'client_secret_basic' }, discovery: { token_endpoint_auth_methods_supported: ['client_secret_post'] } })
+    expect(basic.authorization).toBe(BASIC)
+    expect(basic.form).not.toHaveProperty('client_secret')
+    const postRun = await exchange({ env: { ...SECRET, HERMES_WEBUI_OIDC_TOKEN_AUTH_METHOD: 'client_secret_post' }, discovery: BASIC_ONLY })
+    expect(postRun.authorization).toBeNull()
+    expect(postRun.form).toMatchObject({ client_id: 'web-client', client_secret: 'synthetic-secret' })
+  })
+
+  it.each([['auto', {}], ['explicit Basic', { HERMES_WEBUI_OIDC_TOKEN_AUTH_METHOD: 'client_secret_basic' }]])('a public client (%s) keeps PKCE-only form authentication', async (_case, env) => {
+    const run = await exchange({ env, discovery: BASIC_ONLY })
+    expect(run.authorization).toBeNull()
+    expect(run.form).toMatchObject({ client_id: 'web-client' })
+    expect(run.form).not.toHaveProperty('client_secret')
+  })
+
+  it('form-urlencodes the id and the secret separately before base64', async () => {
+    const run = await exchange({ clientId: 'a b:c+d/e%f é', env: { HERMES_WEBUI_OIDC_CLIENT_SECRET: 'p w:q+r/s%t ü', HERMES_WEBUI_OIDC_TOKEN_AUTH_METHOD: 'client_secret_basic' } })
+    expect(run.authorization).toBe(basicOf('a+b%3Ac%2Bd%2Fe%25f+%C3%A9', 'p+w%3Aq%2Br%2Fs%25t+%C3%BC'))
+    expect(run.form).not.toHaveProperty('client_secret')
+    expect(run.form).not.toHaveProperty('client_id')
+  })
+
+  it('reads the method from the operator config, normalized, and lets the environment override it', async () => {
+    const operator = { webui_oidc: { token_auth_method: ' Client_Secret_BASIC ' } }
+    const discovery = { token_endpoint_auth_methods_supported: ['client_secret_post'] }
+    expect((await exchange({ env: SECRET, operator, discovery })).authorization).toBe(BASIC)
+    expect((await exchange({ env: { ...SECRET, HERMES_WEBUI_OIDC_TOKEN_AUTH_METHOD: 'client_secret_post' }, operator, discovery })).authorization).toBeNull()
+  })
+
+  it('an unsupported method falls back to auto', async () => {
+    const run = await exchange({ env: { ...SECRET, HERMES_WEBUI_OIDC_TOKEN_AUTH_METHOD: 'private_key_jwt' }, discovery: BASIC_ONLY })
+    expect(run.authorization).toBe(BASIC)
+  })
+
+  it('warns once per distinct unsupported value across config reloads, bounded, without credentials', async () => {
+    let clock = 1_700_000_000
+    const logs: string[] = []
+    const env: Record<string, string> = { ...OIDC_BASE_ENV, ...SECRET, HERMES_WEBUI_OIDC_TOKEN_AUTH_METHOD: 'synthetic-secret-typo' }
+    const oidc = new OidcService({ env, operatorConfig: () => Promise.resolve({}), profileHome: () => '', fetch: () => fetch, pinned: () => { throw new Error('unused') }, now: () => clock, log: (line) => { logs.push(line) } })
+    const reload = async (): Promise<void> => { clock += 10; await oidc.resolve() }
+    for (let i = 0; i < 5; i += 1) await reload()
+    const warnings = (): string[] => logs.filter((l) => l.includes('token_auth_method'))
+    expect(warnings()).toHaveLength(1)
+    env.HERMES_WEBUI_OIDC_TOKEN_AUTH_METHOD = 'another-typo'
+    await reload(); await reload()
+    expect(warnings()).toHaveLength(2)
+    for (let i = 0; i < 64; i += 1) { env.HERMES_WEBUI_OIDC_TOKEN_AUTH_METHOD = `typo-${String(i)}`; await reload() }
+    expect(warnings()).toHaveLength(32)
+    expect(logs.join('\n')).not.toMatch(/synthetic-secret|typo/)
   })
 })
