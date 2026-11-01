@@ -311,7 +311,7 @@ describe('file tree keeps the server order (TAL-1303)', () => {
 })
 
 describe('unsaved edits survive workspace and file navigation (TAL-1576)', () => {
-  interface Props { workspace?: string | null; sessionId?: string; restored?: { seq: number; paths: string[] } | null }
+  interface Props { workspace?: string | null; sessionId?: string; restored?: { seq: number; paths: string[]; workspace: string } | null }
   function renderAt(initial: Props = {}) {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
     const page = (props: Props) => <QueryClientProvider client={qc}><FilesPage workspace="/a" sessionId="s1" active {...props} /></QueryClientProvider>
@@ -438,11 +438,27 @@ describe('unsaved edits survive workspace and file navigation (TAL-1576)', () =>
     await waitFor(() => expect(b).toHaveValue('Original b.txt'))
     await userEvent.type(b, ' kept')
     await back()
-    rerender({ restored: { seq: 1, paths: ['a.txt'] } })
+    rerender({ restored: { seq: 1, paths: ['a.txt'], workspace: '/a' } })
     expect(await openFile('a.txt')).toHaveValue('Original a.txt')
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
     await back()
     expect(await openFile('b.txt')).toHaveValue('Original b.txt kept')
+  })
+
+  it('a restore that answers after a workspace switch clears the restored workspace\'s drafts, not the shown one\'s', async () => {
+    const rerender = renderAt()
+    const inA = await openFile('a.txt')
+    await waitFor(() => expect(inA).toHaveValue('Original a.txt'))
+    await userEvent.type(inA, ' pre-restore')
+    rerender({ workspace: '/b' })
+    const inB = await openFile('a.txt')
+    await waitFor(() => expect(inB).toHaveValue('Original a.txt'))
+    await userEvent.type(inB, ' unrelated B edit')
+    rerender({ workspace: '/b', restored: { seq: 1, paths: ['a.txt'], workspace: '/a' } })
+    expect(screen.getByRole('textbox', { name: 'Preview' })).toHaveValue('Original a.txt unrelated B edit')
+    rerender({ workspace: '/a', restored: { seq: 1, paths: ['a.txt'], workspace: '/a' } })
+    expect(await openFile('a.txt')).toHaveValue('Original a.txt')
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
   })
 
   it('a renamed or moved file takes its draft to the new path; a deleted file drops it', async () => {

@@ -39,8 +39,8 @@ const draftKey = (sessionId: string, source: 'workspace' | 'managed', workspace:
 type Drafts = Record<string, string>
 type Pending = { kind: 'new-file' } | { kind: 'new-folder' } | { kind: 'rename'; entry: Entry } | { kind: 'delete'; entry: Entry } | null
 
-/** Files a checkpoint restore rewrote; `seq` tells one restore from the next. */
-export interface RestoredFiles { seq: number; paths: string[] }
+/** Files a checkpoint restore rewrote in `workspace`; `seq` tells one restore from the next. */
+export interface RestoredFiles { seq: number; paths: string[]; workspace: string }
 
 /** The right panel's Files page (TAL-373): directory tree, file preview/edit, git status. Its folder and preview stay
  * while another page is shown; it fetches only while `active`. Unsaved drafts live here, above the per-workspace
@@ -53,7 +53,7 @@ export function FilesPage({ workspace, sessionId, active, restored = null }: { w
   const [seenRestore, setSeenRestore] = useState(restored?.seq)
   if (restored && restored.seq !== seenRestore) {
     setSeenRestore(restored.seq)
-    const rewritten = new Set(restored.paths.map((path) => draftKey(sessionId, 'workspace', workspace ?? '', path)))
+    const rewritten = new Set(restored.paths.map((path) => draftKey(sessionId, 'workspace', restored.workspace, path)))
     setDrafts((d) => Object.fromEntries(Object.entries(d).filter(([key]) => !rewritten.has(key))))
   }
   const sources: ('workspace' | 'managed')[] = managedOpened ? ['workspace', 'managed'] : ['workspace']
