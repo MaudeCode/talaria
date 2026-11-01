@@ -1783,3 +1783,47 @@ describe('lineage continuations under person isolation (TAL-48)', () => {
     }
   })
 })
+
+describe('delegated subagents under person isolation (TAL-48)', () => {
+  it('belong to the person whose chat delegated them, through nested delegations', async () => {
+    const issuer = 'https://identity.invalid'
+    const s = await bootTestServer({ env: {
+      HERMES_WEBUI_PERSON_ISOLATION: '1', HERMES_WEBUI_OIDC_ISSUER: issuer, HERMES_WEBUI_OIDC_CLIENT_ID: 'synthetic-client',
+      HERMES_WEBUI_OIDC_ALLOW_CLAIM: 'email_verified', HERMES_WEBUI_OIDC_ALLOW_VALUES: 'true', HERMES_WEBUI_OIDC_OWNER_CLAIM: 'groups', HERMES_WEBUI_OIDC_OWNER_VALUES: 'admins',
+    }, deps: (deps) => { deps.oidc.sessionBindingIsCurrent = () => Promise.resolve(true) } })
+    const db = createStateDb(join(s.state, 'state.db'))
+    try {
+      await s.deps.settings.save({ show_cli_sessions: true })
+      const headers = (subject: string, owner = false) => {
+        const cookie = s.deps.auth.createSession({ authType: 'oidc', username: subject, oidcBinding: { issuer, subject, ...(owner ? { owner: true } : {}) } })
+        return { cookie: `${s.deps.auth.cookieName()}=${cookie}` }
+      }
+      const alice = headers('alice')
+      const olive = headers('olive', true)
+      const aliceId = ((await (await s.get('/api/auth/status', { headers: alice })).json()) as { person: { id: string } }).person.id
+      await s.deps.sessionStore.save(new Session({ session_id: 'aliceparent', title: 'Alice plan', owner_person_id: aliceId, messages: [{ role: 'user', content: 'go', timestamp: 1001 }] }, { workspace: s.state, model: null }))
+      insertSession(db, { id: 'aliceparent', source: 'webui', started_at: 1000, title: 'Alice plan', messages: [['user', 1001]] })
+      insertSession(db, { id: 'subalice', source: 'subagent', started_at: 1003, title: 'Alice worker', parent: 'aliceparent', messages: [['user', 1004], ['assistant', 1005]] })
+      insertSession(db, { id: 'subalicenested', source: 'subagent', started_at: 1006, title: 'Alice nested', parent: 'subalice', messages: [['user', 1007], ['assistant', 1008]] })
+      insertSession(db, { id: 'clihost', source: 'cli', started_at: 1100, title: 'CLI host', messages: [['user', 1101], ['assistant', 1102]] })
+      insertSession(db, { id: 'subcli', source: 'subagent', started_at: 1103, parent: 'clihost', messages: [['user', 1104], ['assistant', 1105]] })
+      s.deps.cliSessions.invalidate()
+
+      for (const sid of ['subalice', 'subalicenested']) {
+        expect((await s.get(`/api/session?session_id=${sid}&messages=0`, { headers: olive })).status, sid).toBe(404)
+        expect((await s.get(`/api/session?session_id=${sid}&messages=0`, { headers: alice })).status, sid).toBe(200)
+      }
+      const listed = async (h: Record<string, string>) => ((await (await s.get('/api/sessions', { headers: h })).json()) as { sessions: { session_id: string }[] }).sessions.map((r) => r.session_id)
+      const aliceRows = await listed(alice)
+      const oliveRows = await listed(olive)
+      expect(aliceRows).toEqual(expect.arrayContaining(['aliceparent', 'subalice', 'subalicenested']))
+      expect(aliceRows).not.toContain('subcli')
+      expect(oliveRows).toEqual(expect.arrayContaining(['clihost', 'subcli']))
+      for (const sid of ['aliceparent', 'subalice', 'subalicenested']) expect(oliveRows).not.toContain(sid)
+    } finally {
+      db.close()
+      s.deps.gatewayWatchers.stopAll()
+      await s.close()
+    }
+  })
+})

@@ -287,3 +287,16 @@ it('runs a queue with its creator\'s person authority once person isolation is o
   expect(after.phase).toBe('refused')
   expect(started).toEqual([])
 })
+
+it('runs queues as before on a server without sign-in, even with person isolation set (TAL-48)', async () => {
+  const sidecar = new FakeSidecar()
+  sidecar.respond('chat.start', completed)
+  server = await bootTestServer({ sidecar, env: { HERMES_WEBUI_PERSON_ISOLATION: '1' } })
+  const sessions = await Promise.all([0, 1].map(() => server!.deps.sessionStore.newSession({ profile: 'default' })))
+  const created = await post('/api/prompt-queues', { request_id: 'no-auth', cards: sessions.map((s, i) => ({ session_id: s.session_id, project_id: null, text: `Prompt ${i}` })) })
+  expect(created.status).toBe(200)
+  const run = await created.json() as PromptQueueRun
+  const current = await act(run, 'start')
+  expect(current.phase).not.toBe('refused')
+  expect(current.cards[0]!.status).not.toBe('refused')
+})

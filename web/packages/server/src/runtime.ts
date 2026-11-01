@@ -82,7 +82,7 @@ import { agentHealth, dashboardStatus, gatewayRestartBlockers, liveGateways } fr
 import { gatewayLifecycle } from './tools/gateway-lifecycle.js'
 import { GatewayRestartQueue, restartGateway } from './tools/gateway-restart.js'
 import { TerminalRegistry } from './tools/terminal.js'
-import { personIdentity, personIsolationEnabled } from './auth/person.js'
+import { personIdentity, personIsolationActive, personIsolationEnabled } from './auth/person.js'
 import { sessionCanManageServer } from './auth/gate.js'
 
 export interface CreateDepsOptions extends LoadConfigOptions {
@@ -525,7 +525,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   const webPush = new WebPushChannel({ documents: storage.documents, activity, lookup: () => deps.dnsLookup, fetch: () => deps.pinnedFetch, liveLogins: () => liveLoginHashes(auth, { sessionBindingIsCurrent: (info) => oidc?.sessionBindingIsCurrent(info) ?? Promise.resolve(false) }),
     // TAL-48: a subscription acts with its login's person authority; a login that is gone has none.
     personAccessFor: async (login) => {
-      if (!personIsolationEnabled(env)) return undefined
+      if (!(await personIsolationActive(env, auth))) return undefined
       const info = login ? auth.liveSessions().find((session) => loginHash(session.token) === login) : undefined
       return info ? { personId: personIdentity(info)?.id ?? null, serverOwner: await sessionCanManageServer({ deps }, info) } : { personId: null, serverOwner: false }
     },
@@ -718,7 +718,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     const caller = await storedSession(callerId)
     if (!caller) throw new SidecarServerError(`no Talaria session ${callerId}`, 'caller_unknown')
     // TAL-48: a session's tools act for the session's person; an unowned session acts with owner authority over unowned sessions only.
-    const personAccess = personIsolationEnabled(env) ? { personId: caller.owner_person_id, serverOwner: !caller.owner_person_id } : undefined
+    const personAccess = await personIsolationActive(env, auth) ? { personId: caller.owner_person_id, serverOwner: !caller.owner_person_id } : undefined
     try {
       return await requestScope.run({ requestProfile: caller.profile ?? 'default', ...(personAccess ? { personAccess } : {}) }, () => fn(caller))
     } catch (error) {

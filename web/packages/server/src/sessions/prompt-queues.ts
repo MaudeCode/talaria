@@ -9,7 +9,7 @@ import { HttpFailure } from './service.js'
 import { startSessionChat } from './admission.js'
 import { isSafeSessionId } from './session.js'
 import { str } from '../util.js'
-import { personIsolationEnabled, type PersonAccess } from '../auth/person.js'
+import { personIsolationActive, type PersonAccess } from '../auth/person.js'
 
 type Scope = Pick<UpdateNotificationScope, 'profile' | 'owner'>
 /** `person`: the creator's session authority under person isolation (TAL-48), which the detached worker acts with. */
@@ -177,7 +177,7 @@ export class PromptQueues {
   private async tick(id: string): Promise<void> {
     const saved = await this.load(id)
     // TAL-48: the worker acts with its creator's person authority; a queue saved without one reaches no person's session.
-    const personAccess = personIsolationEnabled(this.deps().config.env) ? saved.person ?? { personId: null, serverOwner: false } : undefined
+    const personAccess = await personIsolationActive(this.deps().config.env, this.deps().auth) ? saved.person ?? { personId: null, serverOwner: false } : undefined
     await this.deps().requestScope.run({ requestProfile: saved.run.profile, notificationOwner: saved.owner, ...(personAccess ? { personAccess } : {}) }, async () => {
       for (let count = 0; count <= saved.run.cards.length && !this.stopped; count += 1) {
         const { run } = await this.load(id)

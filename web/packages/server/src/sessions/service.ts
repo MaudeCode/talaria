@@ -347,17 +347,28 @@ export class SessionService {
   }
 
   /**
-   * The person an id without a Web document belongs to: its recorded Agent-session owner, else its lineage root's owner,
-   * because a compression or reset continuation gets a new Agent id while the Web document keeps the root's.
+   * The person an id without a Web document belongs to: its recorded Agent-session owner, else that of the chat it
+   * continues (a compression or reset gets a new Agent id while the Web document keeps the root's), else that of the
+   * chat that delegated it (a subagent, through nested delegations). Unresolved within a bounded walk: unowned.
    */
   async foreignOwnerOf(sid: string): Promise<string | null> {
     const owners = await this.store.foreignOwners()
-    const recorded = owners.get(sid)
-    if (recorded) return recorded
-    const report = await stateDbSessionReadAsync(emptyLineageReport(sid), 'stateDbLineageReport', this.stateDbPath(null), sid)
-    const root = report.found ? str(report.lineage_key) : ''
-    if (!root || root === sid) return null
-    try { return (await this.store.get(root, { metadataOnly: true, cacheOnMiss: false })).owner_person_id } catch { return owners.get(root) ?? null }
+    const path = this.stateDbPath(null)
+    const seen = new Set<string>()
+    let id = sid
+    for (let hop = 0; hop < 32 && id && !seen.has(id); hop += 1) {
+      seen.add(id)
+      const recorded = owners.get(id)
+      if (recorded) return recorded
+      if (id !== sid) {
+        try { return (await this.store.get(id, { metadataOnly: true, cacheOnMiss: false })).owner_person_id } catch { /* no Web document */ }
+      }
+      const report = await stateDbSessionReadAsync(emptyLineageReport(id), 'stateDbLineageReport', path, id)
+      const root = report.found ? str(report.lineage_key) : ''
+      if (root && root !== id) { id = root; continue }
+      id = str((await stateDbSessionReadAsync(null, 'stateDbSessionRow', path, id))?.parent_session_id)
+    }
+    return null
   }
 
   /** Every session read, write and projection goes through this: the request's person owns it and its profile is active. */
@@ -1509,11 +1520,23 @@ export class SessionService {
     }
     const foreignOwners = await this.store.foreignOwners()
     // TAL-48: an Agent row continuing a Web chat (its lineage root) belongs to that chat's person.
-    const webOwners = new Map(webuiRows.flatMap((row) => typeof row.owner_person_id === 'string' && row.owner_person_id ? [[str(row.session_id), row.owner_person_id] as const] : []))
-    const rowOwner = (row: Row): string | null => {
-      if (typeof row.owner_person_id === 'string' && row.owner_person_id) return row.owner_person_id
-      const root = str(row._lineage_root_id)
-      return (root && (webOwners.get(root) ?? foreignOwners.get(root))) || foreignOwners.get(str(row.session_id)) || null
+    // TAL-48: an Agent row continuing a Web chat, or delegated by one (nested too), belongs to that chat's person.
+    const webIds = new Set(webuiRows.map((row) => str(row.session_id)))
+    const byId = new Map<string, Row>()
+    for (const row of [...(cliRows ?? []), ...webuiRows]) for (const id of [row.session_id, row._lineage_root_id, row._lineage_tip_id]) if (str(id)) byId.set(str(id), row)
+    const rowOwner = (start: Row): string | null => {
+      const seen = new Set<Row>()
+      for (let row: Row | undefined = start; row && !seen.has(row) && seen.size < 32; ) {
+        seen.add(row)
+        if (typeof row.owner_person_id === 'string' && row.owner_person_id) return row.owner_person_id
+        // A Web document carries its own owner; without one it is unowned, whatever it was forked from.
+        if (webIds.has(str(row.session_id))) return null
+        const recorded = [row._lineage_root_id, row.session_id].map((id) => foreignOwners.get(str(id))).find(Boolean)
+        if (recorded) return recorded
+        const parent = str(row._parent_lineage_root_id || row.parent_session_id)
+        row = parent ? byId.get(parent) : undefined
+      }
+      return null
     }
     const lookups = await withStateDbListingReads(() => this.listStateDbLookups(webuiRows, (cliRows ?? []).map((r) => str(r.session_id))))
     const payload = (await buildSessionListPayload(this.store, { ...params, ...(cliRows ? { cliRows } : {}), ...(truncatedSources ? { truncatedSources } : {}), ...(agentStorage ? { agentStorage } : {}), gatewayIdentity, ...lookups, webuiRows, webDiagnosticIds, activeProfile, isolatedProfileMode: this.deps.isolatedProfileMode(), profilesMatch: this.deps.profilesMatch, rowVisible: (row) => this.personMaySee(rowOwner(row)) }))

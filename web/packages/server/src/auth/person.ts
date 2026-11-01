@@ -15,6 +15,14 @@ export function personIsolationEnabled(env: Env): boolean {
   return truthy(env.HERMES_WEBUI_PERSON_ISOLATION)
 }
 
+/**
+ * Isolation outside a request (queue workers, a session's tools, push channels): only where sign-in tells people apart,
+ * as the request gate, which binds no person on a server without authentication.
+ */
+export async function personIsolationActive(env: Env, auth: { isAuthEnabled: () => Promise<boolean> }): Promise<boolean> {
+  return personIsolationEnabled(env) && await auth.isAuthEnabled()
+}
+
 /** The opaque person a login belongs to, with its display name; null for any login that is not a validated OIDC identity. */
 export function personIdentity(info: SessionInfo | null | undefined): { id: string; display_name: string } | null {
   if (str(info?.auth_type).trim() !== 'oidc') return null
