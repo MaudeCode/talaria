@@ -1,4 +1,4 @@
-import { initializeStore } from '../test/storage.js'
+import { initializeStore, useJsonStorage } from '../test/storage.js'
 import { JsonDocuments } from '../test/storage.js'
 /**
  * Auth and provider-status regressions: login redirect sanitising, CSRF
@@ -17,6 +17,8 @@ import { safeLoginRedirectPath } from '../auth/gate.js'
 import { AuthStore } from '../auth/store.js'
 import { readProjectContext } from '../tools/memory.js'
 import { writeEnvFile } from '../test/env-file.js'
+
+useJsonStorage()
 
 type Json = Record<string, unknown>
 const post = (s: TestServer, path: string, body: unknown, headers: Record<string, string> = {}): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json', ...headers } })

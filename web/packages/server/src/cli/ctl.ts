@@ -481,13 +481,27 @@ export async function stopCmd(ctx: CtlContext): Promise<number> {
   return 0
 }
 
+/** The address a daemon recorded, else the configured one. */
+function boundAddress(ctx: CtlContext, p: CtlPaths): { host: string; port: number } {
+  const state = readState(p)
+  const host = state.HOST ?? ((ctx.env.HERMES_WEBUI_HOST ?? '').trim() || '127.0.0.1')
+  return { host, port: Number.parseInt(state.PORT ?? ((ctx.env.HERMES_WEBUI_PORT ?? '').trim() || '8787'), 10) || 8787 }
+}
+
+/** `status`'s checks, for maintenance commands that need the server stopped: why it counts as running, or null. */
+export async function runningServer(ctx: CtlContext, p: CtlPaths): Promise<string | null> {
+  const daemon = recordedDaemon(p, ctx)
+  if (daemon?.owned === null) return `PID ${String(daemon.pid)} could not be verified as stopped`
+  if (daemon?.owned) return `Talaria Web is running (PID ${String(daemon.pid)})`
+  const { host, port } = boundAddress(ctx, p)
+  return await portAnswersHttp(probeTargetHost(host), port) ? `a server is answering on ${host}:${String(port)}` : null
+}
+
 export async function statusCmd(ctx: CtlContext): Promise<number> {
   loadStartupEnv({ env: ctx.env, webRoot: ctx.webRoot, home: ctx.home, log: ctx.warn })
   const p = ctlPaths(ctx)
   ensureHome(p)
-  const state = readState(p)
-  const host = state.HOST ?? ((ctx.env.HERMES_WEBUI_HOST ?? '').trim() || '127.0.0.1')
-  const port = Number.parseInt(state.PORT ?? ((ctx.env.HERMES_WEBUI_PORT ?? '').trim() || '8787'), 10) || 8787
+  const { host, port } = boundAddress(ctx, p)
   const tls = Boolean((ctx.env.HERMES_WEBUI_TLS_CERT ?? '').trim()) && Boolean((ctx.env.HERMES_WEBUI_TLS_KEY ?? '').trim())
   const daemon = recordedDaemon(p, ctx)
   if (daemon?.owned === null) return warnUnverified(ctx, daemon.pid)

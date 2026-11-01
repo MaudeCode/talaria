@@ -4,8 +4,10 @@ import { describe, expect, it, vi } from 'vitest'
 import { allSessions, buildSessionListPayload, dedupeCliSidebarSessions, sessionListResponse, type ListParams, type ListPayload, type Row, type RuntimeOverlay } from './list.js'
 import * as sessionRows from './storage/row.js'
 import { bootTestServer } from '../test/harness.js'
-import { sessionDirectory, sessionIndexPath, sessionPath } from '../test/storage.js'
+import { sessionDirectory, sessionIndexPath, sessionPath, useJsonStorage } from '../test/storage.js'
 import { Session } from './session.js'
+
+useJsonStorage()
 
 const fixture = JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as { session_list: { stored: Row[]; live_stream_ids: string[]; sessions: Row[] }; nested_session_list: { stored: Row[]; sessions: Row[] } }
 

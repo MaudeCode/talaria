@@ -24,8 +24,16 @@ defaults:
 jobs:
   server:
     if: inputs.server
+    name: server (${{ matrix.storage }} storage)
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # The server suite runs once per storage backend; the repository checks run once, on the default (TAL-1066).
+    strategy:
+      fail-fast: false
+      matrix:
+        storage: [json, sqlite]
+    env:
+      TALARIA_STORAGE: ${{ matrix.storage }}
     # The S3 blob store conformance runs against a throwaway MinIO (TAL-1069); upstream stopped publishing
     # minio/minio images, so this pins the last Bitnami build, which starts the server by default.
     services:
@@ -57,28 +65,36 @@ jobs:
         run: npm run build:fast -w packages/frontend
 
       - name: Contracts and server lint
+        if: matrix.storage == 'json'
         run: npm run lint -w packages/contracts && npm run lint -w packages/server
 
       - name: Contracts and server strict TypeScript
+        if: matrix.storage == 'json'
         run: npm run typecheck -w packages/contracts && npm run typecheck -w packages/server
 
       - name: Wait for MinIO
         run: timeout 60 bash -c 'until curl -fsS http://127.0.0.1:9000/minio/health/live; do sleep 1; done'
 
-      - name: Contracts and server Vitest
+      - name: Contracts Vitest
+        if: matrix.storage == 'json'
+        run: npm test -w packages/contracts -- --maxWorkers=2
+
+      - name: Server Vitest
         env:
           TALARIA_TEST_BLOB_ENDPOINT: http://127.0.0.1:9000
           AWS_ACCESS_KEY_ID: talaria-ci
           AWS_SECRET_ACCESS_KEY: talaria-ci-synthetic
           AWS_REGION: us-east-1
-        run: npm test -w packages/contracts -- --maxWorkers=2 && npm test -w packages/server -- --maxWorkers=2
+        run: npm test -w packages/server -- --maxWorkers=2
 
       - name: Generated OpenAPI document and What's New schema are committed
+        if: matrix.storage == 'json'
         run: |
           npm run openapi
           git diff --exit-code -- ../contracts/web-api.openapi.json ../contracts/whats-new.schema.json
 
       - name: Generated sidecar and server method schemas are committed
+        if: matrix.storage == 'json'
         run: |
           npm run fixtures -w packages/contracts
           git diff --exit-code -- sidecar/tests/fixtures/schemas.json sidecar/tests/fixtures/server_schemas.json

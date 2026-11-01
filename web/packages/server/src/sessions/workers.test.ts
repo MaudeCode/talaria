@@ -1,4 +1,4 @@
-import { testSessionDocuments } from '../test/storage.js'
+import { testSessionDocuments, useJsonStorage } from '../test/storage.js'
 import { jsonJournal } from '../test/storage.js'
 import { JsonJournal } from './storage/json-journal.js'
 import { JsonDocuments } from '../test/storage.js'
@@ -19,6 +19,8 @@ import { agentHealth, processStartTime, remoteGatewayBaseUrl, runtimeStatusIsFre
 import { str } from '../util.js'
 import { withBackgroundUpdates, batchUpdate, recordBackgroundUpdate } from './background-updates.js'
 import { HeldWakeups } from './wakeup-pause.js'
+
+useJsonStorage()
 
 type Json = Record<string, unknown>
 const json = async (res: Response): Promise<Json> => (await res.json()) as Json

@@ -3,6 +3,7 @@
  *   talaria-web [port] [--host H] [--no-browser] [--foreground] [--skip-agent-install]   launch (detached unless supervised)
  *   talaria-web serve [launcher args]                                                     run the server (supervised worker; self-update restarts it)
  *   talaria-web ctl <start|stop|restart|status|logs> [...]                                daemon control
+ *   talaria-web storage copy --from <json|sqlite> --to <json|sqlite>                      move sessions, documents and journals (server stopped)
  *   talaria-web storage copy-blobs --from <local|s3> --to <local|s3>                       copy chat attachments (server stopped)
  */
 import { createApp } from '../app.js'
@@ -84,7 +85,7 @@ export async function main(argv: string[]): Promise<number> {
   if (first === 'serve') return (await serve(rest))
   if (first === 'storage') return runStorage({ env: process.env, webRoot, home: process.env.HOME ?? '', log, warn }, rest)
   if (first === '-h' || first === '--help' || first === 'help') {
-    log('Usage: talaria-web [port] [--host HOST] [--no-browser] [--skip-agent-install] [--foreground]\n       talaria-web serve [args]\n       talaria-web ctl <start|stop|restart|status|logs>\n       talaria-web storage copy-blobs --from <local|s3> --to <local|s3>\n       talaria-web self-check')
+    log('Usage: talaria-web [port] [--host HOST] [--no-browser] [--skip-agent-install] [--foreground]\n       talaria-web serve [args]\n       talaria-web ctl <start|stop|restart|status|logs>\n       talaria-web storage copy --from <json|sqlite> --to <json|sqlite>\n       talaria-web storage copy-blobs --from <local|s3> --to <local|s3>\n       talaria-web self-check')
     return 0
   }
   const home = process.env.HOME ?? ''

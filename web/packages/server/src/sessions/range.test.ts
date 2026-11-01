@@ -1,8 +1,11 @@
+import { useJsonStorage } from '../test/storage.js'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, it, vi } from 'vitest'
 import { bootTestServer, openStateDb } from '../test/harness.js'
 import { Session } from './session.js'
+
+useJsonStorage()
 
 it('derives only the requested turns on first open and older pages of 5,000 rows', async () => {
   const server = await bootTestServer()

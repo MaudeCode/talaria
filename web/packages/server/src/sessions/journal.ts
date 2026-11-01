@@ -102,6 +102,46 @@ export function summaryFromEvents(sessionId: string, runId: string, events: Jour
   }
 }
 
+/** One journal row as every backend writes it; `name` is the trimmed, non-empty event name. */
+export function journalEvent(sessionId: string, runId: string, seq: number, name: string, payload: unknown, meta: { terminal?: boolean | undefined; createdAt: number; redacted?: boolean | undefined }): JournalEvent {
+  const terminalState = terminalStateForEvent(name, payload)
+  return {
+    version: 1, event_id: `${runId}:${String(seq)}`, seq, run_id: runId, session_id: sessionId, event: name, type: name,
+    created_at: meta.createdAt, terminal: meta.terminal ?? Boolean(terminalState), terminal_state: terminalState, payload: payload ?? {},
+    ...(meta.redacted === undefined ? {} : { redacted: meta.redacted }),
+  }
+}
+
+/** Python `stale_interrupted_event`: a synthetic terminal row for a journal whose worker died, from the run's latest summary. */
+export function staleInterruptedEvent(summary: RunSummary, sessionId: string, runId: string, afterSeq: number | null, now: number): JournalEvent | null {
+  if (summary.terminal || !summary.event_count) return null
+  const seq = (summary.last_seq || 0) + 1
+  if (afterSeq !== null && seq <= afterSeq) return null
+  return {
+    version: 1, event_id: `${runId}:${String(seq)}`, seq, run_id: runId, session_id: sessionId, event: 'apperror', type: 'apperror', created_at: now, terminal: true, terminal_state: 'lost-worker-bookkeeping',
+    payload: { type: 'interrupted', recovery_control: true, message: 'The live worker stopped before this run finished.', hint: 'The transcript was restored to the last journaled event. Start a new turn if you still need the task to continue.', session_id: sessionId, stream_id: runId, journal_last_seq: summary.last_seq },
+    synthetic: true,
+  }
+}
+
+/** Retention for `pruneSettled`: `HERMES_WEBUI_RUN_JOURNAL_RETENTION_DAYS` (14) and `HERMES_WEBUI_RUN_JOURNAL_KEEP_RECENT` (3), unless the caller overrides them. */
+export function pruneRetention(env: Record<string, string | undefined>, opts: PruneOptions): { retention: number; keep: number; now: number; cutoff: number } {
+  const days = Number.parseFloat(env.HERMES_WEBUI_RUN_JOURNAL_RETENTION_DAYS ?? '14')
+  const retention = opts.retentionSeconds ?? (Number.isFinite(days) ? Math.max(0, days) * 86400 : 14 * 86400)
+  const keepEnv = Number.parseInt(env.HERMES_WEBUI_RUN_JOURNAL_KEEP_RECENT ?? '3', 10)
+  const keep = opts.keepRecent ?? (Number.isFinite(keepEnv) ? Math.max(0, keepEnv) : 3)
+  const now = opts.now ?? Date.now() / 1000
+  return { retention, keep, now, cutoff: now - retention }
+}
+
+/** Session journal replay bounds: a reconnect never parses more than this in one request. */
+export const SESSION_REPLAY_MAX_BYTES = 4 * 1024 * 1024
+export const SESSION_REPLAY_MAX_ROWS = 4096
+export const LIVE_SNAPSHOT_MAX_BYTES = 1024 * 1024
+export const LIVE_SNAPSHOT_MAX_ROWS = 512
+export const RUN_SUMMARY_MAX_BYTES = 4 * 1024 * 1024
+export const RUN_SUMMARY_MAX_ROWS = 512
+
 /** Rows that ask the user something; a replay withholds one once its own run proves it settled (TAL-1561). */
 const REPLAY_PROMPT_EVENTS = new Set(['approval', 'clarify'])
 

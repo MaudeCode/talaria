@@ -175,7 +175,13 @@ in-flight response cannot erase newly queued deletions. Invalid outbox state fai
 it. The separate started ledger retains its announcement semantics. This additive file is ignored by
 older Stable versions and remains available when returning to a version that supports replay.
 
-Web runtime persistence is selected by `TALARIA_STORAGE`, defaulting to `json`. Unknown values fail startup.
+Web runtime persistence is selected by `TALARIA_STORAGE`: `json` (the default) or `sqlite`. Unknown values fail startup.
+The SQLite adapter (`sessions/storage/sqlite*.ts`) uses one `node:sqlite` connection to `<stateDir>/talaria.db` in WAL
+mode, with numbered schema migrations; a database from a newer schema refuses to open. Messages are rows keyed by
+`(session_id, idx)`, so range reads, appends and tail splices touch only their rows. An FTS5 trigram index over each
+message's JavaScript-lowercased search text narrows content search to one statement; the shared matcher still decides
+every result. `talaria-web storage copy` moves an install between backends through the `StorageBackend` port and
+verifies the copy, so a new adapter gets migration for free.
 `SessionStore` owns resident sessions, mutation locks, write serialization and index projection. Only its
 backend adapter accesses session files. Reads carry opaque revisions; stale writes raise
 `RevisionConflict`, reload the cache and preserve the committed document. Message changes are typed

@@ -1,8 +1,11 @@
+import { useJsonStorage } from '../../test/storage.js'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
 import { bootTestServer } from '../../test/harness.js'
 import { Session } from '../session.js'
+
+useJsonStorage()
 
 it('preserves baseline JSON bytes through save, shrink, compress, index and deletion', async () => {
   const server = await bootTestServer({ now: () => 1700000000 })

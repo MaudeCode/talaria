@@ -1,4 +1,4 @@
-import { sessionDirectory } from '../test/storage.js'
+import { sessionDirectory, useJsonStorage } from '../test/storage.js'
 import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -13,6 +13,8 @@ import { GatewayWatcher } from './gateway-watcher.js'
 import { Session } from './session.js'
 import { StartupTiming, startupTimingScope, timingKey } from '../startup-timing.js'
 import { agentSessionRowsExistingAsync, crashStateDbWorkerForTests, readImportableAgentSessionRowsAsync, setStateDbReadDelayForTests, stateDbSessionReadAsync, stateDbSessionSourcesAsync, stopStateDbWorker, type StateDbWorkerReply, type StateDbWorkerRequest } from './state-db.js'
+
+useJsonStorage()
 
 type Json = Record<string, unknown>
 

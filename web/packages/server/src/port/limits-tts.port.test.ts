@@ -1,3 +1,4 @@
+import { useJsonStorage } from '../test/storage.js'
 /** TTS routing, tool-argument cap, and speech-settings regressions. */
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -8,6 +9,8 @@ import { SidecarError } from '../sidecar/client.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { WindowLimiter } from '../api/tools-router.js'
 import { TOOL_ARG_CONTENT_CAP, TOOL_ARG_CONTENT_KEYS, truncateToolArgs } from '../sessions/merge.js'
+
+useJsonStorage()
 
 type Json = Record<string, unknown>
 const post = (s: TestServer, path: string, body: unknown, headers: Record<string, string> = {}): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json', ...headers } })

@@ -8,15 +8,9 @@ import { dirname, join } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
 
 
-import { RUN_JOURNAL_DIR_NAME, SSE_RELAY_CLOSE_EVENTS, validateId, parseRunJournalEventId, terminalStateForEvent, selectAuthoritativeTerminalEvent, summaryFromEvents, type JournalEvent, type RunSummary, type PruneOptions, type PruneResult } from '../journal.js'
+import { LIVE_SNAPSHOT_MAX_BYTES, LIVE_SNAPSHOT_MAX_ROWS, RUN_SUMMARY_MAX_BYTES, RUN_SUMMARY_MAX_ROWS, SESSION_REPLAY_MAX_BYTES, SESSION_REPLAY_MAX_ROWS, pruneRetention, staleInterruptedEvent, RUN_JOURNAL_DIR_NAME, SSE_RELAY_CLOSE_EVENTS, validateId, parseRunJournalEventId, journalEvent, selectAuthoritativeTerminalEvent, summaryFromEvents, type JournalEvent, type RunSummary, type PruneOptions, type PruneResult } from '../journal.js'
 import type { JournalBackend, JournalEventMeta, JournalInput, SessionJournalReplay } from './backend.js'
 const SAFE_ID_RE = /^[A-Za-z0-9_.-]+$/
-const SESSION_REPLAY_MAX_BYTES = 4 * 1024 * 1024
-const SESSION_REPLAY_MAX_ROWS = 4096
-const LIVE_SNAPSHOT_MAX_BYTES = 1024 * 1024
-const LIVE_SNAPSHOT_MAX_ROWS = 512
-const RUN_SUMMARY_MAX_BYTES = 4 * 1024 * 1024
-const RUN_SUMMARY_MAX_ROWS = 512
 const RUN_EVENTS_PAGE_BYTES = 64 * 1024
 const PRUNED_SUMMARY_SUFFIX = '.summary.json'
 const RUN_OWNER_CACHE_MAX = 1000
@@ -24,6 +18,34 @@ const RUN_OWNER_CACHE_MAX = 1000
 const TURN_JOURNAL_DIR = '_turn_journal'
 const TURN_JOURNAL_ID_RE = /^[A-Za-z0-9_.-]+$/
 const createdAt = (event: Record<string, unknown>): number => { const value = Number(event.created_at ?? 0); return Number.isFinite(value) ? value : 0 }
+/** Legacy `_turn_journal/*.jsonl` recovery rows under the session directory, grouped by session and ordered by time. */
+export function readTurnJournalEvents(sessionDir: string): Map<string, Record<string, unknown>[]> {
+  const dir = join(sessionDir, TURN_JOURNAL_DIR)
+  const out = new Map<string, Record<string, unknown>[]>()
+  let names: string[]
+  try { names = readdirSync(dir).sort() } catch { return out }
+  for (const name of names) {
+    if (!name.endsWith('.jsonl')) continue
+    const stem = name.slice(0, -'.jsonl'.length)
+    const tilde = stem.indexOf('~')
+    const sid = tilde > 0 ? stem.slice(0, tilde) : stem
+    if (!TURN_JOURNAL_ID_RE.test(sid)) continue
+    let text: string
+    try {
+      if (!statSync(join(dir, name)).isFile()) continue
+      text = readFileSync(join(dir, name), 'utf8')
+    } catch { continue }
+    const events = out.get(sid) ?? []
+    for (const line of text.split('\n')) {
+      if (!line.trim()) continue
+      try { const event = JSON.parse(line) as unknown; if (event && typeof event === 'object' && !Array.isArray(event)) events.push(event as Record<string, unknown>) } catch { /* a torn line */ }
+    }
+    out.set(sid, events)
+  }
+  for (const events of out.values()) events.sort((a, b) => createdAt(a) - createdAt(b))
+  return out
+}
+
 export class JsonJournal implements JournalBackend {
   private readonly runOwners = new Map<string, string>()
   constructor(readonly sessionDir: string, private readonly env: Record<string, string | undefined> = {}) {}
@@ -48,32 +70,7 @@ export class JsonJournal implements JournalBackend {
   }
 
 
-  async recoveryEvents(): Promise<Map<string, Record<string, unknown>[]>> {
-    const dir = join(this.sessionDir, TURN_JOURNAL_DIR)
-    const out = new Map<string, Record<string, unknown>[]>()
-    let names: string[]
-    try { names = readdirSync(dir).sort() } catch { return out }
-    for (const name of names) {
-      if (!name.endsWith('.jsonl')) continue
-      const stem = name.slice(0, -'.jsonl'.length)
-      const tilde = stem.indexOf('~')
-      const sid = tilde > 0 ? stem.slice(0, tilde) : stem
-      if (!TURN_JOURNAL_ID_RE.test(sid)) continue
-      let text: string
-      try {
-        if (!statSync(join(dir, name)).isFile()) continue
-        text = readFileSync(join(dir, name), 'utf8')
-      } catch { continue }
-      const events = out.get(sid) ?? []
-      for (const line of text.split('\n')) {
-        if (!line.trim()) continue
-        try { const event = JSON.parse(line) as unknown; if (event && typeof event === 'object' && !Array.isArray(event)) events.push(event as Record<string, unknown>) } catch { /* a torn line */ }
-      }
-      out.set(sid, events)
-    }
-    for (const events of out.values()) events.sort((a, b) => createdAt(a) - createdAt(b))
-    return out
-  }
+  async recoveryEvents(): Promise<Map<string, Record<string, unknown>[]>> { return readTurnJournalEvents(this.sessionDir) }
 
   private fsyncMode(): 'eager' | 'terminal-only' {
     const mode = (this.env.HERMES_WEBUI_RUN_JOURNAL_FSYNC ?? 'terminal-only').trim().toLowerCase()
@@ -114,6 +111,16 @@ export class JsonJournal implements JournalBackend {
   async streams(sessionId: string): Promise<string[]> {
     const dir = join(this.root(), validateId(sessionId, 'session_id'))
     try { return [...new Set(readdirSync(dir).filter((name) => name.endsWith('.jsonl') || name.endsWith(PRUNED_SUMMARY_SUFFIX)).map((name) => name.replace(/(?:\.jsonl|\.summary\.json)$/, '')))].sort() } catch { return [] }
+  }
+  async importRun(sessionId: string, runId: string, run: { rows: JournalEvent[]; summary: RunSummary | null }): Promise<void> {
+    if (this.closed) throw new Error('Storage is closed')
+    const path = this.pathFor(sessionId, runId)
+    const summaryPath = path.replace(/\.jsonl$/, PRUNED_SUMMARY_SUFFIX)
+    mkdirSync(dirname(path), { recursive: true })
+    if (run.rows.length) await atomicWriteTextAsync(path, run.rows.map((row) => `${JSON.stringify(row)}\n`).join(''))
+    else rmSync(path, { force: true })
+    if (run.summary) await atomicWriteTextAsync(summaryPath, JSON.stringify(run.summary))
+    else rmSync(summaryPath, { force: true })
   }
   async prune(olderThan: number): Promise<number> { return (await this.pruneSettled({ now: olderThan + 1, retentionSeconds: 1 })).pruned }
 
@@ -269,12 +276,7 @@ export class JsonJournal implements JournalBackend {
    */
   async pruneSettled(opts: PruneOptions = {}): Promise<PruneResult> {
     const result: PruneResult = { examined: 0, terminal: 0, pruned: 0, bytes_reclaimed: 0 }
-    const days = Number.parseFloat(this.env.HERMES_WEBUI_RUN_JOURNAL_RETENTION_DAYS ?? '14')
-    const retention = opts.retentionSeconds ?? (Number.isFinite(days) ? Math.max(0, days) * 86400 : 14 * 86400)
-    const keepEnv = Number.parseInt(this.env.HERMES_WEBUI_RUN_JOURNAL_KEEP_RECENT ?? '3', 10)
-    const keep = opts.keepRecent ?? (Number.isFinite(keepEnv) ? Math.max(0, keepEnv) : 3)
-    const now = opts.now ?? Date.now() / 1000
-    const cutoff = now - retention
+    const { retention, keep, now, cutoff } = pruneRetention(this.env, opts)
     const root = this.root()
     // Yield to queued requests, then report whether the sweep may continue.
     const proceed = async (): Promise<boolean> => { await (opts.pause ?? nextTurn)(); return !opts.signal?.aborted }
@@ -509,17 +511,8 @@ export class JsonJournal implements JournalBackend {
     } }
   }
 
-  /** Python `stale_interrupted_event`: a synthetic terminal row for a journal whose worker died. */
   staleInterruptedEventNow(sessionId: string, runId: string, afterSeq: number | null = null, now = Date.now() / 1000): JournalEvent | null {
-    const summary = this.latestRunSummaryNow(sessionId, runId)
-    if (summary.terminal || !summary.event_count) return null
-    const seq = (summary.last_seq || 0) + 1
-    if (afterSeq !== null && seq <= afterSeq) return null
-    return {
-      version: 1, event_id: `${runId}:${String(seq)}`, seq, run_id: runId, session_id: sessionId, event: 'apperror', type: 'apperror', created_at: now, terminal: true, terminal_state: 'lost-worker-bookkeeping',
-      payload: { type: 'interrupted', recovery_control: true, message: 'The live worker stopped before this run finished.', hint: 'The transcript was restored to the last journaled event. Start a new turn if you still need the task to continue.', session_id: sessionId, stream_id: runId, journal_last_seq: summary.last_seq },
-      synthetic: true,
-    }
+    return staleInterruptedEvent(this.latestRunSummaryNow(sessionId, runId), sessionId, runId, afterSeq, now)
   }
 }
 
@@ -557,13 +550,8 @@ export class JsonJournalWriter {
     if (this.closed) throw new Error('run journal writer is closed')
     const name = eventName.trim()
     if (!name) throw new Error('event_name is required')
-    const terminalState = terminalStateForEvent(name, payload)
     this.seq += 1
-    const event: JournalEvent = {
-      version: 1, event_id: `${this.runId}:${String(this.seq)}`, seq: this.seq, run_id: this.runId, session_id: this.sessionId, event: name, type: name,
-      created_at: createdAt ?? meta.createdAt ?? this.now(), terminal: terminal ?? Boolean(terminalState), terminal_state: terminalState, payload: payload ?? {},
-      ...(meta.redacted === undefined ? {} : { redacted: meta.redacted }),
-    }
+    const event = journalEvent(this.sessionId, this.runId, this.seq, name, payload, { terminal, createdAt: createdAt ?? meta.createdAt ?? this.now(), redacted: meta.redacted })
     if (this.fd === null) {
       mkdirSync(dirname(this.path), { recursive: true })
       this.fd = openSync(this.path, fsConstants.O_CREAT | fsConstants.O_APPEND | fsConstants.O_WRONLY, 0o600)

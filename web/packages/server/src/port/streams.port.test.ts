@@ -1,4 +1,4 @@
-import { jsonJournal } from '../test/storage.js'
+import { jsonJournal, useJsonStorage } from '../test/storage.js'
 /**
  * Chat-stream, cancel, journal, projection, and persistence regressions.
  */
@@ -12,6 +12,8 @@ import { bootTestServer, type SseFrame, type TestServer } from '../test/harness.
 import { redactSessionData, stripPublicInternalFields } from '../redact.js'
 import { allSessions } from '../sessions/list.js'
 import { str } from '../util.js'
+
+useJsonStorage()
 
 type Json = Record<string, unknown>
 type ChatResult = SidecarResult<'chat.start'>

@@ -1,4 +1,4 @@
-import { testSessionDocuments } from '../test/storage.js'
+import { testSessionDocuments, useJsonStorage } from '../test/storage.js'
 import { JsonDocuments } from '../test/storage.js'
 import { sessionDirectory, sessionPath } from '../test/storage.js'
 import { readFileSync } from 'node:fs'
@@ -9,6 +9,8 @@ import { CompletionDrain } from './completions.js'
 import { BackgroundActivity, BackgroundTaskStore, taskView } from './background-tasks.js'
 import { batchUpdate, eventUpdate, recordBackgroundUpdate } from './background-updates.js'
 import { StreamChannel, StreamRegistry, type SessionChannels } from './streams.js'
+
+useJsonStorage()
 
 type Dict = Record<string, unknown>
 const heartbeat = (sid: string, seq = 1): Dict => ({ type: 'heartbeat', process_id: 'proc_beat', session_id: 'proc_beat', command: 'npm test', seq, interval: 60, elapsed: seq * 61, started_at: 10, output: `test ${seq} passed`, origin_ui_session_id: sid, consumed: false })

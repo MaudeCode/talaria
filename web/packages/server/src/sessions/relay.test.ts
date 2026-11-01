@@ -1,4 +1,4 @@
-import { JsonDocuments } from '../test/storage.js'
+import { JsonDocuments, useJsonStorage } from '../test/storage.js'
 import { testProfileIdentity } from '../test/storage.js'
 import { initializeStore } from '../test/storage.js'
 import { sessionDirectory, sessionPath } from '../test/storage.js'
@@ -11,6 +11,8 @@ import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer, type TestServer, openStateDb } from '../test/harness.js'
 import * as atomic from '../fs/atomic.js'
 import { loadRelayConfig, saveRelayConfig, PRESENCE_FENCE_SECONDS, PRESENCE_LEASE_SECONDS, PRESENCE_MAX_LEASES, PresenceLeases, RelayPairingError, RelayPublisher, validatedOrigin, type RelayConfig } from './relay.js'
+
+useJsonStorage()
 
 type Json = Record<string, unknown>
 it('projects a live Web completion without pairing and keeps terminal failures quiet', async () => {

@@ -1,4 +1,4 @@
-import { sessionDirectory, sessionIndexPath, sessionPath } from '../test/storage.js'
+import { sessionDirectory, sessionIndexPath, sessionPath, useJsonStorage } from '../test/storage.js'
 import { publicToolFrame } from '../redact.js'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -17,6 +17,8 @@ import { diffHunks } from '../text/diff.js'
 import { withPendingUserTurn, withoutRunningTurnOutput } from './merge.js'
 import { JsonJournalWriter as RunJournalWriter } from './storage/json-journal.js'
 import typedRows from '../test/fixtures/agent-typed-rows.json' with { type: 'json' }
+
+useJsonStorage()
 
 type Json = Record<string, unknown>
 const post = (s: TestServer, path: string, body: unknown): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
@@ -3579,3 +3581,4 @@ describe('project deletion unlinks every session that names it (TAL-1028)', () =
     }
   })
 })
+

@@ -8,7 +8,9 @@ import { walkSkillFiles } from '../tools/skills.js'
 import { classifyProviderError } from './turn.js'
 import { persistentStateSnapshot } from './state-saved.js'
 import { ReasoningTitleTracker } from './reasoning-titles.js'
-import { sessionPath } from '../test/storage.js'
+import { sessionPath, useJsonStorage } from '../test/storage.js'
+
+useJsonStorage()
 
 vi.mock('node:fs', { spy: true })
 vi.mock('../tools/skills.js', { spy: true })

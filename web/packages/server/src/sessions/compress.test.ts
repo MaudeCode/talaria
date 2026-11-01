@@ -1,4 +1,4 @@
-import { sessionPath } from '../test/storage.js'
+import { sessionPath, useJsonStorage } from '../test/storage.js'
 /**
  * TAL-255: manual compression on `/api/session/compress` (iOS `/compress`) and the `compress/start` + `compress/status`
  * job the browser polls, against a fake `chat.compress`.
@@ -11,6 +11,8 @@ import { SidecarError } from '../sidecar/client.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { mergeSessionMessagesAppendOnly } from './merge.js'
 import { COMPRESSION_JOB_TTL_SECONDS, CompressionJobs, type CompressionJob } from './compress.js'
+
+useJsonStorage()
 
 type Json = Record<string, unknown>
 type CompressResult = SidecarResult<'chat.compress'>

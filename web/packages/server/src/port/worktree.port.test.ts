@@ -1,3 +1,4 @@
+import { useJsonStorage } from '../test/storage.js'
 /**
  * Worktree session regressions.
  */
@@ -10,6 +11,8 @@ import { SidecarError } from '../sidecar/client.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { allSessions } from '../sessions/list.js'
 import { WORKTREE_RETAIN_RETRY_MS } from '../sessions/service.js'
+
+useJsonStorage()
 
 type Json = Record<string, unknown>
 const post = (s: TestServer, path: string, body: unknown): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })

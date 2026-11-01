@@ -1,3 +1,4 @@
+import { useJsonStorage } from '../test/storage.js'
 /**
  * Nous picker signals, import scrubbing, ephemeral turn projection, and
  * runner event projection regressions.
@@ -17,6 +18,8 @@ import { bootTestServer, type TestServer } from '../test/harness.js'
 import { writeEnvFile } from '../test/env-file.js'
 import { projectRunnerEventPayload } from '../api/automation-raw.js'
 import { str } from '../util.js'
+
+useJsonStorage()
 
 type Json = Record<string, unknown>
 const post = (s: TestServer, path: string, body: unknown): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
