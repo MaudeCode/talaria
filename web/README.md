@@ -142,9 +142,11 @@ commented template.
 
 Public authentication request bodies are limited to 64 KiB, including chunked requests;
 larger bodies receive HTTP 413. Authenticated routes retain their existing limits.
-Access logs include `forwarded_for` only when `HERMES_WEBUI_TRUST_FORWARDED_FOR` is enabled
-and the connection comes from a trusted proxy. The value uses the validated
-client-IP selection and is limited to 256 characters.
+Access logs include `forwarded_for` only when `HERMES_WEBUI_TRUST_FORWARDED_FOR` is enabled,
+the connection comes from a trusted proxy (loopback included), and `X-Forwarded-For` resolves
+to a valid, normalized client address; `X-Real-IP` is never used. A forwarded header that is
+not recorded sets `forwarded_for_ignored: true` instead. See
+[Behind a reverse proxy](docs/remote-access.md#behind-a-reverse-proxy).
 
 Login, passkey, native OIDC start, and TTS limits key on a forwarded client only when
 `HERMES_WEBUI_TRUST_FORWARDED_FOR` is enabled and the proxy's socket address is listed in

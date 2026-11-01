@@ -42,7 +42,7 @@ import type { ConnectorOffers } from '../tools/connectors.js'
 import type { StreamSlots } from '../api/sse-routes.js'
 import type { BootstrapFeatures, ReleaseInfo, WhatsNewAnnouncement } from '@maudecode/talaria-web-contracts'
 import { buildCspEnforcedPolicy, buildCspReportOnlyPolicy, cspExtras, CSP_REPORT_TO, type CspExtras } from './csp.js'
-import { forwardedClientIp, rawPeerIsTrustedProxy, type CsrfFailure } from './origin.js'
+import { forwardedLogFields, rawPeerIsTrustedProxy, type CsrfFailure } from './origin.js'
 import type { AgentConfig } from '../config/agent-config.js'
 import type { ProviderCatalog } from '../providers/catalog.js'
 import type { ProfileService } from '../profiles/profiles.js'
@@ -447,10 +447,13 @@ export class RequestContext {
       ms: Math.round((Date.now() - this.startedAtMs) * 10) / 10,
     }
     const env = this.deps.config.env
-    if (truthy(env.HERMES_WEBUI_TRUST_FORWARDED_FOR) && rawPeerIsTrustedProxy(this.peer, env) &&
-      (this.header('x-forwarded-for') !== undefined || this.header('x-real-ip') !== undefined)) {
-      const forwardedFor = forwardedClientIp(this.headerAll('x-forwarded-for'), this.header('x-real-ip'), this.peer, env)
-      if (forwardedFor) record.forwarded_for = forwardedFor.slice(0, 256)
+    const forwarded = forwardedLogFields(this.headerAll('x-forwarded-for'), this.peer, env)
+    Object.assign(record, forwarded)
+    if ('forwarded_for_ignored' in forwarded && truthy(env.HERMES_WEBUI_TRUST_FORWARDED_FOR) && !rawPeerIsTrustedProxy(this.peer, env) &&
+      !untrustedForwardingWarned.has(this.deps)) {
+      untrustedForwardingWarned.add(this.deps)
+      this.deps.log(`[webui] warning: ignoring X-Forwarded-For from ${JSON.stringify(this.peer.slice(0, 64))}, which is not in HERMES_WEBUI_TRUSTED_PROXY_CIDRS; ` +
+        'add the proxy address there to log its clients. Requests that lose the header carry forwarded_for_ignored. Shown once.')
     }
     this.deps.log(`[webui] ${JSON.stringify(record)}`)
   }
@@ -576,6 +579,8 @@ export function acceptsEncoding(header: string | undefined, coding: string): boo
 }
 
 const gzipAsync = promisify(gzip)
+/** Apps (one per process outside tests) that already warned about an untrusted proxy's X-Forwarded-For. */
+const untrustedForwardingWarned = new WeakSet<object>()
 
 /** Encode already-serialized JSON bytes, including oRPC output, without blocking the event loop on gzip. */
 export async function encodeJsonResponse(payload: Buffer, acceptEncoding: string | undefined): Promise<{ body: Buffer; gzipped: boolean }> {

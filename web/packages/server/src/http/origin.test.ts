@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { allowedPublicOrigins, canonicalIp, checkSameOriginBrowserRequest, forwardedClientIp, isLoopback, normalizeHostPort, portsMatch, rawPeerIsTrustedProxy, throttleClientIp } from './origin.js'
+import { allowedPublicOrigins, canonicalIp, checkSameOriginBrowserRequest, forwardedClientIp, isLoopback, normalizeHostPort, portsMatch, rawPeerIsTrustedProxy, throttleClientIp, trustsProxyBeyondLoopback } from './origin.js'
 import { buildCspEnforcedPolicy, buildCspReportOnlyPolicy, cspExtras } from './csp.js'
 
 describe('host and port normalisation', () => {
@@ -87,7 +87,9 @@ describe('trusted proxies and client IPs', () => {
     expect(canonicalIp('::ffff:203.0.113.1')).toBe('203.0.113.1')
     expect(canonicalIp('::FFFF:cb00:7101')).toBe('203.0.113.1')
     expect(canonicalIp('203.0.113.1')).toBe('203.0.113.1')
-    for (const bad of ['', 'evil', '010.0.0.1', '203.0.113.1 ']) expect(canonicalIp(bad), bad).toBeNull()
+    expect(canonicalIp('0:0:0:0:0:ffff:cb00:7101')).toBe('203.0.113.1')
+    // A zone id is free-form text; the address is rejected rather than silently stripped.
+    for (const bad of ['', 'evil', '010.0.0.1', '203.0.113.1 ', 'fe80::1%eth0', '2001:db8::1%x']) expect(canonicalIp(bad), bad).toBeNull()
   })
 
   it('keys throttles on a forwarded client only behind an explicitly listed proxy with consistent evidence', () => {
@@ -130,11 +132,22 @@ describe('trusted proxies and client IPs', () => {
     expect(key(['203.0.113.9'], ['::FFFF:cb00:7109'])).toBe('203.0.113.9')
     expect(key(['2001:0DB8:0:0::1'], ['2001:db8::0:1'])).toBe('2001:db8::1')
     expect(key(['2001:db8::1'])).toBe(key(['2001:0db8:0000::0001']))
+    // A scoped hop names no client, so it never mints a fresh budget.
+    expect(key(['fe80::1%syntheticmarker'])).toBe('10.0.0.1')
   })
 
   it('recognises loopback addresses', () => {
     for (const a of ['127.0.0.1', '127.255.255.255', '::1', '::ffff:127.0.0.1']) expect(isLoopback(a), a).toBe(true)
     for (const a of ['10.0.0.1', '192.168.1.1', '100.64.0.1', 'garbage']) expect(isLoopback(a), a).toBe(false)
+  })
+
+  it('tells loopback-only proxy lists from ones that trust another host', () => {
+    for (const cidrs of [undefined, '', '127.0.0.1/32', '127.0.0.0/8; ::1', '::ffff:127.0.0.1', 'bogus/99']) {
+      expect(trustsProxyBeyondLoopback({ HERMES_WEBUI_TRUSTED_PROXY_CIDRS: cidrs }), String(cidrs)).toBe(false)
+    }
+    for (const cidrs of ['172.17.0.1', '127.0.0.1, 10.0.0.0/8', '0.0.0.0/0', '::/0', '2001:db8::/32', '127.0.0.0/7']) {
+      expect(trustsProxyBeyondLoopback({ HERMES_WEBUI_TRUSTED_PROXY_CIDRS: cidrs }), cidrs).toBe(true)
+    }
   })
 })
 

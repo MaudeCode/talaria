@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Request logs take the client address only from a valid X-Forwarded-For chain and mark forwarded headers they ignore.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

@@ -117,6 +117,25 @@ export interface ProxyTrust {
   implicitLoopback?: boolean
 }
 
+interface ProxyCidr { addr: string; bits: number; type: 'ipv4' | 'ipv6' }
+
+/** The valid `HERMES_WEBUI_TRUSTED_PROXY_CIDRS` entries; a bare address is a full-length prefix, malformed entries are skipped. */
+function proxyCidrEntries(env: Env): ProxyCidr[] {
+  const out: ProxyCidr[] = []
+  for (const rawToken of (env.HERMES_WEBUI_TRUSTED_PROXY_CIDRS ?? '').replace(/;/g, ',').split(',')) {
+    const token = rawToken.trim()
+    if (!token) continue
+    const [addr = '', prefix] = token.split('/')
+    const family = isIP(addr)
+    if (!family) continue
+    const max = family === 4 ? 32 : 128
+    const bits = prefix === undefined ? max : Number(prefix)
+    if ((prefix !== undefined && !/^\d+$/.test(prefix)) || bits < 0 || bits > max) continue
+    out.push({ addr, bits, type: family === 4 ? 'ipv4' : 'ipv6' })
+  }
+  return out
+}
+
 export function trustedProxyNetworks(env: Env, { implicitLoopback = true }: ProxyTrust = {}): BlockList {
   const list = new BlockList()
   if (implicitLoopback) {
@@ -124,23 +143,19 @@ export function trustedProxyNetworks(env: Env, { implicitLoopback = true }: Prox
     list.addSubnet('::1', 128, 'ipv6')
     list.addSubnet('::ffff:127.0.0.0', 104, 'ipv6')
   }
-  for (const rawToken of (env.HERMES_WEBUI_TRUSTED_PROXY_CIDRS ?? '').replace(/;/g, ',').split(',')) {
-    const token = rawToken.trim()
-    if (!token) continue
-    const [addr, prefix] = token.split('/')
-    const family = isIP(addr ?? '')
-    if (!family) continue
-    const type = family === 4 ? 'ipv4' : 'ipv6'
-    if (prefix === undefined) {
-      list.addAddress(addr ?? '', type)
-      continue
-    }
-    const bits = Number(prefix)
-    const max = family === 4 ? 32 : 128
-    if (!/^\d+$/.test(prefix) || bits < 0 || bits > max) continue
-    try { list.addSubnet(addr ?? '', bits, type) } catch { /* fail closed */ }
+  for (const { addr, bits, type } of proxyCidrEntries(env)) {
+    try { list.addSubnet(addr, bits, type) } catch { /* fail closed */ }
   }
   return list
+}
+
+/** Whether `HERMES_WEBUI_TRUSTED_PROXY_CIDRS` trusts any proxy beyond the loopback networks. */
+export function trustsProxyBeyondLoopback(env: Env): boolean {
+  return proxyCidrEntries(env).some(({ addr, bits, type }) => {
+    if (type === 'ipv4') return !(addr.startsWith('127.') && bits >= 8)
+    const mapped = ipv4Mapped(addr)
+    return mapped ? !(mapped.startsWith('127.') && bits >= 104) : !(isLoopback(addr) && bits === 128)
+  })
 }
 
 export function ipInNetworks(addr: string, networks: BlockList): boolean {
@@ -161,8 +176,12 @@ export function rawPeerIsTrustedProxy(peer: string, env: Env, trust: ProxyTrust 
   return Boolean(peer) && ipInNetworks(peer, trustedProxyNetworks(env, trust))
 }
 
-/** One spelling per address: compressed lower-case IPv6, IPv4-mapped IPv6 as IPv4; null when not an address. */
+/**
+ * One spelling per address: compressed lower-case IPv6, IPv4-mapped IPv6 as IPv4; null when not an address.
+ * A scoped IPv6 address is null too: its zone id is free-form text that `SocketAddress` would silently drop.
+ */
 export function canonicalIp(addr: string): string | null {
+  if (addr.includes('%')) return null
   const family = isIP(addr)
   if (!family) return null
   try {
@@ -214,4 +233,20 @@ export function throttleClientIp(xff: string[], realIp: string[], peer: string, 
   const client = forwarded === null ? null : canonicalIp(forwarded)
   if (client === null) return peer
   return realIp.flatMap((field) => field.split(',')).every((value) => canonicalIp(value.trim()) === client) ? client : peer
+}
+
+export type ForwardedLogFields = { forwarded_for: string } | { forwarded_for_ignored: true } | Record<string, never>
+
+/**
+ * Request-log client identity. `forwarded_for` comes only from the X-Forwarded-For walk (never X-Real-IP,
+ * which a proxy relays from the client unchanged) behind an opted-in trusted peer, as a canonical address
+ * other than the peer. A nonblank chain that yields nothing is flagged without its text; no chain adds neither.
+ */
+export function forwardedLogFields(xff: string[], peer: string, env: Env): ForwardedLogFields {
+  if (!xff.some((v) => v.trim())) return {}
+  if (truthy(env.HERMES_WEBUI_TRUST_FORWARDED_FOR) && rawPeerIsTrustedProxy(peer, env)) {
+    const client = canonicalIp(forwardedClientIp(xff, undefined, peer, env) ?? '')
+    if (client && client !== canonicalIp(peer)) return { forwarded_for: client }
+  }
+  return { forwarded_for_ignored: true }
 }
