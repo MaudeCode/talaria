@@ -24,7 +24,8 @@ const quotas = ProviderQuotasSchema.parse({
     },
     { source_id: 'qsrc_plain', provider_id: 'openai-codex', provider_label: 'OpenAI Codex', status: 'available', windows: [{ label: 'Session', used_percent: 40, remaining_percent: 60, reset_at: null, detail: null, window_seconds: null, pace: null, forecast: null }] },
     { source_id: 'qsrc_credits', provider_id: 'openrouter', provider_label: 'OpenRouter', status: 'available', quota: { limit_remaining: 12.5, usage: 7.5, limit: 20 } },
-    { source_id: 'qsrc_down', provider_id: 'nous', provider_label: 'Nous', status: 'stale', unavailable_reason: 'Provider data is temporarily unavailable.', windows: [] },
+    { source_id: 'qsrc_down', provider_id: 'nous', provider_label: 'Nous', status: 'stale', unavailable_reason: 'Provider data is temporarily unavailable.', urgency: { remaining: 'stale', pace: 'stale' },
+      windows: [{ label: 'Session', used_percent: 10, remaining_percent: 90, reset_at: null, detail: null, window_seconds: null, pace: null, forecast: null, urgency: { remaining: 'healthy', pace: 'healthy' } }] },
   ],
 })
 
@@ -61,6 +62,7 @@ describe('ProviderQuotaRows', () => {
     const down = document.querySelector('[data-quota-source="qsrc_down"]')!
     expect(down).toHaveAttribute('data-quota-status', 'stale')
     expect(down).toHaveTextContent('Provider data is temporarily unavailable.')
+    expect(down.querySelector('[data-quota-window="Session"]'), 'a stale source outranks its cached window level').toHaveAttribute('data-level', 'stale')
     expect(screen.getByRole('button', { name: 'Refresh quotas' })).toBeEnabled()
   })
 })

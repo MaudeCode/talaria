@@ -40,8 +40,17 @@ struct InsightsActivityChart: View {
         .frame(height: 120)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
-        .accessibilityValue(Text(summary ?? String(localized: "No data")))
+        .accessibilityValue(Text(accessibilityValue))
         .accessibilityIdentifier(identifier)
+    }
+
+    /// The peak, then every category with sessions, so VoiceOver reads the whole series.
+    private var accessibilityValue: String {
+        let values = categories.filter { $0.sessions > 0 }.map { category in
+            "\(category.label ?? InsightsActivitySummary.hourLabel(Int(category.id) ?? 0)) \(category.sessions)"
+        }
+        guard !values.isEmpty else { return String(localized: "No data") }
+        return ([summary].compactMap { $0 } + [values.joined(separator: ", ")]).joined(separator: ". ")
     }
 
     static func weekdays(_ days: [InsightsActivityByDay]) -> [InsightsActivityCategory] {

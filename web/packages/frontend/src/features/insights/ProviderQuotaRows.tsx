@@ -83,8 +83,12 @@ function QuotaSourceRow({ source: s, locale }: { source: QuotaSource; locale: st
 
 function QuotaWindowRow({ window: w, source, locale }: { window: QuotaWindow; source: QuotaSource; locale: string }) {
   const { pace, forecast } = w
-  // The server's pace level already falls back to its remaining classification for a window without pace (TAL-411).
-  const level: QuotaLevel = w.urgency?.pace ?? source.urgency?.pace ?? 'healthy'
+  // A source the server marks stale or unavailable outranks its cached windows' levels (`reconcileProviderQuotas` keeps
+  // the windows as they were); otherwise the window's pace level, which already falls back to its remaining
+  // classification without a pace (TAL-411). The App's `ProviderQuotaPresentation.state` orders them the same way.
+  const level: QuotaLevel = source.status !== 'available'
+    ? source.urgency?.pace ?? 'unavailable'
+    : w.urgency?.pace ?? source.urgency?.pace ?? 'healthy'
   const remaining = w.remaining_percent
   // The server's minutes to reset, as of its `computed_at`; the list rereads every minute.
   const countdown = pace ? formatMinutes(locale, pace.minutes_to_reset) : null

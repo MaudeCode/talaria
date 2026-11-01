@@ -200,6 +200,16 @@ public enum ProviderQuotaSidebarSettings {
 
     /// The pins among `visible` source IDs, compacted into the first slot. A pin on a hidden
     /// or vanished source would hold a slot Insights cannot show or release.
+    /// The two sidebar slots after toggling `sourceID`: a pinned source leaves and the second slot moves up; an
+    /// unpinned one takes the first free slot, or nothing when both are held.
+    public static func toggled(first: String, second: String, sourceID: String) -> (first: String, second: String) {
+        if first == sourceID { return (second, "") }
+        if second == sourceID { return (first, "") }
+        if first.isEmpty { return (sourceID, second) }
+        if second.isEmpty { return (first, sourceID) }
+        return (first, second)
+    }
+
     public static func pruned(
         first: String,
         second: String,

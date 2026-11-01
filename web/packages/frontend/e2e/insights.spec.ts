@@ -42,11 +42,13 @@ const insights = {
   activity_by_hour: Array.from({ length: 24 }, (_, hour) => ({ hour, sessions: hour >= 9 && hour <= 18 ? 3 + (hour * 7) % 5 : 0 })),
 }
 
-test('Insights shows every quota window with pace and forecast, the stat row, the charts and the model table', async ({ page }, info) => {
+test('Insights opens on Quotas with every window, pace and forecast; Usage holds the stats, charts and model table', async ({ page }, info) => {
   await page.route('**/api/provider/quotas**', (route) => route.fulfill({ json: quotas }))
   await page.route('**/api/insights**', (route) => route.fulfill({ json: insights }))
   await page.goto('/insights')
   await settle(page)
+  await expect(page.getByRole('tab', { name: 'Quotas' })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByTestId('insights-stats')).toHaveCount(0)
 
   const paced = page.locator('[data-quota-source="qsrc_paced"]')
   await expect(paced.getByRole('meter')).toHaveCount(2)
@@ -64,6 +66,17 @@ test('Insights shows every quota window with pace and forecast, the stat row, th
   await expect(codex).toContainText('60% remaining')
   await expect(codex).not.toContainText('pace')
 
+  // Evidence: the Quotas tab, then the Usage tab's charts and table further down the hub's own scroll area.
+  const shot = async (name: string) => {
+    const path = info.outputPath(`insights-${name}-${info.project.name}.png`)
+    await page.screenshot({ path })
+    await info.attach(`insights-${name}-${info.project.name}`, { path, contentType: 'image/png' })
+  }
+  await shot('quotas')
+
+  await page.getByRole('tab', { name: 'Usage' }).click()
+  await expect(page).toHaveURL(/tab=usage/)
+  await expect(page.locator('[data-quota-source]')).toHaveCount(0)
   const stats = page.getByTestId('insights-stats')
   await expect(stats).toContainText('Prompt-cache hit rate')
   await expect(stats).toContainText('50%')
@@ -82,14 +95,13 @@ test('Insights shows every quota window with pace and forecast, the stat row, th
   await page.getByRole('option', { name: 'Sessions' }).click()
   await expect(page.locator('[data-chart="daily"]')).toContainText('Max 7')
 
-  // Evidence: the top of the page as it opens, then the charts and table further down the hub's own scroll area.
-  const shot = async (name: string) => {
-    const path = info.outputPath(`insights-${name}-${info.project.name}.png`)
-    await page.screenshot({ path })
-    await info.attach(`insights-${name}-${info.project.name}`, { path, contentType: 'image/png' })
-  }
   await page.locator('.main-view-body').evaluate((el) => { el.scrollTop = 0 })
-  await shot('top')
+  await shot('usage-top')
   await page.locator('.main-view-body').evaluate((el) => { el.scrollTop = el.scrollHeight })
-  await shot('bottom')
+  await shot('usage-bottom')
+
+  // The tab survives a reload through the URL.
+  await page.reload()
+  await settle(page)
+  await expect(page.getByRole('tab', { name: 'Usage' })).toHaveAttribute('aria-selected', 'true')
 })

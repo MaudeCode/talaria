@@ -116,6 +116,14 @@ struct SessionListView: View {
     @AppStorage(ProviderQuotaSidebarSettings.firstSourceKey) private var firstSidebarQuotaSourceID = ""
     @AppStorage(ProviderQuotaSidebarSettings.secondSourceKey) private var secondSidebarQuotaSourceID = ""
     @AppStorage(ProviderQuotaVisibilitySettings.storageKey) private var hiddenProviderData = Data()
+    @AppStorage(
+        ProviderQuotaDisplaySettings.aliasesKey,
+        store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
+    ) private var providerAliasesData = Data()
+    @AppStorage(
+        ProviderQuotaPercentageMode.storageKey,
+        store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
+    ) private var quotaPercentageModeRawValue = ProviderQuotaPercentageMode.defaultValue.rawValue
     @State private var sidebarSearch = SidebarSearchPull()
     private var searchText: String { sidebarSearch.text }
     @State private var selectedProjectID: String?
@@ -1294,6 +1302,7 @@ struct SessionListView: View {
                     server: server,
                     quotaViewModel: quotaViewModel,
                     initialQuotaSourceID: insightsQuotaSourceID,
+                    selection: sectionSelection,
                     openProviderSettings: {
                         openSection(.settings(.providerQuotas))
                     },
@@ -1360,10 +1369,53 @@ struct SessionListView: View {
                 } else {
                     ContentUnavailableView("Select a Task", systemImage: "calendar.badge.clock")
                 }
+            case .quotaSource(let id):
+                if let source = quotaViewModel.quotaSources.first(where: { $0.id == id }) {
+                    quotaSourcePage(source)
+                } else {
+                    ContentUnavailableView("Loading quota…", systemImage: "gauge.with.dots.needle.33percent")
+                }
             }
         }
         .id(viewModel.activeProfileName)
         .adaptiveSecondaryNavigationTitle()
+    }
+
+    /// One quota account above the Insights Quotas tab (TAL-1750); pins and hiding write the same stores the sidebar reads.
+    private func quotaSourcePage(_ source: ProviderQuotaSource) -> some View {
+        let pinnedIDs = ProviderQuotaSidebarSettings.sourceIDs(first: firstSidebarQuotaSourceID, second: secondSidebarQuotaSourceID)
+        return ProviderQuotaDetailView(
+            source: source,
+            scopeID: quotaViewModel.quotaScopeID ?? "",
+            displayName: ProviderQuotaDisplaySettings.displayName(
+                providerID: source.providerID, fallback: source.providerLabel, aliasesData: providerAliasesData
+            ),
+            percentageMode: ProviderQuotaPercentageMode(rawValue: quotaPercentageModeRawValue) ?? .defaultValue,
+            isRefreshing: quotaViewModel.refreshingQuotaSourceIDs.contains(source.id),
+            isPinned: pinnedIDs.contains(source.id),
+            canPin: quotaViewModel.hasStableQuotaSources && pinnedIDs.count < 2,
+            refresh: {
+                Task {
+                    if quotaViewModel.hasStableQuotaSources {
+                        await quotaViewModel.refreshQuota(sourceID: source.id)
+                    } else {
+                        await quotaViewModel.loadQuotas(refresh: true)
+                    }
+                }
+            },
+            togglePin: {
+                let slots = ProviderQuotaSidebarSettings.toggled(
+                    first: firstSidebarQuotaSourceID, second: secondSidebarQuotaSourceID, sourceID: source.id
+                )
+                firstSidebarQuotaSourceID = slots.first
+                secondSidebarQuotaSourceID = slots.second
+            },
+            hide: {
+                hiddenProviderData = ProviderQuotaVisibilitySettings.data(bySetting: source.providerID, hidden: true, in: hiddenProviderData)
+                navigationState.selectedItem = nil
+            },
+            openProviderSettings: { openSection(.settings(.providerQuotas)) }
+        )
     }
 
     private var sectionSelection: Binding<SectionItem?> {

@@ -2346,6 +2346,8 @@
 	"insights_by_hour": "Activity by hour",
 	"insights_no_data": "No activity in this period.",
 	"insights_usage": "Usage",
+	"insights_tab_quotas": "Quotas",
+	"insights_tab_usage": "Usage",
 	"insights_daily": "Daily",
 	"insights_metric": "Metric",
 	"insights_chart_max": "Max {value}",

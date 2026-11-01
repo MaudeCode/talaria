@@ -2,14 +2,14 @@
   "entries": [
     {
       "category": "Changed",
-      "summary": "Insights shows every provider quota window with its pace, burn rate, budget, forecast, reset time and freshness, matching the widgets.",
+      "summary": "Insights splits into Quotas and Usage: each quota account is a widget-style tile that opens its windows, pace, burn rate, budget, forecast, reset schedule and actions.",
       "highlight": true,
       "components": [
         "app"
       ],
       "announcement": {
         "title": "Insights, rebuilt",
-        "description": "Quota pace and forecasts, usage charts and a compact summary on one screen.",
+        "description": "Quota tiles with pace and forecasts, usage charts and a compact summary, each on its own tab.",
         "icon": "sparkles"
       }
     },
@@ -31,7 +31,7 @@
     },
     {
       "category": "Added",
-      "summary": "Insights lists every provider quota with its windows, pace, burn rate, budget and forecast.",
+      "summary": "Insights gains a Quotas tab listing every provider account with its windows, pace, burn rate, budget and forecast, and a Usage tab for analytics.",
       "highlight": true,
       "components": [
         "web"

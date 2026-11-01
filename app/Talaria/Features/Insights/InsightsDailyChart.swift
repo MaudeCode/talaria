@@ -60,8 +60,30 @@ struct InsightsDailyChart: View {
             chart
                 .frame(height: 170)
                 .accessibilityIdentifier("insights-daily-chart")
+
+            // Every day's figures, for VoiceOver and for reading exact values; the chart itself summarises.
+            DisclosureGroup("Values") {
+                ForEach(days.filter { $0.day != nil }, id: \.date) { day in
+                    LabeledContent(day.day?.formatted(.dateTime.month(.abbreviated).day()) ?? day.date ?? "") {
+                        Text(valueLine(day))
+                            .font(.caption.monospacedDigit())
+                            .multilineTextAlignment(.trailing)
+                    }
+                    .font(.caption)
+                }
+            }
+            .font(.caption)
+            .accessibilityIdentifier("insights-daily-values")
         }
         .padding(.vertical, 4)
+    }
+
+    private func valueLine(_ day: InsightsDailyToken) -> String {
+        [
+            String(localized: "\(formatTokens(day.totalTokens)) tokens"),
+            String(localized: "\(day.sessions ?? 0) sessions"),
+            (day.cost ?? 0).formattedCost(collapsingZeroCents: true),
+        ].joined(separator: " · ")
     }
 
     private var chart: some View {

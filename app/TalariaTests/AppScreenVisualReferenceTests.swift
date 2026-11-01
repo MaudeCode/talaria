@@ -160,16 +160,16 @@ final class AppScreenVisualReferenceTests: XCTestCase {
         }
     }
 
-    /// The Insights quota row with two live windows, their server pace and forecast, and a fixed clock (TAL-1750).
-    func testProviderQuotaRowReferences() throws {
+    /// The quota detail's windows block with two live windows, their server pace and forecast, and a fixed clock (TAL-1750).
+    func testProviderQuotaWindowsReferences() throws {
         for scheme in [ColorScheme.light, .dark] {
             try VisualReference.assertMatchesReference(
-                try InsightsHostedTests.quotaRowView(InsightsHostedTests.pacedSource)
+                try InsightsHostedTests.quotaWindowsView(InsightsHostedTests.pacedSource)
                     .padding(16)
                     .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
                     .padding(.horizontal, 16),
-                named: "insights-quota-row-\(name(for: scheme))",
-                size: CGSize(width: 390, height: 330),
+                named: "insights-quota-windows-\(name(for: scheme))",
+                size: CGSize(width: 390, height: 500),
                 colorScheme: scheme,
                 background: Color(.systemGroupedBackground)
             )

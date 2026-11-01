@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useNavigate, useSearch } from '@tanstack/react-router'
 import { m } from '../../paraglide/messages.js'
+import type { InsightsTab } from '../../contracts/url'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { useLocale } from '../../i18n/useLocale'
@@ -11,8 +13,10 @@ import { Select } from '../../ui/Select'
 import { EmptyState, ErrorState, LoadingState, formatUsd } from '../../ui/States'
 import { BarChart } from './BarChart'
 import { ProviderQuotaRows } from './ProviderQuotaRows'
+import { cn } from '../../ui/cn'
 
 const PERIODS = [7, 30, 90, 365]
+const TABS: { id: InsightsTab; label: () => string }[] = [{ id: 'quotas', label: m.insights_tab_quotas }, { id: 'usage', label: m.insights_tab_usage }]
 const METRICS = ['tokens', 'cost', 'sessions'] as const
 type Metric = (typeof METRICS)[number]
 
@@ -22,11 +26,17 @@ function localDay(date: string): Date | null {
   return y && mo && d ? new Date(y, mo - 1, d) : null
 }
 
+/** Insights: a Quotas tab of every provider account's windows, and a Usage tab of the period's analytics (TAL-1750). */
 export function InsightsPage() {
   const locale = useLocale()
-  const [days, setDays] = useState(30)
+  const search = useSearch({ from: '/_app/insights' })
+  const navigate = useNavigate()
+  const tab: InsightsTab = search.tab ?? 'quotas'
+  const days = search.days ?? 30
+  const setTab = (next: InsightsTab) => { void navigate({ to: '/insights', search: { ...search, tab: next }, replace: true }) }
+  const setDays = (next: number) => { void navigate({ to: '/insights', search: { ...search, days: next }, replace: true }) }
   const [metric, setMetric] = useState<Metric>('tokens')
-  const insights = useQuery({ queryKey: keys.insights(days), queryFn: () => api.fetchInsights(days), staleTime: 60_000 })
+  const insights = useQuery({ queryKey: keys.insights(days), queryFn: () => api.fetchInsights(days), staleTime: 60_000, enabled: tab === 'usage' })
   const { quotas, refresh } = useProviderQuotas()
   const d = insights.data
 
@@ -55,13 +65,23 @@ export function InsightsPage() {
   return (
     <HubPage
       title={m.tab_insights()}
-      toolbar={<label className="flex items-center gap-2 text-xs text-muted">{m.insights_period()} <Select value={days} onValueChange={(v) => setDays(Number(v))}>{PERIODS.map((p) => <option key={p} value={p}>{m.insights_days({ n: p })}</option>)}</Select></label>}
+      toolbar={
+        <>
+          <div role="tablist" aria-label={m.tab_insights()} className="flex gap-1">
+            {TABS.map((t) => (
+              <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} aria-controls={`insights-${t.id}`} onClick={() => setTab(t.id)} className={cn('rounded-md px-3 py-1.5 text-sm', tab === t.id ? 'bg-accent-bg text-accent-text' : 'text-muted hover:bg-hover hover:text-text')}>
+                {t.label()}
+              </button>
+            ))}
+          </div>
+          {tab === 'usage' && <label className="ml-auto flex items-center gap-2 text-xs text-muted">{m.insights_period()} <Select value={days} onValueChange={(v) => setDays(Number(v))}>{PERIODS.map((p) => <option key={p} value={p}>{m.insights_days({ n: p })}</option>)}</Select></label>}
+        </>
+      }
     >
       <div className="flex flex-col gap-8" id="insightsContent">
-        <ProviderQuotaRows quotas={quotas} onRefresh={() => { void refresh() }} />
+        {tab === 'quotas' && <div role="tabpanel" id="insights-quotas"><ProviderQuotaRows quotas={quotas} onRefresh={() => { void refresh() }} /></div>}
 
-        <section className="flex flex-col gap-4" data-section="insights-usage">
-          <h2 className="text-base font-semibold text-text">{m.insights_usage()}</h2>
+        {tab === 'usage' && <section role="tabpanel" id="insights-usage" className="flex flex-col gap-4" data-section="insights-usage">
           {insights.isPending && <LoadingState />}
           {insights.isError && <ErrorState error={insights.error} onRetry={() => { void insights.refetch() }} />}
           {d && (
@@ -126,7 +146,7 @@ export function InsightsPage() {
               )}
             </>
           )}
-        </section>
+        </section>}
       </div>
     </HubPage>
   )
