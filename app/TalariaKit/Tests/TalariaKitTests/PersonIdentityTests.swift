@@ -101,6 +101,37 @@ final class PersonIdentityTests: XCTestCase {
         XCTAssertEqual(manager.state, .loggedIn(server: server))
     }
 
+    /// A password sign-in after an SSO person's session drops that person's local state, as another SSO identity would.
+    func testPasswordSignInAfterAnSSOPersonPurgesThatPersonsState() async throws {
+        let server = URL(string: "https://people.test")!
+        let keychain = InMemoryKeychainStore()
+        try keychain.save(server.absoluteString, forKey: .serverURL)
+        try keychain.save("member\noidc:alice", forKey: .authenticatedProfile, scope: server.absoluteString)
+        let client = MockAuthAPIClient(authStatus: AuthStatusResponse(authEnabled: true, loggedIn: false, passwordAuthEnabled: true))
+        var purged: [URL] = []
+        let manager = AuthManager(
+            keychain: keychain, clientFactory: { _ in client },
+            probeClientFactory: { _, _, _ in client }, headerStore: CustomHeaderStore(),
+            cookieStorage: cookieStorage, profileEntityCache: ProfileEntityCache(defaults: nil),
+            resetServerScopedState: { purged.append($0) },
+            serverRegistry: ServerRegistry.inMemory()
+        )
+        manager.handleAPIError(APIError.unauthorized)
+        await manager.recoveryTask?.value
+        XCTAssertEqual(manager.pendingReauthentication, server)
+        let revision = manager.authenticatedIdentityRevision
+
+        _ = await manager.configure(serverURLString: server.absoluteString, password: "fixture-password")
+        XCTAssertNil(manager.pendingReauthentication)
+        XCTAssertEqual(purged, [server])
+        XCTAssertEqual(manager.authenticatedIdentityRevision, revision + 1)
+        XCTAssertNil(keychain.scopedValue(.authenticatedProfile, scope: server.absoluteString))
+
+        // A later password sign-in has nothing left to purge.
+        _ = await manager.configure(serverURLString: server.absoluteString, password: "fixture-password")
+        XCTAssertEqual(purged, [server])
+    }
+
     func testRevokedLoginStartsReauthentication() async throws {
         let (manager, client, server) = try signedInManager(status: AuthStatusResponse(authEnabled: true, loggedIn: true))
         client.authStatusError = APIError.unauthorized

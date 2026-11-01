@@ -429,6 +429,13 @@ public final class AuthManager {
             }
 
             do {
+                // TAL-48: a login with no SSO identity replaces an SSO one only after that identity's local state is gone.
+                try await resetProfileScopedStateIfChanged(nil, for: serverURL)
+                guard canCommit() else {
+                    _ = try? await client.logout()
+                    clearSessionCookies(for: serverURL)
+                    return nil
+                }
                 try completeConfiguration(
                     serverURL,
                     previousServerID: previousServerID,
@@ -585,6 +592,7 @@ public final class AuthManager {
                 retainedPassword = password
             }
 
+            try await resetProfileScopedStateIfChanged(nil, for: serverURL)
             try completeAddedServer(
                 serverURL,
                 headers: newHeaders,
@@ -751,7 +759,9 @@ public final class AuthManager {
     /// `resetServerScopedState`), the App Intents profile picker cache, and the
     /// quota widget snapshot (TAL-131). A purge failure propagates so the caller
     /// aborts the sign-in; the old marker stays, so the next sign-in retries.
-    private func resetProfileScopedStateIfChanged(_ profile: String, for server: URL) async throws {
+    /// `nil` is a login with no SSO identity (password, trusted header): it purges
+    /// whatever an earlier SSO identity left, the same way a different one does.
+    private func resetProfileScopedStateIfChanged(_ profile: String?, for server: URL) async throws {
         let scope = server.absoluteString
         guard (try? keychain.load(.authenticatedProfile, scope: scope)) != profile else { return }
         try await resetServerScopedState(server)
