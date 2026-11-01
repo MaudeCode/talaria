@@ -5,7 +5,9 @@
  */
 import type { ToolEditDiff, ToolKind, ToolProgress } from '@maudecode/talaria-web-contracts'
 import { OutboundDraftRefSchema, type OutboundDraftRef } from '@maudecode/talaria-web-contracts'
+import { posix } from 'node:path'
 import { str } from '../util.js'
+import { expandHome } from '../workspace/paths.js'
 import { diffHunks, hunkTotals } from '../text/diff.js'
 import { isDict, messageText, TOOL_ARG_CONTENT_CAP, TOOL_ARG_CONTENT_KEYS } from './merge.js'
 
@@ -103,27 +105,39 @@ export function snapshotArgs(args: unknown): unknown {
 
 /**
  * A call's display class and label: the first line of its kind's argument, whitespace-collapsed and capped. TAL-1458:
- * `focus_path` is a read or write call's file when its path argument is workspace-relative, the file a companion page shows.
+ * `focus_path` is a read or write call's file inside the session's `workspace` root, the file a companion page shows.
  */
-export function toolDisplay(name: unknown, args: unknown): { kind: ToolKind; target: string; focus_path: string | null } {
+export function toolDisplay(name: unknown, args: unknown, workspace: string | null = null): { kind: ToolKind; target: string; focus_path: string | null } {
   const kind = toolKind(name)
   const a = isDict(args) ? args : {}
   const arg = (keys: string[]) => keys.map((k) => snapshotArg(a, k)).find((v): v is string => typeof v === 'string' && Boolean(v.trim())) ?? ''
   const first = arg(TARGET_KEYS[kind] ?? FALLBACK_KEYS).trim().split('\n')[0] ?? ''
   // Capped by code point, so the cap never splits a surrogate pair into invalid JSON.
-  return { kind, target: Array.from(first.replace(/\s+/g, ' ').trim()).slice(0, TOOL_TARGET_MAX).join(''), focus_path: kind === 'read' || kind === 'write' ? focusPath(arg(FOCUS_KEYS)) : null }
+  return { kind, target: Array.from(first.replace(/\s+/g, ' ').trim()).slice(0, TOOL_TARGET_MAX).join(''), focus_path: kind === 'read' || kind === 'write' ? focusPath(arg(FOCUS_KEYS), workspace) : null }
 }
 
 const FOCUS_KEYS = ['path', 'file_path', 'file', 'target']
 
 /**
- * A path argument as a workspace-relative file, without a leading `./`; null for an absolute, home, drive or URL path, one
- * that climbs out with `..`, a multi-line value, or one the snapshot capped (it ends in `...` and names no real file).
+ * A path argument as a workspace-relative file, without a leading `./`; null for a drive or URL path, one that climbs out
+ * with `..`, a multi-line value, or one the snapshot capped (it ends in `...` and names no real file).
  */
-function focusPath(raw: string): string | null {
-  const path = raw.trim().replace(/^(?:\.[\\/])+/, '')
+function focusPath(raw: string, workspace: string | null): string | null {
+  const path = workspaceRelative(raw.trim(), workspace)?.replace(/^(?:\.[\\/])+/, '')
   if (!path || path.includes('\n') || path.endsWith('...') || /^(?:[\\/~]|[A-Za-z]:|[A-Za-z][\w+.-]*:\/\/)/.test(path)) return null
   return path.split(/[\\/]/).includes('..') ? null : path
+}
+
+/**
+ * TAL-1537: an absolute or `~/` path as its remainder under the workspace root, lexically (no symlinks resolved); null for
+ * the root itself, a path outside it, or no workspace. Any other path passes through for `focusPath`'s own rules.
+ */
+function workspaceRelative(path: string, workspace: string | null): string | null {
+  if (!path.startsWith('/') && !path.startsWith('~/')) return path
+  if (!workspace) return null
+  const root = posix.normalize(workspace).replace(/\/+$/, '')
+  const full = posix.normalize(expandHome(path))
+  return full.startsWith(`${root}/`) ? full.slice(root.length + 1) : null
 }
 
 /** A persisted call's arguments: live `args`, a `tool_use` block's `input`, or OpenAI `function.arguments` JSON. */

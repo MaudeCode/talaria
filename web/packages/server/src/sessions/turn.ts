@@ -854,7 +854,7 @@ export class TurnRunner {
                 toolIds.set(call, call.tid || mintToolId())
                 toolStartedAt.set(call, receivedAt)
                 const redacted = deps.redactEnabled()
-                await emitFrame('tool', publicToolFrame(withToolId(data, toolIds.get(call)!), redacted), { redacted })
+                await emitFrame('tool', publicToolFrame(withToolId(data, toolIds.get(call)!), redacted, s.workspace), { redacted })
                 return
               }
               case 'tool_progress': {
@@ -889,7 +889,7 @@ export class TurnRunner {
                 const id = (tc && toolIds.get(tc)) || str(data.tid) || mintToolId()
                 this.lastCompletedTool.set(streamId, id)
                 const redacted = deps.redactEnabled()
-                await emitFrame('tool_complete', publicToolFrame(withToolId(complete, id), redacted), { redacted })
+                await emitFrame('tool_complete', publicToolFrame(withToolId(complete, id), redacted, s.workspace), { redacted })
                 // TAL-397: the todo tool's result is the session's new list; the settled session derives the same one.
                 // TAL-889: the sidecar attaches `todo_result` only to the Agent's todo tool, so no name check here.
                 const todos = parseTodoToolResult(todoResult)

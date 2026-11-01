@@ -65,7 +65,7 @@ export type ToolProgress = z.infer<typeof ToolProgressSchema>
 /** Shared tool display fields. Progress is ephemeral, absent on older servers and null after completion. */
 export const ToolDisplayFields = {
   progress: ToolProgressSchema.nullable().optional(), kind: ToolKindSchema.optional(), target: z.string().optional(), edit_diff: ToolEditDiffSchema.optional(),
-  focus_path: NullableString.optional().describe('TAL-1458: a read or write call\'s file as a workspace-relative path, the file a companion page shows; absent for any other call or an absolute, home or out-of-workspace path.'),
+  focus_path: NullableString.optional().describe('TAL-1458: a read or write call\'s file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace.'),
 }
 
 /**
@@ -404,7 +404,7 @@ export const SessionSchema = z.looseObject({
   /** The agent's display name: a named profile's own name, else the `bot_name` setting (TAL-458). */
   assistant_name: z.string().optional(),
   workspace_name: WorkspaceNameSchema,
-  focus_path: NullableString.optional().describe('TAL-1458: the last non-null `focus_path` of the session\'s persisted tool calls, so a reopened chat shows its file before any stream event; null when none.'),
+  focus_path: NullableString.optional().describe('TAL-1458: the last non-null `focus_path` of the session\'s persisted tool calls, so a reopened chat shows its file before any stream event; null when none. TAL-1537: absolute paths inside the session workspace count.'),
   branched_from: BranchedFromSchema.nullable().optional().describe('TAL-454: the chat this one was branched from while it still loads (archived included); null for a compression continuation, a deleted or missing parent, and every other chat.'),
 })
 export type Session = z.infer<typeof SessionSchema>

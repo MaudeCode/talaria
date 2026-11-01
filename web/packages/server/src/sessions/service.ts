@@ -893,7 +893,7 @@ export class SessionService {
 
   /** `compact()` with the wire streaming/read-only flags (TAL-312), for replies that return the session row. */
   async wireRow(s: Session): Promise<Record<string, unknown>> {
-    return withSessionWireFlags((await this.ownerLocked([{ ...s.compact({ contextLengthFor: this.deps.contextLengthFor, modelOptionFor: this.deps.modelOptionFor }), activity_phase: await this.activityPhase(s), context_detail_key: this.contextDetailKey(s), assistant_name: this.assistantName(s), workspace_name: (await this.workspaceNames([s]))(s), focus_path: sessionFocusPath(s.tool_calls, this.deps.redactEnabled()) }]))[0]!, this.deps.runtime.activeStreamIds)
+    return withSessionWireFlags((await this.ownerLocked([{ ...s.compact({ contextLengthFor: this.deps.contextLengthFor, modelOptionFor: this.deps.modelOptionFor }), activity_phase: await this.activityPhase(s), context_detail_key: this.contextDetailKey(s), assistant_name: this.assistantName(s), workspace_name: (await this.workspaceNames([s]))(s), focus_path: sessionFocusPath(s.tool_calls, this.deps.redactEnabled(), s.workspace) }]))[0]!, this.deps.runtime.activeStreamIds)
   }
 
   /**
@@ -1198,7 +1198,7 @@ export class SessionService {
     raw.assistant_name = this.assistantName(s)
     raw.workspace_name = (await this.workspaceNames([s]))(s)
     raw.branched_from = (await this.branchedFrom(s))
-    raw.focus_path = sessionFocusPath(s.tool_calls, this.deps.redactEnabled())
+    raw.focus_path = sessionFocusPath(s.tool_calls, this.deps.redactEnabled(), s.workspace)
     withSessionWireFlags(raw, activeStreamIds)
     // A metadata-only read lacks the history the gate counts, so it carries no flag.
     if (loadMessages) raw.can_compress = limited ? raw.read_only !== true && !isClaudeCodeSessionId(s.session_id) && (!s.active_stream_id || this.compactionWaiters.has(s.active_stream_id)) && limited.enoughContext : this.canCompress(s, raw.read_only === true, stateRows)
@@ -2982,7 +2982,7 @@ export class SessionService {
     // Paged rows come from the raw transcript, so they take the same credential redaction as the detail's preview.
     const enabled = this.deps.redactEnabled()
     const redacted = redactValue(result, enabled) as typeof result
-    const rows = withSceneToolDisplay(result.rows, redacted.rows as unknown[], enabled)
+    const rows = withSceneToolDisplay(result.rows, redacted.rows as unknown[], enabled, session.workspace)
     // `/api/media` serves stored sessions only, so a state.db-only session's rows stay as written, as its detail does.
     return { ...redacted, rows: stored ? withSceneRowMedia(rows, (await this.mediaProjector(session))) : rows }
   }
