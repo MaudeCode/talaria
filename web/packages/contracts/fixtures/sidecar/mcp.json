@@ -30,5 +30,36 @@
         "policies": []
       }
     }
+  ],
+  "mcp.probe_targets": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "servers": {
+          "remote": {
+            "url": "https://mcp.invalid/mcp",
+            "headers": {
+              "Authorization": "Bearer ${TALARIA_SCENARIO_UNSET}",
+              "X-Literal": "literal-value"
+            }
+          },
+          "local": {
+            "command": "never-spawn"
+          }
+        }
+      },
+      "result": {
+        "targets": [
+          {
+            "name": "remote",
+            "url": "https://mcp.invalid/mcp",
+            "headers": {
+              "Authorization": "Bearer ${TALARIA_SCENARIO_UNSET}",
+              "X-Literal": "literal-value"
+            }
+          }
+        ]
+      }
+    }
   ]
 }

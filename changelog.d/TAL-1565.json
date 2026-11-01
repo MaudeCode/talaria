@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "MCP servers that sign in with an API key from your environment no longer show Needs sign-in while they work.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

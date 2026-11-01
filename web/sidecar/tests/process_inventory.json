@@ -1535,6 +1535,13 @@
         ""
       ]
     },
+    "tests/test_mcp_probe_targets.py::test_probe_targets_render_each_profiles_own_env_references": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: the installed release's MCP ${VAR} rendering under each profile's secret scope, including a rotated .env value. Uses the real installed release with disposable synthetic .env files; no server is contacted.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_mcp_progress.py::test_mcp_stdio_progress_reaches_the_sidecar_tool_row": {
       "layer": "compatibility",
       "reason": "Real supported-Agent MCP stdio progress-token round trip through the callback chat.start installs; boundary fakes cannot establish this API behavior.",

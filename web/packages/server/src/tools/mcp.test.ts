@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { JoplinError, joplinSearch, McpService } from './mcp.js'
 import { FakeSidecar } from '../sidecar/fake.js'
+import { McpHealthProber } from './mcp-health.js'
 import type { AgentConfig, Dict } from '../config/agent-config.js'
 
 describe('MCP config updates', () => {
@@ -157,5 +158,104 @@ describe('Joplin client', () => {
     expect(error).toBeInstanceOf(JoplinError)
     expect((error as Error).message).toBe('Joplin API is not reachable')
     expect(signal).toBeInstanceOf(AbortSignal)
+  })
+})
+
+describe('MCP health probe credentials (TAL-1565)', () => {
+  const INIT_OK = JSON.stringify({ jsonrpc: '2.0', id: 'hermes-webui-health', result: { protocolVersion: '2025-06-18' } })
+  /** An MCP endpoint that answers initialize only for an accepted Authorization header, recording each one it saw. */
+  const endpoint = (accepted: Set<string>) => {
+    const seen: string[] = []
+    const f = ((_url: string, init: RequestInit) => {
+      const auth = new Headers(init.headers).get('authorization') ?? ''
+      if (init.method === 'POST') seen.push(auth)
+      return Promise.resolve(accepted.has(auth) ? new Response(INIT_OK, { status: 200, headers: { 'content-type': 'application/json' } }) : new Response('', { status: 401 }))
+    }) as typeof fetch
+    return { f, seen }
+  }
+  const raw = { url: 'https://mcp.invalid/mcp', headers: { Authorization: 'Bearer ${SYNTHETIC_MCP_KEY}' } }
+  const setup = (fetchImpl: typeof fetch, env: Record<string, Record<string, string>>, servers: Dict = { kanvil: raw }) => {
+    const sidecar = new FakeSidecar()
+    sidecar.respond('mcp.status', () => ({ servers: [] }))
+    sidecar.respond('mcp.cost_policies', () => ({ supported: false, policies: [] }))
+    // The Agent's rendering: `${VAR}` from the requested profile's own environment, an unset one kept as its placeholder.
+    sidecar.respond('mcp.probe_targets', (params) => ({ targets: Object.entries(params.servers).map(([name, c]) => {
+      const render = (v: string) => v.replace(/\$\{([^}]+)\}/g, (ref, key: string) => env[params.profile_home]?.[key] ?? ref)
+      const cfg = c as { url: string; headers?: Record<string, string> }
+      return { name, url: render(cfg.url), headers: Object.fromEntries(Object.entries(cfg.headers ?? {}).map(([k, v]) => [k, render(v)])) }
+    }) }))
+    const config = { read: () => Promise.resolve({ mcp_servers: servers }) } as unknown as AgentConfig
+    let now = 1000
+    const health = new McpHealthProber({ fetch: () => fetchImpl, now: () => now, log: () => undefined })
+    const service = new McpService({ sidecar: () => sidecar, config, health })
+    const rows = async (profile: string) => {
+      await service.servers(profile)
+      await health.settle()
+      return Object.fromEntries(((await service.servers(profile)).servers as Dict[]).map((r) => [String(r.name), r])) as Record<string, Dict>
+    }
+    return { rows, tick: () => { now += 1 } }
+  }
+
+  it('probes with the profile\'s resolved Authorization reference, so a working key reads healthy, not Needs sign-in', async () => {
+    const api = endpoint(new Set(['Bearer synthetic-a']))
+    const { rows } = setup(api.f, { '/profiles/a': { SYNTHETIC_MCP_KEY: 'synthetic-a' } })
+    expect((await rows('/profiles/a')).kanvil).toMatchObject({ health: 'healthy', health_detail: 'HTTP 200' })
+    expect(api.seen).toEqual(['Bearer synthetic-a'])
+  })
+
+  it('keeps each profile\'s credential and verdict apart for the same server and reference, and re-probes a rotated key', async () => {
+    const accepted = new Set(['Bearer synthetic-a'])
+    const api = endpoint(accepted)
+    const env = { '/profiles/a': { SYNTHETIC_MCP_KEY: 'synthetic-a' }, '/profiles/b': { SYNTHETIC_MCP_KEY: 'synthetic-b' } }
+    const { rows, tick } = setup(api.f, env)
+    expect((await rows('/profiles/a')).kanvil).toMatchObject({ health: 'healthy' })
+    // A genuine authentication failure still reads as needs_auth.
+    expect((await rows('/profiles/b')).kanvil).toMatchObject({ health: 'needs_auth', health_detail: 'HTTP 401' })
+    expect(api.seen).toEqual(['Bearer synthetic-a', 'Bearer synthetic-b'])
+    // Rotating profile B's key probes again at once rather than reusing its stale verdict within the interval.
+    env['/profiles/b'].SYNTHETIC_MCP_KEY = 'synthetic-b2'
+    accepted.add('Bearer synthetic-b2')
+    tick()
+    expect((await rows('/profiles/b')).kanvil).toMatchObject({ health: 'healthy' })
+    expect((await rows('/profiles/a')).kanvil).toMatchObject({ health: 'healthy' })
+    expect(api.seen).toEqual(['Bearer synthetic-a', 'Bearer synthetic-b', 'Bearer synthetic-b2'])
+  })
+
+  it('keeps literal headers working and never reports an unresolved reference as healthy', async () => {
+    const api = endpoint(new Set(['Bearer literal-token']))
+    const servers = { literal: { url: 'https://mcp.invalid/literal', headers: { Authorization: 'Bearer literal-token' } }, unset: raw }
+    const { rows } = setup(api.f, {}, servers)
+    const result = await rows('/profiles/a')
+    expect(result.literal).toMatchObject({ health: 'healthy' })
+    expect(result.unset).toMatchObject({ health: 'unhealthy', health_detail: 'unresolved in url/headers: ${SYNTHETIC_MCP_KEY}' })
+    // The unresolved placeholder is never sent as a credential.
+    expect(api.seen).toEqual(['Bearer literal-token'])
+  })
+
+  it('fails closed without the sidecar instead of sending the raw reference', async () => {
+    const api = endpoint(new Set())
+    const config = { read: () => Promise.resolve({ mcp_servers: { kanvil: raw } }) } as unknown as AgentConfig
+    const health = new McpHealthProber({ fetch: () => api.f, now: () => 1000, log: () => undefined })
+    const service = new McpService({ sidecar: () => null, config, health })
+    await service.servers('/profiles/a')
+    await health.settle()
+    expect(((await service.servers('/profiles/a')).servers as Dict[])[0]).toMatchObject({ health: 'unhealthy', health_detail: 'unresolved in url/headers: ${SYNTHETIC_MCP_KEY}' })
+    expect(api.seen).toEqual([])
+  })
+
+  it('never returns a resolved credential in the server rows, even when the transport error quotes it', async () => {
+    const failing = (() => Promise.reject(new TypeError('Headers.append: "Bearer synthetic-secret-c" is an invalid header value.'))) as typeof fetch
+    const { rows } = setup(failing, { '/profiles/a': { SYNTHETIC_MCP_KEY: 'synthetic-secret-c' } })
+    const result = await rows('/profiles/a')
+    expect(result.kanvil).toMatchObject({ health: 'unhealthy', headers: { Authorization: '••••••' } })
+    expect(JSON.stringify(result)).not.toContain('synthetic-secret-c')
+  })
+
+  it('never returns a resolved credential that a JSON-RPC initialize rejection quotes', async () => {
+    const rejecting = ((_url: string, init: RequestInit) => Promise.resolve(new Response(JSON.stringify({ jsonrpc: '2.0', id: 'hermes-webui-health', error: { code: -32001, message: `Rejected key ${new Headers(init.headers).get('authorization') ?? ''}` } }), { status: 200, headers: { 'content-type': 'application/json' } }))) as typeof fetch
+    const { rows } = setup(rejecting, { '/profiles/a': { SYNTHETIC_MCP_KEY: 'synthetic-secret-d' } })
+    const result = await rows('/profiles/a')
+    expect(result.kanvil).toMatchObject({ health: 'unhealthy', health_detail: 'initialize rejected: Rejected key [REDACTED]' })
+    expect(JSON.stringify(result)).not.toContain('synthetic-secret-d')
   })
 })

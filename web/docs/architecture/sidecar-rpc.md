@@ -21,6 +21,16 @@ resolves that session's profile and answers with up to 50 of that profile's
 `/api/sessions` rows, newest first, with `is_caller`, `is_streaming`,
 `pending_steer_count` and `attention`. An unknown caller gets `caller_unknown`.
 
+RPC v70 adds `mcp.probe_targets` (TAL-1565). The server passes its profile's
+enabled MCP servers; the sidecar renders each remote server's `url` and string
+`headers` with the Agent's own `${VAR}` rules inside that profile's secret
+scope, as the Agent does when it connects. The server's health probe sends those
+values, keys each verdict by profile and rendered config, and never returns them:
+summaries keep masking the configured headers, and a transport error that quotes
+a value is scrubbed. A reference still unset after rendering, or any reference
+when the sidecar is unavailable, makes the probe `unhealthy` (`unresolved in url/headers: ${VAR}`) instead of
+sending the placeholder, which the endpoint would answer with HTTP 401.
+
 RPC v69 adds `max_iterations_summary_request` to the `chat.interrupt` reply
 (TAL-739), as `chat.start`'s result carries it. A Stop while the Agent generates
 its max-iterations summary leaves that request at the checkpoint's tail; the
@@ -372,7 +382,7 @@ the cache input APIs retain their original uncached behavior.
 | `state_db` | `sync_start`, `sync_usage`, `sync_title`, `delete_cli_session`, `append_message` | |
 | `profiles` | `list`, `create`, `delete`, `runtime_env`, `skills_stats` | |
 | `skills` | `list`, `view`, `find` | |
-| `mcp` | `status`, `registry_tools`, `reload` | |
+| `mcp` | `status`, `registry_tools`, `probe_targets`, `cost_policies`, `reload` | |
 | `connectors` | `available`, `catalog`, `accounts`, `remove`, `tools`, `policy.get`, `policy.set`, `connect`, `operation`, `respond` | |
 | `stt` | `capability`, `transcribe` | |
 | `cron` | `list`, `get`, `create`, `update`, `delete`, `pause`, `resume`, `run`, `status`, `history`, `run_detail`, `output`, `delivery_options` | `run`: `started` |

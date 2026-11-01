@@ -134,7 +134,7 @@ export class McpService {
       } catch { /* runtime unavailable → configured only */ }
     }
     const enabledServers = Object.fromEntries(Object.entries(servers).filter(([, cfg]) => isDict(cfg) && parseEnabled(cfg.enabled)))
-    const verdicts = this.deps.health?.refreshAndRead(enabledServers) ?? {}
+    const verdicts = this.deps.health?.refreshAndRead(profileHome, await this.probeConfigs(profileHome, enabledServers)) ?? {}
     for (const [name, cfg] of Object.entries(servers)) {
       const entry = { ...(byName.get(name) ?? { name }) }
       const enabled = isDict(cfg) ? parseEnabled(cfg.enabled) : false
@@ -143,6 +143,23 @@ export class McpService {
       byName.set(name, entry)
     }
     return byName
+  }
+
+  /**
+   * `servers` with each remote url/headers rendered by the Agent in this profile's secret scope, as it connects. The
+   * resolved values stay in this process for the probe; without the sidecar the raw references fail the probe closed.
+   */
+  private async probeConfigs(profileHome: string, servers: Dict): Promise<Dict> {
+    const sidecar = this.deps.sidecar()
+    if (!sidecar || !Object.values(servers).some((cfg) => isDict(cfg) && 'url' in cfg)) return servers
+    let targets: SidecarResult<'mcp.probe_targets'>['targets'] = []
+    try { targets = (await sidecar.call('mcp.probe_targets', { profile_home: profileHome, servers })).targets } catch { return servers }
+    const rendered = { ...servers }
+    for (const target of targets) {
+      const cfg = rendered[target.name]
+      if (isDict(cfg)) rendered[target.name] = { ...cfg, url: target.url, headers: target.headers }
+    }
+    return rendered
   }
 
   private async policies(profileHome: string, config: Config): Promise<SidecarResult<'mcp.cost_policies'> | null> {
