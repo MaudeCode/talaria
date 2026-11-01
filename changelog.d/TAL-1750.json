@@ -1,0 +1,58 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Insights splits into Quotas and Usage: every quota account shows all its windows with pace, burn rate, budget and forecast, and opens a detail with its reset schedule and actions.",
+      "highlight": true,
+      "components": [
+        "app"
+      ],
+      "announcement": {
+        "title": "Insights, rebuilt",
+        "description": "Every quota window with pace and forecast, usage charts and a compact summary, each on its own tab.",
+        "icon": "sparkles"
+      }
+    },
+    {
+      "category": "Added",
+      "summary": "Insights charts daily tokens, cost or sessions over the whole period, plus sessions by weekday and by hour.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    },
+    {
+      "category": "Changed",
+      "summary": "Insights totals sit in a compact two-column summary, and each model row shows its share, cost, tokens, sessions and cache hit rate.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    },
+    {
+      "category": "Added",
+      "summary": "Insights gains a Quotas tab listing every provider account with its windows, pace, burn rate, budget and forecast, and a Usage tab for analytics.",
+      "highlight": true,
+      "components": [
+        "web"
+      ],
+      "announce": false
+    },
+    {
+      "category": "Changed",
+      "summary": "Insights charts gained a baseline, labels, hover values, a metric switch and a table view; the models table shows input, output, total tokens, cache hit rate and share.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    },
+    {
+      "category": "Fixed",
+      "summary": "The Insights models table no longer shows zero tokens for every model.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

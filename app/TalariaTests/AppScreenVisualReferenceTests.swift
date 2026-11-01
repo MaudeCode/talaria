@@ -160,6 +160,22 @@ final class AppScreenVisualReferenceTests: XCTestCase {
         }
     }
 
+    /// The quota detail's windows block with two live windows, their server pace and forecast, and a fixed clock (TAL-1750).
+    func testProviderQuotaWindowsReferences() throws {
+        for scheme in [ColorScheme.light, .dark] {
+            try VisualReference.assertMatchesReference(
+                try InsightsHostedTests.quotaWindowsView(InsightsHostedTests.pacedSource)
+                    .padding(16)
+                    .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+                    .padding(.horizontal, 16),
+                named: "insights-quota-windows-\(name(for: scheme))",
+                size: CGSize(width: 390, height: 500),
+                colorScheme: scheme,
+                background: Color(.systemGroupedBackground)
+            )
+        }
+    }
+
     // MARK: - Fixtures
 
     private static let fixtureID = UUID(uuidString: "00000000-0000-0000-0000-0000000000A1")!

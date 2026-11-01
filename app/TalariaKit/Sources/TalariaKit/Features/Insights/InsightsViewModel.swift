@@ -208,15 +208,16 @@ public final class InsightsViewModel {
         serverInsights?.models ?? []
     }
 
-    public var recentDailyTokens: [InsightsDailyToken] {
-        Array((serverInsights?.dailyTokens ?? []).suffix(14))
+    /// The server's whole daily series for the loaded period, oldest first.
+    public var dailyTokens: [InsightsDailyToken] {
+        serverInsights?.dailyTokens ?? []
     }
 
-    var activityByDay: [InsightsActivityByDay] {
+    public var activityByDay: [InsightsActivityByDay] {
         serverInsights?.activityByDay ?? []
     }
 
-    var activityByHour: [InsightsActivityByHour] {
+    public var activityByHour: [InsightsActivityByHour] {
         serverInsights?.activityByHour ?? []
     }
 

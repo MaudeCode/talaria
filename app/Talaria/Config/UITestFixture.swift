@@ -831,6 +831,8 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         case "/api/provider/quotas":
             if panelScenario != nil { return json(["providers": []]) }
             return providerQuotasResponse()
+        case "/api/insights":
+            return insightsResponse(url)
         case "/api/models":
             return json([
                 "groups": [],
@@ -1522,12 +1524,21 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         ]
     }
 
+    /// One live source with a session window the sidebar shows (75% remaining) and a weekly window, both with the
+    /// server pace and forecast Insights renders (TAL-1750).
     private static func providerQuotasResponse() -> Data {
-        json([
+        let iso = ISO8601DateFormatter()
+        let now = Date()
+        let stamp = { (offset: TimeInterval) in iso.string(from: now.addingTimeInterval(offset)) }
+        let computedAt = stamp(-120)
+        let sessionReset = stamp(3 * 3600)
+        let weeklyReset = stamp(2.5 * 86_400)
+        return json([
             "version": 1,
             "scope_id": "ui-fixture-scope",
             "profile_id": "ui-fixture-profile",
             "active_provider": "fixture-provider",
+            "computed_at": computedAt,
             "sources": [[
                 "source_id": "ui-fixture-source",
                 "provider_id": "fixture-provider",
@@ -1536,13 +1547,78 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                 "is_active_provider": true,
                 "supported": true,
                 "status": "available",
+                "plan": "Pro",
+                "fetched_at": computedAt,
+                "session_window_index": 0,
+                "weekly_window_index": 1,
+                "pace_window_index": 1,
+                "urgency": ["remaining": "healthy", "pace": "healthy"],
                 "windows": [[
                     "label": "Session",
+                    "window_seconds": 18_000,
                     "used_percent": 25,
                     "remaining_percent": 75,
-                    "reset_at": "2030-01-01T00:00:00Z"
+                    "reset_at": sessionReset,
+                    "urgency": ["remaining": "healthy", "pace": "healthy"],
+                    "pace": [
+                        "expected_remaining_percent": 60, "pace_delta_percent": 15, "burn_rate": 0.62, "minutes_to_reset": 180,
+                        "projected_minutes_to_empty": 540, "elapsed_minutes": 120, "valid_until": sessionReset, "status": "under"
+                    ],
+                    "forecast": ["outcome": "safe", "budget_unit": "hour", "budget_percent": 25, "depletion_margin_minutes": 360]
+                ], [
+                    "label": "Weekly",
+                    "window_seconds": 604_800,
+                    "used_percent": 70,
+                    "remaining_percent": 30,
+                    "reset_at": weeklyReset,
+                    "urgency": ["remaining": "warning", "pace": "warning"],
+                    "pace": [
+                        "expected_remaining_percent": 36, "pace_delta_percent": -6, "burn_rate": 1.1, "minutes_to_reset": 3600,
+                        "projected_minutes_to_empty": 3270, "elapsed_minutes": 6480, "valid_until": weeklyReset, "status": "over"
+                    ],
+                    "forecast": ["outcome": "warning", "budget_unit": "day", "budget_percent": 12, "depletion_margin_minutes": -330]
                 ]]
             ]]
+        ])
+    }
+
+    /// Thirty days of synthetic usage, so the analytics charts have a series to draw.
+    private static func insightsResponse(_ url: URL) -> Data {
+        let days = Int(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
+            .first { $0.name == "days" }?.value ?? "") ?? 30
+        let calendar = Calendar(identifier: .gregorian)
+        let today = calendar.startOfDay(for: Date())
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.dateFormat = "yyyy-MM-dd"
+        let series: [[String: Any]] = (0..<days).reversed().map { offset in
+            let input = 12_000 + (offset * 7_919) % 90_000
+            let output = 2_000 + (offset * 3_571) % 20_000
+            return [
+                "date": formatter.string(from: calendar.date(byAdding: .day, value: -offset, to: today)!),
+                "input_tokens": input, "output_tokens": output, "cache_read_tokens": input / 2,
+                "sessions": 1 + (offset * 5) % 7, "cost": Double(input + output) / 1_000_000 * 3,
+            ]
+        }
+        let input = series.reduce(0) { $0 + ($1["input_tokens"] as! Int) }
+        let output = series.reduce(0) { $0 + ($1["output_tokens"] as! Int) }
+        let sessions = series.reduce(0) { $0 + ($1["sessions"] as! Int) }
+        let cost = series.reduce(0.0) { $0 + ($1["cost"] as! Double) }
+        return json([
+            "period_days": days,
+            "total_sessions": sessions, "total_messages": sessions * 9,
+            "total_input_tokens": input, "total_output_tokens": output, "total_tokens": input + output,
+            "total_cache_read_tokens": input / 2, "total_cache_hit_percent": 50, "total_cost": cost,
+            "models": [
+                ["model": "fixture-model", "sessions": sessions - 3, "input_tokens": input - 40_000, "output_tokens": output - 9_000,
+                 "total_tokens": input + output - 49_000, "cache_read_tokens": input / 2, "cache_hit_percent": 52.5,
+                 "cost": cost * 0.8, "session_share": 80, "token_share": 84, "cost_share": 80],
+                ["model": "fixture-small", "sessions": 3, "input_tokens": 40_000, "output_tokens": 9_000, "total_tokens": 49_000,
+                 "cache_read_tokens": 0, "cache_hit_percent": 0, "cost": cost * 0.2, "session_share": 20, "token_share": 16, "cost_share": 20],
+            ],
+            "daily_tokens": series,
+            "activity_by_day": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].enumerated().map { ["day": $0.element, "sessions": [4, 9, 6, 7, 5, 2, 1][$0.offset]] },
+            "activity_by_hour": (0..<24).map { ["hour": $0, "sessions": $0 >= 9 && $0 <= 18 ? 3 + ($0 * 7) % 5 : 0] },
         ])
     }
 

@@ -26,6 +26,9 @@ final class InsightsViewModelTests: XCTestCase {
         """)
 
         XCTAssertEqual(insights.models?.first?.displayShare, 26)
+
+        let served = try decodeInsights(#"{"models": [{"model": "m", "cost_share": 0, "token_share": 26, "display_share": 7}]}"#)
+        XCTAssertEqual(served.models?.first?.displayShare, 7, "The server's display share outranks the client fallback")
     }
 
     @MainActor
@@ -512,5 +515,39 @@ private final class RecordingSleeper {
     func releasePendingSleep() {
         pendingRelease?.yield()
         pendingRelease = nil
+    }
+}
+
+extension InsightsViewModelTests {
+    func testCompactNumbersReadLikeStatTiles() {
+        let locale = Locale(identifier: "en_US")
+        XCTAssertEqual(insightsCompactNumber(0, locale: locale), "0")
+        XCTAssertEqual(insightsCompactNumber(950, locale: locale), "950")
+        XCTAssertEqual(insightsCompactNumber(48_200, locale: locale), "48.2K")
+        XCTAssertEqual(insightsCompactNumber(1_234_567, locale: locale), "1.23M")
+    }
+
+    func testDailyTokenDayParsesTheServerBucketAsALocalDay() throws {
+        let insights = try decodeInsights("""
+        {"daily_tokens": [{"date": "2030-02-03", "input_tokens": 1}, {"date": "yesterday", "input_tokens": 1}]}
+        """)
+        let days = try XCTUnwrap(insights.dailyTokens)
+        let components = Calendar.current.dateComponents([.year, .month, .day], from: try XCTUnwrap(days[0].day))
+        XCTAssertEqual([components.year, components.month, components.day], [2030, 2, 3])
+        XCTAssertNil(days[1].day)
+    }
+}
+
+extension InsightsViewModelTests {
+    private struct Account: Identifiable, Equatable { let id: String }
+
+    func testQuotaOrderPutsSavedAccountsFirstAndKeepsServerOrderForTheRest() {
+        let sources = ["a", "b", "c", "d"].map(Account.init)
+        XCTAssertEqual(ProviderQuotaOrderSettings.ordered(sources, by: ["c", "zzz", "a"]).map(\.id), ["c", "a", "b", "d"])
+        XCTAssertEqual(ProviderQuotaOrderSettings.ordered(sources, by: []).map(\.id), ["a", "b", "c", "d"])
+        let moved = ProviderQuotaOrderSettings.moved(["c", "a", "b", "d"], fromOffsets: IndexSet(integer: 3), toOffset: 0, within: ["c", "hidden", "a"])
+        XCTAssertEqual(moved, ["d", "c", "a", "b", "hidden"])
+        XCTAssertEqual(ProviderQuotaOrderSettings.sourceIDs(from: ProviderQuotaOrderSettings.data(moved)), moved)
+        XCTAssertEqual(ProviderQuotaOrderSettings.sourceIDs(from: Data()), [])
     }
 }

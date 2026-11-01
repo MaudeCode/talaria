@@ -76,7 +76,7 @@ public struct ProviderQuotaSource: Codable, Equatable, Identifiable, Sendable {
     public let id: String
     public let providerID: String
     public let providerLabel: String
-    let accountLabel: String
+    public let accountLabel: String
     public let isActiveProvider: Bool
     let supported: Bool
     public internal(set) var status: String

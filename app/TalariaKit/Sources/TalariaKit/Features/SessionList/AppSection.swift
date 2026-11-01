@@ -135,6 +135,8 @@ public enum SectionItem: Hashable {
     case memory(MemoryFile)
     case skill(id: String)
     case task(id: String)
+    /// A provider quota account opened from the Insights Quotas tab (TAL-1750).
+    case quotaSource(id: String)
 }
 
 /// A row of the Settings root list.

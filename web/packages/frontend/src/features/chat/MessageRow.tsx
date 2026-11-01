@@ -24,6 +24,7 @@ import { speak } from '../voice/tts'
 import { ImageLightbox, type LightboxImage } from './ImageLightbox'
 import { usageDetailLines } from '../composer/chips'
 import { useLocale } from '../../i18n/useLocale'
+import { formatCompact } from '../../i18n/units'
 
 export interface RowActions {
   onQuoteSelection?: (text: string) => void
@@ -249,8 +250,7 @@ export const DeliveryRow = memo(function DeliveryRow({ row }: { row: VisibleMess
 /** TAL-1076: the reply's own in/out tokens, opening its cache and estimated-cost figures; every value is the server's. */
 function TurnUsageMeta({ usage }: { usage: TurnUsage }) {
   const locale = useLocale()
-  const compact = new Intl.NumberFormat(locale, { notation: 'compact', maximumFractionDigits: 1 })
-  const figures = { input: compact.format(usage.input_tokens), output: compact.format(usage.output_tokens) }
+  const figures = { input: formatCompact(locale, usage.input_tokens), output: formatCompact(locale, usage.output_tokens) }
   const details = usageDetailLines({ input: usage.input_tokens, output: usage.output_tokens, cacheRead: usage.cache_read_tokens, cacheWrite: usage.cache_write_tokens, cacheHitPercent: usage.cache_hit_percent, cost: usage.estimated_cost })
   return (
     <Popover.Root>

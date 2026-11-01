@@ -29,7 +29,7 @@ final class ComposerModelPickerHostedTests: XCTestCase {
         let quota = try decoder.decode(ProviderQuotasResponse.self, from: Data(#"{"sources":[{"source_id":"qsrc_test","provider_id":"openai-codex","provider_label":"OpenAI Codex","status":"stale","unavailable_reason":"Provider data is temporarily unavailable. Showing last-confirmed data.","windows":[{"label":"Session","remaining_percent":75}]}]}"#.utf8))
         let row = try hostWindow(NavigationStack {
             List {
-                ProviderQuotaRow(source: quota.sources[0], displayName: "Test account", percentageMode: .remaining, isRefreshing: false, isPinned: false, canPin: true, refresh: {}, togglePin: {}, hide: {})
+                ProviderQuotaWindowsView(source: quota.sources[0], scopeID: "qscope_test", percentageMode: .remaining, referenceDate: Date())
             }.navigationTitle("Provider quotas")
         })
         XCTAssertTrue(HostedAccessibility.labels(in: row).contains { $0.contains("last-confirmed data") })

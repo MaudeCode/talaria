@@ -1503,6 +1503,10 @@ final class RegularSplitHostedTests: XCTestCase {
                 }
                 try await openSidebar(in: window)
                 HostedAccessibility.activate(try await requireElement(in: window, label: section))
+                // Insights opens on its Quotas tab; the analytics states live on Usage (TAL-1750).
+                if section == "Insights" {
+                    HostedAccessibility.activate(try await requireElement(in: window, label: "Usage"))
+                }
                 // A native progress element may prepend its spoken state ("In progress, …").
                 let state = try await requireElement(in: window, "Missing \(label)") {
                     $0.accessibilityLabel == label || $0.accessibilityLabel?.hasSuffix(", \(label)") == true

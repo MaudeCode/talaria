@@ -983,8 +983,16 @@ export type Logs = z.infer<typeof LogsSchema>
 export const InsightsSchema = z.looseObject({
   period_days: z.number().optional(), total_sessions: z.number().optional(), total_messages: z.number().optional(), total_tokens: z.number().optional(), total_input_tokens: z.number().optional(), total_output_tokens: z.number().optional(),
   total_cache_read_tokens: z.number().optional(), total_cache_hit_percent: NullableNumber.optional(), total_cost: z.number().optional(), activity_by_day: z.array(z.looseObject({ day: z.string(), sessions: z.number() })).optional(),
-  activity_by_hour: z.array(z.looseObject({ hour: z.number(), sessions: z.number() })).optional(), daily_tokens: z.array(z.looseObject({ date: z.string(), input_tokens: z.number().optional(), output_tokens: z.number().optional(), cache_read_tokens: z.number().optional(), cost: z.number().optional(), sessions: z.number().optional() })).optional(),
-  models: z.array(z.looseObject({ model: z.string().optional(), sessions: z.number().optional(), tokens: z.number().optional(), cost: z.number().optional() })).optional(),
+  activity_by_hour: z.array(z.looseObject({ hour: z.number(), sessions: z.number() })).optional(), daily_tokens: z.array(z.looseObject({ date: z.string(), input_tokens: z.number().optional(), output_tokens: z.number().optional(), total_tokens: z.number().optional().describe('TAL-1750: input plus output for the day.'), cache_read_tokens: z.number().optional(), cost: z.number().optional(), sessions: z.number().optional() })).optional(),
+  /**
+   * TAL-1750: one row per model with its token split, prompt-cache hit rate and its share of the period's sessions, tokens
+   * and cost (whole percents). `display_share` is the one share a row shows: cost when any, else tokens, else sessions.
+   */
+  models: z.array(z.looseObject({
+    model: z.string().optional(), sessions: z.number().optional(), input_tokens: z.number().optional(), output_tokens: z.number().optional(), total_tokens: z.number().optional(),
+    cache_read_tokens: z.number().optional(), cache_hit_percent: NullableNumber.optional(), cost: z.number().optional(),
+    session_share: z.number().optional(), token_share: z.number().optional(), cost_share: z.number().optional(), display_share: z.number().optional(),
+  })).optional(),
 })
 export type Insights = z.infer<typeof InsightsSchema>
 export const DashboardStatusSchema = z.looseObject({ running: z.boolean(), enabled: z.string().optional(), url: z.string().optional(), browser_url: z.string().optional(), host: z.string().optional(), port: z.number().int().optional(), version: z.string().optional(), error: z.string().optional() })

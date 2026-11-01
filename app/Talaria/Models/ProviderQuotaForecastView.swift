@@ -33,13 +33,13 @@ struct ProviderQuotaForecastView: View {
             }
 
             HStack(spacing: 8) {
-                metric(title: "Burn", value: burnRateLabel)
-                metric(title: budgetTitle, value: budgetLabel)
+                ProviderQuotaMetricCell(title: String(localized: "Burn"), value: burnRateLabel)
+                ProviderQuotaMetricCell(title: budgetTitle, value: budgetLabel)
             }
 
             Label(forecastLabel, systemImage: forecastSystemImage)
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(forecastTint)
+                .foregroundStyle(forecast.outcome.tint)
                 .lineLimit(2)
 
             HStack(spacing: 5) {
@@ -59,19 +59,6 @@ struct ProviderQuotaForecastView: View {
         .minimumScaleFactor(0.7)
         .accessibilityIdentifier("provider-quota-widget-forecast")
         .accessibilityElement(children: .combine)
-    }
-
-    private func metric(title: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(.caption2).foregroundStyle(.secondary)
-            Text(value)
-                .font(.caption.weight(.semibold).monospacedDigit())
-                .lineLimit(1)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
     }
 
     private var forecast: ProviderQuotaForecastSummary {
@@ -97,12 +84,26 @@ struct ProviderQuotaForecastView: View {
     private var forecastSystemImage: String {
         forecast.systemImage
     }
+}
 
-    private var forecastTint: Color {
-        switch forecast.outcome {
-        case .unavailable: .secondary
-        case .safe: .green
-        case .warning: .orange
+/// One labelled figure (Burn, Budget, Pace): the widgets' forecast cell, also the Insights quota row's.
+struct ProviderQuotaMetricCell: View {
+    let title: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.caption2).foregroundStyle(.secondary)
+            Text(value)
+                .font(.caption.weight(.semibold).monospacedDigit())
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
         }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(title), \(value)")
     }
 }
