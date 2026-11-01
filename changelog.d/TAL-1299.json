@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A finished background command and its result in Talaria Web no longer vanish when they finish while the chat's background list is loading, or after one failed read of that list.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
