@@ -1,7 +1,7 @@
 import { useEffect, useEffectEvent, useId, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { Archive, FolderPlus, Plus, RefreshCw, X } from 'lucide-react'
+import { Archive, Check, FolderPlus, Plus, RefreshCw, X } from 'lucide-react'
 import { useDebounced } from '../../lib/useDebounced'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
@@ -15,6 +15,7 @@ import { Button, IconButton } from '../../ui/Button'
 import { Switch, FieldRow, TextInput } from '../../ui/Field'
 import { Select } from '../../ui/Select'
 import { ConfirmDialog, Dialog } from '../../ui/Dialog'
+import { ContextMenu, MENU_ROW, MenuGroupLabel, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator } from '../../ui/Menu'
 import { EmptyState, ErrorState, LoadingState, formatDate } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { showErrorToast } from '../toast/errorToast'
@@ -184,7 +185,7 @@ export function KanbanPage() {
   const options = (values: unknown[] | undefined, chosen: string) => [...new Set([...(chosen ? [chosen] : []), ...(values ?? []).map(String)])]
   // A new task has no assignee yet, so it shows once: in the unassigned lane, else the first.
   const createdLane = board.data?.lanes ? Math.max(0, board.data.lanes.findIndex((lane) => !lane.assignee)) : 0
-  const renderColumns = (cols: KanbanColumn[], lane = 0) => <KanbanColumns columns={withCardEffects(cols, current, effects, lane === createdLane)} readOnly={serverReadOnly} stale={stale} selected={selected} onToggle={toggleSelected} onOpen={setOpenTaskId} />
+  const renderColumns = (cols: KanbanColumn[], lane = 0) => <KanbanColumns board={current} columns={withCardEffects(cols, current, effects, lane === createdLane)} readOnly={serverReadOnly} stale={stale} selected={selected} onToggle={toggleSelected} onOpen={setOpenTaskId} onChanged={() => { void invalidate() }} />
 
   return (
     <HubPage
@@ -347,7 +348,7 @@ function KanbanInspection({ mode, current, filters, onChanged }: { mode: string;
   </section>
 }
 
-function KanbanColumns({ columns, readOnly, stale, selected, onToggle, onOpen }: { columns: KanbanColumn[]; readOnly: boolean; stale: boolean; selected: string[]; onToggle: (id: string) => void; onOpen: (id: string) => void }) {
+function KanbanColumns({ board, columns, readOnly, stale, selected, onToggle, onOpen, onChanged }: { board: string | undefined; columns: KanbanColumn[]; readOnly: boolean; stale: boolean; selected: string[]; onToggle: (id: string) => void; onOpen: (id: string) => void; onChanged: () => void }) {
   return (
     <div className="kanban-board grid gap-3 md:grid-cols-2 xl:grid-cols-3" id="kanbanList">
       {columns.map((col) => (
@@ -359,15 +360,7 @@ function KanbanColumns({ columns, readOnly, stale, selected, onToggle, onOpen }:
             {col.tasks.length === 0 && <div className="px-1 py-2 text-xs text-muted">{m.kanban_no_tasks()}</div>}
             {col.tasks.map((task) => {
               const id = String(task.id)
-              const provisional = id.includes(':new:')
-              return (
-                <div key={id} className="flex items-start gap-2">
-                  {!readOnly && <input type="checkbox" className="mt-3 shrink-0" checked={selected.includes(id)} disabled={stale || provisional} onChange={() => onToggle(id)} aria-label={m.kanban_select_task({ a0: task.title ?? id })} />}
-                  <div className="min-w-0 flex-1">
-                    <KanbanTaskButton task={task} disabled={provisional} selected={selected.includes(id)} onOpen={() => onOpen(id)} />
-                  </div>
-                </div>
-              )
+              return <KanbanCard key={id} board={board} task={task} readOnly={readOnly} stale={stale} selected={selected.includes(id)} onToggle={() => onToggle(id)} onOpen={() => onOpen(id)} onChanged={onChanged} />
             })}
           </div>
         </section>
@@ -376,9 +369,98 @@ function KanbanColumns({ columns, readOnly, stale, selected, onToggle, onOpen }:
   )
 }
 
+/**
+ * One owner for a card's actions, shared by its dialog and its context menu (TAL-1157). The server owns which actions a
+ * card offers and whether leaving Running needs confirmation (TAL-557); `confirmation` must be rendered by the caller.
+ */
+function useKanbanCardActions(board: string | undefined, task: KanbanTask, readOnly: boolean, onChanged: () => void) {
+  const [pendingRunningExit, setPendingRunningExit] = useState<(() => void) | null>(null)
+  const taskId = String(task.id)
+  const act = useKanbanMutation({
+    resource: () => cardResource(board, taskId),
+    readKeys: () => kanbanReads(board, [taskId]),
+    // Unblock lands in Ready, which the server may re-gate on parents.
+    effect: ({ action, body }: { action: 'patch' | 'block' | 'unblock'; body: Record<string, unknown> }) => ({ fields: { status: action === 'block' ? 'blocked' : action === 'unblock' ? 'ready' : body.status } }),
+    mutationFn: ({ action, body }) => api.kanbanTaskAction(board, task.id, action, body),
+    onSuccess: () => { showToast(m.saved()) },
+    // A refusal (the task changed since this board was read) refetches, so the card shows its current actions.
+    onError: (e) => { showErrorToast(e) },
+  })
+  // Dispatch starts a worker on the server: only its control is busy.
+  const dispatchTask = useMutation({ mutationFn: () => api.kanbanTaskAction(board, task.id, 'dispatch', {}), onSuccess: () => { showToast(m.saved()); onChanged() }, onError: (e) => { showErrorToast(e); onChanged() } })
+  // A confirmed write says so; the server refuses to take a task out of Running without it.
+  const request = (fn: (confirm: { confirm_running_exit: boolean }) => void) => { if (readOnly) return; if (task.requires_running_exit_confirmation) setPendingRunningExit(() => () => fn({ confirm_running_exit: true })); else fn({ confirm_running_exit: false }) }
+  return {
+    setStatus: (status: string) => request((confirm) => act.mutate({ action: 'patch', body: { status, ...confirm } })),
+    block: () => request((confirm) => act.mutate({ action: 'block', body: confirm })),
+    unblock: () => request(() => act.mutate({ action: 'unblock', body: {} })),
+    dispatch: () => { if (!readOnly) dispatchTask.mutate() },
+    dispatching: dispatchTask.isPending,
+    confirmation: <ConfirmDialog open={pendingRunningExit !== null} onOpenChange={(o) => { if (!o) setPendingRunningExit(null) }} title={m.kanban_leave_running_title()} description={m.kanban_leave_running_body()} confirmLabel={m.kanban_continue()} cancelLabel={m.cancel()} danger onConfirm={() => pendingRunningExit?.()} />,
+  }
+}
+
+const MOVE_ROW = cn(MENU_ROW, 'data-[checked]:text-accent-text')
+
+/** A board card: click opens its dialog; right-click or long-press opens the same actions as a menu (TAL-1157). */
+function KanbanCard({ board, task, readOnly, stale, selected, onToggle, onOpen, onChanged }: { board: string | undefined; task: KanbanTask; readOnly: boolean; stale: boolean; selected: boolean; onToggle: () => void; onOpen: () => void; onChanged: () => void }) {
+  const id = String(task.id)
+  // A pending create has no server identity yet, so it cannot be opened or acted on, the same as its checkbox.
+  const provisional = id.includes(':new:')
+  // Read-only and stale boards offer only Open.
+  const writable = !readOnly && !stale
+  const card = useKanbanCardActions(board, task, !writable || provisional, onChanged)
+  const actions = task.available_actions
+  const status = task.status ?? ''
+  return (
+    <>
+      <ContextMenu
+        label={m.kanban_task_menu()}
+        trigger={
+          <div className="flex items-start gap-2">
+            {!readOnly && <input type="checkbox" className="mt-3 shrink-0" checked={selected} disabled={stale || provisional} onChange={onToggle} aria-label={m.kanban_select_task({ a0: task.title ?? id })} />}
+            <div className="min-w-0 flex-1">
+              <KanbanTaskButton task={task} disabled={provisional} selected={selected} onOpen={onOpen} />
+            </div>
+          </div>
+        }
+      >
+        <MenuItem disabled={provisional} onClick={onOpen}>{m.kanban_open()}</MenuItem>
+        {writable && (
+          <>
+            {actions.move_to.length > 0 && (
+              <>
+                <MenuSeparator />
+                {/* The server's move targets in its order, after the current status. */}
+                <MenuRadioGroup value={status} disabled={provisional} onValueChange={(next: string) => { if (next !== status) card.setStatus(next) }}>
+                  <MenuGroupLabel>{m.kanban_move_to()}</MenuGroupLabel>
+                  {[status, ...actions.move_to.filter((s) => s !== status)].map((s) => (
+                    <MenuRadioItem key={s} value={s} closeOnClick className={MOVE_ROW}>
+                      <span className="flex-1">{statusLabel(s)}</span>
+                      {s === status && <Check size={14} aria-hidden="true" />}
+                    </MenuRadioItem>
+                  ))}
+                </MenuRadioGroup>
+              </>
+            )}
+            <MenuSeparator />
+            <MenuItem disabled={provisional || card.dispatching} onClick={card.dispatch}>{m.kanban_dispatch()}</MenuItem>
+            {actions.block && <MenuItem disabled={provisional} onClick={card.block}>{m.kanban_block()}</MenuItem>}
+            {actions.unblock && <MenuItem disabled={provisional} onClick={card.unblock}>{m.kanban_unblock()}</MenuItem>}
+            {actions.complete && <MenuItem disabled={provisional} onClick={() => card.setStatus('done')}>{m.kanban_complete()}</MenuItem>}
+            {actions.archive && <MenuItem disabled={provisional} onClick={() => card.setStatus('archived')}>{m.kanban_archive()}</MenuItem>}
+            <MenuSeparator />
+            <MenuItem disabled={provisional} onClick={onToggle}>{selected ? m.kanban_deselect() : m.kanban_select()}</MenuItem>
+          </>
+        )}
+      </ContextMenu>
+      {card.confirmation}
+    </>
+  )
+}
+
 function TaskDialog({ board, task, readOnly, onClose, onChanged }: { board: string | undefined; task: KanbanTask; readOnly: boolean; onClose: () => void; onChanged: () => void }) {
   const [comment, setComment] = useState('')
-  const [pendingRunningExit, setPendingRunningExit] = useState<(() => void) | null>(null)
   const [parentId, setParentId] = useState('')
   const effects = useResourceEffects()
   const busy = readOnly
@@ -395,18 +477,7 @@ function TaskDialog({ board, task, readOnly, onClose, onChanged }: { board: stri
   const links = detail.data?.links
   // A linked task the server could not name (since deleted) falls back to its id.
   const linked = new Map((detail.data?.link_tasks ?? []).map((t) => [t.id, t]))
-  const act = useKanbanMutation({
-    resource: () => cardResource(board, taskId),
-    readKeys: () => kanbanReads(board, [taskId]),
-    // Unblock lands in Ready, which the server may re-gate on parents.
-    effect: ({ action, body }: { action: 'patch' | 'block' | 'unblock'; body: Record<string, unknown> }) => ({ fields: { status: action === 'block' ? 'blocked' : action === 'unblock' ? 'ready' : body.status } }),
-    mutationFn: ({ action, body }) => api.kanbanTaskAction(board, task.id, action, body),
-    onSuccess: () => { showToast(m.saved()) },
-    // A refusal (the task changed since this board was read) refetches, so the dialog shows its current actions.
-    onError: (e) => { showErrorToast(e) },
-  })
-  // Dispatch starts a worker on the server: only its button is busy.
-  const dispatchTask = useMutation({ mutationFn: () => api.kanbanTaskAction(board, task.id, 'dispatch', {}), onSuccess: () => { showToast(m.saved()); onChanged() }, onError: (e) => { showErrorToast(e); onChanged() } })
+  const card = useKanbanCardActions(board, task, readOnly, onChanged)
   // A sent comment joins the log at once; a refused one stays there with Retry instead of losing its text.
   const [unsent, setUnsent] = useState<string[]>([])
   const commentWrite = useKanbanMutation({
@@ -419,17 +490,13 @@ function TaskDialog({ board, task, readOnly, onClose, onChanged }: { board: stri
   const sendComment = (text: string) => commentWrite.mutate({ text, resource: newResource(`kanban-comment-${board ?? ''}-${taskId}`) }, { onError: (e) => { if (isDefiniteRefusal(e)) setUnsent((rows) => [...rows, text]) } })
   const sending = withCreated<{ text: string }>([], `kanban-comment-${board ?? ''}-${taskId}`, effects)
   const entries: unknown[] = log.data?.log ?? log.data?.entries ?? []
-  // The server owns which actions a card offers and whether leaving Running needs confirmation (TAL-557).
   const actions = task.available_actions
-  // A confirmed write says so; the server refuses to take a task out of Running without it.
-  const request = (fn: (confirm: { confirm_running_exit: boolean }) => void) => { if (busy) return; if (task.requires_running_exit_confirmation) setPendingRunningExit(() => () => fn({ confirm_running_exit: true })); else fn({ confirm_running_exit: false }) }
-  const setStatus = (status: string) => request((confirm) => act.mutate({ action: 'patch', body: { status, ...confirm } }))
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }} title={task.title ?? String(task.id)} description={task.description ?? undefined} className="w-[min(92vw,640px)]">
       <div className="flex flex-col gap-3 text-sm">
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
           <span>{m.kanban_column_label()}:</span>
-          <Select value={task.status ?? ''} disabled={busy || actions.move_to.length === 0} onValueChange={setStatus} aria-label={m.kanban_column_label()}>
+          <Select value={task.status ?? ''} disabled={busy || actions.move_to.length === 0} onValueChange={card.setStatus} aria-label={m.kanban_column_label()}>
             {[...new Set([task.status ?? '', ...actions.move_to])].map((c) => <option key={c} value={c}>{c}</option>)}
           </Select>
           {task.assignee && <span>{task.assignee}</span>}
@@ -437,11 +504,11 @@ function TaskDialog({ board, task, readOnly, onClose, onChanged }: { board: stri
         </div>
         {!readOnly && (
           <div className="flex flex-wrap gap-2">
-            <Button disabled={busy || dispatchTask.isPending} aria-busy={dispatchTask.isPending || undefined} onClick={() => dispatchTask.mutate()}>{m.kanban_dispatch()}</Button>
-            {actions.block && <Button disabled={busy} onClick={() => request((confirm) => act.mutate({ action: 'block', body: confirm }))}>{m.kanban_block()}</Button>}
-            {actions.unblock && <Button disabled={busy} onClick={() => request(() => act.mutate({ action: 'unblock', body: {} }))}>{m.kanban_unblock()}</Button>}
-            {actions.complete && <Button disabled={busy} onClick={() => setStatus('done')}>{m.kanban_complete()}</Button>}
-            {actions.archive && <Button disabled={busy} onClick={() => setStatus('archived')}>{m.kanban_archive()}</Button>}
+            <Button disabled={busy || card.dispatching} aria-busy={card.dispatching || undefined} onClick={card.dispatch}>{m.kanban_dispatch()}</Button>
+            {actions.block && <Button disabled={busy} onClick={card.block}>{m.kanban_block()}</Button>}
+            {actions.unblock && <Button disabled={busy} onClick={card.unblock}>{m.kanban_unblock()}</Button>}
+            {actions.complete && <Button disabled={busy} onClick={() => card.setStatus('done')}>{m.kanban_complete()}</Button>}
+            {actions.archive && <Button disabled={busy} onClick={() => card.setStatus('archived')}>{m.kanban_archive()}</Button>}
           </div>
         )}
         <div role="group" aria-label={m.kanban_links()}>
@@ -474,7 +541,7 @@ function TaskDialog({ board, task, readOnly, onClose, onChanged }: { board: stri
             </form>
           )}
         </div>
-        <ConfirmDialog open={pendingRunningExit !== null} onOpenChange={(o) => { if (!o) setPendingRunningExit(null) }} title={m.kanban_leave_running_title()} description={m.kanban_leave_running_body()} confirmLabel={m.kanban_continue()} cancelLabel={m.cancel()} danger onConfirm={() => pendingRunningExit?.()} />
+        {card.confirmation}
         <div>
           <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted">{m.kanban_comments()}</div>
           {!readOnly && (
