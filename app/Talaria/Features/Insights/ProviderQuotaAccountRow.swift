@@ -1,8 +1,8 @@
 import SwiftUI
 import TalariaKit
 
-/// One quota account on the Insights Quotas tab: the account's name and plan, then every window with its rail, pace
-/// and forecast (the same block the detail screen and the Web tab show). Tapping opens the account's detail screen.
+/// One quota account on the Insights Quotas tab: the account's name and plan, then every window with its percent,
+/// meter, reset, forecast and pace cells (the same block the detail screen shows). Tapping opens the detail screen.
 struct ProviderQuotaAccountRow: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -16,7 +16,7 @@ struct ProviderQuotaAccountRow: View {
 
     var body: some View {
         Button(action: open) {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 12) {
                 header
                 ProviderQuotaWindowsView(
                     source: source,
@@ -25,6 +25,7 @@ struct ProviderQuotaAccountRow: View {
                     referenceDate: referenceDate
                 )
             }
+            .padding(.vertical, 6)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -34,10 +35,10 @@ struct ProviderQuotaAccountRow: View {
     }
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 7) {
-            ProviderIconView(providerID: source.providerID, label: displayName, size: 18)
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            ProviderIconView(providerID: source.providerID, label: displayName, size: 20)
             Text(displayName)
-                .font(.subheadline.weight(.semibold))
+                .font(.headline)
                 .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
             if let plan = source.plan, !plan.isEmpty {
                 Text(plan)
@@ -63,5 +64,38 @@ struct ProviderQuotaAccountRow: View {
                 .foregroundStyle(.tertiary)
                 .accessibilityHidden(true)
         }
+    }
+}
+
+/// An account the server reports without quota windows or credits: its name and the reason, one line each.
+struct ProviderQuotaUnavailableRow: View {
+    let source: ProviderQuotaSource
+    let displayName: String
+    let open: () -> Void
+
+    var body: some View {
+        Button(action: open) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                ProviderIconView(providerID: source.providerID, label: displayName, size: 18)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(displayName)
+                        .font(.subheadline.weight(.medium))
+                    Text(source.unavailableReason ?? source.message ?? ProviderQuotaPresentation.statusLabel(source.status))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.forward")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
+            }
+            .padding(.vertical, 4)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("provider-quota-row-\(source.id)")
+        .accessibilityElement(children: .combine)
     }
 }

@@ -39,11 +39,29 @@ export function ProviderQuotaRows({ quotas, onRefresh }: { quotas: UseQueryResul
       {quotas.isPending && <LoadingState compact />}
       {quotas.isError && !data && <ErrorState error={quotas.error} onRetry={onRefresh} />}
       {data?.sources.length === 0 && <EmptyState>{m.insights_quotas_empty()}</EmptyState>}
-      {data && data.sources.length > 0 && (
-        <ul className="flex flex-col">
-          {data.sources.map((s) => <QuotaSourceRow key={s.source_id} source={s} locale={locale} />)}
-        </ul>
-      )}
+      {data && data.sources.length > 0 && (() => {
+        // Accounts with windows or credits first; the rest (unsupported providers, rejected keys) in a compact group.
+        const withData = data.sources.filter((s) => (s.windows?.length ?? 0) > 0 || s.quota)
+        const unavailable = data.sources.filter((s) => !withData.includes(s))
+        return (
+          <>
+            {withData.length > 0 && <ul className="flex flex-col">{withData.map((s) => <QuotaSourceRow key={s.source_id} source={s} locale={locale} />)}</ul>}
+            {unavailable.length > 0 && (
+              <section className="mt-4 flex flex-col gap-1" data-section="insights-quotas-unavailable">
+                <h3 className="text-xs font-medium uppercase tracking-wider text-muted">{m.insights_quotas_unavailable()}</h3>
+                <ul className="flex flex-col">
+                  {unavailable.map((s) => (
+                    <li key={s.source_id} className="flex flex-wrap items-baseline gap-x-2 border-t border-border-subtle py-2 text-xs" data-quota-source={s.source_id} data-quota-status={s.status ?? 'unavailable'}>
+                      <span className="font-medium text-text">{s.provider_label ?? s.provider_id ?? s.source_id}</span>
+                      <span className="text-muted">{typeof s.unavailable_reason === 'string' ? s.unavailable_reason : s.message ?? STATUS_LABEL[s.status ?? 'unavailable']?.() ?? s.status}</span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+          </>
+        )
+      })()}
     </section>
   )
 }

@@ -26,6 +26,7 @@ const quotas = ProviderQuotasSchema.parse({
     { source_id: 'qsrc_credits', provider_id: 'openrouter', provider_label: 'OpenRouter', status: 'available', quota: { limit_remaining: 12.5, usage: 7.5, limit: 20 } },
     { source_id: 'qsrc_down', provider_id: 'nous', provider_label: 'Nous', status: 'stale', unavailable_reason: 'Provider data is temporarily unavailable.', urgency: { remaining: 'stale', pace: 'stale' },
       windows: [{ label: 'Session', used_percent: 10, remaining_percent: 90, reset_at: null, detail: null, window_seconds: null, pace: null, forecast: null, urgency: { remaining: 'healthy', pace: 'healthy' } }] },
+    { source_id: 'qsrc_none', provider_id: 'google', provider_label: 'Google', status: 'unsupported', unavailable_reason: 'No verified server-side quota or balance endpoint is available for Google.', windows: [] },
   ],
 })
 
@@ -63,6 +64,9 @@ describe('ProviderQuotaRows', () => {
     expect(down).toHaveAttribute('data-quota-status', 'stale')
     expect(down).toHaveTextContent('Provider data is temporarily unavailable.')
     expect(down.querySelector('[data-quota-window="Session"]'), 'a stale source outranks its cached window level').toHaveAttribute('data-level', 'stale')
+    const unavailable = document.querySelector('[data-section="insights-quotas-unavailable"]')!
+    expect(unavailable).toHaveTextContent('Google')
+    expect(unavailable.querySelector('[data-quota-source="qsrc_none"]')).toHaveTextContent('No verified server-side quota')
     expect(screen.getByRole('button', { name: 'Refresh quotas' })).toBeEnabled()
   })
 })

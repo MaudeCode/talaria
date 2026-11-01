@@ -2356,6 +2356,7 @@
 	"insights_model_input": "Input",
 	"insights_model_output": "Output",
 	"insights_quotas_empty": "No quota sources reported by this server.",
+	"insights_quotas_unavailable": "No quota data",
 	"provider_quota_as_of": "As of {time}",
 	"provider_quota_credits_remaining": "{amount} credits remaining",
 	"logs_file_label": "Log file",

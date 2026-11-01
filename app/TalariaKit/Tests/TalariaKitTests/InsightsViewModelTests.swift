@@ -537,3 +537,17 @@ extension InsightsViewModelTests {
         XCTAssertNil(days[1].day)
     }
 }
+
+extension InsightsViewModelTests {
+    private struct Account: Identifiable, Equatable { let id: String }
+
+    func testQuotaOrderPutsSavedAccountsFirstAndKeepsServerOrderForTheRest() {
+        let sources = ["a", "b", "c", "d"].map(Account.init)
+        XCTAssertEqual(ProviderQuotaOrderSettings.ordered(sources, by: ["c", "zzz", "a"]).map(\.id), ["c", "a", "b", "d"])
+        XCTAssertEqual(ProviderQuotaOrderSettings.ordered(sources, by: []).map(\.id), ["a", "b", "c", "d"])
+        let moved = ProviderQuotaOrderSettings.moved(["c", "a", "b", "d"], fromOffsets: IndexSet(integer: 3), toOffset: 0, within: ["c", "hidden", "a"])
+        XCTAssertEqual(moved, ["d", "c", "a", "b", "hidden"])
+        XCTAssertEqual(ProviderQuotaOrderSettings.sourceIDs(from: ProviderQuotaOrderSettings.data(moved)), moved)
+        XCTAssertEqual(ProviderQuotaOrderSettings.sourceIDs(from: Data()), [])
+    }
+}

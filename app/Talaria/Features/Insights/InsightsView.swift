@@ -30,7 +30,9 @@ struct InsightsView: View {
     @State private var viewModel: InsightsViewModel
     @State private var tab: InsightsTab = .quotas
     @State private var isShowingQuotaNotice = false
+    @State private var isReorderingQuotas = false
     @State private var dailyMetric: InsightsDailyMetric = .tokens
+    @AppStorage(ProviderQuotaOrderSettings.storageKey) private var quotaOrderData = Data()
     @AppStorage(ProviderQuotaSidebarSettings.firstSourceKey) private var firstSidebarQuotaSourceID = ""
     @AppStorage(ProviderQuotaSidebarSettings.secondSourceKey) private var secondSidebarQuotaSourceID = ""
     @AppStorage(ProviderQuotaVisibilitySettings.storageKey) private var hiddenProviderData = Data()
@@ -73,10 +75,10 @@ struct InsightsView: View {
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
                 .padding(.bottom, 8)
-                .background(Color(.systemGroupedBackground))
+                .background(tabBackground)
                 .accessibilityIdentifier("insights-tabs")
             }
-            .background(Color(.systemGroupedBackground))
+            .background(tabBackground)
             .navigationTitle("Insights")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -86,8 +88,23 @@ struct InsightsView: View {
                 }
                 if tab == .quotas {
                     ToolbarItem(placement: .topBarTrailing) {
-                        Button(action: openProviderSettings) {
-                            Image(systemName: "gearshape")
+                        Menu {
+                            Button {
+                                withAnimation { isReorderingQuotas.toggle() }
+                            } label: {
+                                Label(isReorderingQuotas ? "Done Reordering" : "Reorder Accounts", systemImage: "arrow.up.arrow.down")
+                            }
+                            .disabled(visibleQuotaSources.count < 2 && !isReorderingQuotas)
+                            Picker("Percentage", selection: $quotaPercentageModeRawValue) {
+                                ForEach(ProviderQuotaPercentageMode.allCases) { mode in
+                                    Text(mode.title).tag(mode.rawValue)
+                                }
+                            }
+                            Button(action: openProviderSettings) {
+                                Label("Provider Quota Settings", systemImage: "gearshape")
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
                         }
                         .accessibilityLabel("Open provider quota settings")
                     }
@@ -151,6 +168,10 @@ struct InsightsView: View {
             }
     }
 
+    private var tabBackground: Color {
+        tab == .quotas && !visibleQuotaSources.isEmpty ? Color(.systemBackground) : Color(.systemGroupedBackground)
+    }
+
     @ViewBuilder
     private var content: some View {
         switch tab {
@@ -166,46 +187,100 @@ struct InsightsView: View {
         if visibleQuotaSources.isEmpty {
             foldAvoiding(quotaStatus)
         } else {
-            // One clock for every row; the countdowns move together once a minute. Rows fill a grid, so an iPad or an
-            // open Duo shows accounts side by side instead of one card stretched across the width.
+            // One clock for every row; the countdowns move together once a minute.
             TimelineView(.everyMinute) { context in
-                ScrollView {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 340, maximum: 600), spacing: 16, alignment: .top)], alignment: .leading, spacing: 16) {
-                        ForEach(visibleQuotaSources) { source in
+                List {
+                    Section {
+                        ForEach(orderedQuotaSources) { source in
                             ProviderQuotaAccountRow(
                                 source: source,
                                 scopeID: quotaViewModel.quotaScopeID ?? "",
                                 displayName: providerDisplayName(source),
-                                percentageMode: ProviderQuotaPercentageMode(rawValue: quotaPercentageModeRawValue) ?? .defaultValue,
+                                percentageMode: quotaPercentageMode,
                                 isRefreshing: quotaViewModel.refreshingQuotaSourceIDs.contains(source.id),
                                 referenceDate: context.date,
                                 open: { selection = .quotaSource(id: source.id) }
                             )
-                            .padding(14)
-                            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                            .contextMenu {
-                                Button {
-                                    Task { await refreshQuotaSource(source.id) }
-                                } label: {
-                                    Label("Refresh", systemImage: "arrow.clockwise")
-                                }
+                            .listRowInsets(EdgeInsets(top: 10, leading: 20, bottom: 10, trailing: 20))
+                            .swipeActions(edge: .trailing) {
                                 Button {
                                     hideProvider(source.providerID)
                                 } label: {
-                                    Label("Hide from Insights", systemImage: "eye.slash")
+                                    Label("Hide", systemImage: "eye.slash")
                                 }
+                                .tint(.orange)
+                            }
+                            .contextMenu { quotaRowMenu(source) }
+                        }
+                        .onMove { offsets, destination in
+                            quotaOrderData = ProviderQuotaOrderSettings.data(ProviderQuotaOrderSettings.moved(
+                                orderedQuotaSources.map(\.id), fromOffsets: offsets, toOffset: destination,
+                                within: ProviderQuotaOrderSettings.sourceIDs(from: quotaOrderData)
+                            ))
+                        }
+                    }
+
+                    if !unavailableQuotaSources.isEmpty {
+                        Section("No quota data") {
+                            ForEach(unavailableQuotaSources) { source in
+                                ProviderQuotaUnavailableRow(
+                                    source: source,
+                                    displayName: providerDisplayName(source),
+                                    open: { selection = .quotaSource(id: source.id) }
+                                )
+                                .listRowInsets(EdgeInsets(top: 8, leading: 20, bottom: 8, trailing: 20))
+                                .swipeActions(edge: .trailing) {
+                                    Button {
+                                        hideProvider(source.providerID)
+                                    } label: {
+                                        Label("Hide", systemImage: "eye.slash")
+                                    }
+                                    .tint(.orange)
+                                }
+                                .contextMenu { quotaRowMenu(source) }
                             }
                         }
                     }
-                    .padding(.horizontal)
-                    .padding(.bottom)
                 }
+                .listStyle(.plain)
+                .environment(\.editMode, .constant(isReorderingQuotas ? .active : .inactive))
             }
             .accessibilityIdentifier("provider-quota-section")
             .refreshable {
                 await loadQuotas(refresh: true)
             }
         }
+    }
+
+    @ViewBuilder
+    private func quotaRowMenu(_ source: ProviderQuotaSource) -> some View {
+        Button {
+            Task { await refreshQuotaSource(source.id) }
+        } label: {
+            Label("Refresh", systemImage: "arrow.clockwise")
+        }
+        Button {
+            hideProvider(source.providerID)
+        } label: {
+            Label("Hide from Insights", systemImage: "eye.slash")
+        }
+    }
+
+    /// Accounts with windows or credits, in the saved order; the server's order for the rest.
+    private var orderedQuotaSources: [ProviderQuotaSource] {
+        ProviderQuotaOrderSettings.ordered(
+            visibleQuotaSources.filter { !$0.windows.isEmpty || $0.quota != nil },
+            by: ProviderQuotaOrderSettings.sourceIDs(from: quotaOrderData)
+        )
+    }
+
+    /// Accounts the server lists without any window or credit figure: unsupported providers, rejected keys.
+    private var unavailableQuotaSources: [ProviderQuotaSource] {
+        visibleQuotaSources.filter { $0.windows.isEmpty && $0.quota == nil }
+    }
+
+    private var quotaPercentageMode: ProviderQuotaPercentageMode {
+        ProviderQuotaPercentageMode(rawValue: quotaPercentageModeRawValue) ?? .defaultValue
     }
 
     @ViewBuilder

@@ -123,8 +123,8 @@ final class InsightsHostedTests: XCTestCase {
         let window = try hostWindow(try Self.detail(Self.pacedSource))
         var seen: [String] = []
         let checks: [(String, (NSObject) -> Bool)] = [
-            ("session pace", Self.labelled(prefix: "Session, 75% remaining")),
-            ("fourth window", Self.labelled(prefix: "Opus, 95% remaining")),
+            ("session pace", Self.labelled(prefix: "Session, 75%, remaining")),
+            ("fourth window", Self.labelled(prefix: "Opus, 95%, remaining")),
             ("reset schedule", { $0.accessibilityLabel?.hasPrefix("Monthly") == true && $0.accessibilityLabel?.contains("Jan 20") == true }),
             ("account label", Self.labelled(prefix: "Account, Claude Max")),
             ("plan", Self.labelled(prefix: "Plan, Max")),
@@ -138,10 +138,10 @@ final class InsightsHostedTests: XCTestCase {
         }
         let labels = seen.joined(separator: "\n")
         for expected in [
-            "15% under pace", "Lasts through reset", "Burn 0.62×", "25%/hr budget",
-            "Weekly, 30% remaining", "6% over pace", "Empty 5h early", "Burn 1.10×", "12%/day budget",
+            "Pace, 15% under", "Lasts through reset", "Burn, 0.62×", "Budget, 25%/hr",
+            "Weekly, 30%, remaining", "Pace, 6% over", "Empty 5h early", "Burn, 1.10×", "Budget, 12%/day",
             // Clock times end in a narrow no-break space before AM/PM, so the expectations stop at the minutes.
-            "Monthly, 90% remaining", "Resets Jan 20 at 12:00", "Session, 75% remaining, Resets Tue 3:00", "As of Tue 12:00", "Updated 12 min. ago", "Last checked",
+            "Monthly, 90%, remaining", "Resets Jan 20 at 12:00", "Session, 75%, remaining, Resets Tue 3:00", "As of Tue 12:00", "Updated 12 min. ago", "Last checked",
         ] {
             XCTAssertTrue(labels.contains(expected), "Missing \(expected) in:\n\(labels)")
         }
@@ -153,9 +153,9 @@ final class InsightsHostedTests: XCTestCase {
         let windows = try Self.quotaWindowsView(Self.plainSource)
         let window = try hostWindow(List { windows })
         let labels = HostedAccessibility.labels(in: window).joined(separator: "\n")
-        XCTAssertTrue(labels.contains("60% remaining"), labels)
+        XCTAssertTrue(labels.contains("60%, remaining"), labels)
         XCTAssertTrue(labels.contains("Resets"), labels)
-        for absent in ["Burn", "pace", "Lasts through reset", "budget", "Refresh needed"] {
+        for absent in ["Burn", "Pace", "Lasts through reset", "Budget", "Refresh for pace"] {
             XCTAssertFalse(labels.contains(absent), "\(absent) shown without a server pace:\n\(labels)")
         }
     }

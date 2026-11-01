@@ -163,9 +163,10 @@ struct ProviderQuotaDetailView: View {
     }
 }
 
-/// The windows block every quota surface in Insights shares: per window the label, percent in the configured mode, a
-/// rail tinted by the server urgency with the pace marker, the reset and countdown, the pace status, burn, budget and
-/// forecast; then credits, status, detail, retry and freshness. The same presentation state drives the widgets.
+/// The windows block every quota surface in Insights shares. Per window: the label and a large percent, the meter
+/// tinted by the server urgency with the pace marker, the reset beside the forecast, then Pace, Burn and Budget as
+/// labelled cells. Then credits, status, the server's notice, retry and freshness. The same presentation state drives
+/// the widgets.
 struct ProviderQuotaWindowsView: View {
     /// Clock times follow the SwiftUI environment (zone and locale, which carries the 12/24-hour preference), so
     /// references and tests can pin both.
@@ -183,7 +184,7 @@ struct ProviderQuotaWindowsView: View {
         let periods = Self.periods(for: widgetSource, settings: settings, at: referenceDate)
         let sourceState = ProviderQuotaPresentation.state(for: widgetSource, settings: settings, at: referenceDate)
 
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 14) {
             ForEach(periods) { period in
                 window(period)
             }
@@ -197,21 +198,28 @@ struct ProviderQuotaWindowsView: View {
             }
 
             if let detail = source.details.first, !detail.isEmpty {
-                Text(detail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                Label {
+                    Text(detail)
+                        .fixedSize(horizontal: false, vertical: true)
+                } icon: {
+                    Image(systemName: "info.circle")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
 
             if let retryAt = ProviderQuotaDateParser.date(from: source.retryAfter) {
-                Text("Retry \(retryAt, style: .relative)")
-                    .font(.caption2)
-                    .foregroundStyle(.orange)
+                Label {
+                    Text("Retry \(retryAt, style: .relative)")
+                } icon: {
+                    Image(systemName: "clock.arrow.circlepath")
+                }
+                .font(.caption)
+                .foregroundStyle(.orange)
             }
 
             freshness(sourceState)
         }
-        .padding(.vertical, 4)
         .accessibilityIdentifier("provider-quota-windows-\(source.id)")
     }
 
@@ -242,20 +250,20 @@ struct ProviderQuotaWindowsView: View {
 
     // MARK: Windows
 
-    /// The Web row's shape: label and percent, the meter, then one wrapping line of reset, pace, burn, budget and
-    /// forecast in small type.
     private func window(_ period: ProviderQuotaPeriodPresentation) -> some View {
         let state = period.state
         let forecast = ProviderQuotaForecastSummary(state: state)
 
-        return VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline) {
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .lastTextBaseline, spacing: 8) {
                 Text(state.window?.label ?? period.shortLabel)
-                    .font(.footnote.weight(.medium))
+                    .font(.subheadline.weight(.semibold))
                 Spacer(minLength: 8)
                 if let percent = state.percent {
-                    Text("\(insightsFormattedPercent(percent)) \(state.modeLabel)")
-                        .font(.footnote.monospacedDigit())
+                    Text(insightsFormattedPercent(percent))
+                        .font(.title2.weight(.semibold).monospacedDigit())
+                    Text(state.modeLabel)
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                 } else if let detail = state.window?.detail, !detail.isEmpty {
                     Text(detail)
@@ -269,43 +277,53 @@ struct ProviderQuotaWindowsView: View {
                     percent: percent,
                     markerPercent: state.expectedPercent,
                     tint: tint(for: state),
-                    height: 6
+                    height: 8
                 )
             }
 
-            metadata(period, forecast: forecast)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                if let resetAt = state.resetAt {
+                    Text(resetLabel(resetAt, period: period))
+                        .foregroundStyle(.secondary)
+                } else if let detail = state.window?.detail, !detail.isEmpty, state.percent != nil {
+                    Text(detail)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                if state.forecast != nil {
+                    Label(forecast.forecastLabel, systemImage: forecast.systemImage)
+                        .foregroundStyle(forecast.outcome.tint)
+                        .labelStyle(.titleAndIcon)
+                        .layoutPriority(1)
+                } else if state.paceNeedsRefresh {
+                    Label("Refresh for pace", systemImage: "arrow.clockwise.circle")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .font(.caption)
+
+            if let pace = state.pace {
+                HStack(spacing: 8) {
+                    ProviderQuotaMetricCell(title: String(localized: "Pace"), value: paceCellValue(pace))
+                    ProviderQuotaMetricCell(title: String(localized: "Burn"), value: forecast.burnRateLabel)
+                    if state.forecast?.budgetPercent != nil {
+                        ProviderQuotaMetricCell(title: String(localized: "Budget"), value: "\(forecast.budgetLabel)\(forecast.budgetUnitSuffix)")
+                    }
+                }
+            }
         }
         .accessibilityElement(children: .combine)
     }
 
-    /// One text that wraps between items, like the Web's row: the forecast item carries its tint.
-    private func metadata(_ period: ProviderQuotaPeriodPresentation, forecast: ProviderQuotaForecastSummary) -> Text {
-        let state = period.state
-        var items: [Text] = []
-        if let resetAt = state.resetAt {
-            items.append(Text(resetLabel(resetAt, period: period)))
-        } else if let detail = state.window?.detail, !detail.isEmpty, state.percent != nil {
-            items.append(Text(detail))
+    /// "15% under", "6% over", or "On pace" from the server's `pace.status`; the delta alone on an older server.
+    private func paceCellValue(_ pace: ProviderQuotaWindowPace) -> String {
+        let value = abs(pace.paceDeltaPercent).formatted(.percent.scale(1).precision(.fractionLength(0...1)))
+        switch pace.status {
+        case "over": return String(localized: "\(value) over")
+        case "under": return String(localized: "\(value) under")
+        case "on": return String(localized: "On pace")
+        default: return value
         }
-        if let paceLabel = state.paceLabel {
-            items.append(Text(paceLabel))
-        } else if state.paceNeedsRefresh {
-            items.append(Text("Refresh needed"))
-        }
-        if let pace = state.pace {
-            items.append(Text("Burn \(pace.burnRate.formatted(.number.precision(.fractionLength(2))))×"))
-            if let serverForecast = state.forecast {
-                if serverForecast.budgetPercent != nil {
-                    items.append(Text("\(forecast.budgetLabel)\(forecast.budgetUnitSuffix) budget"))
-                }
-                items.append(Text(forecast.forecastLabel).foregroundStyle(forecast.outcome.tint))
-            }
-        }
-        guard let first = items.first else { return Text("") }
-        return items.dropFirst().reduce(first) { $0 + Text("   ") + $1 }
     }
 
     private func resetLabel(_ resetAt: Date, period: ProviderQuotaPeriodPresentation) -> String {
@@ -325,16 +343,18 @@ struct ProviderQuotaWindowsView: View {
     @ViewBuilder
     private func credits(_ quota: ProviderQuotaAmount, state: ProviderQuotaPresentationState) -> some View {
         if let percent = state.percent {
-            VStack(alignment: .leading, spacing: 5) {
-                HStack {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .lastTextBaseline, spacing: 8) {
                     Text("Credits")
-                        .font(.subheadline.weight(.medium))
+                        .font(.subheadline.weight(.semibold))
                     Spacer(minLength: 8)
-                    Text("\(insightsFormattedPercent(percent)) \(state.modeLabel)")
-                        .font(.subheadline.monospacedDigit())
+                    Text(insightsFormattedPercent(percent))
+                        .font(.title2.weight(.semibold).monospacedDigit())
+                    Text(state.modeLabel)
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                ProgressRailView(percent: percent, tint: tint(for: state), height: 6)
+                ProgressRailView(percent: percent, tint: tint(for: state), height: 8)
                 if let remaining = quota.limitRemaining {
                     Text("\(remaining.formatted()) credits remaining")
                         .font(.caption)

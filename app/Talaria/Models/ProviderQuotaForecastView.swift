@@ -33,8 +33,8 @@ struct ProviderQuotaForecastView: View {
             }
 
             HStack(spacing: 8) {
-                metric(title: "Burn", value: burnRateLabel)
-                metric(title: budgetTitle, value: budgetLabel)
+                ProviderQuotaMetricCell(title: String(localized: "Burn"), value: burnRateLabel)
+                ProviderQuotaMetricCell(title: budgetTitle, value: budgetLabel)
             }
 
             Label(forecastLabel, systemImage: forecastSystemImage)
@@ -61,19 +61,6 @@ struct ProviderQuotaForecastView: View {
         .accessibilityElement(children: .combine)
     }
 
-    private func metric(title: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(.caption2).foregroundStyle(.secondary)
-            Text(value)
-                .font(.caption.weight(.semibold).monospacedDigit())
-                .lineLimit(1)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-    }
-
     private var forecast: ProviderQuotaForecastSummary {
         ProviderQuotaForecastSummary(state: state)
     }
@@ -96,5 +83,27 @@ struct ProviderQuotaForecastView: View {
 
     private var forecastSystemImage: String {
         forecast.systemImage
+    }
+}
+
+/// One labelled figure (Burn, Budget, Pace): the widgets' forecast cell, also the Insights quota row's.
+struct ProviderQuotaMetricCell: View {
+    let title: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.caption2).foregroundStyle(.secondary)
+            Text(value)
+                .font(.caption.weight(.semibold).monospacedDigit())
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(title), \(value)")
     }
 }

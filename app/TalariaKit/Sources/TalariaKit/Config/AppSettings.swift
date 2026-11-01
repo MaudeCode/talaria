@@ -180,6 +180,41 @@ public enum SectionVisibilitySettings {
     }
 }
 
+/// The order of quota accounts on the Insights Quotas tab (TAL-1750): a device-local display preference, like the
+/// sidebar pins. Sources the saved order does not name follow in the server's order.
+public enum ProviderQuotaOrderSettings {
+    public static let storageKey = "providerQuota.insightsOrder"
+
+    public static func sourceIDs(from data: Data) -> [String] {
+        (try? JSONDecoder().decode([String].self, from: data)) ?? []
+    }
+
+    public static func data(_ sourceIDs: [String]) -> Data {
+        (try? JSONEncoder().encode(sourceIDs)) ?? Data()
+    }
+
+    public static func ordered<Source: Identifiable>(_ sources: [Source], by sourceIDs: [String]) -> [Source] where Source.ID == String {
+        let rank = Dictionary(sourceIDs.enumerated().map { ($0.element, $0.offset) }, uniquingKeysWith: { first, _ in first })
+        let indexed = sources.enumerated()
+        return indexed.sorted { lhs, rhs in
+            switch (rank[lhs.element.id], rank[rhs.element.id]) {
+            case let (l?, r?): return l < r
+            case (.some, nil): return true
+            case (nil, .some): return false
+            case (nil, nil): return lhs.offset < rhs.offset
+            }
+        }.map(\.element)
+    }
+
+    /// The saved order after moving `offsets` to `destination` within `visibleIDs` (the ids on screen, in their shown
+    /// order); ids not on screen keep their place at the end so a hidden account reappears where it was.
+    public static func moved(_ visibleIDs: [String], fromOffsets offsets: IndexSet, toOffset destination: Int, within saved: [String]) -> [String] {
+        var shown = visibleIDs
+        shown.move(fromOffsets: offsets, toOffset: destination)
+        return shown + saved.filter { !shown.contains($0) }
+    }
+}
+
 public enum ProviderQuotaSidebarSettings {
     public static let firstSourceKey = "providerQuotaSidebar.source1"
     public static let secondSourceKey = "providerQuotaSidebar.source2"
