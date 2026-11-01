@@ -13,6 +13,9 @@ const cost = (v: unknown): number => {
 }
 
 const USAGE_FIELDS = ['message_count', 'input_tokens', 'output_tokens', 'cache_read_tokens'] as const
+const dayKey = (d: Date): string => `${String(d.getFullYear())}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+/** A session's activity time: the one timestamp that both admits it to the window and picks its day. */
+const activityAt = (e: Dict): number => Math.max(num(e.created_at), num(e.updated_at))
 
 /**
  * `input_tokens` is the whole prompt (uncached, cache reads, and cache writes) for both sources, so a cache hit rate
@@ -27,8 +30,9 @@ export async function buildInsights(entries: Dict[], daysRaw: unknown, nowSecond
   const parsed = Number.parseInt(str(daysRaw ?? '30'), 10)
   const days = Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), 365) : 30
   const today = new Date(nowSeconds * 1000)
-  const midnight = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime() / 1000
-  const cutoff = midnight - (days - 1) * 86_400
+  // Local calendar days, not 86,400-second steps: a DST change makes a day 23 or 25 hours long (TAL-1115).
+  const windowDays = Array.from({ length: days }, (_, i) => new Date(today.getFullYear(), today.getMonth(), today.getDate() - (days - 1) + i))
+  const cutoff = windowDays[0]!.getTime() / 1000
   const state = new Map((await stateRows(cutoff)).map((r) => [str(r.session_id), r]))
   const merged = entries.map((e) => {
     const row = state.get(str(e.session_id))
@@ -37,7 +41,7 @@ export async function buildInsights(entries: Dict[], daysRaw: unknown, nowSecond
     const model = num(row.updated_at) > num(e.updated_at) ? str(row.model) || str(e.model) : str(e.model) || str(row.model)
     return { ...e, ...Object.fromEntries(USAGE_FIELDS.map((k) => [k, Math.max(num(e[k]), num(row[k]))])), estimated_cost: Math.max(cost(e.estimated_cost), cost(row.estimated_cost)), updated_at: Math.max(num(e.updated_at), num(row.updated_at)), model }
   })
-  const sessions = [...merged, ...state.values()].filter((e) => Math.max(num(e.created_at), num(e.updated_at)) >= cutoff)
+  const sessions = [...merged, ...state.values()].filter((e) => activityAt(e) >= cutoff)
   let totalMessages = 0
   let totalInput = 0
   let totalOutput = 0
@@ -65,10 +69,10 @@ export async function buildInsights(entries: Dict[], daysRaw: unknown, nowSecond
     bucket.cache_read_tokens += cache
     bucket.cost += c
     models.set(model, bucket)
-    const ts = num(s.updated_at) || num(s.created_at)
+    const ts = activityAt(s)
     if (ts) {
       const d = new Date(ts * 1000)
-      const key = `${String(d.getFullYear())}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      const key = dayKey(d)
       const day = daily.get(key) ?? { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, sessions: 0, cost: 0 }
       day.input_tokens += input
       day.output_tokens += output
@@ -92,13 +96,11 @@ export async function buildInsights(entries: Dict[], daysRaw: unknown, nowSecond
     }
   // Python: `(-cost, -sessions, model)`.
   }).sort((a, b) => b.cost - a.cost || b.sessions - a.sessions || (a.model < b.model ? -1 : a.model > b.model ? 1 : 0))
-  const series: Dict[] = []
-  for (let i = 0; i < days; i += 1) {
-    const d = new Date((cutoff + i * 86_400) * 1000)
-    const key = `${String(d.getFullYear())}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  const series: Dict[] = windowDays.map((d) => {
+    const key = dayKey(d)
     const b = daily.get(key) ?? { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, sessions: 0, cost: 0 }
-    series.push({ date: key, input_tokens: b.input_tokens, output_tokens: b.output_tokens, cache_read_tokens: b.cache_read_tokens, sessions: b.sessions, cost: Math.round(b.cost * 1e6) / 1e6 })
-  }
+    return { date: key, input_tokens: b.input_tokens, output_tokens: b.output_tokens, cache_read_tokens: b.cache_read_tokens, sessions: b.sessions, cost: Math.round(b.cost * 1e6) / 1e6 }
+  })
   const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
   return {
     period_days: days, total_sessions: totalSessions, total_messages: totalMessages, total_input_tokens: totalInput, total_output_tokens: totalOutput, total_cache_read_tokens: totalCache,

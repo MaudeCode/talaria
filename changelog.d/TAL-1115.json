@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Insights now shows every day of the selected period, with usage on the right day, when the period crosses a daylight saving time change.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
