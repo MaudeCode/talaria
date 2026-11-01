@@ -56,7 +56,7 @@ def _event_row(evt: dict) -> dict:
             if not row.get("origin_ui_session_id"):
                 row["origin_ui_session_id"] = str(getattr(proc, "origin_ui_session_id", "") or "") or str(getattr(proc, "spawn_session_id", "") or "")
     try:
-        # Only the exit is consumed by the agent's wait or poll; a watch notice from the same process still wakes (TAL-724).
+        # Only the exit is consumed by the agent's wait or log; a watch notice from the same process still wakes (TAL-724).
         row["consumed"] = bool(registry is not None and process_id and row.get("type") in (None, "completion") and registry.is_completion_consumed(process_id))
     except Exception:  # noqa: BLE001
         row["consumed"] = False
@@ -277,15 +277,16 @@ def mark_consumed(process_id: str) -> bool:
 
 
 def consumed_ids(process_ids: list[str]) -> list[str]:
-    """The processes the agent already holds from its own turn: consumed via wait/log, or observed exiting via poll.
-    Checked at wakeup delivery, since the completion is usually drained before the agent's wait returns (TAL-532)."""
+    """The processes whose full result the agent already consumed via wait/log in its own turn.
+    Checked at wakeup delivery, since the completion is usually drained before the agent's wait returns (TAL-532).
+    A poll preview carries only a short tail, so it leaves the full completion to the wakeup (TAL-1560)."""
     registry = _registry()
     if registry is None:
         return []
     out = []
     for process_id in process_ids:
         try:
-            if registry.is_completion_consumed(process_id) or process_id in (getattr(registry, "_poll_observed", None) or ()):
+            if registry.is_completion_consumed(process_id):
                 out.append(process_id)
         except Exception:  # noqa: BLE001
             log.debug("Completion consumed check failed for %r", process_id, exc_info=True)

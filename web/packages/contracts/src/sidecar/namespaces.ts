@@ -564,7 +564,7 @@ export const PROCESS_METHODS = {
   'process.recover': { params: BaseHomeParams, result: z.object({ homes: z.number().int() }) },
   'process.requeue': { params: z.object({ events: z.array(Loose) }), result: z.object({ requeued: z.number().int() }) },
   'process.mark_consumed': { params: z.object({ process_id: z.string().min(1) }), result: Ok },
-  /** TAL-532: the subset the agent already holds from its own turn (consumed via wait/log, or poll-observed). */
+  /** TAL-532: the subset whose full result the agent already consumed via wait/log; a poll preview does not count (TAL-1560). */
   'process.consumed': { params: z.object({ process_ids: z.array(z.string().min(1)) }), result: z.object({ consumed: z.array(z.string()) }) },
   /** TAL-459: the Agent's durable delivery ledger. A null claim means another consumer delivered (or holds) it; "" means nothing durable to acknowledge. */
   'process.claim_delivery': { params: ProfileHomeParams.extend({ event: Loose, consumer: z.string().min(1) }), result: z.object({ claim_id: z.string().nullable(), retryable: z.boolean().optional() }) },

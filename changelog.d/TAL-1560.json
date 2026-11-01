@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "When the agent only checks on a background process with a quick status poll, Talaria Web now still wakes the chat with the process's full output once it finishes.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
