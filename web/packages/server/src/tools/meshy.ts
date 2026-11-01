@@ -134,7 +134,7 @@ export class MeshyHost {
     return {
       ...this.status(result), auto_rotate: result.auto_rotate ?? true, active: result.active ?? [],
       recent: revision ? byNewest((result.recent ?? []).map((row) => this.recentItem(scope, revision, row, ready))) : [],
-      local: revision ? byNewest((result.local ?? []).map((row) => this.localItem(scope, revision, row, ready || result.availability === 'missing_key'))) : [],
+      local: revision ? byNewest((result.local ?? []).map((row) => this.localItem(scope, revision, row, ready))) : [],
     }
   }
 

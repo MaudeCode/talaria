@@ -137,8 +137,10 @@ describe('Meshy previews (TAL-1514)', () => {
 
   it('names missing-key, plugin and old-Agent states instead of failing', async () => {
     const b = await backend()
-    b.sidecar.respond('plugins.meshy', () => ({ availability: 'missing_key', message: 'Add a Meshy API key in Plugins to see generations and download files.', balance: null, revision: REVISION, auto_rotate: true, recent: [], active: [], local: [] }))
-    expect(await (await b.server.get('/api/meshy/overview')).json()).toMatchObject({ availability: 'missing_key', balance: null, recent: [] })
+    const partial = { path: b.model.replace('model.glb', 'image-1.png'), name: 'image-1.png', kind: 'image' as const, task_id: TASK, prompt: null, modified: 1, bytes: 4, images: [], download_incomplete: true }
+    b.sidecar.respond('plugins.meshy', () => ({ availability: 'missing_key', message: 'Add a Meshy API key in Plugins to see generations and download files.', balance: null, revision: REVISION, auto_rotate: true, recent: [], active: [], local: [partial] }))
+    // Saved files still show, but nothing offers a download the native plugin refuses without a key.
+    expect(await (await b.server.get('/api/meshy/overview')).json()).toMatchObject({ availability: 'missing_key', balance: null, recent: [], local: [{ saved: true, download_incomplete: true, can_download: false }] })
     b.sidecar.respond('plugins.meshy', () => ({ availability: 'plugin_unavailable', message: null, balance: null, revision: null }))
     expect(await (await b.server.get('/api/meshy/overview')).json()).toMatchObject({ availability: 'plugin_unavailable' })
     expect(((await (await b.server.get('/api/meshy/overview')).json()) as MeshyOverview).message).toContain('Meshy plugin')
