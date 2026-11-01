@@ -143,8 +143,16 @@ commented template.
 Public authentication request bodies are limited to 64 KiB, including chunked requests;
 larger bodies receive HTTP 413. Authenticated routes retain their existing limits.
 Access logs include `forwarded_for` only when `HERMES_WEBUI_TRUST_FORWARDED_FOR` is enabled
-and the connection comes from a trusted proxy. The value uses the same validated
-client-IP selection as rate limiting and is limited to 256 characters.
+and the connection comes from a trusted proxy. The value uses the validated
+client-IP selection and is limited to 256 characters.
+
+Login, passkey, native OIDC start, and TTS limits key on a forwarded client only when
+`HERMES_WEBUI_TRUST_FORWARDED_FOR` is enabled and the proxy's socket address is listed in
+`HERMES_WEBUI_TRUSTED_PROXY_CIDRS`; loopback is not trusted implicitly for these limits. A
+same-host proxy lists `127.0.0.1/32` (and `::1/128`), which trusts every local client the
+same way, SSH tunnels included. The proxy must append the client to `X-Forwarded-For` and
+overwrite any `X-Real-IP` it sends. A missing chain, an empty field, or an `X-Real-IP`
+naming a different address counts against the proxy's own budget.
 
 ### How chat runs
 

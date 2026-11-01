@@ -8,7 +8,9 @@ import { JsonDocuments } from '../test/storage.js'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { request } from 'node:http'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { WindowLimiter } from '../api/tools-router.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer, cookieHeader, type TestServer } from '../test/harness.js'
 import { safeLoginRedirectPath } from '../auth/gate.js'
@@ -81,21 +83,99 @@ describe('password login: CSRF exemption and attempt persistence', () => {
 describe('login limiter behind an opted-in trusted proxy', () => {
   let s: TestServer
   const PASSWORD = 'correct horse battery'
+  const PEER = '127.0.0.1'
+  const env = (): Record<string, string | undefined> => s.deps.config.env
+  const login = (headers: Record<string, string | string[]>, password = 'wrong'): Promise<number> => rawPost(s, '/api/auth/login', { password }, headers)
+  const passkey = (headers: Record<string, string | string[]>): Promise<number> => rawPost(s, '/api/auth/passkey/login', { id: 'unknown' }, headers)
+  /** Five rejected guesses under rotating headers, then the sixth: 429 means they all shared one budget. */
+  const sixthAfterFiveRotating = async (send: (headers: Record<string, string | string[]>) => Promise<number>, headersFor: (i: number) => Record<string, string | string[]>): Promise<number> => {
+    for (let i = 0; i < 5; i += 1) expect(await send(headersFor(i))).toBe(401)
+    return send(headersFor(5))
+  }
   beforeAll(async () => { s = await bootTestServer({ env: { HERMES_WEBUI_PASSWORD: PASSWORD, HERMES_WEBUI_PASSKEY: '1', HERMES_WEBUI_TRUST_FORWARDED_FOR: '1' } }) })
+  afterEach(() => {
+    delete env().HERMES_WEBUI_TRUSTED_PROXY_CIDRS
+    env().HERMES_WEBUI_TRUST_FORWARDED_FOR = '1'
+    for (const key of [PEER, ...Array.from({ length: 8 }, (_, i) => `203.0.113.${i}`)]) s.deps.auth.clearLoginAttempts(key)
+  })
   afterAll(() => s.close())
 
-  it('password login keeps a budget per forwarded client that a rotated left-most hop does not reset', async () => {
-    for (let i = 0; i < 5; i += 1) expect((await post(s, '/api/auth/login', { password: 'wrong' }, { 'x-forwarded-for': '203.0.113.1' })).status).toBe(401)
-    expect((await post(s, '/api/auth/login', { password: PASSWORD }, { 'x-forwarded-for': '198.51.100.9, 203.0.113.1' })).status).toBe(429)
-    expect((await post(s, '/api/auth/login', { password: PASSWORD }, { 'x-forwarded-for': '203.0.113.2' })).status).toBe(200)
+  it.each([['password', login], ['passkey', passkey]] as const)('%s: implicit loopback trust cannot select a budget with a rotating X-Forwarded-For', async (_name, send) => {
+    expect(await sixthAfterFiveRotating(send, (i) => ({ 'x-forwarded-for': `203.0.113.${i}` }))).toBe(429)
   })
 
-  it('passkey login keeps a budget per forwarded client', async () => {
-    for (let i = 0; i < 5; i += 1) expect((await post(s, '/api/auth/passkey/login', { id: 'unknown' }, { 'x-forwarded-for': '203.0.113.3' })).status).toBe(401)
-    expect((await post(s, '/api/auth/passkey/login', { id: 'unknown' }, { 'x-forwarded-for': '198.51.100.9, 203.0.113.3' })).status).toBe(429)
-    expect((await post(s, '/api/auth/passkey/login', { id: 'unknown' }, { 'x-forwarded-for': '203.0.113.4' })).status).toBe(401)
+  it.each([['password', login], ['passkey', passkey]] as const)('%s: a listed proxy whose X-Real-IP disagrees with X-Forwarded-For keys on the peer', async (_name, send) => {
+    env().HERMES_WEBUI_TRUSTED_PROXY_CIDRS = '127.0.0.1/32'
+    expect(await sixthAfterFiveRotating(send, (i) => ({ 'x-forwarded-for': `203.0.113.${i}`, 'x-real-ip': '192.0.2.99' }))).toBe(429)
+  })
+
+  it.each([['password', login], ['passkey', passkey]] as const)('%s: X-Real-IP without an X-Forwarded-For chain keys on the peer', async (_name, send) => {
+    env().HERMES_WEBUI_TRUSTED_PROXY_CIDRS = '127.0.0.1/32'
+    expect(await sixthAfterFiveRotating(send, (i) => ({ 'x-real-ip': `203.0.113.${i}` }))).toBe(429)
+  })
+
+  it.each([['password', login], ['passkey', passkey]] as const)('%s: an empty first X-Forwarded-For field with a rotating later field keys on the peer', async (_name, send) => {
+    env().HERMES_WEBUI_TRUSTED_PROXY_CIDRS = '127.0.0.1/32'
+    expect(await sixthAfterFiveRotating(send, (i) => ({ 'x-forwarded-for': ['', `203.0.113.${i}`] }))).toBe(429)
+  })
+
+  it.each([['password', login], ['passkey', passkey]] as const)('%s: repeated X-Real-IP fields that disagree key on the peer', async (_name, send) => {
+    env().HERMES_WEBUI_TRUSTED_PROXY_CIDRS = '127.0.0.1/32'
+    expect(await sixthAfterFiveRotating(send, (i) => ({ 'x-forwarded-for': `203.0.113.${i}`, 'x-real-ip': [`203.0.113.${i}`, '192.0.2.99'] }))).toBe(429)
+  })
+
+  it('password login: without the opt-in a listed proxy still keys on the peer', async () => {
+    delete env().HERMES_WEBUI_TRUST_FORWARDED_FOR
+    env().HERMES_WEBUI_TRUSTED_PROXY_CIDRS = '127.0.0.1/32'
+    expect(await sixthAfterFiveRotating(login, (i) => ({ 'x-forwarded-for': `203.0.113.${i}` }))).toBe(429)
+  })
+
+  it('password login: a listed proxy with consistent evidence keeps a budget per client that a forged left-most hop does not reset', async () => {
+    env().HERMES_WEBUI_TRUSTED_PROXY_CIDRS = '127.0.0.1/32, ::1/128'
+    for (let i = 0; i < 5; i += 1) expect(await login({ 'x-forwarded-for': `198.51.100.${i}, 203.0.113.1`, 'x-real-ip': '203.0.113.1' })).toBe(401)
+    expect(await login({ 'x-forwarded-for': '198.51.100.9, 203.0.113.1', 'x-real-ip': '203.0.113.1' }, PASSWORD)).toBe(429)
+    // Equivalent spellings of the same client share its budget.
+    expect(await login({ 'x-forwarded-for': '::ffff:203.0.113.1', 'x-real-ip': '::FFFF:cb00:7101' }, PASSWORD)).toBe(429)
+    expect(await login({ 'x-forwarded-for': '203.0.113.2', 'x-real-ip': ['203.0.113.2', '::ffff:203.0.113.2'] }, PASSWORD)).toBe(200)
+    expect(await login({ 'x-forwarded-for': '203.0.113.3' }, PASSWORD)).toBe(200)
+    // The peer's own budget is untouched by the forwarded clients' failures.
+    expect(await login({}, PASSWORD)).toBe(200)
+  })
+
+  it('passkey login: a listed proxy keeps a budget per forwarded client', async () => {
+    env().HERMES_WEBUI_TRUSTED_PROXY_CIDRS = '127.0.0.1/32'
+    for (let i = 0; i < 5; i += 1) expect(await passkey({ 'x-forwarded-for': '203.0.113.3' })).toBe(401)
+    expect(await passkey({ 'x-forwarded-for': '198.51.100.9, 203.0.113.3' })).toBe(429)
+    expect(await passkey({ 'x-forwarded-for': '203.0.113.4' })).toBe(401)
+    expect(await passkey({})).toBe(401)
+  })
+
+  it('native OIDC start keys its limiter through the same policy', async () => {
+    const start = (headers: Record<string, string | string[]>): Promise<number> => rawPost(s, '/api/auth/oidc/native/start', { callback_url: 'talaria://oidc-callback', state: 's'.repeat(32), code_challenge: 'c'.repeat(43), code_challenge_method: 'S256' }, headers)
+    s.deps.nativeOidcLimiter = new WindowLimiter(60, 1)
+    expect(await start({ 'x-forwarded-for': '203.0.113.5' })).not.toBe(429)
+    expect(await start({ 'x-forwarded-for': '203.0.113.6' })).toBe(429)
+    env().HERMES_WEBUI_TRUSTED_PROXY_CIDRS = '127.0.0.1/32'
+    s.deps.nativeOidcLimiter = new WindowLimiter(60, 1)
+    expect(await start({ 'x-forwarded-for': '203.0.113.5' })).not.toBe(429)
+    expect(await start({ 'x-forwarded-for': '203.0.113.6' })).not.toBe(429)
+    expect(await start({ 'x-forwarded-for': '203.0.113.6', 'x-real-ip': '192.0.2.99' })).not.toBe(429)
+    expect(await start({ 'x-forwarded-for': '203.0.113.7', 'x-real-ip': '192.0.2.99' })).toBe(429)
   })
 })
+
+/** POST with each header array sent as repeated wire fields, which fetch would join. */
+function rawPost(s: TestServer, path: string, body: unknown, headers: Record<string, string | string[]>): Promise<number> {
+  const payload = JSON.stringify(body)
+  return new Promise((resolve, reject) => {
+    const req = request(`${s.base}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload), ...headers } }, (res) => {
+      res.resume()
+      res.on('end', () => { resolve(res.statusCode ?? 0) })
+    })
+    req.on('error', reject)
+    req.end(payload)
+  })
+}
 
 describe('auth persistence off the request path', () => {
   let s: TestServer
