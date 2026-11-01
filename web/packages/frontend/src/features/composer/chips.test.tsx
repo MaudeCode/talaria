@@ -94,6 +94,27 @@ describe('ModelChip', () => {
     expect(trigger).toHaveFocus()
   })
 
+  it('pins search above the scrolling rows, reaches them with ArrowDown and keeps the selection through a refresh (TAL-1131)', async () => {
+    catalog = COLON_CATALOG
+    renderChip({ model: '@ollama:llama3:8b', optionId: '@ollama:llama3:8b' })
+    const trigger = screen.getByRole('button')
+    await userEvent.click(trigger)
+    const search = await screen.findByRole('searchbox')
+    const rows = screen.getAllByRole('menuitemradio')[0]!.closest('.overflow-y-auto')
+    expect(rows).toBeInstanceOf(HTMLElement)
+    expect(rows).not.toContainElement(search)
+    expect(screen.getByRole('menu')).toContainElement(search)
+    expect(search).toHaveFocus()
+    await userEvent.keyboard('{ArrowDown}')
+    expect(screen.getByRole('menuitemradio', { name: 'Claude Opus 4.7' })).toHaveFocus()
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+    catalog = { ...COLON_CATALOG, groups: [...COLON_CATALOG.groups, { provider: 'Mistral', provider_id: 'mistral', models: [{ id: '@mistral:large', label: 'Mistral Large', provider_id: 'mistral', bare_id: 'large' }] }] }
+    await userEvent.click(trigger)
+    expect(await screen.findByRole('menuitemradio', { name: 'Mistral Large' })).toHaveAttribute('aria-checked', 'false')
+    expect(screen.getByRole('menuitemradio', { name: 'Llama3 (8B)' })).toHaveAttribute('aria-checked', 'true')
+  })
+
   it('keeps surviving model rows out of search renders and mounts returning rows once', async () => {
     catalog = COLON_CATALOG
     renderChip({ model: null, optionId: null })

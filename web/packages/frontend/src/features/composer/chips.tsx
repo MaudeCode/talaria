@@ -45,6 +45,7 @@ export function Chip({ icon, label, title, className, disabled, row, size = 'sm'
 }
 
 const RADIO_CLASS = cn(MENU_ROW, 'data-[checked]:text-accent-text')
+const SEARCH_LIST_KEYS = new Set(['Escape', 'ArrowDown', 'ArrowUp'])
 
 /** TAL-807: the server's rate-limit state for a provider group: its account limit or a low quota level (never both). */
 function GroupLimitBadge({ group, locale }: { group: Models['groups'][number]; locale: string }) {
@@ -74,8 +75,9 @@ export function ModelChip({ model, optionId, onChange, row }: { model: string | 
   const label = selected ? selected.label ?? selected.id : (model ?? models.data?.default_model) || '—'
   return (
     // TAL-807: opening the picker reads the catalog again, so a rate limit or quota level reflects the server now.
-    <Menu open={open} initialFocus={searchInput} label={m.composer_control_model()} side="top" className="min-w-72 max-w-[calc(100vw-2rem)] [--menu-max-height:60vh]" onOpenChange={(open) => { setOpen(open); if (open) void models.refetch() }} trigger={<Chip id={row ? undefined : "composerModelChip"} icon={<Cpu size={16} aria-hidden="true" />} label={label} title={m.composer_control_model()} row={row} className="composer-model-chip" />}>
-      <div className="p-1"><input ref={searchInput} type="search" autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder={m.model_search_placeholder()} aria-label={m.model_search_placeholder()} className="h-8 w-full rounded-md border border-border bg-input px-2 text-sm text-text" onKeyDown={(e) => { if (e.key !== 'Escape') e.stopPropagation() }} /></div>
+    // TAL-1131: search is the menu's pinned header; ArrowUp/ArrowDown reach Base UI's list navigation, other keys stay typing.
+    <Menu open={open} initialFocus={searchInput} label={m.composer_control_model()} side="top" className="min-w-72 max-w-[calc(100vw-2rem)] [--menu-max-height:60vh]" onOpenChange={(open) => { setOpen(open); if (open) void models.refetch() }} trigger={<Chip id={row ? undefined : "composerModelChip"} icon={<Cpu size={16} aria-hidden="true" />} label={label} title={m.composer_control_model()} row={row} className="composer-model-chip" />}
+      header={<div className="p-1"><input ref={searchInput} type="search" autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder={m.model_search_placeholder()} aria-label={m.model_search_placeholder()} className="h-8 w-full rounded-md border border-border bg-input px-2 text-sm text-text" onKeyDown={(e) => { if (!SEARCH_LIST_KEYS.has(e.key)) e.stopPropagation() }} /></div>}>
       <MenuRadioGroup value={selected?.id ?? ''} onValueChange={onSelect}>
         {groups.map((g) => (
           <MenuGroup key={g.provider}>
