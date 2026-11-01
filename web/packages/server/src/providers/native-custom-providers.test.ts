@@ -77,6 +77,29 @@ describe('native custom providers in the catalog (TAL-1654)', () => {
     expect(await catalog.contextLengthInputs(home, 'demo-model', 'custom:demo')).toEqual({ base_url: 'https://synthetic.invalid/v1', api_key: 'sk-synthetic-demo', config_context_length: 777777 })
   })
 
+  it('lists a keyed native record without a curated list from its live catalog, configured ids as the fallback', async () => {
+    config = { model: { provider: 'anthropic' }, providers: { omni: { url: 'https://omni.invalid/v1', api_key: 'sk-synthetic-omni', default_model: 'omni-1' }, 'custom:demo': structuredClone(DEMO) } }
+    sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: p.provider === 'omni' ? ['omni-live-a', 'omni-1'] : p.provider === 'custom:demo' ? ['demo-live'] : [] }))
+    const catalog = build({ DEMO_KEY: 'sk-synthetic-demo' })
+    const rows = (await catalog.providers(home)).providers as unknown as Row[]
+    const groups = (await catalog.models(home)).groups
+    const ids = (models: ModelEntry[]) => models.map((m) => m.bare_id ?? m.id)
+    expect(ids(rows.find((r) => r.id === 'custom:omni')!.models)).toEqual(['omni-live-a', 'omni-1'])
+    expect(ids(groups.find((g) => g.provider_id === 'custom:omni')!.models)).toEqual(['omni-live-a', 'omni-1'])
+    // A curated `models` list pins both surfaces.
+    expect(ids(rows.find((r) => r.id === 'custom:demo')!.models)).toEqual(['demo-model'])
+    expect(ids(groups.find((g) => g.provider_id === 'custom:demo')!.models)).toEqual(['demo-model'])
+    sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: [] }))
+    const cold = build({ DEMO_KEY: 'sk-synthetic-demo' })
+    expect(ids(((await cold.providers(home)).providers as unknown as Row[]).find((r) => r.id === 'custom:omni')!.models)).toEqual(['omni-1'])
+  })
+
+  it('keeps an underscore in a native custom slug for endpoint, key and context lookups', async () => {
+    config = { model: { provider: 'anthropic' }, providers: { 'custom:my_box': { api: 'https://box.invalid/v1', api_key: 'sk-synthetic-box', models: { 'box-model': { context_length: 4242 } } } } }
+    expect(modelBaseUrl(config, 'custom:my_box')).toBe('https://box.invalid/v1')
+    expect(await build({}).contextLengthInputs(home, 'box-model', 'custom:my_box')).toEqual({ base_url: 'https://box.invalid/v1', api_key: 'sk-synthetic-box', config_context_length: 4242 })
+  })
+
   it('never routes a disabled identity to another record or key', async () => {
     config = { model: { provider: 'anthropic' }, providers: { 'custom:demo': { ...DEMO, enabled: false }, demo: { api: 'https://other.invalid/v1', api_key: 'sk-other-owner' } } }
     const catalog = build({ DEMO_KEY: 'sk-synthetic-demo' })

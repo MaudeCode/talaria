@@ -355,7 +355,8 @@ function nativeCustomIdentities(config: Config, plugins?: ReadonlySet<string>): 
  */
 function nativeCustomOwner(identity: string, group: [string, Dict][] | undefined): CustomProviderOwner {
   if (!group?.length) return { entry: null, refused: null }
-  const own = ([key, record]: [string, Dict]): Dict => customEntry(record, key.trim().toLowerCase() === identity ? identity : key.trim(), str(record.name).trim() || key.trim())
+  // `provider_key`: the mapping key the Agent knows this record by, for its live model catalog.
+  const own = ([key, record]: [string, Dict]): Dict => ({ ...customEntry(record, key.trim().toLowerCase() === identity ? identity : key.trim(), str(record.name).trim() || key.trim()), provider_key: key.trim() })
   const exact = group.find(([key]) => key.trim().toLowerCase() === identity)
   if (exact) return providerRecordEnabled(exact[1]) ? { entry: own(exact), refused: null } : { entry: null, refused: 'disabled' }
   const enabled = group.filter(([, record]) => providerRecordEnabled(record))
@@ -652,7 +653,8 @@ export function modelBaseUrl(config: Config, provider: string): string {
   const pid = canonicaliseProviderId(provider)
   const model = modelSection(config)
   if (canonicaliseProviderId(model.provider) === pid && str(model.base_url).trim()) return str(model.base_url).trim()
-  if (pid.startsWith('custom:')) return str(customProviderOwner(config, pid).entry?.base_url).trim()
+  // The owner lookup keeps the slug as written: canonicalising folds `custom:my_box` into another identity.
+  if (pid.startsWith('custom:')) return str(customProviderOwner(config, provider).entry?.base_url).trim()
   const providers = dict(config.providers)
   const key = Object.keys(providers).find((k) => canonicaliseProviderId(k) === pid)
   return str(dict(key ? providers[key] : null).base_url).trim()

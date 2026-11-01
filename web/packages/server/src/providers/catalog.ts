@@ -719,6 +719,12 @@ export class ProviderCatalog {
     return false
   }
 
+  /** TAL-1654: the Agent's live ids for a native custom record, probed under its mapping key; legacy entries have none. */
+  private async nativeCustomLiveIds(profileHome: string, entry: Dict, source: string): Promise<string[]> {
+    const key = str(entry.provider_key).trim()
+    return key ? this.liveModelIds(profileHome, key, { source }) : []
+  }
+
   /**
    * The credential a custom record declares, resolved inside this profile: a literal `api_key`, else its `${VAR}`
    * reference or `key_env`, read from the profile's `.env` before the process environment (TAL-1654).
@@ -973,6 +979,12 @@ export class ProviderCatalog {
       // `hermes auth add` for this identity (TAL-603, TAL-1654).
       const credential = this.customCredential(cp, envValues, profileHome)
       const hasKey = Boolean(credential) || pooled.has(slug)
+      // A curated list pins the card as it pins the picker group; otherwise a keyed native record lists the Agent's live
+      // catalog for its mapping key, configured ids as the fallback (TAL-1654).
+      if (hasKey && (!configuredModelIds(cp.models).length || cp.models_discovered === true)) {
+        const live = await this.nativeCustomLiveIds(profileHome, cp, source)
+        ids.unshift(...live.filter((id) => !ids.includes(id)))
+      }
       const keySource = credential ? credential.source : hasKey ? 'credential_pool' : str(cp.api_key).trim() ? 'config_yaml' : 'none'
       rows.push({
         id: slug, display_name: str(cp.display_name).trim() || name, has_key: hasKey, configured: hasKey,
@@ -1076,12 +1088,18 @@ export class ProviderCatalog {
     const namedCustom = new Map<string, { name: string; models: ModelEntry[] }>()
     const customModels: ModelEntry[] = []
     const customEntries = customProviderEntries(config, pluginIds)
+    const keyedCustom = new Set(providerState.providers.filter((row) => row.is_custom === true && row.has_key === true).map((row) => str(row.id)))
     for (const entry of customEntries) {
       const name = str(entry.name).trim()
       const slug = customProviderSlug(name) || 'custom'
       if (slug !== 'custom' && !namedCustom.has(slug)) namedCustom.set(slug, { name: str(entry.display_name).trim() || name, models: [] })
       detected.add(slug)
-      const ids = [str(entry.model).trim(), ...configuredModelIds(entry.models)].filter((v, i, a) => v && a.indexOf(v) === i)
+      let ids = [str(entry.model).trim(), ...configuredModelIds(entry.models)].filter((v, i, a) => v && a.indexOf(v) === i)
+      // A curated list pins the group; otherwise a keyed native record lists its live catalog, configured ids as the fallback.
+      if ((!configuredModelIds(entry.models).length || entry.models_discovered === true) && keyedCustom.has(slug)) {
+        const live = await this.nativeCustomLiveIds(profileHome, entry, source)
+        ids = [...live, ...ids.filter((id) => !live.includes(id))]
+      }
       for (const id of ids) {
         const row = { id, label: labelForModel(id, []) }
         if (slug === 'custom') customModels.push(row)
@@ -1404,6 +1422,9 @@ export class ProviderCatalog {
     const config = await this.deps.config.read(profileHome)
     const section = modelSection(config)
     const pid = canonicaliseProviderId(provider ?? section.provider) || null
+    // A custom identity keeps its slug as written (`custom:my_box`); canonicalising would fold it into another one.
+    const rawProvider = str(provider ?? section.provider).trim().toLowerCase()
+    const customId = rawProvider.startsWith('custom:') ? rawProvider : null
     const bare = unqualifiedModelId(model)
     const positive = (v: unknown): number | null => { const n = Math.trunc(Number(v)); return Number.isFinite(n) && n > 0 ? n : null }
     const fromModels = (models: unknown): number | null => {
@@ -1416,9 +1437,9 @@ export class ProviderCatalog {
     const sectionModel = str(section.default || (typeof config.model === 'string' ? config.model : '')).trim()
     if (sectionModel && [model, bare].includes(unqualifiedModelId(sectionModel))) configContextLength = positive(section.context_length)
     if (!pid || canonicaliseProviderId(section.provider) === pid) baseUrl = str(section.base_url).trim()
-    if (pid?.startsWith('custom:')) {
+    if (customId) {
       // The selected owner alone, even when the catalog view is suppressed; a refused identity contributes nothing (TAL-1654).
-      const owner = customProviderOwner(config, pid).entry
+      const owner = customProviderOwner(config, customId).entry
       if (owner) {
         if (!baseUrl) baseUrl = str(owner.base_url).trim()
         configContextLength ??= fromModels(owner.models) ?? positive(owner.context_length)
@@ -1430,13 +1451,13 @@ export class ProviderCatalog {
       if (!baseUrl) baseUrl = str(providerCfg.base_url).trim()
       configContextLength ??= fromModels(providerCfg.models)
     }
-    if (!pid?.startsWith('custom:')) for (const cp of customProviderEntries(config)) {
+    if (!customId) for (const cp of customProviderEntries(config)) {
       const name = str(cp.name).trim().toLowerCase()
       if (!name || !(pid === name || pid === `custom:${name}` || pid === customProviderSlug(name) || (Boolean(baseUrl) && str(cp.base_url).trim().replace(/\/+$/, '') === baseUrl.replace(/\/+$/, '')))) continue
       if (!baseUrl) baseUrl = str(cp.base_url).trim()
       configContextLength ??= fromModels(cp.models)
     }
-    const apiKey = pid ? this.apiKeyFor(pid, profileHome, config) : null
+    const apiKey = customId ? this.apiKeyFor(customId, profileHome, config) : pid ? this.apiKeyFor(pid, profileHome, config) : null
     return { ...(baseUrl ? { base_url: baseUrl } : {}), ...(apiKey ? { api_key: apiKey } : {}), config_context_length: configContextLength }
   }
 
