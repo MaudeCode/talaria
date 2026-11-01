@@ -154,6 +154,8 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
   const entries = withCreated(withEffects(listing.data?.entries ?? [], (e) => entryResource(workspace, e.path ?? joinPath(dir, e.name)), effects), createKind(workspace, dir), effects)
   const paths = entries.map((e) => e.path ?? joinPath(dir, e.name))
   const kept = cursor.dir === dir ? paths.indexOf(cursor.path) : -1
+  // A refresh that moves the focused row moves the index its removal would fall back to.
+  if (kept >= 0 && kept !== cursor.index) setCursor({ ...cursor, index: kept })
   const activeIndex = kept >= 0 ? kept : Math.min(cursor.dir === dir ? cursor.index : 0, paths.length - 1)
   // When the focused row leaves (removed, or its folder or file view replaced it) and focus fell to the page, the tab
   // stop row takes it. Focus the user moved elsewhere stays there.

@@ -569,6 +569,19 @@ describe('file tree keyboard navigation and row names (TAL-1606)', () => {
     expect(tabStops()).toEqual(['b.txt, file, 3 B'])
   })
 
+  it('hands focus to the row now at a removed row\'s index after an earlier refresh moved it', async () => {
+    const qc = renderFiles()
+    await focusRow('a.txt')
+    const added = { name: 'new.txt', path: 'new.txt', size: 1 }
+    vi.mocked(api.listDir).mockResolvedValue({ entries: [added, ...tree.entries] })
+    await act(() => qc.invalidateQueries())
+    await waitFor(() => expect(names()).toEqual(['new.txt', 'docs', 'a.txt', 'b.txt']))
+    vi.mocked(api.listDir).mockResolvedValue({ entries: [added, ...tree.entries.filter((e) => e.name !== 'a.txt')] })
+    await act(() => qc.invalidateQueries())
+    await waitFor(() => expect(names()).toEqual(['new.txt', 'docs', 'b.txt']))
+    expect(focused()).toBe('b.txt, file, 3 B')
+  })
+
   it('never takes focus back from a control the user moved to', async () => {
     renderFiles()
     await focusRow('a.txt')
