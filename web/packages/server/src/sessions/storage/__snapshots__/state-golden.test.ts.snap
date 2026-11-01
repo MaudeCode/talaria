@@ -41,7 +41,7 @@ exports[`preserves main JSON bytes for every document namespace and run-journal 
     "sessions/_run_journal/session/_archive/stream.jsonl.gz": "{"version":1,"event_id":"stream:1","seq":1,"run_id":"stream","session_id":"session","event":"token","type":"token","created_at":1000,"terminal":false,"terminal_state":null,"payload":{"text":"hello"}}
 {"version":1,"event_id":"stream:2","seq":2,"run_id":"stream","session_id":"session","event":"done","type":"done","created_at":1000,"terminal":true,"terminal_state":"completed","payload":{"terminal_state":"completed"}}
 ",
-    "sessions/_run_journal/session/stream.summary.json": "{"session_id":"session","run_id":"stream","stream_id":"stream","event_count":2,"last_seq":2,"last_event_id":"stream:2","terminal":true,"terminal_state":"completed","last_event":"done","journal_pruned":true,"journal_pruned_at":2000,"original_size":418,"original_mtime":1000}",
+    "sessions/_run_journal/session/stream.summary.json": "{"session_id":"session","run_id":"stream","stream_id":"stream","event_count":2,"last_seq":2,"last_event_id":"stream:2","terminal":true,"terminal_state":"completed","last_event":"done","journal_pruned":true,"journal_pruned_at":2000,"original_size":418,"original_mtime":1000,"archived":{"event_count":2,"journal_truncated":false}}",
     "sessions/_wakeup_held.json": "{"session":[{"process_id":"process","wakeup_prompt":"finished"}]}",
     "settings.json": "{
   "default_workspace": "<workspace>",

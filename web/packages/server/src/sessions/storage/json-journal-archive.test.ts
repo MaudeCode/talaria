@@ -19,7 +19,7 @@ vi.mock('node:fs/promises', async (original) => {
 })
 vi.mock('node:zlib', async (original) => {
   const real = await original<typeof zlib>()
-  return { ...real, createGzip: vi.fn(real.createGzip) }
+  return { ...real, createGzip: vi.fn(real.createGzip), createGunzip: vi.fn(real.createGunzip) }
 })
 
 const DAY = 86400
@@ -289,6 +289,19 @@ describe('run-journal archival', () => {
     expect(await journal.findRunSummary('run')).toBeNull()
   })
 
+  it('answers lookups of an archived run from its bounded summary, without inflating the archive', async () => {
+    const journal = fixture()
+    await writeRun(journal, 'session', 'run', { text: UNICODE })
+    const before = await journal.findRunSummary('run')
+    await sweep(journal)
+    vi.mocked(zlib.createGunzip).mockClear()
+    const fresh = fixture(journal.sessionDir)
+    expect(await fresh.findRunSummary('run')).toEqual({ ...before, path: journal.archivePathFor('session', 'run') })
+    expect(await fresh.latestRunSummary('session', 'run')).toEqual(await journal.latestRunSummary('session', 'run'))
+    expect(await fresh.summary('session', 'run')).toMatchObject({ terminal: true, last_seq: 3 })
+    expect(zlib.createGunzip, 'status lookups never decompress an archive').not.toHaveBeenCalled()
+  })
+
   it('leaves the previous Stable a summary of every archived run', async () => {
     const journal = fixture()
     await writeRun(journal, 'session', 'run')
@@ -296,7 +309,7 @@ describe('run-journal archival', () => {
     const now = Date.now() / 1000
     await sweep(journal, { now })
     const legacy = JSON.parse(fs.readFileSync(join(journal.root(), 'session', 'run.summary.json'), 'utf8')) as Record<string, unknown>
-    expect(Object.keys(legacy)).toEqual(['session_id', 'run_id', 'stream_id', 'event_count', 'last_seq', 'last_event_id', 'terminal', 'terminal_state', 'last_event', 'journal_pruned', 'journal_pruned_at', 'original_size', 'original_mtime'])
+    expect(Object.keys(legacy)).toEqual(['session_id', 'run_id', 'stream_id', 'event_count', 'last_seq', 'last_event_id', 'terminal', 'terminal_state', 'last_event', 'journal_pruned', 'journal_pruned_at', 'original_size', 'original_mtime', 'archived'])
     expect(legacy).toMatchObject({ session_id: 'session', run_id: 'run', last_seq: 3, terminal: true, journal_pruned: true, journal_pruned_at: now, original_size: size })
     // This release reads the archive, not the summary.
     expect((await journal.findRunSummary('run'))?.journal_pruned).toBeUndefined()
