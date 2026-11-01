@@ -36,7 +36,7 @@ import { AssetCache, SpaShell } from './spa.js'
 import { StartupGate } from './startup.js'
 import { SessionNotFound, SessionStore } from './sessions/store.js'
 import { SidecarServerError } from './sidecar/server-methods.js'
-import type { Session } from './sessions/session.js'
+import { isSafeSessionId, type Session } from './sessions/session.js'
 import { sidebarListSelection } from './api/sessions-router.js'
 import { JsonStorage } from './sessions/storage/json.js'
 import type { StorageBackend } from './sessions/storage/backend.js'
@@ -676,15 +676,36 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     profileHome, activeProfile, showReasoning: async (home) => showReasoning(await agentConfig.read(home)), redactEnabled: sessions.deps.redactEnabled, now, log })
   // TAL-1164: the `talaria` agent toolset. A tool call names the Web session whose agent made it; that session's
   // profile scopes every answer, exactly as a request bound to that session would be.
+  const storedSession = async (sid: string): Promise<Session | null> => {
+    if (!isSafeSessionId(sid)) return null
+    try { return await store.get(sid, { metadataOnly: true, cacheOnMiss: false }) } catch (error) {
+      if (error instanceof SessionNotFound) return null
+      throw error
+    }
+  }
+  /** Run `fn` as a request bound to the calling session: its profile scopes every read and gate. */
+  const asCaller = async <T>(callerId: string, fn: (caller: Session) => Promise<T>): Promise<T> => {
+    const caller = await storedSession(callerId)
+    if (!caller) throw new SidecarServerError(`no Talaria session ${callerId}`, 'caller_unknown')
+    return requestScope.run({ requestProfile: caller.profile ?? 'default' }, () => fn(caller))
+  }
+  /**
+   * TAL-1167: the session whose queue a tool manages: in the caller's profile (another profile's reads as unknown), never
+   * the caller (its own queue drains only after its turn ends), and writable (else the server's read-only reason).
+   */
+  const queueTarget = async (caller: Session, targetId: string): Promise<Session> => {
+    const target = await storedSession(targetId)
+    if (!target || !profilesMatch(target.profile, caller.profile)) throw new SidecarServerError(`no Talaria session ${targetId} in this profile`, 'target_unknown')
+    if (target.session_id === caller.session_id) throw new SidecarServerError('a session cannot manage its own queue; it is delivered after your turn ends', 'self_target')
+    const readOnly = await sessions.readOnlyReason(target)
+    if (readOnly) throw new SidecarServerError(readOnly, 'read_only')
+    return target
+  }
   sidecar?.serveSidecarRequests?.({
-    'server.session_list': async ({ caller_session_id, query }) => {
-      let caller: Session
-      try { caller = await store.get(caller_session_id, { metadataOnly: true, cacheOnMiss: false }) } catch (error) {
-        if (error instanceof SessionNotFound) throw new SidecarServerError(`no Talaria session ${caller_session_id}`, 'caller_unknown')
-        throw error
-      }
-      return requestScope.run({ requestProfile: caller.profile ?? 'default' }, async () => sessions.agentSessionList(caller.session_id, query ?? null, sidebarListSelection(await settings.load(), {}, false)))
-    },
+    'server.session_list': ({ caller_session_id, query }) => asCaller(caller_session_id, async (caller) => sessions.agentSessionList(caller.session_id, query ?? null, sidebarListSelection(await settings.load(), {}, false))),
+    'server.queue_list': ({ caller_session_id, session_id }) => asCaller(caller_session_id, async (caller) => sessions.agentQueue(await queueTarget(caller, session_id))),
+    'server.queue_send_now': ({ caller_session_id, session_id, steer_id }) => asCaller(caller_session_id, async (caller) => turns.sendSteerNow((await queueTarget(caller, session_id)).session_id, steer_id)),
+    'server.queue_withdraw': ({ caller_session_id, session_id, steer_id }) => asCaller(caller_session_id, async (caller) => turns.withdrawSteer((await queueTarget(caller, session_id)).session_id, steer_id, 'cancel')),
   })
   const deps: AppDeps = {
     config,

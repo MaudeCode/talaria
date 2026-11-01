@@ -17,7 +17,8 @@ from talaria_sidecar.rpc import RpcServer
 
 HERE = pathlib.Path(__file__).parent
 SCHEMAS = json.loads((HERE / "fixtures" / "server_schemas.json").read_text())
-RECORDED = json.loads((HERE.parent.parent / "packages" / "contracts" / "fixtures" / "sidecar" / "server.json").read_text())["server.session_list"][0]
+SERVER_FIXTURES = json.loads((HERE.parent.parent / "packages" / "contracts" / "fixtures" / "sidecar" / "server.json").read_text())
+RECORDED = SERVER_FIXTURES["server.session_list"][0]
 
 
 class Peer:
@@ -157,3 +158,57 @@ def test_session_list_forwards_the_web_session_of_the_calling_agent(monkeypatch)
     monkeypatch.setattr(rpc, "call_server", refuse)
     assert json.loads(talaria_toolset.session_list({}, session_id="unknown_agent_session")) == {"error": "no Talaria session unknown_agent_session", "condition": "caller_unknown"}
     assert json.loads(talaria_toolset.session_list({}))["condition"] == "caller_unknown"
+
+
+@pytest.mark.parametrize(("tool", "method"), [
+    ("queue_list", "server.queue_list"),
+    ("queue_send_now", "server.queue_send_now"),
+    ("queue_withdraw", "server.queue_withdraw"),
+])
+def test_queue_tools_forward_the_target_and_return_the_server_result_unchanged(monkeypatch, tool, method) -> None:
+    """TAL-1167: each queue tool sends the calling Web session, the target and the steer to its ``server.*`` method."""
+    from types import SimpleNamespace
+
+    from talaria_sidecar.methods import chat
+
+    recorded = SERVER_FIXTURES[method][0]
+    handler = getattr(talaria_toolset, tool)
+    monkeypatch.setitem(chat._RUNS, "stream-1", SimpleNamespace(session_id=recorded["params"]["caller_session_id"], agent=SimpleNamespace(session_id="20261020_130000_tip")))
+    sent: list[tuple[str, dict]] = []
+    monkeypatch.setattr(rpc, "call_server", lambda m, params, **kw: sent.append((m, params)) or recorded["result"])
+    args = {key: f"  {value}  " for key, value in recorded["params"].items() if key != "caller_session_id"}
+    assert json.loads(handler(args, session_id="20261020_130000_tip")) == recorded["result"]
+    assert sent == [(method, recorded["params"])]
+    assert validate(sent[0][1], SCHEMAS[method]["params"]) == []
+    assert validate(recorded["result"], SCHEMAS[method]["result"]) == []
+
+    # A missing target or steer never reaches the server; the server's refusal reaches the agent with its condition.
+    for missing in args:
+        assert json.loads(handler({k: v for k, v in args.items() if k != missing}, session_id="20261020_130000_tip")) == {"error": f"{missing} is required", "condition": "invalid_params"}
+    assert len(sent) == 1
+
+    def refuse(m, params, **kw):
+        raise RpcError("a session cannot manage its own queue; it is delivered after your turn ends", condition="self_target")
+
+    monkeypatch.setattr(rpc, "call_server", refuse)
+    assert json.loads(handler(args, session_id="20261020_130000_tip"))["condition"] == "self_target"
+    assert json.loads(handler(args))["condition"] == "caller_unknown"
+
+
+def test_the_talaria_toolset_registers_every_tool_under_its_schema_name(monkeypatch) -> None:
+    import sys
+    from types import ModuleType, SimpleNamespace
+
+    registered: list[dict] = []
+    fake = ModuleType("tools.registry")
+    fake.registry = SimpleNamespace(register=lambda **kw: registered.append(kw))
+    monkeypatch.setitem(sys.modules, "tools", ModuleType("tools"))
+    monkeypatch.setitem(sys.modules, "tools.registry", fake)
+    talaria_toolset.register()
+    assert [(r["name"], r["toolset"], r["handler"].__name__) for r in registered] == [
+        ("session_list", "talaria", "session_list"),
+        ("queue_list", "talaria", "queue_list"),
+        ("queue_send_now", "talaria", "queue_send_now"),
+        ("queue_withdraw", "talaria", "queue_withdraw"),
+    ]
+    assert all(r["schema"]["name"] == r["name"] for r in registered)

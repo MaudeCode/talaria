@@ -33,5 +33,67 @@
         "truncated": false
       }
     }
+  ],
+  "server.queue_list": [
+    {
+      "params": {
+        "caller_session_id": "20261020_120000_caller",
+        "session_id": "20261020_120500_busy"
+      },
+      "result": {
+        "session_id": "20261020_120500_busy",
+        "is_streaming": true,
+        "pending_steers": [
+          {
+            "steer_id": "steer-q1",
+            "text": "Check the failing test first",
+            "submitted_at": 1792500310,
+            "state": "pending",
+            "actions": {
+              "edit": true,
+              "cancel": true,
+              "send_now": true
+            }
+          },
+          {
+            "steer_id": "steer-q2",
+            "text": "Then update the changelog",
+            "submitted_at": 1792500310,
+            "state": "pending",
+            "actions": {
+              "edit": true,
+              "cancel": true,
+              "send_now": true
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "server.queue_send_now": [
+    {
+      "params": {
+        "caller_session_id": "20261020_120000_caller",
+        "session_id": "20261020_120500_busy",
+        "steer_id": "steer-q1"
+      },
+      "result": {
+        "redirected": true,
+        "outcome": "delivered"
+      }
+    }
+  ],
+  "server.queue_withdraw": [
+    {
+      "params": {
+        "caller_session_id": "20261020_120000_caller",
+        "session_id": "20261020_120500_busy",
+        "steer_id": "steer-q2"
+      },
+      "result": {
+        "withdrawn": true,
+        "text": "Then update the changelog"
+      }
+    }
   ]
 }
