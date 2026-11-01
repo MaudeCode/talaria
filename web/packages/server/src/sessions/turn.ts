@@ -1155,7 +1155,10 @@ export class TurnRunner {
         if (typeof m.content === 'string' && m.content) {
           const [content, inline] = splitDisplayText(m.content)
           m.content = content
-          if (inline) m.reasoning = joinReasoning([reasoningFieldsText({ reasoning: m.reasoning }), inline])
+          const own = reasoningFieldsText({ reasoning: m.reasoning })
+          const merged = inline ? joinReasoning([own, inline]) : own
+          // TAL-1175: inline thinking streamed as text, not as a reasoning segment; the scene keeps it a `:thinking` row.
+          if (merged !== own) { m.reasoning = merged; m._inline_thinking = joinReasoning([inline]) }
         }
         if (turnIdx === prevAssistants && reasoning.trim() && !m.reasoning) m.reasoning = reasoning.trim()
       }

@@ -968,6 +968,8 @@ export function normalizeAssistantDisplay<T>(message: T): T {
   delete m.reasoning_content
   delete m.thinking
   delete m.reasoning
+  // Settlement bookkeeping for the scene (TAL-1175); its text is already in `reasoning`.
+  delete m._inline_thinking
   const parts = [reasoningFieldsText(message)]
   if (typeof m.content === 'string') {
     const [content, inline] = splitDisplayText(m.content)

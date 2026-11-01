@@ -344,4 +344,31 @@ describe('reasoning disclosure keys (TAL-1175)', () => {
       expect(sceneKeys(detail.session.messages)).toEqual(keys)
     } finally { await server.close() }
   })
+
+  it('keeps settled inline thinking out of the segment count, so the next live segment keeps its key', async () => {
+    const sidecar = new FakeSidecar()
+    sidecar.respond('chat.start', (params, emit) => {
+      emit({ event: 'token', data: { text: '<think>Inline plan.</think>Reading.' } })
+      emit({ event: 'tool', data: { name: 'read_file', tid: 't', args: { path: 'a.txt' } } })
+      emit({ event: 'tool_complete', data: { name: 'read_file', tid: 't', result: 'A' } })
+      emit({ event: 'reasoning', data: { text: 'Check the result.' } })
+      emit({ event: 'token', data: { text: 'Answer' } })
+      return { ...completed(params), final_response: 'Answer', messages: [...params.conversation_history, { role: 'user', content: params.user_message },
+        { role: 'assistant', content: '<think>Inline plan.</think>Reading.', tool_calls: [{ id: 't', type: 'function', function: { name: 'read_file', arguments: '{"path":"a.txt"}' } }] },
+        { role: 'tool', tool_call_id: 't', content: 'A' },
+        { role: 'assistant', content: 'Answer', reasoning: 'Check the result.' }] }
+    })
+    const server = await bootTestServer({ sidecar })
+    try {
+      const session = await server.deps.sessionStore.newSession()
+      const start = await server.get('/api/chat/start', { method: 'POST', body: JSON.stringify({ session_id: session.session_id, message: 'hello' }), headers: { 'content-type': 'application/json' } })
+      const { stream_id: streamId } = await start.json() as { stream_id: string }
+      const frames = await server.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'stream_end')
+      expect(new Set(frames.filter((f) => f.event === 'reasoning').map((f) => (f.data as { disclosure_key?: string }).disclosure_key))).toEqual(new Set([`${streamId}:reasoning:0`]))
+      const detail = await (await server.get(`/api/session?session_id=${session.session_id}`)).json() as { session: { messages: Record<string, unknown>[] } }
+      const rows = (detail.session.messages.at(-1)?._anchor_activity_scene as { activity_rows: { role: string; text?: string; disclosure_key?: string }[] }).activity_rows
+      expect(rows.filter((row) => row.role === 'reasoning').map((row) => [row.text, row.disclosure_key])).toEqual([['Inline plan.', undefined], ['Check the result.', `${streamId}:reasoning:0`]])
+      expect(detail.session.messages.some((m) => '_inline_thinking' in m)).toBe(false)
+    } finally { await server.close() }
+  })
 })

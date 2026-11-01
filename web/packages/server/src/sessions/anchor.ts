@@ -8,7 +8,7 @@ import { reasoningDisclosureKey } from './reasoning-titles.js'
  */
 import { str } from '../util.js'
 import { createHash } from 'node:crypto'
-import { hasToolUseBlocks, finalAnswerOf, agentRowKind, agentSteerText, isCompactionRow, isReasoningBlock, markerKind, messageText, normalizeAssistantDisplay, normalizeUserDisplay, reasoningBlockText, reasoningFieldsText, splitDisplayText, stripToolCallXml, decidedResultView, toolResultView, toolOutcome, type ToolResultView } from './merge.js'
+import { hasToolUseBlocks, finalAnswerOf, agentRowKind, agentSteerText, isCompactionRow, isReasoningBlock, joinReasoning, markerKind, messageText, normalizeAssistantDisplay, normalizeUserDisplay, reasoningBlockText, reasoningFieldsText, splitDisplayText, stripToolCallXml, decidedResultView, toolResultView, toolOutcome, type ToolResultView } from './merge.js'
 import type { Session } from './session.js'
 import { toolMessageForLimitedPayload } from './window.js'
 import { decidedEditDiff, toolArgs, toolEditDiff } from './tool-display.js'
@@ -373,11 +373,14 @@ export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: 
     // Structured content with tool_use or reasoning blocks is walked in order below, so its reasoning keeps its place.
     const walked = hasToolUseBlocks(m) || (Array.isArray(m.content) && m.content.some((part) => isDict(part) && isReasoningBlock(part)))
     let reasoning = reasoningFieldsText(m)
-    for (const part of commentary) reasoning = reasoning.replace(part, '')
+    // TAL-1175: inline thinking a settled row folded into `reasoning` (`_inline_thinking`) stays its own `:thinking` row.
+    const settledInline = str(m._inline_thinking)
+    for (const part of [...commentary, settledInline]) if (part) reasoning = reasoning.replace(part, '')
     reasoning = reasoning.replace(/\n{3,}/g, '\n\n').trim()
     const titles = Array.isArray(m.reasoning_titles) ? m.reasoning_titles.filter((t): t is string => typeof t === 'string' && Boolean(t.trim())) : []
     if (reasoning || titles.length) push({ row_id: `${ref}:reasoning`, role: 'reasoning', text: reasoning, titles, ...at })
-    const [prose, inlineThinking] = splitDisplayText(messageText(m.content))
+    const [prose, contentThinking] = splitDisplayText(messageText(m.content))
+    const inlineThinking = joinReasoning([settledInline, contentThinking])
     if (inlineThinking) push({ row_id: `${ref}:thinking`, role: 'reasoning', text: inlineThinking, titles: [], ...at })
     const pushTool = (raw: unknown, i: number) => {
       const call = isDict(raw) ? raw : {}
