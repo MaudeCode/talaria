@@ -6,7 +6,7 @@
 import { closeSync, constants, fchmodSync, fstatSync, openSync } from 'node:fs'
 import { join } from 'node:path'
 import { truthy, type ServerConfig } from './config.js'
-import { isLoopback } from './http/origin.js'
+import { isLoopback, trustsProxyBeyondLoopback } from './http/origin.js'
 
 export const STARTUP_WAIT_SECONDS = 10
 export const STARTUP_WAIT_SLOT_COUNT = 8
@@ -86,4 +86,19 @@ export async function warnUnauthenticatedBind(host: string, boundAddress: string
   log('     Anyone on the network can access your filesystem and agent.')
   log('     Set a password via Settings or HERMES_WEBUI_PASSWORD env var.')
   log('     To suppress: bind to 127.0.0.1 or set a password.')
+}
+
+/**
+ * Forwarding opt-in with no proxy listed outside this host. The text stays true whether or not loopback is
+ * listed: the request log trusts loopback implicitly, but per-client limits use a forwarded client only from
+ * a listed proxy, and a proxy on another host or a Docker bridge is ignored by both until it is listed.
+ */
+export function warnForwardedForWithoutProxy(env: ServerConfig['env'], log: (line: string) => void): void {
+  if (!truthy(env.HERMES_WEBUI_TRUST_FORWARDED_FOR) || trustsProxyBeyondLoopback(env)) return
+  log('[!] HERMES_WEBUI_TRUST_FORWARDED_FOR is set, but HERMES_WEBUI_TRUSTED_PROXY_CIDRS lists no proxy outside this host.')
+  log('    The request log trusts a proxy on this host through loopback; login, passkey, native OIDC start, and TTS limits')
+  log('    use its forwarded client only once it is listed (HERMES_WEBUI_TRUSTED_PROXY_CIDRS=127.0.0.1/32,::1/128).')
+  log('    A proxy on another host or a Docker bridge must be listed instead (for example HERMES_WEBUI_TRUSTED_PROXY_CIDRS=172.17.0.1);')
+  log('    until then its X-Forwarded-For is ignored and its requests are logged with forwarded_for_ignored.')
+  log('    The proxy must append the client address to X-Forwarded-For (nginx: $proxy_add_x_forwarded_for).')
 }

@@ -9,7 +9,7 @@ import { connect } from 'node:net'
 import { readFileSync } from 'node:fs'
 import type { App } from './app.js'
 import type { ServerConfig } from './config.js'
-import { fixCredentialPermissions, warnUnauthenticatedBind } from './startup.js'
+import { fixCredentialPermissions, warnForwardedForWithoutProxy, warnUnauthenticatedBind } from './startup.js'
 import { stopStateDbWorker } from './sessions/state-db.js'
 import { closeTranscribeStreams } from './api/transcribe-stream.js'
 import { watchRetirement } from './cli/supervise.js'
@@ -85,6 +85,7 @@ export async function startServer(app: App, config: ServerConfig, opts: { log?: 
   const port = typeof address === 'object' && address ? address.port : config.port
   log(`  Talaria Web listening on ${scheme}://${config.host}:${port}`)
   await warnUnauthenticatedBind(config.host, typeof address === 'object' && address ? address.address : config.host, app.deps.auth, log)
+  warnForwardedForWithoutProxy(config.env, log)
   const close = async () => {
     // One failed step must not skip the persistence after it; each failure is logged and fails the close.
     const failures: string[] = []

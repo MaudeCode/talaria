@@ -519,33 +519,102 @@ describe('pre-auth request hardening', () => {
     })
   }
 
-  it('logs forwarded clients only with opt-in and a trusted raw peer', () => {
+  it('never takes the logged client from X-Real-IP or a scoped IPv6 hop', () => {
     const env = s.deps.config.env
-    const record = (peer: string, forwarded: string | string[], realIp?: string): Record<string, unknown> => {
+    const record = (headers: Record<string, string>): Record<string, unknown> => {
+      const socket = new Socket()
+      Object.defineProperty(socket, 'remoteAddress', { value: '10.0.0.1' })
+      const req = new IncomingMessage(socket)
+      req.method = 'GET'
+      req.url = '/api/auth/status'
+      req.headers = headers
+      new RequestContext(req, new ServerResponse(req), s.deps).logRequest(200)
+      return JSON.parse(s.logs.at(-1)!.slice('[webui] '.length)) as Record<string, unknown>
+    }
+    env.HERMES_WEBUI_TRUST_FORWARDED_FOR = '1'
+    env.HERMES_WEBUI_TRUSTED_PROXY_CIDRS = '10.0.0.0/8'
+    try {
+      // A proxy relays a client-supplied X-Real-IP unchanged, so it never names the logged client.
+      expect(record({ 'x-real-ip': '203.0.113.77' })).not.toHaveProperty('forwarded_for')
+      // A zone id is free-form header text, so a scoped hop never becomes the logged client.
+      expect(record({ 'x-forwarded-for': 'fe80::1%syntheticmarker' })).not.toHaveProperty('forwarded_for')
+    } finally {
+      delete env.HERMES_WEBUI_TRUST_FORWARDED_FOR
+      delete env.HERMES_WEBUI_TRUSTED_PROXY_CIDRS
+    }
+  })
+
+  it('logs forwarded clients only from a validated chain with opt-in and a trusted raw peer', async () => {
+    const env = s.deps.config.env
+    const lines: string[] = []
+    const record = (peer: string, forwarded?: string | string[], realIp?: string): Record<string, unknown> => {
       const socket = new Socket()
       Object.defineProperty(socket, 'remoteAddress', { value: peer })
       const req = new IncomingMessage(socket)
       req.method = 'GET'
       req.url = '/api/auth/status'
-      req.headers = { 'x-forwarded-for': forwarded, ...(realIp ? { 'x-real-ip': realIp } : {}) }
+      req.headers = { ...(forwarded === undefined ? {} : { 'x-forwarded-for': forwarded }), ...(realIp ? { 'x-real-ip': realIp } : {}) }
+      const before = s.logs.length
       new RequestContext(req, new ServerResponse(req), s.deps).logRequest(200)
+      lines.push(...s.logs.slice(before))
       return JSON.parse(s.logs.at(-1)!.slice('[webui] '.length)) as Record<string, unknown>
     }
-    expect(record('127.0.0.1', '203.0.113.9')).not.toHaveProperty('forwarded_for')
+    // Only the forwarding fields, so every assertion also proves the two are mutually exclusive.
+    const fields = (rec: Record<string, unknown>): Record<string, unknown> =>
+      Object.fromEntries(Object.entries(rec).filter(([key]) => key.startsWith('forwarded_for')))
+    const ignored = { forwarded_for_ignored: true }
+    const scoped = 'fe80::1%syntheticmarker'
+    const oversized = 'x'.repeat(15_000)
+
+    // Opt-in off: a forwarded header is never trusted, but the record says it was dropped.
+    expect(fields(record('127.0.0.1', '203.0.113.9'))).toEqual(ignored)
     env.HERMES_WEBUI_TRUST_FORWARDED_FOR = '1'
     env.HERMES_WEBUI_TRUSTED_PROXY_CIDRS = '10.0.0.0/8'
     try {
-      expect(record('198.51.100.1', '203.0.113.9')).not.toHaveProperty('forwarded_for')
-      expect(record('10.0.0.1', ['198.51.100.7', '203.0.113.9, 10.0.0.2'])).toMatchObject({ remote: '10.0.0.1', forwarded_for: '203.0.113.9' })
-      expect(record('::ffff:10.0.0.1', '203.0.113.9')).toHaveProperty('forwarded_for', '203.0.113.9')
-      expect(record('10.0.0.1', 'bad, 10.0.0.2')).not.toHaveProperty('forwarded_for')
-      expect(record('10.0.0.1', 'x'.repeat(15_000))).not.toHaveProperty('forwarded_for')
-      expect(record('10.0.0.1', 'bad', '203.0.113.9')).not.toHaveProperty('forwarded_for')
-      expect(record('10.0.0.1', [])).not.toHaveProperty('forwarded_for')
-      expect(record('10.0.0.1', [], '203.0.113.9')).toHaveProperty('forwarded_for', '203.0.113.9')
+      expect(fields(record('10.0.0.1', undefined, '203.0.113.77'))).toEqual({})
+      expect(fields(record('10.0.0.1', 'bad', '203.0.113.77'))).toEqual(ignored)
+      expect(fields(record('10.0.0.1', scoped))).toEqual(ignored)
+      expect(fields(record('10.0.0.1', `203.0.113.9, ${scoped}`))).toEqual(ignored)
+
+      // A valid trusted chain resolves to one canonical address; repeated headers keep wire order.
+      expect(record('10.0.0.1', '203.0.113.9, 10.0.0.2')).toMatchObject({ remote: '10.0.0.1', forwarded_for: '203.0.113.9' })
+      expect(fields(record('10.0.0.1', ['198.51.100.7', '203.0.113.9, 10.0.0.2']))).toEqual({ forwarded_for: '203.0.113.9' })
+      expect(fields(record('10.0.0.1', ['203.0.113.9', '198.51.100.7']))).toEqual({ forwarded_for: '198.51.100.7' })
+      expect(fields(record('::ffff:10.0.0.1', '203.0.113.9'))).toEqual({ forwarded_for: '203.0.113.9' })
+      expect(fields(record('10.0.0.1', '::ffff:203.0.113.9, ::ffff:10.0.0.2'))).toEqual({ forwarded_for: '203.0.113.9' })
+      expect(fields(record('10.0.0.1', '0:0:0:0:0:ffff:cb00:7109'))).toEqual({ forwarded_for: '203.0.113.9' })
+      expect(fields(record('10.0.0.1', '2001:0DB8:0000:0000:0000:0000:0000:0001'))).toEqual({ forwarded_for: '2001:db8::1' })
       const client = record('10.0.0.1', '2001:db8:ffff:ffff:ffff:ffff:ffff:ffff').forwarded_for
       expect(client).toBe('2001:db8:ffff:ffff:ffff:ffff:ffff:ffff')
-      expect(String(client).length).toBeLessThanOrEqual(256)
+
+      // A nonblank chain that names no client other than the peer is flagged, never echoed.
+      for (const [peer, chain] of [
+        ['198.51.100.1', '203.0.113.9'], // untrusted peer
+        ['10.0.0.1', 'bad, 10.0.0.2'], // malformed hop
+        ['10.0.0.1', '203.0.113.9,'], // trailing comma
+        ['10.0.0.1', ' , '], // separators only
+        ['10.0.0.1', oversized],
+        ['10.0.0.1', '10.0.0.3, 10.0.0.2'], // every hop is a trusted proxy
+        ['::ffff:10.0.0.1', '10.0.0.1'], // resolves to the peer itself
+      ] as const) expect(fields(record(peer, chain)), `${peer} ${chain.slice(0, 40)}`).toEqual(ignored)
+
+      // No XFF, or only blank values: neither field, so the plain record is unchanged.
+      for (const chain of [undefined, [], '', '   ', ['', ' ']]) expect(fields(record('10.0.0.1', chain)), JSON.stringify(chain)).toEqual({})
+      expect(fields(record('198.51.100.1', undefined))).toEqual({})
+
+      // One warning per process for an untrusted proxy, however many first requests arrive together.
+      await Promise.all(['198.51.100.2', '198.51.100.3', '198.51.100.4'].map(async (peer) => { await Promise.resolve(); record(peer, oversized) }))
+      record('198.51.100.5', '203.0.113.9')
+      const warnings = lines.filter((line) => line.includes('HERMES_WEBUI_TRUSTED_PROXY_CIDRS'))
+      expect(warnings).toHaveLength(1)
+      expect(warnings[0]).toContain('198.51.100.1')
+      // Hostile header text never reaches a warning or a record.
+      for (const line of lines) {
+        expect(line).not.toContain('syntheticmarker')
+        expect(line).not.toContain('xxxxxxxx')
+        expect(line).not.toContain('bad')
+        expect(line).not.toContain('203.0.113.77')
+      }
     } finally {
       delete env.HERMES_WEBUI_TRUST_FORWARDED_FOR
       delete env.HERMES_WEBUI_TRUSTED_PROXY_CIDRS

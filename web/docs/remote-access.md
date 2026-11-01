@@ -90,4 +90,42 @@ for an app-like experience.
 > `docker-compose.yml` environment (already the default) and set
 > `HERMES_WEBUI_PASSWORD`.
 
+## Behind a reverse proxy
+
+Set `HERMES_WEBUI_TRUST_FORWARDED_FOR=1` to use the client address from
+`X-Forwarded-For`. It applies only when the connection comes from a trusted
+proxy. The request log and the local-origin onboarding gate trust loopback
+implicitly. Login, passkey, native OIDC start, and TTS limits use a forwarded
+client only from a proxy listed in `HERMES_WEBUI_TRUSTED_PROXY_CIDRS`, so a
+same-host proxy lists `127.0.0.1/32` (and `::1/128`). A proxy on another host
+or a Docker bridge must be listed too (for example `172.17.0.1` or
+`10.0.0.0/8`). When the opt-in is set and no proxy outside this host is listed,
+startup prints a reminder.
+
+The proxy must append the address it received the request from to
+`X-Forwarded-For` (nginx: `proxy_set_header X-Forwarded-For
+$proxy_add_x_forwarded_for;`). A proxy that passes the client's own header
+through unchanged lets the client choose the logged address.
+
+### Client IP in the request log
+
+Each request-log record carries at most one of these fields:
+
+- `forwarded_for`: the client address, present only with the opt-in, a trusted
+  proxy peer, and an `X-Forwarded-For` chain that resolves to a valid address
+  other than the peer. It is always a normalized address (IPv4-mapped IPv6 is
+  written as IPv4), never header text. Key fail2ban jails on this field.
+- `forwarded_for_ignored: true`: a nonblank `X-Forwarded-For` arrived but was
+  not recorded, because the opt-in is off, the peer is not a trusted proxy, or
+  the chain is malformed, ends in a scoped IPv6 address, or names only trusted
+  proxies. The first ignored header from an untrusted peer also logs a one-time
+  warning naming that peer.
+
+The request log never reads `X-Real-IP`, because proxies relay a
+client-supplied value unchanged. The local-origin onboarding gate still falls
+back to `X-Real-IP` from a trusted proxy when there is no `X-Forwarded-For`,
+and the limits above count a request against the proxy's own budget when its
+`X-Real-IP` names a different client. Configure the proxy to overwrite it
+(`proxy_set_header X-Real-IP $remote_addr;`).
+
 ---
