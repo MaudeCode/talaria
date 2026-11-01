@@ -88,26 +88,40 @@ export function checkImageMagic(data: Buffer, mime: string): boolean {
   return !signature.brands || (data.length >= 12 && signature.brands.includes(data.subarray(8, 12).toString('latin1')))
 }
 
-/** The candidate file and the allowed root it sits under; the bytes are then read through an anchored walk from that root. */
+/**
+ * The candidate file and the allowed root it sits under; the bytes are then read through an anchored walk from that
+ * root. Only a candidate that is absent, or not a regular file, lets a later root supply the name: any other lookup
+ * failure (permission, descriptor exhaustion, I/O) stops the search, so an image the walk cannot see is omitted
+ * rather than replaced by a later namesake.
+ */
 function resolveAgainstRoots(raw: string, allowed: string[], home: string): { path: string; root: string } | null {
   if (raw.startsWith('file://')) return null
   if (raw.startsWith('/') || raw.startsWith('~')) {
     let p: string
     try { p = resolvePathLikePython(expandHome(raw, home), home) } catch { return null }
     const root = allowed.find((r) => isWithin(p, r))
-    return root && isFile(p) ? { path: p, root } : null
+    return root && candidateKind(p) === 'file' ? { path: p, root } : null
   }
   for (const root of allowed) {
     let candidate: string
-    try { candidate = resolvePathLikePython(resolve(root, raw), home) } catch { continue }
+    try { candidate = resolvePathLikePython(resolve(root, raw), home) } catch { return null }
     if (!isWithin(candidate, root)) continue
-    if (isFile(candidate)) return { path: candidate, root }
+    const kind = candidateKind(candidate)
+    if (kind === 'file') return { path: candidate, root }
+    if (kind === 'stop') return null
   }
   return null
 }
 
-function isFile(p: string): boolean {
-  try { return statSync(p).isFile() } catch { return false }
+/** Stat failures that mean the name is genuinely not under this root. */
+const ABSENT_CODES = new Set(['ENOENT', 'ENOTDIR'])
+
+function candidateKind(p: string): 'file' | 'skip' | 'stop' {
+  try {
+    return statSync(p).isFile() ? 'file' : 'skip'
+  } catch (error) {
+    return ABSENT_CODES.has((error as NodeJS.ErrnoException).code ?? '') ? 'skip' : 'stop'
+  }
 }
 
 /** The file's bytes read through the anchored walk (no symlinked component, nothing swapped since resolution), or null. */

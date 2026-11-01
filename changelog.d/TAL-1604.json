@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Public shares leave out an image they cannot read instead of embedding a different file with the same name.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
