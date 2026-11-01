@@ -11,6 +11,7 @@ import type { SessionInfo } from '../auth/store.js'
 import { gatewayStatus } from '../tools/health.js'
 import type { GatewayMode } from '@maudecode/talaria-web-contracts'
 import { buildInsights } from '../tools/insights.js'
+import { CLIENT_COMMANDS } from '../tools/commands.js'
 import { insightsSessionRows } from '../sessions/state-db.js'
 import { homeDotenvKeys, setHomeDotenvKeys } from '../cli/dotenv.js'
 import { serverSummary, maskSecrets } from '../tools/mcp.js'
@@ -489,6 +490,92 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
       expect(commands.find((c) => c.name === 'initiate-setup')).toMatchObject({ handler: 'prompt', clients: ['web', 'ios'], aliases: ['initiate_setup'] })
       expect(commands.find((c) => c.name === 'initiate-setup')).not.toHaveProperty('unsupported_message')
       expect(commands.find((c) => c.name === 'blueprint')).toMatchObject({ handler: 'agent', clients: [], unsupported_message: '/blueprint is not available in Talaria yet.' })
+    } finally {
+      const recorded = loadSidecarFixtures().get('commands.registry')?.[0]?.result
+      sidecar.respond('commands.registry', () => recorded as never)
+    }
+  })
+
+  it('commands publish the other `_`/`-` spelling of a server-run command without shadowing a literal name (TAL-1577)', async () => {
+    const row = (name: string, extra: Json = {}) => ({ name, description: `agent ${name}`, category: 'Plugin', aliases: [], args_hint: '', subcommands: [], cli_only: false, gateway_only: false, exec: true, prompt: null, ...extra })
+    const catalog = async (rows: Json[]) => {
+      sidecar.respond('commands.registry', () => ({ commands: rows }) as never)
+      return (await json(await s.get('/api/commands'))).commands as Json[]
+    }
+    const aliasesOf = (commands: Json[], name: string) => commands.find((c) => c.name === name)?.aliases
+    try {
+      let commands = await catalog([row('knowledge-loop'), row('plugin_review'), row('Mixed-Case')])
+      expect(aliasesOf(commands, 'knowledge-loop')).toEqual(['knowledge_loop'])
+      expect(aliasesOf(commands, 'plugin_review')).toEqual(['plugin-review'])
+      expect(aliasesOf(commands, 'Mixed-Case')).toEqual(['Mixed_Case'])
+      // Client entries are untouched, and every typed name still resolves to one entry.
+      const clientRows = commands.filter((c) => c.handler === 'client')
+      expect(clientRows.map((c) => [c.name, c.aliases])).toEqual(CLIENT_COMMANDS.map((c) => [c.name, c.aliases]))
+      const all = (cs: Json[]) => cs.flatMap((c) => [c.name, ...(c.aliases as string[])])
+      expect(new Set(all(commands)).size).toBe(all(commands).length)
+
+      // Both literal spellings registered, in either order: each stays its own command and neither gets the other's name.
+      for (const rows of [[row('plugin-review'), row('plugin_review')], [row('plugin_review'), row('plugin-review')]]) {
+        commands = await catalog(rows)
+        expect(aliasesOf(commands, 'plugin-review')).toEqual([])
+        expect(aliasesOf(commands, 'plugin_review')).toEqual([])
+      }
+      // A literal name is reserved before an earlier row's explicit alias can take it.
+      commands = await catalog([row('lint', { aliases: ['plugin_review'] }), row('plugin_review')])
+      expect(aliasesOf(commands, 'lint')).toEqual([])
+      expect(aliasesOf(commands, 'plugin_review')).toEqual(['plugin-review'])
+      // Explicit aliases outrank generated ones; alias-only clashes go to the first row in server order.
+      commands = await catalog([row('knowledge-loop'), row('loop', { aliases: ['knowledge_loop'] }), row('a-b_c'), row('a_b-c')])
+      expect(aliasesOf(commands, 'knowledge-loop')).toEqual([])
+      expect(aliasesOf(commands, 'loop')).toEqual(['knowledge_loop'])
+      expect(aliasesOf(commands, 'a-b_c')).toEqual(['a_b_c', 'a-b-c'])
+      expect(aliasesOf(commands, 'a_b-c')).toEqual([])
+      // Only commands the server runs get one: CLI-only, unsupported, prompt and chat-turn rows keep their aliases.
+      commands = await catalog([
+        row('history-log', { cli_only: true, exec: false }), row('blue-print', { prompt: 'unsupported', exec: false }),
+        row('initiate-setup', { prompt: 'expand', exec: false, aliases: ['initiate_setup'] }), row('say-hi', { exec: false, category: 'Session' }),
+        row('reload-skills', { aliases: ['reload_skills'] }), row('knowledgebase'), row('knowledge'),
+      ])
+      expect(aliasesOf(commands, 'history-log')).toEqual([])
+      expect(aliasesOf(commands, 'blue-print')).toEqual([])
+      expect(aliasesOf(commands, 'initiate-setup')).toEqual(['initiate_setup'])
+      expect(aliasesOf(commands, 'say-hi')).toEqual([])
+      expect(aliasesOf(commands, 'reload-skills')).toEqual(['reload_skills'])
+      expect(aliasesOf(commands, 'knowledgebase')).toEqual([])
+      expect(aliasesOf(commands, 'knowledge')).toEqual([])
+    } finally {
+      const recorded = loadSidecarFixtures().get('commands.registry')?.[0]?.result
+      sidecar.respond('commands.registry', () => recorded as never)
+    }
+  })
+
+  it('exec runs a generated separator alias as its command once, with the argument bytes unchanged (TAL-1577)', async () => {
+    const row = (name: string, extra: Json = {}) => ({ name, description: `agent ${name}`, category: 'Plugin', aliases: [], args_hint: '', subcommands: [], cli_only: false, gateway_only: false, exec: true, prompt: null, ...extra })
+    sidecar.respond('commands.registry', () => ({ commands: [row('knowledge-loop'), row('plugin-review'), row('plugin_review'), row('reload-skills', { aliases: ['reload_skills'] }), row('history-log', { cli_only: true, exec: false }), row('Mixed-Case')] }))
+    const sent = async (command: string) => {
+      const before = sidecar.calls.filter((c) => c.method === 'commands.exec').length
+      await post(s, '/api/commands/exec', { command })
+      const execs = sidecar.calls.filter((c) => c.method === 'commands.exec')
+      expect(execs).toHaveLength(before + 1)
+      return (execs.at(-1)?.params as Json).command
+    }
+    try {
+      expect(await sent('/knowledge_loop  Draft_A-b\n  "x_y"')).toBe('/knowledge-loop  Draft_A-b\n  "x_y"')
+      expect(await sent('/KNOWLEDGE_LOOP')).toBe('/knowledge-loop')
+      expect(await sent('knowledge_loop go')).toBe('knowledge-loop go')
+      expect(await sent('/mixed_case')).toBe('/Mixed-Case')
+      // A literal registered spelling, an explicit alias, a trailing separator and a non-executable row pass unchanged.
+      expect(await sent('/plugin_review x')).toBe('/plugin_review x')
+      expect(await sent('/plugin-review x')).toBe('/plugin-review x')
+      expect(await sent('/reload_skills')).toBe('/reload_skills')
+      expect(await sent('/knowledge_ x')).toBe('/knowledge_ x')
+      expect(await sent('/history_log')).toBe('/history_log')
+      // Without the Agent registry nothing is rewritten.
+      sidecar.respond('commands.registry', () => { throw new SidecarError('boom', { condition: 'sidecar_error' }) })
+      expect(await sent('/knowledge_loop')).toBe('/knowledge_loop')
+      // Bundles are not catalog rows: the Agent's own resolver owns their spelling, so the route forwards the text as typed.
+      await post(s, '/api/commands/bundles/resolve', { command: '/media_kit find a cat' })
+      expect(sidecar.calls.at(-1)).toEqual({ method: 'commands.bundle_resolve', params: { profile_home: s.deps.profileHome('default'), command: '/media_kit find a cat' } })
     } finally {
       const recorded = loadSidecarFixtures().get('commands.registry')?.[0]?.result
       sidecar.respond('commands.registry', () => recorded as never)

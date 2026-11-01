@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Command } from '../../contracts'
 import * as commands from './commands'
+import { commandCatalog } from '../../../../server/src/tools/commands.ts'
 
 const { parseCommand, suggestCommands } = commands
 
@@ -67,5 +68,40 @@ describe('runsOnServer', () => {
     expect(commands.runsOnServer(agent('hello', { category: 'Plugin' }))).toBe(true)
     expect(commands.runsOnServer(agent('save', { category: 'Session' }))).toBe(false)
     expect(commands.runsOnServer({ name: 'stop', aliases: [], handler: 'client', clients: ['web', 'ios'] })).toBe(false)
+  })
+})
+
+// TAL-1577: the real server catalog feeds the real Web matcher. `_` and `-` spell the same Agent command; the server
+// publishes the other spelling in `aliases`, so the client matches it literally and holds no separator rule of its own.
+describe('server catalog separator aliases', () => {
+  type AgentRow = Parameters<typeof commandCatalog>[0][number]
+  const agent = (name: string, extra: Partial<AgentRow> = {}): AgentRow => ({ name, description: name, category: 'Plugin', aliases: [], args_hint: '', subcommands: [], cli_only: false, gateway_only: false, exec: true, prompt: null, ...extra })
+  const web = (rows: AgentRow[]) => commandCatalog(rows)
+
+  it('finds and resolves the other separator spelling of a registered command', () => {
+    const catalog = web([agent('knowledge-loop'), agent('plugin_review')])
+    expect(suggestCommands('knowledge_loop', catalog).map((c) => c.name)).toEqual(['knowledge-loop'])
+    expect(suggestCommands('knowledge_', catalog).map((c) => c.name)).toEqual(['knowledge-loop'])
+    expect(commands.resolveCommand('knowledge_loop', catalog)?.name).toBe('knowledge-loop')
+    expect(commands.resolveCommand('Knowledge_Loop', catalog)?.name).toBe('knowledge-loop')
+    expect(commands.resolveCommand('plugin-review', catalog)?.name).toBe('plugin_review')
+  })
+
+  it('keeps each literal spelling its own command in either registration order', () => {
+    for (const rows of [[agent('plugin-review'), agent('plugin_review')], [agent('plugin_review'), agent('plugin-review')]]) {
+      const catalog = web(rows)
+      expect(commands.resolveCommand('plugin_review', catalog)?.name).toBe('plugin_review')
+      expect(commands.resolveCommand('plugin-review', catalog)?.name).toBe('plugin-review')
+      expect(catalog.flatMap((c) => c.aliases)).not.toContain('plugin_review')
+      expect(catalog.flatMap((c) => c.aliases)).not.toContain('plugin-review')
+    }
+  })
+
+  it('folds only separators: no trailing-separator stripping or neighbouring slugs', () => {
+    const catalog = web([agent('knowledge-loop'), agent('knowledgebase'), agent('knowledge')])
+    expect(suggestCommands('knowledge_', catalog).map((c) => c.name)).toEqual(['knowledge-loop'])
+    expect(commands.resolveCommand('knowledge_', catalog)).toBeUndefined()
+    expect(commands.resolveCommand('knowledge_base', catalog)).toBeUndefined()
+    expect(commands.resolveCommand('knowledge-loop-', catalog)).toBeUndefined()
   })
 })
