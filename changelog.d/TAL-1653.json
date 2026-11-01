@@ -1,0 +1,3 @@
+{
+  "entries": [{"category": "Security", "summary": "Provider balance and quota checks no longer follow redirects, so an API key is only ever sent to its provider.", "highlight": false, "components": ["web"]}]
+}

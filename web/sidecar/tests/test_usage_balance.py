@@ -3,12 +3,15 @@ balance endpoints with stubbed HTTP, from a pool account's key or the server-res
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
+import http.server
 import io
 import json
 import pathlib
 import subprocess
 import sys
+import threading
 import time
 import types
 import urllib.error
@@ -37,7 +40,7 @@ def _stub_http(monkeypatch, body=None, *, status: int | None = None) -> list:
             raise urllib.error.HTTPError(request.full_url, status, "error", {}, None)
         return _Response(body if isinstance(body, bytes) else json.dumps(body).encode())
 
-    monkeypatch.setattr(usage.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(usage, "_open_balance", urlopen)
     return requests
 
 
@@ -343,7 +346,7 @@ class Response(io.BytesIO):
 def urlopen(request, **kwargs):
     requests.append(request.get_header('Authorization'))
     return Response(b'{"data":{"usage":3,"limit":100}}')
-usage.urllib.request.urlopen = urlopen
+usage._open_balance = urlopen
 usage._pool = lambda provider: (None, [types.SimpleNamespace(id='work', runtime_api_key='sk-work-vault'), types.SimpleNamespace(id='home', runtime_api_key='sk-home-vault')])
 registry = Registry(runtime=types.SimpleNamespace(load=lambda: None, ensure_current=lambda: None))
 usage.register(registry)
@@ -380,3 +383,82 @@ def test_missing_scoped_resolvers_never_read_ambient_key(monkeypatch):
     result = usage.balance("openrouter", credential_id=None, api_key=None, env_vars=["OPENROUTER_API_KEY"])
     assert result["status"] == "no_key"
     assert requests == []
+
+
+@contextlib.contextmanager
+def _loopback(respond):
+    """A test-owned loopback HTTP server; ``respond(handler)`` answers each GET. Yields (base URL, Authorization headers seen)."""
+    seen = []
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            seen.append(self.headers.get("Authorization"))
+            respond(self)
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server.daemon_threads = True
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_address[1]}", seen
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def _send(handler, status: int, body: bytes = b"", headers: dict | None = None):
+    handler.send_response(status)
+    for name, value in {"Content-Length": str(len(body)), **(headers or {})}.items():
+        handler.send_header(name, value)
+    handler.end_headers()
+    handler.wfile.write(body)
+
+
+@pytest.mark.parametrize("status", [301, 302, 303, 307, 308])
+def test_a_quota_redirect_never_reaches_another_origin(monkeypatch, status):
+    """TAL-1653: a bearer-authenticated quota read refuses redirects, so a 3xx to another origin never receives the key."""
+    with _loopback(lambda h: _send(h, 200, b'{"data":{"usage":1}}')) as (destination, reached):
+        with _loopback(lambda h: _send(h, status, b"moved", {"Location": f"{destination}/stolen"})) as (origin, asked):
+            for provider in usage._BALANCE_URLS:
+                monkeypatch.setitem(usage._BALANCE_URLS, provider, f"{origin}/quota")
+                result = _read(provider, api_key="sk-synthetic-redirect")
+                assert (result["status"], result["http_status"]) == ("http_error", status)
+                assert "sk-synthetic" not in json.dumps(result) and "moved" not in json.dumps(result)
+    assert asked == ["Bearer sk-synthetic-redirect"] * len(usage._BALANCE_URLS)
+    assert reached == []
+
+
+def test_a_loopback_quota_read_still_parses_and_bounds_failures(monkeypatch):
+    """Normal 200s parse over a real socket; malformed, oversized, truncated, slow, and non-HTTP answers read as unavailable."""
+    body = json.dumps({"data": {"usage": 3, "limit": 100, "label": "synthetic"}}).encode()
+    monkeypatch.setattr(usage, "_BALANCE_TIMEOUT_SECONDS", 0.3)
+
+    def truncated(h):
+        h.send_response(200)
+        h.send_header("Content-Length", "100")
+        h.end_headers()
+        h.wfile.write(b'{"data":')
+
+    def not_http(h):
+        h.wfile.write(b"NOT HTTP AT ALL\r\n\r\n")
+
+    answers = {
+        "ok": lambda h: _send(h, 200, body),
+        "malformed": lambda h: _send(h, 200, b"not json"),
+        "oversized": lambda h: _send(h, 200, b"{" + b" " * (256 * 1024) + b"}"),
+        "truncated": truncated,
+        "slow": lambda h: time.sleep(1.5),
+        "not_http": not_http,
+    }
+    for name, respond in answers.items():
+        with _loopback(respond) as (base, _):
+            monkeypatch.setitem(usage._BALANCE_URLS, "openrouter", f"{base}/key")
+            result = _read("openrouter", api_key="sk-synthetic-bounds")
+        expected = "ok" if name == "ok" else "unavailable"
+        assert result["status"] == expected, name
+        assert "sk-synthetic" not in json.dumps(result), name
+        if name == "ok":
+            assert result["label"] == "synthetic" and result["quota"]["usage"] == 3
