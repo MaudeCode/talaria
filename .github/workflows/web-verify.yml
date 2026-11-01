@@ -26,6 +26,16 @@ jobs:
     if: inputs.server
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # The S3 blob store conformance runs against a throwaway MinIO (TAL-1069); upstream stopped publishing
+    # minio/minio images, so this pins the last Bitnami build, which starts the server by default.
+    services:
+      minio:
+        image: bitnamilegacy/minio:2025.7.23-debian-12-r5@sha256:6dabb4a2088c9a79908de3bc05f4586c23ad2182c8908e7e3acbf61c1467fb20
+        env:
+          MINIO_ROOT_USER: talaria-ci
+          MINIO_ROOT_PASSWORD: talaria-ci-synthetic
+        ports:
+          - 9000:9000
     steps:
       - uses: actions/checkout@v7
 
@@ -52,7 +62,15 @@ jobs:
       - name: Contracts and server strict TypeScript
         run: npm run typecheck -w packages/contracts && npm run typecheck -w packages/server
 
+      - name: Wait for MinIO
+        run: timeout 60 bash -c 'until curl -fsS http://127.0.0.1:9000/minio/health/live; do sleep 1; done'
+
       - name: Contracts and server Vitest
+        env:
+          TALARIA_TEST_S3_ENDPOINT: http://127.0.0.1:9000
+          AWS_ACCESS_KEY_ID: talaria-ci
+          AWS_SECRET_ACCESS_KEY: talaria-ci-synthetic
+          AWS_REGION: us-east-1
         run: npm test -w packages/contracts -- --maxWorkers=2 && npm test -w packages/server -- --maxWorkers=2
 
       - name: Generated OpenAPI document and What's New schema are committed

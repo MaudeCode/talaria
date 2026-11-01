@@ -115,6 +115,7 @@ export async function startServer(app: App, config: ServerConfig, opts: { log?: 
     await settle('state database', () => stopStateDbWorker())
     await settle('session owner', () => app.deps.sessions.owner?.close())
     await settle('session store', () => app.deps.sessionStore.close())
+    await settle('blob store', () => app.deps.blobs.close())
     if (failures.length) throw new Error(`shutdown incomplete: ${failures.join(', ')}`)
   }
   // SIGHUP is handled too: its default action would exit before auth writes land.

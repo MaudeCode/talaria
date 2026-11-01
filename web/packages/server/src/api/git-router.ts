@@ -268,7 +268,7 @@ export const gitRouter = os.router({
       }
       if (!ctx.deps.profilesMatch(session.profile, ctx.deps.activeProfile())) throw new HttpError(404, 'Session not found')
       try {
-        return ctx.deps.uploads.rollback(sessionId, tokens)
+        return await ctx.deps.uploads.rollback(sessionId, tokens)
       } catch (error) {
         throw new HttpError(400, (error as Error).message)
       }

@@ -4,7 +4,7 @@
  * handler and reuses the anchored file helpers.
  */
 import { handleGroupFile } from './groups-router.js'
-import { closeSync, createReadStream, existsSync, mkdirSync, readdirSync, statSync, realpathSync } from 'node:fs'
+import { closeSync, createReadStream, existsSync, readdirSync, statSync, realpathSync } from 'node:fs'
 import { Readable } from 'node:stream'
 import { OwnerExportFormatSchema } from '@maudecode/talaria-web-contracts'
 import { basename, join, relative } from 'node:path'
@@ -12,8 +12,9 @@ import type { RequestContext } from '../http/context.js'
 import { HttpError } from './router.js'
 import { escapeRequest, fileError, fileOpsSession } from './sessions-router.js'
 import { HttpFailure } from '../sessions/service.js'
+import { materializeAttachment } from '../sessions/storage/blobs.js'
 import { SessionNotFound } from '../sessions/store.js'
-import { FileExistsError, makeAnchoredDir, openAnchoredCreateFd, openAnchoredFd, rmtreeAnchored, safeResolve, safeResolveWs, unlinkAnchored } from '../workspace/fs.js'
+import { FileExistsError, makeAnchoredDir, openAnchoredCreateFd, openAnchoredFd, safeResolve, safeResolveWs, unlinkAnchored } from '../workspace/fs.js'
 import { isWithin, resolvePathLikePython } from '../workspace/paths.js'
 import { isLoopback } from '../http/origin.js'
 import { truthy } from '../config.js'
@@ -121,14 +122,15 @@ async function handleClarifyInject(ctx: RequestContext): Promise<void> {
   await ctx.json({ ok: true, session_id: sid })
 }
 
-function fileRawTarget(ctx: RequestContext, workspace: string, sid: string, rel: string): [string, string] | null {
+async function fileRawTarget(ctx: RequestContext, workspace: string, sid: string, rel: string): Promise<[string, string] | null> {
   try {
     const target = safeResolve(workspace, rel)
     if (existsSync(target) && statSync(target).isFile()) return [workspace, target]
   } catch { /* fall through to the attachment inbox */ }
   try {
     const attachmentRoot = ctx.deps.uploads.sessionDir(sid)
-    const target = safeResolve(attachmentRoot, rel)
+    const target = safeResolve(attachmentRoot, ctx.deps.uploads.rebase(sid, rel))
+    await materializeAttachment(ctx.deps.blobs, target)
     if (existsSync(target) && statSync(target).isFile()) return [attachmentRoot, target]
   } catch { /* none */ }
   return null
@@ -140,7 +142,7 @@ async function handleFileRaw(ctx: RequestContext): Promise<void> {
   const s = (await fileOpsSession(ctx, sid))
   const rel = ctx.query.get('path') ?? ''
   if (rel.includes('\0')) throw new HttpError(400, 'invalid path')
-  const resolved = fileRawTarget(ctx, s.workspace, sid, rel)
+  const resolved = await fileRawTarget(ctx, s.workspace, sid, rel)
   if (!resolved) {
     await ctx.json({ error: 'not found' }, { status: 404 })
     return
@@ -229,6 +231,8 @@ async function handleMedia(ctx: RequestContext): Promise<void> {
   }
   const anchorRoot = (await mediaAnchorRoot(target, mediaSession, deps.mediaAccess))
   if (!anchorRoot) throw new HttpError(403, 'Path not in allowed location')
+  // An authorized attachment path whose bytes live in a remote store is downloaded before the anchored open.
+  try { await materializeAttachment(deps.blobs, target) } catch (error) { deps.log(`[webui] could not load attachment ${basename(target)}: ${(error as Error).message}`) }
   const mime = mimeFor(target)
   const inlinePreview = ctx.query.get('inline') === '1'
   const htmlInlineOk = inlinePreview && mime === 'text/html'
@@ -461,7 +465,7 @@ async function handleUpload(ctx: RequestContext): Promise<void> {
   const file = (await uploadFile(ctx, form))
   if (!file || !(await uploadSessionVisible(ctx, sessionId))) return
   try {
-    await ctx.json(ctx.deps.uploads.store(sessionId, file.filename, file.body))
+    await ctx.json(await ctx.deps.uploads.store(sessionId, file.filename, file.body))
   } catch (error) {
     if (error instanceof UploadConflict) { (await ctx.json({ error: error.message }, { status: 409 })); return }
     if (error instanceof UploadRejected) { (await ctx.json({ error: error.message }, { status: 403 })); return }
@@ -478,19 +482,8 @@ async function handleUploadExtract(ctx: RequestContext): Promise<void> {
   const sessionId = form.fields.session_id ?? ''
   const file = (await uploadFile(ctx, form))
   if (!file || !(await uploadSessionVisible(ctx, sessionId))) return
-  const { uploads } = ctx.deps
   try {
-    const inbox = uploads.sessionDir(sessionId)
-    mkdirSync(inbox, { recursive: true })
-    const result = await extractArchive(file.body, file.filename, inbox, inbox, ctx.deps.config.maxExtractedBytes)
-    let token: string
-    try {
-      token = uploads.registerReceipt(sessionId, result.dest, true)
-    } catch (error) {
-      try { rmtreeAnchored(inbox, result.dest) } catch { /* ignore */ }
-      throw error
-    }
-    await ctx.json({ ok: true, ...result, rollback_token: token })
+    await ctx.json({ ok: true, ...(await ctx.deps.uploads.extract(sessionId, file.filename, file.body, ctx.deps.config.maxExtractedBytes)) })
   } catch (error) {
     if (error instanceof ArchiveRejected) { (await ctx.json({ error: error.message }, { status: 400 })); return }
     ctx.deps.log(`[webui] upload extract error: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`)

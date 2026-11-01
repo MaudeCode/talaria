@@ -1,11 +1,11 @@
 /** Chat attachment uploads: multipart parsing, the per-session inbox, and rollback receipts (Python `api/upload.py`). */
-import { closeSync, existsSync, lstatSync, mkdirSync, realpathSync } from 'node:fs'
-import { writeFully } from '../fs/atomic.js'
-import { basename, extname, join } from 'node:path'
+import { existsSync, mkdirSync } from 'node:fs'
+import { basename, extname, isAbsolute, join, relative, sep } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { MIMEType } from 'node:util'
 import { isWithin, resolvePathLikePython } from './paths.js'
-import { openAnchoredCreateFd, rmtreeAnchored, unlinkAnchored, FileExistsError } from './fs.js'
+import { attachmentKey, attachmentSessionName, BlobExists, BlobKeyRejected, type BlobStat, type BlobStore } from '../sessions/storage/blobs.js'
+import { extractArchive, type Extraction } from './extract.js'
 import { mimeFor } from './media.js'
 import { MAX_CHAT_ATTACHMENTS } from '@maudecode/talaria-web-contracts'
 
@@ -80,34 +80,54 @@ export function sanitizeUploadName(filename: string): string {
   return safe
 }
 
-interface Receipt { sessionId: string; path: string; isDir: boolean; dev: bigint; ino: bigint; size: bigint; mtimeNs: bigint; ctimeNs: bigint; createdAt: number; rollingBack?: boolean }
+/** A file receipt holds its key's etag; an extracted tree's receipt holds every file's. */
+interface Receipt { sessionId: string; key: string; isDir: boolean; etags: Map<string, string>; createdAt: number; rollingBack?: boolean }
 
 const RECEIPT_TTL_MS = 60 * 60 * 1000
 
 export class UploadInbox {
   private readonly receipts = new Map<string, Receipt>()
 
-  constructor(readonly attachmentRoot: () => string, private readonly now: () => number = () => Date.now()) {}
+  /** `legacyRoot`: the local attachment directory, when a remote store replaced it; transcripts may still name it. */
+  constructor(readonly blobs: BlobStore, private readonly legacyRoot: (() => string) | null = null, private readonly now: () => number = () => Date.now()) {}
 
-  /** Python `_session_attachment_dir`. */
+  /** A path into the session's old local directory, as the same name in its current attachments; anything else unchanged. */
+  rebase(sessionId: string, rel: string): string {
+    if (!this.legacyRoot || !isAbsolute(rel)) return rel
+    const legacy = resolvePathLikePython(join(this.legacyRoot(), attachmentSessionName(sessionId)))
+    const resolved = resolvePathLikePython(rel)
+    return resolved !== legacy && isWithin(resolved, legacy) ? relative(legacy, resolved) : rel
+  }
+
+  /** Python `_session_attachment_dir`: where the session's attachments are (or are materialized) on disk. */
   sessionDir(sessionId: string): string {
-    const root = resolvePathLikePython(this.attachmentRoot())
-    const dest = resolvePathLikePython(join(root, (sessionId || 'session').replace(/[^\w.-]/g, '_').slice(0, 120)))
+    const root = resolvePathLikePython(this.blobs.attachmentRoot())
+    const dest = resolvePathLikePython(join(root, attachmentSessionName(sessionId)))
     if (dest !== root && !isWithin(dest, root)) throw new Error('Invalid attachment directory')
     return dest
   }
 
-  registerReceipt(sessionId: string, target: string, isDir = false): string {
-    const st = lstatSync(target, { bigint: true })
+  private registerReceipt(sessionId: string, key: string, isDir: boolean, etags: Map<string, string>): string {
     const token = randomBytes(32).toString('base64url')
     const now = this.now()
-    for (const [key, value] of this.receipts) if (now - value.createdAt > RECEIPT_TTL_MS) this.receipts.delete(key)
-    this.receipts.set(token, { sessionId, path: target, isDir, dev: st.dev, ino: st.ino, size: st.size, mtimeNs: st.mtimeNs, ctimeNs: st.ctimeNs, createdAt: now })
+    for (const [k, value] of this.receipts) if (now - value.createdAt > RECEIPT_TTL_MS) this.receipts.delete(k)
+    this.receipts.set(token, { sessionId, key, isDir, etags, createdAt: now })
     return token
   }
 
-  rollback(sessionId: string, tokens: string[]): { ok: boolean; rolled_back: number; failed: number } {
-    const root = this.sessionDir(sessionId)
+  /** The stored objects still match the receipt exactly: nothing replaced, added or removed since the upload. */
+  private async unchanged(receipt: Receipt): Promise<boolean> {
+    if (!receipt.isDir) return (await this.blobs.stat(receipt.key))?.etag === receipt.etags.get(receipt.key)
+    let seen = 0
+    for await (const item of this.blobs.list(receipt.key)) {
+      if (receipt.etags.get(item.key) !== item.etag) return false
+      seen += 1
+    }
+    return seen === receipt.etags.size
+  }
+
+  async rollback(sessionId: string, tokens: string[]): Promise<{ ok: boolean; rolled_back: number; failed: number }> {
+    this.sessionDir(sessionId)
     let rolledBack = 0
     let failed = 0
     const now = this.now()
@@ -117,15 +137,9 @@ export class UploadInbox {
       if (now - receipt.createdAt > RECEIPT_TTL_MS) { this.receipts.delete(token); failed += 1; continue }
       receipt.rollingBack = true
       try {
-        let resolved = receipt.path
-        try { resolved = realpathSync(receipt.path) } catch { /* lstat below fails too */ }
-        let rootResolved = root
-        try { rootResolved = realpathSync(root) } catch { /* keep */ }
-        if (resolved !== rootResolved && !isWithin(resolved, rootResolved)) throw new Error('Invalid rollback target')
-        const current = lstatSync(receipt.path, { bigint: true })
-        if (current.dev !== receipt.dev || current.ino !== receipt.ino || current.size !== receipt.size || current.mtimeNs !== receipt.mtimeNs || current.ctimeNs !== receipt.ctimeNs) throw new Error('Upload target changed')
-        if (receipt.isDir) rmtreeAnchored(root, receipt.path)
-        else unlinkAnchored(root, receipt.path)
+        if (!(await this.unchanged(receipt))) throw new Error('Upload target changed')
+        if (receipt.isDir) await this.blobs.deletePrefix(receipt.key)
+        else await this.blobs.delete(receipt.key)
       } catch {
         receipt.rollingBack = false
         failed += 1
@@ -137,53 +151,72 @@ export class UploadInbox {
     return { ok: failed === 0, rolled_back: rolledBack, failed }
   }
 
-  /** Write one upload into the session inbox with an O_EXCL anchored create. */
-  store(sessionId: string, filename: string, bytes: Buffer): { filename: string; path: string; size: number; mime: string; is_image: boolean; rollback_token: string; named_in_prompt: true; max_attachments_per_message: number } {
+  /** Store one upload with an exclusive put under a name free in the session's attachments. */
+  async store(sessionId: string, filename: string, bytes: Buffer): Promise<{ filename: string; path: string; size: number; mime: string; is_image: boolean; rollback_token: string; named_in_prompt: true; max_attachments_per_message: number }> {
     const safeName = sanitizeUploadName(filename)
-    const destDir = this.sessionDir(sessionId)
-    mkdirSync(destDir, { recursive: true })
+    this.sessionDir(sessionId)
     // Python `_upload_destination`: a name already in the inbox gets `-1`, `-2`, ... (every clipboard paste is
     // `image.png`); the 409 below is reserved for a duplicate that raced past this check.
-    const dest = uploadDestination(destDir, safeName)
-    let fd: number
+    const stored = await uploadDestinationName(safeName, async (name) => Boolean(await this.blobs.stat(attachmentKey(sessionId, name))))
+    const key = attachmentKey(sessionId, stored)
+    const mime = guessMime(stored)
+    let stat: BlobStat
     try {
-      fd = openAnchoredCreateFd(destDir, dest)
+      stat = await this.blobs.put(key, bytes, { contentType: mime, exclusive: true })
     } catch (error) {
-      if (error instanceof FileExistsError) throw new UploadConflict(`Upload destination already exists: ${safeName}`)
-      throw new UploadRejected('Upload destination rejected')
-    }
-    try {
-      writeFully(fd, bytes)
-    } finally {
-      closeSync(fd)
-    }
-    let token: string
-    try {
-      token = this.registerReceipt(sessionId, dest)
-    } catch (error) {
-      try { unlinkAnchored(destDir, dest) } catch { /* ignore */ }
+      if (error instanceof BlobExists) throw new UploadConflict(`Upload destination already exists: ${safeName}`)
+      if (error instanceof BlobKeyRejected) throw new UploadRejected('Upload destination rejected')
       throw error
     }
+    const token = this.registerReceipt(sessionId, key, false, new Map([[key, stat.etag]]))
     // The response reports the name actually stored (Python `test_duplicate_upload_response_reports_actual_stored_filename`).
-    const stored = basename(dest)
-    const mime = guessMime(stored)
     // The server names every attached file in the turn's prompt (TAL-276) and keeps at most
     // MAX_CHAT_ATTACHMENTS per message, so clients send the bare draft and stage no more (TAL-635).
-    return { filename: stored, path: dest, size: bytes.length, mime, is_image: mime.startsWith('image/'), rollback_token: token, named_in_prompt: true, max_attachments_per_message: MAX_CHAT_ATTACHMENTS }
+    return { filename: stored, path: await this.blobs.localPath(key), size: bytes.length, mime, is_image: mime.startsWith('image/'), rollback_token: token, named_in_prompt: true, max_attachments_per_message: MAX_CHAT_ATTACHMENTS }
+  }
+
+  /** Python `handle_upload_extract`: unpack into `<session inbox>/<stem>`, store every file, and return a tree receipt. */
+  async extract(sessionId: string, filename: string, bytes: Buffer, cap: number): Promise<Extraction & { rollback_token: string }> {
+    const inbox = this.sessionDir(sessionId)
+    mkdirSync(inbox, { recursive: true })
+    const prefixOf = (dir: string): string => `${attachmentKey(sessionId, ...relative(inbox, dir).split(sep))}/`
+    const result = await extractArchive(bytes, filename, inbox, inbox, cap, async (dir) => {
+      for await (const _ of this.blobs.list(prefixOf(dir))) return true
+      return false
+    })
+    const prefix = prefixOf(result.dest)
+    try {
+      const etags = new Map<string, string>()
+      // The archive lands in the local directory; a remote store keeps its own copy of every file.
+      for (const file of result.files) {
+        const key = attachmentKey(sessionId, ...file.split(sep))
+        etags.set(key, (await this.blobs.commitLocal(key)).etag)
+      }
+      return { ...result, rollback_token: this.registerReceipt(sessionId, prefix, true, etags) }
+    } catch (error) {
+      try { await this.blobs.deletePrefix(prefix) } catch { /* ignore */ }
+      throw error
+    }
   }
 }
 
 export class UploadConflict extends Error {}
 
-export function uploadDestination(destDir: string, safeName: string): string {
-  const dest = join(destDir, safeName)
-  if (!existsSync(dest)) return dest
+function* destinationNames(safeName: string): Generator<string> {
+  yield safeName
   const ext = extname(safeName)
   const stem = safeName.slice(0, safeName.length - ext.length)
-  for (let idx = 1; idx < 1000; idx += 1) {
-    const candidate = join(destDir, `${stem}-${String(idx)}${ext}`)
-    if (!existsSync(candidate)) return candidate
-  }
+  for (let idx = 1; idx < 1000; idx += 1) yield `${stem}-${String(idx)}${ext}`
+}
+
+/** The first of `name`, `stem-1.ext` ... `stem-999.ext` that `taken` reports free. */
+export async function uploadDestinationName(safeName: string, taken: (name: string) => Promise<boolean>): Promise<string> {
+  for (const name of destinationNames(safeName)) if (!(await taken(name))) return name
+  throw new UploadRejected('Too many uploads with the same filename')
+}
+
+export function uploadDestination(destDir: string, safeName: string): string {
+  for (const name of destinationNames(safeName)) if (!existsSync(join(destDir, name))) return join(destDir, name)
   throw new UploadRejected('Too many uploads with the same filename')
 }
 

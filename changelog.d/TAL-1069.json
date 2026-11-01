@@ -1,0 +1,1 @@
+{"entries":[{"category":"Added","summary":"Store chat attachments in any S3-compatible bucket, and copy existing attachments there with talaria-web storage copy-blobs.","highlight":false,"components":["web"]}]}

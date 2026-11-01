@@ -12,7 +12,6 @@ import type { AgentStorage, ChatReadiness, PendingSteer, RecoveryAudit, RunStatu
 import type { RunJournal } from './journal.js'
 import { str } from '../util.js'
 import { createHmac, randomUUID } from 'node:crypto'
-import { rmSync } from 'node:fs'
 import { buildActiveTurnToken, copyJson, redactSessionData, redactValue, sessionFocusPath, stripPublicInternalFields, withSceneToolDisplay } from '../redact.js'
 import type { OutboundDraft, OutboundDraftAction, OutboundDraftRef } from '@maudecode/talaria-web-contracts'
 import type { DraftStore } from './drafts.js'
@@ -37,7 +36,8 @@ import { withBackgroundLinks, type Receipt } from './background-tasks.js'
 import { messagesForLimitedPayload, messageCountsAsRenderable, messageWindowForDisplay, MAX_MSG_LIMIT, parseMsgLimit, toolCallsForMessageWindow } from './window.js'
 import { redactText } from '../redact.js'
 import { workspaceDisplayName, type WorkspaceEntry, type WorkspaceRegistry } from '../workspace/workspaces.js'
-import { buildShareSnapshot, type ShareStore } from './shares.js'
+import { buildShareSnapshot, shareEmbeddable, type ShareStore } from './shares.js'
+import { attachmentPrefix, type BlobStore } from './storage/blobs.js'
 import { mediaAnchorRootResolved, resolveMediaAccess, mediaRefPath, mediaTarget, type MediaAccessDeps } from '../workspace/media.js'
 import { projectMediaRefs, type MediaProjection } from '../workspace/media-refs.js'
 import type { ProjectStore } from '../projects.js'
@@ -168,6 +168,8 @@ export interface SessionServiceDeps {
     deleteCliSession: (profile: string | null, sid: string) => Promise<SidecarResult<'state_db.delete_cli_session'>>
   }
   attachmentDir: (sid: string) => string
+  /** Chat attachment bytes (TAL-1069). */
+  blobs: BlobStore
   /** A deleted session can never be viewed, so its finished runs are cleared from the relay. */
   clearRelayCompletions?: (sid: string, profile: string | null) => Promise<void>
   /** Run journals are removed with their session (Python `delete_run_journal`). */
@@ -2733,7 +2735,7 @@ export class SessionService {
     }
     for (const id of removedIds) {
       await this.deps.runtime.evictAgent(id, true)
-      try { rmSync(this.deps.attachmentDir(id), { recursive: true, force: true }) } catch { /* ignore */ }
+      try { await this.deps.blobs.deletePrefix(attachmentPrefix(id)) } catch (error) { this.deps.log(`[webui] could not delete attachments of ${id}: ${(error as Error).message}`) }
       // Python `delete_run_journal` (#3802): a deleted session leaves no replayable run journal behind.
       try { (await this.deps.journal?.deleteSession(id)) } catch { /* ignore */ }
       this.deps.runtime.closeTerminal(id)
@@ -3061,8 +3063,11 @@ export class SessionService {
     this.rejectClaudeCode(sid, 'shared')
     return this.withShareLock(sid, async (s) => {
       let snapshot
+      // A remote attachment store puts the session's embeddable images on disk, where the snapshot reads them.
+      const blobs = this.deps.blobs
+      for await (const item of blobs.list(attachmentPrefix(sid))) if (shareEmbeddable(item.key, item.size)) await blobs.localPath(item.key)
       try {
-        snapshot = buildShareSnapshot(s, s.messages, { hermesHome: this.deps.hermesHome, attachmentRoot: this.deps.attachmentDir('').replace(/\/[^/]*$/, ''), home: this.deps.home })
+        snapshot = buildShareSnapshot(s, s.messages, { hermesHome: this.deps.hermesHome, attachmentRoot: blobs.attachmentRoot(), home: this.deps.home })
       } catch (error) {
         throw new HttpFailure(400, (error as Error).message)
       }

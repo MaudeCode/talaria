@@ -4,6 +4,7 @@
  * security headers, CSP report-only policy, sliding-session renewal, queued
  * cookies, and the structured access log.
  */
+import type { BlobStore } from '../sessions/storage/blobs.js'
 import type { Groups } from '../sessions/groups.js'
 import { StartupTiming } from '../startup-timing.js'
 import type { AsyncLocalStorage } from 'node:async_hooks'
@@ -137,6 +138,8 @@ export interface AppDeps {
   git: GitRunner
   rollback: RollbackStore
   uploads: UploadInbox
+  /** Chat attachment bytes (TAL-1069): the local directory or an S3 bucket behind one port. */
+  blobs: BlobStore
   /** Read-only grants for workspace symlinks that point outside the workspace (TAL-263). */
   escapeGrants: EscapeGrants
   /** The `/api/media` allow-list, shared with the transcript media projection (TAL-186). */

@@ -22,6 +22,8 @@ const SHARE_TOKEN_RE = /^[A-Za-z0-9_-]{8,64}$/
 const SHARE_MEDIA_RE = /MEDIA:(?!https?:\/\/)([^\s)\]>]+)/g
 const SHARE_EMBED_MAX_BYTES = 512 * 1024
 const ALLOWED_MIME: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' }
+/** Whether a share snapshot could embed this file, so a remote attachment store only materializes those. */
+export const shareEmbeddable = (name: string, size: number): boolean => Boolean(ALLOWED_MIME[extname(name).toLowerCase()]) && size <= SHARE_EMBED_MAX_BYTES
 const PLACEHOLDER = '[*Local attachment omitted from public share*]'
 /**
  * Content-supplied inline `data:` URIs never reach a public share: their bytes are opaque to the credential
