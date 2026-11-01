@@ -957,6 +957,8 @@ export class TurnRunner {
                 if (startsBackgroundWork(data.name, rawResult)) deps.onBackgroundWork?.(sessionId, s.profile ?? null)
                 const id = (tc && toolIds.get(tc)) || str(data.tid) || mintToolId()
                 this.lastCompletedTool.set(streamId, id)
+                const redacted = deps.redactEnabled()
+                await emitFrame('tool_complete', publicToolFrame(withToolId(complete, id), redacted, s.workspace), { redacted })
                 // TAL-1649: a successful skill_view is one load in this conversation (never an ephemeral clone's), counted while
                 // this run still owns the session under the clear generation it started with.
                 const skillName = opts.ephemeral ? null : successfulSkillViewName(data.name, rawResult)
@@ -965,8 +967,6 @@ export class TurnRunner {
                   countedSkillLoads.add(skillLoad)
                   await deps.service().recordSkillUse(sessionId, [skillName], { generation: skillFence, streamId })
                 }
-                const redacted = deps.redactEnabled()
-                await emitFrame('tool_complete', publicToolFrame(withToolId(complete, id), redacted, s.workspace), { redacted })
                 // TAL-397: the todo tool's result is the session's new list; the settled session derives the same one.
                 // TAL-889: the sidecar attaches `todo_result` only to the Agent's todo tool, so no name check here.
                 const todos = parseTodoToolResult(todoResult)
