@@ -10,6 +10,7 @@ import { PanelHead, PanelHeadButton } from '../../shell/Sidebar'
 import { cn } from '../../ui/cn'
 import { useDebounced } from '../../lib/useDebounced'
 import { HelpTip } from '../../ui/Field'
+import { Dialog } from '../../ui/Dialog'
 import { useNewChat } from './useNewChat'
 import { SessionContextMenu } from './SessionContextMenu'
 import { ProjectChip } from './ProjectChip'
@@ -55,7 +56,7 @@ export function relativeTime(ts: number | null | undefined, now = Date.now()): s
   return date.toLocaleDateString(undefined, options)
 }
 
-type GroupId = 'pinned' | 'today' | 'yesterday' | 'week' | 'older'
+type GroupId = 'pinned' | 'today' | 'yesterday' | 'week' | 'older' | 'scheduled' | 'webhook'
 
 const GROUP_LABEL: Record<GroupId, () => string> = {
   pinned: () => m.session_time_bucket_pinned(),
@@ -63,14 +64,22 @@ const GROUP_LABEL: Record<GroupId, () => string> = {
   yesterday: () => m.session_time_bucket_yesterday(),
   week: () => m.session_time_bucket_this_week(),
   older: () => m.session_time_bucket_older(),
+  scheduled: () => m.session_group_scheduled(),
+  webhook: () => m.session_group_webhook(),
 }
+
+/** TAL-1639: the server's Scheduled and Webhook groups, shown as collapsed disclosures after the date groups. */
+type DisclosureId = 'scheduled' | 'webhook'
+const isDisclosure = (id: GroupId): id is DisclosureId => id === 'scheduled' || id === 'webhook'
+/** Rows a closed-search disclosure previews before View all, as in the App sidebar. */
+const DISCLOSURE_PREVIEW = 5
 
 /** Spoken status for a row that needs the user; the server names the kind. */
 const attentionLabel = (kind: string | undefined) => kind === 'approval' ? m.session_attention_approval_title() : kind === 'clarify' ? m.session_attention_clarify_title() : m.session_attention_generic_title()
 
-const GROUP_ORDER: GroupId[] = ['pinned', 'today', 'yesterday', 'week', 'older']
+const GROUP_ORDER: GroupId[] = ['pinned', 'today', 'yesterday', 'week', 'older', 'scheduled', 'webhook']
 
-/** Files rows under the server's Pinned group (TAL-1534), the rest under local-date groups by the server's `sort_ts`, keeping the server's order inside each group (TAL-306). */
+/** Files rows under the server's Pinned, Scheduled and Webhook groups (TAL-1534, TAL-1639), the rest under local-date groups by the server's `sort_ts`, keeping the server's order inside each group (TAL-306). */
 export function groupSessionRows(rows: SessionRow[], now = Date.now()): { id: GroupId; rows: SessionRow[] }[] {
   const today = new Date(now); today.setHours(0, 0, 0, 0)
   const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1)
@@ -79,7 +88,7 @@ export function groupSessionRows(rows: SessionRow[], now = Date.now()): { id: Gr
   const byGroup = new Map<GroupId, SessionRow[]>()
   for (const r of rows) {
     const ts = r.sort_ts * 1000
-    const g: GroupId = r.sidebar_group === 'pinned' ? 'pinned' : ts >= todayMs ? 'today' : ts >= yesterdayMs ? 'yesterday' : ts >= weekMs ? 'week' : 'older'
+    const g: GroupId = r.sidebar_group === 'pinned' || r.sidebar_group === 'scheduled' || r.sidebar_group === 'webhook' ? r.sidebar_group : ts >= todayMs ? 'today' : ts >= yesterdayMs ? 'yesterday' : ts >= weekMs ? 'week' : 'older'
     const grouped = byGroup.get(g)
     if (grouped) grouped.push(r)
     else byGroup.set(g, [r])
@@ -265,8 +274,21 @@ export function SessionListPanel() {
   })
   // Empty targets exist only during an internal gesture; ordinary visits keep the existing groups.
   if (dragRow && !groups.some((g) => g.id === 'pinned')) groups.unshift({ id: 'pinned', label: GROUP_LABEL.pinned(), rows: [] })
-  if (dragRow && groups.every((g) => g.id === 'pinned')) groups.push({ id: 'today', label: m.session_unpin(), rows: [] })
-  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({})
+  if (dragRow && groups.every((g) => g.id === 'pinned' || isDisclosure(g.id))) groups.splice(groups.findIndex((g) => g.id === 'pinned') + 1, 0, { id: 'today', label: m.session_unpin(), rows: [] })
+  // Disclosures start collapsed; a search opens them on every match, as in the App sidebar.
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({ scheduled: true, webhook: true })
+  const searching = !!filter.trim()
+  const isCollapsed = (id: GroupId) => !(searching && isDisclosure(id)) && !!collapsedGroups[id]
+  const shownRows = (g: { id: GroupId; rows: SessionRow[] }) => (isDisclosure(g.id) && !searching ? g.rows.slice(0, DISCLOSURE_PREVIEW) : g.rows)
+  const disclosureCount: Record<DisclosureId, string> = {
+    scheduled: `${(data?.scheduled_session_count ?? 0).toLocaleString()}${data?.scheduled_sessions_truncated ? '+' : ''}`,
+    webhook: `${(data?.webhook_session_count ?? 0).toLocaleString()}${data?.webhook_sessions_truncated ? '+' : ''}`,
+  }
+  // View all closes when a row in it opens another session.
+  const [viewAll, setViewAll] = useState<{ id: DisclosureId; at: string | null } | null>(null)
+  if (viewAll && viewAll.at !== activeId) setViewAll(null)
+  const viewAllGroup = viewAll ? groups.find((g) => g.id === viewAll.id) : undefined
+  const navIds = groups.flatMap((g) => (isCollapsed(g.id) ? [] : shownRows(g).map((r) => r.session_id)))
   const archive = useResourceMutation({
     resource: ({ id }: { id: string; archived: boolean }) => `session:${id}`,
     effect: ({ archived }) => ({ fields: { archived } }),
@@ -287,16 +309,15 @@ export function SessionListPanel() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.key !== 'j' && e.key !== 'k') || e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented || inTextField(e.target) || (e.target as Element | null)?.closest?.('[role="dialog"],[role="alertdialog"],[role="menu"]')) return
-      const ids = groups.flatMap((g) => (collapsedGroups[g.id] ? [] : g.rows.map((r) => r.session_id)))
-      const i = activeId ? ids.indexOf(activeId) : -1
+      const i = activeId ? navIds.indexOf(activeId) : -1
       if (i < 0) return
       e.preventDefault()
-      const next = ids[i + (e.key === 'j' ? 1 : -1)]
+      const next = navIds[i + (e.key === 'j' ? 1 : -1)]
       if (next) void navigate({ to: '/session/$sessionId', params: { sessionId: next } })
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [groups, collapsedGroups, activeId, navigate])
+  }, [navIds, activeId, navigate])
   const importInput = useRef<HTMLInputElement>(null)
   const importSession = useMutation({
     mutationFn: async (file: File) => {
@@ -378,20 +399,60 @@ export function SessionListPanel() {
         )}
         {list.isSuccess && filtered.length === 0 && !(q.length >= 2 && search.isPending) && <div className="session-list-note">{filter ? m.no_matching_sessions() : m.no_sessions_yet()}</div>}
         {groups.map((g) => {
-          const isCollapsed = !!collapsedGroups[g.id]
+          const collapsed = isCollapsed(g.id)
+          const disclosure = isDisclosure(g.id)
+          const toggle = () => setCollapsedGroups((c) => ({ ...c, [g.id]: !c[g.id] }))
           return (
-            <div key={g.id} className={cn('session-date-group', dropTarget !== null && dropTarget === (g.id === 'pinned') && 'session-drop-target')} {...dropHandlers(g.id === 'pinned')}>
-              <div className={cn('session-date-header', g.id === 'pinned' && 'pinned')} role="button" tabIndex={0} aria-expanded={!isCollapsed} onClick={() => setCollapsedGroups((c) => ({ ...c, [g.id]: !c[g.id] }))} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setCollapsedGroups((c) => ({ ...c, [g.id]: !c[g.id] })) } }}>
-                <span className={cn('session-date-caret', isCollapsed && 'collapsed')} aria-hidden="true">{'\u25BE'}</span>
+            <div key={g.id} className={cn('session-date-group', disclosure && 'session-disclosure', dropTarget !== null && dropTarget === (g.id === 'pinned') && 'session-drop-target')} {...(disclosure ? {} : dropHandlers(g.id === 'pinned'))}>
+              <div className={cn('session-date-header', g.id === 'pinned' && 'pinned')} role="button" tabIndex={0} aria-expanded={!collapsed} onClick={toggle} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle() } }}>
+                <span className={cn('session-date-caret', collapsed && 'collapsed')} aria-hidden="true">{'\u25BE'}</span>
                 <span>{g.label}</span>
+                {disclosure && <span className="session-disclosure-count">{disclosureCount[g.id as DisclosureId]}</span>}
               </div>
-              <div className="session-date-body" style={isCollapsed ? { display: 'none' } : undefined}>
-                {g.rows.map((row) => <SessionListItem key={row.session_id} row={row} active={row.session_id === activeId} proj={row.project_id ? projectsById.get(row.project_id) : undefined} preview={previews.get(row.session_id)} timeLabel={relativeTime(row.sort_ts)} onArchive={onArchive} onDragStart={startDrag} onDragEnd={endDrag} />)}
+              <div className="session-date-body" style={collapsed ? { display: 'none' } : undefined}>
+                {shownRows(g).map((row) => <SessionListItem key={row.session_id} row={row} active={row.session_id === activeId} proj={row.project_id ? projectsById.get(row.project_id) : undefined} preview={previews.get(row.session_id)} timeLabel={relativeTime(row.sort_ts)} onArchive={onArchive} {...(disclosure ? {} : { onDragStart: startDrag, onDragEnd: endDrag })} />)}
+                {disclosure && !searching && g.rows.length > DISCLOSURE_PREVIEW && <button type="button" className="session-view-all" onClick={() => setViewAll({ id: g.id as DisclosureId, at: activeId })}>{m.session_group_view_all()}</button>}
               </div>
             </div>
           )
         })}
       </div>
+      {viewAll && <SessionGroupDialog title={GROUP_LABEL[viewAll.id]()} kind={viewAll.id} rows={viewAllGroup?.rows ?? []} filters={searchFilters} activeId={activeId} projectsById={projectsById} onArchive={onArchive} onClose={() => setViewAll(null)} />}
     </div>
+  )
+}
+
+/** TAL-1639: every row of one server group, searched through the sidebar search within the panel's scope. */
+function SessionGroupDialog({ title, kind, rows, filters, activeId, projectsById, onArchive, onClose }: {
+  title: string
+  kind: DisclosureId
+  rows: SessionRow[]
+  filters: api.SessionSearchFilters
+  activeId: string | null
+  projectsById: Map<string, Awaited<ReturnType<typeof api.fetchProjects>>['projects'][number]>
+  onArchive: (id: string, archived: boolean) => void
+  onClose: () => void
+}) {
+  const [filter, setFilter] = useState('')
+  const q = useDebounced(filter.trim(), 200)
+  const effects = useResourceEffects()
+  const search = useQuery({ queryKey: keys.sessions.search(q, filters), queryFn: ({ signal }) => api.searchSessions(q, filters, 5, signal), enabled: q.length >= 2, staleTime: 15_000, placeholderData: keepPreviousData })
+  const matches = q.length < 2 ? rows : search.data ? withEffects(search.data.sessions, (r) => `session:${r.session_id}`, effects).filter((r) => r.sidebar_group === kind && (filters.include_archived || !r.archived)) : null
+  const previews = new Map((q.length >= 2 ? search.data?.sessions ?? [] : []).flatMap((r) => (r.match_preview ? [[r.session_id, r.match_preview] as const] : [])))
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open) onClose() }} title={title} className="max-h-[85dvh]">
+      <div className="session-search sidebar-search">
+        <div className="session-search-field">
+          <Search size={14} className="sidebar-search-icon" aria-hidden="true" />
+          <input type="search" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={m.filter_conversations()} aria-label={m.filter_conversations()} autoComplete="off" data-1p-ignore data-lpignore="true" />
+        </div>
+      </div>
+      <div className="session-list max-h-[60dvh]" role="list">
+        {matches === null && search.isError ? <div className="session-list-note session-list-error" role="alert">{m.error_generic()} <button type="button" className="linklike" onClick={() => { void search.refetch() }}>{m.retry()}</button></div>
+          : matches === null ? <div className="session-list-note" role="status">{m.loading()}</div>
+          : matches.length === 0 ? <div className="session-list-note">{m.no_matching_sessions()}</div>
+          : matches.map((row) => <SessionListItem key={row.session_id} row={row} active={row.session_id === activeId} proj={row.project_id ? projectsById.get(row.project_id) : undefined} preview={previews.get(row.session_id)} timeLabel={relativeTime(row.sort_ts)} onArchive={onArchive} />)}
+      </div>
+    </Dialog>
   )
 }

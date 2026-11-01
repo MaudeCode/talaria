@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
@@ -243,6 +243,70 @@ describe('session list date groups (TAL-306)', () => {
     const day = 86_400
     const recent = { ...rows.find((r) => r.session_id === 'tal306-newest')!, sort_ts: at / 1000 - 60, last_message_at: at / 1000 - 30 * day, updated_at: at / 1000 - 30 * day }
     expect(groupSessionRows([recent], at).map((g) => g.id)).toEqual(['today'])
+  })
+})
+
+describe('Scheduled and Webhook disclosures (TAL-1639)', () => {
+  const cron = Array.from({ length: 6 }, (_, i) => row(`cron-${String(i)}`, `Cron run ${String(i)}`, { source_kind: 'cron', sidebar_group: 'scheduled', sort_ts: now - i }))
+  const hook = row('hook', 'Hook run', { source_kind: 'webhook', sidebar_group: 'webhook' })
+  // The server's group decides: a cron-sourced row it files under Recents stays there.
+  const recentCron = row('recent-cron', 'Recent cron', { source_kind: 'cron', sidebar_group: 'recent' })
+  const listed = (sessions: SessionRow[], counts = { scheduled_session_count: 6, scheduled_sessions_truncated: true, webhook_session_count: 1, webhook_sessions_truncated: false }) =>
+    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions, ...counts } as never)
+  const panel = () => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SessionListPanel /></QueryClientProvider>)
+  // A collapsed group keeps its rows mounted but hidden.
+  const visible = (scope = '') => [...document.querySelectorAll<HTMLElement>(`${scope} [data-sid]`)].filter((el) => el.closest<HTMLElement>('.session-date-body')?.style.display !== 'none').map((el) => el.dataset.sid)
+
+  it('files server-grouped rows under collapsed disclosures with the server counts, outside the date groups', async () => {
+    listed([{ ...alpha, sidebar_group: 'recent' }, recentCron, ...cron, hook])
+    panel()
+    const scheduled = await screen.findByRole('button', { name: /Scheduled sessions/ })
+    const webhook = screen.getByRole('button', { name: /Webhook sessions/ })
+    expect(scheduled).toHaveAttribute('aria-expanded', 'false')
+    expect(webhook).toHaveAttribute('aria-expanded', 'false')
+    expect(scheduled).toHaveTextContent('6+')
+    expect(webhook).toHaveTextContent('1')
+    expect(visible()).toEqual(['alpha', 'recent-cron'])
+    expect(visible('.session-date-group:not(.session-disclosure)')).toEqual(['alpha', 'recent-cron'])
+
+    await userEvent.click(scheduled)
+    expect(scheduled).toHaveAttribute('aria-expanded', 'true')
+    expect(visible()).toEqual(['alpha', 'recent-cron', 'cron-0', 'cron-1', 'cron-2', 'cron-3', 'cron-4'])
+    await userEvent.click(screen.getByRole('button', { name: 'View all' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Scheduled sessions' })
+    expect([...dialog.querySelectorAll('[data-sid]')].map((el) => el.getAttribute('data-sid'))).toEqual(cron.map((r) => r.session_id))
+  })
+
+  it('searches the View all list through the server and keeps only its rows of that group', async () => {
+    listed([alpha, ...cron, hook])
+    vi.mocked(api.searchSessions).mockResolvedValue({ sessions: [{ ...cron[4]!, match_type: 'content', match_preview: 'nightly zebra' }, { ...alpha, sidebar_group: 'recent', match_type: 'title' }], sidebar_filtered: true, all_profiles: false, active_profile: 'default' } as never)
+    panel()
+    await userEvent.click(await screen.findByRole('button', { name: /Scheduled sessions/ }))
+    await userEvent.click(screen.getByRole('button', { name: 'View all' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Scheduled sessions' })
+    await userEvent.type(within(dialog).getByRole('searchbox'), 'zebra')
+    await waitFor(() => { expect([...dialog.querySelectorAll('[data-sid]')].map((el) => el.getAttribute('data-sid'))).toEqual(['cron-4']) })
+    expect(api.searchSessions).toHaveBeenLastCalledWith('zebra', { project_id: undefined, sidebar_source: undefined, include_archived: false }, 5, expect.any(AbortSignal))
+    expect(within(dialog).getByText('nightly zebra')).toBeInTheDocument()
+  })
+
+  it('says a failed View all search failed and retries it', async () => {
+    listed([alpha, ...cron, hook])
+    vi.mocked(api.searchSessions).mockRejectedValueOnce(new Error('offline')).mockResolvedValue({ sessions: [cron[2]!], sidebar_filtered: true, all_profiles: false, active_profile: 'default' })
+    panel()
+    await userEvent.click(await screen.findByRole('button', { name: /Scheduled sessions/ }))
+    await userEvent.click(screen.getByRole('button', { name: 'View all' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Scheduled sessions' })
+    await userEvent.type(within(dialog).getByRole('searchbox'), 'digest')
+    await userEvent.click(await within(dialog).findByRole('button', { name: 'Retry' }))
+    await waitFor(() => { expect([...dialog.querySelectorAll('[data-sid]')].map((el) => el.getAttribute('data-sid'))).toEqual(['cron-2']) })
+  })
+
+  it('shows no disclosure the server lists no rows for', async () => {
+    listed([alpha, other], { scheduled_session_count: 0, scheduled_sessions_truncated: false, webhook_session_count: 0, webhook_sessions_truncated: false })
+    panel()
+    await screen.findByText('Alpha zebra')
+    expect(screen.queryByRole('button', { name: /Scheduled sessions|Webhook sessions/ })).toBeNull()
   })
 })
 

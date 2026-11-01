@@ -891,11 +891,15 @@ export function overlayRuntimeRows(rows: Row[], overlay: RuntimeOverlay): Row[] 
   return out.sort(compareSessionRows)
 }
 
-const SIDEBAR_GROUP_TITLES: Record<SidebarGroupKind, string> = { pinned: 'Pinned', recent: 'Recents' }
+const SIDEBAR_GROUP_TITLES: Record<SidebarGroupKind, string> = { pinned: 'Pinned', recent: 'Recents', scheduled: 'Scheduled sessions', webhook: 'Webhook sessions' }
 
-/** TAL-1534: the sidebar group the canonical order (pinned first) files a row under; an archived row is in none. */
+/**
+ * TAL-1534: the sidebar group the canonical order (pinned first) files a row under; an archived row is in none.
+ * TAL-1639: a cron or webhook row, pinned or archived, is in its own group, as `scheduled_session_count` counts it.
+ */
 function sidebarGroup(row: Row): SidebarGroupKind | null {
-  return row.archived ? null : row.pinned ? 'pinned' : 'recent'
+  const kind = sourceKind(row)
+  return kind === 'cron' ? 'scheduled' : kind === 'webhook' ? 'webhook' : row.archived ? null : row.pinned ? 'pinned' : 'recent'
 }
 
 export function sidebarSessionResponseItem(row: Row, redactEnabled: boolean, attention: Row | null, activeStreamIds: ReadonlySet<string>, workspaceName: (row: Row) => string | null): Row {
