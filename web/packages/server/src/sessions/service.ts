@@ -351,9 +351,9 @@ export class SessionService {
    * continues (a compression or reset gets a new Agent id while the Web document keeps the root's), else that of the
    * chat that delegated it (a subagent, through nested delegations). Unresolved within a bounded walk: unowned.
    */
-  async foreignOwnerOf(sid: string): Promise<string | null> {
+  async foreignOwnerOf(sid: string, profile: string | null = null): Promise<string | null> {
     const owners = await this.store.foreignOwners()
-    const path = this.stateDbPath(null)
+    const path = this.stateDbPath(profile)
     const seen = new Set<string>()
     let id = sid
     for (let hop = 0; hop < 32 && id && !seen.has(id); hop += 1) {

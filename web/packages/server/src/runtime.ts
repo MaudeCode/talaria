@@ -520,6 +520,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     registry, pending, store, background, activitySummary: (session) => sessions.activitySummary(session), presence, activity, profileHome, profilesMatch, fetch: () => lazyFetch, now, log,
     agentSessions: (profile) => readImportableAgentSessionRowsAsync(join(profileHome(profile), 'state.db')),
     personIsolation: () => personIsolationEnabled(env),
+    agentSessionOwner: (sid, profile) => sessions.foreignOwnerOf(sid, profile),
     documents: storage.documents, env, canonicalProfile: (p) => (isRootProfile(p) ? 'default' : p),
   })
   const webPush = new WebPushChannel({ documents: storage.documents, activity, lookup: () => deps.dnsLookup, fetch: () => deps.pinnedFetch, liveLogins: () => liveLoginHashes(auth, { sessionBindingIsCurrent: (info) => oidc?.sessionBindingIsCurrent(info) ?? Promise.resolve(false) }),

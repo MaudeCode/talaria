@@ -218,6 +218,8 @@ export interface RelayPublisherDeps {
    * published to the profile's devices; only unowned sessions are.
    */
   personIsolation?: () => boolean
+  /** The person an Agent session in `profile` belongs to (`SessionService.foreignOwnerOf`): recorded, continued or delegated. */
+  agentSessionOwner?: (sid: string, profile: string) => Promise<string | null>
   fetch: () => typeof fetch
   now: () => number
   log: (line: string) => void
@@ -378,6 +380,20 @@ export class RelayPublisher {
     }
   }
 
+  /**
+   * TAL-48: the Agent rows a profile's relay scope may announce: under isolation only those no person owns, resolving a
+   * person through what the session continues or was delegated by, as every other session path does.
+   */
+  private async publishedAgentRows(profile: string, rows: Record<string, unknown>[]): Promise<Record<string, unknown>[]> {
+    if (!this.deps.personIsolation?.()) return rows
+    const recorded = await this.deps.store.foreignOwners()
+    return filterAsync(rows, async (row) => {
+      const sid = str(row._lineage_root_id || row.id)
+      const owner = this.deps.agentSessionOwner ? await this.deps.agentSessionOwner(sid, profile) : recorded.get(sid) ?? null
+      return this.publishesOwner(owner)
+    })
+  }
+
   /** A session reaches the profile's relay scope unless it belongs to a person under isolation. */
   private publishesOwner(owner: unknown): boolean {
     return !(this.deps.personIsolation?.() && owner)
@@ -482,12 +498,10 @@ export class RelayPublisher {
     const agentRows = new Map<string, Record<string, unknown>[]>()
     for (const [profile, cfg] of Object.entries(this.config.profiles)) {
       if (!(await this.publishes(profile, cfg))) continue
-      try { agentRows.set(profile, await this.deps.agentSessions(profile)) } catch { agentRows.set(profile, []) }
+      try { agentRows.set(profile, await this.publishedAgentRows(profile, await this.deps.agentSessions(profile))) } catch { agentRows.set(profile, []) }
     }
     let index: Record<string, unknown>[] = []
     try { index = await this.deps.store.readIndexEntries() } catch { /* no resident index */ }
-    // TAL-48: an Agent chat a person started through Web carries that person's recorded ownership.
-    const foreignOwners = await this.deps.store.foreignOwners()
     const eligible = new Set<string>()
     for (const [profile, cfg] of Object.entries(this.config.profiles)) if (await this.publishes(profile, cfg)) eligible.add(profile)
     return (await this.mutateStarted((ledger) => {
@@ -502,7 +516,7 @@ export class RelayPublisher {
       const agent = agentRows.get(profile) ?? []
       const seen = [
         ...index.filter((row) => Number(row.message_count) > 0 && this.deps.profilesMatch(row.profile as string | null | undefined, profile) && this.publishesOwner(row.owner_person_id)).map((row) => [row.session_id, row.created_at]),
-        ...agent.filter((row) => this.publishesOwner(foreignOwners.get(str(row._lineage_root_id || row.id)) ?? foreignOwners.get(str(row.id)))).map((row) => [row._lineage_root_id || row.id, row.started_at]),
+        ...agent.map((row) => [row._lineage_root_id || row.id, row.started_at]),
       ]
       for (const [rawSid, created] of seen) {
         const sid = str(rawSid).trim()

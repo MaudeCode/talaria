@@ -1011,11 +1011,16 @@ describe('session-started events under person isolation (TAL-48)', () => {
       db.exec(`CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT NOT NULL, model TEXT, started_at REAL NOT NULL, message_count INTEGER DEFAULT 0, title TEXT, parent_session_id TEXT, ended_at REAL, end_reason TEXT);
         CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT, timestamp REAL NOT NULL)`)
       const startedAt = Date.now() / 1000
-      for (const id of ['diagnostic_alice_01', 'cli_unowned_0001']) {
-        db.prepare('INSERT INTO sessions (id, source, started_at, message_count, title) VALUES (?, ?, ?, ?, ?)').run(id, 'cli', startedAt, 1, id)
+      for (const [id, source, parent] of [['diagnostic_alice_01', 'cli', null], ['cli_unowned_0001', 'cli', null], ['subagent_alice_01', 'subagent', 'alicewebchat01']] as const) {
+        db.prepare('INSERT INTO sessions (id, source, started_at, message_count, title, parent_session_id) VALUES (?, ?, ?, ?, ?, ?)').run(id, source, startedAt, 1, id, parent)
         db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(id, 'user', 'hi', startedAt)
       }
       db.close()
+      // Alice's private Web chat delegated the subagent above.
+      const webChat = await s.deps.sessionStore.newSession({ profile: 'default' })
+      webChat.session_id = 'alicewebchat01'
+      webChat.owner_person_id = 'oidc:alice'
+      await s.deps.sessionStore.save(webChat)
       // Alice started this diagnostic chat through Web, so its person is recorded.
       expect(await s.deps.sessionStore.recordForeignOwner('diagnostic_alice_01', 'oidc:alice')).toBe(true)
       const started = (): string[] => relay.calls.filter((c) => c.url.endsWith('/started')).map((c) => String(c.body.sessionId))
@@ -1026,6 +1031,7 @@ describe('session-started events under person isolation (TAL-48)', () => {
       s.deps.relay.current()!.changed()
       await new Promise((r) => setTimeout(r, 200))
       expect(started()).not.toContain('diagnostic_alice_01')
+      expect(started()).not.toContain('subagent_alice_01')
     } finally {
       s.deps.relay.stop()
       await s.close()
