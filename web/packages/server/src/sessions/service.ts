@@ -104,8 +104,12 @@ interface SessionGateReads {
   owners: (profile?: string) => Promise<Map<string, StateDbSessionSource> | null>
   row: () => Promise<ReturnType<typeof stateDbSessionRow>>
   meta: () => Promise<Row | null>
-  messages: (stitch: boolean) => Promise<Message[]>
-  /** The stitched transcript read behind `messages(true)`, with whether it succeeded. */
+  /** The tip segment's active rows (a local lineage's model context). */
+  context: () => Promise<Message[]>
+  /**
+   * The stitched transcript, with whether it succeeded: the Agent's display rows (TAL-825), and in `model` its active rows
+   * when the two can differ.
+   */
   transcript: () => Promise<StateDbRead>
   /** Its size and recency without loading it (TAL-1249). */
   summary: () => Promise<StateDbMessageSummary>
@@ -716,7 +720,7 @@ export class SessionService {
     const claudeCode = isClaudeCodeSessionId(sid)
     const read = (): Promise<StateDbRead> => transcript ??= claudeCode
       ? Promise.resolve({ ...failedStateDbRead(), ok: true, rows: this.deps.claudeCode?.messages(sid) ?? [] })
-      : stateDbSessionReadAsync({ ...failedStateDbRead(), reason: TRANSCRIPT_UNREADABLE }, 'stateDbSessionRead', dbPath, sid, { stitch: true })
+      : stateDbSessionReadAsync({ ...failedStateDbRead(), reason: TRANSCRIPT_UNREADABLE }, 'stateDbSessionRead', dbPath, sid, { stitch: true, display: true })
     return {
       sid,
       owners: (ownerProfile = profile) => {
@@ -726,7 +730,7 @@ export class SessionService {
       },
       row: () => row ??= stateDbSessionReadAsync(null, 'stateDbSessionRow', dbPath, sid),
       meta: () => meta ??= this.lookupCliMeta(sid),
-      messages: (stitch) => stitch ? read().then((r) => r.rows) : context ??= stateDbSessionReadAsync([], 'stateDbSessionMessages', dbPath, sid, { stitch: false }),
+      context: () => context ??= stateDbSessionReadAsync([], 'stateDbSessionMessages', dbPath, sid, { stitch: false }),
       transcript: read,
       // A Claude Code transcript is a local file, not state.db: its size comes from the one read of it.
       summary: () => summary ??= claudeCode
@@ -789,7 +793,8 @@ export class SessionService {
     // failed read is unknown, never an empty session.
     const summary = opts.transcript === false ? await reads.summary() : undefined
     if (summary?.reason) throw new HttpFailure(503, summary.reason)
-    const msgs = summary ? [] : await reads.messages(true)
+    const transcript = summary ? null : await reads.transcript()
+    const msgs = transcript?.rows ?? []
     const meta: Row = { ...(metaIn ?? (await reads.meta()) ?? {}) }
     // An owner receipt proves a session before its first turn (a fresh diagnostic chat, TAL-1040); a bare row does not.
     if (!(summary ? summary.count : msgs.length) && !(meta._lineage_root_id && meta._lineage_tip_id) && !canonical) return { session: null, reason: 'no_foreign_state' }
@@ -806,7 +811,10 @@ export class SessionService {
     const claimable = owners !== null && isClaimableCliSource(meta, owners.get(sid) || stateDbSource)
     const workspace = str(meta.workspace || meta.cwd).trim() || (await this.deps.workspaces.lastWorkspace(profile))
     const defaults = (await this.store.deps.defaults(profile))
-    const context = !summary && Array.isArray(meta._lineage_ids) ? await reads.messages(false) : null
+    // TAL-825: the transcript shows the Agent's display rows; the model keeps its active rows (the Agent's resume model
+    // history), never a micro-compaction's archived originals.
+    const model = transcript?.model && JSON.stringify(transcript.model) !== JSON.stringify(msgs) ? transcript.model : null
+    const context = !summary && Array.isArray(meta._lineage_ids) ? await reads.context() : model
     const session = new Session({
       session_id: sid, title: str(meta.title) || 'CLI Session', workspace, model: str(meta.model) || 'unknown', model_provider: str(meta.model_provider) || null,
       messages: msgs, created_at: Number(meta.created_at) || 0, updated_at: Number(meta.updated_at) || 0, profile: str(meta.profile) || null,

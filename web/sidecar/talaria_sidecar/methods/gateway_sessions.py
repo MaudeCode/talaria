@@ -97,6 +97,9 @@ def _snapshot(value: dict) -> dict:
     rows = []
     for row in value["messages"]:
         metadata = row.get("display_metadata")
+        # TAL-825: a micro-compaction's join of adjacent user turns is model context; the archived originals display.
+        if isinstance(metadata, dict) and metadata.get("model_only") is True:
+            continue
         reactions = metadata.get("reactions", []) if isinstance(metadata, dict) else []
         rows.append({**{k: v for k, v in row.items() if k in message_keys}, "reactions": [
             {"author": reaction["author"], "emoji": reaction["emoji"]} for reaction in reactions

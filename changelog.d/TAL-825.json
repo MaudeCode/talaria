@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "After the Agent compacts a long chat, your separate messages show one by one in Talaria Web instead of merged into one message.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

@@ -745,6 +745,17 @@ def test_reaction_snapshot_strips_private_metadata(native_owner_stub, sha):
     assert result["snapshot"]["reactions_supported"] is True
 
 
+def test_snapshot_skips_model_only_micro_compaction_rows(native_owner_stub):
+    owner = native_owner_stub
+    owner.snapshot_extra = {"messages": [
+        {"role": "user", "row_id": 1, "content": "q0", "archived": True},
+        {"role": "user", "row_id": 2, "content": "q1", "archived": True},
+        {"role": "user", "row_id": 3, "content": "q0\n\nq1", "display_metadata": {"model_only": True}},
+        {"role": "assistant", "row_id": 4, "content": "answer", "display_metadata": {"model_only": False}}]}
+    result = owner.run(None, {"session_id": "native", "action": "snapshot"})
+    assert [row["content"] for row in result["snapshot"]["messages"]] == ["q0", "q1", "answer"]
+
+
 def test_another_viewers_reaction_refreshes_the_existing_watch(native_owner_stub, monkeypatch):
     from types import SimpleNamespace
     from talaria_sidecar.methods import gateway_sessions as adapter

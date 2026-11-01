@@ -1388,8 +1388,36 @@ function replayIdentities(db: DatabaseSync, chain: string[], rows: Dict[], avail
   return identities
 }
 
-/** `reason`: why a failed read failed (TAL-785). */
-export interface StateDbRead { rows: Dict[]; idCapable: boolean; ok: boolean; reason: string | null; generation: string | null }
+/**
+ * `reason`: why a failed read failed (TAL-785). `model`: a display read's default (active-row) projection, present only when
+ * the Agent's display index served `rows` (TAL-825).
+ */
+export interface StateDbRead { rows: Dict[]; idCapable: boolean; ok: boolean; reason: string | null; generation: string | null; model?: Dict[] }
+
+// Agent v0.21.5+ `hermes_state_messages.py`: the display set (live rows plus compaction archives), minus model-only rows
+// (micro-compaction's join of adjacent user turns), and the probe for a visible row its read-only reader cannot index.
+const DISPLAY_ACTIVE_SQL = '(active = 1 OR compacted = 1)'
+const DISPLAY_VISIBLE_SQL = " AND COALESCE(json_extract(CASE WHEN json_valid(display_metadata) THEN display_metadata ELSE json_object() END, '$.model_only'), 0) = 0"
+const DISPLAY_INDEX_MISSING_SQL = `SELECT 1 FROM messages WHERE session_id = ? AND ${DISPLAY_ACTIVE_SQL} AND (display_order IS NULL OR display_identity IS NULL) LIMIT 1`
+
+/**
+ * TAL-825: the Agent's `_display_rows_from_conn` on each segment, root to tip: one row per Agent-maintained `display_order`
+ * group, its live copy first. Null when the schema predates the display index or a visible row is still unindexed (the
+ * Agent backfills those on its next write; a read-only reader cannot).
+ */
+function displayRows(db: DatabaseSync, available: Set<string>, selected: string[], chain: string[]): Dict[] | null {
+  if (!['id', 'active', 'compacted', 'display_order', 'display_identity'].every((c) => available.has(c))) return null
+  const missing = db.prepare(DISPLAY_INDEX_MISSING_SQL)
+  if (chain.some((segment) => missing.get(segment))) return null
+  // Unqualified on purpose, as in the Agent: inside the correlated subquery it binds to `candidate`.
+  const visible = available.has('display_metadata') ? DISPLAY_VISIBLE_SQL : ''
+  const page = db.prepare(`WITH page AS (SELECT display_order FROM messages WHERE session_id = ? AND ${DISPLAY_ACTIVE_SQL}${visible} GROUP BY display_order)
+    SELECT ${selected.map((c) => `chosen.${c}`).join(', ')}, chosen.session_id FROM page JOIN messages AS chosen ON chosen.id = (
+      SELECT candidate.id FROM messages AS candidate WHERE candidate.session_id = ? AND candidate.display_order = page.display_order
+        AND (candidate.active = 1 OR candidate.compacted = 1)${visible} ORDER BY candidate.active DESC, candidate.id DESC LIMIT 1)
+    ORDER BY page.display_order ASC`)
+  return chain.flatMap((segment) => page.all(segment, segment) as Dict[])
+}
 
 export function stateDbSessionMessages(dbPath: string, sid: string, opts: { stitch?: boolean } = {}): Dict[] {
   return stateDbSessionRead(dbPath, sid, opts).rows
@@ -1399,7 +1427,7 @@ export function stateDbSessionMessages(dbPath: string, sid: string, opts: { stit
  * `stateDbSessionMessages`, whether the read succeeded (`ok`), and whether its `messages` table has an `id` column
  * (TAL-493: an empty id-capable read is a baseline of 0; a missing database or a failed read says nothing).
  */
-export function stateDbSessionRead(dbPath: string, sid: string, opts: { stitch?: boolean; lineage?: string[] | null } = {}): StateDbRead {
+export function stateDbSessionRead(dbPath: string, sid: string, opts: { stitch?: boolean; lineage?: string[] | null; display?: boolean } = {}): StateDbRead {
   return readStateDbSession(dbPath, sid, opts)
 }
 
@@ -1480,7 +1508,7 @@ export function stateDbSessionMessageSummary(dbPath: string, sid: string): State
   }
 }
 
-function readStateDbSession(dbPath: string, sid: string, opts: { stitch?: boolean; lineage?: string[] | null; afterId?: number; unidentified?: readonly ReadonlyMap<string, number>[] }): StateDbRead & { anchor?: Dict; requiresFullRead?: boolean } {
+function readStateDbSession(dbPath: string, sid: string, opts: { stitch?: boolean; lineage?: string[] | null; display?: boolean; afterId?: number; unidentified?: readonly ReadonlyMap<string, number>[] }): StateDbRead & { anchor?: Dict; requiresFullRead?: boolean } {
   const none: StateDbRead = { rows: [], idCapable: false, ok: false, reason: null, generation: null }
   const id = sid.trim()
   if (!id || !existsSync(dbPath)) return none
@@ -1498,7 +1526,10 @@ function readStateDbSession(dbPath: string, sid: string, opts: { stitch?: boolea
     const rangeArgs = opts.afterId === undefined ? [] : [opts.afterId]
     const order = hasId ? 'id' : 'timestamp'
     const rows = db.prepare(`SELECT ${selected.join(', ')}, session_id FROM messages WHERE session_id IN (${chain.map(() => '?').join(', ')})${activeClause}${range} ORDER BY ${order} ASC`).all(...chain, ...rangeArgs) as Dict[]
-    let projected = rows.map((row) => projectStateDbMessage(row, hasId))
+    // TAL-825: a display read paints the Agent's display rows; identity passes below treat both projections alike.
+    const display = opts.display && opts.afterId === undefined ? displayRows(db, available, selected, chain) : null
+    const read = display ? [...rows, ...display] : rows
+    let twinOf = new Map<unknown, unknown>()
     // TAL-709: an in-place compaction archives the live rows and re-inserts each as a copy that keeps its role and timestamp
     // (content may be pruned). A copy takes the id of the oldest archived row it copies, so the merge sees a row it has
     // already read instead of a new one. Only a compaction archive (`compacted = 1`) vouches for a changed copy: a rewound
@@ -1510,43 +1541,38 @@ function readStateDbSession(dbPath: string, sid: string, opts: { stitch?: boolea
       const sameCall = available.has('tool_call_id') ? " AND COALESCE(a.tool_call_id, '') = COALESCE(m.tool_call_id, '')" : ''
       const vouched = [available.has('compacted') ? 'a.compacted = 1' : '', available.has('tool_call_id') ? 'm.tool_call_id IS NOT NULL' : '', 'a.content = m.content'].filter(Boolean).join(' OR ')
       const twins = db.prepare(`SELECT m.id AS id, MIN(a.id) AS twin FROM messages m JOIN messages a ON a.session_id = m.session_id AND a.active = 0 AND a.role = m.role AND a.timestamp = m.timestamp AND a.id < m.id${sameCall} WHERE m.session_id IN (${chain.map(() => '?').join(', ')}) AND (m.active IS NULL OR m.active != 0) AND (${vouched})${opts.afterId === undefined ? '' : ' AND m.id > ?'} GROUP BY m.id`).all(...chain, ...rangeArgs) as Dict[]
-      const twinOf = new Map(twins.map((row) => [row.id, row.twin]))
-      for (const [i, row] of rows.entries()) {
-        const twin = twinOf.get(row.id)
-        if (typeof twin === 'number') projected[i]!._state_db_row_id = twin
-      }
+      twinOf = new Map(twins.map((row) => [row.id, row.twin]))
     }
     let identities: ReturnType<typeof replayIdentities> | undefined
-    if (hasId && ['message_uid', 'active', 'compacted'].every((c) => available.has(c))) {
-      identities = replayIdentities(db, local?.context ?? chain, rows, available)
-      for (const [i, row] of rows.entries()) {
-        const identity = identities.get(Number(row.id))
-        // A known changed generation overrides even a coincidental legacy timestamp twin.
-        if (identity !== undefined) {
-          projected[i]!._state_db_row_id = identity.id
-          if (identity.id !== row.id) projected[i]!._state_db_source_key = identity.sourceKey
-          if (identity.changed) projected[i]!._state_db_authored_change = true
-        }
-      }
-    }
-    // The kept reply and summary have independent archive identities; neither can consume the other's copy.
-    const withCarrierSummary = (row: Dict, message: Dict): Dict[] => {
-      const carrier = compactionCarrier(row)
-      return carrier ? [message, { role: 'assistant', content: carrier.summary, timestamp: row.timestamp,
-        _context_compression_marker: true, ...(hasId ? { _state_db_row_id: identities?.get(Number(row.id))?.summaryId ?? row.id } : {}) }] : [message]
-    }
-    projected = rows.flatMap((row, i) => withCarrierSummary(row, projected[i]!))
+    if (hasId && ['message_uid', 'active', 'compacted'].every((c) => available.has(c))) identities = replayIdentities(db, local?.context ?? chain, read, available)
     // TAL-493: the database file's identity, so a marker taken in a replaced state.db is never applied to its successor.
     const generation = stateDbGeneration(dbPath)
-    if (hasId) {
-      for (const m of projected) m._state_db_generation = generation
+    const project = (row: Dict): Dict[] => {
+      const message = projectStateDbMessage(row, hasId)
+      const twin = twinOf.get(row.id)
+      if (typeof twin === 'number') message._state_db_row_id = twin
+      const identity = identities?.get(Number(row.id))
+      // A known changed generation overrides even a coincidental legacy timestamp twin.
+      if (identity !== undefined) {
+        message._state_db_row_id = identity.id
+        if (identity.id !== row.id) message._state_db_source_key = identity.sourceKey
+        if (identity.changed) message._state_db_authored_change = true
+      }
+      // The kept reply and summary have independent archive identities; neither can consume the other's copy.
+      const carrier = compactionCarrier(row)
+      const messages = carrier ? [message, { role: 'assistant', content: carrier.summary, timestamp: row.timestamp,
+        _context_compression_marker: true, ...(hasId ? { _state_db_row_id: identity?.summaryId ?? row.id } : {}) }] : [message]
+      if (hasId) for (const m of messages) m._state_db_generation = generation
+      return messages
     }
+    const model = rows.flatMap(project)
+    const projected = display ? display.flatMap(project) : model
     let anchor: Dict | undefined
     if (opts.afterId !== undefined) {
       anchor = projected.find((m) => m._state_db_row_id === opts.afterId)
       if (!anchor) {
         const row = db.prepare(`SELECT ${selected.join(', ')}, session_id FROM messages WHERE session_id IN (${chain.map(() => '?').join(', ')}) AND id = ?${activeClause} LIMIT 1`).get(...chain, opts.afterId) as Dict | undefined
-        if (row) anchor = { ...withCarrierSummary(row, projectStateDbMessage(row, true)).at(-1)!, _state_db_generation: generation }
+        if (row) anchor = { ...project(row).at(-1)!, _state_db_generation: generation }
       }
     }
     let requiresFullRead = false
@@ -1559,7 +1585,7 @@ function readStateDbSession(dbPath: string, sid: string, opts: { stitch?: boolea
         requiresFullRead = Boolean(covered) || available.has('message_uid')
       }
     }
-    return { rows: projected, idCapable: hasId, ok: true, reason: null, generation, requiresFullRead, ...(anchor ? { anchor } : {}) }
+    return { rows: projected, idCapable: hasId, ok: true, reason: null, generation, requiresFullRead, ...(anchor ? { anchor } : {}), ...(display ? { model } : {}) }
   } catch (error) {
     return { ...none, reason: stateDbReadFailure(error).reason }
   } finally {
