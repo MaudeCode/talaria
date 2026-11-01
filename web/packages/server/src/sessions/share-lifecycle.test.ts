@@ -52,7 +52,7 @@ async function fixture() {
   const store = new SessionStore({
     storage: { sessions: backend } as unknown as StorageBackend,
     defaults: () => ({ workspace: '', model: null, modelProvider: null }),
-    drafts: { read: () => Promise.resolve({}), delete: () => Promise.resolve() } as unknown as SessionServiceDeps['drafts'],
+    drafts: { read: () => Promise.resolve({}), delete: () => Promise.resolve(), ids: () => Promise.resolve([]) } as unknown as SessionServiceDeps['drafts'],
     events: { publish: vi.fn() } as unknown as SessionServiceDeps['events'],
     activeStreamIds: () => new Set(), now: () => now, log: () => undefined, cacheMax: () => 100,
   })

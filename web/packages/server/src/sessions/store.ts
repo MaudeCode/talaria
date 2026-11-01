@@ -442,8 +442,11 @@ export class SessionStore {
       if (!await this.backend.delete(sid, { tombstone: opts.tombstone ?? true })) return false
       this.sessions.delete(sid)
       try { await this.pruneFromIndex(sid) } catch { /* ignore */ }
-      try { (await this.deps.drafts.delete(sid)) } catch { /* ignore */ }
+      let draftError: unknown = null
+      try { await this.deps.drafts.delete(sid) } catch (error) { draftError = error }
       await this.deps.onDeleted?.(sid)
+      // TAL-1073: the owner is gone, but its unsent draft text is not; callers report the failure and retry the orphan.
+      if (draftError) throw new DraftDeleteFailed(sid, draftError)
       return true
     })
   }
@@ -454,6 +457,10 @@ export class SessionStore {
   }
 }
 
+/** The session itself was deleted, but its composer draft could not be removed (TAL-1073). */
+export class DraftDeleteFailed extends Error {
+  constructor(readonly sid: string, cause: unknown) { super(`Failed to delete composer draft: ${sid}`, { cause }); this.name = 'DraftDeleteFailed' }
+}
 export class SessionBusy extends Error {
   constructor(readonly sid: string) { super(`Session busy: ${sid}`); this.name = 'SessionBusy' }
 }

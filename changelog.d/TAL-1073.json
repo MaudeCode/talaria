@@ -1,0 +1,3 @@
+{
+  "entries": [{"category": "Fixed", "summary": "Deleting or cleaning up a chat now reports when its unsent draft could not be removed, a later cleanup removes the leftover draft, and cleanup no longer removes a new chat whose first reply is still running.", "highlight": false, "components": ["web"]}]
+}

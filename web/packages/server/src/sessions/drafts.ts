@@ -86,6 +86,9 @@ export class DraftStore {
     return normalized
   }
 
+  /** Session IDs that have a stored draft. */
+  async ids(): Promise<string[]> { return (await this.documents.list('drafts')).map((row) => row.key) }
+
   async delete(sid: string): Promise<void> {
     try { this.validate(sid) } catch { return }
     await this.documents.delete('drafts', sid)
