@@ -715,7 +715,9 @@ export const ChatStartResultSchema = z.object({
   failed: z.boolean(), partial: z.boolean(), compression_exhausted: z.boolean(),
   tool_limit_reached: z.boolean(), max_iterations_summary_request: z.string(), usage: ChatUsageSchema,
   /** TAL-1076: the turn agent's counters when this turn bound it, the baseline of the turn's own usage; absent when no agent was bound. */
-  usage_start: ChatUsageSchema.nullable().optional(), context: ChatContextSchema, model: z.string(), provider: z.string(), compressed: z.boolean(), agent_session_id: z.string(),
+  usage_start: ChatUsageSchema.nullable().optional(), context: ChatContextSchema, model: z.string(), provider: z.string(),
+  requested_model: z.string().optional().describe('TAL-978: the primary-route model the Agent requested for the turn, in the Agent\'s own normalized form; `model` and `provider` name the route that served it, a fallback when `model` differs. Absent when the Agent reports none.'),
+  compressed: z.boolean(), agent_session_id: z.string(),
   token_sent: z.boolean(), pending_steer: z.string(), live_tool_calls: z.array(Loose),
 })
 const Text = z.object({ text: z.string() }).catchall(Json)

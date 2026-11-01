@@ -2308,7 +2308,10 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             "context": _context_length(agent),
             # TAL-801: the Agent's result names the model the turn ran on; a voice turn's route is undone by now.
             "model": str(result.get("model") or getattr(agent, "model", None) or resolved_model),
-            "provider": str(resolved_provider or ""),
+            # TAL-978: the route that served the turn (a fallback swaps ``agent.provider`` until the next turn starts) and
+            # the primary model the Agent requested, both in the Agent's normalized form, so the server can tell a fallback.
+            "provider": str(getattr(agent, "provider", None) or resolved_provider or ""),
+            "requested_model": str(result.get("requested_model") or ""),
             "compressed": compressed,
             "agent_session_id": str(getattr(agent, "session_id", None) or session_id),
             "token_sent": token_sent[0],

@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "After a provider fallback answers a chat, the composer model chip and the chat header name the model that answered. The picker keeps your chosen model, and the next message asks for it again.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

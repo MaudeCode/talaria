@@ -11205,6 +11205,10 @@
       "provider": {
         "type": "string"
       },
+      "requested_model": {
+        "description": "TAL-978: the primary-route model the Agent requested for the turn, in the Agent's own normalized form; `model` and `provider` name the route that served it, a fallback when `model` differs. Absent when the Agent reports none.",
+        "type": "string"
+      },
       "compressed": {
         "type": "boolean"
       },

@@ -924,6 +924,7 @@
 	"composer_control_profile": "Profile",
 	"composer_control_workspace": "Switch workspace",
 	"composer_control_model": "Conversation model",
+	"composer_model_served": "Conversation model {configured}, answered by {served} after a fallback",
 	"composer_control_reasoning": "Reasoning effort",
 	"composer_control_context": "Context",
 	"composer_control_voice_mode": "Voice mode",

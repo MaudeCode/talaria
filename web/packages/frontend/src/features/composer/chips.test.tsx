@@ -54,6 +54,20 @@ function renderChip(props: { model: string | null; optionId: string | null }, on
 }
 
 describe('ModelChip', () => {
+  it.each([
+    ['the model that answered after a fallback', 'fallback-model', 'fallback-model', 'Conversation model Claude Opus 4.7, answered by fallback-model after a fallback'],
+    ['the configured model when it answered', null, 'Claude Opus 4.7', 'Conversation model'],
+  ])('names %s (TAL-978)', async (_case, servedModel, label, title) => {
+    catalog = COLON_CATALOG
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={qc}><ModelChip model="claude-opus-4.7" optionId="claude-opus-4.7" servedModel={servedModel} onChange={vi.fn()} /></QueryClientProvider>)
+    await waitFor(() => { expect(screen.getByRole('button')).toHaveAttribute('title', title); expect(screen.getByRole('button')).toHaveTextContent(label) })
+    // The picker keeps the configured model ticked: it is what the next turn asks for.
+    await userEvent.click(screen.getByRole('button'))
+    expect(await screen.findByRole('menuitemradio', { name: 'Claude Opus 4.7' })).toHaveAttribute('aria-checked', 'true')
+    cleanup()
+  })
+
   it('renders server-owned allowance labels and sections, including an unknown saved model', async () => {
     catalog = { groups: [{ provider: 'Nous', provider_id: 'nous', plan_usage: null,
       sections: [{ kind: 'recommended', model_ids: ['included'] }, { kind: 'other', model_ids: ['saved', 'free', 'large'] }],
