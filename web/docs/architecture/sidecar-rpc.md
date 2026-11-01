@@ -24,12 +24,17 @@ resolves that session's profile and answers with up to 50 of that profile's
 RPC v71 adds the toolset's session tools (TAL-1165), each a `server.*` method
 that calls the service behind a route. `session_new` (`server.session_new`)
 creates a chat in the caller's profile as `POST /api/session/new` does with an
-empty body (the profile's default model and workspace; no worktree), applies an
-optional title, and starts its first turn as `/api/chat/start` does.
+empty body (the profile's default model and workspace; no worktree) but with the
+caller's toolsets, applies an optional title, and starts its first turn as
+`/api/chat/start` does.
 `session_send` (`server.session_send`) gives a running target the message as a
 pending steer through `/api/chat/steer`'s path (`outcome: queued`, with its
 `steer_id`) and starts a turn on an idle one (`started`); a running turn that
-refuses the steer is an error, never a second turn. `session_wait`
+refuses the steer is an error, never a second turn. Work never reaches a session
+with more access than the caller: a target with YOLO on (when the caller's is
+off) or with a toolset outside the caller's effective set (`toolsets.catalog`)
+is `exceeds_caller`, so a prompt-injected caller cannot enlist one to act
+without its approvals. `session_wait`
 (`server.session_wait`) waits on the target's current run through the turn
 runner's worker and Stop signal, not by polling: `ended`, `not_running`,
 `timeout` (`timeout_s`, default 300, at most 600) or `cancelled` when the

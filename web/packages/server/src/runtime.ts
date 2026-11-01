@@ -716,19 +716,41 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   }
   const queueTarget = (caller: Session, targetId: string) => sessionTarget(caller, targetId, 'a session cannot manage its own queue; it is delivered after your turn ends')
   const runTarget = (caller: Session, targetId: string) => sessionTarget(caller, targetId, 'a session cannot message, wait on or stop its own turn')
+  /** The toolsets a session's turns run with: its own selection, else its profile's defaults, as the sidecar resolves them. */
+  const effectiveToolsets = async (s: Session): Promise<Set<string>> => {
+    if (!sidecar) throw new SidecarServerError('the Agent sidecar is not running', 'sidecar_unavailable')
+    return new Set((await sidecar.call('toolsets.catalog', { profile_home: profileHome(s.profile ?? 'default'), enabled_toolsets: s.enabled_toolsets })).selected_toolsets)
+  }
+  /**
+   * TAL-1165: work a caller hands on runs with no more access than the caller's own, so a prompt-injected caller cannot
+   * enlist a session with YOLO on or a toolset it lacks to act without the caller's approvals.
+   */
+  const assertNoWiderThanCaller = async (caller: Session, target: Session): Promise<void> => {
+    const refuse = (why: string) => new SidecarServerError(`session ${target.session_id} has more access than this one (${why})`, 'exceeds_caller')
+    if (yoloSessions.has(target.session_id) && !yoloSessions.has(caller.session_id)) throw refuse('YOLO is on')
+    if (JSON.stringify(target.enabled_toolsets) === JSON.stringify(caller.enabled_toolsets)) return
+    const allowed = await effectiveToolsets(caller)
+    const extra = [...(await effectiveToolsets(target))].filter((name) => !allowed.has(name))
+    if (extra.length) throw refuse(`toolsets: ${extra.join(', ')}`)
+  }
   sidecar?.serveSidecarRequests?.({
     'server.session_list': ({ caller_session_id, query }) => asCaller(caller_session_id, async (caller) => sessions.agentSessionList(caller.session_id, query ?? null, sidebarListSelection(await settings.load(), {}, false))),
     'server.queue_list': ({ caller_session_id, session_id }) => asCaller(caller_session_id, async (caller) => sessions.agentQueue(await queueTarget(caller, session_id))),
     'server.queue_send_now': ({ caller_session_id, session_id, steer_id }) => asCaller(caller_session_id, async (caller) => turns.sendSteerNow((await queueTarget(caller, session_id)).session_id, steer_id)),
     'server.queue_withdraw': ({ caller_session_id, session_id, steer_id }) => asCaller(caller_session_id, async (caller) => turns.withdrawSteer((await queueTarget(caller, session_id)).session_id, steer_id, 'cancel')),
     // TAL-1165: the route services behind `/api/session/new`, `/api/chat/start`, `/api/chat/steer` and `/api/chat/cancel`.
-    'server.session_new': ({ caller_session_id, message, title }) => asCaller(caller_session_id, async () => {
-      const created = await sessions.create({})
+    'server.session_new': ({ caller_session_id, message, title }) => asCaller(caller_session_id, async (caller) => {
+      // The new chat runs with the caller's toolsets, not the profile's defaults, and starts without YOLO.
+      const created = await sessions.create({ enabled_toolsets: caller.enabled_toolsets })
       if (title?.trim()) await sessions.rename(created.session_id, title.trim())
       const started = await startSessionChat(deps, { session_id: created.session_id, message })
       return { session_id: created.session_id, title: str(started.title) || (await store.get(created.session_id, { metadataOnly: true })).title, stream_id: started.stream_id ? str(started.stream_id) : null }
     }),
-    'server.session_send': ({ caller_session_id, session_id, message }) => asCaller(caller_session_id, async (caller) => sendSessionMessage(deps, (await runTarget(caller, session_id)).session_id, message)),
+    'server.session_send': ({ caller_session_id, session_id, message }) => asCaller(caller_session_id, async (caller) => {
+      const target = await runTarget(caller, session_id)
+      await assertNoWiderThanCaller(caller, target)
+      return sendSessionMessage(deps, target.session_id, message)
+    }),
     'server.session_wait': ({ caller_session_id, session_id, timeout_s }) => asCaller(caller_session_id, async (caller) => {
       const target = await runTarget(caller, session_id)
       const streamId = registry.activeRunStreamForSession(target.session_id)

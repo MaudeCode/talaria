@@ -187,6 +187,11 @@ describe('server.session_new, server.session_send, server.session_wait, server.s
         await s.deps.turns.finished(streamId)
       }
       const caller = String(((await post('/api/session/new', {})).session as Record<string, unknown>).session_id)
+      // The caller's access: two toolsets and no YOLO. The profile default is `file` alone.
+      const callerRow = await s.deps.sessionStore.get(caller)
+      callerRow.enabled_toolsets = ['file', 'web']
+      await s.deps.sessionStore.save(callerRow)
+      sidecar.respond('toolsets.catalog', (params) => ({ toolsets: [], selected_toolsets: (params as { enabled_toolsets: string[] | null }).enabled_toolsets ?? ['file'], using_defaults: (params as { enabled_toolsets: string[] | null }).enabled_toolsets === null }))
       const ask = async (method: 'server.session_new' | 'server.session_send' | 'server.session_wait' | 'server.session_interrupt', params: Record<string, unknown>, callerId = caller) => {
         const answer = await sidecar.serverRequest(method, { caller_session_id: callerId, ...params })
         return 'error' in answer ? answer : { result: SIDECAR_SERVER_METHODS[method].result.parse(answer.result) }
@@ -197,7 +202,7 @@ describe('server.session_new, server.session_send, server.session_wait, server.s
       const target = (created as { result: { session_id: string } }).result.session_id
       expect(created).toEqual({ result: { session_id: target, title: 'Flaky test', stream_id: s.deps.registry.activeRunStreamForSession(target) } })
       expect(s.deps.registry.activeRunStreamForSession(target)).toMatch(/.+/)
-      expect(await s.deps.sessionStore.get(target)).toMatchObject({ profile: 'default', pending_user_message: 'Fix the flaky test' })
+      expect(await s.deps.sessionStore.get(target)).toMatchObject({ profile: 'default', pending_user_message: 'Fix the flaky test', enabled_toolsets: ['file', 'web'] })
 
       // session_send: a running target queues a pending steer; an idle one starts a turn.
       const queued = await ask('server.session_send', { session_id: target, message: 'Also update the changelog' })
@@ -257,6 +262,24 @@ describe('server.session_new, server.session_send, server.session_wait, server.s
       finishers.get(target)!('stopped')
       await s.deps.turns.finished((interrupted as { result: { stream_id: string } }).result.stream_id)
       expect(await ask('server.session_interrupt', { session_id: target })).toMatchObject({ result: { ok: true, cancelled: false } })
+
+      // A session never hands work to one with more access than its own: YOLO, or a toolset the caller lacks.
+      await save('agentyolo', 'default')
+      await s.deps.sessions.setYolo('agentyolo', true)
+      await save('agentwider', 'default', { enabled_toolsets: ['file', 'terminal'] })
+      const routed = async (toolsets: string[] | null) => {
+        const sid = String(((await post('/api/session/new', {})).session as Record<string, unknown>).session_id)
+        const row = await s.deps.sessionStore.get(sid)
+        row.enabled_toolsets = toolsets
+        await s.deps.sessionStore.save(row)
+        return sid
+      }
+      const narrow = await routed(['file'])
+      const profileDefault = await routed(null)
+      expect(await ask('server.session_send', { session_id: 'agentyolo', message: 'rm -rf' })).toMatchObject({ error: { message: 'session agentyolo has more access than this one (YOLO is on)', data: { condition: 'exceeds_caller' } } })
+      expect(await ask('server.session_send', { session_id: 'agentwider', message: 'rm -rf' })).toMatchObject({ error: { message: 'session agentwider has more access than this one (toolsets: terminal)', data: { condition: 'exceeds_caller' } } })
+      expect(await ask('server.session_send', { session_id: narrow, message: 'read the docs' })).toMatchObject({ result: { outcome: 'started' } })
+      expect(await ask('server.session_send', { session_id: profileDefault, message: 'read the docs' })).toMatchObject({ result: { outcome: 'started' } })
 
       // Refused targets, for every tool that takes one.
       for (const method of ['server.session_send', 'server.session_wait', 'server.session_interrupt'] as const) {

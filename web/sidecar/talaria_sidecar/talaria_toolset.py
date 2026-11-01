@@ -71,8 +71,8 @@ QUEUE_WITHDRAW_SCHEMA = {
 SESSION_NEW_SCHEMA = {
     "name": "session_new",
     "description": (
-        "Start a new Talaria chat session in this profile, with the profile's default model and workspace, and send it "
-        "its first message. Returns its session_id and the stream_id of the turn it started."
+        "Start a new Talaria chat session in this profile, with the profile's default model and workspace and your own "
+        "toolsets, and send it its first message. Returns its session_id and the stream_id of the turn it started."
     ),
     "parameters": {
         "type": "object",
@@ -90,7 +90,8 @@ SESSION_SEND_SCHEMA = {
     "name": "session_send",
     "description": (
         "Send a message to another Talaria session. An idle session starts a turn with it (outcome started); a running "
-        "one gets it queued for its current turn, as the composer queues a steer (outcome queued, with its steer_id)."
+        "one gets it queued for its current turn, as the composer queues a steer (outcome queued, with its steer_id). "
+        "A session with more access than yours (YOLO on, or a toolset you lack) is refused with exceeds_caller."
     ),
     "parameters": {"type": "object", "properties": {"session_id": _SESSION_ID, "message": _MESSAGE}, "required": ["session_id", "message"]},
 }
