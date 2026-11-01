@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Long chats with Virtualize long transcripts on no longer drift or jump while you scroll on iPhone and iPad, and a message link stays on its message.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

@@ -456,3 +456,89 @@ for (const [virtualize, repeats] of [[false, 1], [true, 1], [false, 50], [true, 
     }
   })
 }
+
+/** 300 turns whose assistant rows run from a few lines to several screens, so every estimate is wrong by a different amount. */
+const tallTranscript = (sid: string) => Array.from({ length: 300 }, (_, i) => [
+  { role: 'user', id: i * 2 + 1, content: `${sid} question ${i + 1}` },
+  { role: 'assistant', id: i * 2 + 2, content: Array.from({ length: 2 + (i * 7) % 11 }, (_, p) => `${sid} answer ${i + 1}, paragraph ${p + 1}. `.repeat(6)).join('\n\n') },
+]).flat()
+
+/** Each frame's rows inside the pane, as their keys and offsets from its top, for `ms` after the call. */
+const visibleFrames = (page: Page, ms: number, during?: () => Promise<void>) => {
+  const frames = page.locator('#messages').evaluate((pane, ms) => new Promise<{ key: string; top: number }[][]>((resolve) => {
+    const frames: { key: string; top: number }[][] = []
+    const end = performance.now() + ms
+    const sample = () => {
+      const bounds = pane.getBoundingClientRect()
+      frames.push([...pane.querySelectorAll<HTMLElement>('[data-message-key]')].flatMap((row) => {
+        const rect = row.getBoundingClientRect()
+        return rect.bottom > bounds.top && rect.top < bounds.bottom ? [{ key: row.dataset.messageKey ?? '', top: rect.top - bounds.top }] : []
+      }))
+      if (performance.now() < end) requestAnimationFrame(sample)
+      else resolve(frames)
+    }
+    requestAnimationFrame(sample)
+  }), ms)
+  return during ? Promise.all([frames, during()]).then(([result]) => result) : frames
+}
+
+// TanStack Virtual defers its size corrections on iOS WebKit and replays them after scrolling stops (TAL-1177).
+// Linux CI reports a Linux `navigator.platform`, so only an iPhone user agent takes that path.
+const IPHONE_SAFARI = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1'
+for (const ios of [false, true]) {
+  test.describe(`a virtualized transcript holds the reader still: ios=${ios}`, () => {
+    if (ios) test.use({ userAgent: IPHONE_SAFARI })
+    const open = async (page: Page, sid: string, query = '') => {
+      await page.route('**/api/settings', (route) => route.fulfill({ json: { virtualize_transcript: true } }))
+      await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: sid, title: sid, messages: tallTranscript(sid) } } }))
+      await page.goto(`/session/${sid}${query}`)
+      await expect(page.locator('[data-virtual-history]')).toBeAttached()
+    }
+
+    test('a message deep link stays on its message', async ({ page }) => {
+      await open(page, 'still-link', '?msg=301')
+      const target = page.locator('[data-message-key="301"]')
+      await expect(target).toBeInViewport()
+      const frames = await visibleFrames(page, 1_500)
+      expect(frames.findIndex((rows) => !rows.some((row) => row.key === '301')), 'first frame without message 301').toBe(-1)
+      await expect(target).toBeInViewport()
+    })
+
+    test('a scrollbar drop keeps its first visible row in place', async ({ page }) => {
+      await open(page, 'still-drop')
+      await shows(page, 'still-drop')
+      await expect.poll(() => distance(page)).toBeLessThan(2)
+      await page.locator('#messages').evaluate((pane) => new Promise<void>((resolve) => {
+        pane.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+        pane.scrollTop = (pane.scrollHeight - pane.clientHeight) * 0.4
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+      }))
+      const frames = await visibleFrames(page, 1_500)
+      const [first] = frames[0]!
+      const moved = frames.map((rows) => rows.find((row) => row.key === first!.key)).map((row) => row ? Math.abs(row.top - first!.top) : Infinity)
+      expect(frames.at(-1)![0]?.key, 'first visible row').toBe(first!.key)
+      expect(Math.max(...moved), 'motion of the first visible row').toBeLessThan(2)
+    })
+
+    test('wheel scrolling up never moves content down the page', async ({ page }) => {
+      await open(page, 'still-wheel')
+      await shows(page, 'still-wheel')
+      await expect.poll(() => distance(page)).toBeLessThan(2)
+      const box = (await page.locator('#messages').boundingBox())!
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+      const frames = await visibleFrames(page, 3_000, async () => {
+        for (let i = 0; i < 25; i++) {
+          await page.mouse.wheel(0, -500)
+          await page.waitForTimeout(40)
+        }
+      })
+      // Scrolling up carries every row down the screen; a row rising between two frames moved against the gesture.
+      const against = frames.slice(1).flatMap((rows, i) => rows.flatMap((row) => {
+        const before = frames[i]!.find((prior) => prior.key === row.key)
+        return before && row.top < before.top - 1 ? [`frame ${i + 1}: row ${row.key} rose ${Math.round(before.top - row.top)}px`] : []
+      }))
+      expect(against).toEqual([])
+      expect(await distance(page), 'the wheel left the bottom').toBeGreaterThan(5_000)
+    })
+  })
+}
