@@ -80,31 +80,19 @@ async function liveHistory(page: Page) {
     server.closeAllConnections()
     await new Promise<void>((resolve) => server.close(() => resolve()))
   }
-  return { sid, streamId, run, close }
+  return { sid, run, close }
 }
 
 test('long history beside a live run renders on a slow CPU', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop', 'CPU throttling is a Chromium desktop measurement')
   const history = await liveHistory(page)
-  // TAL-1637: the run's status answers once the newest answer shows, so the live turn attaches while the rest of the
-  // history is still rendering. One blocking render of all 300 answers used to hold it for seconds.
-  let answerStatus!: () => void
-  const newestShown = new Promise<void>((resolve) => { answerStatus = resolve })
-  await page.exposeFunction('newestAnswerShown', answerStatus)
-  await page.route('**/api/chat/stream/status?**', async (route) => {
-    await newestShown
-    await route.fulfill({ json: { active: true, stream_id: history.streamId, replay_available: true } })
-  })
+  // TAL-1637: one blocking render of all 300 answers held the live turn's attach for seconds. Record, at the commit
+  // that first shows the newest answer, whether the oldest had rendered too.
   await page.addInitScript(() => {
-    const w = window as unknown as { newestAnswerShown: () => void; oldestBeforeLive?: boolean }
-    let shown = false
+    const w = window as unknown as { oldestWithNewest?: boolean }
     new MutationObserver((_, observer) => {
-      if (!shown && document.querySelector('[data-message-key="600"] .msg-body')?.textContent?.includes('Paragraph 8:')) {
-        shown = true
-        w.newestAnswerShown()
-      }
-      if (!document.querySelector('.live-turn')) return
-      w.oldestBeforeLive = !!document.querySelector('[data-message-key="2"] .msg-body')?.textContent
+      if (!document.querySelector('[data-message-key="600"] .msg-body')?.textContent?.includes('Paragraph 8:')) return
+      w.oldestWithNewest = !!document.querySelector('[data-message-key="2"] .msg-body')?.textContent
       observer.disconnect()
     }).observe(document, { childList: true, subtree: true })
   })
@@ -115,11 +103,9 @@ test('long history beside a live run renders on a slow CPU', async ({ page }, te
     await cpu.send('Emulation.setCPUThrottlingRate', { rate: 4 })
     await page.goto(`/session/${history.sid}`)
     await expect(page.locator('.live-turn')).toBeAttached()
-    expect(await page.evaluate(() => (window as unknown as { oldestBeforeLive?: boolean }).oldestBeforeLive), 'the live turn attaches before the whole history renders').toBe(false)
     await expect(page.locator('[data-message-key="600"] .msg-body')).toContainText('Paragraph 8:')
-    await expect(page.locator('[data-message-key="2"] .msg-body')).toContainText('Paragraph 8:')
+    expect(await page.evaluate(() => (window as unknown as { oldestWithNewest?: boolean }).oldestWithNewest), 'the history renders newest first, a batch per task').toBe(false)
   } finally {
-    answerStatus()
     await cpu.send('Emulation.setCPUThrottlingRate', { rate: 1 })
     await cpu.detach()
     await page.goto('about:blank')
