@@ -1,7 +1,9 @@
 import * as fs from 'node:fs'
 import { expect, it, vi } from 'vitest'
 import { bootTestServer } from '../../test/harness.js'
-import { sessionPath } from '../../test/storage.js'
+import { sessionPath, useJsonStorage } from '../../test/storage.js'
+
+useJsonStorage()
 
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>()

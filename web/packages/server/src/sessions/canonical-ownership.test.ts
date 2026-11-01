@@ -1,3 +1,4 @@
+import { useJsonStorage } from '../test/storage.js'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -8,6 +9,8 @@ import type { SidecarParams, SidecarResult } from '@maudecode/talaria-web-contra
 import { Session } from './session.js'
 import { HttpFailure, stampCompressionExhaustedRecovery } from './turn.js'
 import { CONVERSATION_ROUND_THRESHOLD, readImportableAgentSessionRows, stateDbSessionSources } from './state-db.js'
+
+useJsonStorage()
 
 const fixture = JSON.parse(readFileSync(new URL('../test/fixtures/canonical-ownership.json', import.meta.url), 'utf8')) as {
   sessions: Record<string, string>; diagnostic: Record<string, string>; schema: string[]; inserts: string[]

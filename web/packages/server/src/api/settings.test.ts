@@ -1,3 +1,4 @@
+import { useJsonStorage } from '../test/storage.js'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -14,6 +15,8 @@ import { writeEnvFile } from '../test/env-file.js'
 import { applyProviderPrefix, deduplicateModelIds, formatOllamaLabel, labelForModel, uniqueQuotaSources } from '../providers/catalog.js'
 import { coerceReasoningEffort, parseProviderQualifiedModel, customProviderSlug, type SpeedTier } from '../config/agent-config.js'
 import { splitProviderModel } from '../profiles/profiles.js'
+
+useJsonStorage()
 
 type Json = Record<string, unknown>
 const dictOf = (v: unknown): Json => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Json) : {})

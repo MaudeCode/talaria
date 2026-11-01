@@ -17,7 +17,7 @@ export interface ServerConfig {
   tlsKey: string | null
   hermesHome: string
   stateDir: string
-  storage: 'json'
+  storage: StorageKind
   /** Where chat attachments live (TAL-1069), chosen independently of `storage`. */
   blobs: BlobConfig
   sessionDir: string
@@ -127,6 +127,13 @@ export function resolveDefaultWorkspace(raw: string | null | undefined, opts: { 
   throw new Error('Could not create or access any usable workspace directory. Set HERMES_WEBUI_DEFAULT_WORKSPACE to a writable path.')
 }
 
+/** `TALARIA_STORAGE` values; `json` stays the default. */
+export const STORAGE_KINDS = ['json', 'sqlite'] as const
+export type StorageKind = typeof STORAGE_KINDS[number]
+export function assertStorageKind(kind: string): asserts kind is StorageKind {
+  if (!(STORAGE_KINDS as readonly string[]).includes(kind)) throw new Error(`Unknown TALARIA_STORAGE=${JSON.stringify(kind)}; supported backends: ${STORAGE_KINDS.join(', ')}`)
+}
+
 export interface LoadConfigOptions {
   env?: Env
   webRoot: string
@@ -137,7 +144,7 @@ export interface LoadConfigOptions {
 export function loadConfig(opts: LoadConfigOptions): ServerConfig {
   const env = opts.env ?? process.env
   const storage = env.TALARIA_STORAGE ?? 'json'
-  if (storage !== 'json') throw new Error(`Unknown TALARIA_STORAGE=${JSON.stringify(storage)}; supported backends: json`)
+  assertStorageKind(storage)
   const home = opts.home ?? homedir()
   const warn = opts.warn ?? ((line) => { console.error(`[webui] WARNING: ${line}`) })
   const hermesHome = resolveHermesHome(env, home)

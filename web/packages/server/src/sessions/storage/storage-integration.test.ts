@@ -1,8 +1,11 @@
+import { useJsonStorage } from '../../test/storage.js'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, it, vi } from 'vitest'
 import { bootTestServer } from '../../test/harness.js'
 import { FakeSidecar } from '../../sidecar/fake.js'
+
+useJsonStorage()
 
 it('batches session saves that commit during an index flush into one follow-up flush', async () => {
   const server = await bootTestServer()

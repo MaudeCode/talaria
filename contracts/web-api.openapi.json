@@ -28379,7 +28379,9 @@
                               "state_db_orphan_webui_row",
                               "state_db_missing_sidecar",
                               "state_db_unreadable",
-                              "turn_journal_pending_turn"
+                              "turn_journal_pending_turn",
+                              "storage_integrity",
+                              "search_index_mismatch"
                             ],
                             "type": "string"
                           },
@@ -28397,7 +28399,8 @@
                               "deleted_session_skipped",
                               "rebuild_index",
                               "materialize_from_state_db",
-                              "audit_only_pending_turn_journal"
+                              "audit_only_pending_turn_journal",
+                              "rebuild_search_index"
                             ],
                             "type": "string"
                           },
@@ -28536,7 +28539,9 @@
                                   "state_db_orphan_webui_row",
                                   "state_db_missing_sidecar",
                                   "state_db_unreadable",
-                                  "turn_journal_pending_turn"
+                                  "turn_journal_pending_turn",
+                                  "storage_integrity",
+                                  "search_index_mismatch"
                                 ],
                                 "type": "string"
                               },
@@ -28554,7 +28559,8 @@
                                   "deleted_session_skipped",
                                   "rebuild_index",
                                   "materialize_from_state_db",
-                                  "audit_only_pending_turn_journal"
+                                  "audit_only_pending_turn_journal",
+                                  "rebuild_search_index"
                                 ],
                                 "type": "string"
                               },
@@ -28759,7 +28765,9 @@
                                   "state_db_orphan_webui_row",
                                   "state_db_missing_sidecar",
                                   "state_db_unreadable",
-                                  "turn_journal_pending_turn"
+                                  "turn_journal_pending_turn",
+                                  "storage_integrity",
+                                  "search_index_mismatch"
                                 ],
                                 "type": "string"
                               },
@@ -28777,7 +28785,8 @@
                                   "deleted_session_skipped",
                                   "rebuild_index",
                                   "materialize_from_state_db",
-                                  "audit_only_pending_turn_journal"
+                                  "audit_only_pending_turn_journal",
+                                  "rebuild_search_index"
                                 ],
                                 "type": "string"
                               },

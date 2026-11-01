@@ -70,7 +70,7 @@ function recordsMessageShrink(live: Dict, bak: Dict): boolean {
   return isGeneration(backup) && backup !== live.intentional_shrink_generation
 }
 
-interface BackupStatus {
+export interface BackupStatus {
   session_id: string
   live_messages: number
   bak_messages: number
@@ -83,8 +83,11 @@ function inspectBackup(dir: string, sid: string, stampingSince: number): BackupS
   const livePath = join(dir, `${sid}.json`)
   let bakMtime: number
   try { bakMtime = statSync(`${livePath}.bak`).mtimeMs / 1000 } catch { return { session_id: sid, live_messages: messageCount(readDoc(livePath)), bak_messages: -1, recommend: 'no_backup' } }
-  const live = readDoc(livePath)
-  const bak = readDoc(`${livePath}.bak`)
+  return backupStatus(sid, readDoc(livePath), readDoc(`${livePath}.bak`), bakMtime, stampingSince)
+}
+
+/** The restore decision for a live document and its pre-shrink backup (each with `messages`), shared by every backend. */
+export function backupStatus(sid: string, live: Dict | null, bak: Dict | null, bakSavedAt: number, stampingSince: number): BackupStatus {
   const base = { session_id: sid, live_messages: messageCount(live), bak_messages: messageCount(bak) }
   if (base.bak_messages <= base.live_messages) return { ...base, recommend: 'no_action' }
   // Every guard needs both documents; an unreadable live file is a real loss and restores.
@@ -92,9 +95,26 @@ function inspectBackup(dir: string, sid: string, stampingSince: number): BackupS
     if (clearedAfterBackup(live, bak)) return { ...base, recommend: 'no_action', reason: 'intentional_clear_truncate' }
     if (recordsCompression(live) && backupPredatesCompression(live, bak)) return { ...base, recommend: 'no_action', reason: 'intentional_compress_shrink' }
     if (recordsMessageShrink(live, bak)) return { ...base, recommend: 'no_action', reason: 'intentional_message_shrink' }
-    if (base.live_messages >= 0 && bakMtime < stampingSince) return { ...base, recommend: 'manual_review', reason: 'unstamped_legacy_backup' }
+    if (base.live_messages >= 0 && bakSavedAt < stampingSince) return { ...base, recommend: 'manual_review', reason: 'unstamped_legacy_backup' }
   }
   return { ...base, recommend: 'restore' }
+}
+
+/** A live session's backup finding, or none; the same kinds for every backend. */
+export function backupIssue(status: BackupStatus, base: Omit<StorageIssue, 'kind' | 'category' | 'recommendation'>): StorageIssue | null {
+  if (status.recommend === 'restore') return { ...base, kind: 'shrunken_live', category: 'repairable', recommendation: 'restore_from_bak' }
+  if (status.recommend === 'manual_review') return { ...base, kind: 'unstamped_legacy_backup', category: 'unsafe_to_repair', recommendation: 'manual_review' }
+  return null
+}
+
+/** Session-list index findings: entries without a session, and sessions without an entry. `indexed` is null when unreadable. */
+export function indexIssues(indexed: Set<string> | null, live: ReadonlySet<string>, count: (sid: string) => number): StorageIssue[] {
+  const issue = (sid: string, kind: StorageIssue['kind'], messages = -1): StorageIssue => ({ session_id: sid, kind, category: 'repairable', recommendation: 'rebuild_index', live_messages: messages, bak_messages: -1 })
+  if (!indexed) return [issue('', 'index_unreadable')]
+  return [
+    ...[...indexed].filter((id) => !live.has(id)).sort().map((sid) => issue(sid, 'index_missing_file')),
+    ...[...live].filter((id) => !indexed.has(id)).map((sid) => issue(sid, 'index_missing_entry', count(sid))),
+  ]
 }
 
 function publish(target: string, text: string, create: boolean): boolean {
@@ -122,23 +142,19 @@ export function diagnoseJson(dir: string, stampingSince: number): StorageIssue[]
     const doc = readDoc(path) ?? readDoc(`${path}.bak`)
     const base = { session_id: sid, live_messages: status.live_messages, bak_messages: status.bak_messages, profile: doc ? str(doc.profile) || 'default' : 'default', revision: statSignature(path), backupRevision: statSignature(`${path}.bak`) }
     if (live.has(sid)) {
-      if (status.recommend === 'restore') issues.push({ ...base, kind: 'shrunken_live', category: 'repairable', recommendation: 'restore_from_bak' })
-      if (status.recommend === 'manual_review') issues.push({ ...base, kind: 'unstamped_legacy_backup', category: 'unsafe_to_repair', recommendation: 'manual_review' })
+      const found = backupIssue(status, base)
+      if (found) issues.push(found)
     } else if (status.bak_messages < 0 || !isSafeSessionId(sid)) issues.push({ ...base, kind: 'malformed_orphan_backup', category: 'unsafe_to_repair', recommendation: 'manual_review' })
     else issues.push({ ...base, kind: 'orphan_backup', category: 'repairable', recommendation: 'restore_from_bak' })
   }
   const indexPath = join(dir, '_index.json')
-  const issue = (sid: string, kind: StorageIssue['kind'], count = -1): StorageIssue => ({ session_id: sid, kind, category: 'repairable', recommendation: 'rebuild_index', live_messages: count, bak_messages: -1 })
   if (existsSync(indexPath)) {
     let indexed: Set<string> | null = null
     try {
       const entries = JSON.parse(readFileSync(indexPath, 'utf8')) as Dict[]
       indexed = new Set(entries.map((e) => e.session_id).filter((id): id is string => typeof id === 'string'))
-    } catch { issues.push(issue('', 'index_unreadable')) }
-    if (indexed) {
-      for (const sid of [...indexed].filter((id) => !live.has(id)).sort()) issues.push(issue(sid, 'index_missing_file'))
-      for (const sid of [...live].filter((id) => !indexed.has(id))) issues.push(issue(sid, 'index_missing_entry', messageCount(readDoc(join(dir, `${sid}.json`)))))
-    }
+    } catch { /* reported as unreadable */ }
+    issues.push(...indexIssues(indexed, live, (sid) => messageCount(readDoc(join(dir, `${sid}.json`)))))
   }
   return issues
 }

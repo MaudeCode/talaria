@@ -1,4 +1,4 @@
-import { sessionPath } from '../test/storage.js'
+import { sessionPath, useJsonStorage } from '../test/storage.js'
 import { spawn } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -21,6 +21,8 @@ import { MESSAGING_SOURCES } from './source-kind.js'
 import { CLI_VISIBLE_SESSION_LIMIT, type CliSessionRead } from './cli-sessions.js'
 import { GatewayWatcher, snapshotHash } from './gateway-watcher.js'
 import { capRecentCliSessions, keepLatestMessagingSessionPerSource, mergeCliSidebarMetadata, withOwnerLocks, type GatewayIdentity } from './list.js'
+
+useJsonStorage()
 
 type Json = Record<string, unknown>
 const json = async (res: Response): Promise<Json> => (await res.json()) as Json

@@ -1,4 +1,4 @@
-import { sessionPath } from '../test/storage.js'
+import { sessionPath, useJsonStorage } from '../test/storage.js'
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -9,6 +9,8 @@ import { readImportableAgentSessionRowBatches, readImportableAgentSessionRows, s
 import { bootTestServer, openStateDb } from '../test/harness.js'
 import { Session } from './session.js'
 import { FakeSidecar } from '../sidecar/fake.js'
+
+useJsonStorage()
 
 describe('Agent v0.22.1 receipt-backed local reset', () => {
   let dir: string

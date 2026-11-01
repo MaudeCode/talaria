@@ -1,6 +1,17 @@
 import { join } from 'node:path'
+import { afterAll, beforeAll } from 'vitest'
 import { JsonStorage } from '../sessions/storage/json.js'
 import type { SessionStore } from '../sessions/store.js'
+
+/**
+ * For a test file that reads or writes JSON storage files directly: its servers use the JSON backend even when the run
+ * selects another with `TALARIA_STORAGE` (TAL-1066).
+ */
+export function useJsonStorage(): void {
+  let previous: string | undefined
+  beforeAll(() => { previous = process.env.TALARIA_STORAGE; process.env.TALARIA_STORAGE = 'json' })
+  afterAll(() => { if (previous === undefined) delete process.env.TALARIA_STORAGE; else process.env.TALARIA_STORAGE = previous })
+}
 
 /** Direct file access is limited to tests of JSON compatibility and external edits. */
 export function sessionDirectory(store: SessionStore): string {

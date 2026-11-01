@@ -45,6 +45,7 @@ import { str } from './util.js'
 import { cancelSessionStream, sendSessionMessage, startSessionChat } from './sessions/admission.js'
 import { JsonStorage } from './sessions/storage/json.js'
 import { attachmentSessionName, createBlobStore, localAttachmentRoot } from './sessions/storage/blobs.js'
+import { SqliteStorage } from './sessions/storage/sqlite.js'
 import type { StorageBackend } from './sessions/storage/backend.js'
 import { DraftStore } from './sessions/drafts.js'
 import { SessionEventBus } from './sessions/events.js'
@@ -1079,7 +1080,9 @@ function readActiveProfileFile(hermesHome: string, pattern: RegExp): string {
 }
 
 export function createStorage(config: import('./config.js').ServerConfig, now = () => Date.now() / 1000, profileHome: (profile: string) => string = (name) => name === 'default' ? config.hermesHome : join(config.hermesHome, 'profiles', name)): StorageBackend {
-  if (config.storage !== 'json') throw new Error(`Unknown TALARIA_STORAGE=${JSON.stringify(config.storage)}; supported backends: json`)
-  const storage: StorageBackend = new JsonStorage({ directory: config.sessionDir, stateDir: config.stateDir, profileHome, env: config.env, now, stampingSince: async () => (await recoveryStampingSince(storage.documents)) })
+  const stampingSince = async (): Promise<number> => await recoveryStampingSince(storage.documents)
+  const storage: StorageBackend = config.storage === 'sqlite'
+    ? new SqliteStorage({ path: join(config.stateDir, 'talaria.db'), sessionDir: config.sessionDir, env: config.env, stampingSince })
+    : new JsonStorage({ directory: config.sessionDir, stateDir: config.stateDir, profileHome, env: config.env, now, stampingSince })
   return storage
 }

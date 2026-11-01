@@ -82,6 +82,8 @@ export async function bootTestServer(opts: BootOptions = {}): Promise<TestServer
     HERMES_WEBUI_CLAUDE_PROJECTS_DIR: join(state, 'claude-projects'),
     HERMES_WEBUI_HOST: '127.0.0.1',
     HERMES_WEBUI_PORT: '0',
+    // CI runs the suite once per backend (TAL-1066).
+    ...(process.env.TALARIA_STORAGE ? { TALARIA_STORAGE: process.env.TALARIA_STORAGE } : {}),
     ...opts.env,
   }
   const deps = await createDeps({ ...(opts.storage ? { storage: opts.storage } : {}), env, webRoot: WEB_ROOT, log: (line) => logs.push(line), version: 'web-v0.0.0-test', ...(opts.now ? { now: opts.now } : {}), ...(opts.sidecar !== undefined ? { sidecar: opts.sidecar } : {}), ...(opts.gatewayPollMs !== undefined ? { gatewayPollMs: opts.gatewayPollMs } : {}) })

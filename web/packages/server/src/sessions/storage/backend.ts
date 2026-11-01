@@ -23,6 +23,8 @@ export interface SessionChange {
   /** The complete message list after the change, when the writer holds it; a backend may use it instead of re-reading its base. */
   all?: Message[]
 }
+/** A session's transcript before a shrinking write; `savedAt` (epoch seconds) decides whether it predates shrink stamping. */
+export interface ShrinkBackup { doc: SessionDocument; messages: Message[]; savedAt: number }
 export interface MessageMatch { idx: number; text: string }
 export type StorageIssue = RecoveryAuditItem & { profile?: string; revision?: string | null; backupRevision?: string | null }
 
@@ -52,7 +54,13 @@ export interface SessionBackend {
     remove(sid: string): Promise<void>
     all(): Promise<Set<string>>
   }
-  shrinkBackup: { discard(sid: string): Promise<void>; restore(sid: string): Promise<boolean> }
+  shrinkBackup: {
+    discard(sid: string): Promise<void>
+    restore(sid: string): Promise<boolean>
+    /** The pre-shrink copy itself, for moving a store between backends. */
+    read(sid: string): Promise<ShrinkBackup | null>
+    write(sid: string, backup: ShrinkBackup): Promise<void>
+  }
   diagnose(): Promise<StorageIssue[]>
   repair(issue: StorageIssue): Promise<boolean>
 }
@@ -115,5 +123,7 @@ export interface JournalBackend {
   sessionJournalFingerprint(sid: string): Promise<string>
   readSessionRunEvents(sid: string, cursor: string | null | undefined): Promise<SessionJournalReplay>
   staleInterruptedEvent(sid: string, streamId: string, afterSeq?: number | null, now?: number): Promise<JournalEvent | null>
+  /** Replace one stream with these exact rows and, for a pruned stream, its summary; for moving a store between backends. */
+  importRun(sid: string, streamId: string, run: { rows: JournalEvent[]; summary: RunSummary | null }): Promise<void>
   close(): Promise<void>
 }

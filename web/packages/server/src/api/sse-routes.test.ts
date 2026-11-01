@@ -1,3 +1,4 @@
+import { useJsonStorage } from '../test/storage.js'
 import * as fs from 'node:fs'
 import * as fsp from 'node:fs/promises'
 import { join } from 'node:path'
@@ -5,6 +6,8 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { JsonJournal } from '../sessions/storage/json-journal.js'
 import type { StreamChannel, StreamSubscriber } from '../sessions/streams.js'
+
+useJsonStorage()
 
 const io = vi.hoisted(() => ({ full: [] as string[], asyncFull: [] as string[], tails: [] as { path: string; position: number }[] }))
 vi.mock('node:fs', async (original) => {

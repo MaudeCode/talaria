@@ -1,8 +1,11 @@
+import { useJsonStorage } from '../test/storage.js'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
+
+useJsonStorage()
 
 /** TAL-267: WebUI dashboard plugins under `<plugins>/<name>/dashboard/` (Python `api/plugins.py`). */
 describe('dashboard plugin routes', () => {

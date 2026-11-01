@@ -1,6 +1,8 @@
 import { afterEach, expect, it } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 
+useJsonStorage()
+
 let server: TestServer | undefined
 afterEach(async () => { await server?.close() })
 
@@ -26,7 +28,7 @@ it('persists an explicitly started queue spanning two chats without dispatching 
 import { vi } from 'vitest'
 import type { PromptQueueRun, SidecarParams, SidecarResultInput, GatewaySessionResult } from '@maudecode/talaria-web-contracts'
 import { FakeSidecar } from '../sidecar/fake.js'
-import { JsonDocuments } from '../test/storage.js'
+import { JsonDocuments, useJsonStorage } from '../test/storage.js'
 import { PromptQueues } from '../sessions/prompt-queues.js'
 
 const completed = (params: SidecarParams<'chat.start'>): SidecarResultInput<'chat.start'> => ({

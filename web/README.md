@@ -363,7 +363,10 @@ outside contributions; see the [contribution policy](../CONTRIBUTING.md).
 Talaria Web began as a fork of Hermes WebUI; [NOTICE](NOTICE) keeps the upstream MIT attribution.
 Licensed under the MIT license (see the repository root).
 
-Session storage defaults to the existing JSON format. `TALARIA_STORAGE=json` selects that adapter explicitly; other values fail startup.
+Session storage defaults to the existing JSON format. `TALARIA_STORAGE=sqlite` keeps sessions, documents and run
+journals in one database, `talaria.db` in the Web state directory. To move an existing install, stop the server and run
+`talaria-web storage copy --from json --to sqlite`: it copies and verifies everything, leaves the JSON files untouched,
+and prints the `TALARIA_STORAGE` value to set. Other values fail startup.
 
 Chat attachments stay in `<state dir>/attachments` by default (`TALARIA_BLOB_STORAGE=local`). To keep them in an
 S3-compatible bucket (AWS S3, MinIO, a NAS S3 endpoint), set `TALARIA_BLOB_STORAGE=s3` with

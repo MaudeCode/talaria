@@ -114,9 +114,9 @@ export const CompressionRecoveryStartSchema = z.object({ ok: z.literal(true), se
  */
 export const RecoveryAuditItemSchema = z.object({
   session_id: z.string(),
-  kind: z.enum(['shrunken_live', 'unstamped_legacy_backup', 'malformed_orphan_backup', 'orphan_backup', 'orphan_backup_without_state_row', 'state_db_deleted_webui_tombstone', 'index_unreadable', 'index_missing_file', 'index_missing_entry', 'state_db_orphan_webui_row', 'state_db_missing_sidecar', 'state_db_unreadable', 'turn_journal_pending_turn']),
+  kind: z.enum(['shrunken_live', 'unstamped_legacy_backup', 'malformed_orphan_backup', 'orphan_backup', 'orphan_backup_without_state_row', 'state_db_deleted_webui_tombstone', 'index_unreadable', 'index_missing_file', 'index_missing_entry', 'state_db_orphan_webui_row', 'state_db_missing_sidecar', 'state_db_unreadable', 'turn_journal_pending_turn', 'storage_integrity', 'search_index_mismatch']),
   category: z.enum(['repairable', 'unsafe_to_repair']),
-  recommendation: z.enum(['restore_from_bak', 'manual_review', 'deleted_session_skipped', 'rebuild_index', 'materialize_from_state_db', 'audit_only_pending_turn_journal']),
+  recommendation: z.enum(['restore_from_bak', 'manual_review', 'deleted_session_skipped', 'rebuild_index', 'materialize_from_state_db', 'audit_only_pending_turn_journal', 'rebuild_search_index']),
   live_messages: z.number().int(), bak_messages: z.number().int(), turn_id: z.string().optional(), event: z.string().optional(),
 })
 /** `GET /api/session/recovery/audit`: every session's backup, index, state.db, and turn-journal recovery findings; read-only. */

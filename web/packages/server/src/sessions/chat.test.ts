@@ -1,5 +1,5 @@
 import { filterAsync } from '../util.js'
-import { sessionPath, sessionDirectory } from '../test/storage.js'
+import { sessionPath, sessionDirectory, useJsonStorage } from '../test/storage.js'
 import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { CANCEL_UNWIND_CEILING_S } from './streams.js'
 import { join } from 'node:path'
@@ -12,6 +12,8 @@ import { str } from '../util.js'
 import { sanitizeMessagesForApi } from './merge.js'
 import { UNSETTLED_TODO_KEY, attachTodoState } from './todo.js'
 import { Session } from './session.js'
+
+useJsonStorage()
 
 type ChatResult = SidecarResult<'chat.start'>
 

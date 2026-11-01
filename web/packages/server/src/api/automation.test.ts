@@ -1,4 +1,4 @@
-import { JsonDocuments } from '../test/storage.js'
+import { JsonDocuments, useJsonStorage } from '../test/storage.js'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -14,6 +14,8 @@ import { ExtensionService, normalizeLoopbackOrigin, normalizeProxyPath, isSafeRe
 import type { PtyModuleLike, PtyProcessLike } from '../tools/terminal.js'
 import { CLOSED_RETENTION_MS, TerminalRegistry } from '../tools/terminal.js'
 import { crc32 } from '../workspace/zip.js'
+
+useJsonStorage()
 
 type Json = Record<string, unknown>
 const post = (s: TestServer, path: string, body: unknown, method = 'POST', headers: Record<string, string> = {}): Promise<Response> => s.get(path, { method, body: JSON.stringify(body), headers: { 'content-type': 'application/json', ...headers } })

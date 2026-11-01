@@ -33,6 +33,28 @@ const formats: Record<string, Format> = {
   'web-push': { files: { vapid: 'web-push-vapid.json' }, secret: true },
   'web-push-subscriptions': { files: { subscriptions: 'web-push-subscriptions.json' }, secret: true },
 }
+/** Every document namespace, so a whole-store copy can enumerate them. */
+export const DOCUMENT_NAMESPACES: readonly string[] = [...Object.keys(formats), 'workspaces', 'relay'].sort()
+
+function documentFormat(namespace: string, key?: string): Format {
+  if (namespace === 'workspaces') return key?.endsWith('.last') ? { text: true } : { indent: 2 }
+  if (namespace === 'relay') return key === 'revision' ? { text: true } : { files: { config: 'talaria-relay.json', started: 'talaria-relay-started.json', deleted: 'talaria-relay-deleted.json' }, ...(key === 'config' ? { indent: 2 } : {}), newline: true, secret: key === 'deleted' }
+  const format = Object.hasOwn(formats, namespace) ? formats[namespace] : undefined
+  if (!format) throw new Error(`Unknown document namespace ${namespace}`)
+  return format
+}
+
+/** The key rules every document backend enforces, so a document stays portable between them. */
+export function validateDocumentKey(namespace: string, key: string): void {
+  const format = documentFormat(namespace, key)
+  if ((!Object.hasOwn(format.files ?? {}, key) && !/^[A-Za-z0-9_-][A-Za-z0-9_.-]*$/.test(key)) || key === '.' || key === '..') throw new Error('Unsafe document key')
+  if (namespace === 'workspaces') { if (!/^[a-z0-9][a-z0-9_-]{0,63}\.(registry|last)$/.test(key)) throw new Error('Unsafe workspace document key'); return }
+  if (namespace === 'relay-identities') { if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(key)) throw new Error('Unsafe profile identity key'); return }
+  if (namespace === 'relay-keys') { if (!/^[a-f0-9]{16}$/.test(key)) throw new Error('Unsafe relay key'); return }
+  if (namespace === 'relay' && key === 'revision') return
+  if (!Object.hasOwn(format.files ?? {}, key) && !format.directory) throw new Error(`Unknown document key ${namespace}/${key}`)
+}
+
 const sortedReplacer = (_key: string, value: unknown): unknown => value && typeof value === 'object' && !Array.isArray(value)
   ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, (value as Record<string, unknown>)[key]])) : value
 
@@ -64,39 +86,26 @@ export class JsonDocuments implements DocumentBackend {
 
   private format(namespace: string, key?: string): Format {
     if (this.closed) throw new Error('Storage is closed')
-    if (namespace === 'workspaces') return key?.endsWith('.last') ? { text: true } : { indent: 2 }
-    if (namespace === 'relay') return key === 'revision' ? { text: true } : { files: { config: 'talaria-relay.json', started: 'talaria-relay-started.json', deleted: 'talaria-relay-deleted.json' }, ...(key === 'config' ? { indent: 2 } : {}), newline: true, secret: key === 'deleted' }
-    const format = Object.hasOwn(formats, namespace) ? formats[namespace] : undefined
-    if (!format) throw new Error(`Unknown document namespace ${namespace}`)
-    return format
+    return documentFormat(namespace, key)
   }
   private path(namespace: string, key: string): string {
     const format = this.format(namespace, key)
-    if ((!Object.hasOwn(format.files ?? {}, key) && !/^[A-Za-z0-9_-][A-Za-z0-9_.-]*$/.test(key)) || key === '.' || key === '..') throw new Error('Unsafe document key')
+    validateDocumentKey(namespace, key)
     if (namespace === 'drafts' || namespace === 'background') return join(this.sessionDirectory, namespace === 'drafts' ? '_drafts' : '_background', `${key}.json`)
     if (namespace === 'held-wakeups' && key === 'held') return join(this.sessionDirectory, '_wakeup_held.json')
     if (namespace === 'workspaces') {
-      const match = /^([a-z0-9][a-z0-9_-]{0,63})\.(registry|last)$/.exec(key)
-      if (!match) throw new Error('Unsafe workspace document key')
+      const match = /^([a-z0-9][a-z0-9_-]{0,63})\.(registry|last)$/.exec(key)!
       const directory = match[1] === 'default' ? this.stateDir : join(this.profileHome(match[1]!), 'webui_state')
       return join(directory, match[2] === 'registry' ? 'workspaces.json' : 'last_workspace.txt')
     }
-    if (namespace === 'relay-identities') {
-      if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(key)) throw new Error('Unsafe profile identity key')
-      return join(this.profileHome(key), '.talaria-relay-profile-id')
-    }
-    if (namespace === 'relay-keys') {
-      if (!/^[a-f0-9]{16}$/.test(key)) throw new Error('Unsafe relay key')
-      return join(this.stateDir, `talaria-relay-publisher-${key}.pem`)
-    }
+    if (namespace === 'relay-identities') return join(this.profileHome(key), '.talaria-relay-profile-id')
+    if (namespace === 'relay-keys') return join(this.stateDir, `talaria-relay-publisher-${key}.pem`)
     if (namespace === 'relay' && (key === 'revision' || key === 'started')) {
       let directory = this.stateDir
       try { const config = JSON.parse(readFileSync(join(this.stateDir, 'talaria-relay.json'), 'utf8')) as Record<string, unknown>; if (typeof config.private_key_path === 'string' && config.private_key_path) directory = dirname(config.private_key_path) } catch { /* unconfigured */ }
       return join(directory, key === 'revision' ? 'talaria-relay-revision' : 'talaria-relay-started.json')
     }
-    const path = format.files?.[key] ?? (format.directory ? `${format.directory}/${key}.json` : null)
-    if (!path) throw new Error(`Unknown document key ${namespace}/${key}`)
-    return join(this.stateDir, path)
+    return join(this.stateDir, format.files?.[key] ?? `${format.directory!}/${key}.json`)
   }
   private remember(namespace: string, path: string, text: string, signature: string): CachedDocument {
     const entry: CachedDocument = { text, signature, revision: createHash('sha256').update(text).digest('hex') }

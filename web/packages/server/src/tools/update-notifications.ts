@@ -469,7 +469,10 @@ export class UpdateNotificationStore {
     const tab = scope.tab && TAB_ID.test(scope.tab) ? scope.tab : null
     const row = this.rows.find((entry) => entry.id === id && entry.kind === 'update' && this.isVisible(entry, scope))
     if (!tab || !row) return
-    row.watchers = [...row.watchers.filter((watcher) => watcher.tab !== tab), { tab, at: this.now().toISOString() }]
+    // A rejoin is the tab's latest join even within the millisecond it joined another operation, so `tab_update` follows it.
+    const joins = this.rows.flatMap((entry) => entry.watchers.filter((watcher) => watcher.tab === tab).map((watcher) => Date.parse(watcher.at) + 1))
+    const at = new Date(Math.max(this.now().valueOf(), ...joins.filter(Number.isFinite))).toISOString()
+    row.watchers = [...row.watchers.filter((watcher) => watcher.tab !== tab), { tab, at }]
     await this.save()
   }
 

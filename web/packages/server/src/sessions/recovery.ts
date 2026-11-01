@@ -284,6 +284,8 @@ export async function repairSafeSessionRecovery(deps: RecoveryDeps): Promise<Rec
   const before = await auditSessionRecovery(deps)
   const s = await scan(deps)
   const backupRepair = await restoreBackups(deps, s)
+  let searchRepairs = 0
+  for (const issue of s.issues) if (issue.recommendation === 'rebuild_search_index' && await deps.store.repair(issue)) searchRepairs += 1
   const sidecarRepair = await materializeSidecars(deps, s)
   const reindex = backupRepair.restored || sidecarRepair.materialized || !await deps.store.hasIndex() || before.items.some((i) => i.recommendation === 'rebuild_index')
   if (reindex) {
@@ -291,5 +293,5 @@ export async function repairSafeSessionRecovery(deps: RecoveryDeps): Promise<Rec
   }
   const after = await auditSessionRecovery(deps)
   const clean = after.summary.repairable === 0 && after.summary.unsafe_to_repair === 0
-  return { clean, ok: clean, repaired: backupRepair.restored + sidecarRepair.materialized, before, backup_repair: backupRepair, sidecar_repair: sidecarRepair, after }
+  return { clean, ok: clean, repaired: backupRepair.restored + searchRepairs + sidecarRepair.materialized, before, backup_repair: backupRepair, sidecar_repair: sidecarRepair, after }
 }

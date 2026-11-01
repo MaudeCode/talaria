@@ -2,11 +2,11 @@
 import { JsonJournal } from './json-journal.js'
 import { JsonDocuments } from './json-documents.js'
 import { dirname } from 'node:path'
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, utimesSync } from 'node:fs'
 import { unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { isSafeSessionId, type Message } from '../session.js'
-import { RevisionConflict, type MessageMatch, type SessionBackend, type SessionChange, type SessionIndexEntry, type StorageBackend, type StorageIssue, type StoredSession } from './backend.js'
+import { RevisionConflict, type MessageMatch, type SessionBackend, type SessionChange, type SessionIndexEntry, type ShrinkBackup, type StorageBackend, type StorageIssue, type StoredSession } from './backend.js'
 import { readJsonMessagePrefix, readMetadataJsonPrefixWithSignature, stageAtomic, statSignature, statSignatureAsync, writeAtomic } from './json-files.js'
 import { sessionSearchMatches, sessionSearchMessageText } from './search-text.js'
 import { diagnoseJson, repairJson, restoreJsonBackup } from './json-recovery.js'
@@ -276,6 +276,22 @@ class JsonSessions implements SessionBackend {
   readonly shrinkBackup = {
     discard: async (sid: string): Promise<void> => { rmSync(`${this.path(sid)}.bak`, { force: true }) },
     restore: async (sid: string): Promise<boolean> => restoreJsonBackup(this.options.directory, sid, await this.options.stampingSince()),
+    read: async (sid: string): Promise<ShrinkBackup | null> => {
+      const path = `${this.path(sid)}.bak`
+      let text: string
+      let savedAt: number
+      try { savedAt = statSync(path).mtimeMs / 1000; text = readFileSync(path, 'utf8') } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error }
+      const doc = JSON.parse(text) as Record<string, unknown>
+      const messages = Array.isArray(doc.messages) ? doc.messages as Message[] : []
+      delete doc.messages
+      return { doc, messages, savedAt }
+    },
+    write: async (sid: string, backup: ShrinkBackup): Promise<void> => {
+      const path = `${this.path(sid)}.bak`
+      mkdirSync(this.options.directory, { recursive: true })
+      writeAtomic(path, JSON.stringify({ ...backup.doc, messages: backup.messages }))
+      utimesSync(path, backup.savedAt, backup.savedAt)
+    },
   }
   async diagnose(): Promise<StorageIssue[]> { this.check(); return diagnoseJson(this.options.directory, await this.options.stampingSince()) }
   async repair(issue: StorageIssue): Promise<boolean> { this.check(); return repairJson(this.options.directory, issue, await this.options.stampingSince()) }

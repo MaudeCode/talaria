@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Self-hosted servers can keep chats in a SQLite database with TALARIA_STORAGE=sqlite, and talaria-web storage copy moves an existing install over and verifies it.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

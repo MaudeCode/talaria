@@ -1,4 +1,4 @@
-import { initializeStore } from '../test/storage.js'
+import { initializeStore, useJsonStorage } from '../test/storage.js'
 import { JsonDocuments } from '../test/storage.js'
 /**
  * Profile regressions: isolation semantics, profile-home routing, per-profile
@@ -17,6 +17,8 @@ import { ProfileService, splitProviderModel } from '../profiles/profiles.js'
 import { jobForApi } from '../tools/crons.js'
 import { str } from '../util.js'
 import { writeEnvFile } from '../test/env-file.js'
+
+useJsonStorage()
 
 type Json = Record<string, unknown>
 const post = (s: TestServer, path: string, body: unknown, headers: Record<string, string> = {}): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json', ...headers } })

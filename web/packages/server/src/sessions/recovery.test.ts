@@ -1,3 +1,4 @@
+import { useJsonStorage } from '../test/storage.js'
 /**
  * TAL-259: `GET /api/session/recovery/audit` and `POST /api/session/recovery/repair-safe`, ported from the Python
  * recovery suites. Every case drives the HTTP routes over a disposable state directory.
@@ -9,6 +10,8 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { bootTestServer, type TestServer, openStateDb } from '../test/harness.js'
+
+useJsonStorage()
 
 type Json = Record<string, unknown>
 const post = (s: TestServer, path: string, body: unknown, headers: Record<string, string> = {}): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json', ...headers } })

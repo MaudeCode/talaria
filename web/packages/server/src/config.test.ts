@@ -9,14 +9,13 @@ let home: string
 beforeEach(() => { home = mkdtempSync(resolve(tmpdir(), 'talaria-config-')) })
 afterEach(() => { vi.restoreAllMocks(); rmSync(home, { recursive: true, force: true }) })
 
-it('selects JSON session storage by default and explicitly', () => {
-  for (const storage of [undefined, 'json']) {
-    expect(loadConfig({ home, webRoot: home, env: { TALARIA_STORAGE: storage } }).storage).toBe('json')
-  }
+it('selects JSON session storage by default, and each backend explicitly', () => {
+  expect(loadConfig({ home, webRoot: home, env: {} }).storage).toBe('json')
+  for (const storage of ['json', 'sqlite']) expect(loadConfig({ home, webRoot: home, env: { TALARIA_STORAGE: storage } }).storage).toBe(storage)
 })
 
 it('rejects an unknown session storage backend without falling back', () => {
-  expect(() => loadConfig({ home, webRoot: home, env: { TALARIA_STORAGE: 'missing' } })).toThrow('Unknown TALARIA_STORAGE="missing"; supported backends: json')
+  expect(() => loadConfig({ home, webRoot: home, env: { TALARIA_STORAGE: 'missing' } })).toThrow('Unknown TALARIA_STORAGE="missing"; supported backends: json, sqlite')
 })
 
 describe.each(['darwin', 'win32'])('Agent home on %s', (platform) => {

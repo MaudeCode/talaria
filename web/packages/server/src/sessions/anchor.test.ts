@@ -1,4 +1,4 @@
-import { sessionPath } from '../test/storage.js'
+import { sessionPath, useJsonStorage } from '../test/storage.js'
 /** Anchor activity scenes: one normalized row shape for both clients, identical in the detail preview and the paged rows. */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -6,6 +6,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { anchorActivitySceneTransportPreview, buildTurnScene, hydrateAnchorActivityScenes, normalizeSceneRows, withTurnIds } from './anchor.js'
 import { withSceneToolDisplay } from '../redact.js'
+
+useJsonStorage()
 
 type Json = Record<string, unknown>
 const post = (s: TestServer, path: string, body: unknown): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })

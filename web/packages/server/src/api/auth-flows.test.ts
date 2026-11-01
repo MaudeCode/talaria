@@ -1,3 +1,4 @@
+import { useJsonStorage } from '../test/storage.js'
 import { FakeAuthenticator, cborEncode, b64u } from '../test/passkeys.js'
 import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, sign as cryptoSign } from 'node:crypto'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
@@ -11,6 +12,8 @@ import { SidecarClient } from '../sidecar/client.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { ConfigUnavailable } from '../config/agent-config.js'
 import { tmpdir } from 'node:os'
+
+useJsonStorage()
 
 type Json = Record<string, unknown>
 const post = (s: TestServer, path: string, body: unknown, headers: Record<string, string> = {}): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json', ...headers } })

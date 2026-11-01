@@ -1,3 +1,4 @@
+import { useJsonStorage } from '../../test/storage.js'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -5,6 +6,8 @@ import { expect, it } from 'vitest'
 import { bootTestServer } from '../../test/harness.js'
 import { HeldWakeups } from '../wakeup-pause.js'
 import { JsonDocuments } from './json-documents.js'
+
+useJsonStorage()
 
 it('keeps auth enabled when settings contain a JSON null rather than an absent document', async () => {
   const server = await bootTestServer()
