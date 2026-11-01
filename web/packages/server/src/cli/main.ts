@@ -3,6 +3,7 @@
  *   talaria-web [port] [--host H] [--no-browser] [--foreground] [--skip-agent-install]   launch (detached unless supervised)
  *   talaria-web serve [launcher args]                                                     run the server (supervised worker; self-update restarts it)
  *   talaria-web ctl <start|stop|restart|status|logs> [...]                                daemon control
+ *   talaria-web storage copy-blobs --from <local|s3> --to <local|s3>                       copy chat attachments (server stopped)
  */
 import { createApp } from '../app.js'
 import { loadConfig } from '../config.js'
@@ -13,6 +14,7 @@ import { launchSidecar } from '../sidecar/discover.js'
 import { loadStartupEnv } from './dotenv.js'
 import { parseBootstrapArgs, runBootstrap } from './launcher.js'
 import { runCtl } from './ctl.js'
+import { runStorage } from './storage.js'
 import { resolveWebRoot } from './web-root.js'
 import { supervise, watchRetirement, WORKER_ENV } from './supervise.js'
 
@@ -80,8 +82,9 @@ export async function main(argv: string[]): Promise<number> {
   const [first, ...rest] = argv
   if (first === 'ctl') return runCtl({ env: process.env, webRoot, home: process.env.HOME ?? '', serveCommand, log, warn }, rest)
   if (first === 'serve') return (await serve(rest))
+  if (first === 'storage') return runStorage({ env: process.env, webRoot, home: process.env.HOME ?? '', log, warn }, rest)
   if (first === '-h' || first === '--help' || first === 'help') {
-    log('Usage: talaria-web [port] [--host HOST] [--no-browser] [--skip-agent-install] [--foreground]\n       talaria-web serve [args]\n       talaria-web ctl <start|stop|restart|status|logs>\n       talaria-web self-check')
+    log('Usage: talaria-web [port] [--host HOST] [--no-browser] [--skip-agent-install] [--foreground]\n       talaria-web serve [args]\n       talaria-web ctl <start|stop|restart|status|logs>\n       talaria-web storage copy-blobs --from <local|s3> --to <local|s3>\n       talaria-web self-check')
     return 0
   }
   const home = process.env.HOME ?? ''

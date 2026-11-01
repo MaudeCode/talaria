@@ -18,6 +18,8 @@ export interface ServerConfig {
   hermesHome: string
   stateDir: string
   storage: 'json'
+  /** Where chat attachments live (TAL-1069), chosen independently of `storage`. */
+  blobs: BlobConfig
   sessionDir: string
   settingsFile: string
   /** `web/` checkout or npm package root that owns `static/`. */
@@ -32,6 +34,30 @@ export interface ServerConfig {
   env: Env
   /** The user's home directory (tests pass a temp dir). */
   homeDir: string
+}
+
+export type BlobConfig =
+  | { kind: 'local' }
+  | { kind: 's3'; endpoint: string | undefined; bucket: string; prefix: string; forcePathStyle: boolean; region: string | undefined; cacheDir: string; cacheMaxBytes: number }
+
+/** `TALARIA_BLOB_STORAGE` and its S3 settings; an unknown kind or a missing bucket fails startup, never falls back. */
+export function loadBlobConfig(env: Env, stateDir: string, warn: (line: string) => void): BlobConfig {
+  const kind = (env.TALARIA_BLOB_STORAGE ?? '').trim() || 'local'
+  if (kind === 'local') return { kind }
+  if (kind !== 's3') throw new Error(`Unknown TALARIA_BLOB_STORAGE=${JSON.stringify(kind)}; supported: local, s3`)
+  const bucket = (env.TALARIA_BLOB_S3_BUCKET ?? '').trim()
+  if (!bucket) throw new Error('TALARIA_BLOB_STORAGE=s3 needs TALARIA_BLOB_S3_BUCKET')
+  const pathStyle = (env.TALARIA_BLOB_S3_FORCE_PATH_STYLE ?? '').trim()
+  return {
+    kind,
+    endpoint: (env.TALARIA_BLOB_S3_ENDPOINT ?? '').trim() || undefined,
+    bucket,
+    prefix: (env.TALARIA_BLOB_S3_PREFIX ?? '').trim(),
+    forcePathStyle: pathStyle ? truthy(pathStyle) : true,
+    region: (env.AWS_REGION ?? env.AWS_DEFAULT_REGION ?? '').trim() || undefined,
+    cacheDir: resolve(stateDir, 'blob-cache'),
+    cacheMaxBytes: envMbBytes(env.TALARIA_BLOB_CACHE_MAX_MB, 2048, warn, 'TALARIA_BLOB_CACHE_MAX_MB'),
+  }
 }
 
 export function truthy(value: string | undefined): boolean {
@@ -129,6 +155,7 @@ export function loadConfig(opts: LoadConfigOptions): ServerConfig {
     tlsKey: (env.HERMES_WEBUI_TLS_KEY ?? '').trim() || null,
     hermesHome,
     storage,
+    blobs: loadBlobConfig(env, stateDir, warn),
     stateDir,
     sessionDir: resolve(stateDir, 'sessions'),
     settingsFile: resolve(stateDir, 'settings.json'),

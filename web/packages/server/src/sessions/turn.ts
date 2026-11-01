@@ -24,6 +24,7 @@ import { toolProgress } from './tool-display.js'
 import { catalogNames, connectorOperation } from '../tools/connectors.js'
 import { PendingPrompts, approvalAllows, clarifyReply, isVaultPrompt, vaultReply } from './pending.js'
 import type { JournalEventMeta } from './storage/backend.js'
+import { materializeTurnAttachments, type BlobStore } from './storage/blobs.js'
 import type { RunJournal, RunJournalWriter } from './journal.js'
 import { COMPRESSION_RECOVERY_ACTION_START_FOCUSED, COMPRESSION_RECOVERY_TERMINAL_STATE, CONTEXT_USAGE_FIELDS, Session, contextUsage, forgetContextFigures, promptCacheHitPercent, titleFrom, type Message } from './session.js'
 import { anchorMessageKey, markerSummary, insertCompactionRow, visibleMessagesForAnchor } from './compress.js'
@@ -80,6 +81,8 @@ export interface TurnRunnerDeps {
   /** Per-session toolsets override; null makes the sidecar resolve the profile's configured toolsets. */
   toolsetsFor: (session: Session) => string[] | null
   attachmentDir: (sid: string) => string
+  /** Chat attachment bytes (TAL-1069): each attachment a turn names is materialized before the Agent opens it. */
+  blobs: BlobStore
   /** Terminal relay phase per stream (`completed`/`cancelled`/`failed`); Python `note_talaria_terminal`. */
   onTerminal?: (streamId: string, phase: string) => void
   /** Insights title sync (Python `sync_session_title`), gated on `sync_to_insights` by the runtime. */
@@ -740,6 +743,10 @@ export class TurnRunner {
     const titles = new ReasoningTitleTracker()
     let capturedTerminalError: string | null = null
     const attachments = opts.attachments ?? []
+    // TAL-1069: a remote attachment store downloads every file this turn names to the path the prompt gives the Agent,
+    // and restores what earlier turns attached; a failure on this turn's files fails the turn below.
+    const earlier = s.messages.toReversed().flatMap((m) => (Array.isArray(m.attachments) ? m.attachments : []).map((att: unknown) => (isDict(att) ? str(att.path).trim() : '')))
+    const materializeError = await materializeTurnAttachments(deps.blobs, attachments.map((att) => str(att.path).trim()), earlier).then(() => null, (error: unknown) => error as Error)
     // TAL-545: one image mode decides both this turn's upload and the replayed history, which a text-mode turn sends
     // without native images; only a turn with an image on either side asks for it.
     const imageMode = attachments.some(isImageAttachment) || hasNativeImages(apiHistory) ? await this.imageInputMode(sessionId, s, opts, controller.signal) : null
@@ -759,6 +766,7 @@ export class TurnRunner {
     let followUp: string[] = []
     try {
       if (!sidecar) throw new SidecarError('The Agent sidecar is not running; chat is unavailable until it starts.', { condition: 'sidecar_unavailable' })
+      if (materializeError) throw new Error(`Could not load this message's attachments: ${materializeError.message}`)
       // Python: budgets, reasoning config, personality and delivery context come from the profile's config.yaml; the
       // system message carries the frozen session workspace, the WebUI guidance rides as the ephemeral prompt with this
       // turn's workspace (TAL-710: never a tag on the user's message, which the Agent can persist from memory).

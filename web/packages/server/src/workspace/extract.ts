@@ -56,9 +56,10 @@ function tooLarge(cap: number): ArchiveRejected {
  * Extract `bytes` into a new directory named for the archive under `parent`. `root` is the trusted directory (the
  * workspace or the session inbox) that `parent` lives in; every directory and file is created by an anchored walk
  * from it. The member count, total size, and every member path are checked before anything is created, and a failed
- * write removes the partial directory. `files` are relative to `parent`.
+ * write removes the partial directory. `files` are relative to `parent`. `taken` reports a directory name that is in use
+ * somewhere besides the disk.
  */
-export async function extractArchive(bytes: Buffer, filename: string, root: string, parent: string, cap: number): Promise<Extraction> {
+export async function extractArchive(bytes: Buffer, filename: string, root: string, parent: string, cap: number, taken?: (dest: string) => Promise<boolean>): Promise<Extraction> {
   const name = basename(filename)
   const isZip = name.toLowerCase().endsWith('.zip')
   if (!isZip && !isArchiveName(name)) throw new ArchiveRejected(`Unsupported archive format: ${filename}`)
@@ -70,7 +71,8 @@ export async function extractArchive(bytes: Buffer, filename: string, root: stri
   if (members.reduce((sum, m) => sum + m.size, 0) > cap) throw tooLarge(cap)
   const parentResolved = resolvePathLikePython(parent)
   let dest = join(parentResolved, stem)
-  for (let attempt = 0; lexists(dest); attempt += 1) {
+  // `taken` (a store that also holds names not on disk) is awaited first, so nothing yields between the local check and the create.
+  for (let attempt = 0; (taken ? await taken(dest) : false) || lexists(dest); attempt += 1) {
     if (attempt >= 1000) throw new ArchiveRejected('Could not allocate a unique extraction directory')
     dest = join(parentResolved, `${stem}_${String(randomInt(1000)).padStart(3, '0')}`)
   }

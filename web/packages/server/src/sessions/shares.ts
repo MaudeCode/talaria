@@ -8,7 +8,7 @@ import { str } from '../util.js'
  */
 import { closeSync, fstatSync, statSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
-import { basename, extname, resolve } from 'node:path'
+import { basename, extname, isAbsolute, resolve } from 'node:path'
 import type { DocumentBackend } from './storage/backend.js'
 import { readDocument } from './storage/document.js'
 import { redactSensitive } from '../redact.js'
@@ -22,6 +22,10 @@ const SHARE_TOKEN_RE = /^[A-Za-z0-9_-]{8,64}$/
 const SHARE_MEDIA_RE = /MEDIA:(?!https?:\/\/)([^\s)\]>]+)/g
 const SHARE_EMBED_MAX_BYTES = 512 * 1024
 const ALLOWED_MIME: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' }
+/** Whether a share snapshot could embed this file, so a remote attachment store only materializes those. */
+export const shareEmbeddable = (name: string, size: number): boolean => Boolean(ALLOWED_MIME[extname(name).toLowerCase()]) && size <= SHARE_EMBED_MAX_BYTES
+/** At most this many bytes of remote attachments are downloaded for one snapshot (64 images at the embed cap). */
+export const SHARE_MATERIALIZE_MAX_BYTES = 64 * SHARE_EMBED_MAX_BYTES
 const PLACEHOLDER = '[*Local attachment omitted from public share*]'
 /**
  * Content-supplied inline `data:` URIs never reach a public share: their bytes are opaque to the credential
@@ -180,29 +184,57 @@ export function embedShareMedia(text: string, allowedRoots: string[], home: stri
   })
 }
 
-export function sanitizeShareMessage(message: unknown, redactPaths: string[], allowedRoots: string[], home: string): Record<string, unknown> | null {
+/** The role and prose a snapshot publishes for a message, or null for one it leaves out. */
+function shareProse(message: unknown): { message: Record<string, unknown>; role: string; text: string } | null {
   if (!isDict(message)) return null
   const role = str(message.role).trim().toLowerCase()
   if (role !== 'user' && role !== 'assistant') return null
   // Only the reply's prose is published: inline thinking and leaked tool-call XML never reach a snapshot.
-  let text = shareMessageText(normalizeAssistantDisplay({ ...message, role }))
-  if (!text) return null
-  text = sanitizeShareText(text, redactPaths, (t) => embedShareMedia(t, allowedRoots, home))
+  const text = shareMessageText(normalizeAssistantDisplay({ ...message, role }))
+  return text ? { message, role, text } : null
+}
+
+/**
+ * Every path under `within` that a snapshot of `messages` could embed: the image `MEDIA:` references of its published
+ * prose, resolved against `allowedRoots` like `embedShareMedia` does. A remote attachment store downloads only these.
+ */
+export function shareMediaPaths(messages: unknown[], allowedRoots: string[], within: string, home: string): string[] {
+  const allowed = allowedRoots.filter(Boolean).map((r) => resolvePathLikePython(r, home))
+  const found = new Set<string>()
+  for (const raw of messages) {
+    const prose = shareProse(raw)
+    if (!prose) continue
+    for (const match of omitInlineData(redactSensitive(prose.text)).matchAll(SHARE_MEDIA_RE)) {
+      const ref = expandHome((match[1] ?? '').trim(), home)
+      if (!ref || ref.startsWith('file://') || !ALLOWED_MIME[extname(ref).toLowerCase()]) continue
+      for (const path of isAbsolute(ref) ? [resolve(ref)] : allowed.map((root) => resolve(root, ref))) if (isWithin(path, within)) found.add(path)
+    }
+  }
+  return [...found]
+}
+
+export function sanitizeShareMessage(message: unknown, redactPaths: string[], allowedRoots: string[], home: string): Record<string, unknown> | null {
+  const prose = shareProse(message)
+  if (!prose) return null
+  const text = sanitizeShareText(prose.text, redactPaths, (t) => embedShareMedia(t, allowedRoots, home))
   if (!text.trim()) return null
-  const sanitized: Record<string, unknown> = { role, content: text }
-  if (typeof message.timestamp === 'number') sanitized.timestamp = message.timestamp
+  const sanitized: Record<string, unknown> = { role: prose.role, content: text }
+  if (typeof prose.message.timestamp === 'number') sanitized.timestamp = prose.message.timestamp
   return sanitized
 }
 
 export interface ShareSnapshot { title: string; messages: Record<string, unknown>[]; message_count: number }
 
+/** The roots a snapshot embeds images from: the session workspace, then the attachment directory. */
+export function shareAllowedRoots(session: Session, attachmentRoot: string): string[] {
+  return [...(session.workspace.trim() ? [session.workspace.trim()] : []), attachmentRoot]
+}
+
 export function buildShareSnapshot(session: Session, messages: unknown[], opts: { hermesHome: string; attachmentRoot: string; home: string }): ShareSnapshot {
   const redactPaths: string[] = []
   for (const value of [session.workspace, session.worktree_path, session.worktree_repo_root]) if (value) redactPaths.push(value)
   redactPaths.push(opts.hermesHome, opts.home)
-  const allowedRoots: string[] = []
-  if (session.workspace.trim()) allowedRoots.push(session.workspace.trim())
-  allowedRoots.push(opts.attachmentRoot)
+  const allowedRoots = shareAllowedRoots(session, opts.attachmentRoot)
   const safe: Record<string, unknown>[] = []
   for (const raw of messages) {
     const sanitized = sanitizeShareMessage(raw, redactPaths, allowedRoots, opts.home)

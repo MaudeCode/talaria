@@ -364,6 +364,16 @@ Licensed under the MIT license (see the repository root).
 
 Session storage defaults to the existing JSON format. `TALARIA_STORAGE=json` selects that adapter explicitly; other values fail startup.
 
+Chat attachments stay in `<state dir>/attachments` by default (`TALARIA_BLOB_STORAGE=local`). To keep them in an
+S3-compatible bucket (AWS S3, MinIO, a NAS S3 endpoint), set `TALARIA_BLOB_STORAGE=s3` with
+`TALARIA_BLOB_S3_BUCKET`, plus `TALARIA_BLOB_S3_ENDPOINT` for a non-AWS service, an optional
+`TALARIA_BLOB_S3_PREFIX`, and `TALARIA_BLOB_S3_FORCE_PATH_STYLE` (default `true`). Credentials and region come from the
+standard `AWS_*` environment or the AWS credential chain. Files the Agent reads are downloaded to
+`<state dir>/blob-cache`, capped by `TALARIA_BLOB_CACHE_MAX_MB` (default 2048). An unknown store or an unreachable
+bucket stops startup. To move existing attachments, stop the server and run
+`talaria-web storage copy-blobs --from local --to s3`; it verifies every object, skips ones already copied, and never
+deletes the source.
+
 Server owners use Settings → **Auxiliary Models → Delegation** to select Default or an
 available registered mode and edit named model/profile routes and their default.
 Unavailable saved modes show the Agent's recovery reason and **Restore Default**.

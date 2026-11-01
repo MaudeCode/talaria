@@ -1,5 +1,6 @@
 /** Memory-only tests of the real service, share store, lifecycle lock and CAS saves. */
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
+import { LocalBlobStore } from './storage/blobs.js'
 import { SessionService, type SessionServiceDeps } from './service.js'
 import { SessionStore } from './store.js'
 import { Session } from './session.js'
@@ -64,7 +65,7 @@ async function fixture() {
   const shares = new ShareStore(documents, () => now)
   const service = new SessionService({
     store, shares, now: () => now, home: '/synthetic', hermesHome: '/synthetic/agent',
-    profileHome: () => '/synthetic/agent', attachmentDir: () => '', activeProfile: () => 'default', isolatedProfileMode: () => false,
+    profileHome: () => '/synthetic/agent', attachmentDir: () => '', blobs: new LocalBlobStore(() => '/synthetic/attachments'), activeProfile: () => 'default', isolatedProfileMode: () => false,
     profilesMatch: (a: string | null | undefined, b: string | null | undefined) => (a || 'default') === (b || 'default'), events: store.deps.events,
     runtime: { activeRunStream: () => null, activeStreamIds: new Set(), evictAgent: () => Promise.resolve(), closeTerminal: () => undefined },
   } as unknown as SessionServiceDeps)

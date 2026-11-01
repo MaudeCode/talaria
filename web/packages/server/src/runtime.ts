@@ -42,6 +42,7 @@ import { SidecarServerError } from './sidecar/server-methods.js'
 import { isSafeSessionId, type Session } from './sessions/session.js'
 import { sidebarListSelection } from './api/sessions-router.js'
 import { JsonStorage } from './sessions/storage/json.js'
+import { attachmentSessionName, createBlobStore, localAttachmentRoot } from './sessions/storage/blobs.js'
 import type { StorageBackend } from './sessions/storage/backend.js'
 import { DraftStore } from './sessions/drafts.js'
 import { SessionEventBus } from './sessions/events.js'
@@ -212,10 +213,9 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       return home === null ? [] : [{ name, home }]
     })]
   }
-  const attachmentRoot = (): string => {
-    const override = (env.HERMES_WEBUI_ATTACHMENT_DIR ?? '').trim()
-    return resolvePathLikePython(override ? override.replace(/^~(?=$|\/)/, home) : join(config.stateDir, 'attachments'))
-  }
+  const attachmentRoot = (): string => localAttachmentRoot(env, config.stateDir, home)
+  // TAL-1069: attachments go through the blob port; S3 materializes them under its cache, the default stays this directory.
+  const blobs = await createBlobStore(config, attachmentRoot)
   const sidecar = opts.sidecar ?? null
   const skillReplays = new SkillReplayService({ documents: storage.documents, sidecar: () => sidecar, now: () => new Date(now() * 1000), log })
   await skillReplays.initialize()
@@ -277,7 +277,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   const projects = new ProjectStore(storage.documents, async () => (await store.readIndexEntries()), isRootProfile)
   const shares = new ShareStore(storage.documents, now)
   const yoloSessions = new Set<string>()
-  const attachmentDir = (sid: string): string => join(attachmentRoot(), (sid || 'session').replace(/[^\w.-]/g, '_').slice(0, 120))
+  const attachmentDir = (sid: string): string => join(blobs.attachmentRoot(), attachmentSessionName(sid))
   const cliSessions = new CliSessionSource({ store, profileHome, profilesMatch, lastWorkspace: async (p) => (await workspaces.lastWorkspace(p)), backgroundProjectId: async (kind, p) => (await projects.ensureSystemProject(kind, p, { create: kind === 'webhook' || (await projects.hasUserProjects(p)) })), now, log })
   const gatewayWatchers = new GatewayWatcherRegistry({ profileHome, rows: (profile) => cliSessions.read(profile), now, log, ...(opts.gatewayPollMs !== undefined ? { pollIntervalMs: opts.gatewayPollMs } : {}) })
   const journal = storage.journals
@@ -416,6 +416,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       },
     },
     attachmentDir,
+    blobs,
     hermesHome: config.hermesHome,
     home,
     // Python `_sync_session_title_to_state_db`: with `sync_to_insights` on, the state.db row follows a rename.
@@ -474,7 +475,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       return !session || profileHome(session.profile ?? activeProfile()) === home
     }),
   })
-  const uploads = new UploadInbox(attachmentRoot)
+  const uploads = new UploadInbox(blobs, blobs.kind === 'local' ? null : attachmentRoot)
   const channels = new SessionChannels(activeProfile, profileHome)
   const pending = new PendingPrompts(events, now)
   // TAL-372: one durable record per piece of background work; a change refreshes every client showing the session.
@@ -573,6 +574,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     saveMode: () => ((env.HERMES_WEBUI_SESSION_SAVE_MODE ?? '').trim().toLowerCase() === 'eager' ? 'eager' : 'deferred'),
     toolsetsFor: (session) => session.enabled_toolsets,
     attachmentDir,
+    blobs,
   })
   // Services read `deps.fetch` lazily so tests can swap the outbound HTTP client after boot.
   const lazyFetch: typeof fetch = (input, init) => deps.fetch(input, init)
@@ -761,6 +763,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     git,
     rollback,
     uploads,
+    blobs,
     escapeGrants: new EscapeGrants(now),
     mediaAccess,
     worktreeLocks: { lockedByStream: (s) => Boolean(s.active_stream_id && activeStreamIds.has(s.active_stream_id)), lockedByTerminal: (sid, worktreePath) => { const term = deps.terminals.get(sid); return Boolean(term?.isAlive) && resolvePathLikePython(term?.workspace ?? '') === resolvePathLikePython(worktreePath) } },

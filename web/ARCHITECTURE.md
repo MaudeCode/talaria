@@ -185,6 +185,20 @@ computes their diff fingerprints on the first save. Content search sends one bat
 the backend, with cached full transcripts handled by the store. Shared extraction and matching functions
 in `sessions/storage/search-text.ts` define search semantics for every adapter.
 
+Chat attachments go through a separate `BlobStore` port (`sessions/storage/blobs.ts`), selected by
+`TALARIA_BLOB_STORAGE` independently of `TALARIA_STORAGE`. Keys are `attachments/<sanitized sid>/<name>`. The
+default `local` adapter is the attachment directory (`<stateDir>/attachments` or `HERMES_WEBUI_ATTACHMENT_DIR`)
+with its anchored exclusive creates; its etag is the inode/size/change-time signature upload receipts always
+compared. The `s3` adapter (`blobs-s3.ts`) stores objects in an S3-compatible bucket and materializes each one
+under `<stateDir>/blob-cache/attachments/...` through `localPath`: concurrent calls share one download, the bytes
+are checked against the etag, and a least-recently-used cap (`TALARIA_BLOB_CACHE_MAX_MB`) bounds the cache, which
+starts empty each run. Upload paths are those local paths in both modes, so the turn, `/api/file/raw`,
+`/api/media` and share snapshots keep their path-based anchored reads; each materializes the file first. Archive
+extraction writes into the local directory and `commitLocal` stores each file. Session delete removes the session
+prefix. An unknown kind or an unreachable bucket fails startup. `talaria-web storage copy-blobs` copies between
+stores with the server stopped, verifying size and SHA-256 and skipping objects already present. Every adapter
+passes `runBlobStoreConformance`.
+
 An adapter implements `StorageBackend`, passes `runSessionBackendConformance`, `runDocumentBackendConformance` and `runJournalBackendConformance`, and owns its recovery
 checks through `diagnose`/`repair`. Cross-backend recovery still reconciles the read-only Agent database.
 The JSON adapter keeps existing paths, bytes, permissions and atomic publication behavior. Its persisted-session
