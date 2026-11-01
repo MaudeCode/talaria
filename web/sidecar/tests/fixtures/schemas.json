@@ -4843,6 +4843,91 @@
     ],
     "additionalProperties": false
   },
+  "mcp.events": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "supported": {
+        "type": "boolean",
+        "description": "The installed Agent ships MCP events (`tools.mcp_tool_events`)."
+      },
+      "callback": {
+        "type": "string",
+        "enum": [
+          "ready",
+          "missing",
+          "not_https"
+        ],
+        "description": "`platforms.webhook.extra.public_url`: an https origin, absent, or set but not https."
+      },
+      "servers": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "utilities": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "subscriptions": {
+              "type": "object",
+              "properties": {
+                "active": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "refresh_overdue": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "lapsed": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "pending": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "paused": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "active",
+                "refresh_overdue",
+                "lapsed",
+                "pending",
+                "paused"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "name",
+            "utilities",
+            "subscriptions"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": [
+      "supported",
+      "callback",
+      "servers"
+    ],
+    "additionalProperties": false
+  },
   "mcp.reload": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

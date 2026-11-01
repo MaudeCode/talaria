@@ -133,3 +133,78 @@ for (const width of [1280, 768, 390]) {
     expect(writes).toMatchObject([{ cost_policy: { spend_limit: 0 } }, { cost_policy: { spend_limit: null } }])
   })
 }
+
+for (const width of [1280, 390]) {
+  test(`MCP events opt-in is optimistic and rows show native subscription state at ${String(width)}px (TAL-1510)`, async ({ page }, testInfo) => {
+    const { McpService } = await import('../../server/dist/tools/mcp.js')
+    const config: Record<string, unknown> = { platforms: { webhook: { enabled: false } }, mcp_servers: {
+      hooks: { command: 'hooks-mcp', trust: 'full', spend_limit: 5 },
+      live: { command: 'live-mcp', events: true },
+      idle: { command: 'idle-mcp', events: true, lazy: true },
+    } }
+    const subscriptions = (counts: Record<string, number>) => ({ active: 0, refresh_overdue: 0, lapsed: 0, pending: 0, paused: 0, ...counts })
+    const service = new McpService({
+      config: {
+        read: () => Promise.resolve(structuredClone(config)),
+        update: async (_home: string, mutate: (config: Record<string, unknown>) => unknown) => { const next = structuredClone(config); await mutate(next); Object.assign(config, next); return next },
+      } as unknown as ConstructorParameters<typeof McpService>[0]['config'],
+      sidecar: () => ({ call: (method: string, params: { servers: Record<string, Record<string, unknown>> }) => {
+        if (method === 'mcp.status') return Promise.resolve({ servers: [{ name: 'hooks', connected: true, status: 'connected', tools: 2 }, { name: 'live', connected: true, status: 'connected', tools: 5 }, { name: 'idle', connected: false, status: 'lazy', tools: 3 }] })
+        if (method !== 'mcp.events') throw new Error(method)
+        return Promise.resolve({ supported: true, callback: 'ready', servers: Object.entries(params.servers).map(([name, cfg]) => ({
+          name, utilities: cfg.events && name !== 'idle' ? 3 : 0,
+          subscriptions: name === 'live' ? subscriptions({ active: 2, paused: 1 }) : name === 'idle' ? subscriptions({ active: 1, lapsed: 1 }) : subscriptions({}),
+        })) })
+      } } as unknown as NonNullable<ReturnType<ConstructorParameters<typeof McpService>[0]['sidecar']>>),
+    })
+    await page.setViewportSize({ width, height: 1100 })
+    const home = '/synthetic/profile'
+    let expose = false
+    await page.route('**/api/mcp/servers', async (route) => {
+      const data = await service.servers(home)
+      if (!expose) for (const row of data.servers as Record<string, unknown>[]) delete row.events
+      await route.fulfill({ json: data })
+    })
+    const writes: unknown[] = []
+    let release: (() => void) | undefined
+    await page.route('**/api/mcp/servers/hooks', async (route) => {
+      const body = route.request().postDataJSON() as Record<string, unknown>
+      writes.push(body)
+      await new Promise<void>((resolve) => { release = resolve })
+      await route.fulfill({ json: await service.update(home, 'hooks', body) })
+    })
+    await page.route('**/api/mcp/tools*', (route) => route.fulfill({ json: { tools: [], total: 0, source: 'none', unavailable_servers: [] } }))
+    await page.goto('/settings/system')
+    await settle(page)
+    const section = page.locator('[data-section="mcp-servers"]')
+    await section.scrollIntoViewIfNeeded()
+    await page.screenshot({ path: testInfo.outputPath(`events-before-${String(width)}.png`) })
+    expose = true
+    await page.reload()
+    await settle(page)
+    const live = page.locator('[data-mcp-server="live"]')
+    const idle = page.locator('[data-mcp-server="idle"]')
+    const hooks = page.locator('[data-mcp-server="hooks"]')
+    await expect(live.getByText('Subscribed', { exact: true })).toBeVisible()
+    await expect(idle.getByText('Subscription lapsed', { exact: true })).toBeVisible()
+    await expect(hooks.getByText('Off', { exact: true })).toHaveCount(0)
+    await live.getByText('Events', { exact: true }).click()
+    await expect(live).toContainText('2 active · 1 paused')
+    await hooks.getByText('Events', { exact: true }).click()
+    const toggle = hooks.getByRole('switch', { name: 'Experimental events for hooks' })
+    await expect(toggle).not.toBeChecked()
+    await toggle.click()
+    await expect(toggle).toBeChecked()
+    await expect.poll(() => writes.length).toBe(1)
+    await section.scrollIntoViewIfNeeded()
+    await page.screenshot({ path: testInfo.outputPath(`events-pending-${String(width)}.png`) })
+    release!()
+    await expect(hooks.getByText('Events ready', { exact: true })).toBeVisible()
+    await expect(toggle).toBeChecked()
+    expect(writes).toEqual([{ events: true }])
+    expect((config.mcp_servers as Record<string, unknown>).hooks).toEqual({ command: 'hooks-mcp', trust: 'full', spend_limit: 5, events: true })
+    expect(config.platforms).toEqual({ webhook: { enabled: false } })
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await page.screenshot({ path: testInfo.outputPath(`events-after-${String(width)}.png`) })
+  })
+}

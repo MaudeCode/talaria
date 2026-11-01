@@ -87334,6 +87334,93 @@
                               }
                             ]
                           },
+                          "events": {
+                            "type": "object",
+                            "properties": {
+                              "supported": {
+                                "type": "boolean"
+                              },
+                              "enabled": {
+                                "type": "boolean",
+                                "description": "Configured opt-in (`mcp_servers.<name>.events`). It never implies a live subscription."
+                              },
+                              "can_edit": {
+                                "type": "boolean",
+                                "description": "PUT `{events}` may change the opt-in: a config.yaml server on an Agent with events, or an opted-in one to turn off."
+                              },
+                              "state": {
+                                "enum": [
+                                  "unsupported",
+                                  "off",
+                                  "needs_public_url",
+                                  "invalid_public_url",
+                                  "unavailable",
+                                  "ready",
+                                  "subscribed",
+                                  "refresh_overdue",
+                                  "lapsed",
+                                  "error"
+                                ],
+                                "type": "string"
+                              },
+                              "detail": {
+                                "type": "string",
+                                "description": "Redacted native reason for `unavailable` or `error`; empty otherwise."
+                              },
+                              "utilities": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991,
+                                "description": "Event utility tools (`list_event_types`, `subscribe_event`, `unsubscribe_event`) this runtime registered."
+                              },
+                              "subscriptions": {
+                                "type": "object",
+                                "properties": {
+                                  "active": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "refresh_overdue": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "lapsed": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "pending": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "paused": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  }
+                                },
+                                "required": [
+                                  "active",
+                                  "refresh_overdue",
+                                  "lapsed",
+                                  "pending",
+                                  "paused"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "supported",
+                              "enabled",
+                              "can_edit",
+                              "state",
+                              "detail",
+                              "utilities",
+                              "subscriptions"
+                            ]
+                          },
                           "name": {
                             "type": "string"
                           },
@@ -87575,6 +87662,7 @@
       },
       "put": {
         "operationId": "mcp.update",
+        "summary": "`{events}` alone sets the experimental MCP events opt-in and nothing else (TAL-1510); `{cost_policy, config_revision}` edits the declared cost policy; otherwise `{url|command, ...}` replaces the transport.",
         "tags": [
           "tools"
         ],
@@ -87697,6 +87785,9 @@
                       }
                     },
                     "additionalProperties": false
+                  },
+                  "events": {
+                    "type": "boolean"
                   }
                 },
                 "additionalProperties": {}
@@ -87958,6 +88049,93 @@
                             {
                               "type": "null"
                             }
+                          ]
+                        },
+                        "events": {
+                          "type": "object",
+                          "properties": {
+                            "supported": {
+                              "type": "boolean"
+                            },
+                            "enabled": {
+                              "type": "boolean",
+                              "description": "Configured opt-in (`mcp_servers.<name>.events`). It never implies a live subscription."
+                            },
+                            "can_edit": {
+                              "type": "boolean",
+                              "description": "PUT `{events}` may change the opt-in: a config.yaml server on an Agent with events, or an opted-in one to turn off."
+                            },
+                            "state": {
+                              "enum": [
+                                "unsupported",
+                                "off",
+                                "needs_public_url",
+                                "invalid_public_url",
+                                "unavailable",
+                                "ready",
+                                "subscribed",
+                                "refresh_overdue",
+                                "lapsed",
+                                "error"
+                              ],
+                              "type": "string"
+                            },
+                            "detail": {
+                              "type": "string",
+                              "description": "Redacted native reason for `unavailable` or `error`; empty otherwise."
+                            },
+                            "utilities": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "Event utility tools (`list_event_types`, `subscribe_event`, `unsubscribe_event`) this runtime registered."
+                            },
+                            "subscriptions": {
+                              "type": "object",
+                              "properties": {
+                                "active": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "refresh_overdue": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "lapsed": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "pending": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "paused": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "active",
+                                "refresh_overdue",
+                                "lapsed",
+                                "pending",
+                                "paused"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "supported",
+                            "enabled",
+                            "can_edit",
+                            "state",
+                            "detail",
+                            "utilities",
+                            "subscriptions"
                           ]
                         },
                         "name": {

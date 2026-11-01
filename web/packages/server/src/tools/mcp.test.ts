@@ -1,4 +1,7 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { McpServerSchema } from '@maudecode/talaria-web-contracts'
 import { JoplinError, joplinSearch, McpService } from './mcp.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { McpHealthProber } from './mcp-health.js'
@@ -257,5 +260,65 @@ describe('MCP health probe credentials (TAL-1565)', () => {
     const result = await rows('/profiles/a')
     expect(result.kanvil).toMatchObject({ health: 'unhealthy', health_detail: 'initialize rejected: Rejected key [REDACTED]' })
     expect(JSON.stringify(result)).not.toContain('synthetic-secret-d')
+  })
+})
+
+describe('MCP events opt-in and subscription health (TAL-1510)', () => {
+  interface Case { name: string; config: Dict; runtime: Dict; data: Dict | null; expected: Dict }
+  const fixture = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../contracts/fixtures/mcp-events.json'), 'utf8')) as { cases: Case[] }
+  const memoryConfig = (cfg: Dict) => ({ read: () => Promise.resolve(structuredClone(cfg)), update: async (_home: string, fn: (c: Dict) => unknown) => { const next = structuredClone(cfg); await fn(next); for (const key of Object.keys(cfg)) Reflect.deleteProperty(cfg, key); Object.assign(cfg, next); return next } }) as unknown as AgentConfig
+  const sidecarFor = (byHome: Record<string, { runtime: Dict[]; data: Dict | null }>) => ({ call: (method: string, params: { profile_home: string }) => {
+    const home = byHome[params.profile_home]!
+    if (method === 'mcp.status') return Promise.resolve({ servers: home.runtime })
+    if (method === 'mcp.events' && home.data) return Promise.resolve(home.data)
+    return Promise.reject(new Error(`${method} unavailable`))
+  } }) as unknown as FakeSidecar
+
+  it.each(fixture.cases)('derives $name from native state', async ({ config, runtime, data, expected }) => {
+    const service = new McpService({ config: memoryConfig({ mcp_servers: { events: config } }), sidecar: () => sidecarFor({ '/profiles/a': { runtime: [{ name: 'events', ...runtime }], data } }) })
+    const row = ((await service.servers('/profiles/a')).servers as Dict[])[0]!
+    expect(row.events).toEqual(expected)
+    expect(McpServerSchema.parse(row).events).toEqual(expected)
+    expect(JSON.stringify(row)).not.toContain('synthetic-secret')
+  })
+
+  it('keeps each profile and server on its own native status', async () => {
+    const both = { mcp_servers: { events: { command: 'events-mcp', events: true }, other: { command: 'other-mcp', events: true } } }
+    const subscriptions = (active: number) => ({ active, refresh_overdue: 0, lapsed: 0, pending: 0, paused: 0 })
+    const sidecar = sidecarFor({
+      '/profiles/a': { runtime: [{ name: 'events', connected: true }, { name: 'other', connected: true }], data: { supported: true, callback: 'ready', servers: [{ name: 'events', utilities: 3, subscriptions: subscriptions(2) }, { name: 'other', utilities: 3, subscriptions: subscriptions(0) }] } },
+      '/profiles/b': { runtime: [{ name: 'events', connected: false, status: 'lazy' }], data: { supported: true, callback: 'missing', servers: [{ name: 'events', utilities: 0, subscriptions: subscriptions(0) }] } },
+    })
+    const homes: Record<string, Dict> = { '/profiles/a': structuredClone(both), '/profiles/b': { mcp_servers: { events: { command: 'events-mcp', events: true } } } }
+    const config = { read: (home: string) => Promise.resolve(structuredClone(homes[home]!)) } as unknown as AgentConfig
+    const service = new McpService({ config, sidecar: () => sidecar })
+    const [a, b] = await Promise.all([service.servers('/profiles/a'), service.servers('/profiles/b')])
+    const states = (r: Dict) => Object.fromEntries((r.servers as Dict[]).map((s): [string, unknown[]] => { const events = s.events as { state: string; subscriptions: { active: number } }; return [String(s.name), [events.state, events.subscriptions.active]] }))
+    expect(states(a)).toEqual({ events: ['subscribed', 2], other: ['ready', 0] })
+    expect(states(b)).toEqual({ events: ['needs_public_url', 0] })
+  })
+
+  it('edits only the events key through the existing update and never adds a public URL or listener', async () => {
+    const retained = { command: 'events-mcp', args: ['--x'], trust: 'full', spend_limit: 5, tool_costs: { search: 1 }, tools: { include: ['search'], resources: false }, enabled: false, future: { keep: true } }
+    const cfg: Dict = { platforms: { webhook: { enabled: false } }, mcp_servers: { events: { ...retained }, sibling: { command: 'sibling' } } }
+    const data = { supported: true, callback: 'missing', servers: [{ name: 'events', utilities: 0, subscriptions: { active: 0, refresh_overdue: 0, lapsed: 0, pending: 0, paused: 0 } }] }
+    const service = new McpService({ config: memoryConfig(cfg), sidecar: () => sidecarFor({ '/profiles/a': { runtime: [], data } }) })
+    const on = await service.update('/profiles/a', 'events', { events: true })
+    expect(cfg).toEqual({ platforms: { webhook: { enabled: false } }, mcp_servers: { events: { ...retained, events: true }, sibling: { command: 'sibling' } } })
+    expect(on.server.events).toMatchObject({ enabled: true, state: 'needs_public_url', subscriptions: { active: 0 } })
+    const off = await service.update('/profiles/a', 'events', { events: false })
+    expect(cfg).toEqual({ platforms: { webhook: { enabled: false } }, mcp_servers: { events: retained, sibling: { command: 'sibling' } } })
+    expect(off.server.events).toMatchObject({ enabled: false, state: 'off' })
+    for (const body of [{ events: 'yes' }, { events: true, url: 'https://x.example' }]) await expect(service.update('/profiles/a', 'events', body)).rejects.toMatchObject({ status: 400 })
+    await expect(service.update('/profiles/a', 'missing', { events: true })).rejects.toMatchObject({ status: 404 })
+    expect(cfg.mcp_servers).toEqual({ events: retained, sibling: { command: 'sibling' } })
+  })
+
+  it('refuses to opt in on an Agent without MCP events but still lets an opted-in server opt out', async () => {
+    const cfg: Dict = { mcp_servers: { events: { command: 'events-mcp', events: true }, plain: { command: 'plain-mcp' } } }
+    const service = new McpService({ config: memoryConfig(cfg), sidecar: () => sidecarFor({ '/profiles/a': { runtime: [], data: { supported: false, callback: 'missing', servers: [] } } }) })
+    await expect(service.update('/profiles/a', 'plain', { events: true })).rejects.toMatchObject({ status: 409 })
+    await service.update('/profiles/a', 'events', { events: false })
+    expect(cfg.mcp_servers).toEqual({ events: { command: 'events-mcp' }, plain: { command: 'plain-mcp' } })
   })
 })

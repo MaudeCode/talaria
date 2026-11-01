@@ -3,6 +3,7 @@ import { GroupSidecarParamsSchema, GroupSidecarResultSchema } from '../groups-na
 import { PlanGaugeSchema, ModelAllowanceSnapshotSchema } from '../plan-usage.js'
 import { OutboundDraftRefSchema, OutboundDraftFieldsSchema, OutboundDraftResultSchema } from '../outbound-drafts.js'
 import { McpCostPolicyDataSchema } from '../mcp-cost-policy.js'
+import { McpEventsDataSchema } from '../mcp-events.js'
 import { ContextDetailSchema } from '../context-detail.js'
 import { z } from 'zod'
 import { AgentImportSourceSchema, AgentImportResultSchema } from '../agent-imports.js'
@@ -352,6 +353,7 @@ export const MCP_METHODS = {
   'mcp.probe_targets': { params: ProfileHomeParams.extend({ servers: Loose }), result: z.object({ targets: z.array(z.object({ name: z.string(), url: z.string(), headers: z.record(z.string(), z.string()) })) }) },
   'mcp.status': { params: ProfileHomeParams, result: z.object({ servers: z.array(z.object({ name: z.string() }).catchall(Json)) }) },
   'mcp.registry_tools': { params: ProfileHomeParams, result: z.object({ tools: z.array(z.object({ name: z.string(), server: z.string(), schema: Loose })) }) },
+  'mcp.events': { params: ProfileHomeParams.extend({ servers: Loose }), result: McpEventsDataSchema },
   'mcp.reload': { params: ProfileHomeParams, result: z.object({ output: z.string() }) },
 } as const
 

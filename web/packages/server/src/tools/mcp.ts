@@ -1,6 +1,7 @@
 /** MCP server inventory from config.yaml plus the Agent's already-known runtime status and the background health verdicts (Python MCP handlers). */
 import { createHash } from 'node:crypto'
-import { McpCostPatchSchema, type SidecarResult } from '@maudecode/talaria-web-contracts'
+import { McpCostPatchSchema, type McpEventsSchema, type SidecarResult } from '@maudecode/talaria-web-contracts'
+import type { z } from 'zod'
 import type { SidecarLike } from '../sidecar/client.js'
 import { dict, isDict, type AgentConfig, type Config, type Dict } from '../config/agent-config.js'
 import { HttpFailure } from '../sessions/service.js'
@@ -35,8 +36,9 @@ function stripMasked(submitted: unknown, existing: unknown): unknown {
   return out
 }
 
-export function parseEnabled(value: unknown): boolean {
-  if (value === null || value === undefined) return true
+/** Native `_parse_boolish`: `fallback` for an absent or unreadable value (`enabled` defaults on, `events` off). */
+export function parseEnabled(value: unknown, fallback = true): boolean {
+  if (value === null || value === undefined) return fallback
   if (typeof value === 'boolean') return value
   if (typeof value === 'number') return value !== 0
   if (typeof value === 'string') {
@@ -44,7 +46,28 @@ export function parseEnabled(value: unknown): boolean {
     if (['true', '1', 'yes', 'on'].includes(n)) return true
     if (['false', '0', 'no', 'off'].includes(n)) return false
   }
-  return true
+  return fallback
+}
+
+type McpEvents = z.infer<typeof McpEventsSchema>
+type McpEventsData = SidecarResult<'mcp.events'>
+const NO_SUBSCRIPTIONS = { active: 0, refresh_overdue: 0, lapsed: 0, pending: 0, paused: 0 }
+
+/**
+ * TAL-1510: one server's events opt-in and native subscription health, by `McpEventsStateSchema` precedence. `data` is
+ * null when the sidecar could not answer: an opted-in server is then `error`, never a guessed healthy state.
+ */
+export function eventsView(cfg: unknown, summary: Dict, runtime: Dict | null, data: McpEventsData | null): McpEvents {
+  const enabled = isDict(cfg) && parseEnabled(cfg.events, false)
+  const row = data?.servers.find((s) => s.name === summary.name)
+  const subscriptions = { ...(row?.subscriptions ?? NO_SUBSCRIPTIONS) }
+  const supported = data?.supported === true
+  const state: McpEvents['state'] = !data ? (enabled ? 'error' : 'off') : !supported ? 'unsupported' : !enabled ? 'off'
+    : data.callback === 'missing' ? 'needs_public_url' : data.callback === 'not_https' ? 'invalid_public_url'
+      : subscriptions.lapsed ? 'lapsed' : subscriptions.refresh_overdue ? 'refresh_overdue' : subscriptions.active ? 'subscribed'
+        : summary.active === true ? 'ready' : 'unavailable'
+  return { supported, enabled, can_edit: summary.can_toggle === true && (supported || enabled), state,
+    detail: state === 'unavailable' ? safeText(runtime?.error, 300) : '', utilities: row?.utilities ?? 0, subscriptions }
 }
 
 /** Python `_server_summary`. */
@@ -183,12 +206,23 @@ export class McpService {
       cost_unit: safeText(view.cost_unit, 32), tool_costs: view.tool_costs.map((tool) => ({ ...tool, name: safeText(tool.name, 200), note: safeText(tool.note, 2000) })) }
   }
 
+  private async events(profileHome: string, servers: Dict): Promise<McpEventsData | null> {
+    const sidecar = this.deps.sidecar()
+    if (!sidecar) return null
+    try { return await sidecar.call('mcp.events', { profile_home: profileHome, servers }) }
+    catch { return null }
+  }
+
   private async inventory(profileHome: string): Promise<{ servers: Dict; runtime: Map<string, Dict>; summaries: Map<string, Dict> }> {
     const config = await this.deps.config.read(profileHome)
     const servers = dict(config.mcp_servers)
     const runtime = await this.runtime(profileHome, servers)
-    const policies = await this.policies(profileHome, config)
-    const summaries = new Map(Object.entries(servers).map(([name, cfg]) => [name, serverSummary(name, cfg, runtime.get(name) ?? null)]))
+    const [policies, events] = await Promise.all([this.policies(profileHome, config), this.events(profileHome, servers)])
+    const summaries = new Map<string, Dict>(Object.entries(servers).map(([name, cfg]) => {
+      const rt = runtime.get(name) ?? null
+      const summary = serverSummary(name, cfg, rt)
+      return [name, { ...summary, events: eventsView(cfg, summary, rt, events) }]
+    }))
     if (policies?.supported) for (const policy of policies.policies) {
       const rt = runtime.get(policy.name) ?? null
       const summary = summaries.get(policy.name) ?? { ...serverSummary(policy.name, { command: '', enabled: rt?.disabled !== true }, rt), transport: str(rt?.transport) || 'package', can_toggle: false }
@@ -287,9 +321,29 @@ export class McpService {
     return { ok: true, server: summary }
   }
 
+  /** TAL-1510: only the `events` key changes; opting out removes it (the native default). Nothing else is added. */
+  private async updateEvents(profileHome: string, name: string, body: Dict): Promise<{ ok: true; server: Dict }> {
+    if (typeof body.events !== 'boolean' || Object.keys(body).length !== 1) throw new HttpFailure(400, 'events must be the only field and a boolean')
+    const events = body.events
+    await this.deps.config.update(profileHome, async (c) => {
+      const servers = dict(c.mcp_servers)
+      if (!(name in servers)) throw new HttpFailure(404, `MCP server '${name}' not found`)
+      if (!serverSummary(name, servers[name], null).can_toggle) throw new HttpFailure(400, `MCP server '${name}' has invalid config`)
+      if (events && !(await this.events(profileHome, servers))?.supported) throw new HttpFailure(409, 'The installed Agent does not support MCP events')
+      const server = { ...dict(servers[name]) }
+      if (events) server.events = true
+      else Reflect.deleteProperty(server, 'events')
+      c.mcp_servers = { ...servers, [name]: server }
+    })
+    const summary = (await this.inventory(profileHome)).summaries.get(name)
+    if (!summary) throw new HttpFailure(404, `MCP server '${name}' not found`)
+    return { ok: true, server: summary }
+  }
+
   async update(profileHome: string, name: string, body: Dict): Promise<{ ok: true; server: Dict }> {
     if (!name) throw new HttpFailure(400, 'name is required')
     if ('cost_policy' in body) return this.updatePolicy(profileHome, name, body)
+    if ('events' in body) return this.updateEvents(profileHome, name, body)
     let summary: Dict = {}
     await this.deps.config.update(profileHome, (c) => {
       const servers = dict(c.mcp_servers)
