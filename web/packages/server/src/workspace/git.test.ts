@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -498,6 +498,35 @@ describe('destructive gate', () => {
       expect((await post(s, '/api/git/fetch', { session_id: sid })).status).toBe(200)
     } finally {
       await s.close()
+    }
+  })
+})
+
+describe('git diff reads', () => {
+  it('leave the index untouched even when the repository asks diff to refresh it (TAL-1603)', async () => {
+    const ws = realpathSync(mkdtempSync(join(tmpdir(), 'talaria-diff-index-')))
+    try {
+      git(ws, 'init', '-q', '-b', 'main')
+      writeFileSync(join(ws, 'edit.txt'), 'a\n')
+      writeFileSync(join(ws, 'touched.txt'), 'b\n')
+      git(ws, 'add', '.')
+      git(ws, 'commit', '-q', '-m', 'init')
+      git(ws, 'config', 'diff.autoRefreshIndex', 'true')
+      writeFileSync(join(ws, 'edit.txt'), 'a\none\ntwo\n')
+      const later = new Date(Date.now() + 5000)
+      utimesSync(join(ws, 'edit.txt'), later, later)
+      utimesSync(join(ws, 'touched.txt'), later, later)
+      const index = join(ws, '.git', 'index')
+      const bytes = readFileSync(index)
+      const { mtimeMs } = statSync(index)
+      const runner = new GitRunner({ env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' } })
+      const diff = await runner.diff(ws, 'edit.txt')
+      expect(diff).toMatchObject({ path: 'edit.txt', kind: 'unstaged', additions: 2, deletions: 0 })
+      expect(diff.diff).toContain('+one\n+two')
+      expect(readFileSync(index)).toEqual(bytes)
+      expect(statSync(index).mtimeMs).toBe(mtimeMs)
+    } finally {
+      rmSync(ws, { recursive: true, force: true })
     }
   })
 })

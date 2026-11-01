@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Viewing workspace changes no longer rewrites the Git index, so it cannot collide with a Git command you run at the same time.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
