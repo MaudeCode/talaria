@@ -278,7 +278,7 @@ def test_recovery_remains_reachable_after_the_job_was_removed(monkeypatch, tmp_p
     class Registry:
         def method(self, name, **kwargs):
             return lambda fn: methods.setdefault(name, fn)
-    monkeypatch.setattr(cron, "_store", lambda home: contextlib.nullcontext())
+    monkeypatch.setattr(cron, "_store", lambda home, **kwargs: contextlib.nullcontext())
     monkeypatch.setattr(cron, "_jobs", lambda: types.SimpleNamespace(get_job=lambda jid: None))
     monkeypatch.setattr(cron, "run_tracked", lambda job, *args, **kwargs: recovered.append(job["id"]) or {"status": "failed"})
     cron.register(Registry())

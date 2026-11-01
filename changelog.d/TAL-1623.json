@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A new scheduled task never appears or runs before its profile, owner and notification settings are saved, and resuming a task while its schedule is edited elsewhere keeps the next run on the saved schedule.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
