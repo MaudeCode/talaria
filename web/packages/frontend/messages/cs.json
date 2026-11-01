@@ -854,7 +854,6 @@
 	"settings_main_advanced_service_tier_default": "Výchozí / vypnuto",
 	"settings_main_advanced_service_tier_priority": "Priorita (rychlé)",
 	"settings_label_auxiliary_models": "Pomocné modely",
-	"settings_desc_auxiliary_models": "Směrování vedlejších úloh pro vision, kompresi, generování názvů atd. \"Auto\" používá váš hlavní chatovací model.",
 	"settings_btn_reset_aux_models": "Resetovat vše na auto",
 	"settings_btn_apply_aux_models": "Aplikovat změny",
 	"settings_aux_provider_auto": "použít hlavní model",

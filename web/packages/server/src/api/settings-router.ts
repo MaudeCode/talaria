@@ -15,7 +15,7 @@ import { HttpFailure } from '../sessions/service.js'
 import { SidecarError } from '../sidecar/client.js'
 import type { SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
 import { SessionNotFound } from '../sessions/store.js'
-import { auxiliaryModels, dict, modelSection, canonicaliseProviderId, ConfigUnavailable, maxTokensStatus, findPersonality, reasoningStatus, setAuxiliaryModel, setDefaultModel, setMaxTokens, validReasoningEffort, type Dict } from '../config/agent-config.js'
+import { auxiliaryModels, auxiliaryReasoning, dict, modelSection, canonicaliseProviderId, ConfigUnavailable, maxTokensStatus, findPersonality, reasoningStatus, setAuxiliaryModel, setDefaultModel, setMaxTokens, validReasoningEffort, type AuxEfforts, type Dict } from '../config/agent-config.js'
 import { ProfileError, validateProfileName } from '../profiles/profiles.js'
 import { OnboardingError } from '../onboarding.js'
 import { EnvWriteError } from '../providers/env-file.js'
@@ -51,18 +51,26 @@ async function run<T>(fn: () => Promise<T> | T): Promise<never> {
 }
 
 const home = (ctx: RequestContext): string => ctx.deps.profileHome(activeProfileName(ctx))
-/** The active profile's auxiliary slots, stamped against the same catalog `/api/models` answers. */
+/**
+ * The active profile's auxiliary slots, stamped against the same catalog `/api/models` answers. TAL-1285: the
+ * independent reads (speed tiers, ownership, delegation, the Agent's slots and their reasoning, the catalog) run together.
+ */
 const auxiliaryState = async (ctx: RequestContext): Promise<Dict> => {
-  const config = await ctx.deps.agentConfig.read(home(ctx))
+  const profileHome = home(ctx)
+  const config = await ctx.deps.agentConfig.read(profileHome)
   const main = modelSection(config)
   const model = str(main.default ?? main.name).trim()
-  // Speed availability must not prevent reading or editing the independent auxiliary slots.
-  const [tiers = []] = model ? await ctx.deps.agentConfig.speedTiers(home(ctx), config, [{ model, provider: str(main.provider) }]).catch(() => []) : []
-  const canEdit = await canManageServer(ctx)
-  const delegation = await ctx.deps.agentConfig.delegation(home(ctx), config)
+  const [[tiers = []], canEdit, delegation, { slots, reasoning }, catalog] = await Promise.all([
+    // Speed availability must not prevent reading or editing the independent auxiliary slots.
+    model ? ctx.deps.agentConfig.speedTiers(profileHome, config, [{ model, provider: str(main.provider) }]).catch(() => []) : Promise.resolve([]),
+    canManageServer(ctx),
+    ctx.deps.agentConfig.delegation(profileHome, config),
+    ctx.deps.agentConfig.auxiliarySlots(profileHome).then(async ({ slots }) => ({ slots, reasoning: await auxiliaryReasoning(config, slots, auxEfforts(ctx)) })),
+    ctx.deps.catalog.models(profileHome),
+  ])
   // Native profile identities and lending routes are owner-only configuration.
   const visible = canEdit ? delegation : { ...delegation, profiles: [], model_map: { options: [], default: null }, profile_routes: { profiles: [], default: null } }
-  return { ...stampAuxiliarySelections(auxiliaryModels(config, tiers, (await ctx.deps.agentConfig.auxiliarySlots(home(ctx))).slots), await ctx.deps.catalog.models(home(ctx))), delegation: { ...visible, can_edit: canEdit } }
+  return { ...stampAuxiliarySelections(auxiliaryModels(config, tiers, slots, reasoning), catalog), delegation: { ...visible, can_edit: canEdit } }
 }
 const CLEAR_PERSONALITY = new Set(['none', 'default', 'clear'])
 const truthy = (v: string | undefined): boolean => ['1', 'true', 'yes', 'on'].includes((v ?? '').trim().toLowerCase())
@@ -208,15 +216,17 @@ async function saveSettings(ctx: RequestContext, input: Dict): Promise<Dict> {
   return saved
 }
 
-const effortsResolver = (ctx: RequestContext) => async (model: string, provider: string): Promise<string[]> => {
+/** The Agent's reasoning levels for a model; null when the sidecar cannot answer (TAL-1285 fails closed on that). */
+const auxEfforts = (ctx: RequestContext): AuxEfforts => async (model, provider) => {
   const sidecar = ctx.deps.sidecar()
-  if (!sidecar) return []
+  if (!sidecar) return null
   try {
     return (await sidecar.call('models.reasoning_efforts', { profile_home: home(ctx), model, provider })).efforts
   } catch {
-    return []
+    return null
   }
 }
+const effortsResolver = (ctx: RequestContext) => async (model: string, provider: string): Promise<string[]> => (await auxEfforts(ctx)(model, provider, '')) ?? []
 
 const OAUTH_GATE_DENIED = 'Onboarding OAuth is only available from local networks when auth is not enabled. To bypass this on a remote server, set HERMES_WEBUI_ONBOARDING_OPEN=1.'
 
@@ -359,7 +369,7 @@ export const settingsRouter = os.router({
       try {
         if (scope === 'auxiliary') {
           if (str(input.task).trim() === '__reset__' && !(await canManageServer(ctx))) throw new HttpError(403, 'An owner session is required to reset delegation settings')
-          const saved = await setAuxiliaryModel(ctx.deps.agentConfig, home(ctx), str(input.task).trim(), provider, model, input.advanced)
+          const saved = await setAuxiliaryModel(ctx.deps.agentConfig, home(ctx), str(input.task).trim(), { provider: input.provider, model: input.model, reasoning_effort: input.reasoning_effort, advanced: input.advanced }, auxEfforts(ctx))
           ctx.deps.catalog.invalidate()
           // The write is saved; a catalog failure only drops the refreshed state, and clients then reread it.
           const auxiliary = await auxiliaryState(ctx).catch(() => undefined)

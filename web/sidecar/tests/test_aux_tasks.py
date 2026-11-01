@@ -15,6 +15,8 @@ from conftest import AGENT_DIR, SidecarProcess, load_schema, requires_agent, val
 
 SIDE = "register_auxiliary_task('side_task', display_name='Side model', description='side summaries', inherit_from='compression')"
 ALPHA = "register_auxiliary_task('alpha_task', display_name='Alpha model', description='alpha scoring', defaults={'timeout': 7})"
+# TAL-1285: an Agent with ``_aux_task_takes_reasoning`` says which slots honour an effort; an older one says nothing (None).
+TAKES = None if AGENT_DIR is None or "_aux_task_takes_reasoning" not in (AGENT_DIR / "hermes_cli/main_provider_setup.py").read_text() else True
 
 
 def _plugin(home: pathlib.Path, name: str, call: str) -> None:
@@ -51,9 +53,11 @@ def test_slots_follow_the_agent_with_plugin_tasks_per_profile(tmp_path: pathlib.
         keys = list(rows)
         # The Agent's built-ins in its order, then this profile's plugin tasks, then the delegation row (TAL-1273).
         assert keys[:4] == ["vision", "compression", "approval", "mcp"] and keys[-3:] == ["alpha_task", "side_task", "delegation"], keys
-        assert rows["voice_chat"] == {"key": "voice_chat", "label": "Voice chat", "description": "spoken voice-mode replies", "inherit_from": None, "reasoning_effort": "none", "effective": None}
+        assert rows["voice_chat"] == {"key": "voice_chat", "label": "Voice chat", "description": "spoken voice-mode replies", "inherit_from": None, "reasoning_effort": "none", "effective": None, "takes_reasoning": TAKES}
         assert rows["compression"]["reasoning_effort"] == ""
-        assert rows["alpha_task"] == {"key": "alpha_task", "label": "Alpha model", "description": "alpha scoring", "inherit_from": None, "reasoning_effort": "", "effective": None}
+        # A slot without a reasoning default (memory_query_rewrite) and review, which runs on delegation's effort, ignore one.
+        assert {key: rows[key]["takes_reasoning"] for key in ("compression", "memory_query_rewrite", "review")} == {"compression": TAKES, "memory_query_rewrite": TAKES and False, "review": TAKES and False}
+        assert rows["alpha_task"] == {"key": "alpha_task", "label": "Alpha model", "description": "alpha scoring", "inherit_from": None, "reasoning_effort": "", "effective": None, "takes_reasoning": TAKES}
         # An unpinned inheriting task runs on its base slot's route.
         assert rows["side_task"]["inherit_from"] == "compression"
         assert rows["side_task"]["effective"] == {"provider": "openrouter", "model": "vendor/model-a", "base_url": ""}
@@ -87,6 +91,6 @@ def test_delegation_row_follows_the_top_level_section(tmp_path: pathlib.Path) ->
     try:
         rows = _rows(sidecar, home)
         assert list(rows)[-1] == "delegation"
-        assert rows["delegation"] == {"key": "delegation", "label": "Delegation", "description": "subagent model (delegate_task)", "inherit_from": None, "reasoning_effort": "low", "effective": None}
+        assert rows["delegation"] == {"key": "delegation", "label": "Delegation", "description": "subagent model (delegate_task)", "inherit_from": None, "reasoning_effort": "low", "effective": None, "takes_reasoning": TAKES}
     finally:
         sidecar.close()

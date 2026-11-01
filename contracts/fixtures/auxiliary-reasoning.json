@@ -1,0 +1,9 @@
+{
+  "explicit": { "saved": "medium", "effective": "medium", "inherited": false, "default_source": "provider", "options": ["low", "medium", "high", "none"], "unavailable": null },
+  "inherited": { "saved": null, "effective": "", "inherited": true, "default_source": "provider", "options": ["low", "medium", "high", "none"], "unavailable": null },
+  "disabled": { "saved": "none", "effective": "none", "inherited": false, "default_source": "provider", "options": ["low", "high", "none"], "unavailable": null },
+  "delegation": { "saved": null, "effective": "", "inherited": true, "default_source": "parent", "options": ["low", "medium", "high", "none"], "unavailable": null },
+  "slot_ignores_effort": { "saved": null, "effective": "", "inherited": true, "default_source": "provider", "options": [], "unavailable": "slot" },
+  "model_without_reasoning": { "saved": null, "effective": "", "inherited": true, "default_source": "provider", "options": [], "unavailable": "model" },
+  "agent_unknown": { "saved": "high", "effective": null, "inherited": false, "default_source": "provider", "options": [], "unavailable": "agent" }
+}

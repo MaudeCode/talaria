@@ -307,10 +307,20 @@ def _delegation_row() -> dict | None:
             "reasoning_effort": _effort_word(_delegation_cfg_as_task(load_config())), "effective": None}
 
 
+def _takes_reasoning():
+    """TAL-1285: the Agent's ``_aux_task_takes_reasoning``, or None on an Agent that does not say which slots honour an effort."""
+    try:
+        from hermes_cli.main_provider_setup import _aux_task_takes_reasoning
+    except ImportError:
+        return None
+    return _aux_task_takes_reasoning
+
+
 def aux_tasks() -> dict:
     """TAL-800: the home's auxiliary slots in Agent order, the ``hermes model`` picker's built-ins, the home's plugin
     tasks, then the picker's delegation row (TAL-1273), each with its resolved reasoning effort and, for a task that
-    inherits another slot, its effective route.
+    inherits another slot, its effective route. TAL-1285: ``takes_reasoning`` is whether the slot's route honours a
+    ``reasoning_effort`` (the Agent's own rule); null when the Agent does not say.
     ``reserved`` names the Agent's other ``auxiliary.*`` keys (settings and unlisted routes), which are never slots."""
     from agent.auxiliary_client import _get_auxiliary_task_config
     from hermes_cli.config import DEFAULT_CONFIG
@@ -334,6 +344,9 @@ def aux_tasks() -> dict:
         row["effective"] = {field: str(resolved.get(field) or "") for field in ("provider", "model", "base_url")} if row["inherit_from"] else None
     if delegation:
         rows.append(delegation)
+    takes = _takes_reasoning()
+    for row in rows:
+        row["takes_reasoning"] = bool(takes(row["key"])) if takes else None
     listed = {row["key"] for row in rows}
     return {"tasks": rows, "reserved": sorted(key for key in (DEFAULT_CONFIG.get("auxiliary") or {}) if key not in listed)}
 

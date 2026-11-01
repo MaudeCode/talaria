@@ -835,7 +835,6 @@
 	"settings_main_advanced_service_tier_default": "Default / off",
 	"settings_main_advanced_service_tier_priority": "Priority (fast)",
 	"settings_label_auxiliary_models": "Yardımcı Modeller",
-	"settings_desc_auxiliary_models": "Görü, sıkıştırma, başlık oluşturma vb. yan görevler için yönlendirme. \"Otomatik\" ana sohbet modelinizi kullanır.",
 	"settings_btn_reset_aux_models": "Tümünü otomatiğe sıfırla",
 	"settings_btn_apply_aux_models": "Değişiklikleri uygula",
 	"settings_aux_provider_auto": "ana modeli kullan",

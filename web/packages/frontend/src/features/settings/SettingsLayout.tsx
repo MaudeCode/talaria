@@ -10,9 +10,9 @@ import { cn } from '../../ui/cn'
 import { SettingsSectionSchema, type SettingsSection as Section } from '../../contracts/url'
 import { useLocale } from '../../i18n/useLocale'
 import { closeMobileSidebar } from '../../shell/useShellState'
-import { MessageSquare, AudioLines, SunMedium, SlidersHorizontal, Key, Link2, Star, Puzzle, Server, CircleHelp, type LucideIcon } from 'lucide-react'
+import { MessageSquare, AudioLines, SunMedium, SlidersHorizontal, Key, Cpu, Link2, Star, Puzzle, Server, CircleHelp, type LucideIcon } from 'lucide-react'
 
-const SECTION_ICON: Record<Section, LucideIcon> = { conversation: MessageSquare, speech: AudioLines, appearance: SunMedium, preferences: SlidersHorizontal, providers: Key, connectors: Link2, plugins: Star, extensions: Puzzle, system: Server, help: CircleHelp }
+const SECTION_ICON: Record<Section, LucideIcon> = { conversation: MessageSquare, speech: AudioLines, appearance: SunMedium, preferences: SlidersHorizontal, providers: Key, auxiliary: Cpu, connectors: Link2, plugins: Star, extensions: Puzzle, system: Server, help: CircleHelp }
 
 export const SECTION_LABEL: Record<Section, () => string> = {
   appearance: () => m.settings_section_appearance_title(),
@@ -20,6 +20,7 @@ export const SECTION_LABEL: Record<Section, () => string> = {
   speech: () => m.settings_section_speech_title(),
   preferences: () => m.settings_section_preferences_title(),
   providers: () => m.settings_section_providers_title(),
+  auxiliary: () => m.settings_label_auxiliary_models(),
   connectors: () => m.settings_section_connectors_title(),
   plugins: () => m.settings_section_plugins_title(),
   extensions: () => m.settings_section_extensions_title(),

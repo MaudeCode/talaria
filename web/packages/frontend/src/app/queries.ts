@@ -43,9 +43,10 @@ export function useAuxiliaryModelsQuery(enabled = true) {
 
 /** One auxiliary slot's write owner; `__reset__` owns every slot. */
 export const auxResource = (task: string) => `aux-model:${task}`
-interface AuxWrite { task: string; model: string; provider?: string | null; tasks?: string[] | undefined; shown: Record<string, unknown>; delegation?: DelegationSettings | undefined }
+/** Without `model`, a write that names `reasoning_effort` changes only the slot's effort (TAL-1285). */
+interface AuxWrite { task: string; model?: string; provider?: string | null; reasoning_effort?: string | null; tasks?: string[] | undefined; shown: Record<string, unknown>; delegation?: DelegationSettings | undefined }
 
-/** Writes one auxiliary slot (or resets all): the slot shows the pick at once, and the server's state replaces the list. */
+/** Writes one auxiliary slot's model and/or effort (or resets all): the slot shows the pick at once, and the server's state replaces the list. */
 export function useSetAuxiliaryModel() {
   const qc = useQueryClient()
   return useResourceMutation({
@@ -53,7 +54,7 @@ export function useSetAuxiliaryModel() {
     exclusive: true,
     queryKey: keys.auxiliaryModels, readKeys: () => [{ queryKey: keys.auxiliaryModels, exact: true }],
     effect: ({ shown, delegation }) => ({ fields: shown, value: delegation }),
-    mutationFn: ({ task, model, provider }) => api.setAuxiliaryModel(task, model, provider),
+    mutationFn: ({ task, model, provider, reasoning_effort }) => api.setAuxiliaryModel(task, { model, provider, reasoning_effort }),
     onSuccess: (res) => { if (res.auxiliary) qc.setQueryData(keys.auxiliaryModels, res.auxiliary) },
     onError: toastError,
   })

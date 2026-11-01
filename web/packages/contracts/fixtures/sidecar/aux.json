@@ -24,7 +24,8 @@
             "description": "image/screenshot analysis",
             "inherit_from": null,
             "reasoning_effort": "",
-            "effective": null
+            "effective": null,
+            "takes_reasoning": true
           },
           {
             "key": "compression",
@@ -32,7 +33,8 @@
             "description": "context summarization",
             "inherit_from": null,
             "reasoning_effort": "",
-            "effective": null
+            "effective": null,
+            "takes_reasoning": true
           },
           {
             "key": "approval",
@@ -40,7 +42,8 @@
             "description": "smart command approval",
             "inherit_from": null,
             "reasoning_effort": "",
-            "effective": null
+            "effective": null,
+            "takes_reasoning": true
           },
           {
             "key": "mcp",
@@ -48,7 +51,8 @@
             "description": "MCP tool reasoning",
             "inherit_from": null,
             "reasoning_effort": "",
-            "effective": null
+            "effective": null,
+            "takes_reasoning": true
           },
           {
             "key": "title_generation",
@@ -56,7 +60,8 @@
             "description": "session titles",
             "inherit_from": null,
             "reasoning_effort": "",
-            "effective": null
+            "effective": null,
+            "takes_reasoning": true
           },
           {
             "key": "review",
@@ -64,7 +69,8 @@
             "description": "/review reviewer subagent",
             "inherit_from": null,
             "reasoning_effort": "",
-            "effective": null
+            "effective": null,
+            "takes_reasoning": false
           },
           {
             "key": "memory_query_rewrite",
@@ -72,7 +78,8 @@
             "description": "memory retrieval queries",
             "inherit_from": null,
             "reasoning_effort": "",
-            "effective": null
+            "effective": null,
+            "takes_reasoning": false
           },
           {
             "key": "tts_audio_tags",
@@ -80,7 +87,8 @@
             "description": "Gemini TTS tag insertion",
             "inherit_from": null,
             "reasoning_effort": "",
-            "effective": null
+            "effective": null,
+            "takes_reasoning": true
           },
           {
             "key": "voice_chat",
@@ -88,7 +96,8 @@
             "description": "spoken voice-mode replies",
             "inherit_from": null,
             "reasoning_effort": "none",
-            "effective": null
+            "effective": null,
+            "takes_reasoning": true
           },
           {
             "key": "skills_hub",
@@ -96,7 +105,8 @@
             "description": "skills search/install",
             "inherit_from": null,
             "reasoning_effort": "",
-            "effective": null
+            "effective": null,
+            "takes_reasoning": true
           },
           {
             "key": "triage_specifier",
@@ -104,7 +114,8 @@
             "description": "kanban spec fleshing",
             "inherit_from": null,
             "reasoning_effort": "",
-            "effective": null
+            "effective": null,
+            "takes_reasoning": true
           },
           {
             "key": "kanban_decomposer",
@@ -112,7 +123,8 @@
             "description": "task decomposition",
             "inherit_from": null,
             "reasoning_effort": "",
-            "effective": null
+            "effective": null,
+            "takes_reasoning": true
           },
           {
             "key": "profile_describer",
@@ -120,7 +132,8 @@
             "description": "auto profile descriptions",
             "inherit_from": null,
             "reasoning_effort": "",
-            "effective": null
+            "effective": null,
+            "takes_reasoning": true
           },
           {
             "key": "curator",
@@ -128,7 +141,8 @@
             "description": "skill-usage review pass",
             "inherit_from": null,
             "reasoning_effort": "",
-            "effective": null
+            "effective": null,
+            "takes_reasoning": true
           },
           {
             "key": "delegation",
@@ -136,7 +150,8 @@
             "description": "subagent model (delegate_task)",
             "inherit_from": null,
             "reasoning_effort": "",
-            "effective": null
+            "effective": null,
+            "takes_reasoning": true
           }
         ],
         "reserved": [

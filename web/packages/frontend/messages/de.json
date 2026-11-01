@@ -779,7 +779,6 @@
 	"settings_main_advanced_service_tier_default": "Default / off",
 	"settings_main_advanced_service_tier_priority": "Priority (fast)",
 	"settings_label_auxiliary_models": "Hilfsmodelle",
-	"settings_desc_auxiliary_models": "Routing für Nebenaufgaben wie Vision, Komprimierung, Titelgenerierung usw. „Auto\" verwendet das Haupt-Chat-Modell.",
 	"settings_btn_reset_aux_models": "Alle auf auto zurücksetzen",
 	"settings_btn_apply_aux_models": "Änderungen anwenden",
 	"settings_aux_provider_auto": "Hauptmodell verwenden",

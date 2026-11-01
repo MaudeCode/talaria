@@ -31,7 +31,15 @@
         "selected_option_id": null,
         "task": "vision",
         "timeout": "",
-        "value_label": null
+        "value_label": null,
+        "reasoning": {
+          "saved": null,
+          "effective": "",
+          "inherited": true,
+          "default_source": "provider",
+          "options": [],
+          "unavailable": "model"
+        }
       },
       {
         "api_key_set": false,
@@ -51,7 +59,15 @@
         "selected_option_id": null,
         "task": "compression",
         "timeout": "",
-        "value_label": null
+        "value_label": null,
+        "reasoning": {
+          "saved": null,
+          "effective": "",
+          "inherited": true,
+          "default_source": "provider",
+          "options": [],
+          "unavailable": "model"
+        }
       },
       {
         "api_key_set": false,
@@ -71,7 +87,15 @@
         "selected_option_id": null,
         "task": "approval",
         "timeout": "",
-        "value_label": null
+        "value_label": null,
+        "reasoning": {
+          "saved": null,
+          "effective": "",
+          "inherited": true,
+          "default_source": "provider",
+          "options": [],
+          "unavailable": "model"
+        }
       },
       {
         "api_key_set": false,
@@ -91,7 +115,15 @@
         "selected_option_id": null,
         "task": "mcp",
         "timeout": "",
-        "value_label": null
+        "value_label": null,
+        "reasoning": {
+          "saved": null,
+          "effective": "",
+          "inherited": true,
+          "default_source": "provider",
+          "options": [],
+          "unavailable": "model"
+        }
       },
       {
         "api_key_set": false,
@@ -111,7 +143,15 @@
         "selected_option_id": null,
         "task": "title_generation",
         "timeout": "",
-        "value_label": null
+        "value_label": null,
+        "reasoning": {
+          "saved": null,
+          "effective": "",
+          "inherited": true,
+          "default_source": "provider",
+          "options": [],
+          "unavailable": "model"
+        }
       },
       {
         "api_key_set": false,
@@ -131,7 +171,15 @@
         "selected_option_id": null,
         "task": "review",
         "timeout": "",
-        "value_label": null
+        "value_label": null,
+        "reasoning": {
+          "saved": null,
+          "effective": "",
+          "inherited": true,
+          "default_source": "provider",
+          "options": [],
+          "unavailable": "slot"
+        }
       },
       {
         "api_key_set": false,
@@ -151,7 +199,15 @@
         "selected_option_id": null,
         "task": "memory_query_rewrite",
         "timeout": "",
-        "value_label": null
+        "value_label": null,
+        "reasoning": {
+          "saved": null,
+          "effective": "",
+          "inherited": true,
+          "default_source": "provider",
+          "options": [],
+          "unavailable": "slot"
+        }
       },
       {
         "api_key_set": false,
@@ -171,7 +227,15 @@
         "selected_option_id": null,
         "task": "tts_audio_tags",
         "timeout": "",
-        "value_label": null
+        "value_label": null,
+        "reasoning": {
+          "saved": null,
+          "effective": "",
+          "inherited": true,
+          "default_source": "provider",
+          "options": [],
+          "unavailable": "model"
+        }
       },
       {
         "api_key_set": false,
@@ -191,7 +255,15 @@
         "selected_option_id": null,
         "task": "voice_chat",
         "timeout": "",
-        "value_label": null
+        "value_label": null,
+        "reasoning": {
+          "saved": null,
+          "effective": "none",
+          "inherited": true,
+          "default_source": "provider",
+          "options": [],
+          "unavailable": "model"
+        }
       },
       {
         "api_key_set": false,
@@ -211,7 +283,15 @@
         "selected_option_id": null,
         "task": "skills_hub",
         "timeout": "",
-        "value_label": null
+        "value_label": null,
+        "reasoning": {
+          "saved": null,
+          "effective": "",
+          "inherited": true,
+          "default_source": "provider",
+          "options": [],
+          "unavailable": "model"
+        }
       },
       {
         "api_key_set": false,
@@ -231,7 +311,15 @@
         "selected_option_id": null,
         "task": "triage_specifier",
         "timeout": "",
-        "value_label": null
+        "value_label": null,
+        "reasoning": {
+          "saved": null,
+          "effective": "",
+          "inherited": true,
+          "default_source": "provider",
+          "options": [],
+          "unavailable": "model"
+        }
       },
       {
         "api_key_set": false,
@@ -251,7 +339,15 @@
         "selected_option_id": null,
         "task": "kanban_decomposer",
         "timeout": "",
-        "value_label": null
+        "value_label": null,
+        "reasoning": {
+          "saved": null,
+          "effective": "",
+          "inherited": true,
+          "default_source": "provider",
+          "options": [],
+          "unavailable": "model"
+        }
       },
       {
         "api_key_set": false,
@@ -271,7 +367,15 @@
         "selected_option_id": null,
         "task": "profile_describer",
         "timeout": "",
-        "value_label": null
+        "value_label": null,
+        "reasoning": {
+          "saved": null,
+          "effective": "",
+          "inherited": true,
+          "default_source": "provider",
+          "options": [],
+          "unavailable": "model"
+        }
       },
       {
         "api_key_set": false,
@@ -291,7 +395,15 @@
         "selected_option_id": null,
         "task": "curator",
         "timeout": "",
-        "value_label": null
+        "value_label": null,
+        "reasoning": {
+          "saved": null,
+          "effective": "",
+          "inherited": true,
+          "default_source": "provider",
+          "options": [],
+          "unavailable": "model"
+        }
       }
     ]
   },

@@ -25,12 +25,11 @@ const renderSection = (canManage = true) => {
 }
 
 describe('PreferencesSection', () => {
-  it('opens the server auxiliary task list beside the default model (TAL-388)', async () => {
+  it('leaves auxiliary models to their own Settings page (TAL-1285)', async () => {
     renderSection()
     await screen.findByText('Default Model')
-    await userEvent.click(screen.getByRole('button', { name: 'Manage' }))
-    const list = within(await screen.findByRole('list', { name: 'Auxiliary Models' }))
-    expect(list.getByRole('button', { name: /Title generation/ })).toHaveTextContent('Auto · Anthropic · Claude Sonnet 4.6')
+    expect(screen.queryByRole('button', { name: 'Manage' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Auxiliary Models')).not.toBeInTheDocument()
   })
 
   it('edits the external-link confirmation and trusted hosts through settings (TAL-279)', async () => {

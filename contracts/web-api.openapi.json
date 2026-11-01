@@ -70142,6 +70142,77 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "reasoning": {
+                            "type": "object",
+                            "properties": {
+                              "saved": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "The effort saved on the slot (`none` disables reasoning); null when none is saved and the slot inherits its default."
+                              },
+                              "effective": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "The effort the slot runs with; `''` is the default named by `default_source`; null when the Agent does not report it."
+                              },
+                              "inherited": {
+                                "type": "boolean",
+                                "description": "No effort is saved, so the slot runs with its default."
+                              },
+                              "default_source": {
+                                "enum": [
+                                  "provider",
+                                  "parent"
+                                ],
+                                "type": "string",
+                                "description": "What the default is: the provider's (auxiliary tasks) or the parent agent's (delegation)."
+                              },
+                              "options": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "description": "Efforts the slot may save, in order (`none` last). Empty when `unavailable` is set."
+                              },
+                              "unavailable": {
+                                "anyOf": [
+                                  {
+                                    "enum": [
+                                      "slot",
+                                      "model",
+                                      "agent"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "Why no effort can be saved: the slot ignores one, its route's model has no reasoning control, or the Agent did not say. Null when `options` apply."
+                              }
+                            },
+                            "required": [
+                              "saved",
+                              "effective",
+                              "inherited",
+                              "default_source",
+                              "options",
+                              "unavailable"
+                            ],
+                            "additionalProperties": {}
                           }
                         },
                         "required": [
@@ -70156,7 +70227,8 @@
                           "selected_option_id",
                           "in_catalog",
                           "inherit_from",
-                          "reasoning_effort"
+                          "reasoning_effort",
+                          "reasoning"
                         ],
                         "additionalProperties": {}
                       }
@@ -72150,6 +72222,77 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "reasoning": {
+                            "type": "object",
+                            "properties": {
+                              "saved": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "The effort saved on the slot (`none` disables reasoning); null when none is saved and the slot inherits its default."
+                              },
+                              "effective": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "The effort the slot runs with; `''` is the default named by `default_source`; null when the Agent does not report it."
+                              },
+                              "inherited": {
+                                "type": "boolean",
+                                "description": "No effort is saved, so the slot runs with its default."
+                              },
+                              "default_source": {
+                                "enum": [
+                                  "provider",
+                                  "parent"
+                                ],
+                                "type": "string",
+                                "description": "What the default is: the provider's (auxiliary tasks) or the parent agent's (delegation)."
+                              },
+                              "options": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "description": "Efforts the slot may save, in order (`none` last). Empty when `unavailable` is set."
+                              },
+                              "unavailable": {
+                                "anyOf": [
+                                  {
+                                    "enum": [
+                                      "slot",
+                                      "model",
+                                      "agent"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "Why no effort can be saved: the slot ignores one, its route's model has no reasoning control, or the Agent did not say. Null when `options` apply."
+                              }
+                            },
+                            "required": [
+                              "saved",
+                              "effective",
+                              "inherited",
+                              "default_source",
+                              "options",
+                              "unavailable"
+                            ],
+                            "additionalProperties": {}
                           }
                         },
                         "required": [
@@ -72164,7 +72307,8 @@
                           "selected_option_id",
                           "in_catalog",
                           "inherit_from",
-                          "reasoning_effort"
+                          "reasoning_effort",
+                          "reasoning"
                         ],
                         "additionalProperties": {}
                       }
@@ -72185,7 +72329,7 @@
     "/api/model/set": {
       "post": {
         "operationId": "models.set",
-        "summary": "scope=main sets config.yaml model.default; scope=auxiliary assigns one task slot (`__reset__` clears all) and answers the refreshed auxiliary state. An auxiliary `model` may be a `/api/models` entry id; provider `auto` with an empty model clears the override.",
+        "summary": "scope=main sets config.yaml model.default; scope=auxiliary assigns one task slot (`__reset__` clears all) and answers the refreshed auxiliary state. An auxiliary `model` may be a `/api/models` entry id; provider `auto` with an empty model clears the override. TAL-1285: an auxiliary write without `model` and `provider` changes only `reasoning_effort` and keeps the route.",
         "tags": [
           "settings"
         ],
@@ -72221,6 +72365,17 @@
                   },
                   "model": {
                     "type": "string"
+                  },
+                  "reasoning_effort": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "TAL-1285, auxiliary only: one of the task's `reasoning.options` to save, or null/'' to clear the override. Omitted, a route change keeps the saved effort when the new route supports it and clears it otherwise. An effort outside the resulting route's options is rejected and nothing is written."
                   },
                   "session_id": {
                     "type": "string"
@@ -72746,6 +72901,77 @@
                                     "type": "null"
                                   }
                                 ]
+                              },
+                              "reasoning": {
+                                "type": "object",
+                                "properties": {
+                                  "saved": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "description": "The effort saved on the slot (`none` disables reasoning); null when none is saved and the slot inherits its default."
+                                  },
+                                  "effective": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "description": "The effort the slot runs with; `''` is the default named by `default_source`; null when the Agent does not report it."
+                                  },
+                                  "inherited": {
+                                    "type": "boolean",
+                                    "description": "No effort is saved, so the slot runs with its default."
+                                  },
+                                  "default_source": {
+                                    "enum": [
+                                      "provider",
+                                      "parent"
+                                    ],
+                                    "type": "string",
+                                    "description": "What the default is: the provider's (auxiliary tasks) or the parent agent's (delegation)."
+                                  },
+                                  "options": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "description": "Efforts the slot may save, in order (`none` last). Empty when `unavailable` is set."
+                                  },
+                                  "unavailable": {
+                                    "anyOf": [
+                                      {
+                                        "enum": [
+                                          "slot",
+                                          "model",
+                                          "agent"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "description": "Why no effort can be saved: the slot ignores one, its route's model has no reasoning control, or the Agent did not say. Null when `options` apply."
+                                  }
+                                },
+                                "required": [
+                                  "saved",
+                                  "effective",
+                                  "inherited",
+                                  "default_source",
+                                  "options",
+                                  "unavailable"
+                                ],
+                                "additionalProperties": {}
                               }
                             },
                             "required": [
@@ -72760,7 +72986,8 @@
                               "selected_option_id",
                               "in_catalog",
                               "inherit_from",
-                              "reasoning_effort"
+                              "reasoning_effort",
+                              "reasoning"
                             ],
                             "additionalProperties": {}
                           }

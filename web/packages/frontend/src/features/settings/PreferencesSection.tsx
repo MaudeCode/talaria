@@ -8,7 +8,6 @@ import { NAV_ITEMS, FIXED_TABS } from '../../shell/nav'
 import { useState } from 'react'
 import { Button } from '../../ui/Button'
 import { CompletionAudioSettings } from './CompletionAudioSettings'
-import { AuxiliaryModelsSetting } from './AuxiliaryModels'
 import { useBootstrap } from '../../app/bootstrap'
 import { catalogEntryById, catalogGroupLabel, ModelOptionContent, catalogModelSections } from '../../lib/modelEntry'
 
@@ -62,7 +61,6 @@ export function PreferencesSection() {
           </Select>
         </FieldRow>
       )}
-      <AuxiliaryModelsSetting />
       <FieldRow label={m.settings_label_send_key()} htmlFor="settingsSendKey" inline>
         <Select id="settingsSendKey" value={str('send_key', 'enter')} onValueChange={(v) => set({ send_key: v })}>
           <option value="enter">{m.settings_send_key_enter()}</option>

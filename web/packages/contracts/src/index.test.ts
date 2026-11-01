@@ -1,4 +1,4 @@
-import { AcceptedSourceReferenceSchema, SessionNewRequestSchema } from './views.js'
+import { AcceptedSourceReferenceSchema, AuxiliaryReasoningSchema, SessionNewRequestSchema } from './views.js'
 import { settingsContract, ReasoningUnsupportedSchema } from './routes/settings.js'
 import { SessionStreamEventSchema } from './sse.js'
 import { RpcRequestSchema } from './sidecar/rpc.js'
@@ -92,6 +92,13 @@ describe('contracts package', () => {
     expect(input.safeParse({ effort: 'high', session_id: null }).success).toBe(false)
     expect(ReasoningUnsupportedSchema.parse(fixture.refusal)).toEqual(fixture.refusal)
     expect(settingsContract.reasoning.get['~orpc'].outputSchema!.parse(fixture.status)).toEqual(fixture.status)
+  })
+  it('pins every auxiliary reasoning state and the effort write for every consumer (TAL-1285)', () => {
+    const fixture = shared('fixtures/auxiliary-reasoning.json') as Record<string, unknown>
+    for (const state of Object.values(fixture)) expect(AuxiliaryReasoningSchema.parse(state)).toEqual(state)
+    const input = settingsContract.models.set['~orpc'].inputSchema!
+    for (const request of [{ scope: 'auxiliary', task: 'compression', reasoning_effort: 'high' }, { scope: 'auxiliary', task: 'compression', reasoning_effort: null }, { scope: 'auxiliary', task: 'compression', provider: 'openai', model: 'small-model', reasoning_effort: 'low' }]) expect(input.parse(request)).toEqual(request)
+    expect(AuxiliaryReasoningSchema.safeParse({ ...(fixture.explicit as object), unavailable: 'later' }).success).toBe(false)
   })
   it('shares live MCP progress between SSE and the running tool view', () => {
     const fixture = shared('fixtures/tool-progress.json') as { running: unknown; completed: unknown; tool: unknown }
