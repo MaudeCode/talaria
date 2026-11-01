@@ -10,8 +10,26 @@ import { buildShareSnapshot, embedShareMedia } from './shares.js'
 const grow = vi.hoisted(() => ({ path: '', ino: 0, bytes: 0 }))
 /** One-shot hook run before the next `openSync`, i.e. immediately before the anchored walk acquires its root. */
 const beforeOpen = vi.hoisted(() => ({ hook: null as (() => void) | null }))
+/** `statSync` of the armed path fails with `code`; `open` tracks every descriptor the module opens and has not closed. */
+const fault = vi.hoisted(() => ({ path: '', code: '', open: new Set<number>() }))
 vi.mock('node:fs', async (importOriginal) => {
   const fs = await importOriginal<typeof import('node:fs')>()
+  const statSync = ((...args: Parameters<typeof fs.statSync>) => {
+    if (fault.path && args[0] === fault.path) throw Object.assign(new Error(`${fault.code}: injected, stat '${fault.path}'`), { code: fault.code })
+    return fs.statSync(...args)
+  }) as typeof fs.statSync
+  const openSync = ((...args: Parameters<typeof fs.openSync>) => {
+    const hook = beforeOpen.hook
+    beforeOpen.hook = null
+    hook?.()
+    const fd = fs.openSync(...args)
+    fault.open.add(fd)
+    return fd
+  }) as typeof fs.openSync
+  const closeSync = ((fd: number) => {
+    fault.open.delete(fd)
+    fs.closeSync(fd)
+  }) as typeof fs.closeSync
   const fstatSync = ((...args: Parameters<typeof fs.fstatSync>) => {
     const st = fs.fstatSync(...args)
     if (grow.path && st?.ino === grow.ino) {
@@ -20,13 +38,7 @@ vi.mock('node:fs', async (importOriginal) => {
     }
     return st
   }) as typeof fs.fstatSync
-  const openSync = ((...args: Parameters<typeof fs.openSync>) => {
-    const hook = beforeOpen.hook
-    beforeOpen.hook = null
-    hook?.()
-    return fs.openSync(...args)
-  }) as typeof fs.openSync
-  return { ...fs, fstatSync, openSync }
+  return { ...fs, fstatSync, statSync, openSync, closeSync }
 })
 
 const SHARE_EMBED_MAX_BYTES = 512 * 1024
@@ -74,6 +86,73 @@ describe('embedShareMedia', () => {
     const atCap = embedShareMedia('MEDIA:at-cap.png', [root], root)
     expect(atCap).toMatch(/<img src="data:image\/png;base64,/)
     expect(Buffer.from(/base64,([^"]+)"/.exec(atCap)![1]!, 'base64').length).toBe(SHARE_EMBED_MAX_BYTES)
+  })
+})
+
+describe('buildShareSnapshot lookup failures', () => {
+  // The later namesake carries its own marker bytes, so any embed of it is visible in the snapshot.
+  const namesake = Buffer.concat([png, Buffer.from('TAL1604-LATER-NAMESAKE-BYTES')])
+  const namesakeB64 = namesake.toString('base64')
+  let workspace = ''
+  let attachments = ''
+  beforeAll(() => {
+    workspace = realpathSync(mkdtempSync(join(tmpdir(), 'share-ws-')))
+    attachments = realpathSync(mkdtempSync(join(tmpdir(), 'share-att-')))
+    mkdirSync(join(workspace, 'sub'))
+    writeFileSync(join(workspace, 'sub', 'image.png'), png)
+    mkdirSync(join(attachments, 'sub'))
+    writeFileSync(join(attachments, 'sub', 'image.png'), namesake)
+    writeFileSync(join(attachments, 'only-later.png'), namesake)
+  })
+  afterAll(() => {
+    Object.assign(fault, { path: '', code: '' })
+    rmSync(workspace, { recursive: true, force: true })
+    rmSync(attachments, { recursive: true, force: true })
+  })
+  const share = (ref: string): string => {
+    fault.open.clear()
+    const snapshot = buildShareSnapshot(new Session({ title: 'Lookup', messages: [] }, { workspace, model: null }), [{ role: 'assistant', content: `see MEDIA:${ref} here` }], { hermesHome: join(workspace, '.hermes'), attachmentRoot: attachments, home: workspace })
+    expect([...fault.open], 'every opened descriptor is closed').toEqual([])
+    return JSON.stringify(snapshot)
+  }
+
+  it.each(['EACCES', 'EPERM', 'EMFILE', 'EIO', 'ESTALE', 'ELOOP'])('omits the image instead of embedding a later namesake when the first-root lookup fails with %s', (code) => {
+    Object.assign(fault, { path: join(workspace, 'sub', 'image.png'), code })
+    try {
+      const text = share('sub/image.png')
+      expect(text).toContain('Local attachment omitted')
+      expect(text).not.toContain(namesakeB64)
+      expect(text).not.toContain('base64')
+    } finally {
+      Object.assign(fault, { path: '', code: '' })
+    }
+  })
+
+  it.each(['ENOENT', 'ENOTDIR'])('still tries the later root when the first-root candidate is absent (%s)', (code) => {
+    Object.assign(fault, { path: join(workspace, 'sub', 'image.png'), code })
+    try {
+      expect(share('sub/image.png')).toContain(namesakeB64)
+    } finally {
+      Object.assign(fault, { path: '', code: '' })
+    }
+  })
+
+  it('embeds a later-root image when no first-root file exists, and the first-root file when it is readable', () => {
+    expect(share('only-later.png')).toContain(namesakeB64)
+    const text = share('sub/image.png')
+    expect(text).toContain(png.toString('base64'))
+    expect(text).not.toContain(namesakeB64)
+  })
+
+  it('omits the image when its real first-root directory is unreadable', { skip: process.getuid?.() === 0 }, () => {
+    chmodSync(join(workspace, 'sub'), 0o000)
+    try {
+      const text = share('sub/image.png')
+      expect(text).toContain('Local attachment omitted')
+      expect(text).not.toContain(namesakeB64)
+    } finally {
+      chmodSync(join(workspace, 'sub'), 0o755)
+    }
   })
 })
 
