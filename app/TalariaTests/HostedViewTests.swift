@@ -202,6 +202,31 @@ final class HostedViewTests: XCTestCase {
         XCTAssertEqual(editor.text, "Delayed editor input")
     }
 
+    /// A loaded CI runner can keep the main actor busy for longer than any wall-clock deadline before the chat shows its
+    /// composer; typing still reaches the composer once it shows (TAL-1665).
+    func testTypingWaitsOutAMainActorBusyPastTenSeconds() async throws {
+        let window = try hostWindow(Color.clear)
+        let editor = UITextView(frame: CGRect(x: 16, y: 100, width: 300, height: 44))
+        let shell = UIButton(frame: CGRect(x: 16, y: 100, width: 300, height: 44))
+        shell.accessibilityLabel = "Message"
+        shell.addAction(UIAction { [weak shell] _ in
+            shell?.removeFromSuperview()
+            window.addSubview(editor)
+        }, for: .primaryActionTriggered)
+        // The stall starts once the helper is polling, the way a loaded runner's other work lands mid-wait.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            Thread.sleep(forTimeInterval: 10.5)
+            window.addSubview(shell)
+        }
+        defer {
+            editor.resignFirstResponder()
+            editor.removeFromSuperview()
+            shell.removeFromSuperview()
+        }
+        try await typeIntoComposer("Typed after a busy main actor", in: window)
+        XCTAssertEqual(editor.text, "Typed after a busy main actor")
+    }
+
     func testAHostedButtonIsFoundByItsIdentifierAndActivates() throws {
         var taps = 0
         let window = try hostWindow(
