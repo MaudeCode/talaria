@@ -219,6 +219,27 @@ describe('server.session_new, server.session_send, server.session_wait, server.s
       await finish(target, long)
       expect(await waitingLong).toMatchObject({ result: { outcome: 'ended', last_assistant_message: 'x'.repeat(4000), truncated: true } })
 
+      // A wait that lands while the target's turn is still being admitted waits for that turn, not for its absent worker.
+      const store = s.deps.sessionStore
+      const storeSave = store.save.bind(store)
+      let release: () => void = () => undefined
+      const gate = new Promise<void>((resolve) => { release = resolve })
+      store.save = async (...args: Parameters<typeof storeSave>) => { if (args[0].session_id === target && args[0].pending_user_message === 'Gated') await gate; return storeSave(...args) }
+      const waitForRun = s.deps.turns.waitForRun.bind(s.deps.turns)
+      let entered: () => void = () => undefined
+      const waitEntered = new Promise<void>((resolve) => { entered = resolve })
+      s.deps.turns.waitForRun = (...args: Parameters<typeof waitForRun>) => { entered(); return waitForRun(...args) }
+      const gatedSend = ask('server.session_send', { session_id: target, message: 'Gated' })
+      while (!s.deps.registry.activeRunStreamForSession(target)) await new Promise((resolve) => setTimeout(resolve, 5))
+      const gatedWait = ask('server.session_wait', { session_id: target })
+      await waitEntered
+      release()
+      store.save = storeSave
+      s.deps.turns.waitForRun = waitForRun
+      expect(await gatedSend).toMatchObject({ result: { outcome: 'started' } })
+      await finish(target, 'Gated done')
+      expect(await gatedWait).toMatchObject({ result: { outcome: 'ended', last_assistant_message: 'Gated done' } })
+
       // Stopping the caller's own turn ends its wait.
       const third = await ask('server.session_send', { session_id: target, message: 'One more thing' })
       await s.sse(`/api/chat/stream?stream_id=${(third as { result: { stream_id: string } }).result.stream_id}`, (f) => f.event === 'token')

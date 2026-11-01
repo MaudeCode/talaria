@@ -319,6 +319,8 @@ export class TurnRunner {
   /** Per-session chain for sidecar YOLO mutation + local commit, so opposing toggles cannot interleave. */
   private readonly yoloChains = new Map<string, Promise<unknown>>()
   private readonly abortControllers = new Map<string, AbortController>()
+  /** Runs registered but not yet given a worker, resolved once admission ends either way. */
+  private readonly admissions = new Map<string, Promise<void>>()
   private readonly steers = new Map<string, SteerRecord[]>()
   private readonly consumedSteers = new Map<string, ConsumedSteer[]>()
   /** Per stream: steer, withdraw and Send now run one at a time, so each sees the queue the Agent holds. */
@@ -528,36 +530,45 @@ export class TurnRunner {
     if (opts.backgroundUpdate) recordBackgroundUpdate(s, streamId, opts.backgroundUpdate)
     const admission = { stream_id: streamId, session_id: s.session_id, started_at: this.deps.now(), phase: 'starting', workspace: opts.workspace, model: opts.model, provider: opts.modelProvider, ephemeral: Boolean(opts.ephemeral), ...(opts.activityParentSessionId ? { activity_parent_session_id: opts.activityParentSessionId } : {}), origin: turnOrigin(source), admitting: true }
     this.registry.registerActiveRun(admission)
-    try { await timing.measure('admission_persistence', () => this.deps.store.save(s)) } catch (error) {
-      this.registry.activeRuns.delete(streamId)
-      s.extra.background_updates = previousUpdates
-      s.extra.completion_acceptances = previousAcceptances
-      s.automatic_turns_stop_held = previousStopHold
-      throw error
+    // A run is visible from here, before its worker exists: `finished()` waits for its admission first (TAL-1165).
+    let admitted: () => void = () => undefined
+    this.admissions.set(streamId, new Promise<void>((resolve) => { admitted = resolve }))
+    try {
+      try { await timing.measure('admission_persistence', () => this.deps.store.save(s)) } catch (error) {
+        this.registry.activeRuns.delete(streamId)
+        s.extra.background_updates = previousUpdates
+        s.extra.completion_acceptances = previousAcceptances
+        s.automatic_turns_stop_held = previousStopHold
+        throw error
+      }
+      this.registry.writebackOwners.set(s.session_id, streamId)
+      // A new chat appears in the list; every turn tells open clients a run started (TAL-434).
+      this.deps.events.publish(wasHiddenEmpty ? 'session_new' : 'turn_started', { profile: s.profile, sessionId: s.session_id })
+      try { this.deps.onTurnStart?.(s.session_id) } catch { /* best effort */ }
+      try { await timing.measure('workspace_persistence', () => this.deps.workspaces.setLastWorkspace(opts.workspace, s.profile)) } catch { /* best effort */ }
+      const channel = this.registry.create(streamId, s.session_id)
+      admission.admitting = false
+      if (opts.goalRelated) this.registry.goalRelated.add(streamId)
+      timing.end('admission')
+      const worker = this.run(s.session_id, streamId, channel, opts, compactionDue).catch((error: unknown) => {
+        timing.finish(timingOutcome(error))
+        this.deps.log(`[webui] ERROR turn ${streamId} crashed\n${error instanceof Error ? (error.stack ?? error.message) : String(error)}`)
+      }).finally(() => { timing.finish(this.registry.cancelled.has(streamId) ? 'cancelled' : undefined); this.workers.delete(streamId) })
+      this.workers.set(streamId, worker)
+    } finally {
+      this.admissions.delete(streamId)
+      admitted()
     }
-    this.registry.writebackOwners.set(s.session_id, streamId)
-    // A new chat appears in the list; every turn tells open clients a run started (TAL-434).
-    this.deps.events.publish(wasHiddenEmpty ? 'session_new' : 'turn_started', { profile: s.profile, sessionId: s.session_id })
-    try { this.deps.onTurnStart?.(s.session_id) } catch { /* best effort */ }
-    try { await timing.measure('workspace_persistence', () => this.deps.workspaces.setLastWorkspace(opts.workspace, s.profile)) } catch { /* best effort */ }
-    const channel = this.registry.create(streamId, s.session_id)
-    admission.admitting = false
-    if (opts.goalRelated) this.registry.goalRelated.add(streamId)
-    timing.end('admission')
-    const worker = this.run(s.session_id, streamId, channel, opts, compactionDue).catch((error: unknown) => {
-      timing.finish(timingOutcome(error))
-      this.deps.log(`[webui] ERROR turn ${streamId} crashed\n${error instanceof Error ? (error.stack ?? error.message) : String(error)}`)
-    }).finally(() => { timing.finish(this.registry.cancelled.has(streamId) ? 'cancelled' : undefined); this.workers.delete(streamId) })
-    this.workers.set(streamId, worker)
     const response: StartTurnResponse = { stream_id: streamId, session_id: s.session_id, pending_started_at: s.pending_started_at, turn_id: streamId, title: s.title }
     if (opts.normalizedModel && opts.model) response.effective_model = opts.model
     if (opts.modelProvider) response.effective_model_provider = opts.modelProvider
     return response
   }
 
-  /** Resolves once the stream's worker has ended (settled, failed, or torn down); it never rejects. */
-  finished(streamId: string): Promise<void> {
-    return this.workers.get(streamId) ?? Promise.resolve()
+  /** Resolves once the stream's worker has ended (settled, failed, or torn down), or its admission failed; it never rejects. */
+  async finished(streamId: string): Promise<void> {
+    await this.admissions.get(streamId)
+    await this.workers.get(streamId)
   }
 
   /**
