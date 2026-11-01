@@ -47,21 +47,58 @@ export const SESSION_EXEC_COMMANDS: ReadonlySet<string> = new Set(['refine'])
 /** What a client shows for an Agent prompt built-in this Agent cannot expand (TAL-817); the turn path refuses it with the same text. */
 export const unsupportedPromptMessage = (name: string): string => `/${name} is not available in Talaria yet.`
 
+/** The other `_`/`-` spellings of `name` (all `_`, all `-`), the equivalence the Agent's slash resolvers apply. */
+const separatorVariants = (name: string): string[] => [...new Set([name.replace(/-/g, '_'), name.replace(/_/g, '-')])].filter((v) => v !== name)
+
 /**
  * The client table followed by the Agent registry. An Agent command whose name is already a client name or alias is
  * dropped, and client-claimed aliases are removed from the rest, so every typed name resolves to one entry.
  * Gateway-only commands never reach a client; CLI-only ones and prompt built-ins the sidecar cannot expand stay listed
  * for no client. An expandable prompt built-in is `handler: 'prompt'`: chat start sends the Agent's expansion (TAL-817).
+ *
+ * TAL-1577: a command `commands.exec` runs also answers to its other `_`/`-` spelling, published in `aliases` (`generated`
+ * maps each such alias to its command). Names are reserved as the sidecar dispatches them: Agent commands before plugins
+ * (`commands.exec` tries the Agent's own commands and aliases first). Within each tier every literal name comes before
+ * explicit aliases, so a registered `plugin_review` stays its own command beside `plugin-review`; generated aliases come
+ * last, each in registry order. Reservation ignores case, as clients and the sidecar match typed names.
  */
-export function commandCatalog(agent: readonly AgentCommand[]): Command[] {
-  const claimed = new Set(CLIENT_COMMANDS.flatMap((c) => [c.name, ...c.aliases]))
-  const rows = agent.flatMap((c): Command[] => {
-    if (c.gateway_only || claimed.has(c.name)) return []
-    claimed.add(c.name)
-    const aliases = c.aliases.filter((a) => !claimed.has(a))
-    for (const a of aliases) claimed.add(a)
-    const unsupported = c.cli_only ? `/${c.name} runs only in the Hermes CLI.` : c.prompt === 'unsupported' ? unsupportedPromptMessage(c.name) : null
-    return [{ ...c, aliases, exec: c.exec || SESSION_EXEC_COMMANDS.has(c.name), handler: c.prompt === 'expand' ? 'prompt' : 'agent', clients: unsupported === null ? ALL : [], ...(unsupported === null ? {} : { unsupported_message: unsupported }) }]
+function buildCatalog(agent: readonly AgentCommand[]): { commands: Command[]; generated: Map<string, string> } {
+  const claimed = new Set(CLIENT_COMMANDS.flatMap((c) => [c.name, ...c.aliases]).map((n) => n.toLowerCase()))
+  const claim = (names: readonly string[]) => names.filter((n) => {
+    const key = n.toLowerCase()
+    if (claimed.has(key)) return false
+    claimed.add(key)
+    return true
   })
-  return [...CLIENT_COMMANDS, ...rows]
+  const aliases = new Map<AgentCommand, string[]>()
+  for (const plugin of [false, true]) {
+    const tier = agent.filter((c) => !c.gateway_only && (c.category === 'Plugin') === plugin && claim([c.name]).length > 0)
+    for (const c of tier) aliases.set(c, claim(c.aliases))
+  }
+  const rows = agent.filter((c) => aliases.has(c)).map((c): Command => {
+    const unsupported = c.cli_only ? `/${c.name} runs only in the Hermes CLI.` : c.prompt === 'unsupported' ? unsupportedPromptMessage(c.name) : null
+    return { ...c, aliases: aliases.get(c) ?? [], exec: c.exec || SESSION_EXEC_COMMANDS.has(c.name), handler: c.prompt === 'expand' ? 'prompt' : 'agent', clients: unsupported === null ? ALL : [], ...(unsupported === null ? {} : { unsupported_message: unsupported }) }
+  })
+  const generated = new Map<string, string>()
+  for (const row of rows) {
+    if (!row.exec || row.clients.length === 0) continue
+    const added = claim(separatorVariants(row.name))
+    for (const a of added) generated.set(a.toLowerCase(), row.name)
+    row.aliases = [...row.aliases, ...added]
+  }
+  return { commands: [...CLIENT_COMMANDS, ...rows], generated }
+}
+
+export const commandCatalog = (agent: readonly AgentCommand[]): Command[] => buildCatalog(agent).commands
+
+/**
+ * `command` with a generated separator alias (TAL-1577) replaced by its command's name, which is what the sidecar
+ * looks up; everything after the name stays byte for byte. Any other name, explicit aliases included, passes unchanged.
+ */
+export function canonicalExecCommand(command: string, agent: readonly AgentCommand[]): string {
+  const generated = buildCatalog(agent).generated
+  return command.replace(/^(\/?)(\S+)/, (typed, slash: string, name: string) => {
+    const canonical = generated.get(name.toLowerCase())
+    return canonical === undefined ? typed : `${slash}${canonical}`
+  })
 }

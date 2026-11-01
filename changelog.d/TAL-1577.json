@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Slash commands such as plugin commands now also answer to their other spelling, so `/knowledge_loop` suggests and runs `/knowledge-loop` while a command registered under either exact spelling keeps its own name.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

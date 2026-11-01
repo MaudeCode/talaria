@@ -19,7 +19,7 @@ import { JoplinError, joplinNote, joplinSearch, notesSources, type JoplinDeps } 
 import { catalogNames, connectorOperation, connectorsPage, connectorTools, rememberCatalogNames } from '../tools/connectors.js'
 import { resolveWikiLocation, wikiPages, type WikiLocation } from '../tools/wiki.js'
 import { buildInsights } from '../tools/insights.js'
-import { commandCatalog, SESSION_EXEC_COMMANDS } from '../tools/commands.js'
+import { canonicalExecCommand, commandCatalog, SESSION_EXEC_COMMANDS } from '../tools/commands.js'
 import { spokenText } from './tools-raw.js'
 import { agentHealth, applyDashboardConfig, dashboardConfig, dashboardStatus, forgetRemoteProbes, gatewayStatus, parseDashboardConfig, readLogTail, remoteGatewayBaseUrl, systemHealth } from '../tools/health.js'
 import { EXTERNALLY_MANAGED } from '../tools/gateway-lifecycle.js'
@@ -68,6 +68,16 @@ function runningSidecar(ctx: RequestContext): NonNullable<ReturnType<RequestCont
   const sidecar = ctx.deps.sidecar()
   if (!sidecar) throw new HttpError(503, 'Hermes Agent sidecar is not running')
   return sidecar
+}
+
+/** The Agent registry rows the command catalog lists; [] without the Agent, so the client commands still list. */
+async function agentCommands(ctx: RequestContext): Promise<Parameters<typeof commandCatalog>[0]> {
+  const sidecar = ctx.deps.sidecar()
+  try {
+    return sidecar ? (await sidecar.call('commands.registry', { profile_home: home(ctx) })).commands : []
+  } catch {
+    return []
+  }
 }
 
 /** A slash command's sidecar failure: `notFound` is 404, bad input 400, the rest as `failure` maps them. */
@@ -491,16 +501,13 @@ export const toolsRouter = os.router({
   },
   commands: {
     list: os.commands.list.handler(({ context: { ctx } }) => run(async () => {
-      const sidecar = ctx.deps.sidecar()
-      let agent: Parameters<typeof commandCatalog>[0] = []
-      try {
-        if (sidecar) agent = (await sidecar.call('commands.registry', { profile_home: home(ctx) })).commands
-      } catch { /* the client commands still list without the Agent registry */ }
-      return { commands: commandCatalog(agent) }
+      return { commands: commandCatalog(await agentCommands(ctx)) }
     })),
     exec: os.commands.exec.handler(({ input, signal, context: { ctx } }) => run(async () => {
-      const command = str(input.command).trim()
-      if (!command) throw new HttpError(400, 'command is required')
+      const typed = str(input.command).trim()
+      if (!typed) throw new HttpError(400, 'command is required')
+      // TAL-1577: a catalog's generated `_`/`-` alias runs as the command it names; only a name with a separator can be one.
+      const command = /^\/?[^\s_-]*[_-]/.test(typed) ? canonicalExecCommand(typed, await agentCommands(ctx)) : typed
       const [, name = '', args = ''] = /^\/?(\S*)\s*([\s\S]*)$/.exec(command) ?? []
       const sessionId = str(input.session_id).trim()
       if (sessionId) (await ctx.deps.sessions.assertWritable(sessionId))
