@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Browsers no longer keep a static file for a year when Talaria Web serves it while an update is replacing its files.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
